@@ -1,0 +1,48 @@
+{
+  "name": "@hc360/staff",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HC360 staff application \u2014 rendered by HC360 Desktop (WebView2) and by browsers on staff tablets.",
+  "scripts": {
+    "dev": "vite",
+    "prebuild": "node -e \"require('node:fs').rmSync('../../../server/HyFib.HealthCare360.Server/wwwroot/assets',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "node scripts/generate-routes.mjs && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "routes": "node scripts/generate-routes.mjs"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "9.74.9",
+    "@fluentui/react-datepicker-compat": "0.6.39",
+    "@fluentui/react-icons": "2.0.342",
+    "@hc360/core": "workspace:*",
+    "@hc360/ui": "workspace:*",
+    "@hookform/resolvers": "5.9.1",
+    "@tanstack/react-query": "5.103.2",
+    "@tanstack/react-router": "1.170.39",
+    "echarts": "6.1.0",
+    "qrcode.react": "4.2.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-hook-form": "7.88.0",
+    "zod": "4.6.5",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@tanstack/react-query-devtools": "5.103.2",
+    "@tanstack/router-plugin": "1.168.40",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/node": "26.6.2",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "jsdom": "30.1.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

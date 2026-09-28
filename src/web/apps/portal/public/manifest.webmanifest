@@ -1,0 +1,16 @@
+{
+  "name": "Patient portal",
+  "short_name": "Patient portal",
+  "description": "Appointments, video consultations, reports, prescriptions and bills",
+  "start_url": "/portal/",
+  "scope": "/portal/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5F5F5",
+  "theme_color": "#0A7CA7",
+  "lang": "en-IN",
+  "dir": "ltr",
+  "icons": [
+    { "src": "/portal/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
