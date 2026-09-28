@@ -1,4 +1,4 @@
-import { makeStyles, mergeClasses, tokens } from '@fluentui/react-components';
+import { Button, makeStyles, mergeClasses, tokens, type ButtonProps } from '@fluentui/react-components';
 import { ChevronLeftRegular } from '@fluentui/react-icons';
 import { createLink, type LinkComponent } from '@tanstack/react-router';
 import { forwardRef, type AnchorHTMLAttributes } from 'react';
@@ -70,7 +70,14 @@ const TextAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function TextAncho
   return <a ref={ref} {...props} className={mergeClasses(styles.text, className)} />;
 });
 
+type ButtonAnchorProps = AnchorProps & Pick<ButtonProps, 'appearance' | 'icon' | 'iconPosition'> & { size?: ButtonProps['size'] };
+
+const ButtonAnchor = forwardRef<HTMLAnchorElement, ButtonAnchorProps>(function ButtonAnchor({ appearance, icon, iconPosition, size = 'large', ...props }, ref) {
+  return <Button as="a" ref={ref} appearance={appearance} icon={icon} iconPosition={iconPosition} size={size} {...props} />;
+});
+
 const CreatedCardLink = createLink(CardAnchor);
+const CreatedButtonLink = createLink(ButtonAnchor);
 const CreatedBackLink = createLink(BackAnchor);
 const CreatedTextLink = createLink(TextAnchor);
 
@@ -82,3 +89,6 @@ export const BackLink: LinkComponent<typeof BackAnchor> = (props) => <CreatedBac
 
 /** An inline text link inside sentences. */
 export const TextLink: LinkComponent<typeof TextAnchor> = (props) => <CreatedTextLink {...props} />;
+
+/** Navigation that looks like a button ("Book an appointment"): still a real link for assistive technology. */
+export const ButtonLink: LinkComponent<typeof ButtonAnchor> = (props) => <CreatedButtonLink {...props} />;

@@ -1,5 +1,20 @@
-import type { Gender } from '@hc360/core';
+import type { BloodGroup, Gender } from '@hc360/core';
 import type { MessageKey, Translate } from '@/i18n';
+
+/** Blood groups are written the same way in every language ("B+", "O−"); null when not known. */
+export const BLOOD_GROUP_LABEL: Record<BloodGroup, string | null> = {
+  Unknown: null,
+  APositive: 'A+',
+  ANegative: 'A−',
+  BPositive: 'B+',
+  BNegative: 'B−',
+  ABPositive: 'AB+',
+  ABNegative: 'AB−',
+  OPositive: 'O+',
+  ONegative: 'O−',
+  BombayPositive: 'Bombay (hh) +',
+  BombayNegative: 'Bombay (hh) −',
+};
 
 export const GENDER_KEY: Record<Gender, MessageKey> = {
   Male: 'gender.Male',

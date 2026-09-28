@@ -3,7 +3,7 @@ import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { PortalBillDetail, PortalBillListItem, PortalPaymentOrder, PortalPaymentStatus } from '@/lib/types';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 50;
 const id = (value: string) => encodeURIComponent(value);
 
 export const billQueries = {

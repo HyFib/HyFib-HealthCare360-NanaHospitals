@@ -15,6 +15,7 @@ type Formatters = {
   weekdayShort: Intl.DateTimeFormat;
   weekdayLong: Intl.DateTimeFormat;
   dayMonth: Intl.DateTimeFormat;
+  monthShort: Intl.DateTimeFormat;
   monthYear: Intl.DateTimeFormat;
   calendarDate: Intl.DateTimeFormat;
   clock: Intl.DateTimeFormat;
@@ -41,6 +42,7 @@ function formatters(language: Language): Formatters {
     weekdayShort: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', weekday: 'short' }),
     weekdayLong: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', weekday: 'long' }),
     dayMonth: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', day: 'numeric', month: 'short' }),
+    monthShort: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', month: 'short' }),
     monthYear: new Intl.DateTimeFormat(locale, { ...zone, month: 'long', year: 'numeric' }),
     calendarDate: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }),
     clock: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit', hour12: true }),
@@ -118,6 +120,12 @@ export function formatWeekday(value: string, language: Language, style: 'short' 
 export function formatDayMonth(value: string, language: Language): string {
   const date = parseCalendarDate(value);
   return date ? formatters(language).dayMonth.format(date) : value;
+}
+
+/** Calendar date → "Sept". */
+export function formatMonthShort(value: string, language: Language): string {
+  const date = parseCalendarDate(value);
+  return date ? formatters(language).monthShort.format(date) : value;
 }
 
 /** Wall-clock "HH:mm[:ss]" (a TimeOnly from the server) → "9:15 am". */

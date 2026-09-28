@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatDayMonth,
   formatInr,
+  formatMonthShort,
   formatMonthYear,
   formatNumber,
   formatTime,
@@ -24,6 +25,7 @@ export interface Formatters {
   calendarDate(value: string | null | undefined): string;
   weekday(value: string, style?: 'short' | 'long'): string;
   dayMonth(value: string): string;
+  monthShort(value: string): string;
   clock(value: string | null | undefined): string;
   inr(value: number | null | undefined, options?: { whole?: boolean }): string;
   number(value: number | null | undefined): string;
@@ -40,6 +42,7 @@ function build(language: Language): Formatters {
     calendarDate: (value) => formatCalendarDate(value, language),
     weekday: (value, style) => formatWeekday(value, language, style),
     dayMonth: (value) => formatDayMonth(value, language),
+    monthShort: (value) => formatMonthShort(value, language),
     clock: (value) => formatClockTime(value, language),
     inr: (value, options) => formatInr(value, language, options),
     number: (value) => formatNumber(value, language),

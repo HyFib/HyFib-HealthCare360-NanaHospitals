@@ -18,3 +18,8 @@ export function useActiveProfile(): ActiveProfile {
   }
   return value;
 }
+
+/** On pages open to everyone (doctors, document checks): the family member when signed in, otherwise null. */
+export function useOptionalProfile(): ActiveProfile | null {
+  return useContext(ProfileContext);
+}

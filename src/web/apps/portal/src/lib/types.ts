@@ -396,6 +396,8 @@ export interface LabReportView {
   amendments: LabAmendmentView[];
   verificationCode: string | null;
   verificationPath: string | null;
+  /** The portal's public check page for the QR code ({portal.baseUrl}/portal/verify/...); null until configured. */
+  verificationUrl?: string | null;
 }
 
 export interface RadiologyAddendumDto {
@@ -432,6 +434,8 @@ export interface RadiologyReportView {
   addenda: RadiologyAddendumDto[];
   verificationCode: string | null;
   verificationPath: string | null;
+  /** The portal's public check page for the QR code ({portal.baseUrl}/portal/verify/...); null until configured. */
+  verificationUrl?: string | null;
 }
 
 export interface EcgFindings {
@@ -518,6 +522,8 @@ export interface CardiologyReportView {
   signatories: ReportSignatory[];
   verificationCode: string | null;
   verificationPath: string | null;
+  /** The portal's public check page for the QR code ({portal.baseUrl}/portal/verify/...); null until configured. */
+  verificationUrl?: string | null;
 }
 
 /** Public QR verification answer: proves a report is genuine without disclosing results or identity. */
