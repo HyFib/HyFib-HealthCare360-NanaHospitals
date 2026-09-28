@@ -3,11 +3,17 @@ import { AlertUrgentRegular, CallRegular, DropRegular, ShieldKeyholeRegular, War
 import { bloodGroupLabel, formatPhone, genderShort, type BloodGroup, type Gender } from '@hc360/core';
 import type { ReactNode } from 'react';
 
+/**
+ * What is known about allergies: some recorded, a clinician confirmed "no known allergies", or nothing recorded yet.
+ * The banner claims "no known allergies" only when that was recorded, never from an empty list.
+ */
+export type AllergyStatus = 'recorded' | 'none' | 'unknown';
+
 export interface PatientBannerData {
   id: string;
   uhid: string;
   fullName: string;
-  gender: Gender;
+  gender?: Gender | null;
   age?: string | null;
   phone?: string | null;
   bloodGroup?: BloodGroup | null;
@@ -15,6 +21,7 @@ export interface PatientBannerData {
   isVip?: boolean;
   isDeceased?: boolean;
   allergies?: string[];
+  allergyStatus?: AllergyStatus;
   alerts?: string[];
   payer?: string | null;
 }
@@ -74,7 +81,7 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
         <div className={styles.meta}>
           <span className={styles.metaItem}>
             <Text weight="semibold">
-              {patient.age ?? '—'} / {genderShort[patient.gender]}
+              {patient.age ?? '—'} / {patient.gender ? genderShort[patient.gender] : '—'}
             </Text>
           </span>
           {patient.bloodGroup && patient.bloodGroup !== 'Unknown' && (
@@ -98,9 +105,13 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
           <Badge color="danger" size="large" icon={<WarningRegular />}>
             Allergies: {allergies.join(', ')}
           </Badge>
-        ) : patient.allergies ? (
+        ) : patient.allergyStatus === 'none' ? (
           <Badge appearance="tint" color="success">
             No known allergies
+          </Badge>
+        ) : patient.allergyStatus === 'unknown' ? (
+          <Badge appearance="tint" color="warning" icon={<WarningRegular />}>
+            Allergies not recorded
           </Badge>
         ) : null}
         {alerts.map((alert) => (

@@ -12,7 +12,7 @@ import {
   type InputProps,
 } from '@fluentui/react-components';
 import type { LookupItem } from '@hc360/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import { Controller, type Control, type FieldPath, type FieldValues } from 'react-hook-form';
 
 interface BaseProps<T extends FieldValues> {
@@ -216,17 +216,19 @@ export function LookupField<T extends FieldValues>({
 }: BaseProps<T> & { load: (search: string) => Promise<LookupItem[]>; placeholder?: string; initialItems?: LookupItem[] }) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<LookupItem[]>(initialItems ?? []);
+  // Callers often pass an inline function: reading the latest one keeps a new identity from re-running the search.
+  const loadItems = useEffectEvent((term: string) => load(term));
 
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      load(search).then((result) => !cancelled && setItems(result), () => undefined);
+      loadItems(search).then((result) => !cancelled && setItems(result), () => undefined);
     }, 250);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [search, load]);
+  }, [search]);
 
   return (
     <Controller
