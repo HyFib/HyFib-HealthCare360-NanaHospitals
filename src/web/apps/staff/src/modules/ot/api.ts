@@ -439,39 +439,34 @@ export interface AddSurgeryMaterialRequest {
   unitPrice: number;
 }
 
-/** A store of the facility (SupplyChain). Surgery materials are issued from the one active OT store. */
-export interface InventoryStoreDto {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
-  isActive: boolean;
+/** A usable batch of an OT store item (quantities in the item's base unit). */
+export interface OtStoreBatch {
+  batchId: string;
+  batchNumber: string;
+  expiryDate: string | null;
+  available: number;
+  mrp: number;
 }
 
-/** SupplyChain catalogue look-up with availability in a store (`/api/v1/inventory/items/lookup`). */
-export interface StoreItemLookup {
-  id: string;
+/**
+ * An item in stock in the facility's OT store (`GET /api/v1/ot/store-items`), the store surgery materials are issued
+ * from. `available` is what can be issued now; `batches` are the first three to issue, nearest expiry first (FEFO), and
+ * `mrp` is the MRP of the first. Record it with `supplyItemId = itemId`, `itemName = name` and the chosen batch's
+ * `lotNumber = batchNumber` and `expiryDate`.
+ */
+export interface OtStoreItem {
+  itemId: string;
   code: string;
   name: string;
   genericName: string | null;
+  manufacturer: string | null;
   type: string;
   baseUnit: string;
-  available: number | null;
-  mrp: number | null;
+  available: number;
   nearestExpiry: string | null;
+  mrp: number | null;
+  batches: OtStoreBatch[];
 }
-
-/** Any of these lets a user read the inventory catalogue and stores (SupplyChain `CatalogReaders`). */
-export const INVENTORY_CATALOG_PERMISSIONS = [
-  'inventory.items.manage',
-  'inventory.stock.read',
-  'inventory.indents.raise',
-  'inventory.indents.issue',
-  'inventory.transfers',
-  'inventory.counts',
-  'purchase.manage',
-  'purchase.grn.receive',
-] as const;
 
 /** Service catalogue item (masters look-up), used to pick the planned procedure. */
 export interface ServiceItemDto {
@@ -521,6 +516,7 @@ export const otKeys = {
   anaesthesia: (id: string) => ['ot', 'booking', id, 'anaesthesia'] as const,
   operationNote: (id: string) => ['ot', 'booking', id, 'operation-note'] as const,
   materials: (id: string) => ['ot', 'booking', id, 'materials'] as const,
+  storeItems: (search: string) => ['ot', 'store-items', search] as const,
   trace: (lot: string, serial: string) => ['ot', 'implant-trace', lot, serial] as const,
 };
 
@@ -582,16 +578,11 @@ export const otQueries = {
       queryKey: otKeys.materials(id),
       queryFn: ({ signal }) => api.get<SurgeryMaterialDto[]>(`/api/v1/ot/bookings/${id}/materials`, { signal }),
     }),
-  otStores: () =>
+  /** 422 `stock.no_store` or `stock.store_ambiguous` when the facility has no single active OT store. */
+  storeItems: (search: string) =>
     queryOptions({
-      queryKey: ['ot', 'inventory-stores'] as const,
-      queryFn: ({ signal }) => api.get<InventoryStoreDto[]>('/api/v1/inventory/stores', { query: { type: 'OT' }, signal }),
-      staleTime: 10 * 60_000,
-    }),
-  storeItems: (search: string, storeId: string) =>
-    queryOptions({
-      queryKey: ['ot', 'store-items', storeId, search] as const,
-      queryFn: ({ signal }) => api.get<StoreItemLookup[]>('/api/v1/inventory/items/lookup', { query: { search: search || undefined, storeId, take: 20 }, signal }),
+      queryKey: otKeys.storeItems(search),
+      queryFn: ({ signal }) => api.get<OtStoreItem[]>('/api/v1/ot/store-items', { query: { search: search || undefined, take: 20 }, signal }),
       staleTime: 30_000,
     }),
   trace: (lot: string, serial: string) =>

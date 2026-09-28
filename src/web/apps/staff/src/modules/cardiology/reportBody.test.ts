@@ -66,6 +66,7 @@ describe('printed cardiology report', () => {
     files: [],
     verificationCode: null,
     verificationPath: null,
+    verificationUrl: null,
   } satisfies CardiologyReportView;
 
   it('prints measurements, conclusion and the critical note, escaped', () => {

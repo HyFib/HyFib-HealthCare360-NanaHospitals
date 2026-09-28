@@ -2,6 +2,7 @@ import { Badge, Button, Caption1, Link, makeStyles, mergeClasses, Text, tokens, 
 import { AlertUrgentRegular, HeartPulseRegular, PillRegular, TaskListLtrRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatRelative } from '@hc360/core';
 import { Section, StatusBadge } from '@hc360/ui';
+import { flagsSummaryNote } from './allergyStatus';
 import { encounterTypeLabel, type PatientClinicalSummary, type VitalsSnapshot } from './api';
 import type { ChartTab } from './timeline';
 import { vitalChips, type VitalChip } from './vitals';
@@ -118,6 +119,7 @@ export function ChartSummary({
 }) {
   const styles = useStyles();
   const medicines = summary.currentMedications;
+  const flagsNote = flagsSummaryNote(summary.allergyStatus, summary.alerts.length, summary.allergies.length);
 
   return (
     <div className={styles.grid}>
@@ -158,9 +160,9 @@ export function ChartSummary({
               </span>
             </li>
           ))}
-          {summary.alerts.length === 0 && summary.allergies.length === 0 && (
+          {flagsNote && (
             <li>
-              <Text className={styles.empty}>{summary.allergiesEverRecorded ? 'No active alerts. No known allergies.' : 'No active alerts. Allergies have not been recorded yet.'}</Text>
+              <Text className={styles.empty}>{flagsNote}</Text>
             </li>
           )}
         </ul>

@@ -15,6 +15,7 @@ export async function printCardiologyReport(view: CardiologyReportView): Promise
     signatories: view.signatories,
     verificationCode: view.verificationCode,
     verificationPath: view.verificationPath,
+    verificationUrl: view.verificationUrl,
     statusBanner: signed ? (view.status === 'Verified' ? 'Signed, not yet released' : null) : 'Draft: not signed by the cardiologist',
     notes: view.files.length ? [`${view.files.length} device ${view.files.length === 1 ? 'recording is' : 'recordings are'} stored with this report.`] : [],
     extraStyles: CARDIOLOGY_PRINT_STYLES,

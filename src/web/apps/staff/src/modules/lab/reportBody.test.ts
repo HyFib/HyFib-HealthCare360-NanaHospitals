@@ -100,6 +100,7 @@ const view: LabReportView = {
   amendments: [{ revision: 2, reason: 'Transcription error', changes: 'Platelets 4,20,000 → 42,000', amendedAt: '2026-09-26T07:00:00Z', amendedBy: 'Dr. Meena Iyer' }],
   verificationCode: 'ABCD2345EFGH6789JKLM',
   verificationPath: '/api/v1/lab/reports/verify/ABCD2345EFGH6789JKLM',
+  verificationUrl: 'https://care.nanahospitals.in/portal/verify/lab/ABCD2345EFGH6789JKLM',
 };
 
 describe('printed lab report', () => {

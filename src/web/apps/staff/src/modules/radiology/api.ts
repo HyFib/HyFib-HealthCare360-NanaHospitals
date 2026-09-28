@@ -9,6 +9,7 @@ import type {
   ReportLetterhead,
   ReportPatient,
   ReportSignatory,
+  ReportStudyRef,
   TatSummary,
 } from '@/modules/lab/common/types';
 
@@ -207,7 +208,10 @@ export interface RadiologyReportView {
   signatories: ReportSignatory[];
   addenda: RadiologyAddendumDto[];
   verificationCode: string | null;
+  /** Server-relative verification API; resolves only on the hospital network. */
   verificationPath: string | null;
+  /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
+  verificationUrl: string | null;
 }
 
 export interface ReportTemplateDto {
@@ -297,6 +301,7 @@ export const radiologyKeys = {
   studies: ['radiology', 'studies'] as const,
   study: (id: string) => ['radiology', 'studies', 'detail', id] as const,
   report: (studyId: string) => ['radiology', 'report', studyId] as const,
+  reportStudy: (reportId: string) => ['radiology', 'report-study', reportId] as const,
   masters: ['radiology', 'masters'] as const,
 };
 
@@ -336,6 +341,13 @@ export const radiologyQueries = {
         }
       },
       refetchOnWindowFocus: false,
+    }),
+  /** The study of a report, for screens that hold only the report id (the doctor's results); 404 when not visible here. */
+  reportStudy: (reportId: string) =>
+    queryOptions({
+      queryKey: radiologyKeys.reportStudy(reportId),
+      queryFn: ({ signal }) => api.get<ReportStudyRef>(`/api/v1/radiology/reports/${reportId}`, { signal }),
+      staleTime: 5 * 60_000,
     }),
   aiFindings: (studyId: string) =>
     queryOptions({
@@ -400,3 +412,6 @@ export const RADIOLOGY_PERMISSIONS = {
   verify: 'radiology.reports.verify',
   mastersManage: 'masters.manage',
 } as const;
+
+/** Who may open imaging studies and resolve a report id to its study (server `RadiologyEndpoints.StudyReaders`). */
+export const RADIOLOGY_STUDY_READERS = [RADIOLOGY_PERMISSIONS.read, RADIOLOGY_PERMISSIONS.worklist, RADIOLOGY_PERMISSIONS.write] as const;

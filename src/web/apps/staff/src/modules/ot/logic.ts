@@ -1,5 +1,5 @@
-import { isApiError } from '@hc360/core';
-import type { ChecklistItemDto, OtCalendarBooking, SafetyPhase, SchedulingConflict, SurgeryDetail, SurgeryStatus } from './api';
+import { formatDateOnly, formatInr, formatNumber, isApiError } from '@hc360/core';
+import type { ChecklistItemDto, OtCalendarBooking, OtStoreBatch, OtStoreItem, SafetyPhase, SchedulingConflict, SurgeryDetail, SurgeryStatus } from './api';
 import { phaseLabel, sideShort } from './labels';
 import { minutesIntoIstDay } from './shared/datetime';
 
@@ -165,6 +165,45 @@ export function operationNoteGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
 
 export function anaesthesiaGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
   return detail.status === 'Requested' || detail.status === 'Cancelled' ? refuse('The anaesthesia record is kept for scheduled surgeries.') : ALLOWED;
+}
+
+// ---------------------------------------------------------------- implants and consumables from the OT store
+
+/** Why the OT store cannot be searched: the facility has no active OT store, or more than one (422 from the server). */
+export type OtStoreProblem = 'no-store' | 'ambiguous';
+
+export function otStoreProblem(error: unknown): OtStoreProblem | null {
+  const code = isApiError(error) ? error.code : undefined;
+  return code === 'stock.no_store' ? 'no-store' : code === 'stock.store_ambiguous' ? 'ambiguous' : null;
+}
+
+/** The listed batch whose lot is the one on the form (case and spaces ignored), if any. */
+export function batchForLot(item: Pick<OtStoreItem, 'batches'> | null, lotNumber: string): OtStoreBatch | null {
+  const lot = lotNumber.trim().toUpperCase();
+  return lot && item ? (item.batches.find((b) => b.batchNumber.trim().toUpperCase() === lot) ?? null) : null;
+}
+
+/** What the OT store can issue: a named lot is issued only from that batch, otherwise FEFO draws on all the stock. */
+export function issuableQuantity(item: Pick<OtStoreItem, 'available' | 'batches'>, lotNumber: string): number {
+  return batchForLot(item, lotNumber)?.available ?? item.available;
+}
+
+/**
+ * The price per unit once a batch is chosen: that batch's MRP, unless the user typed a price of their own (anything
+ * other than the MRP filled in earlier), which is kept.
+ */
+export function priceForBatch(current: number | null, filledMrp: number | null, batchMrp: number): number {
+  return current === null || current === filledMrp ? batchMrp : current;
+}
+
+/** "Lot B123 · expires 31 Mar 2027 · 4 Nos available · MRP ₹1,250.00". */
+export function batchLabel(batch: OtStoreBatch, baseUnit: string): string {
+  return [
+    `Lot ${batch.batchNumber}`,
+    batch.expiryDate ? `expires ${formatDateOnly(batch.expiryDate)}` : 'no expiry date',
+    `${formatNumber(batch.available)} ${baseUnit} available`,
+    `MRP ${formatInr(batch.mrp)}`,
+  ].join(' · ');
 }
 
 // ---------------------------------------------------------------- day-of-surgery steps

@@ -696,7 +696,10 @@ export interface LabReportView {
   hasAutoValidatedResults: boolean;
   amendments: LabAmendmentView[];
   verificationCode: string | null;
+  /** Server-relative verification API; resolves only on the hospital network. */
   verificationPath: string | null;
+  /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
+  verificationUrl: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------ quality control

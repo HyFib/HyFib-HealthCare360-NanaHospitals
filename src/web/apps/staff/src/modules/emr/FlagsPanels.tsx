@@ -11,17 +11,19 @@ import {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Switch,
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, AlertUrgentRegular, ShieldErrorRegular } from '@fluentui/react-icons';
+import { AddRegular, AlertUrgentRegular, CheckmarkCircleRegular, ShieldErrorRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateOnly, isApiError, todayIso } from '@hc360/core';
 import {
   applyServerErrors,
   ChoiceField,
+  ConfirmDialog,
   DataTable,
   DateField,
   FormGrid,
@@ -36,6 +38,7 @@ import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
+import { canRecordNoKnownAllergies, noKnownAllergiesRefusal, recordedByText } from './allergyStatus';
 import {
   ALERT_TYPES,
   alertTypeLabel,
@@ -53,6 +56,7 @@ const useStyles = makeStyles({
   toolbar: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   muted: { color: tokens.colorNeutralForeground3 },
+  statement: { marginBottom: '12px' },
 });
 
 function severityTone(severity: string): 'danger' | 'warning' | 'informative' {
@@ -279,13 +283,38 @@ function UpdateAllergyForm({ allergy, patientId, onClose }: { allergy: AllergyDt
 
 export function AllergiesTab({ patientId }: { patientId: string }) {
   const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
   const canManage = usePermission('clinical.allergies.manage');
   const [showAll, setShowAll] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [confirmingNone, setConfirmingNone] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const allergies = useQuery(emrQueries.allergies(patientId, showAll));
+  const status = useQuery(emrQueries.allergyStatus(patientId));
   const all = useQuery({ ...emrQueries.allergies(patientId, true), enabled: editingId !== null });
   const editing = editingId ? (all.data ?? allergies.data)?.find((a) => a.id === editingId) ?? null : null;
+  const activeListed = (allergies.data ?? []).filter((a) => a.status === 'Active').length;
+
+  const recordNone = useMutation({
+    mutationFn: () => emrApi.recordNoKnownAllergies(patientId),
+    onSuccess: (recorded) => {
+      queryClient.setQueryData(emrKeys.allergyStatus(patientId), recorded);
+      void queryClient.invalidateQueries({ queryKey: emrKeys.summary(patientId) });
+      setConfirmingNone(false);
+      notify.success('No known allergies recorded', 'The banner now shows it with your name and the time.');
+    },
+    onError: (error) => {
+      if (noKnownAllergiesRefusal(error)) {
+        // An allergy was recorded since this list loaded: show it and withdraw the action.
+        void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
+      }
+    },
+  });
+  const closeNone = () => {
+    setConfirmingNone(false);
+    recordNone.reset();
+  };
 
   return (
     <>
@@ -295,8 +324,21 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
             Record allergy
           </Button>
         )}
+        {canRecordNoKnownAllergies(status.data?.status, canManage, activeListed) && (
+          <Button icon={<CheckmarkCircleRegular />} onClick={() => setConfirmingNone(true)}>
+            Record no known allergies
+          </Button>
+        )}
         <Switch checked={showAll} onChange={(_, d) => setShowAll(d.checked)} label="Show inactive and resolved" />
       </div>
+      {status.data?.status === 'NoKnownAllergies' && (
+        <MessageBar intent="success" className={styles.statement}>
+          <MessageBarBody>
+            <MessageBarTitle>No known allergies</MessageBarTitle>
+            {recordedByText(status.data)} Recording an allergy replaces this statement.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       <DataTable
         ariaLabel="Allergies"
         rows={allergies.data}
@@ -332,6 +374,27 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
         }}
       />
       <UpdateAllergyDialog allergy={editing} patientId={patientId} onClose={() => setEditingId(null)} />
+      <ConfirmDialog
+        open={confirmingNone}
+        title="Record no known allergies?"
+        confirmLabel="Record no known allergies"
+        busy={recordNone.isPending}
+        onConfirm={() => recordNone.mutate()}
+        onCancel={closeNone}
+      >
+        <div className={styles.form}>
+          <Text block>Record this only after asking the patient, or their family, about medicine, food and other allergies.</Text>
+          <Text block>The banner will then show &quot;No known allergies&quot; with your name and the time. If an allergy is recorded later, it replaces this statement.</Text>
+          {recordNone.error && (
+            <MessageBar intent="error" layout="multiline" politeness="assertive">
+              <MessageBarBody>
+                <MessageBarTitle>Not recorded</MessageBarTitle>
+                {noKnownAllergiesRefusal(recordNone.error) ?? (isApiError(recordNone.error) ? recordNone.error.userMessage : 'Please try again.')}
+              </MessageBarBody>
+            </MessageBar>
+          )}
+        </div>
+      </ConfirmDialog>
     </>
   );
 }

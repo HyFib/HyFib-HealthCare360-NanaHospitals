@@ -9,6 +9,7 @@ import type {
   ReportLetterhead,
   ReportPatient,
   ReportSignatory,
+  ReportStudyRef,
 } from '@/modules/lab/common/types';
 
 // ------------------------------------------------------------------------------------------------ enums (as strings)
@@ -215,7 +216,10 @@ export interface CardiologyReportView {
   signatories: ReportSignatory[];
   files: DeviceFileDto[];
   verificationCode: string | null;
+  /** Server-relative verification API; resolves only on the hospital network. */
   verificationPath: string | null;
+  /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
+  verificationUrl: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------ queries and commands
@@ -235,6 +239,7 @@ const PAGE = 25;
 export const cardiologyKeys = {
   all: ['cardiology'] as const,
   study: (id: string) => ['cardiology', 'studies', 'detail', id] as const,
+  reportStudy: (reportId: string) => ['cardiology', 'report-study', reportId] as const,
 };
 
 export const cardiologyQueries = {
@@ -259,6 +264,13 @@ export const cardiologyQueries = {
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
+  /** The study of a report, for screens that hold only the report id (the doctor's results); 404 when not visible here. */
+  reportStudy: (reportId: string) =>
+    queryOptions({
+      queryKey: cardiologyKeys.reportStudy(reportId),
+      queryFn: ({ signal }) => api.get<ReportStudyRef>(`/api/v1/cardiology/reports/${reportId}`, { signal }),
+      staleTime: 5 * 60_000,
+    }),
 };
 
 const study = (id: string) => `/api/v1/cardiology/studies/${id}`;
@@ -282,3 +294,6 @@ export const CARDIOLOGY_PERMISSIONS = {
   manage: 'cardiology.studies.manage',
   verify: 'cardiology.reports.verify',
 } as const;
+
+/** Who may open cardiology studies and resolve a report id to its study (server `CardiologyEndpoints.StudyReaders`). */
+export const CARDIOLOGY_STUDY_READERS = [CARDIOLOGY_PERMISSIONS.read, CARDIOLOGY_PERMISSIONS.manage, CARDIOLOGY_PERMISSIONS.verify] as const;

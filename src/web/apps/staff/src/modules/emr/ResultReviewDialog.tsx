@@ -24,12 +24,15 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkRegular, OpenRegular, PersonRegular } from '@fluentui/react-icons';
-import { formatDateTime } from '@hc360/core';
+import { formatDateTime, isApiError } from '@hc360/core';
 import { LoadingState, useNotify } from '@hc360/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { CARDIOLOGY_STUDY_READERS, cardiologyQueries } from '@/modules/cardiology/api';
+import type { ReportStudyRef } from '@/modules/lab/common/types';
+import { RADIOLOGY_STUDY_READERS, radiologyQueries } from '@/modules/radiology/api';
 import { emrApi, emrKeys, emrQueries, type LabResultFlag, type WorklistResult } from './api';
 
 const useStyles = makeStyles({
@@ -94,6 +97,29 @@ function LabResults({ reportId }: { reportId: string }) {
   );
 }
 
+/** Where the full imaging or cardiology report is: the results list holds only the report id, the screens use the study. */
+function StudyReportNote({ kind, study }: { kind: 'Radiology' | 'Cardiology'; study: UseQueryResult<ReportStudyRef> }) {
+  const styles = useStyles();
+  const department = kind === 'Radiology' ? 'radiology' : 'cardiology';
+  if (study.isPending) {
+    return <LoadingState label="Finding the report…" />;
+  }
+  if (study.error) {
+    return (
+      <Caption1 className={styles.muted}>
+        {isApiError(study.error) && study.error.status === 404
+          ? `This report could not be found. It may have been withdrawn; check with the ${department} department.`
+          : `The report could not be opened here. Open the patient's chart or the ${department} module to read it.`}
+      </Caption1>
+    );
+  }
+  return (
+    <Caption1 className={styles.muted}>
+      Open the full report to read the findings{kind === 'Radiology' ? ' and view the images' : ' and the device recordings'}.
+    </Caption1>
+  );
+}
+
 /** Review a released result and acknowledge it (critical results stay at the top of the worklist until then). */
 export function ResultReviewDialog({ result, onClose }: { result: WorklistResult | null; onClose: () => void }) {
   return (
@@ -109,8 +135,27 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const canReadLab = usePermission('lab.orders.read');
+  const canReadRadiology = usePermission(RADIOLOGY_STUDY_READERS);
+  const canReadCardiology = usePermission(CARDIOLOGY_STUDY_READERS);
   const canAcknowledge = usePermission('clinical.emr.write');
   const [note, setNote] = useState('');
+  // Radiology and cardiology screens open by study: resolve the report id as soon as the result is shown.
+  const radiologyStudy = useQuery({ ...radiologyQueries.reportStudy(result.reportId), enabled: result.kind === 'Radiology' && canReadRadiology });
+  const cardiologyStudy = useQuery({ ...cardiologyQueries.reportStudy(result.reportId), enabled: result.kind === 'Cardiology' && canReadCardiology });
+  const study =
+    result.kind === 'Radiology' && canReadRadiology
+      ? { kind: 'Radiology' as const, query: radiologyStudy }
+      : result.kind === 'Cardiology' && canReadCardiology
+        ? { kind: 'Cardiology' as const, query: cardiologyStudy }
+        : null;
+  const studyId = study?.query.data?.studyId;
+  const openStudy = (id: string) => {
+    if (study?.kind === 'Radiology') {
+      void navigate({ to: '/radiology/studies/$studyId', params: { studyId: id } });
+    } else {
+      void navigate({ to: '/cardiology/studies/$studyId', params: { studyId: id } });
+    }
+  };
   const acknowledge = useMutation({
     mutationFn: () => emrApi.acknowledgeResult(result.id, note.trim() || null),
     onSuccess: () => {
@@ -144,6 +189,8 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         )}
         {result.kind === 'Laboratory' && canReadLab ? (
           <LabResults reportId={result.reportId} />
+        ) : study ? (
+          <StudyReportNote kind={study.kind} study={study.query} />
         ) : (
           <Caption1 className={styles.muted}>Open the patient's chart or the {result.kind.toLowerCase()} module to read the full report.</Caption1>
         )}
@@ -159,6 +206,11 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         </Button>
         {result.kind === 'Laboratory' && canReadLab && (
           <Button icon={<OpenRegular />} onClick={() => void navigate({ href: `/lab/reports/${result.reportId}` })}>
+            Full report
+          </Button>
+        )}
+        {studyId && (
+          <Button icon={<OpenRegular />} onClick={() => openStudy(studyId)}>
             Full report
           </Button>
         )}

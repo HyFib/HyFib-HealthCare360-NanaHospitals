@@ -130,7 +130,10 @@ export interface PrescriptionPrintModel {
   followUpAdvice: string | null;
   refillsAllowed: number;
   verificationToken: string | null;
+  /** Server-relative verification API; resolves only on the hospital network. */
   verificationPath: string | null;
+  /** Absolute portal verification page (`{portal.baseUrl}/portal/verify/…`) for the QR code; null until the public address is configured. */
+  verificationUrl: string | null;
 }
 
 export interface DrugInteractionDto {
@@ -191,32 +194,31 @@ export interface ControlledDrugRegisterDto {
   confirmedByUserId: string | null;
 }
 
-/** Inventory drug master row (SupplyChain `ItemLookup`). */
-export interface DrugLookupItem {
+export type DrugSchedule = 'None' | 'Otc' | 'G' | 'H' | 'H1' | 'X';
+
+/**
+ * A medicine from the drug master for the prescriber's picker (`GET /api/v1/emr/drugs`, ERX-01). `isControlled` means
+ * Schedule H1/X or NDPS (the lines that need the prescriber's confirmation and the controlled-drug register), with
+ * `controlledSchedule` "X" or "H1". `available` is the stock of the facility's pharmacy stores: 0 when out of stock,
+ * null when the facility has no pharmacy store.
+ */
+export interface PrescribableDrug {
   id: string;
   code: string;
   name: string;
   genericName: string | null;
+  brandName: string | null;
   strength: string | null;
-  type: string;
-  schedule: 'None' | 'Otc' | 'G' | 'H' | 'H1' | 'X';
+  dosageForm: string | null;
+  schedule: DrugSchedule;
   isControlled: boolean;
+  controlledSchedule: 'X' | 'H1' | null;
+  requiresPrescription: boolean;
   isColdChain: boolean;
   baseUnit: string;
   available: number | null;
+  nearestExpiry: string | null;
 }
-
-/** Permissions that may search the inventory drug master (the look-up is not open to prescribers by default). */
-export const DRUG_LOOKUP_PERMISSIONS = [
-  'inventory.items.manage',
-  'inventory.stock.read',
-  'inventory.indents.raise',
-  'inventory.indents.issue',
-  'inventory.transfers',
-  'inventory.counts',
-  'purchase.manage',
-  'purchase.grn.receive',
-] as const;
 
 export interface PrescriptionListParams {
   encounterId?: string | null;
@@ -230,7 +232,7 @@ export const prescriptionKeys = {
   interactions: (search: string, severity: InteractionSeverity | null, page: number) => ['emr', 'drug-interactions', search, severity ?? 'all', page] as const,
   doseLimits: () => ['emr', 'dose-limits'] as const,
   register: (from: string, to: string, page: number) => ['emr', 'controlled-register', from, to, page] as const,
-  drugs: (search: string) => ['emr', 'drug-lookup', search] as const,
+  drugs: (search: string) => ['emr', 'drugs', search] as const,
 };
 
 export const prescriptionQueries = {
@@ -271,11 +273,12 @@ export const prescriptionQueries = {
         api.get<PagedResult<ControlledDrugRegisterDto>>('/api/v1/clinical/controlled-drug-register', { query: { from, to, page, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
+  /** Prescriber drug search (needs `clinical.prescriptions.write`), with the facility's pharmacy stock. */
   drugs: (search: string) =>
     queryOptions({
       queryKey: prescriptionKeys.drugs(search),
-      queryFn: ({ signal }) => api.get<DrugLookupItem[]>('/api/v1/inventory/items/lookup', { query: { search, type: 'Drug', take: 15 }, signal }),
-      staleTime: 5 * 60_000,
+      queryFn: ({ signal }) => api.get<PrescribableDrug[]>('/api/v1/emr/drugs', { query: { search, take: 15 }, signal }),
+      staleTime: 60_000,
     }),
 };
 
