@@ -1,0 +1,162 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+
+namespace HyFib.HealthCare360.Platform.Auditing;
+
+public static class AuditCategories
+{
+    public const string Auth = "auth";
+    public const string Data = "data";
+    public const string PhiAccess = "phi";
+    public const string Security = "security";
+    public const string Admin = "admin";
+    public const string Clinical = "clinical";
+    public const string Integration = "integration";
+}
+
+public enum AuditSeverity
+{
+    Info = 0,
+    Warning = 1,
+    Critical = 2,
+}
+
+/// <summary>
+/// Append-only audit record. Rows are inserted without locking; <see cref="AuditSealer"/> later assigns
+/// <see cref="ChainIndex"/> and a SHA-256 hash chained to the previous sealed row, so tampering is detectable.
+/// A database trigger forbids UPDATE (other than sealing) and DELETE.
+/// </summary>
+public sealed class AuditEvent
+{
+    public long Id { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public string Category { get; set; } = AuditCategories.Data;
+    public string Action { get; set; } = string.Empty;
+    public AuditSeverity Severity { get; set; }
+    public string? EntityType { get; set; }
+    public string? EntityId { get; set; }
+    public Guid? PatientId { get; set; }
+    public Guid? UserId { get; set; }
+    public string? UserName { get; set; }
+    public Guid? FacilityId { get; set; }
+    public Guid? DeviceId { get; set; }
+    public Guid? SessionId { get; set; }
+    public string? IpAddress { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? Summary { get; set; }
+    public string? Details { get; set; }
+
+    public long? ChainIndex { get; set; }
+    public string? PreviousHash { get; set; }
+    public string? Hash { get; set; }
+
+    /// <summary>Canonical text hashed into the chain (stable field order, invariant formatting).</summary>
+    public string CanonicalContent() => string.Join('\u001f',
+        Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        OccurredAt.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        Category, Action, EntityType, EntityId, PatientId, UserId, FacilityId, Summary, Details);
+
+    public static string ComputeHash(string? previousHash, string canonicalContent) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes((previousHash ?? "GENESIS") + "\u001e" + canonicalContent)));
+}
+
+internal sealed class AuditEventConfiguration : IEntityTypeConfiguration<AuditEvent>
+{
+    public void Configure(EntityTypeBuilder<AuditEvent> b)
+    {
+        b.ToTable("audit_events", "audit");
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).UseIdentityAlwaysColumn();
+        b.Property(x => x.Category).HasMaxLength(32);
+        b.Property(x => x.Action).HasMaxLength(128);
+        b.Property(x => x.EntityType).HasMaxLength(128);
+        b.Property(x => x.EntityId).HasMaxLength(64);
+        b.Property(x => x.UserName).HasMaxLength(128);
+        b.Property(x => x.IpAddress).HasMaxLength(64);
+        b.Property(x => x.CorrelationId).HasMaxLength(128);
+        b.Property(x => x.Summary).HasMaxLength(1000);
+        b.Property(x => x.Details).HasColumnType("jsonb");
+        b.Property(x => x.PreviousHash).HasMaxLength(64);
+        b.Property(x => x.Hash).HasMaxLength(64);
+
+        b.HasIndex(x => x.OccurredAt);
+        b.HasIndex(x => new { x.PatientId, x.OccurredAt });
+        b.HasIndex(x => new { x.UserId, x.OccurredAt });
+        b.HasIndex(x => new { x.Category, x.OccurredAt });
+        b.HasIndex(x => x.ChainIndex).IsUnique();
+        b.HasIndex(x => x.Id).HasFilter("hash IS NULL").HasDatabaseName("ix_audit_events_unsealed");
+    }
+}
+
+/// <summary>An audit record requested by application code.</summary>
+public sealed record AuditEntry(string Category, string Action, string? Summary = null)
+{
+    public string? EntityType { get; init; }
+    public string? EntityId { get; init; }
+    public Guid? PatientId { get; init; }
+    public object? Details { get; init; }
+    public AuditSeverity Severity { get; init; } = AuditSeverity.Info;
+
+    /// <summary>Overrides the user (for example a failed login where nobody is authenticated yet).</summary>
+    public Guid? UserId { get; init; }
+
+    public string? UserName { get; init; }
+}
+
+public interface IAuditLogger
+{
+    /// <summary>Adds the entry to the current unit of work; it is saved with the caller's SaveChangesAsync.</summary>
+    void Add(AuditEntry entry);
+
+    /// <summary>Writes the entry immediately in its own transaction (reads, failed logins, security events).</summary>
+    Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default);
+
+    /// <summary>Records that the current user viewed/printed/exported part of a patient's record (PHI access).</summary>
+    Task PatientRecordAccessedAsync(Guid patientId, string what, CancellationToken cancellationToken = default);
+}
+
+internal sealed class AuditLogger(
+    HospitalDbContext db,
+    IDbContextFactory<HospitalDbContext> contextFactory,
+    ICurrentUser currentUser,
+    TimeProvider time) : IAuditLogger
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public void Add(AuditEntry entry) => db.Set<AuditEvent>().Add(Build(entry));
+
+    public async Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        context.Set<AuditEvent>().Add(Build(entry));
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public Task PatientRecordAccessedAsync(Guid patientId, string what, CancellationToken cancellationToken = default) =>
+        WriteAsync(new AuditEntry(AuditCategories.PhiAccess, "patient.accessed", what) { PatientId = patientId }, cancellationToken);
+
+    private AuditEvent Build(AuditEntry entry) => new()
+    {
+        OccurredAt = time.GetUtcNow(),
+        Category = entry.Category,
+        Action = entry.Action,
+        Severity = entry.Severity,
+        Summary = entry.Summary,
+        EntityType = entry.EntityType,
+        EntityId = entry.EntityId,
+        PatientId = entry.PatientId,
+        UserId = entry.UserId ?? currentUser.UserId,
+        UserName = entry.UserName ?? currentUser.UserName,
+        FacilityId = currentUser.FacilityId,
+        DeviceId = currentUser.DeviceId,
+        SessionId = currentUser.SessionId,
+        IpAddress = currentUser.IpAddress,
+        CorrelationId = currentUser.CorrelationId,
+        Details = entry.Details is null ? null : JsonSerializer.Serialize(entry.Details, JsonOptions),
+    };
+}

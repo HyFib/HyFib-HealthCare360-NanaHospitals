@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Dependency-free building blocks shared by every module (entities, results, paging, value objects). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.SharedKernel</RootNamespace>
+  </PropertyGroup>
+</Project>

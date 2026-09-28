@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Thin Windows interop shared by the Server Node (WiFi link monitor) and HC360 Desktop (connection
+    indicator): Native WiFi (wlanapi.dll) queries. Targets net10.0 so the server stays testable on any OS;
+    every entry point checks OperatingSystem.IsWindows().
+  -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.WindowsInterop</RootNamespace>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+  </PropertyGroup>
+</Project>
