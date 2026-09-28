@@ -19,6 +19,7 @@ export function PatientPicker({
   required,
   validationMessage,
   hint,
+  autoFocus,
 }: {
   value: PickedPatient | null;
   onChange: (patient: PickedPatient | null) => void;
@@ -26,6 +27,8 @@ export function PatientPicker({
   required?: boolean;
   validationMessage?: string;
   hint?: FieldProps['hint'];
+  /** Focus the search box on mount (counter screens where finding the patient is the first step). */
+  autoFocus?: boolean;
 }) {
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 300);
@@ -42,6 +45,8 @@ export function PatientPicker({
     <Field label={label} required={required} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'} hint={hint}>
       <Combobox
         placeholder="UHID, mobile number or name"
+        // Opt-in, for counter screens whose first step is finding the patient.
+        autoFocus={autoFocus}
         value={term || (value ? `${value.fullName} (${value.uhid})` : '')}
         selectedOptions={value ? [value.id] : []}
         onChange={(event) => {

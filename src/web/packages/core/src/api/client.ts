@@ -31,6 +31,8 @@ export interface ApiClient {
   patch<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T>;
   delete<T>(path: string, options?: RequestOptions): Promise<T>;
   blob(path: string, options?: RequestOptions): Promise<Blob>;
+  /** A file together with the name the server gave it (Content-Disposition), for "save as" downloads. */
+  download(path: string, options?: RequestOptions): Promise<{ blob: Blob; fileName: string | null }>;
 }
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
@@ -140,7 +142,28 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     patch: (path, body, options) => request('PATCH', path, body, options),
     delete: (path, options) => request('DELETE', path, undefined, options),
     blob: async (path, options) => (await send('GET', path, undefined, options)).blob(),
+    download: async (path, options) => {
+      const response = await send('GET', path, undefined, options);
+      return { blob: await response.blob(), fileName: fileNameFromDisposition(response.headers.get('content-disposition')) };
+    },
   };
+}
+
+/** The file name in a Content-Disposition header: the UTF-8 `filename*` form first, then plain `filename`. */
+export function fileNameFromDisposition(header: string | null): string | null {
+  if (!header) {
+    return null;
+  }
+  const encoded = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (encoded?.[1]) {
+    try {
+      return decodeURIComponent(encoded[1].trim());
+    } catch {
+      // Malformed percent-encoding: fall back to the plain name.
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+  return plain?.[1]?.trim() || null;
 }
 
 export function buildUrl(base: string, path: string, query?: Record<string, QueryValue>): string {
