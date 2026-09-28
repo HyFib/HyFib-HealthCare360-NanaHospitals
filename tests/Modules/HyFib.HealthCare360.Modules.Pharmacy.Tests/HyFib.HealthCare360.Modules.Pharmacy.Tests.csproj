@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Pharmacy\HyFib.HealthCare360.Modules.Pharmacy.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="HyFib.HealthCare360.SharedKernel" />
+    <Using Include="HyFib.HealthCare360.Platform.Contracts" />
+    <Using Include="HyFib.HealthCare360.Modules.Pharmacy.Domain" />
+  </ItemGroup>
+</Project>

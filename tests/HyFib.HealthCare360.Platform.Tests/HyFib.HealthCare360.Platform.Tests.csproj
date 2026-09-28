@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unit tests for platform services (realtime topic authorisation, rate-limit partitions). -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\server\HyFib.HealthCare360.Platform\HyFib.HealthCare360.Platform.csproj" />
+  </ItemGroup>
+</Project>

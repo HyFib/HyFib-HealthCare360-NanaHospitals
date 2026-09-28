@@ -1,0 +1,125 @@
+# Module development guide (server)
+
+How to build a bounded-context module for HC360 so it looks and behaves like the rest of the system.
+The **reference implementation is the Patients module** (`src/server/Modules/HyFib.HealthCare360.Modules.Patients`) —
+copy its patterns. Read [ARCHITECTURE.md](ARCHITECTURE.md) first.
+
+## 1. What you own
+| Path | Owner |
+|---|---|
+| `src/server/Modules/HyFib.HealthCare360.Modules.<Name>/**` | your module (all server code) |
+| `tests/Modules/HyFib.HealthCare360.Modules.<Name>.Tests/**` | your module's tests |
+| `docs/modules/<name>.md` | your module's API reference (endpoints, DTOs, permissions, events) |
+
+Do **not** edit Platform, SharedKernel, other modules, the Server project, `Directory.*.props`, the solution or
+EF migrations. If you need something there, stop and report it (the maintainers add it).
+
+## 2. Layering
+A module may reference only **lower** modules (see ARCHITECTURE.md §4). Everything upward goes through Platform:
+* **Contracts** (`HyFib.HealthCare360.Platform.Contracts`): `IChargePoster` (post billable charges; idempotent on
+  `SourceModule`+`SourceReference`), `IBillingStatusProvider`, `IInstrumentResultSink`, `IPortalAccountResolver`.
+* **Integration events** (`Platform/Contracts/IntegrationEvents.cs`): `ServiceOrderPlaced`, `PrescriptionSigned`,
+  `PatientAdmitted`, `PatientTransferred`, `PatientDischarged`, `AdmissionCancelled`, `DiagnosticReportReleased`, `AppointmentBooked`,
+  `MedicationDispensed`, `PaymentReceived`, `BillFinalized`, … Raise them from your aggregate
+  (`Raise(new PatientAdmitted(...))`); handle others' events with `IDomainEventHandler<TEvent>` (auto-registered,
+  runs inside the same transaction before commit).
+* Refer to entities of other modules **by id** (`Guid PatientId`, `Guid AdmissionId`). Foreign keys are allowed only to
+  lower modules you reference (e.g. `b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId)`).
+
+## 3. Anatomy
+```
+<Name>Module.cs          IModule (Name = schema key), <Name>Permissions, AddServices, MapEndpoints
+Domain/                  entities, enums, domain rules (methods returning Result), events raised
+Persistence/             IEntityTypeConfiguration<T> classes — auto-discovered
+Features/<Area>/         <Area>Contracts.cs (records + FluentValidation validators) and <Area>Endpoints.cs
+Services/                application services (transactions, numbering, charges, notifications)
+Seed/                    ISeeder (Order ≥ 100) — idempotent reference data; demo data only if SeedDemoData
+```
+Global usings (SharedKernel, Platform.*, EF Core, ASP.NET Core, FluentValidation) are already provided by
+`src/server/Modules/Directory.Build.props`.
+
+## 4. Entities
+* Derive from `AuditableEntity` (GUID v7 `Id`, audit columns, soft delete, `Version` = PostgreSQL `xmin`).
+  High-volume append-only rows may derive from `Entity` and carry `[NotAudited]`.
+* Facility-owned rows implement `IFacilityScoped` (queries are filtered to the user's facility automatically;
+  `FacilityId` is filled on insert from the signed-in user).
+* Types: `decimal` money (18,2), `DateTimeOffset` for instants (UTC), `DateOnly`/`TimeOnly` for calendar values,
+  enums (stored as strings — add new values at the end), `List<string>`/`List<Guid>` map to PostgreSQL arrays.
+* Mark secrets/identifiers with `[SensitiveData]` (masked in audit diffs); encrypt national identifiers with
+  `IFieldProtector` (see `PatientRegistrationService`).
+* Put state transitions in entity methods returning `Result` (see `Visit.Cancel`, `QueueToken.Call`).
+
+## 5. Persistence
+```csharp
+internal sealed class LabOrderConfiguration : IEntityTypeConfiguration<LabOrder>
+{
+    public void Configure(EntityTypeBuilder<LabOrder> b)
+    {
+        b.ToTable("lab_orders", "diagnostics");          // schema = module key; columns become snake_case
+        b.Property(x => x.OrderNumber).HasMaxLength(24);   // always bound strings
+        b.HasIndex(x => x.OrderNumber).IsUnique();
+        b.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.LabOrderId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+```
+Use `db.Set<T>()` from `HospitalDbContext` (no DbSet properties). Do **not** add migrations; the maintainers
+generate them after all modules compile.
+
+## 6. Endpoints
+* One static class per area: `group = app.MapGroup("/api/v1/<area>").WithTags("<Area>")`.
+* **Every** endpoint: `.RequirePermission(<Name>Permissions.X)` (or `RequireAnyPermission`). Anonymous endpoints
+  (public booking, webhooks) must be explicit (`.AllowAnonymous()` + `.RequireRateLimiting(RateLimitPolicies.Public)`).
+  Machines that present their own credential (RPM gateways, biometric terminals) use `RateLimitPolicies.Device`
+  instead, which is counted per credential rather than per client address.
+* Bodies: `.WithValidation<TRequest>()` + a public `AbstractValidator<TRequest>` (use `CommonRules`: `PhoneNumber()`,
+  `IndianMobile()`, `PinCode()`, `Gstin()`, `SafeText(max)`).
+* Lists: `[AsParameters] PageQuery query` → `query.ToRequest()` → `.ToPagedResultAsync(page, ct)`; sort only via
+  `OrderByKey(page, allowList, default)`.
+* Results: return `IResult`; map `Result`/`Error` with `.ToOk()`, `.ToNoContent()`, `.ToCreated(...)`, `error.ToProblem()`.
+  Error types: `Error.NotFound`, `Error.Field` (400), `Error.Conflict` (409), `Error.Rule` (422), `Error.Forbidden` (403).
+* Updates carry `uint Version` and call `db.SetExpectedVersion(entity, request.Version)` (409 on conflict).
+* Idempotency (`Idempotency-Key`) is handled by middleware — nothing to do.
+* PHI: when returning clinical/patient data call `await audit.PatientRecordAccessedAsync(patientId, "what", ct)` once
+  per request, and guard restricted records with `PatientAccessGuard.EnsureCanOpenAsync(patientId, ct)`.
+* Patient-portal endpoints live under `/api/v1/portal/<area>`, require `PatientsPermissions.Portal` and must scope
+  data with `PortalPatientScope` (`EnsureAccessAsync` / `AccessiblePatientIdsAsync`).
+* Dates arriving as query parameters are local (IST) calendar dates; convert with the helpers in
+  `PatientQueries` (`time.Today()`, `IndiaTime`).
+
+## 7. Permissions
+Names are `<area>.<resource>.<action>` (e.g. `lab.results.verify`). Declare them in `<Name>Permissions.All`
+with a group label, a plain-language description and default roles from `SystemRoles`
+(grants are applied once at first start).
+
+## 8. Services you can inject
+| Need | Use |
+|---|---|
+| Document numbers (bill, accession, PO…) | `INumberSeries.NextAsync(key, facilityId, "{FAC}LAB{YY}{SEQ:6}", NumberResetPolicy.Yearly, ct)` inside `db.Database.BeginTransactionAsync` |
+| Charge a patient | `IChargePoster.PostAsync(new ChargeRequest { ..., SourceModule = "diagnostics.lab", SourceReference = item.Id.ToString() }, ct)` |
+| SMS / WhatsApp / e-mail | `INotificationService.Queue(templateKey, recipient, values, [NotificationChannel.Sms, ...])` (+ seed templates) |
+| In-app alerts to staff | `INotificationService.NotifyPermissionHoldersAsync(permission, facilityId, title, body, link, category, severity, ct)` |
+| Real-time UI refresh | `IRealtimePublisher.PublishAsync(Topics.Lab(facilityId), "lab.sample.received", new { id }, ct)` — ids only |
+| Files (PDF/images) | `IFileStore.SaveAsync/ReadAsync` (encrypted at rest) |
+| Settings / feature flags | `ISettingsService.GetAsync<T>("module.setting", facilityId, ct)` |
+| Current user / facility | `ICurrentUser` (`UserId`, `FacilityId`, `PractitionerId`, `IsPatient`, `PatientId`) |
+| Audit | `IAuditLogger.Add(...)` (same transaction) / `WriteAsync(...)` (immediate) |
+| Time | `TimeProvider` (never `DateTime.Now`) |
+
+## 9. Seeding
+`internal sealed class XSeeder(...) : ISeeder { public int Order => 1xx; ... }` — must be idempotent (check by code
+before insert). Service catalogue entries your module bills for go into `org.service_items` (`ServiceItem`) with
+stable codes (`LAB-CBC`, `RAD-XR-CHEST`, …). Demo/sample transactional data only when `PlatformOptions.SeedDemoData`.
+
+## 10. Build & test (you share the machine with other agents)
+```bash
+dotnet build src/server/Modules/HyFib.HealthCare360.Modules.<Name> --no-dependencies -v q
+dotnet build tests/Modules/HyFib.HealthCare360.Modules.<Name>.Tests --no-dependencies -v q
+dotnet test --project tests/Modules/HyFib.HealthCare360.Modules.<Name>.Tests --no-build
+```
+Warnings are errors. Unit-test domain rules (pure C#, no database). Do not run the server or touch Docker.
+
+## 11. Definition of done
+* Module compiles with zero warnings; tests pass.
+* Every SRS requirement ID assigned to you is covered by entities + endpoints (+ seed data where useful).
+* `docs/modules/<name>.md` lists endpoints (method, path, permission, request/response record names and key
+  fields), events raised/handled, notification templates, number series and seeded service codes.

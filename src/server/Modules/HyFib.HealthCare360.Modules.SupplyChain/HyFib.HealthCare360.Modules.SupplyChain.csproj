@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Inventory, stores, purchase, indents, vendors and asset management (INV, AST). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.SupplyChain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

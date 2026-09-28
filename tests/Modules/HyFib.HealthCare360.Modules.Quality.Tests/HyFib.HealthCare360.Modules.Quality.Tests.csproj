@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Quality\HyFib.HealthCare360.Modules.Quality.csproj" />
+  </ItemGroup>
+</Project>

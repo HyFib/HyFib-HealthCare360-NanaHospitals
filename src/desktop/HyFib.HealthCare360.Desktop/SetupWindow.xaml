@@ -1,0 +1,80 @@
+<Window x:Class="HyFib.HealthCare360.Desktop.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set up HC360 Desktop"
+        Icon="Assets/hc360.ico"
+        Width="640" Height="600" MinWidth="560" MinHeight="520"
+        WindowStartupLocation="CenterScreen">
+  <Grid Margin="28">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+      <Image Source="Assets/hc360-256.png" Width="44" Height="44" />
+      <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+        <TextBlock Text="HealthCare360" FontSize="22" FontWeight="SemiBold" />
+        <TextBlock x:Name="StepTitle" Text="Step 1 of 3 · Find the hospital server" Opacity="0.7" />
+      </StackPanel>
+    </StackPanel>
+
+    <!-- Step 1: discover or enter the server -->
+    <Grid x:Name="DiscoverPanel" Grid.Row="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+        <RowDefinition Height="Auto" />
+      </Grid.RowDefinitions>
+      <TextBlock TextWrapping="Wrap" Margin="0,0,0,10"
+                 Text="HC360 looks for the hospital's server on this WiFi network. Choose it from the list, or type its name or address." />
+      <ListBox x:Name="ServerList" Grid.Row="1" DisplayMemberPath="Display" MinHeight="140" SelectionChanged="OnServerSelected" />
+      <StackPanel Grid.Row="2" Margin="0,12,0,0">
+        <TextBlock x:Name="DiscoverStatus" Opacity="0.7" Margin="0,0,0,8" TextWrapping="Wrap" />
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <TextBox x:Name="ManualAddress" ToolTip="Server name or address, e.g. HC360-SRV or 192.168.1.20:7360" />
+          <Button Grid.Column="1" Content="Search again" Margin="8,0,0,0" Padding="12,4" Click="OnSearchClick" />
+        </Grid>
+      </StackPanel>
+    </Grid>
+
+    <!-- Step 2: verify the hospital certificate -->
+    <StackPanel x:Name="VerifyPanel" Grid.Row="1" Visibility="Collapsed">
+      <TextBlock TextWrapping="Wrap"
+                 Text="Before HC360 trusts this server, confirm its security fingerprint. It must match the fingerprint shown on the server machine (HC360 › Administration › System health)." />
+      <TextBlock x:Name="VerifyServer" FontWeight="SemiBold" FontSize="16" Margin="0,16,0,4" />
+      <TextBlock x:Name="VerifyFacility" Opacity="0.75" />
+      <Border Margin="0,16,0,0" Padding="14" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource {x:Static SystemColors.ActiveBorderBrushKey}}">
+        <TextBlock x:Name="Fingerprint" FontFamily="Consolas" FontSize="15" TextWrapping="Wrap" LineHeight="22" />
+      </Border>
+      <TextBlock x:Name="FingerprintMatch" Margin="0,10,0,0" TextWrapping="Wrap" />
+      <CheckBox x:Name="FingerprintConfirmed" Margin="0,16,0,0" Content="I checked that this fingerprint matches the server" Checked="OnConfirmChanged" Unchecked="OnConfirmChanged" />
+    </StackPanel>
+
+    <!-- Step 3: enrol this computer -->
+    <StackPanel x:Name="EnrolPanel" Grid.Row="1" Visibility="Collapsed">
+      <TextBlock TextWrapping="Wrap"
+                 Text="Enrol this computer so the hospital knows it. An administrator creates a one-time code in HC360 › Administration › Devices." />
+      <TextBlock Text="Computer name" Margin="0,16,0,4" />
+      <TextBox x:Name="DeviceName" />
+      <TextBlock Text="Enrolment code" Margin="0,12,0,4" />
+      <TextBox x:Name="EnrolmentCode" FontFamily="Consolas" FontSize="18" CharacterCasing="Upper" MaxLength="9" />
+      <TextBlock Opacity="0.7" Margin="0,8,0,0" TextWrapping="Wrap"
+                 Text="You can skip this. Some roles (for example billing counters) can only sign in on enrolled computers." />
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Margin="0,16,0,0">
+      <TextBlock x:Name="ErrorText" Foreground="#C50F1F" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="Collapsed" />
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="BackButton" Content="Back" Padding="16,6" Visibility="Collapsed" Click="OnBackClick" />
+        <Button x:Name="SkipButton" Content="Skip for now" Padding="16,6" Margin="8,0,0,0" Visibility="Collapsed" Click="OnSkipClick" />
+        <Button x:Name="NextButton" Content="Connect" Padding="20,6" Margin="8,0,0,0" IsDefault="True" Click="OnNextClick" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Window>

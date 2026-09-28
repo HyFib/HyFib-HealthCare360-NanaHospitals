@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HC360 Desktop: the Windows client for hospital workstations, kiosks and waiting-area TVs.
+    A WPF shell that hosts the HC360 staff app in WebView2 (Evergreen), pins the hospital's private CA, keeps
+    working through WiFi drops, and exposes a small JSON-RPC bridge (printing, WiFi status, notifications,
+    dictation) to the web app.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>HyFib.HealthCare360.Desktop</RootNamespace>
+    <AssemblyName>HC360Desktop</AssemblyName>
+    <ApplicationIcon>Assets\hc360.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!--
+      WPF0001: WPF's Windows 11 (Fluent) theme is still flagged experimental in .NET 10.
+      WFO0003: WinForms' "configure DPI in code" rule targets WinForms apps; this is a WPF app that uses WinForms only
+      for the tray icon, and WPF reads its per-monitor DPI awareness from app.manifest.
+    -->
+    <NoWarn>$(NoWarn);WPF0001;WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <!-- WinForms is referenced only for NotifyIcon and printer enumeration; keep WPF types unambiguous. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" />
+    <PackageReference Include="Makaretu.Dns.Multicast.New" />
+    <PackageReference Include="System.Speech" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\shared\HyFib.HealthCare360.WindowsInterop\HyFib.HealthCare360.WindowsInterop.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\hc360.ico" />
+    <Resource Include="Assets\hc360-256.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HyFib.HealthCare360.Desktop.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- AI voice assistant: voice commands and clinical dictation to structured drafts (AIV). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.AI</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Official Anthropic C# SDK (default AI text provider, ADR-011); version pinned in Directory.Packages.props. -->
+    <PackageReference Include="Anthropic" />
+    <!-- Typed HttpClient for the on-prem Whisper speech-to-text server. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HyFib.HealthCare360.Modules.AI.Tests" />
+    <!-- NSubstitute (Castle DynamicProxy) proxies internal service interfaces in the unit tests. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+</Project>

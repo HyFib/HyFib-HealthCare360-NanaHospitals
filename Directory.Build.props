@@ -1,0 +1,29 @@
+<Project>
+  <!-- Shared build settings for every .NET project in HyFib HealthCare360. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <Company>HyFib</Company>
+    <Product>HyFib HealthCare360</Product>
+    <Authors>HyFib Product Engineering</Authors>
+    <Copyright>© 2026 HyFib. All rights reserved.</Copyright>
+    <Version>1.0.0</Version>
+    <InformationalVersion>1.0.0</InformationalVersion>
+
+    <!-- CS1591: public XML docs are not mandatory; NU1507: multiple package sources are fine in dev. -->
+    <NoWarn>$(NoWarn);CS1591;NU1507</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>portable</DebugType>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

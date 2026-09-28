@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Patient administration & Front Office (layer 2): patient master (UHID/MPI), registration with duplicate
+    detection, visits, queue tokens, enquiries, visitor passes, consents and documents.
+    This module is the reference implementation that every other module follows.
+  -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Patients</RootNamespace>
+  </PropertyGroup>
+</Project>

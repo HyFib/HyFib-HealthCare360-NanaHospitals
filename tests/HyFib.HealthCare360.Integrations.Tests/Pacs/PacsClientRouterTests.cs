@@ -1,0 +1,86 @@
+using HyFib.HealthCare360.Integrations.Common;
+using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
+using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
+
+namespace HyFib.HealthCare360.Integrations.Tests.Pacs;
+
+/// <summary>
+/// The router is what Diagnostics resolves as <see cref="IPacsClient"/>. Diagnostics treats
+/// <see cref="HttpRequestException"/> as "PACS unavailable", so every failure must arrive as one, never as a server error.
+/// </summary>
+public sealed class PacsClientRouterTests
+{
+    private static readonly ImagingStudyInfo Study = new("1.2.840.113619.2.55.3.1", "ACC-1", "UHID00012345", "SHARMA RAVI", null, "CT", "CT BRAIN", 3, 245);
+
+    private readonly ISettingsService _settings = Substitute.For<ISettingsService>();
+    private readonly IPacsProvider _dicomWeb = Substitute.For<IPacsProvider>();
+
+    public PacsClientRouterTests()
+    {
+        _dicomWeb.Key.Returns("dicomweb");
+        _settings.GetAsync<PacsSecrets>("integrations.pacs.secret", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(new PacsSecrets());
+        Configure(new PacsSettings { Enabled = true, Provider = "dicomweb", QidoUrl = "http://orthanc:8042/dicom-web" });
+    }
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private PacsClientRouter Router =>
+        new([_dicomWeb], new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance));
+
+    private void Configure(PacsSettings? settings) =>
+        _settings.GetAsync<PacsSettings>("integrations.pacs", Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(settings);
+
+    [Fact]
+    public async Task Delegates_study_searches_to_the_configured_provider()
+    {
+        _dicomWeb.FindStudiesAsync(default!, default!, default!, Ct).ReturnsForAnyArgs([Study]);
+
+        var studies = await Router.FindStudiesAsync(new PacsStudyQuery(AccessionNumber: "ACC-1"), Ct);
+
+        studies.ShouldHaveSingleItem().ShouldBe(Study);
+    }
+
+    [Theory]
+    [InlineData(false, "PACS is disabled.")]
+    [InlineData(null, "PACS is not configured. Set it up in Administration → Integrations.")]
+    public async Task An_unusable_pacs_is_reported_as_unavailable(bool? enabled, string message)
+    {
+        Configure(enabled is null ? null : new PacsSettings { Enabled = enabled.Value, Provider = "dicomweb" });
+
+        var failure = await Should.ThrowAsync<HttpRequestException>(() => Router.FindStudiesAsync(new PacsStudyQuery(AccessionNumber: "ACC-1"), Ct));
+
+        failure.Message.ShouldBe(message);
+        (await Router.PingAsync(Ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Provider_failures_surface_as_http_request_exceptions()
+    {
+        _dicomWeb.FindStudiesAsync(default!, default!, default!, Ct).ReturnsForAnyArgs<IReadOnlyList<ImagingStudyInfo>>(_ => throw new IntegrationException("The PACS returned HTTP 500."));
+
+        var failure = await Should.ThrowAsync<HttpRequestException>(() => Router.FindStudiesAsync(new PacsStudyQuery(AccessionNumber: "ACC-1"), Ct));
+
+        failure.Message.ShouldBe("The PACS returned HTTP 500.");
+        failure.InnerException.ShouldBeOfType<IntegrationException>();
+    }
+
+    [Fact]
+    public void Viewer_links_work_even_while_the_integration_is_disabled()
+    {
+        Configure(new PacsSettings { Enabled = false, Provider = "dicomweb", ViewerUrlTemplate = "https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}" });
+
+        Router.BuildViewerUrl("1.2.3", null).ShouldBe("https://pacs.local/ohif/viewer?StudyInstanceUIDs=1.2.3");
+    }
+
+    [Fact]
+    public void No_viewer_template_means_no_link()
+    {
+        Configure(null);
+
+        Router.BuildViewerUrl("1.2.3", "ACC-1").ShouldBeNull();
+    }
+}

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Telehealth video consultations and remote patient monitoring (TEL, RPM). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.VirtualCare</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- Layer 5 → layer 3 (ARCHITECTURE.md §4): telehealth sessions follow Scheduling's appointments. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Scheduling\HyFib.HealthCare360.Modules.Scheduling.csproj" />
+  </ItemGroup>
+</Project>

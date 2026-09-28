@@ -1,0 +1,10 @@
+<Application x:Class="HyFib.HealthCare360.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="System"
+             ShutdownMode="OnExplicitShutdown">
+  <Application.Resources>
+    <SolidColorBrush x:Key="BrandBrush" Color="#0A7CA7" />
+    <SolidColorBrush x:Key="BrandDarkBrush" Color="#045E80" />
+  </Application.Resources>
+</Application>

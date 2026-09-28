@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- EHR / EMR physician desktop, e-prescribing, clinical orders, medical records with ICD coding and master health checkup (EHR, ERX, EMR, MRD, MHC). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Clinical</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,30 @@
+{
+  "name": "hc360-web",
+  "private": true,
+  "type": "module",
+  "description": "HyFib HealthCare360 web front-ends: staff app (rendered inside HC360 Desktop / tablets) and patient portal.",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @hc360/staff dev",
+    "dev:staff": "pnpm --filter @hc360/staff dev",
+    "dev:portal": "pnpm --filter @hc360/portal dev",
+    "build": "pnpm -r --filter ./apps/** build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.11.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.7",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1"
+  }
+}

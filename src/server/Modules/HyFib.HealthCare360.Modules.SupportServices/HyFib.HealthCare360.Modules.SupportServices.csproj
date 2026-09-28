@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- CSSD, dietary and canteen (CSSD, DIET, CAN). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.SupportServices</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- Layer 6 → 5 (ARCHITECTURE §4): ward-wise meal plans need the admission's current ward and bed. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <!-- Layer 6 → 2: canteen staff credit checks employees and posts salary deductions through HR. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.HR\HyFib.HealthCare360.Modules.HR.csproj" />
+  </ItemGroup>
+</Project>

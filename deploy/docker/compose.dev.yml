@@ -1,0 +1,41 @@
+# Developer dependencies for HyFib HealthCare360.
+#   HC360_DEV_DB_PASSWORD=<local password> docker compose -f deploy/docker/compose.dev.yml up -d
+# The password is yours to choose; put the same value in the server's user secrets (see README).
+# PostgreSQL listens on host port 57360 so it never collides with other local databases.
+# The optional Orthanc PACS (DICOMweb) is enabled with:  --profile pacs
+name: hc360-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: hc360-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hc360
+      POSTGRES_USER: hc360
+      POSTGRES_PASSWORD: ${HC360_DEV_DB_PASSWORD:?Set HC360_DEV_DB_PASSWORD to a local password (see README)}
+      TZ: Asia/Kolkata
+    ports:
+      - "127.0.0.1:57360:5432"
+    volumes:
+      - hc360-pgdata-dev:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hc360 -d hc360"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  orthanc:
+    image: orthancteam/orthanc:latest
+    container_name: hc360-orthanc-dev
+    profiles: ["pacs"]
+    restart: unless-stopped
+    environment:
+      ORTHANC__NAME: HC360-DEV-PACS
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__AUTHENTICATION_ENABLED: "false"
+    ports:
+      - "127.0.0.1:58042:8042"
+
+volumes:
+  hc360-pgdata-dev:

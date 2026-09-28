@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- OP and IP pharmacy: e-prescription queue, dispensing, counter sales, returns, refills and controlled-drug registers (PH). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Pharmacy</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+  </ItemGroup>
+</Project>

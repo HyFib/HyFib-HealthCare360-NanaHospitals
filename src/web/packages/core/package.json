@@ -1,0 +1,30 @@
+{
+  "name": "@hc360/core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HC360 client core: API client (auth refresh, idempotency, retry), session, desktop bridge, realtime, formatting.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "10.0.11",
+    "zustand": "5.0.15"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "5.103.2",
+    "react": "19.3.0"
+  },
+  "devDependencies": {
+    "@tanstack/react-query": "5.103.2",
+    "@types/react": "19.3.0",
+    "jsdom": "30.1.1",
+    "react": "19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

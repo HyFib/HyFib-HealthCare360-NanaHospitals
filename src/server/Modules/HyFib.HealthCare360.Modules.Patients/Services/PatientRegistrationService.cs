@@ -1,0 +1,324 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Numbering;
+
+namespace HyFib.HealthCare360.Modules.Patients.Services;
+
+/// <summary>Normalised patient fields shared by registration and update.</summary>
+internal sealed record PatientInput(
+    string? Title, string FirstName, string? MiddleName, string? LastName, Gender Gender, DateOnly? DateOfBirth, int? AgeYears, int? AgeMonths,
+    string? Phone, string? AlternatePhone, string? Email, Address? Address, BloodGroup? BloodGroup, MaritalStatus? MaritalStatus,
+    string? GuardianName, GuardianRelation? GuardianRelation, string? EmergencyContactName, string? EmergencyContactPhone,
+    string? EmergencyContactRelation, string? Occupation, string? Religion, string? Nationality, string? PreferredLanguage,
+    PatientCategory? Category, string? AbhaNumber, string? AbhaAddress, string? AadhaarNumber, Guid? PhotoFileId, bool IsVip, string? Notes)
+{
+    public static PatientInput From(RegisterPatientRequest r) => new(
+        r.Title, r.FirstName, r.MiddleName, r.LastName, r.Gender, r.DateOfBirth, r.AgeYears, r.AgeMonths, r.Phone, r.AlternatePhone, r.Email,
+        r.Address, r.BloodGroup, r.MaritalStatus, r.GuardianName, r.GuardianRelation, r.EmergencyContactName, r.EmergencyContactPhone,
+        r.EmergencyContactRelation, r.Occupation, r.Religion, r.Nationality, r.PreferredLanguage, r.Category, r.AbhaNumber, r.AbhaAddress,
+        r.AadhaarNumber, r.PhotoFileId, r.IsVip, r.Notes);
+
+    public static PatientInput From(UpdatePatientRequest r) => new(
+        r.Title, r.FirstName, r.MiddleName, r.LastName, r.Gender, r.DateOfBirth, r.AgeYears, r.AgeMonths, r.Phone, r.AlternatePhone, r.Email,
+        r.Address, r.BloodGroup, r.MaritalStatus, r.GuardianName, r.GuardianRelation, r.EmergencyContactName, r.EmergencyContactPhone,
+        r.EmergencyContactRelation, r.Occupation, r.Religion, r.Nationality, r.PreferredLanguage, r.Category, r.AbhaNumber, r.AbhaAddress,
+        r.AadhaarNumber, r.PhotoFileId, r.IsVip, r.Notes);
+}
+
+/// <summary>
+/// Registration (FO-01): duplicate detection, UHID allocation (gap-free, inside the insert transaction),
+/// encryption of national identifiers, updates with optimistic concurrency, and duplicate merging.
+/// </summary>
+public sealed class PatientRegistrationService(
+    HospitalDbContext db,
+    INumberSeries numbers,
+    IFieldProtector protector,
+    ICurrentUser currentUser,
+    IAuditLogger audit,
+    TimeProvider time)
+{
+    public const string UhidSeries = "uhid";
+    public const string UhidFormat = "{FAC}{YY}{SEQ:6}";
+    private const int StrongDuplicateScore = 75;
+
+    public async Task<IReadOnlyList<DuplicateCandidate>> FindDuplicatesAsync(DuplicateCheckRequest check, Guid? excludeId, CancellationToken ct)
+    {
+        var phone = Phone.Normalize(check.Phone);
+        var abhaIndex = string.IsNullOrWhiteSpace(check.AbhaNumber) ? null : protector.BlindIndex(Masking.Normalize(check.AbhaNumber));
+        var aadhaarIndex = string.IsNullOrWhiteSpace(check.AadhaarNumber) ? null : protector.BlindIndex(Masking.Normalize(check.AadhaarNumber));
+        var firstName = string.IsNullOrWhiteSpace(check.FirstName) ? null : check.FirstName.Trim();
+        var dob = check.DateOfBirth;
+
+        if (phone is null && abhaIndex is null && aadhaarIndex is null && (firstName is null || dob is null))
+        {
+            return [];
+        }
+
+        var rows = await db.Set<Patient>().AsNoTracking()
+            .Where(p => p.MergedIntoPatientId == null && (excludeId == null || p.Id != excludeId))
+            .Where(p => (abhaIndex != null && p.AbhaNumberIndex == abhaIndex)
+                        || (aadhaarIndex != null && p.AadhaarIndex == aadhaarIndex)
+                        || (phone != null && p.Phone == phone)
+                        || (firstName != null && dob != null && p.DateOfBirth == dob && EF.Functions.ILike(p.FirstName, firstName)))
+            .OrderByDescending(p => p.RegisteredAt)
+            .Take(25)
+            .Select(p => new { p.Id, p.Uhid, p.FullName, p.FirstName, p.Gender, p.DateOfBirth, p.Phone, p.AbhaNumberIndex, p.AadhaarIndex })
+            .ToListAsync(ct);
+
+        var today = time.Today();
+        return rows
+            .Select(p =>
+            {
+                var sameFirst = firstName is not null && string.Equals(p.FirstName, firstName, StringComparison.OrdinalIgnoreCase);
+                var samePhone = phone is not null && p.Phone == phone;
+                var similarAge = dob is not null && p.DateOfBirth is not null && Math.Abs(dob.Value.DayNumber - p.DateOfBirth.Value.DayNumber) <= 365;
+                var (score, reason) =
+                    abhaIndex is not null && p.AbhaNumberIndex == abhaIndex ? (100, "Same ABHA number")
+                    : aadhaarIndex is not null && p.AadhaarIndex == aadhaarIndex ? (100, "Same Aadhaar number")
+                    : samePhone && sameFirst ? (90, "Same mobile number and first name")
+                    : sameFirst && dob is not null && p.DateOfBirth == dob ? (85, "Same name and date of birth")
+                    : samePhone && similarAge ? (75, "Same mobile number and similar age")
+                    : samePhone ? (50, "Same mobile number (possibly a family member)")
+                    : (0, string.Empty);
+                return new DuplicateCandidate(p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth is { } d ? Age.Format(d, today) : null,
+                    Phone.Mask(p.Phone), score, reason);
+            })
+            .Where(c => c.Score > 0)
+            .OrderByDescending(c => c.Score)
+            .Take(5)
+            .ToList();
+    }
+
+    public async Task<Result<PatientCreated>> RegisterAsync(RegisterPatientRequest request, CancellationToken ct)
+    {
+        if (currentUser.FacilityId is not { } facilityId)
+        {
+            return Error.Rule("facility.required", "Select a facility before registering patients.");
+        }
+
+        var input = PatientInput.From(request);
+        var today = time.Today();
+        var dob = PatientRules.ResolveDateOfBirth(input.DateOfBirth, input.AgeYears, input.AgeMonths, today, out _);
+
+        var identifierConflict = await CheckIdentifierConflictsAsync(input, null, ct);
+        if (identifierConflict is not null)
+        {
+            return identifierConflict;
+        }
+
+        if (!request.ConfirmedNotDuplicate)
+        {
+            var candidates = await FindDuplicatesAsync(
+                new DuplicateCheckRequest(input.FirstName, input.LastName, dob, input.Phone, null, null), null, ct);
+            var strong = candidates.Where(c => c.Score >= StrongDuplicateScore).ToList();
+            if (strong.Count > 0)
+            {
+                return Error.Conflict("patient.possible_duplicate", "This patient may already be registered. Review the matches before continuing.", strong);
+            }
+        }
+
+        var patient = new Patient { RegisteredFacilityId = facilityId, RegisteredAt = time.GetUtcNow() };
+        Apply(patient, input, today, isNew: true);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        patient.Uhid = await numbers.NextAsync(UhidSeries, null, UhidFormat, NumberResetPolicy.Never, ct);
+        patient.MarkRegistered();
+        db.Add(patient);
+        db.Set<PatientConsent>().Add(new PatientConsent
+        {
+            PatientId = patient.Id,
+            Type = ConsentType.SmsWhatsAppUpdates,
+            Granted = !string.IsNullOrWhiteSpace(patient.Phone),
+            CapturedAt = patient.RegisteredAt,
+            CapturedByUserId = currentUser.UserId,
+            Notes = "Transactional SMS/WhatsApp updates accepted at registration.",
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+
+        return new PatientCreated(patient.Id, patient.Uhid);
+    }
+
+    public async Task<Result> UpdateAsync(Guid id, UpdatePatientRequest request, CancellationToken ct)
+    {
+        var patient = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == id, ct);
+        if (patient is null)
+        {
+            return Error.NotFound(nameof(Patient), id);
+        }
+
+        if (patient.MergedIntoPatientId is not null)
+        {
+            return Error.Rule("patient.merged", "This record was merged into another patient and can no longer be edited.");
+        }
+
+        var input = PatientInput.From(request);
+        var identifierConflict = await CheckIdentifierConflictsAsync(input, id, ct);
+        if (identifierConflict is not null)
+        {
+            return identifierConflict;
+        }
+
+        db.SetExpectedVersion(patient, request.Version);
+        Apply(patient, input, time.Today(), isNew: false);
+        patient.IsDeceased = request.IsDeceased;
+        patient.DeceasedAt = request.IsDeceased ? request.DeceasedAt ?? patient.DeceasedAt ?? time.GetUtcNow() : null;
+        patient.IsActive = request.IsActive;
+
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
+    public async Task<Result> MergeAsync(Guid sourceId, MergePatientRequest request, CancellationToken ct)
+    {
+        if (sourceId == request.IntoPatientId)
+        {
+            return Error.Rule("patient.merge_self", "Choose a different record to merge into.");
+        }
+
+        var source = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == sourceId, ct);
+        var target = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == request.IntoPatientId, ct);
+        if (source is null || target is null)
+        {
+            return Error.NotFound(nameof(Patient), source is null ? sourceId : request.IntoPatientId);
+        }
+
+        if (source.MergedIntoPatientId is not null || target.MergedIntoPatientId is not null)
+        {
+            return Error.Rule("patient.already_merged", "One of these records has already been merged.");
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // Re-point this module's own records; other modules handle PatientsMerged in the same transaction.
+        foreach (var visit in await db.Set<Visit>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(v => v.PatientId == sourceId).ToListAsync(ct))
+        {
+            visit.PatientId = target.Id;
+        }
+
+        foreach (var token in await db.Set<QueueToken>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(t => t.PatientId == sourceId).ToListAsync(ct))
+        {
+            token.PatientId = target.Id;
+        }
+
+        foreach (var consent in await db.Set<PatientConsent>().Where(c => c.PatientId == sourceId).ToListAsync(ct))
+        {
+            consent.PatientId = target.Id;
+        }
+
+        foreach (var document in await db.Set<PatientDocument>().Where(d => d.PatientId == sourceId).ToListAsync(ct))
+        {
+            document.PatientId = target.Id;
+        }
+
+        target.AbhaNumberCipher ??= source.AbhaNumberCipher;
+        target.AbhaNumberIndex ??= source.AbhaNumberIndex;
+        target.AbhaNumberMasked ??= source.AbhaNumberMasked;
+        target.AadhaarLast4 ??= source.AadhaarLast4;
+        target.AadhaarIndex ??= source.AadhaarIndex;
+        source.MarkMergedInto(target.Id);
+
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.merged", $"Merged {source.Uhid} into {target.Uhid}: {request.Reason}")
+        {
+            PatientId = target.Id,
+            EntityType = nameof(Patient),
+            EntityId = source.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+        });
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Result.Success();
+    }
+
+    private async Task<Error?> CheckIdentifierConflictsAsync(PatientInput input, Guid? excludeId, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(input.AbhaNumber))
+        {
+            var index = protector.BlindIndex(Masking.Normalize(input.AbhaNumber));
+            var holder = await db.Set<Patient>().Where(p => p.AbhaNumberIndex == index && p.Id != excludeId).Select(p => p.Uhid).FirstOrDefaultAsync(ct);
+            if (holder is not null)
+            {
+                return Error.Conflict("patient.abha_in_use", $"This ABHA number is already linked to UHID {holder}.");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.AadhaarNumber))
+        {
+            var index = protector.BlindIndex(Masking.Normalize(input.AadhaarNumber));
+            var holder = await db.Set<Patient>().Where(p => p.AadhaarIndex == index && p.Id != excludeId).Select(p => p.Uhid).FirstOrDefaultAsync(ct);
+            if (holder is not null)
+            {
+                return Error.Conflict("patient.aadhaar_in_use", $"This Aadhaar number is already linked to UHID {holder}.");
+            }
+        }
+
+        return null;
+    }
+
+    private void Apply(Patient patient, PatientInput input, DateOnly today, bool isNew)
+    {
+        patient.SetName(input.Title, input.FirstName, input.MiddleName, input.LastName);
+        patient.Gender = input.Gender;
+        var dob = PatientRules.ResolveDateOfBirth(input.DateOfBirth, input.AgeYears, input.AgeMonths, today, out var estimated);
+        if (dob is not null || isNew)
+        {
+            patient.DateOfBirth = dob;
+            patient.IsDateOfBirthEstimated = estimated;
+        }
+
+        patient.Phone = Phone.Normalize(input.Phone);
+        patient.AlternatePhone = Phone.Normalize(input.AlternatePhone);
+        patient.Email = string.IsNullOrWhiteSpace(input.Email) ? null : input.Email.Trim().ToLowerInvariant();
+        patient.Address = input.Address ?? new Address();
+        patient.BloodGroup = input.BloodGroup ?? patient.BloodGroup;
+        patient.MaritalStatus = input.MaritalStatus ?? patient.MaritalStatus;
+        patient.GuardianName = Clean(input.GuardianName);
+        patient.GuardianRelation = input.GuardianRelation;
+        patient.EmergencyContactName = Clean(input.EmergencyContactName);
+        patient.EmergencyContactPhone = Phone.Normalize(input.EmergencyContactPhone);
+        patient.EmergencyContactRelation = Clean(input.EmergencyContactRelation);
+        patient.Occupation = Clean(input.Occupation);
+        patient.Religion = Clean(input.Religion);
+        patient.Nationality = Clean(input.Nationality) ?? "Indian";
+        patient.PreferredLanguage = Clean(input.PreferredLanguage);
+        patient.Category = input.Category ?? patient.Category;
+        patient.AbhaAddress = Clean(input.AbhaAddress)?.ToLowerInvariant();
+        patient.PhotoFileId = input.PhotoFileId;
+        patient.IsVip = input.IsVip;
+        patient.Notes = Clean(input.Notes);
+
+        // null = leave unchanged, "" = remove, value = replace.
+        if (input.AbhaNumber is not null)
+        {
+            if (string.IsNullOrWhiteSpace(input.AbhaNumber))
+            {
+                patient.AbhaNumberCipher = patient.AbhaNumberIndex = patient.AbhaNumberMasked = null;
+            }
+            else
+            {
+                var abha = Masking.Normalize(input.AbhaNumber);
+                patient.AbhaNumberCipher = protector.Protect(abha);
+                patient.AbhaNumberIndex = protector.BlindIndex(abha);
+                patient.AbhaNumberMasked = "XX-XXXX-XXXX-" + abha[^4..];
+            }
+        }
+
+        if (input.AadhaarNumber is not null)
+        {
+            if (string.IsNullOrWhiteSpace(input.AadhaarNumber))
+            {
+                patient.AadhaarLast4 = patient.AadhaarIndex = null;
+            }
+            else
+            {
+                var aadhaar = Masking.Normalize(input.AadhaarNumber);
+                patient.AadhaarLast4 = aadhaar[^4..];
+                patient.AadhaarIndex = protector.BlindIndex(aadhaar);
+            }
+        }
+
+    }
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+}

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Healthcare CRM, campaigns, follow-ups, feedback and patient-portal profile (CRM, FB, PP). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Engagement</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+  </ItemGroup>
+</Project>

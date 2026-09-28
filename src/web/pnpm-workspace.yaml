@@ -1,0 +1,7 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Reproducible, supply-chain-conscious installs.
+onlyBuiltDependencies:
+  - esbuild

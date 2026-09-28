@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="HyFib.HealthCare360.SharedKernel" />
+    <Using Include="HyFib.HealthCare360.Modules.SupplyChain.Domain" />
+  </ItemGroup>
+</Project>
