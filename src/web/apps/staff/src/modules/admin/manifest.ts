@@ -1,4 +1,4 @@
-import { SettingsRegular } from '@fluentui/react-icons';
+import { BeakerRegular, PlugConnectedRegular, SettingsRegular, SparkleRegular } from '@fluentui/react-icons';
 import type { ModuleManifest } from '@/lib/modules';
 import { SystemHealthWidget } from './SystemHealthWidget';
 
@@ -15,7 +15,61 @@ const manifest: ModuleManifest = {
     { label: 'System health', to: '/admin/system', permission: 'admin.system.read', keywords: ['wifi', 'server', 'ups', 'disk', 'certificate'] },
     { label: 'Audit log', to: '/admin/audit', permission: 'admin.audit.read', keywords: ['security', 'who accessed', 'history'] },
     { label: 'Settings', to: '/admin/settings', permission: 'admin.settings.manage', keywords: ['configuration', 'sms', 'whatsapp'] },
+    {
+      label: 'Integrations',
+      to: '/admin/integrations',
+      permission: 'admin.integrations.manage',
+      keywords: [
+        'sms',
+        'msg91',
+        'dlt',
+        'whatsapp',
+        'email',
+        'smtp',
+        'payment gateway',
+        'razorpay',
+        'pos',
+        'card',
+        'upi',
+        'pine labs',
+        'tally',
+        'pacs',
+        'dicom',
+        'lab analyser',
+        'hl7',
+        'astm',
+        'barcode labels',
+        'icd',
+        'integration log',
+        'simulator',
+        'opt-out',
+        'send test',
+      ],
+    },
+    {
+      label: 'AI assistant',
+      to: '/admin/ai',
+      permission: 'ai.settings.manage',
+      keywords: ['ai', 'claude', 'anthropic', 'voice', 'speech', 'whisper', 'dictation', 'usage', 'quota'],
+    },
     { label: 'Backups', to: '/admin/backups', permission: 'admin.backups.manage', keywords: ['restore', 'recovery key'] },
+  ],
+  quickActions: [
+    {
+      label: 'Test an integration',
+      to: '/admin/integrations',
+      permission: 'admin.integrations.manage',
+      icon: PlugConnectedRegular,
+      description: 'Status and a test for SMS, WhatsApp, payments and more',
+    },
+    {
+      label: 'Simulator inbox',
+      to: '/admin/integrations/simulator',
+      permission: 'admin.integrations.manage',
+      icon: BeakerRegular,
+      description: 'Training messages and payments that were not really sent',
+    },
+    { label: 'AI usage', to: '/admin/ai', permission: 'ai.settings.manage', icon: SparkleRegular, description: 'Is AI on, and who used it' },
   ],
   widgets: [{ id: 'admin-system-health', permission: 'admin.system.read', span: 2, order: 900, component: SystemHealthWidget }],
 };

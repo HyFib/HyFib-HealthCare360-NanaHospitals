@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { usePublicSettings } from '@/lib/lookups';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { matchLink, NAV_SECTIONS, visibleModules } from '@/lib/modules';
+import { AssistantButton } from './assistant/AssistantButton';
 import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
 import { ConnectionIndicator, OfflineBanner } from './ConnectionIndicator';
@@ -138,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Caption1 className={styles.kbd}>Ctrl+K</Caption1>
         </Button>
         <div className={styles.actions}>
+          <AssistantButton />
           <ConnectionIndicator />
           <NotificationsButton />
           <UserMenu onLock={() => setLocked(true)} />
