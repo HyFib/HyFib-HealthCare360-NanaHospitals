@@ -215,9 +215,11 @@ internal sealed class BedOccupancyReport : ReportDefinition
         var days = ctx.Args.DayCount;
         var daysByWard = stays.GroupBy(s => s.Key!.Value).ToDictionary(g => g.Key, g => InpatientData.CensusDays(g, ctx.Args.From, ctx.Args.To));
 
-        var rows = wards
+        var shown = wards
             .Where(w => (wardId == null || w.Id == wardId) && (w.IsActive || daysByWard.ContainsKey(w.Id)))
             .OrderBy(w => w.DisplayOrder).ThenBy(w => w.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var rows = shown
             .Select(w =>
             {
                 var bedCount = beds.GetValueOrDefault(w.Id);
@@ -244,6 +246,8 @@ internal sealed class BedOccupancyReport : ReportDefinition
                 new("averageCensus", "Average daily census", Figures.PerDay(totalDays, days), ReportValueType.Decimal),
             ],
             Notes = [InpatientData.BedsNote],
+            RowKeys = shown.Select(w => (string?)w.Id.ToString()).ToList(),
+            DrillDown = new ReportDrillDown("ward-census", ReportKeys.Ward, "See beds now"),
         };
     }
 }
@@ -421,6 +425,10 @@ internal sealed class AlosReport : ReportDefinition
                 new("stayDays", "Total stay (days)", totalStay, ReportValueType.Integer),
             ],
             Chart = byDoctor ? new ReportChartHint(ReportChartType.Bar, "doctor", ["alos"]) : null,
+            RowKeys = byDoctor ? null : groups.Select(g => g.DepartmentId?.ToString()).ToList(),
+            DrillDown = byDoctor
+                ? null
+                : new ReportDrillDown("alos", ReportKeys.Department, "See consultants", new Dictionary<string, string> { [ReportKeys.GroupBy] = ByDoctor }),
         };
     }
 
@@ -570,6 +578,8 @@ internal sealed class DischargeOutcomesReport : ReportDefinition
             groups.Sum(g => g.Absconded), groups.Sum(g => g.Deaths), groups.Sum(g => g.Deaths48));
         return new ReportData(rows)
         {
+            RowKeys = groups.Select(g => g.DepartmentId?.ToString()).ToList(),
+            DrillDown = new ReportDrillDown("adverse-discharges", ReportKeys.Department, "See patients"),
             Totals = Row("Total", total),
             Summary =
             [
@@ -683,7 +693,7 @@ internal sealed class AdverseDischargesReport : ReportDefinition
                 new("dama", "DAMA", list.Count(r => r.Outcome == DischargeType.Dama), ReportValueType.Integer),
                 new("absconded", "Absconded", list.Count(r => r.Outcome == DischargeType.Absconded), ReportValueType.Integer),
             ],
-            PatientIds = list.Select(r => r.PatientId).Distinct().ToList(),
+            RowPatientIds = list.Select(r => (Guid?)r.PatientId).ToList(),
         };
     }
 

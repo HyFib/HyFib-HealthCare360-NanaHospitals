@@ -194,6 +194,8 @@ internal sealed class HrHeadcountReport : ReportDefinition
             groups.Sum(g => g.Support), groups.Sum(g => g.Permanent), groups.Sum(g => g.Joined), groups.Sum(g => g.Left));
         return new ReportData(rows)
         {
+            RowKeys = groups.Where(g => g.Headcount + g.Joined + g.Left > 0).Select(g => g.DepartmentId?.ToString()).ToList(),
+            DrillDown = new ReportDrillDown("hr-attendance", ReportKeys.Department, "See attendance"),
             Totals = Row("Total", total),
             Summary =
             [
