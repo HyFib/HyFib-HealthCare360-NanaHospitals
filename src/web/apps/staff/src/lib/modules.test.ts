@@ -22,6 +22,10 @@ const manifests: ModuleManifest[] = [
     section: 'admin',
     icon: Icon,
     links: [{ label: 'Users', to: '/admin/users', permission: 'admin.users.read' }],
+    quickActions: [
+      { label: 'Add user', to: '/admin/users', permission: 'admin.users.manage', icon: Icon },
+      { label: 'Test an integration', to: '/admin/integrations', permission: 'admin.integrations.manage', icon: Icon },
+    ],
   },
 ];
 
@@ -77,5 +81,12 @@ describe('safeRedirect', () => {
     ['/loginhelp', '/loginhelp'],
   ])('%s → %s', (input, expected) => {
     expect(safeRedirect(input)).toBe(expected);
+  });
+});
+
+describe('visibleModules quick actions', () => {
+  it('hides quick actions the user may not open, like links', () => {
+    const [admin] = visibleModules(user(['admin.users.read', 'admin.users.manage']), manifests).filter((m) => m.id === 'admin');
+    expect(admin?.quickActions?.map((a) => a.label)).toEqual(['Add user']);
   });
 });

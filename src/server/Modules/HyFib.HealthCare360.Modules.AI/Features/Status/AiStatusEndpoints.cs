@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.AI.Domain;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Modules.AI.Services;
 using HyFib.HealthCare360.Modules.AI.Services.Speech;
 
@@ -50,7 +51,7 @@ internal static class AiStatusEndpoints
 
         var result = await usage.OrderByDescending(u => u.CreatedAt)
             .Select(u => new AiUsageDto(u.Id, u.CreatedAt, u.UserId, u.PatientId, u.Purpose, u.Provider, u.Model, u.InputTokens, u.OutputTokens,
-                u.LatencyMs, u.Success, u.Error))
+                u.LatencyMs, u.Success, u.Error, db.Set<User>().Where(x => x.Id == u.UserId).Select(x => x.DisplayName).FirstOrDefault()))
             .ToPagedResultAsync(page, ct);
         return TypedResults.Ok(result);
     }

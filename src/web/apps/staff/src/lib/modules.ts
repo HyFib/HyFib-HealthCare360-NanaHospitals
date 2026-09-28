@@ -58,10 +58,14 @@ export interface ModuleManifest {
   widgets?: DashboardWidget[];
 }
 
-/** Modules and links the user may open (links without permission are hidden, not disabled). */
+/** Modules, links and quick actions the user may open (anything without permission is hidden, not disabled). */
 export function visibleModules(user: AuthUser | null, manifests: ModuleManifest[]): ModuleManifest[] {
   return manifests
-    .map((manifest) => ({ ...manifest, links: manifest.links.filter((link) => hasPermission(user, link.permission)) }))
+    .map((manifest) => ({
+      ...manifest,
+      links: manifest.links.filter((link) => hasPermission(user, link.permission)),
+      quickActions: manifest.quickActions?.filter((action) => hasPermission(user, action.permission)),
+    }))
     .filter((manifest) => manifest.links.length > 0);
 }
 

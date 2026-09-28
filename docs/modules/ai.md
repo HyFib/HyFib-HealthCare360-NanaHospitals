@@ -88,7 +88,7 @@ Malformed values disable the feature instead of failing the request. They are lo
 | POST | `/api/v1/ai/clinical/structure-note` | `ai.dictation.use` | `{ transcript, specialty, patientId }` → `ClinicalNoteDraft`. 503 `ai.disabled`, 429 `ai.quota`, 502 `ai.provider_failed`. |
 | POST | `/api/v1/ai/voice/transcribe` | `ai.dictation.use` or `ai.assistant.use` | multipart `audio` (WebM, WAV or Ogg, ≤ 10 MB; the declared type must match the file signature), `language` (ISO 639-1), `patientId` → `{ text, provider, language, durationMs }`. 503 `ai.speech_disabled` when no server STT is configured. Antiforgery is disabled because this is a bearer API. |
 | GET | `/api/v1/ai/status` | any AI permission | → `{ enabled, provider, model, reason, serverSpeechToText, speechProvider, speechReason }`, so the UI knows which AI actions to show |
-| GET | `/api/v1/ai/usage` | `ai.settings.manage` | paging + `purpose, userId, from, to` → `PagedResult<AiUsageDto>` (never text) |
+| GET | `/api/v1/ai/usage` | `ai.settings.manage` | paging + `purpose, userId, from, to` → `PagedResult<AiUsageDto>` with the user's display name (never text) |
 
 Problem responses carry a machine-readable `code` extension (`ai.disabled`, `ai.speech_disabled`, `ai.quota`,
 `ai.provider_failed`) that the UI switches on.

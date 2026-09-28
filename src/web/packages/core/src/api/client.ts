@@ -106,7 +106,12 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         throw await toApiError(response);
       }
 
-      if (RETRYABLE_STATUS.has(response.status) && attempt < MAX_ATTEMPTS && (!unsafe || idempotencyKey)) {
+      if (
+        RETRYABLE_STATUS.has(response.status) &&
+        attempt < MAX_ATTEMPTS &&
+        (!unsafe || idempotencyKey) &&
+        !(await isServerDecision(response))
+      ) {
         await delay(backoff(attempt, response.headers.get('Retry-After')));
         continue;
       }
@@ -152,6 +157,23 @@ export function buildUrl(base: string, path: string, query?: Record<string, Quer
   }
   const qs = params.toString();
   return `${base}${path}${qs ? `?${qs}` : ''}`;
+}
+
+/**
+ * A 5xx from HC360 itself that names a problem code (for example `ai.provider_failed` or `ai.disabled`) is the server's
+ * answer, not a dropped connection: retrying would only repeat it (and spend quota). Proxy and gateway failures carry
+ * no such problem body and are still retried.
+ */
+async function isServerDecision(response: Response): Promise<boolean> {
+  if (!(response.headers.get('content-type') ?? '').includes('application/problem+json')) {
+    return false;
+  }
+  try {
+    const problem = (await response.clone().json()) as { code?: unknown };
+    return typeof problem.code === 'string' && problem.code.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function backoff(attempt: number, retryAfter?: string | null): number {

@@ -23,4 +23,5 @@ public sealed record AiUsageDto(
     int OutputTokens,
     int LatencyMs,
     bool Success,
-    string? Error);
+    string? Error,
+    string? UserName = null);
