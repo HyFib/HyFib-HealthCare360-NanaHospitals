@@ -1,5 +1,7 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
+using HyFib.HealthCare360.Modules.VirtualCare.Services;
+using HyFib.HealthCare360.Platform.Realtime;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Features.Rpm;
 
@@ -11,12 +13,12 @@ internal static class RpmAlertEndpoints
         var group = app.MapGroup("/api/v1/rpm/alerts").WithTags("Remote Monitoring");
 
         group.MapGet("/", List).RequirePermission(VirtualCarePermissions.RpmRead);
-        group.MapPost("/{id:guid}/acknowledge", (Guid id, AlertActionRequest request, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct) =>
-                ChangeAsync(id, (alert, now) => alert.Acknowledge(user.UserId, request.Notes, now), db, time, ct))
+        group.MapPost("/{id:guid}/acknowledge", (Guid id, AlertActionRequest request, HospitalDbContext db, ICurrentUser user, IRealtimePublisher realtime, TimeProvider time, CancellationToken ct) =>
+                ChangeAsync(id, (alert, now) => alert.Acknowledge(user.UserId, request.Notes, now), db, realtime, time, ct))
             .RequirePermission(VirtualCarePermissions.RpmAlerts)
             .WithValidation<AlertActionRequest>();
-        group.MapPost("/{id:guid}/resolve", (Guid id, AlertActionRequest request, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct) =>
-                ChangeAsync(id, (alert, now) => alert.Resolve(user.UserId, request.Notes, now), db, time, ct))
+        group.MapPost("/{id:guid}/resolve", (Guid id, AlertActionRequest request, HospitalDbContext db, ICurrentUser user, IRealtimePublisher realtime, TimeProvider time, CancellationToken ct) =>
+                ChangeAsync(id, (alert, now) => alert.Resolve(user.UserId, request.Notes, now), db, realtime, time, ct))
             .RequirePermission(VirtualCarePermissions.RpmAlerts)
             .WithValidation<AlertActionRequest>();
     }
@@ -62,7 +64,8 @@ internal static class RpmAlertEndpoints
         return TypedResults.Ok(result);
     }
 
-    private static async Task<IResult> ChangeAsync(Guid id, Func<RpmAlert, DateTimeOffset, Result> change, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ChangeAsync(
+        Guid id, Func<RpmAlert, DateTimeOffset, Result> change, HospitalDbContext db, IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
     {
         var alert = await db.Set<RpmAlert>().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (alert is null)
@@ -77,6 +80,7 @@ internal static class RpmAlertEndpoints
         }
 
         await db.SaveChangesAsync(ct);
+        await realtime.ToFacilityAsync(alert.FacilityId, RpmAlertService.ChangedEvent, new { alert.Id, alert.Status }, ct);
         return TypedResults.NoContent();
     }
 }

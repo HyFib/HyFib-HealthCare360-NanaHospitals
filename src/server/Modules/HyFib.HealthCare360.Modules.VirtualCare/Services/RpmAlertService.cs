@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Realtime;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Services;
@@ -12,8 +13,11 @@ namespace HyFib.HealthCare360.Modules.VirtualCare.Services;
 /// same transaction as the readings) and every holder of <c>rpm.alerts.manage</c> in the facility in-app (after commit,
 /// so staff are never alerted about data that was rolled back). A silent device also nudges the patient.
 /// </summary>
-public sealed class RpmAlertService(HospitalDbContext db, INotificationService notifications, ILogger<RpmAlertService> logger)
+public sealed class RpmAlertService(HospitalDbContext db, INotificationService notifications, IRealtimePublisher realtime, ILogger<RpmAlertService> logger)
 {
+    /// <summary>Facility event after alerts are raised, acknowledged or resolved, so alert queues refresh at once.</summary>
+    public const string ChangedEvent = "rpm.alerts.changed";
+
     public const string CareTeamTemplate = "rpm.alert";
     public const string DeviceSilentTemplate = "rpm.device_silent";
 
@@ -110,7 +114,7 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
                     alert.FacilityId,
                     $"{(critical ? "Critical" : "Remote monitoring")} alert: {patients.GetValueOrDefault(alert.PatientId, "patient")}",
                     alert.Message,
-                    $"/virtual-care/rpm/enrollments/{alert.EnrollmentId}?alert={alert.Id}",
+                    $"/rpm/enrollments/{alert.EnrollmentId}?alert={alert.Id}",
                     "rpm",
                     critical ? "critical" : "warning",
                     ct);
@@ -119,6 +123,18 @@ public sealed class RpmAlertService(HospitalDbContext db, INotificationService n
             {
                 // The alert itself is stored and listed; a failed bell notification must not fail ingestion.
                 logger.LogWarning(ex, "In-app notification for RPM alert {AlertId} failed", alert.Id);
+            }
+        }
+
+        foreach (var facility in alerts.GroupBy(a => a.FacilityId))
+        {
+            try
+            {
+                await realtime.ToFacilityAsync(facility.Key, ChangedEvent, new { raised = facility.Count() }, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Realtime push for RPM alerts failed");
             }
         }
     }

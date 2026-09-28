@@ -65,6 +65,21 @@ public sealed class RpmDevice : AuditableEntity, IFacilityScoped
         SilenceAlertRaisedAt = null;
     }
 
+    /// <summary>Brings a retired device back (for example after refurbishment): new details, no assignment, a new key to issue.</summary>
+    public void Reactivate(Guid facilityId, RpmDeviceType type, string? manufacturer, string? model)
+    {
+        FacilityId = facilityId;
+        Type = type;
+        Manufacturer = manufacturer;
+        Model = model;
+        IsActive = true;
+        EnrollmentId = null;
+        PatientId = null;
+        AssignedAt = null;
+        LastSeenAt = null;
+        SilenceAlertRaisedAt = null;
+    }
+
     public void RecordContact(DateTimeOffset now)
     {
         LastSeenAt = now;

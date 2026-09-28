@@ -206,20 +206,26 @@ public sealed class RpmEnrollmentService(HospitalDbContext db, ICurrentUser curr
         }
 
         var serial = request.SerialNumber.Trim().ToUpperInvariant();
-        if (await db.Set<RpmDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(d => d.SerialNumber == serial, ct))
+        var existing = await db.Set<RpmDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(d => d.SerialNumber == serial, ct);
+        if (existing is { IsActive: true })
         {
             return Error.Conflict("rpm.device_exists", $"A device with serial number {serial} is already registered.");
         }
 
         var now = time.GetUtcNow();
-        var device = new RpmDevice
+        var device = existing ?? new RpmDevice { SerialNumber = serial };
+        if (existing is null)
         {
-            FacilityId = facilityId,
-            SerialNumber = serial,
-            Type = request.Type,
-            Manufacturer = Clean(request.Manufacturer),
-            Model = Clean(request.Model),
-        };
+            device.FacilityId = facilityId;
+            device.Type = request.Type;
+            device.Manufacturer = Clean(request.Manufacturer);
+            device.Model = Clean(request.Model);
+        }
+        else
+        {
+            // A retired device registered again keeps its record (and its reading history) and gets a new key.
+            device.Reactivate(facilityId, request.Type, Clean(request.Manufacturer), Clean(request.Model));
+        }
 
         if (request.EnrollmentId is { } enrollmentId)
         {
@@ -233,7 +239,11 @@ public sealed class RpmEnrollmentService(HospitalDbContext db, ICurrentUser curr
         }
 
         var key = device.IssueApiKey(now);
-        db.Add(device);
+        if (existing is null)
+        {
+            db.Add(device);
+        }
+
         await db.SaveChangesAsync(ct);
         return new DeviceKeyIssued(device.Id, device.SerialNumber, key, DeviceIngestion.Path, DeviceIngestion.KeyHeader);
     }
