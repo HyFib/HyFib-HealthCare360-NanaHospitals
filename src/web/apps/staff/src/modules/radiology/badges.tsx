@@ -1,9 +1,9 @@
 import { Badge, Tooltip } from '@fluentui/react-components';
 import { AlertUrgentRegular, BotRegular } from '@fluentui/react-icons';
 import { StatusBadge } from '@hc360/ui';
-import type { DiagnosticReportStatus } from '@/modules/lab/common/types';
+export { DiagnosticReportBadge } from '@/modules/lab/common/DiagnosticReportBadge';
 import type { ImagingStudyStatus, Modality } from './api';
-import { modalityLabel, reportStatusLabel, studyStatusLabel } from './labels';
+import { modalityLabel, studyStatusLabel } from './labels';
 
 export function StudyStatusBadge({ status }: { status: ImagingStudyStatus }) {
   const tone =
@@ -17,14 +17,6 @@ export function StudyStatusBadge({ status }: { status: ImagingStudyStatus }) {
             ? 'important'
             : 'brand';
   return <StatusBadge status={status} tone={tone} label={studyStatusLabel[status]} />;
-}
-
-export function DiagnosticReportBadge({ status }: { status: DiagnosticReportStatus | null | undefined }) {
-  if (!status) {
-    return null;
-  }
-  const tone = status === 'Released' ? 'success' : status === 'Verified' ? 'warning' : status === 'Reported' ? 'important' : 'informative';
-  return <StatusBadge status={status} tone={tone} label={reportStatusLabel[status]} />;
 }
 
 export function ModalityBadge({ modality }: { modality: Modality }) {

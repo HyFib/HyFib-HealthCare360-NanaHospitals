@@ -53,7 +53,14 @@ export function useFormDraft<T extends FieldValues>(form: UseFormReturn<T> | nul
       }
       changed = false;
       try {
-        localStorage.setItem(storageKey, JSON.stringify({ value: form.getValues(), savedAt: Date.now() }));
+        const values = form.getValues();
+        // Back at the saved state (for example after a save reset the form to what the server holds): nothing to keep,
+        // so saved content never comes back later as a "draft".
+        if (JSON.stringify(values) === JSON.stringify(form.formState.defaultValues ?? {})) {
+          localStorage.removeItem(storageKey);
+          return;
+        }
+        localStorage.setItem(storageKey, JSON.stringify({ value: values, savedAt: Date.now() }));
       } catch {
         // Quota exceeded or private mode: drafts are best effort.
       }

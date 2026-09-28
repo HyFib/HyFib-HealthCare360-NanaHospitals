@@ -45,6 +45,31 @@ describe('api client', () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
+  it('does not retry a server-decided failure that names a problem code', async () => {
+    const problem = new Response(JSON.stringify({ title: 'The AI provider failed', status: 502, code: 'ai.provider_failed' }), {
+      status: 502,
+      headers: { 'content-type': 'application/problem+json' },
+    });
+    const fetchMock = vi.fn().mockResolvedValueOnce(problem);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient(baseConfig);
+    await expect(client.post('/api/v1/ai/assistant/command', { text: 'open billing' })).rejects.toBeInstanceOf(ApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('still retries a gateway failure without a problem body', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('Bad gateway', { status: 502, headers: { 'content-type': 'text/html' } }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient(baseConfig);
+    await expect(client.get('/api/v1/patients')).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('refreshes once on 401 and replays the request', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(401, {})).mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);

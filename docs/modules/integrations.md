@@ -290,11 +290,14 @@ ones and retries ports that could not be bound.
 | GET | `/api/v1/integrations/webhooks/whatsapp` | anonymous, verify token | Meta subscription check |
 | POST | `/api/v1/integrations/webhooks/whatsapp` | anonymous, `X-Hub-Signature-256` | statuses and inbound messages |
 
-Webhooks use the platform's `public` rate-limit policy, read at most 256 KB and accept `?facility=<id>`. Integration
-settings themselves are edited through the platform settings API with `admin.integrations.manage`.
+Webhooks use the platform's `public` rate-limit policy, read at most 256 KB and accept `?facility=<id>`.
 
-`IntegrationsModule` declares `integrations.labels.print` (all staff roles). Administration uses the platform's
-`admin.integrations.manage`.
+Permissions:
+* `IntegrationsModule` declares `integrations.labels.print` (all staff roles).
+* The dashboard, test sends, logs and inboxes need the platform's `admin.integrations.manage`. It has no default role:
+  only Super Admin holds it until an administrator grants it, because it exposes message logs and live test sends.
+* Integration settings and credentials are saved through the platform settings API (`/api/v1/admin/settings`), which
+  needs `admin.settings.manage`. Credentials are write-only, and each change is audited as a warning.
 
 ## DI registrations (`IntegrationsServiceCollectionExtensions.AddIntegrations`)
 
