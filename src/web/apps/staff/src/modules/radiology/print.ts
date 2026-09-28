@@ -14,6 +14,7 @@ export async function printRadiologyReport(view: RadiologyReportView): Promise<v
     signatories: view.signatories,
     verificationCode: view.verificationCode,
     verificationPath: view.verificationPath,
+    verificationUrl: view.verificationUrl,
     statusBanner: signed ? (view.status === 'Verified' ? 'Signed, not yet released' : null) : 'Draft: not signed by the radiologist',
     notes: ['This report is a professional opinion and should be correlated clinically.'],
     extraStyles: RADIOLOGY_PRINT_STYLES,

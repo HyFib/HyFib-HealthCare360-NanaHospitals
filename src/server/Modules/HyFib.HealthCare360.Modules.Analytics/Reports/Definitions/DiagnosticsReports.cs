@@ -149,6 +149,10 @@ internal sealed class LabVolumeTatReport : ReportDefinition
         return new ReportData(result)
         {
             Columns = byTest ? [C.Text("key", "Test"), .. Descriptor.Columns.Skip(1)] : null,
+            RowKeys = byTest ? null : volumes.Select(v => (string?)v.Key).ToList(),
+            DrillDown = byTest
+                ? null
+                : new ReportDrillDown("lab-volume-tat", ReportKeys.Section, "See tests", new Dictionary<string, string> { [ReportKeys.GroupBy] = ByTest }),
             Totals =
             [
                 "All tests", ordered, releasedCount, ordered - releasedCount - cancelled, cancelled, volumes.Sum(v => v.Stat), Turnaround.Minutes(overall.MedianMinutes),
@@ -291,6 +295,10 @@ internal sealed class RadiologyVolumeTatReport : ReportDefinition
         return new ReportData(result)
         {
             Columns = byStudy ? [C.Text("key", "Study"), .. Descriptor.Columns.Skip(1)] : null,
+            RowKeys = byStudy ? null : volumes.Select(v => (string?)v.Key).ToList(),
+            DrillDown = byStudy
+                ? null
+                : new ReportDrillDown("radiology-volume-tat", ReportKeys.Modality, "See studies", new Dictionary<string, string> { [ReportKeys.GroupBy] = ByStudy }),
             Totals =
             [
                 "All studies", ordered, reportedCount, Math.Max(0, ordered - reportedCount - cancelled), cancelled, volumes.Sum(v => v.Stat),
@@ -414,7 +422,7 @@ internal sealed class CriticalValuesReport : ReportDefinition
                 new("medianMinutes", "Median minutes to inform", Figures.Round1(summary.MedianMinutes), ReportValueType.Minutes),
                 new("within30", "Informed within 30 min", Figures.Round1(summary.WithinTargetPercent), ReportValueType.Percent),
             ],
-            PatientIds = all.Select(r => r.PatientId).Distinct().ToList(),
+            RowPatientIds = all.Select(r => (Guid?)r.PatientId).ToList(),
         };
     }
 

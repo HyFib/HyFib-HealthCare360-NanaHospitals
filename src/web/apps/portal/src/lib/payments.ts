@@ -179,20 +179,27 @@ export function rememberPendingPayment(pending: PendingPayment): void {
   }
 }
 
-/** The payment this tab started on a hosted page for `billId`, if any (removed once read). */
-export function takePendingPayment(billId: string): PendingPayment | null {
+/** The payment this tab started on a hosted page for `billId`, if any (read only; see `clearPendingPayment`). */
+export function peekPendingPayment(billId: string): PendingPayment | null {
   try {
     const raw = sessionStorage.getItem(SESSION_KEYS.pendingPayment);
     if (!raw) {
       return null;
     }
     const value = JSON.parse(raw) as Partial<PendingPayment>;
-    if (value.kind === 'bill' && value.billId === billId && typeof value.orderRowId === 'string') {
-      sessionStorage.removeItem(SESSION_KEYS.pendingPayment);
-      return { kind: 'bill', billId, orderRowId: value.orderRowId };
-    }
-    return null;
+    return value.kind === 'bill' && value.billId === billId && typeof value.orderRowId === 'string'
+      ? { kind: 'bill', billId, orderRowId: value.orderRowId }
+      : null;
   } catch {
     return null;
+  }
+}
+
+/** Forgets the hosted-page payment once its outcome is known. */
+export function clearPendingPayment(): void {
+  try {
+    sessionStorage.removeItem(SESSION_KEYS.pendingPayment);
+  } catch {
+    // Nothing was stored.
   }
 }

@@ -1,8 +1,17 @@
 import type { Language } from './define';
 import { appointmentMessages } from './messages/appointments';
 import { authMessages } from './messages/auth';
+import { billMessages } from './messages/bills';
 import { common } from './messages/common';
 import { doctorMessages } from './messages/doctors';
+import { feedbackMessages } from './messages/feedback';
+import { homeMessages } from './messages/home';
+import { prescriptionMessages } from './messages/prescriptions';
+import { profileMessages } from './messages/profile';
+import { recordMessages } from './messages/records';
+import { reportMessages } from './messages/reports';
+import { verifyMessages } from './messages/verify';
+import { videoMessages } from './messages/video';
 
 /**
  * Every feature's message set. Adding a feature = add its `messages/<feature>.ts` here; the dictionary tests then
@@ -13,6 +22,15 @@ export const MESSAGE_SETS = {
   auth: authMessages,
   doctors: doctorMessages,
   appointments: appointmentMessages,
+  video: videoMessages,
+  reports: reportMessages,
+  prescriptions: prescriptionMessages,
+  bills: billMessages,
+  records: recordMessages,
+  feedback: feedbackMessages,
+  profile: profileMessages,
+  verify: verifyMessages,
+  home: homeMessages,
 } as const;
 
 type Sets = typeof MESSAGE_SETS;

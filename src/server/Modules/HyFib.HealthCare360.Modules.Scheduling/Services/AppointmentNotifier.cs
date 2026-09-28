@@ -2,6 +2,7 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Scheduling.Services;
 
@@ -11,7 +12,7 @@ namespace HyFib.HealthCare360.Modules.Scheduling.Services;
 /// booking commits, and they expire at the appointment time — a reminder delivered after an internet outage but
 /// after the appointment would only confuse the patient.
 /// </summary>
-public sealed class AppointmentNotifier(HospitalDbContext db, INotificationService notifications, SchedulingSettings settings, TimeProvider time)
+public sealed class AppointmentNotifier(HospitalDbContext db, INotificationService notifications, ISettingsService settings, TimeProvider time)
 {
     public const string ConfirmedTemplate = "appointment.confirmed";
     public const string ReminderTemplate = "appointment.reminder";
@@ -35,9 +36,9 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
             return;
         }
 
-        var baseUrl = await settings.PortalBaseUrlAsync(entry.FacilityId, ct);
+        var baseUrl = await PortalAddress.BaseUrlAsync(settings, entry.FacilityId, ct);
         var values = Values(contact, slotStartsAt, null);
-        values["link"] = baseUrl is null ? "the patient portal" : $"{baseUrl}/portal/doctors/{entry.PractitionerId}";
+        values["link"] = baseUrl is null ? "the patient portal" : PortalAddress.Page(baseUrl, $"doctors/{entry.PractitionerId}");
         Queue(WaitlistTemplate, contact, values, slotStartsAt, entry.FacilityId);
     }
 

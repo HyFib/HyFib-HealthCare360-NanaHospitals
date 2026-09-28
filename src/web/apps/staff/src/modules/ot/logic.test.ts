@@ -1,15 +1,20 @@
-import { ApiError } from '@hc360/core';
+import { ApiError, formatDateOnly, formatInr } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import type { OtCalendarBooking, SafetyPhaseDto, SurgeryStatus } from './api';
+import type { OtCalendarBooking, OtStoreItem, SafetyPhaseDto, SurgeryStatus } from './api';
 import {
+  batchForLot,
+  batchLabel,
   completeGate,
   currentStepId,
   dayWindow,
+  issuableQuantity,
   localClashes,
+  otStoreProblem,
   overlaps,
   phaseGate,
   placeBlocks,
   preOpGate,
+  priceForBatch,
   receiveGate,
   slotConflicts,
   startGate,
@@ -246,5 +251,56 @@ describe('utilisation totals', () => {
     const totals = utilisationTotals([{ metrics: metrics(240, 480, 1, 1) }, { metrics: metrics(120, 480, 1, 0) }]);
     expect(totals).toMatchObject({ casesCompleted: 4, casesCancelled: 2, actualMinutes: 360, availableMinutes: 960, utilisationPercent: 37.5, firstCaseOnTimePercent: 50 });
     expect(utilisationTotals([]).utilisationPercent).toBeNull();
+  });
+});
+
+describe('OT store materials', () => {
+  const item: OtStoreItem = {
+    itemId: 'i1',
+    code: 'IMP-001',
+    name: 'Knee prosthesis, size 4',
+    genericName: null,
+    manufacturer: 'OrthoCo',
+    type: 'Implant',
+    baseUnit: 'Nos',
+    available: 7,
+    nearestExpiry: '2027-03-31',
+    mrp: 125000,
+    batches: [
+      { batchId: 'b1', batchNumber: 'LOT-A', expiryDate: '2027-03-31', available: 2, mrp: 125000 },
+      { batchId: 'b2', batchNumber: 'LOT-B', expiryDate: '2027-09-30', available: 5, mrp: 130000 },
+    ],
+  };
+  const firstBatch = item.batches[0]!;
+
+  it('reads a missing or ambiguous OT store from the 422 codes only', () => {
+    expect(otStoreProblem(new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.no_store' }))).toBe('no-store');
+    expect(otStoreProblem(new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.store_ambiguous' }))).toBe('ambiguous');
+    expect(otStoreProblem(new ApiError({ status: 0, title: 'Cannot reach the HealthCare360 server', code: 'network' }))).toBeNull();
+    expect(otStoreProblem(null)).toBeNull();
+  });
+
+  it('finds the chosen batch by its lot number', () => {
+    expect(batchForLot(item, ' lot-b ')?.batchId).toBe('b2');
+    expect(batchForLot(item, 'LOT-Z')).toBeNull();
+    expect(batchForLot(item, '')).toBeNull();
+    expect(batchForLot(null, 'LOT-A')).toBeNull();
+  });
+
+  it('limits the issue to the chosen lot, otherwise to all the stock', () => {
+    expect(issuableQuantity(item, 'LOT-A')).toBe(2);
+    expect(issuableQuantity(item, '')).toBe(7);
+    expect(issuableQuantity(item, 'LOT-Z')).toBe(7);
+  });
+
+  it('follows the batch MRP unless the user typed a price', () => {
+    expect(priceForBatch(null, null, 125000)).toBe(125000);
+    expect(priceForBatch(125000, 125000, 130000)).toBe(130000);
+    expect(priceForBatch(99000, 125000, 130000)).toBe(99000);
+  });
+
+  it('describes a batch in words', () => {
+    expect(batchLabel(firstBatch, 'Nos')).toBe(`Lot LOT-A · expires ${formatDateOnly('2027-03-31')} · 2 Nos available · MRP ${formatInr(125000)}`);
+    expect(batchLabel({ ...firstBatch, expiryDate: null }, 'Nos')).toContain('no expiry date');
   });
 });

@@ -138,7 +138,7 @@ Consent is re-checked **at send time**, not only when the campaign is scheduled.
 ### Feedback forms (`/api/v1/feedback/forms`)
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
-| GET | `/` · `/{id}` | feedback.read or .manage | `activeOnly, type` → `FeedbackFormDto` including `publicToken` and `qrUrl` (`{portal.baseUrl}/feedback/form/{token}`) |
+| GET | `/` · `/{id}` | feedback.read or .manage | `activeOnly, type` → `FeedbackFormDto` including `publicToken` and `qrUrl` (`{portal.baseUrl}/portal/feedback/form/{token}`) |
 | POST/PUT | `/[{id}]` | feedback.manage | `SaveFeedbackFormRequest {code, title, type: OP\|IP\|Portal\|General, aspects[Doctor\|Nursing\|FrontDesk\|Billing\|Cleanliness\|Food\|Overall], includesNps, allowsComment, introText, thankYouText, departmentId, isActive, version}`. The code must be unique in the facility (409 otherwise), and a form must ask at least one question |
 | POST | `/{id}/rotate-token` | feedback.manage | issues a new public token, which retires the old QR posters |
 
@@ -248,19 +248,21 @@ No events are raised by this module.
 |---|---|---|
 | `campaign.message` | SMS, WhatsApp | campaign messages: `{{message}}` plus the mandatory `{{optout}}` link. Seeded here |
 | `complaint.acknowledged` | SMS | a low-score complaint when the patient asked for a call-back: `{{reference}}`. Seeded here |
-| `feedback.request` | SMS | personal feedback link: `{{link}}`. Platform default |
-| `followup.reminder` | SMS | follow-up due: `{{doctor}}, {{date}}, {{link}}`. Platform default |
+| `feedback.request` | SMS | personal feedback link: `{{link}}` = `{base}/portal/feedback/{token}`. Platform default |
+| `followup.reminder` | SMS | follow-up due: `{{doctor}}, {{date}}, {{link}}` (`{base}/portal/`, the portal home). Platform default |
+
+Campaign opt-out links are `{base}/portal/unsubscribe/{token}` and form QR codes `{base}/portal/feedback/form/{token}`.
 
 In-app notifications: a new complaint goes to `feedback.complaints.manage` holders (a warning when the complaint is
 High priority), and a complaint assignment goes to the new owner. Real-time: `feedback.complaint.created` to the
 facility. Notifications carry the complaint number and area, never the patient's comment.
 
 ## Settings
-`portal.baseUrl` (per facility or global; shared with Scheduling and Telehealth) is the public portal address used in
-SMS links:
-* A bare host name is read as https.
-* Only an https URL without credentials is accepted.
-* A malformed value reads as "not configured".
+`portal.baseUrl` is the hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+
+It is set per facility or globally and read through the Platform helper `PortalAddress`, shared with Scheduling,
+Telehealth and the QR codes of printed prescriptions and reports: a bare host name is read as https, a trailing
+`/portal` is ignored, and a plain http, credential-bearing or malformed value reads as "not configured".
 
 ## Number series
 | Key | Format | Reset |

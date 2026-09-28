@@ -6,6 +6,7 @@ import {
   DrawerHeader,
   DrawerHeaderTitle,
   makeStyles,
+  mergeClasses,
   MessageBar,
   MessageBarBody,
   OverlayDrawer,
@@ -125,7 +126,7 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               <Text>Round off</Text>
               <Text className={styles.right}>{formatInr(s.roundOff)}</Text>
               <Text className={styles.net}>Total</Text>
-              <Text className={`${styles.net} ${styles.right}`}>{formatInr(s.netAmount)}</Text>
+              <Text className={mergeClasses(styles.net, styles.right)}>{formatInr(s.netAmount)}</Text>
             </div>
             <Text>
               Paid by {PAYMENT_LABEL[s.paymentMode]}

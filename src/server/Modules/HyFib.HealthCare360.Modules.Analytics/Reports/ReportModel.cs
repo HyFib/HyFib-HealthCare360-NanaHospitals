@@ -94,6 +94,13 @@ public sealed record ReportColumn(string Key, string Label, ReportValueType Type
 /// </summary>
 public sealed record ReportChartHint(ReportChartType Type, string CategoryKey, IReadOnlyList<string> SeriesKeys, bool TimeSeries = false, int TopN = 15);
 
+/// <summary>
+/// BI drill-down: clicking a row (or chart bar) opens <see cref="ReportId"/> with the row's key in
+/// <see cref="ParameterKey"/>, the same period and facility, and any fixed <see cref="Parameters"/> (for example
+/// "show by doctor").
+/// </summary>
+public sealed record ReportDrillDown(string ReportId, string ParameterKey, string Label, IReadOnlyDictionary<string, string>? Parameters = null);
+
 /// <summary>Everything the catalogue says about a report (the query lives in its <see cref="ReportDefinition"/>).</summary>
 public sealed record ReportDescriptor(
     string Id,
@@ -148,6 +155,12 @@ public sealed class ReportData
     /// <summary>Chart for this run when it differs from the descriptor's default; null means the default.</summary>
     public ReportChartHint? Chart { get; init; }
 
+    /// <summary>Drill-down target for this run (rows need <see cref="RowKeys"/>); null means none.</summary>
+    public ReportDrillDown? DrillDown { get; init; }
+
+    /// <summary>The id each row stands for (department, ward, section…), aligned with <see cref="Rows"/>, for drill-down.</summary>
+    public IReadOnlyList<string?>? RowKeys { get; init; }
+
     /// <summary>Default sort column for this run (for example a ranking view of a report that is chronological by default).</summary>
     public string? DefaultSort { get; init; }
 
@@ -161,8 +174,11 @@ public sealed class ReportData
     /// <summary>Explanations shown under the report ("Beds in service: 120").</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
 
-    /// <summary>Patients listed (patient-level reports only): each view or export is audited per patient.</summary>
-    public IReadOnlyList<Guid> PatientIds { get; init; } = [];
+    /// <summary>
+    /// The patient each row lists (patient-level reports only), aligned with <see cref="Rows"/>: every page viewed and
+    /// every export is audited for exactly these patients.
+    /// </summary>
+    public IReadOnlyList<Guid?>? RowPatientIds { get; init; }
 
     /// <summary>Set by the runner when a query hit the row cap.</summary>
     public bool Truncated { get; set; }

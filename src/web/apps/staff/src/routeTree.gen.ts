@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccountRouteImport } from './routes/_app/account'
 import { Route as DisplayQueueRouteImport } from './routes/display/queue'
+import { Route as AppAdminAiRouteImport } from './routes/_app/admin/ai'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminBackupsRouteImport } from './routes/_app/admin/backups'
 import { Route as AppAdminDevicesRouteImport } from './routes/_app/admin/devices'
@@ -21,6 +22,8 @@ import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
 import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppAnalyticsIndexRouteImport } from './routes/_app/analytics/index'
+import { Route as AppAnalyticsSchedulesRouteImport } from './routes/_app/analytics/schedules'
 import { Route as AppAssetsIndexRouteImport } from './routes/_app/assets/index'
 import { Route as AppAssetsAssetIdRouteImport } from './routes/_app/assets/$assetId'
 import { Route as AppAssetsCondemnationsRouteImport } from './routes/_app/assets/condemnations'
@@ -151,6 +154,14 @@ import { Route as AppSchedulingSchedulesRouteImport } from './routes/_app/schedu
 import { Route as AppSchedulingWaitlistRouteImport } from './routes/_app/scheduling/waitlist'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
+import { Route as AppAdminIntegrationsIndexRouteImport } from './routes/_app/admin/integrations/index'
+import { Route as AppAdminIntegrationsInboundRouteImport } from './routes/_app/admin/integrations/inbound'
+import { Route as AppAdminIntegrationsLogsRouteImport } from './routes/_app/admin/integrations/logs'
+import { Route as AppAdminIntegrationsSimulatorRouteImport } from './routes/_app/admin/integrations/simulator'
+import { Route as AppAnalyticsDashboardsIndexRouteImport } from './routes/_app/analytics/dashboards/index'
+import { Route as AppAnalyticsDashboardsDashboardIdRouteImport } from './routes/_app/analytics/dashboards/$dashboardId'
+import { Route as AppAnalyticsReportsIndexRouteImport } from './routes/_app/analytics/reports/index'
+import { Route as AppAnalyticsReportsReportIdRouteImport } from './routes/_app/analytics/reports/$reportId'
 import { Route as AppBillingBillsIndexRouteImport } from './routes/_app/billing/bills/index'
 import { Route as AppBillingBillsBillIdRouteImport } from './routes/_app/billing/bills/$billId'
 import { Route as AppBillingDiscountApprovalsIndexRouteImport } from './routes/_app/billing/discount-approvals/index'
@@ -187,6 +198,7 @@ import { Route as AppEmrEncountersEncounterIdRouteImport } from './routes/_app/e
 import { Route as AppEmrPrescriptionsPrescriptionIdRouteImport } from './routes/_app/emr/prescriptions/$prescriptionId'
 import { Route as AppFeedbackComplaintsIndexRouteImport } from './routes/_app/feedback/complaints/index'
 import { Route as AppFeedbackComplaintsComplaintIdRouteImport } from './routes/_app/feedback/complaints/$complaintId'
+import { Route as AppFeedbackComplaintsNewRouteImport } from './routes/_app/feedback/complaints/new'
 import { Route as AppFeedbackFormsIndexRouteImport } from './routes/_app/feedback/forms/index'
 import { Route as AppFeedbackFormsFormIdRouteImport } from './routes/_app/feedback/forms/$formId'
 import { Route as AppFeedbackFormsNewRouteImport } from './routes/_app/feedback/forms/new'
@@ -262,6 +274,7 @@ import { Route as AppQualityIndicatorsIndicatorIdRouteImport } from './routes/_a
 import { Route as AppQualityIndicatorsScorecardRouteImport } from './routes/_app/quality/indicators/scorecard'
 import { Route as AppRadiologyStudiesStudyIdRouteImport } from './routes/_app/radiology/studies/$studyId'
 import { Route as AppRpmEnrollmentsEnrollmentIdRouteImport } from './routes/_app/rpm/enrollments/$enrollmentId'
+import { Route as AppAdminIntegrationsConfigureNameRouteImport } from './routes/_app/admin/integrations/configure/$name'
 import { Route as AppEmrPatientsPatientIdIndexRouteImport } from './routes/_app/emr/patients/$patientId/index'
 import { Route as AppHrEmployeesEmployeeIdIndexRouteImport } from './routes/_app/hr/employees/$employeeId/index'
 import { Route as AppHrEmployeesEmployeeIdEditRouteImport } from './routes/_app/hr/employees/$employeeId/edit'
@@ -293,6 +306,11 @@ const DisplayQueueRoute = DisplayQueueRouteImport.update({
   id: '/display/queue',
   path: '/display/queue',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppAdminAiRoute = AppAdminAiRouteImport.update({
+  id: '/admin/ai',
+  path: '/admin/ai',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppAdminAuditRoute = AppAdminAuditRouteImport.update({
   id: '/admin/audit',
@@ -327,6 +345,16 @@ const AppAdminSystemRoute = AppAdminSystemRouteImport.update({
 const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsIndexRoute = AppAnalyticsIndexRouteImport.update({
+  id: '/analytics/',
+  path: '/analytics/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAnalyticsSchedulesRoute = AppAnalyticsSchedulesRouteImport.update({
+  id: '/analytics/schedules',
+  path: '/analytics/schedules',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAssetsIndexRoute = AppAssetsIndexRouteImport.update({
@@ -980,6 +1008,54 @@ const AppTelehealthSessionIdRoute = AppTelehealthSessionIdRouteImport.update({
   path: '/telehealth/$sessionId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminIntegrationsIndexRoute =
+  AppAdminIntegrationsIndexRouteImport.update({
+    id: '/admin/integrations/',
+    path: '/admin/integrations/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAdminIntegrationsInboundRoute =
+  AppAdminIntegrationsInboundRouteImport.update({
+    id: '/admin/integrations/inbound',
+    path: '/admin/integrations/inbound',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAdminIntegrationsLogsRoute =
+  AppAdminIntegrationsLogsRouteImport.update({
+    id: '/admin/integrations/logs',
+    path: '/admin/integrations/logs',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAdminIntegrationsSimulatorRoute =
+  AppAdminIntegrationsSimulatorRouteImport.update({
+    id: '/admin/integrations/simulator',
+    path: '/admin/integrations/simulator',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAnalyticsDashboardsIndexRoute =
+  AppAnalyticsDashboardsIndexRouteImport.update({
+    id: '/analytics/dashboards/',
+    path: '/analytics/dashboards/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAnalyticsDashboardsDashboardIdRoute =
+  AppAnalyticsDashboardsDashboardIdRouteImport.update({
+    id: '/analytics/dashboards/$dashboardId',
+    path: '/analytics/dashboards/$dashboardId',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAnalyticsReportsIndexRoute =
+  AppAnalyticsReportsIndexRouteImport.update({
+    id: '/analytics/reports/',
+    path: '/analytics/reports/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppAnalyticsReportsReportIdRoute =
+  AppAnalyticsReportsReportIdRouteImport.update({
+    id: '/analytics/reports/$reportId',
+    path: '/analytics/reports/$reportId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppBillingBillsIndexRoute = AppBillingBillsIndexRouteImport.update({
   id: '/billing/bills/',
   path: '/billing/bills/',
@@ -1173,6 +1249,12 @@ const AppFeedbackComplaintsComplaintIdRoute =
   AppFeedbackComplaintsComplaintIdRouteImport.update({
     id: '/feedback/complaints/$complaintId',
     path: '/feedback/complaints/$complaintId',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppFeedbackComplaintsNewRoute =
+  AppFeedbackComplaintsNewRouteImport.update({
+    id: '/feedback/complaints/new',
+    path: '/feedback/complaints/new',
     getParentRoute: () => AppRoute,
   } as any)
 const AppFeedbackFormsIndexRoute = AppFeedbackFormsIndexRouteImport.update({
@@ -1579,6 +1661,12 @@ const AppRpmEnrollmentsEnrollmentIdRoute =
     path: '/rpm/enrollments/$enrollmentId',
     getParentRoute: () => AppRoute,
   } as any)
+const AppAdminIntegrationsConfigureNameRoute =
+  AppAdminIntegrationsConfigureNameRouteImport.update({
+    id: '/admin/integrations/configure/$name',
+    path: '/admin/integrations/configure/$name',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppEmrPatientsPatientIdIndexRoute =
   AppEmrPatientsPatientIdIndexRouteImport.update({
     id: '/emr/patients/$patientId/',
@@ -1625,6 +1713,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/account': typeof AppAccountRoute
   '/display/queue': typeof DisplayQueueRoute
+  '/admin/ai': typeof AppAdminAiRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
@@ -1632,6 +1721,7 @@ export interface FileRoutesByFullPath {
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -1731,6 +1821,7 @@ export interface FileRoutesByFullPath {
   '/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/analytics/': typeof AppAnalyticsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
   '/billing/': typeof AppBillingIndexRoute
   '/blood-bank/': typeof AppBloodBankIndexRoute
@@ -1762,6 +1853,11 @@ export interface FileRoutesByFullPath {
   '/rpm/': typeof AppRpmIndexRoute
   '/scheduling/': typeof AppSchedulingIndexRoute
   '/telehealth/': typeof AppTelehealthIndexRoute
+  '/admin/integrations/inbound': typeof AppAdminIntegrationsInboundRoute
+  '/admin/integrations/logs': typeof AppAdminIntegrationsLogsRoute
+  '/admin/integrations/simulator': typeof AppAdminIntegrationsSimulatorRoute
+  '/analytics/dashboards/$dashboardId': typeof AppAnalyticsDashboardsDashboardIdRoute
+  '/analytics/reports/$reportId': typeof AppAnalyticsReportsReportIdRoute
   '/billing/bills/$billId': typeof AppBillingBillsBillIdRoute
   '/billing/discount-approvals/$approvalId': typeof AppBillingDiscountApprovalsApprovalIdRoute
   '/billing/ip-accounts/$accountId': typeof AppBillingIpAccountsAccountIdRoute
@@ -1783,6 +1879,7 @@ export interface FileRoutesByFullPath {
   '/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
   '/emr/prescriptions/$prescriptionId': typeof AppEmrPrescriptionsPrescriptionIdRoute
   '/feedback/complaints/$complaintId': typeof AppFeedbackComplaintsComplaintIdRoute
+  '/feedback/complaints/new': typeof AppFeedbackComplaintsNewRoute
   '/feedback/forms/$formId': typeof AppFeedbackFormsFormIdRoute
   '/feedback/forms/new': typeof AppFeedbackFormsNewRoute
   '/health-checkups/bookings/$bookingId': typeof AppHealthCheckupsBookingsBookingIdRoute
@@ -1829,6 +1926,9 @@ export interface FileRoutesByFullPath {
   '/quality/indicators/scorecard': typeof AppQualityIndicatorsScorecardRoute
   '/radiology/studies/$studyId': typeof AppRadiologyStudiesStudyIdRoute
   '/rpm/enrollments/$enrollmentId': typeof AppRpmEnrollmentsEnrollmentIdRoute
+  '/admin/integrations/': typeof AppAdminIntegrationsIndexRoute
+  '/analytics/dashboards/': typeof AppAnalyticsDashboardsIndexRoute
+  '/analytics/reports/': typeof AppAnalyticsReportsIndexRoute
   '/billing/bills/': typeof AppBillingBillsIndexRoute
   '/billing/discount-approvals/': typeof AppBillingDiscountApprovalsIndexRoute
   '/billing/ip/': typeof AppBillingIpIndexRoute
@@ -1873,6 +1973,7 @@ export interface FileRoutesByFullPath {
   '/quality/capas/': typeof AppQualityCapasIndexRoute
   '/quality/incidents/': typeof AppQualityIncidentsIndexRoute
   '/quality/indicators/': typeof AppQualityIndicatorsIndexRoute
+  '/admin/integrations/configure/$name': typeof AppAdminIntegrationsConfigureNameRoute
   '/hr/employees/$employeeId/edit': typeof AppHrEmployeesEmployeeIdEditRoute
   '/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
@@ -1886,6 +1987,7 @@ export interface FileRoutesByTo {
   '/account': typeof AppAccountRoute
   '/display/queue': typeof DisplayQueueRoute
   '/': typeof AppIndexRoute
+  '/admin/ai': typeof AppAdminAiRoute
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
@@ -1893,6 +1995,7 @@ export interface FileRoutesByTo {
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
   '/admin/users': typeof AppAdminUsersRoute
+  '/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -1992,6 +2095,7 @@ export interface FileRoutesByTo {
   '/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/analytics': typeof AppAnalyticsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
   '/billing': typeof AppBillingIndexRoute
   '/blood-bank': typeof AppBloodBankIndexRoute
@@ -2023,6 +2127,11 @@ export interface FileRoutesByTo {
   '/rpm': typeof AppRpmIndexRoute
   '/scheduling': typeof AppSchedulingIndexRoute
   '/telehealth': typeof AppTelehealthIndexRoute
+  '/admin/integrations/inbound': typeof AppAdminIntegrationsInboundRoute
+  '/admin/integrations/logs': typeof AppAdminIntegrationsLogsRoute
+  '/admin/integrations/simulator': typeof AppAdminIntegrationsSimulatorRoute
+  '/analytics/dashboards/$dashboardId': typeof AppAnalyticsDashboardsDashboardIdRoute
+  '/analytics/reports/$reportId': typeof AppAnalyticsReportsReportIdRoute
   '/billing/bills/$billId': typeof AppBillingBillsBillIdRoute
   '/billing/discount-approvals/$approvalId': typeof AppBillingDiscountApprovalsApprovalIdRoute
   '/billing/ip-accounts/$accountId': typeof AppBillingIpAccountsAccountIdRoute
@@ -2044,6 +2153,7 @@ export interface FileRoutesByTo {
   '/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
   '/emr/prescriptions/$prescriptionId': typeof AppEmrPrescriptionsPrescriptionIdRoute
   '/feedback/complaints/$complaintId': typeof AppFeedbackComplaintsComplaintIdRoute
+  '/feedback/complaints/new': typeof AppFeedbackComplaintsNewRoute
   '/feedback/forms/$formId': typeof AppFeedbackFormsFormIdRoute
   '/feedback/forms/new': typeof AppFeedbackFormsNewRoute
   '/health-checkups/bookings/$bookingId': typeof AppHealthCheckupsBookingsBookingIdRoute
@@ -2090,6 +2200,9 @@ export interface FileRoutesByTo {
   '/quality/indicators/scorecard': typeof AppQualityIndicatorsScorecardRoute
   '/radiology/studies/$studyId': typeof AppRadiologyStudiesStudyIdRoute
   '/rpm/enrollments/$enrollmentId': typeof AppRpmEnrollmentsEnrollmentIdRoute
+  '/admin/integrations': typeof AppAdminIntegrationsIndexRoute
+  '/analytics/dashboards': typeof AppAnalyticsDashboardsIndexRoute
+  '/analytics/reports': typeof AppAnalyticsReportsIndexRoute
   '/billing/bills': typeof AppBillingBillsIndexRoute
   '/billing/discount-approvals': typeof AppBillingDiscountApprovalsIndexRoute
   '/billing/ip': typeof AppBillingIpIndexRoute
@@ -2134,6 +2247,7 @@ export interface FileRoutesByTo {
   '/quality/capas': typeof AppQualityCapasIndexRoute
   '/quality/incidents': typeof AppQualityIncidentsIndexRoute
   '/quality/indicators': typeof AppQualityIndicatorsIndexRoute
+  '/admin/integrations/configure/$name': typeof AppAdminIntegrationsConfigureNameRoute
   '/hr/employees/$employeeId/edit': typeof AppHrEmployeesEmployeeIdEditRoute
   '/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
@@ -2149,6 +2263,7 @@ export interface FileRoutesById {
   '/_app/account': typeof AppAccountRoute
   '/display/queue': typeof DisplayQueueRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/admin/ai': typeof AppAdminAiRoute
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/backups': typeof AppAdminBackupsRoute
   '/_app/admin/devices': typeof AppAdminDevicesRoute
@@ -2156,6 +2271,7 @@ export interface FileRoutesById {
   '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/system': typeof AppAdminSystemRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/analytics/schedules': typeof AppAnalyticsSchedulesRoute
   '/_app/assets/$assetId': typeof AppAssetsAssetIdRoute
   '/_app/assets/condemnations': typeof AppAssetsCondemnationsRoute
   '/_app/assets/maintenance': typeof AppAssetsMaintenanceRoute
@@ -2255,6 +2371,7 @@ export interface FileRoutesById {
   '/_app/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/_app/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/_app/analytics/': typeof AppAnalyticsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/billing/': typeof AppBillingIndexRoute
   '/_app/blood-bank/': typeof AppBloodBankIndexRoute
@@ -2286,6 +2403,11 @@ export interface FileRoutesById {
   '/_app/rpm/': typeof AppRpmIndexRoute
   '/_app/scheduling/': typeof AppSchedulingIndexRoute
   '/_app/telehealth/': typeof AppTelehealthIndexRoute
+  '/_app/admin/integrations/inbound': typeof AppAdminIntegrationsInboundRoute
+  '/_app/admin/integrations/logs': typeof AppAdminIntegrationsLogsRoute
+  '/_app/admin/integrations/simulator': typeof AppAdminIntegrationsSimulatorRoute
+  '/_app/analytics/dashboards/$dashboardId': typeof AppAnalyticsDashboardsDashboardIdRoute
+  '/_app/analytics/reports/$reportId': typeof AppAnalyticsReportsReportIdRoute
   '/_app/billing/bills/$billId': typeof AppBillingBillsBillIdRoute
   '/_app/billing/discount-approvals/$approvalId': typeof AppBillingDiscountApprovalsApprovalIdRoute
   '/_app/billing/ip-accounts/$accountId': typeof AppBillingIpAccountsAccountIdRoute
@@ -2307,6 +2429,7 @@ export interface FileRoutesById {
   '/_app/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
   '/_app/emr/prescriptions/$prescriptionId': typeof AppEmrPrescriptionsPrescriptionIdRoute
   '/_app/feedback/complaints/$complaintId': typeof AppFeedbackComplaintsComplaintIdRoute
+  '/_app/feedback/complaints/new': typeof AppFeedbackComplaintsNewRoute
   '/_app/feedback/forms/$formId': typeof AppFeedbackFormsFormIdRoute
   '/_app/feedback/forms/new': typeof AppFeedbackFormsNewRoute
   '/_app/health-checkups/bookings/$bookingId': typeof AppHealthCheckupsBookingsBookingIdRoute
@@ -2353,6 +2476,9 @@ export interface FileRoutesById {
   '/_app/quality/indicators/scorecard': typeof AppQualityIndicatorsScorecardRoute
   '/_app/radiology/studies/$studyId': typeof AppRadiologyStudiesStudyIdRoute
   '/_app/rpm/enrollments/$enrollmentId': typeof AppRpmEnrollmentsEnrollmentIdRoute
+  '/_app/admin/integrations/': typeof AppAdminIntegrationsIndexRoute
+  '/_app/analytics/dashboards/': typeof AppAnalyticsDashboardsIndexRoute
+  '/_app/analytics/reports/': typeof AppAnalyticsReportsIndexRoute
   '/_app/billing/bills/': typeof AppBillingBillsIndexRoute
   '/_app/billing/discount-approvals/': typeof AppBillingDiscountApprovalsIndexRoute
   '/_app/billing/ip/': typeof AppBillingIpIndexRoute
@@ -2397,6 +2523,7 @@ export interface FileRoutesById {
   '/_app/quality/capas/': typeof AppQualityCapasIndexRoute
   '/_app/quality/incidents/': typeof AppQualityIncidentsIndexRoute
   '/_app/quality/indicators/': typeof AppQualityIndicatorsIndexRoute
+  '/_app/admin/integrations/configure/$name': typeof AppAdminIntegrationsConfigureNameRoute
   '/_app/hr/employees/$employeeId/edit': typeof AppHrEmployeesEmployeeIdEditRoute
   '/_app/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/_app/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
@@ -2412,6 +2539,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/account'
     | '/display/queue'
+    | '/admin/ai'
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
@@ -2419,6 +2547,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/users'
+    | '/analytics/schedules'
     | '/assets/$assetId'
     | '/assets/condemnations'
     | '/assets/maintenance'
@@ -2518,6 +2647,7 @@ export interface FileRouteTypes {
     | '/scheduling/schedules'
     | '/scheduling/waitlist'
     | '/telehealth/$sessionId'
+    | '/analytics/'
     | '/assets/'
     | '/billing/'
     | '/blood-bank/'
@@ -2549,6 +2679,11 @@ export interface FileRouteTypes {
     | '/rpm/'
     | '/scheduling/'
     | '/telehealth/'
+    | '/admin/integrations/inbound'
+    | '/admin/integrations/logs'
+    | '/admin/integrations/simulator'
+    | '/analytics/dashboards/$dashboardId'
+    | '/analytics/reports/$reportId'
     | '/billing/bills/$billId'
     | '/billing/discount-approvals/$approvalId'
     | '/billing/ip-accounts/$accountId'
@@ -2570,6 +2705,7 @@ export interface FileRouteTypes {
     | '/emr/encounters/$encounterId'
     | '/emr/prescriptions/$prescriptionId'
     | '/feedback/complaints/$complaintId'
+    | '/feedback/complaints/new'
     | '/feedback/forms/$formId'
     | '/feedback/forms/new'
     | '/health-checkups/bookings/$bookingId'
@@ -2616,6 +2752,9 @@ export interface FileRouteTypes {
     | '/quality/indicators/scorecard'
     | '/radiology/studies/$studyId'
     | '/rpm/enrollments/$enrollmentId'
+    | '/admin/integrations/'
+    | '/analytics/dashboards/'
+    | '/analytics/reports/'
     | '/billing/bills/'
     | '/billing/discount-approvals/'
     | '/billing/ip/'
@@ -2660,6 +2799,7 @@ export interface FileRouteTypes {
     | '/quality/capas/'
     | '/quality/incidents/'
     | '/quality/indicators/'
+    | '/admin/integrations/configure/$name'
     | '/hr/employees/$employeeId/edit'
     | '/hr/payroll/runs/$runId'
     | '/lab/masters/tests/$testId'
@@ -2673,6 +2813,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/display/queue'
     | '/'
+    | '/admin/ai'
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
@@ -2680,6 +2821,7 @@ export interface FileRouteTypes {
     | '/admin/settings'
     | '/admin/system'
     | '/admin/users'
+    | '/analytics/schedules'
     | '/assets/$assetId'
     | '/assets/condemnations'
     | '/assets/maintenance'
@@ -2779,6 +2921,7 @@ export interface FileRouteTypes {
     | '/scheduling/schedules'
     | '/scheduling/waitlist'
     | '/telehealth/$sessionId'
+    | '/analytics'
     | '/assets'
     | '/billing'
     | '/blood-bank'
@@ -2810,6 +2953,11 @@ export interface FileRouteTypes {
     | '/rpm'
     | '/scheduling'
     | '/telehealth'
+    | '/admin/integrations/inbound'
+    | '/admin/integrations/logs'
+    | '/admin/integrations/simulator'
+    | '/analytics/dashboards/$dashboardId'
+    | '/analytics/reports/$reportId'
     | '/billing/bills/$billId'
     | '/billing/discount-approvals/$approvalId'
     | '/billing/ip-accounts/$accountId'
@@ -2831,6 +2979,7 @@ export interface FileRouteTypes {
     | '/emr/encounters/$encounterId'
     | '/emr/prescriptions/$prescriptionId'
     | '/feedback/complaints/$complaintId'
+    | '/feedback/complaints/new'
     | '/feedback/forms/$formId'
     | '/feedback/forms/new'
     | '/health-checkups/bookings/$bookingId'
@@ -2877,6 +3026,9 @@ export interface FileRouteTypes {
     | '/quality/indicators/scorecard'
     | '/radiology/studies/$studyId'
     | '/rpm/enrollments/$enrollmentId'
+    | '/admin/integrations'
+    | '/analytics/dashboards'
+    | '/analytics/reports'
     | '/billing/bills'
     | '/billing/discount-approvals'
     | '/billing/ip'
@@ -2921,6 +3073,7 @@ export interface FileRouteTypes {
     | '/quality/capas'
     | '/quality/incidents'
     | '/quality/indicators'
+    | '/admin/integrations/configure/$name'
     | '/hr/employees/$employeeId/edit'
     | '/hr/payroll/runs/$runId'
     | '/lab/masters/tests/$testId'
@@ -2935,6 +3088,7 @@ export interface FileRouteTypes {
     | '/_app/account'
     | '/display/queue'
     | '/_app/'
+    | '/_app/admin/ai'
     | '/_app/admin/audit'
     | '/_app/admin/backups'
     | '/_app/admin/devices'
@@ -2942,6 +3096,7 @@ export interface FileRouteTypes {
     | '/_app/admin/settings'
     | '/_app/admin/system'
     | '/_app/admin/users'
+    | '/_app/analytics/schedules'
     | '/_app/assets/$assetId'
     | '/_app/assets/condemnations'
     | '/_app/assets/maintenance'
@@ -3041,6 +3196,7 @@ export interface FileRouteTypes {
     | '/_app/scheduling/schedules'
     | '/_app/scheduling/waitlist'
     | '/_app/telehealth/$sessionId'
+    | '/_app/analytics/'
     | '/_app/assets/'
     | '/_app/billing/'
     | '/_app/blood-bank/'
@@ -3072,6 +3228,11 @@ export interface FileRouteTypes {
     | '/_app/rpm/'
     | '/_app/scheduling/'
     | '/_app/telehealth/'
+    | '/_app/admin/integrations/inbound'
+    | '/_app/admin/integrations/logs'
+    | '/_app/admin/integrations/simulator'
+    | '/_app/analytics/dashboards/$dashboardId'
+    | '/_app/analytics/reports/$reportId'
     | '/_app/billing/bills/$billId'
     | '/_app/billing/discount-approvals/$approvalId'
     | '/_app/billing/ip-accounts/$accountId'
@@ -3093,6 +3254,7 @@ export interface FileRouteTypes {
     | '/_app/emr/encounters/$encounterId'
     | '/_app/emr/prescriptions/$prescriptionId'
     | '/_app/feedback/complaints/$complaintId'
+    | '/_app/feedback/complaints/new'
     | '/_app/feedback/forms/$formId'
     | '/_app/feedback/forms/new'
     | '/_app/health-checkups/bookings/$bookingId'
@@ -3139,6 +3301,9 @@ export interface FileRouteTypes {
     | '/_app/quality/indicators/scorecard'
     | '/_app/radiology/studies/$studyId'
     | '/_app/rpm/enrollments/$enrollmentId'
+    | '/_app/admin/integrations/'
+    | '/_app/analytics/dashboards/'
+    | '/_app/analytics/reports/'
     | '/_app/billing/bills/'
     | '/_app/billing/discount-approvals/'
     | '/_app/billing/ip/'
@@ -3183,6 +3348,7 @@ export interface FileRouteTypes {
     | '/_app/quality/capas/'
     | '/_app/quality/incidents/'
     | '/_app/quality/indicators/'
+    | '/_app/admin/integrations/configure/$name'
     | '/_app/hr/employees/$employeeId/edit'
     | '/_app/hr/payroll/runs/$runId'
     | '/_app/lab/masters/tests/$testId'
@@ -3235,6 +3401,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DisplayQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/admin/ai': {
+      id: '/_app/admin/ai'
+      path: '/admin/ai'
+      fullPath: '/admin/ai'
+      preLoaderRoute: typeof AppAdminAiRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/admin/audit': {
       id: '/_app/admin/audit'
       path: '/admin/audit'
@@ -3282,6 +3455,20 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/': {
+      id: '/_app/analytics/'
+      path: '/analytics'
+      fullPath: '/analytics/'
+      preLoaderRoute: typeof AppAnalyticsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/schedules': {
+      id: '/_app/analytics/schedules'
+      path: '/analytics/schedules'
+      fullPath: '/analytics/schedules'
+      preLoaderRoute: typeof AppAnalyticsSchedulesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/assets/': {
@@ -4194,6 +4381,62 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTelehealthSessionIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/integrations/': {
+      id: '/_app/admin/integrations/'
+      path: '/admin/integrations'
+      fullPath: '/admin/integrations/'
+      preLoaderRoute: typeof AppAdminIntegrationsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/integrations/inbound': {
+      id: '/_app/admin/integrations/inbound'
+      path: '/admin/integrations/inbound'
+      fullPath: '/admin/integrations/inbound'
+      preLoaderRoute: typeof AppAdminIntegrationsInboundRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/integrations/logs': {
+      id: '/_app/admin/integrations/logs'
+      path: '/admin/integrations/logs'
+      fullPath: '/admin/integrations/logs'
+      preLoaderRoute: typeof AppAdminIntegrationsLogsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/integrations/simulator': {
+      id: '/_app/admin/integrations/simulator'
+      path: '/admin/integrations/simulator'
+      fullPath: '/admin/integrations/simulator'
+      preLoaderRoute: typeof AppAdminIntegrationsSimulatorRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/dashboards/': {
+      id: '/_app/analytics/dashboards/'
+      path: '/analytics/dashboards'
+      fullPath: '/analytics/dashboards/'
+      preLoaderRoute: typeof AppAnalyticsDashboardsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/dashboards/$dashboardId': {
+      id: '/_app/analytics/dashboards/$dashboardId'
+      path: '/analytics/dashboards/$dashboardId'
+      fullPath: '/analytics/dashboards/$dashboardId'
+      preLoaderRoute: typeof AppAnalyticsDashboardsDashboardIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/reports/': {
+      id: '/_app/analytics/reports/'
+      path: '/analytics/reports'
+      fullPath: '/analytics/reports/'
+      preLoaderRoute: typeof AppAnalyticsReportsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/analytics/reports/$reportId': {
+      id: '/_app/analytics/reports/$reportId'
+      path: '/analytics/reports/$reportId'
+      fullPath: '/analytics/reports/$reportId'
+      preLoaderRoute: typeof AppAnalyticsReportsReportIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/billing/bills/': {
       id: '/_app/billing/bills/'
       path: '/billing/bills'
@@ -4444,6 +4687,13 @@ declare module '@tanstack/react-router' {
       path: '/feedback/complaints/$complaintId'
       fullPath: '/feedback/complaints/$complaintId'
       preLoaderRoute: typeof AppFeedbackComplaintsComplaintIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/feedback/complaints/new': {
+      id: '/_app/feedback/complaints/new'
+      path: '/feedback/complaints/new'
+      fullPath: '/feedback/complaints/new'
+      preLoaderRoute: typeof AppFeedbackComplaintsNewRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/feedback/forms/': {
@@ -4971,6 +5221,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRpmEnrollmentsEnrollmentIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/admin/integrations/configure/$name': {
+      id: '/_app/admin/integrations/configure/$name'
+      path: '/admin/integrations/configure/$name'
+      fullPath: '/admin/integrations/configure/$name'
+      preLoaderRoute: typeof AppAdminIntegrationsConfigureNameRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/emr/patients/$patientId/': {
       id: '/_app/emr/patients/$patientId/'
       path: '/emr/patients/$patientId'
@@ -5026,6 +5283,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppAccountRoute: typeof AppAccountRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppAdminAiRoute: typeof AppAdminAiRoute
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminBackupsRoute: typeof AppAdminBackupsRoute
   AppAdminDevicesRoute: typeof AppAdminDevicesRoute
@@ -5033,6 +5291,7 @@ interface AppRouteChildren {
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminSystemRoute: typeof AppAdminSystemRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppAnalyticsSchedulesRoute: typeof AppAnalyticsSchedulesRoute
   AppAssetsAssetIdRoute: typeof AppAssetsAssetIdRoute
   AppAssetsCondemnationsRoute: typeof AppAssetsCondemnationsRoute
   AppAssetsMaintenanceRoute: typeof AppAssetsMaintenanceRoute
@@ -5132,6 +5391,7 @@ interface AppRouteChildren {
   AppSchedulingSchedulesRoute: typeof AppSchedulingSchedulesRoute
   AppSchedulingWaitlistRoute: typeof AppSchedulingWaitlistRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
+  AppAnalyticsIndexRoute: typeof AppAnalyticsIndexRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
   AppBillingIndexRoute: typeof AppBillingIndexRoute
   AppBloodBankIndexRoute: typeof AppBloodBankIndexRoute
@@ -5163,6 +5423,11 @@ interface AppRouteChildren {
   AppRpmIndexRoute: typeof AppRpmIndexRoute
   AppSchedulingIndexRoute: typeof AppSchedulingIndexRoute
   AppTelehealthIndexRoute: typeof AppTelehealthIndexRoute
+  AppAdminIntegrationsInboundRoute: typeof AppAdminIntegrationsInboundRoute
+  AppAdminIntegrationsLogsRoute: typeof AppAdminIntegrationsLogsRoute
+  AppAdminIntegrationsSimulatorRoute: typeof AppAdminIntegrationsSimulatorRoute
+  AppAnalyticsDashboardsDashboardIdRoute: typeof AppAnalyticsDashboardsDashboardIdRoute
+  AppAnalyticsReportsReportIdRoute: typeof AppAnalyticsReportsReportIdRoute
   AppBillingBillsBillIdRoute: typeof AppBillingBillsBillIdRoute
   AppBillingDiscountApprovalsApprovalIdRoute: typeof AppBillingDiscountApprovalsApprovalIdRoute
   AppBillingIpAccountsAccountIdRoute: typeof AppBillingIpAccountsAccountIdRoute
@@ -5184,6 +5449,7 @@ interface AppRouteChildren {
   AppEmrEncountersEncounterIdRoute: typeof AppEmrEncountersEncounterIdRoute
   AppEmrPrescriptionsPrescriptionIdRoute: typeof AppEmrPrescriptionsPrescriptionIdRoute
   AppFeedbackComplaintsComplaintIdRoute: typeof AppFeedbackComplaintsComplaintIdRoute
+  AppFeedbackComplaintsNewRoute: typeof AppFeedbackComplaintsNewRoute
   AppFeedbackFormsFormIdRoute: typeof AppFeedbackFormsFormIdRoute
   AppFeedbackFormsNewRoute: typeof AppFeedbackFormsNewRoute
   AppHealthCheckupsBookingsBookingIdRoute: typeof AppHealthCheckupsBookingsBookingIdRoute
@@ -5230,6 +5496,9 @@ interface AppRouteChildren {
   AppQualityIndicatorsScorecardRoute: typeof AppQualityIndicatorsScorecardRoute
   AppRadiologyStudiesStudyIdRoute: typeof AppRadiologyStudiesStudyIdRoute
   AppRpmEnrollmentsEnrollmentIdRoute: typeof AppRpmEnrollmentsEnrollmentIdRoute
+  AppAdminIntegrationsIndexRoute: typeof AppAdminIntegrationsIndexRoute
+  AppAnalyticsDashboardsIndexRoute: typeof AppAnalyticsDashboardsIndexRoute
+  AppAnalyticsReportsIndexRoute: typeof AppAnalyticsReportsIndexRoute
   AppBillingBillsIndexRoute: typeof AppBillingBillsIndexRoute
   AppBillingDiscountApprovalsIndexRoute: typeof AppBillingDiscountApprovalsIndexRoute
   AppBillingIpIndexRoute: typeof AppBillingIpIndexRoute
@@ -5274,6 +5543,7 @@ interface AppRouteChildren {
   AppQualityCapasIndexRoute: typeof AppQualityCapasIndexRoute
   AppQualityIncidentsIndexRoute: typeof AppQualityIncidentsIndexRoute
   AppQualityIndicatorsIndexRoute: typeof AppQualityIndicatorsIndexRoute
+  AppAdminIntegrationsConfigureNameRoute: typeof AppAdminIntegrationsConfigureNameRoute
   AppHrEmployeesEmployeeIdEditRoute: typeof AppHrEmployeesEmployeeIdEditRoute
   AppHrPayrollRunsRunIdRoute: typeof AppHrPayrollRunsRunIdRoute
   AppLabMastersTestsTestIdRoute: typeof AppLabMastersTestsTestIdRoute
@@ -5286,6 +5556,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAccountRoute: AppAccountRoute,
   AppIndexRoute: AppIndexRoute,
+  AppAdminAiRoute: AppAdminAiRoute,
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminBackupsRoute: AppAdminBackupsRoute,
   AppAdminDevicesRoute: AppAdminDevicesRoute,
@@ -5293,6 +5564,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminSystemRoute: AppAdminSystemRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
+  AppAnalyticsSchedulesRoute: AppAnalyticsSchedulesRoute,
   AppAssetsAssetIdRoute: AppAssetsAssetIdRoute,
   AppAssetsCondemnationsRoute: AppAssetsCondemnationsRoute,
   AppAssetsMaintenanceRoute: AppAssetsMaintenanceRoute,
@@ -5392,6 +5664,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSchedulingSchedulesRoute: AppSchedulingSchedulesRoute,
   AppSchedulingWaitlistRoute: AppSchedulingWaitlistRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
+  AppAnalyticsIndexRoute: AppAnalyticsIndexRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,
   AppBillingIndexRoute: AppBillingIndexRoute,
   AppBloodBankIndexRoute: AppBloodBankIndexRoute,
@@ -5423,6 +5696,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppRpmIndexRoute: AppRpmIndexRoute,
   AppSchedulingIndexRoute: AppSchedulingIndexRoute,
   AppTelehealthIndexRoute: AppTelehealthIndexRoute,
+  AppAdminIntegrationsInboundRoute: AppAdminIntegrationsInboundRoute,
+  AppAdminIntegrationsLogsRoute: AppAdminIntegrationsLogsRoute,
+  AppAdminIntegrationsSimulatorRoute: AppAdminIntegrationsSimulatorRoute,
+  AppAnalyticsDashboardsDashboardIdRoute:
+    AppAnalyticsDashboardsDashboardIdRoute,
+  AppAnalyticsReportsReportIdRoute: AppAnalyticsReportsReportIdRoute,
   AppBillingBillsBillIdRoute: AppBillingBillsBillIdRoute,
   AppBillingDiscountApprovalsApprovalIdRoute:
     AppBillingDiscountApprovalsApprovalIdRoute,
@@ -5446,6 +5725,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppEmrPrescriptionsPrescriptionIdRoute:
     AppEmrPrescriptionsPrescriptionIdRoute,
   AppFeedbackComplaintsComplaintIdRoute: AppFeedbackComplaintsComplaintIdRoute,
+  AppFeedbackComplaintsNewRoute: AppFeedbackComplaintsNewRoute,
   AppFeedbackFormsFormIdRoute: AppFeedbackFormsFormIdRoute,
   AppFeedbackFormsNewRoute: AppFeedbackFormsNewRoute,
   AppHealthCheckupsBookingsBookingIdRoute:
@@ -5497,6 +5777,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppQualityIndicatorsScorecardRoute: AppQualityIndicatorsScorecardRoute,
   AppRadiologyStudiesStudyIdRoute: AppRadiologyStudiesStudyIdRoute,
   AppRpmEnrollmentsEnrollmentIdRoute: AppRpmEnrollmentsEnrollmentIdRoute,
+  AppAdminIntegrationsIndexRoute: AppAdminIntegrationsIndexRoute,
+  AppAnalyticsDashboardsIndexRoute: AppAnalyticsDashboardsIndexRoute,
+  AppAnalyticsReportsIndexRoute: AppAnalyticsReportsIndexRoute,
   AppBillingBillsIndexRoute: AppBillingBillsIndexRoute,
   AppBillingDiscountApprovalsIndexRoute: AppBillingDiscountApprovalsIndexRoute,
   AppBillingIpIndexRoute: AppBillingIpIndexRoute,
@@ -5541,6 +5824,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppQualityCapasIndexRoute: AppQualityCapasIndexRoute,
   AppQualityIncidentsIndexRoute: AppQualityIncidentsIndexRoute,
   AppQualityIndicatorsIndexRoute: AppQualityIndicatorsIndexRoute,
+  AppAdminIntegrationsConfigureNameRoute:
+    AppAdminIntegrationsConfigureNameRoute,
   AppHrEmployeesEmployeeIdEditRoute: AppHrEmployeesEmployeeIdEditRoute,
   AppHrPayrollRunsRunIdRoute: AppHrPayrollRunsRunIdRoute,
   AppLabMastersTestsTestIdRoute: AppLabMastersTestsTestIdRoute,

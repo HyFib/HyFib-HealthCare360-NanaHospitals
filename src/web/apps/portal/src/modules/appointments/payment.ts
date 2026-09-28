@@ -12,8 +12,9 @@ export type AppointmentPaymentResult =
 
 /**
  * Online prepayment of an appointment: opens the gateway for the order the server created (at booking, or now),
- * then asks the server to verify the gateway's signature before the appointment is marked paid. A payment problem
- * never costs the patient their slot; the appointment simply stays "pay at the hospital".
+ * then asks the server to verify the payment before the appointment is marked paid: the gateway's signature, or for
+ * the training gateway a server-to-server status check. A payment problem never costs the patient their slot; the
+ * appointment simply stays "pay at the hospital".
  */
 export async function payAppointment(
   appointmentId: string,
@@ -42,9 +43,14 @@ export async function payAppointment(
       return { status: 'not-paid', messageKey: 'payment.dismissed' };
     case 'failed':
       return { status: 'not-paid', messageKey: 'payment.failed' };
-    // Training gateway: appointment payments are confirmed only with a gateway signature, which the training gateway
-    // cannot give the browser (reported); the appointment stays "pay at the hospital".
     case 'captured':
+      try {
+        await appointmentApi.verifyPayment(appointmentId);
+        return { status: 'paid' };
+      } catch (error) {
+        return { status: 'error', error };
+      }
+    // A hosted payment page is not offered for appointments: nothing would confirm it when the patient comes back.
     case 'redirected':
     case 'unavailable':
     default:

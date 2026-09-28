@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 
@@ -43,13 +44,20 @@ internal sealed record FacilitySnapshot(
 /// <summary>A person who signed a report: name plus the practitioner's qualification, registration and signature image.</summary>
 internal sealed record Signatory(Guid UserId, string Name, string? Qualification, string? RegistrationNumber, Guid? SignatureFileId);
 
-/// <summary>Read-only look-ups into the Patients module and the platform masters.</summary>
-internal sealed class DiagnosticsLookups(HospitalDbContext db)
+/// <summary>Read-only look-ups into the Patients module and the platform masters and settings.</summary>
+internal sealed class DiagnosticsLookups(HospitalDbContext db, ISettingsService settings)
 {
     private readonly Dictionary<(Guid FacilityId, string Code), Guid?> _departments = [];
 
     public async Task<PatientSnapshot?> PatientAsync(Guid id, CancellationToken ct) =>
         (await PatientsAsync([id], ct)).GetValueOrDefault(id);
+
+    /// <summary>
+    /// Absolute QR link of a printed report: the portal's public verification page under the facility's public address
+    /// (<see cref="ReportVerificationLinks"/>). Null without a verification code or while <c>portal.baseUrl</c> is not set.
+    /// </summary>
+    public async Task<string?> VerificationUrlAsync(Guid facilityId, DiagnosticKind kind, string? code, CancellationToken ct) =>
+        code is null ? null : ReportVerificationLinks.Url(await PortalAddress.BaseUrlAsync(settings, facilityId, ct), kind, code);
 
     public async Task<IReadOnlyDictionary<Guid, PatientSnapshot>> PatientsAsync(IReadOnlyCollection<Guid> ids, CancellationToken ct)
     {

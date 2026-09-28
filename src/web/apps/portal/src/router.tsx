@@ -1,5 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
-import { createRouter } from '@tanstack/react-router';
+import { createRouter, type RouterHistory } from '@tanstack/react-router';
 import { PageSpinner } from '@/components/States';
 import { NotFound, RouteError } from '@/shell/RouteError';
 import { routeTree } from './routeTree.gen';
@@ -8,9 +8,11 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-export function createPortalRouter(queryClient: QueryClient) {
+/** `history` is for tests (memory history); the app uses the browser's. */
+export function createPortalRouter(queryClient: QueryClient, history?: RouterHistory) {
   return createRouter({
     routeTree,
+    ...(history ? { history } : {}),
     // Served by the HC360 Server at /portal (the staff app owns "/").
     basepath: '/portal',
     context: { queryClient },

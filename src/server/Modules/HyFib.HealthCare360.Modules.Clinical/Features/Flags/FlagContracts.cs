@@ -21,6 +21,13 @@ public sealed record AllergyDto(
     string? Notes,
     uint Version);
 
+/// <summary>
+/// What the banner may claim about allergies. <c>Recorded</c>: active allergies exist (time and author of the most
+/// recently recorded one). <c>NoKnownAllergies</c>: a clinician recorded "no known allergies" (time and author of that
+/// statement). <c>NotRecorded</c>: neither (both null).
+/// </summary>
+public sealed record AllergyStatusDto(AllergyRecordingStatus Status, DateTimeOffset? RecordedAt, string? RecordedByName);
+
 public sealed record RaiseAlertRequest(PatientAlertType Type, string? Title, string? Detail, AlertSeverity? Severity, DateOnly? ExpiresOn);
 
 public sealed record DeactivateAlertRequest(string Reason);

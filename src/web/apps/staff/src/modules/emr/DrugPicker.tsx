@@ -4,26 +4,15 @@ import { useQuery } from '@tanstack/react-query';
 import { usePermission } from '@/lib/permissions';
 import { emrQueries } from './api';
 import { frequencyMeaning } from './dosing';
-import { favouriteDefaults, type MedicineDefaults } from './prescriptionForm';
-import { DRUG_LOOKUP_PERMISSIONS, prescriptionQueries, type DrugLookupItem } from './prescriptionsApi';
+import { drugMasterDefaults, drugOptionView, favouriteDefaults, type MedicineDefaults } from './prescriptionForm';
+import { prescriptionQueries } from './prescriptionsApi';
 
 const useStyles = makeStyles({
   option: { display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 },
   row: { display: 'flex', gap: '6px', alignItems: 'baseline', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
+  outOfStock: { color: tokens.colorPaletteDarkOrangeForeground1, fontWeight: tokens.fontWeightSemibold },
 });
-
-function drugDefaults(item: DrugLookupItem): MedicineDefaults {
-  const controlled = item.isControlled || item.schedule === 'H1' || item.schedule === 'X';
-  return {
-    drugItemId: item.id,
-    drugName: item.name,
-    genericName: item.genericName,
-    strength: item.strength,
-    isControlledDrug: controlled,
-    controlledSchedule: controlled ? (item.schedule === 'X' ? 'X' : 'H1') : null,
-  };
-}
 
 function matches(text: string, ...values: (string | null | undefined)[]): boolean {
   const needle = text.trim().toLowerCase();
@@ -32,7 +21,7 @@ function matches(text: string, ...values: (string | null | undefined)[]): boolea
 
 /**
  * Medicine name with suggestions: the doctor's favourites (with their usual dose), the speciality template's medicines
- * and — where the user may search it — the pharmacy drug master. Anything typed is accepted as free text.
+ * and — for prescribers — the drug master with the pharmacy's stock. Anything typed is accepted as free text.
  */
 export function DrugPicker({
   value,
@@ -52,7 +41,7 @@ export function DrugPicker({
   ariaLabel: string;
 }) {
   const styles = useStyles();
-  const canSearchMaster = usePermission(DRUG_LOOKUP_PERMISSIONS);
+  const canSearchMaster = usePermission('clinical.prescriptions.write');
   const debounced = useDebouncedValue(value.trim(), 250);
   const favourites = useQuery(emrQueries.favourites('Drug'));
   const master = useQuery({ ...prescriptionQueries.drugs(debounced), enabled: canSearchMaster && debounced.length >= 2 });
@@ -79,7 +68,7 @@ export function DrugPicker({
     } else if (source === 'drug') {
       const item = masterMatches.find((d) => d.id === id);
       if (item) {
-        onPick(drugDefaults(item));
+        onPick(drugMasterDefaults(item));
       }
     }
   };
@@ -134,23 +123,28 @@ export function DrugPicker({
       )}
       {masterMatches.length > 0 && (
         <OptionGroup label="Pharmacy drug master">
-          {masterMatches.map((d) => (
-            <Option key={d.id} value={`drug:${d.id}`} text={d.name}>
-              <span className={styles.option}>
-                <span className={styles.row}>
-                  <Text weight="semibold">{d.name}</Text>
-                  {(d.schedule === 'H1' || d.schedule === 'X') && (
-                    <Badge size="small" color="danger" appearance="outline">
-                      Schedule {d.schedule}
-                    </Badge>
-                  )}
+          {masterMatches.map((d) => {
+            const view = drugOptionView(d);
+            return (
+              <Option key={d.id} value={`drug:${d.id}`} text={d.name}>
+                <span className={styles.option}>
+                  <span className={styles.row}>
+                    <Text weight="semibold">{d.name}</Text>
+                    {view.flags.map((flag) => (
+                      <Badge key={flag.kind} size="small" color={flag.kind === 'controlled' ? 'danger' : 'informative'} appearance="outline">
+                        {flag.label}
+                      </Badge>
+                    ))}
+                  </span>
+                  <Caption1 className={styles.muted}>
+                    {view.detail}
+                    {view.detail && view.stock ? ' · ' : ''}
+                    {view.stock && <span className={view.outOfStock ? styles.outOfStock : undefined}>{view.stock}</span>}
+                  </Caption1>
                 </span>
-                <Caption1 className={styles.muted}>
-                  {[d.genericName, d.strength, d.available !== null ? `${d.available} ${d.baseUnit} in stock` : null].filter(Boolean).join(' · ')}
-                </Caption1>
-              </span>
-            </Option>
-          ))}
+              </Option>
+            );
+          })}
         </OptionGroup>
       )}
     </Combobox>

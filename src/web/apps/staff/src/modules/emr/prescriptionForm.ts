@@ -1,9 +1,11 @@
+import { formatNumber } from '@hc360/core';
 import { z } from 'zod';
 import { DOSE_FREQUENCIES, quantityToDispense, type DoseFrequency } from './dosing';
+import type { PrescribableDrug } from './prescriptionsApi';
 
 /**
  * The prescription editor's form model (pure, unit-tested): one row per medicine, validation that mirrors the
- * server (so signing does not fail late) and mapping to and from the API, favourites and templates.
+ * server (so signing does not fail late) and mapping to and from the API, favourites, templates and the drug master.
  */
 
 export interface RxLineValues {
@@ -322,6 +324,53 @@ export function fromCurrentMedication(m: { drugName: string; genericName: string
     customFrequency: known ? null : m.frequency,
     durationDays: m.durationDays,
   });
+}
+
+/** Row defaults from a drug-master pick: the server decides what is controlled (Schedule H1/X or NDPS) and its schedule. */
+export function drugMasterDefaults(
+  drug: Pick<PrescribableDrug, 'id' | 'name' | 'genericName' | 'strength' | 'dosageForm' | 'isControlled' | 'controlledSchedule'>,
+): MedicineDefaults {
+  return {
+    drugItemId: drug.id,
+    drugName: drug.name,
+    genericName: drug.genericName,
+    strength: drug.strength,
+    dosageForm: drug.dosageForm,
+    isControlledDrug: drug.isControlled,
+    controlledSchedule: drug.controlledSchedule,
+  };
+}
+
+export interface DrugFlag {
+  kind: 'controlled' | 'coldChain';
+  label: string;
+}
+
+/** How a drug-master medicine is shown in the picker. */
+export interface DrugOptionView {
+  /** Generic name, strength and form. */
+  detail: string;
+  /** "In stock: 120 TAB" or "Out of stock"; null when the facility has no pharmacy store (stock unknown). */
+  stock: string | null;
+  outOfStock: boolean;
+  /** Written flags (never colour alone): the controlled-drug schedule and cold-chain storage. */
+  flags: DrugFlag[];
+}
+
+export function drugOptionView(
+  drug: Pick<PrescribableDrug, 'genericName' | 'strength' | 'dosageForm' | 'isControlled' | 'controlledSchedule' | 'isColdChain' | 'baseUnit' | 'available'>,
+): DrugOptionView {
+  const flags: DrugFlag[] = [];
+  if (drug.isControlled) {
+    flags.push({ kind: 'controlled', label: `Schedule ${drug.controlledSchedule ?? 'H1'}` });
+  }
+  if (drug.isColdChain) {
+    flags.push({ kind: 'coldChain', label: 'Cold chain' });
+  }
+  const available = drug.available ?? null;
+  const outOfStock = available !== null && available <= 0;
+  const stock = available === null ? null : outOfStock ? 'Out of stock' : `In stock: ${formatNumber(available)} ${drug.baseUnit}`;
+  return { detail: [drug.genericName, drug.strength, drug.dosageForm].filter(Boolean).join(' · '), stock, outOfStock, flags };
 }
 
 /** Row defaults from a speciality template's medicine. */

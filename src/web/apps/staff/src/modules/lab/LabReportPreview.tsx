@@ -2,7 +2,7 @@ import { Caption1, makeStyles, MessageBar, MessageBarBody, Subtitle1, Subtitle2,
 import { formatDateTime } from '@hc360/core';
 import { QRCodeSVG } from 'qrcode.react';
 import { Fragment } from 'react';
-import { verificationUrl } from './common/reportPrint';
+import { verificationLink } from '@/lib/verification';
 import type { LabReportResultLine, LabReportView } from './api';
 import { FlagChip } from './badges';
 import { flagDisplay } from './flags';
@@ -70,7 +70,7 @@ function ResultValue({ line }: { line: LabReportResultLine }) {
 /** On-screen copy of the lab report, laid out like the print (letterhead, patient block, results, signatories, QR). */
 export function LabReportPreview({ view }: { view: LabReportView }) {
   const styles = useStyles();
-  const url = view.verificationCode ? verificationUrl(view.verificationPath) : null;
+  const url = view.verificationCode ? verificationLink(view.verificationUrl, view.verificationPath) : null;
   const notes = labReportNotes(view);
 
   return (

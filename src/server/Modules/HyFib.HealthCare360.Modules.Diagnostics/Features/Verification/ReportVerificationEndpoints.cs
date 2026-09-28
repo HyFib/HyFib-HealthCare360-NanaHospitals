@@ -21,9 +21,9 @@ internal static class ReportVerificationEndpoints
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/api/v1/lab/reports/verify/{code}", VerifyLab).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit);
-        app.MapGet("/api/v1/radiology/reports/verify/{code}", VerifyRadiology).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit);
-        app.MapGet("/api/v1/cardiology/reports/verify/{code}", VerifyCardiology).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit);
+        app.MapGet("/api/v1/lab/reports/verify/{code}", VerifyLab).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit).WithSensitivePath();
+        app.MapGet("/api/v1/radiology/reports/verify/{code}", VerifyRadiology).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit).WithSensitivePath();
+        app.MapGet("/api/v1/cardiology/reports/verify/{code}", VerifyCardiology).WithTags("Report verification").AllowAnonymous().RequireRateLimiting(PublicRateLimit).WithSensitivePath();
     }
 
     private static async Task<IResult> VerifyLab(string code, HospitalDbContext db, CancellationToken ct)

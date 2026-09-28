@@ -137,7 +137,7 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
                 Key = key,
                 RequestHash = requestHash,
                 Method = context.Request.Method,
-                Path = context.Request.Path.Value ?? string.Empty,
+                Path = LoggedPath.Of(context),
                 State = IdempotencyState.InProgress,
                 CreatedAt = now,
                 ExpiresAt = now + Retention,

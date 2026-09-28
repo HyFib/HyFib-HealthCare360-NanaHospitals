@@ -36,6 +36,7 @@ export async function printLabReport(view: LabReportView): Promise<void> {
     signatories: view.signatories,
     verificationCode: view.verificationCode,
     verificationPath: view.verificationPath,
+    verificationUrl: view.verificationUrl,
     statusBanner: released ? null : 'Preliminary copy for the laboratory: not released',
     notes: labReportNotes(view),
     extraStyles: LAB_REPORT_STYLES,

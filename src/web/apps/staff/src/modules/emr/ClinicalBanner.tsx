@@ -1,24 +1,11 @@
-import {
-  Badge,
-  Button,
-  Field,
-  makeStyles,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
-  Skeleton,
-  SkeletonItem,
-  Text,
-  Textarea,
-  Tooltip,
-} from '@fluentui/react-components';
-import { QuestionCircleRegular } from '@fluentui/react-icons';
+import { Button, Field, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Skeleton, SkeletonItem, Text, Textarea } from '@fluentui/react-components';
 import { formatDateTime, humanize } from '@hc360/core';
 import { ErrorState, Page, PatientBanner, Section, useNotify, type PatientBannerData } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { patientApi } from '@/modules/patients/api';
+import { bannerAllergyStatus } from './allergyStatus';
 import type { PatientClinicalSummary } from './api';
 import { isRestricted } from './hooks';
 
@@ -44,8 +31,9 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
     category: p.category === 'General' ? null : humanize(p.category),
     isVip: p.isVip,
     isDeceased: p.isDeceased,
-    // "Never recorded" is not "no allergies": the banner then shows neither badge and we add our own prompt.
-    allergies: summary.allergiesEverRecorded ? summary.allergies.map(allergyText) : undefined,
+    allergies: summary.allergies.map(allergyText),
+    // "No known allergies" only when a clinician recorded it; an empty list alone shows "Allergies not recorded".
+    allergyStatus: bannerAllergyStatus(summary.allergyStatus),
     alerts: summary.alerts.map((alert) => (alert.detail ? `${alert.title}: ${alert.detail}` : alert.title)),
   };
 }
@@ -55,23 +43,7 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
  * (sticky) on the chart and the encounter workspace.
  */
 export function ClinicalBanner({ summary, actions }: { summary: PatientClinicalSummary; actions?: ReactNode }) {
-  return (
-    <PatientBanner
-      patient={bannerData(summary)}
-      actions={
-        <>
-          {!summary.allergiesEverRecorded && (
-            <Tooltip content="No allergy has ever been recorded for this patient. Ask about drug allergies and record them, or record 'No known allergies'." relationship="description">
-              <Badge color="warning" size="large" icon={<QuestionCircleRegular />}>
-                Allergies not recorded
-              </Badge>
-            </Tooltip>
-          )}
-          {actions}
-        </>
-      }
-    />
-  );
+  return <PatientBanner patient={bannerData(summary)} actions={actions} />;
 }
 
 export function BannerSkeleton() {

@@ -132,8 +132,13 @@ internal sealed class OpCensusReport : ReportDefinition
                 new("perDay", "Visits per day", Figures.PerDay(visitsTotal, days), ReportValueType.Decimal),
             ],
             Chart = byDoctor ? new ReportChartHint(ReportChartType.StackedBar, "doctor", ["new", "followUp"]) : null,
+            RowKeys = byDoctor ? null : groups.Select(g => g.DepartmentId?.ToString()).ToList(),
+            DrillDown = byDoctor ? null : DoctorDrill,
         };
     }
+
+    private static readonly ReportDrillDown DoctorDrill =
+        new("op-census", ReportKeys.Department, "See doctors", new Dictionary<string, string> { [ReportKeys.GroupBy] = ByDoctor });
 
     private sealed record CensusRow(Guid? DepartmentId, Guid? PractitionerId, int Visits, int FollowUps, int Cancelled);
 }

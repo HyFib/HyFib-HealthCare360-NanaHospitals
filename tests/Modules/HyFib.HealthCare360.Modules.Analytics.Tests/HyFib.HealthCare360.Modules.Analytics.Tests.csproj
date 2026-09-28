@@ -2,4 +2,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Analytics\HyFib.HealthCare360.Modules.Analytics.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="HyFib.HealthCare360.SharedKernel" />
+  </ItemGroup>
 </Project>

@@ -6,6 +6,7 @@ import {
   Field,
   Input,
   makeStyles,
+  mergeClasses,
   MessageBar,
   MessageBarActions,
   MessageBarBody,
@@ -151,7 +152,7 @@ function LineRow({
   };
 
   return (
-    <li className={[styles.row, line.isControlledDrug ? styles.rowControlled : undefined].filter(Boolean).join(' ')} aria-label={name}>
+    <li className={mergeClasses(styles.row, line.isControlledDrug ? styles.rowControlled : undefined)} aria-label={name}>
       <div className={styles.grid}>
         <span className={styles.number}>{index + 1}.</span>
         <Controller

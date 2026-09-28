@@ -31,7 +31,24 @@ const useStyles = makeStyles({
   meta: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, lineHeight: tokens.lineHeightBase200 },
   trailing: { flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', textAlign: 'end' },
   chevron: { flexShrink: 0, color: tokens.colorNeutralForeground3, fontSize: '20px' },
+  card: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    minHeight: '64px',
+    padding: '12px 14px',
+    boxSizing: 'border-box',
+    backgroundColor: tokens.colorNeutralBackground1,
+    borderRadius: tokens.borderRadiusXLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
 });
+
+/** The same card look as a `CardLink`, for rows that are not links (status lists, history). */
+export function RowCard({ children }: { children: ReactNode }) {
+  const styles = useStyles();
+  return <div className={styles.card}>{children}</div>;
+}
 
 /**
  * The content of a list card: a tinted icon, what it is, when/who, and its status on the right. Put it inside a

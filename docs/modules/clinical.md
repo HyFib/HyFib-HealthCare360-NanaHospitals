@@ -2,13 +2,14 @@
 
 EHR / EMR physician desktop, e-prescribing, clinical orders, discharge summaries, medical records with ICD coding (MRD)
 and master health checkups (MHC). Project: `src/server/Modules/HyFib.HealthCare360.Modules.Clinical` (layer 4,
-references Patients only). Database schema: `clinical`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
+references Patients and SupplyChain — the latter read-only, for the prescribers' drug search). Database schema: `clinical`.
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 
 | Requirement | Where |
 |---|---|
 | EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
 | EHR-02 timeline by type/department/date | `GET /emr/patients/{id}/timeline?types=&from=&to=&departmentId=` |
-| EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies, alerts, problems, current medicines, last vitals + flags); real-time `clinical.flags.changed` on `patient:{id}` |
+| EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags), `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module; every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites |
@@ -48,7 +49,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 |---|---|---|---|
 | GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional) |
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
-| GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
+| GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result) |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
@@ -60,8 +61,10 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET / POST | `/emr/patients/{patientId}/vitals` | emr.read / vitals.record | `RecordVitalsRequest{encounterId?, recordedAt?, temperature, temperatureUnit, pulse, respiratoryRate, systolicBp, diastolicBp, spO2, onSupplementalOxygen, heightCm, weightKg, painScore, bloodGlucose, glucoseTiming, gcs, notes}` → `VitalsDto` with `flags` |
 | POST | `/emr/patients/{patientId}/vitals/preview` | vitals.record | same request → `VitalFlag[]` (nothing saved) |
 | POST | `/emr/vitals/{id}/entered-in-error` | vitals.record | `EnteredInErrorRequest{reason}` |
-| GET / POST | `/emr/patients/{patientId}/allergies` | emr.read / allergies.manage | `RecordAllergyRequest{allergen, type, reaction, severity, onsetDate, notes}` → `AllergyDto` (409 `allergy.duplicate`) |
-| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version}` |
+| GET / POST | `/emr/patients/{patientId}/allergies` | emr.read / allergies.manage | `RecordAllergyRequest{allergen, type, reaction, severity, onsetDate, notes}` → `AllergyDto` (409 `allergy.duplicate`). Recording an allergy removes a "no known allergies" statement in the same save |
+| PUT | `/emr/allergies/{id}` | allergies.manage | `UpdateAllergyRequest{reaction, severity, status, statusReason, notes, version}`. Re-activating an allergy also removes a "no known allergies" statement |
+| GET | `/emr/patients/{patientId}/allergies/status` | emr.read | → `AllergyStatusDto{status: Recorded\|NoKnownAllergies\|NotRecorded, recordedAt?, recordedByName?}` (see *No known allergies*); restricted-record guard and PHI audit like the allergy list |
+| POST | `/emr/patients/{patientId}/allergies/none` | allergies.manage | no body → 200 `AllergyStatusDto` (`NoKnownAllergies`). 409 `allergy.active_exist` (`data.activeAllergies`) while an active allergy exists; idempotent (repeats return the existing statement); 422 `patient.merged` on a merged-away UHID; publishes `clinical.flags.changed` |
 | GET / POST | `/emr/patients/{patientId}/alerts` | emr.read / alerts.manage | `RaiseAlertRequest{type, title?, detail?, severity?, expiresOn?}` → `PatientAlertDto` |
 | POST | `/emr/alerts/{id}/deactivate` | alerts.manage | `DeactivateAlertRequest{reason}` |
 | GET | `/emr/patients/{patientId}/diagnoses?encounterId&problemsOnly` | emr.read | → `DiagnosisDto[]` |
@@ -77,6 +80,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/emr/templates/{id}` | emr.read | → `TemplateDto` (SOAP defaults, complaints, default orders, medicines) |
 | POST / PUT | `/emr/templates`, `/emr/templates/{id}` | templates.manage | `SaveTemplateRequest` |
 | GET / POST / DELETE | `/emr/favourites`, `/emr/favourites/{id}` | emr.read / emr.write or prescriptions.write | `SaveFavouriteRequest{kind: Order|Drug, label, serviceItemId?, drugItemId?, dose defaults…}` |
+| GET | `/emr/drugs?search&take` | prescriptions.write | → `PrescribableDrug[]` (see *Drug search*); `take` defaults to 20, capped at 50 |
 
 ### Clinical orders and e-prescribing (`/clinical`)
 
@@ -96,7 +100,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/clinical/prescriptions/{id}/cancel` | prescriptions.sign | `CancelPrescriptionRequest{reason}` |
 | POST | `/clinical/prescriptions/{id}/repeat` | prescriptions.write | → 201 new Draft |
 | POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`) |
-| GET | `/clinical/prescriptions/{id}/print` | emr.read | → `PrescriptionPrintModel` (letterhead, prescriber qualification + council registration, patient, diagnoses, known allergies, lines with English/Hindi directions, advice, follow-up, `verificationToken`, `verificationPath`) |
+| GET | `/clinical/prescriptions/{id}/print` | emr.read | → `PrescriptionPrintModel` (letterhead, prescriber qualification + council registration, patient, diagnoses, known allergies, lines with English/Hindi directions, advice, follow-up, `verificationToken`, `verificationPath`, `verificationUrl`) — print `verificationUrl` as the QR code (see *QR verification links*) |
 | GET / POST / PUT | `/clinical/drug-interactions[/{id}]` | emr.read / templates.manage | `SaveDrugInteractionRequest{drugA, drugB, severity, effect, management, isActive, version?}` |
 | GET / POST / PUT | `/clinical/dose-limits[/{id}]` | emr.read / templates.manage | `SaveDoseLimitRequest{genericName, maxDailyDoseMg, route, notes, isActive, version?}` |
 | GET | `/clinical/controlled-drug-register?from&to&page` | prescriptions.sign or mrd.records | → `PagedResult<ControlledDrugRegisterDto>` |
@@ -107,6 +111,46 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/clinical/discharge-summaries/{id}/print` | emr.read | → `DischargeSummaryPrint` |
 
 Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount}` — no patient data.
+
+#### QR verification links
+
+`verificationPath` is the server-relative verification API above; it resolves only on the hospital LAN and is kept for
+compatibility. `verificationUrl` is the absolute page a phone can open anywhere:
+`{portal.baseUrl}/portal/verify/prescription/{token}` (the patient portal's public page, which calls the verification
+API). It is null until the prescription is signed or while `portal.baseUrl` is not configured. `portal.baseUrl` is the
+hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+
+#### No known allergies
+
+A clinician can record that the patient has **no known allergies** (`NoKnownAllergiesStatement`, table
+`clinical.no_known_allergies`: patientId, recordedAt, recordedByUserId, recordedByName). It is patient-wide like
+allergies; a unique index on live rows (`ux_no_known_allergies_patient`, `is_deleted = false`) allows one statement per
+patient, and removed statements stay soft-deleted as history. The status shown on the banner
+(`NoKnownAllergiesStatement.StatusOf`, unit-tested) is:
+
+| Chart | `status` | `recordedAt` / `recordedByName` |
+|---|---|---|
+| at least one active allergy (a leftover statement never hides it) | `Recorded` | the most recently recorded active allergy and its author |
+| no active allergy, statement recorded | `NoKnownAllergies` | the statement |
+| neither (including only inactive, resolved or entered-in-error allergies) | `NotRecorded` | null |
+
+The statement cannot be recorded while an active allergy exists (409 `allergy.active_exist`). Recording an allergy, or
+re-activating one, soft-deletes the statement in the same save. A patient merge keeps at most one live statement (the
+surviving record's first) and none when either record has an active allergy.
+
+#### Drug search
+
+`GET /emr/drugs?search&take` lets prescribers, who hold no inventory permission, search the SupplyChain drug master:
+active items of type Drug matched on code, barcode, name, generic or brand (`InventoryQueries.Search`), in name order.
+`PrescribableDrug{id, code, name, genericName, brandName, strength, dosageForm, schedule (None|Otc|G|H|H1|X),
+isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, available, nearestExpiry}`:
+* `isControlled` is true for Schedule H1/X and NDPS items (the lines needing explicit confirmation and the register);
+  `controlledSchedule` is then `X` for Schedule X, else `H1`.
+* `available` / `nearestExpiry` sum the issuable stock of the signed-in facility's active pharmacy stores
+  (`InventoryQueries.AvailabilityAsync`); both are null when the facility has no pharmacy store, `available` is 0 when
+  out of stock.
+* Fill a `PrescriptionItemRequest` with `drugItemId = id`, `drugName = name`, `genericName`, `strength`, `dosageForm`,
+  `isControlledDrug = isControlled`, `controlledSchedule`.
 
 ### Medical records (`/mrd`, tag Medical Records)
 
@@ -173,7 +217,7 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 | Method | Path | Response |
 |---|---|---|
 | GET | `/portal/prescriptions?patientId&page` | `PagedResult<PortalPrescriptionListItem>` (signed/cancelled only) |
-| GET | `/portal/prescriptions/{id}` | `PortalPrescriptionDetail` (bilingual directions, doctor registration, QR token) |
+| GET | `/portal/prescriptions/{id}` | `PortalPrescriptionDetail` (bilingual directions, doctor registration, QR `verificationToken` and `verificationUrl`, see *QR verification links*) |
 | GET | `/portal/health-records?patientId` | `PortalHealthRecord{allergies, problems, recentEncounters (no free-text notes), immunizations, dischargeSummaries}` |
 | GET | `/portal/discharge-summaries/{id}` | `DischargeSummaryDto` (signed only) |
 | POST | `/portal/record-requests` | `PortalRecordRequest{patientId, purpose, details}` → 201 |
@@ -217,7 +261,7 @@ Handled (same transaction):
 
 | Event | Action |
 |---|---|
-| `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient |
+| `PatientsMerged` (Patients) | re-points every clinical row (all facilities, including soft-deleted) to the surviving patient; keeps at most one "no known allergies" statement, and none when an active allergy exists |
 | `PatientAdmitted` | opens the MRD chart of the admission |
 | `PatientDischarged` | sets chart discharge time and due date (+7 days), queues ICD coding (Pending), stamps the discharge summary |
 | `DiagnosticReportReleased` | completes the order line and adds/re-opens a "result to review" for the ordering doctor |

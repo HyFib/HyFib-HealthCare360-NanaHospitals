@@ -24,27 +24,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowClockwiseRegular, BoxRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateOnly, formatDateTime, formatInr, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatInr, formatNumber, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
 import { ChoiceField, ConfirmDialog, DataTable, DateField, FormGrid, FullRow, NumberField, Section, TextField, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
-import {
-  INVENTORY_CATALOG_PERMISSIONS,
-  MATERIAL_KINDS,
-  otApi,
-  otKeys,
-  otQueries,
-  type InventoryStoreDto,
-  type StoreItemLookup,
-  type SurgeryDetail,
-  type SurgeryMaterialDto,
-} from './api';
+import { MATERIAL_KINDS, otApi, otKeys, otQueries, type OtStoreBatch, type OtStoreItem, type SurgeryDetail, type SurgeryMaterialDto } from './api';
 import { materialKindLabel } from './labels';
-import { materialsGate } from './logic';
-import { applyFormErrors } from './shared/errors';
+import { batchForLot, batchLabel, issuableQuantity, materialsGate, otStoreProblem, priceForBatch } from './logic';
+import { applyFormErrors, errorMessage } from './shared/errors';
 import { ActionError, ChargeBadge } from './shared/feedback';
 
 const useStyles = makeStyles({
@@ -107,7 +97,9 @@ function StockError({ error }: { error: unknown }) {
           ? 'Check the quantity, or ask the store to receive or transfer stock to the OT store first.'
           : error.code === 'stock.batch_expired'
             ? 'Use a batch that is in date.'
-            : 'Retry, or check the item with the stores team.';
+            : error.code === 'stock.batch_not_found'
+              ? 'Choose one of the listed batches, or check the lot number on the pack.'
+              : 'Retry, or check the item with the stores team.';
   return (
     <MessageBar intent="error" layout="multiline" politeness="assertive">
       <MessageBarBody>
@@ -292,17 +284,12 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const canReadStore = usePermission(INVENTORY_CATALOG_PERMISSIONS);
-  const stores = useQuery({ ...otQueries.otStores(), enabled: canReadStore });
-  const activeStores = (stores.data ?? []).filter((s) => s.isActive);
-  const otStore: InventoryStoreDto | null = activeStores.length === 1 ? (activeStores[0] ?? null) : null;
-  const storeUsable = canReadStore && otStore !== null;
 
   const form = useForm<MaterialValues>({
     resolver: zodResolver(materialSchema),
     defaultValues: {
       kind: 'Implant',
-      source: canReadStore ? 'store' : 'outside',
+      source: 'store',
       supplyItemId: null,
       itemName: '',
       manufacturer: '',
@@ -313,8 +300,50 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
       unitPrice: null,
     },
   });
-  const [kind, source, quantity, unitPrice] = useWatch({ control: form.control, name: ['kind', 'source', 'quantity', 'unitPrice'] });
-  const [picked, setPicked] = useState<StoreItemLookup | null>(null);
+  const [kind, source, quantity, unitPrice, lotNumber] = useWatch({ control: form.control, name: ['kind', 'source', 'quantity', 'unitPrice', 'lotNumber'] });
+  const [picked, setPicked] = useState<OtStoreItem | null>(null);
+  // The MRP last filled in as the price: choosing another batch updates it, unless the user typed a price of their own.
+  const [filledPrice, setFilledPrice] = useState<number | null>(null);
+  // The first page of the OT store tells whether the facility has one usable OT store (422 otherwise); the picker reuses it.
+  const store = useQuery({ ...otQueries.storeItems(''), enabled: source === 'store' });
+  const storeProblem = otStoreProblem(store.error);
+
+  const chooseBatch = (batch: OtStoreBatch) => {
+    form.setValue('lotNumber', batch.batchNumber, { shouldValidate: true });
+    form.setValue('expiryDate', batch.expiryDate, { shouldValidate: true });
+    const price = priceForBatch(form.getValues('unitPrice'), filledPrice, batch.mrp);
+    form.setValue('unitPrice', price);
+    if (price === batch.mrp) {
+      setFilledPrice(price);
+    }
+  };
+
+  /** Lot and expiry filled from an OT store batch do not describe another item, nor a consignment or patient-supplied one. */
+  const clearStoreBatch = () => {
+    if (batchForLot(picked, form.getValues('lotNumber'))) {
+      form.setValue('lotNumber', '');
+      form.setValue('expiryDate', null);
+    }
+  };
+
+  const pickItem = (item: OtStoreItem | null) => {
+    clearStoreBatch();
+    setPicked(item);
+    if (!item) {
+      return;
+    }
+    form.setValue('itemName', item.name, { shouldValidate: true });
+    if (item.manufacturer) {
+      form.setValue('manufacturer', item.manufacturer);
+    }
+    const first = item.batches[0];
+    if (first) {
+      chooseBatch(first);
+    } else if (item.mrp !== null && form.getValues('unitPrice') === null) {
+      form.setValue('unitPrice', item.mrp);
+      setFilledPrice(item.mrp);
+    }
+  };
 
   const add = useMutation({
     mutationFn: (values: MaterialValues) =>
@@ -343,7 +372,10 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   });
 
   const amount = (quantity ?? 0) * (unitPrice ?? 0);
-  const short = source === 'store' && picked?.available !== null && picked?.available !== undefined && (quantity ?? 0) > picked.available;
+  const storePick = source === 'store' ? picked : null;
+  const chosenBatch = batchForLot(storePick, lotNumber);
+  const issuable = storePick ? issuableQuantity(storePick, lotNumber) : null;
+  const short = issuable !== null && (quantity ?? 0) > issuable;
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
@@ -373,12 +405,13 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                           onChange={(_, d) => {
                             field.onChange(d.value);
                             if (d.value === 'outside') {
+                              clearStoreBatch();
                               form.setValue('supplyItemId', null);
                               setPicked(null);
                             }
                           }}
                         >
-                          <Radio value="store" label="OT store (issued from stock)" disabled={!canReadStore} />
+                          <Radio value="store" label="OT store (issued from stock)" />
                           <Radio value="outside" label="Consignment or patient-supplied" />
                         </RadioGroup>
                       </Field>
@@ -387,37 +420,39 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 </FullRow>
                 {source === 'store' && (
                   <FullRow>
-                    {!canReadStore ? (
-                      <MessageBar intent="info">
-                        <MessageBarBody>You cannot look up OT store stock. Record the item as consignment, or ask the store team to issue it.</MessageBarBody>
-                      </MessageBar>
-                    ) : stores.isLoading ? (
-                      <Spinner size="tiny" label="Finding the OT store…" labelPosition="after" />
-                    ) : !storeUsable ? (
+                    {store.isPending ? (
+                      <Spinner size="tiny" label="Opening the OT store…" labelPosition="after" />
+                    ) : storeProblem ? (
                       <MessageBar intent="warning" layout="multiline">
                         <MessageBarBody>
-                          <MessageBarTitle>{activeStores.length > 1 ? 'More than one OT store is active' : 'No OT store is set up'}</MessageBarTitle>
-                          {activeStores.length > 1
-                            ? 'The server cannot tell which store to issue from. Ask the stores team to keep one active OT store.'
+                          <MessageBarTitle>{storeProblem === 'ambiguous' ? 'More than one OT store is active' : 'No OT store is set up'}</MessageBarTitle>
+                          {storeProblem === 'ambiguous'
+                            ? 'The server cannot tell which store to issue from. Ask the stores team to keep one active OT store. Until then, record the item as consignment / patient-supplied.'
                             : 'Ask the stores team to set one up under Inventory → Stores. Until then, record the item as consignment / patient-supplied.'}
                         </MessageBarBody>
                       </MessageBar>
                     ) : (
-                      <StoreItemPicker
-                        form={form}
-                        storeId={otStore.id}
-                        storeName={otStore.name}
-                        onPicked={(item) => {
-                          setPicked(item);
-                          if (item) {
-                            form.setValue('itemName', item.name, { shouldValidate: true });
-                            if (item.mrp !== null && form.getValues('unitPrice') === null) {
-                              form.setValue('unitPrice', item.mrp);
-                            }
+                      <StoreItemPicker form={form} picked={picked} onPicked={pickItem} />
+                    )}
+                  </FullRow>
+                )}
+                {storePick && storePick.batches.length > 0 && (
+                  <FullRow>
+                    <Field label="Batch" hint="The batch that expires first is chosen. Pick the lot printed on the pack you are using.">
+                      <RadioGroup
+                        value={chosenBatch?.batchId ?? ''}
+                        onChange={(_, d) => {
+                          const batch = storePick.batches.find((b) => b.batchId === d.value);
+                          if (batch) {
+                            chooseBatch(batch);
                           }
                         }}
-                      />
-                    )}
+                      >
+                        {storePick.batches.map((batch) => (
+                          <Radio key={batch.batchId} value={batch.batchId} label={batchLabel(batch, storePick.baseUnit)} />
+                        ))}
+                      </RadioGroup>
+                    </Field>
                   </FullRow>
                 )}
                 <FullRow>
@@ -439,14 +474,20 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                   name="lotNumber"
                   label="Lot / batch number"
                   maxLength={64}
-                  hint={kind === 'Implant' ? 'Scan or type from the pack label. Lot or serial is required for implants.' : 'From the store batch, if known.'}
+                  hint={
+                    storePick
+                      ? 'Filled from the chosen batch: the OT store issues this lot.'
+                      : kind === 'Implant'
+                        ? 'Scan or type from the pack label. Lot or serial is required for implants.'
+                        : 'From the pack label, if known.'
+                  }
                 />
                 <TextField control={form.control} name="serialNumber" label="Serial number" maxLength={64} />
                 <div>
                   <NumberField control={form.control} name="quantity" label="Quantity" required min={1} max={1000} />
                   {short && (
                     <Caption1 className={styles.warn}>
-                      Only {picked?.available} {picked?.baseUnit} in the OT store. The store will refuse a larger issue.
+                      Only {formatNumber(issuable)} {storePick?.baseUnit} {chosenBatch ? `of lot ${chosenBatch.batchNumber} ` : ''}in the OT store. The store will refuse a larger issue.
                     </Caption1>
                   )}
                 </div>
@@ -461,7 +502,12 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
               <Button onClick={onClose} disabled={add.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={add.isPending} icon={add.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={add.isPending || (source === 'store' && (store.isPending || storeProblem !== null))}
+                icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 {source === 'store' ? 'Issue, record and bill' : 'Record and bill'}
               </Button>
             </DialogActions>
@@ -472,40 +518,30 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   );
 }
 
-/** Searches the inventory catalogue with the OT store's available quantity and nearest expiry. */
-function StoreItemPicker({
-  form,
-  storeId,
-  storeName,
-  onPicked,
-}: {
-  form: UseFormReturn<MaterialValues>;
-  storeId: string;
-  storeName: string;
-  onPicked: (item: StoreItemLookup | null) => void;
-}) {
+/** Searches the OT store: only items it can issue now, with the quantity available and the nearest expiry. */
+function StoreItemPicker({ form, picked, onPicked }: { form: UseFormReturn<MaterialValues>; picked: OtStoreItem | null; onPicked: (item: OtStoreItem | null) => void }) {
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
-  const items = useQuery(otQueries.storeItems(search, storeId));
+  const items = useQuery(otQueries.storeItems(search));
 
   return (
     <Controller
       control={form.control}
       name="supplyItemId"
       render={({ field, fieldState }) => {
-        const selected = items.data?.find((i) => i.id === field.value);
+        const problem = fieldState.error?.message ?? (items.error ? errorMessage(items.error, 'The OT store could not be searched. Try again.') : undefined);
         return (
           <Field
-            label={`Item from ${storeName}`}
+            label="Item from the OT store"
             required
-            validationMessage={fieldState.error?.message}
-            validationState={fieldState.error ? 'error' : 'none'}
-            hint="Scan the item code or type its name. Stock shown is what the OT store holds now."
+            validationMessage={problem}
+            validationState={problem ? 'error' : 'none'}
+            hint="Scan the item code or type its name. Only items the OT store can issue now are listed."
           >
             <Combobox
               placeholder="Scan or type to search the OT store"
-              value={term || selected?.name || ''}
+              value={term || picked?.name || ''}
               selectedOptions={field.value ? [field.value] : []}
               onChange={(event) => {
                 setTerm(event.target.value);
@@ -515,8 +551,8 @@ function StoreItemPicker({
                 }
               }}
               onOptionSelect={(_, data) => {
-                const item = items.data?.find((i) => i.id === data.optionValue) ?? null;
-                field.onChange(item?.id ?? null);
+                const item = items.data?.find((i) => i.itemId === data.optionValue) ?? null;
+                field.onChange(item?.itemId ?? null);
                 onPicked(item);
                 setTerm('');
               }}
@@ -525,12 +561,13 @@ function StoreItemPicker({
               autoFocus
             >
               {(items.data ?? []).map((item) => (
-                <Option key={item.id} value={item.id} text={item.name} disabled={item.available !== null && item.available <= 0}>
+                <Option key={item.itemId} value={item.itemId} text={item.name} disabled={item.available <= 0}>
                   <span>
                     {item.name} <span className={styles.muted}>· {item.code}</span>
-                    <Caption1 block className={item.available !== null && item.available <= 0 ? styles.warn : styles.muted}>
-                      {item.available === null ? 'Stock not known' : item.available <= 0 ? 'Out of stock in the OT store' : `${item.available} ${item.baseUnit} in stock`}
+                    <Caption1 block className={item.available <= 0 ? styles.warn : styles.muted}>
+                      {item.available <= 0 ? 'Out of stock in the OT store' : `${formatNumber(item.available)} ${item.baseUnit} in stock`}
                       {item.nearestExpiry ? ` · earliest expiry ${formatDateOnly(item.nearestExpiry)}` : ''}
+                      {item.manufacturer ? ` · ${item.manufacturer}` : ''}
                     </Caption1>
                   </span>
                 </Option>

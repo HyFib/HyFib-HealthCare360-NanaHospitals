@@ -346,8 +346,8 @@ Permissions:
 * **Biometric attendance**: by design there is no biometric abstraction. HR receives ZKTeco/eSSL ADMS pushes on
   `/iclock/*` itself, so no adapter lives here.
 * **HL7 host query** (QRY^Q02 / QBP): not implemented. The ASTM host query is.
-* **ABDM (HIP/HIU)** and a **FHIR R4 facade** are out of scope for this project. The FHIR facade is planned at
-  integration level.
+* **ABDM (HIP/HIU)** is out of scope for this project. The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter:
+  it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
 
 ## Database

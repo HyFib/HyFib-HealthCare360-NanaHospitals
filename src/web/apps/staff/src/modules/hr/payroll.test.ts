@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inputAmountLabel, previewInputsCsv, previewTotal, runActions, runStepIndex, splitCsvLine, structurePreview } from './payroll';
+import { inputAmountLabel, previewInputsCsv, previewTotal, runActions, runStepIndex, splitCsvLine, structurePreview, validatePtBands, withUpperLimits } from './payroll';
 
 describe('payroll run actions', () => {
   const both = { process: true, approve: true };
@@ -68,5 +68,38 @@ describe('salary structure preview', () => {
 
   it('is zero without a basic', () => {
     expect(structurePreview([{ code: 'HRA', kind: 'Earning', calculationType: 'PercentOfBasic', value: 40 }]).gross).toBe(0);
+  });
+});
+
+describe('professional tax bands', () => {
+  it('checks bands like the server', () => {
+    expect(validatePtBands([], 'Monthly', [])).toEqual(['Add at least one income band.']);
+    expect(validatePtBands([{ incomeFrom: 100, amount: 0, februaryAmount: null }], 'Monthly', [])).toEqual(['The first band must start at ₹0.']);
+    expect(
+      validatePtBands(
+        [
+          { incomeFrom: 0, amount: 0, februaryAmount: null },
+          { incomeFrom: 0, amount: 200, februaryAmount: null },
+        ],
+        'Monthly',
+        [],
+      ),
+    ).toEqual(['Two bands start at the same income.']);
+    expect(validatePtBands([{ incomeFrom: 0, amount: 0, februaryAmount: null }], 'HalfYearly', [])).toEqual([
+      'Choose the months (1–12) in which the half-yearly tax is deducted.',
+    ]);
+    expect(validatePtBands([{ incomeFrom: 0, amount: 0, februaryAmount: null }], 'HalfYearly', [9, 3])).toEqual([]);
+  });
+
+  it('fills in upper limits', () => {
+    expect(
+      withUpperLimits([
+        { incomeFrom: 25000, amount: 200, februaryAmount: 300 },
+        { incomeFrom: 0, amount: 0, februaryAmount: null },
+      ]),
+    ).toEqual([
+      { incomeFrom: 0, incomeTo: 24999, amount: 0, februaryAmount: null },
+      { incomeFrom: 25000, incomeTo: null, amount: 200, februaryAmount: 300 },
+    ]);
   });
 });

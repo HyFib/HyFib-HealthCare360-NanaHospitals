@@ -176,7 +176,8 @@ public sealed record RadiologyReportView(
     IReadOnlyList<ReportSignatory> Signatories,
     IReadOnlyList<RadiologyAddendumDto> Addenda,
     string? VerificationCode,
-    string? VerificationPath);
+    string? VerificationPath,
+    string? VerificationUrl);
 
 public sealed record ReportTemplateDto(
     Guid Id, string Code, string Name, Modality Modality, string? BodyPart, string? Technique, string Findings, string Impression, bool IsActive, uint Version);

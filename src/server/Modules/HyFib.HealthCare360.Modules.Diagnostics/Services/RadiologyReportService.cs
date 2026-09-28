@@ -252,7 +252,8 @@ internal sealed class RadiologyReportService(
             report.Technique, report.ClinicalHistory, report.Comparison, report.Findings, report.Impression, report.IsCriticalFinding, report.Status,
             report.VerifiedAt, report.ReleasedAt,
             signatories.Select(s => new ReportSignatory(s.UserId, s.Name, s.Qualification, s.RegistrationNumber, s.SignatureFileId)).ToList(),
-            dto.Addenda, report.VerificationCode, report.VerificationCode is { } code ? VerificationPathPrefix + code : null);
+            dto.Addenda, report.VerificationCode, report.VerificationCode is { } code ? VerificationPathPrefix + code : null,
+            await lookups.VerificationUrlAsync(study.FacilityId, DiagnosticKind.Radiology, report.VerificationCode, ct));
     }
 
     private async Task<Result> ReleaseCoreAsync(ImagingStudy study, RadiologyReport report, DateTimeOffset now, CancellationToken ct)

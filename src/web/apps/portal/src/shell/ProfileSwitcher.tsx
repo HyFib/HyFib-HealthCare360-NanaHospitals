@@ -11,7 +11,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, ChevronDownRegular, DismissRegular } from '@fluentui/react-icons';
-import { useNotify } from '@hc360/ui';
+import { useToast } from '@/lib/toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -106,7 +106,7 @@ export function ProfileList({ profiles, activeId, onDone }: { profiles: PortalPr
   const t = useT();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const notify = useNotify();
+  const toast = useToast();
   const [switching, setSwitching] = useState<string | null>(null);
 
   const choose = async (profile: PortalProfile) => {
@@ -121,7 +121,7 @@ export function ProfileList({ profiles, activeId, onDone }: { profiles: PortalPr
       if (activeId) {
         // The page on screen belonged to the previous person; start again from their home.
         void navigate({ to: '/home' });
-        notify.info(t('shell.profile.switched', { name: profile.fullName }));
+        toast.info(t('shell.profile.switched', { name: profile.fullName }));
       }
     } finally {
       setSwitching(null);

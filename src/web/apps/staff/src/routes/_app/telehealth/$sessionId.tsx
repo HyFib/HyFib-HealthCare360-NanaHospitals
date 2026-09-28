@@ -23,7 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { hubErrorMessage } from '@/modules/virtualcare/signalling/hubProtocol';
+import { hubErrorMessage } from '@hc360/core';
 import {
   telehealthApi,
   telehealthKeys,
@@ -128,8 +128,8 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
               Open chart
             </Button>
             {s.visitId && (
-              <Button as="a" href={emrLinks.prescribe(s.patientId, s.visitId)} target="_blank" rel="noopener noreferrer" icon={<PillRegular />}>
-                Write prescription
+              <Button as="a" href={emrLinks.consultation(s.patientId)} target="_blank" rel="noopener noreferrer" icon={<PillRegular />}>
+                Notes and prescription
               </Button>
             )}
           </div>

@@ -79,6 +79,22 @@ internal sealed class AllergyConfiguration : IEntityTypeConfiguration<Allergy>
     }
 }
 
+internal sealed class NoKnownAllergiesStatementConfiguration : IEntityTypeConfiguration<NoKnownAllergiesStatement>
+{
+    /// <summary>Name of the one-live-statement-per-patient index (a concurrent second statement is a duplicate).</summary>
+    public const string OnePerPatientIndex = "ux_no_known_allergies_patient";
+
+    public void Configure(EntityTypeBuilder<NoKnownAllergiesStatement> b)
+    {
+        b.ToTable("no_known_allergies", ClinicalSchema.Name);
+        b.Property(x => x.RecordedByName).HasMaxLength(200);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // Removed statements are soft-deleted and kept as history, so uniqueness applies to live rows only.
+        b.HasIndex(x => x.PatientId).IsUnique().HasFilter("is_deleted = false").HasDatabaseName(OnePerPatientIndex);
+    }
+}
+
 internal sealed class PatientAlertConfiguration : IEntityTypeConfiguration<PatientAlert>
 {
     public void Configure(EntityTypeBuilder<PatientAlert> b)

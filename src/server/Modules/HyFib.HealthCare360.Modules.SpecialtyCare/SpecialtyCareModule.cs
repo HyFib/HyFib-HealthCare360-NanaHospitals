@@ -38,6 +38,7 @@ public sealed class SpecialtyCareModule : IModule
         TheatreEndpoints.Map(endpoints);
         SurgeryEndpoints.Map(endpoints);
         OtClinicalEndpoints.Map(endpoints);
+        OtStoreEndpoints.Map(endpoints);
         DialysisSetupEndpoints.Map(endpoints);
         DialysisSessionEndpoints.Map(endpoints);
         PhysioEndpoints.Map(endpoints);

@@ -153,7 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           type={narrow ? 'overlay' : 'inline'}
           onOpenChange={(_, data) => setNavOpen(data.open)}
           selectedValue={current?.link.to ?? (pathname === '/' ? '/' : '')}
-          selectedCategoryValue={current && current.module.links.length > 1 ? current.module.id : undefined}
+          selectedCategoryValue={current && current.module.links.length > 1 ? current.module.id : ''}
           openCategories={openCategories}
           onNavCategoryItemToggle={(_, data) =>
             setOpenCategories((open) => (open.includes(String(data.value)) ? open.filter((v) => v !== data.value) : [String(data.value)]))

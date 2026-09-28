@@ -167,3 +167,43 @@ export function structurePreview(lines: StructureLineValue[]): { basic: number; 
   }
   return { basic, gross: Math.round(gross * 100) / 100, deductions: Math.round(deductions * 100) / 100, amounts };
 }
+
+export interface PtBandInput {
+  incomeFrom: number;
+  amount: number;
+  februaryAmount: number | null;
+}
+
+/** Same checks as the server's ProfessionalTaxCalculator.Validate, so the officer sees them before saving. */
+export function validatePtBands(bands: PtBandInput[], frequency: 'Monthly' | 'HalfYearly', deductionMonths: number[]): string[] {
+  const errors: string[] = [];
+  if (bands.length === 0) {
+    return ['Add at least one income band.'];
+  }
+  const ordered = [...bands].sort((a, b) => a.incomeFrom - b.incomeFrom);
+  if (ordered[0]?.incomeFrom !== 0) {
+    errors.push('The first band must start at ₹0.');
+  }
+  if (new Set(ordered.map((b) => b.incomeFrom)).size !== ordered.length) {
+    errors.push('Two bands start at the same income.');
+  }
+  if (ordered.some((b) => b.amount < 0 || (b.februaryAmount ?? 0) < 0 || b.incomeFrom < 0)) {
+    errors.push('Amounts and incomes cannot be negative.');
+  }
+  if (frequency === 'HalfYearly' && (deductionMonths.length === 0 || deductionMonths.some((m) => m < 1 || m > 12))) {
+    errors.push('Choose the months (1–12) in which the half-yearly tax is deducted.');
+  }
+  if (bands.length > 20) {
+    errors.push('At most 20 bands.');
+  }
+  return errors;
+}
+
+/** Bands sorted by income with each upper limit filled in (one rupee below the next band; the last is open). */
+export function withUpperLimits(bands: PtBandInput[]): { incomeFrom: number; incomeTo: number | null; amount: number; februaryAmount: number | null }[] {
+  const ordered = [...bands].sort((a, b) => a.incomeFrom - b.incomeFrom);
+  return ordered.map((band, index) => {
+    const next = ordered[index + 1];
+    return { ...band, incomeTo: next ? Math.max(band.incomeFrom, next.incomeFrom - 1) : null };
+  });
+}

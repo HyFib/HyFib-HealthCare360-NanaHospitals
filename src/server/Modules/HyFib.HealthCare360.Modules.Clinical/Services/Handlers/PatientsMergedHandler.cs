@@ -17,6 +17,7 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         await RepointAsync<Encounter>(source, target, cancellationToken);
         await RepointAsync<VitalSigns>(source, target, cancellationToken);
         await RepointAsync<Allergy>(source, target, cancellationToken);
+        await MergeNoKnownAllergiesAsync(source, target, cancellationToken);
         await RepointAsync<PatientAlert>(source, target, cancellationToken);
         await RepointAsync<Diagnosis>(source, target, cancellationToken);
         await RepointAsync<ClinicalNote>(source, target, cancellationToken);
@@ -30,6 +31,32 @@ internal sealed class PatientsMergedHandler(HospitalDbContext db) : IDomainEvent
         await RepointAsync<MedicalRecord>(source, target, cancellationToken);
         await RepointAsync<RecordRequest>(source, target, cancellationToken);
         await RepointAsync<PackageBooking>(source, target, cancellationToken);
+    }
+
+    /// <summary>
+    /// "No known allergies" moves with the chart, but the merged record keeps at most one live statement (the
+    /// survivor's first) and none at all when either record has an active allergy: a statement must never sit next to
+    /// an allergy. Statements that no longer apply are soft-deleted; history rows are re-pointed like everything else.
+    /// </summary>
+    private async Task MergeNoKnownAllergiesAsync(Guid source, Guid target, CancellationToken ct)
+    {
+        var statements = await db.Set<NoKnownAllergiesStatement>().IgnoreQueryFilters()
+            .Where(s => s.PatientId == source || s.PatientId == target)
+            .ToListAsync(ct);
+        if (statements.Count == 0)
+        {
+            return;
+        }
+
+        var live = statements.Where(s => !s.IsDeleted).OrderByDescending(s => s.PatientId == target).ThenByDescending(s => s.RecordedAt).ToList();
+        var hasActiveAllergy = live.Count > 0
+                               && await db.Set<Allergy>().AnyAsync(a => (a.PatientId == source || a.PatientId == target) && a.Status == AllergyStatus.Active, ct);
+        foreach (var statement in statements)
+        {
+            statement.PatientId = target;
+        }
+
+        db.RemoveRange(hasActiveAllergy ? live : live.Skip(1));
     }
 
     private async Task RepointAsync<T>(Guid source, Guid target, CancellationToken ct)

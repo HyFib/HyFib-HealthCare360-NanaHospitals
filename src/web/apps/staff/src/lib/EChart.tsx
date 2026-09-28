@@ -1,24 +1,46 @@
 import { tokens } from '@fluentui/react-components';
 import { useResolvedTheme } from '@hc360/ui';
 import { BarChart, LineChart, PieChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
+import { GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
 import { init, use as registerChartParts, type ComposeOption, type ECharts } from 'echarts/core';
 import type { BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts/charts';
 import type { GridComponentOption, LegendComponentOption, TooltipComponentOption } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent, useRef } from 'react';
 
-registerChartParts([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent, CanvasRenderer]);
+registerChartParts([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
 
 export type ChartOption = ComposeOption<
   BarSeriesOption | LineSeriesOption | PieSeriesOption | GridComponentOption | TooltipComponentOption | LegendComponentOption
 >;
 
-/** Thin ECharts wrapper (tree-shaken: line, bar, pie) that follows the app theme and resizes with its container. */
-export function EChart({ option, height = 260, ariaLabel }: { option: ChartOption; height?: number; ariaLabel: string }) {
+/** The data point a user clicked (for drill-down from a chart to the rows behind it). */
+export interface ChartPoint {
+  name: string;
+  seriesName?: string;
+  dataIndex: number;
+  value: unknown;
+}
+
+/**
+ * Thin ECharts wrapper (tree-shaken: line, bar, pie, mark lines and shaded mark areas) that follows the app theme and
+ * resizes with its container. Pass `onPointClick` to make data points clickable.
+ */
+export function EChart({
+  option,
+  height = 260,
+  ariaLabel,
+  onPointClick,
+}: {
+  option: ChartOption;
+  height?: number;
+  ariaLabel: string;
+  onPointClick?: (point: ChartPoint) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const chart = useRef<ECharts | null>(null);
   const { isDark } = useResolvedTheme();
+  const pointClicked = useEffectEvent((point: ChartPoint) => onPointClick?.(point));
 
   useEffect(() => {
     if (!ref.current) {
@@ -26,6 +48,10 @@ export function EChart({ option, height = 260, ariaLabel }: { option: ChartOptio
     }
     const instance = init(ref.current, isDark ? 'dark' : undefined, { renderer: 'canvas' });
     chart.current = instance;
+    instance.on('click', (params) => {
+      const p = params as { name?: string; seriesName?: string; dataIndex?: number; value?: unknown };
+      pointClicked({ name: p.name ?? '', seriesName: p.seriesName, dataIndex: p.dataIndex ?? -1, value: p.value });
+    });
     const observer = new ResizeObserver(() => instance.resize());
     observer.observe(ref.current);
     return () => {

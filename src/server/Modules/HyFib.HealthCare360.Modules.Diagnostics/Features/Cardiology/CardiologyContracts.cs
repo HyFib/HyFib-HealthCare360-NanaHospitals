@@ -137,7 +137,8 @@ public sealed record CardiologyReportView(
     IReadOnlyList<ReportSignatory> Signatories,
     IReadOnlyList<DeviceFileDto> Files,
     string? VerificationCode,
-    string? VerificationPath);
+    string? VerificationPath,
+    string? VerificationUrl);
 
 public sealed class ScheduleCardiologyRequestValidator : AbstractValidator<ScheduleCardiologyRequest>
 {

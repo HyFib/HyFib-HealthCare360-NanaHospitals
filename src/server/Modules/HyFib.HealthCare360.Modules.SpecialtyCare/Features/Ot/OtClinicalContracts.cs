@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Common;
+using ItemType = HyFib.HealthCare360.Modules.SupplyChain.Domain.ItemType;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 
@@ -108,6 +109,28 @@ public sealed record AddSurgeryMaterialRequest(
     DateOnly? ExpiryDate,
     decimal Quantity,
     decimal UnitPrice);
+
+/// <summary>
+/// An item in stock in the facility's OT store, for the implants and consumables dialog. Record it with
+/// <see cref="AddSurgeryMaterialRequest"/>: <c>supplyItemId = itemId</c>, <c>itemName = name</c>, <c>manufacturer</c>,
+/// and from the chosen batch <c>lotNumber = batchNumber</c> and <c>expiryDate</c>. <see cref="Available"/> is what can
+/// be issued now (unreserved, unexpired, unblocked); <see cref="Mrp"/> is the MRP of the batch FEFO issues first.
+/// </summary>
+public sealed record OtStoreItem(
+    Guid ItemId,
+    string Code,
+    string Name,
+    string? GenericName,
+    string? Manufacturer,
+    ItemType Type,
+    string BaseUnit,
+    decimal Available,
+    DateOnly? NearestExpiry,
+    decimal? Mrp,
+    IReadOnlyList<OtStoreBatch> Batches);
+
+/// <summary>A usable batch of an OT store item (nearest expiry first).</summary>
+public sealed record OtStoreBatch(Guid BatchId, string BatchNumber, DateOnly? ExpiryDate, decimal Available, decimal Mrp);
 
 /// <summary>Recall search result: who received implants of a given lot or serial number.</summary>
 public sealed record ImplantTraceItem(

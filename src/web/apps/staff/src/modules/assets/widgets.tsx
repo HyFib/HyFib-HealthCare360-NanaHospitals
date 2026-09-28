@@ -1,4 +1,4 @@
-import { Button, Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
+import { Button, Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { ArrowRightRegular } from '@fluentui/react-icons';
 import { ErrorState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -53,11 +53,11 @@ export function EquipmentAttentionWidget() {
     >
       <div className={styles.counts}>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/tickets' })}>
-          <span className={`${styles.value} ${d && d.criticalOpenTickets > 0 ? styles.alert : ''}`}>{n(d?.openTickets)}</span>
+          <span className={mergeClasses(styles.value, d && d.criticalOpenTickets > 0 ? styles.alert : '')}>{n(d?.openTickets)}</span>
           <Caption1 className={styles.muted}>{d && d.criticalOpenTickets > 0 ? `open (${d.criticalOpenTickets} critical)` : 'open breakdowns'}</Caption1>
         </button>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/maintenance' })}>
-          <span className={`${styles.value} ${d && d.pmOverdue > 0 ? styles.alert : ''}`}>{n(d?.pmOverdue)}</span>
+          <span className={mergeClasses(styles.value, d && d.pmOverdue > 0 ? styles.alert : '')}>{n(d?.pmOverdue)}</span>
           <Caption1 className={styles.muted}>PM overdue</Caption1>
         </button>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/maintenance' })}>

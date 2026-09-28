@@ -3,6 +3,8 @@ import {
   appendLines,
   applyDefaults,
   autoQuantity,
+  drugMasterDefaults,
+  drugOptionView,
   duplicateGenerics,
   effectiveQuantity,
   emptyLine,
@@ -12,6 +14,7 @@ import {
   toRequestBody,
   type RxLineValues,
 } from './prescriptionForm';
+import type { PrescribableDrug } from './prescriptionsApi';
 
 function line(partial: Partial<RxLineValues>): RxLineValues {
   return { ...emptyLine(), ...partial };
@@ -77,5 +80,65 @@ describe('mapping', () => {
 
   it('spots the same generic twice', () => {
     expect(duplicateGenerics([paracetamol, { ...paracetamol, drugName: 'Crocin 500' }, line({ genericName: 'Ibuprofen' })])).toEqual(['paracetamol']);
+  });
+});
+
+describe('drug master', () => {
+  const drug = (partial: Partial<PrescribableDrug> = {}): PrescribableDrug => ({
+    id: 'd1',
+    code: 'DRG001',
+    name: 'Dolo 650',
+    genericName: 'Paracetamol',
+    brandName: 'Dolo',
+    strength: '650 mg',
+    dosageForm: 'Tablet',
+    schedule: 'H',
+    isControlled: false,
+    controlledSchedule: null,
+    requiresPrescription: true,
+    isColdChain: false,
+    baseUnit: 'TAB',
+    available: 1200,
+    nearestExpiry: '2027-03-31',
+    ...partial,
+  });
+
+  it('fills the row straight from the server fields', () => {
+    expect(drugMasterDefaults(drug())).toEqual({
+      drugItemId: 'd1',
+      drugName: 'Dolo 650',
+      genericName: 'Paracetamol',
+      strength: '650 mg',
+      dosageForm: 'Tablet',
+      isControlledDrug: false,
+      controlledSchedule: null,
+    });
+  });
+
+  it('keeps the schedule the server gives a controlled medicine', () => {
+    const alprazolam = drug({ name: 'Alprax 0.25', genericName: 'Alprazolam', schedule: 'H1', isControlled: true, controlledSchedule: 'X' });
+    expect(applyDefaults(emptyLine(), drugMasterDefaults(alprazolam))).toMatchObject({ drugItemId: 'd1', isControlledDrug: true, controlledSchedule: 'X' });
+    // An H1 item the master does not mark as controlled stays an ordinary line: the server decides.
+    expect(applyDefaults(emptyLine(), drugMasterDefaults(drug({ schedule: 'H1' })))).toMatchObject({ isControlledDrug: false, controlledSchedule: '' });
+  });
+
+  it('shows stock, or nothing when the facility has no pharmacy store', () => {
+    expect(drugOptionView(drug()).stock).toBe('In stock: 1,200 TAB');
+    expect(drugOptionView(drug({ available: 0 }))).toMatchObject({ stock: 'Out of stock', outOfStock: true });
+    expect(drugOptionView(drug({ available: null }))).toMatchObject({ stock: null, outOfStock: false });
+  });
+
+  it('flags controlled and cold-chain medicines in words', () => {
+    expect(drugOptionView(drug()).flags).toEqual([]);
+    expect(drugOptionView(drug({ isControlled: true, controlledSchedule: 'X', isColdChain: true })).flags).toEqual([
+      { kind: 'controlled', label: 'Schedule X' },
+      { kind: 'coldChain', label: 'Cold chain' },
+    ]);
+    expect(drugOptionView(drug({ isControlled: true, controlledSchedule: 'H1' })).flags[0]?.label).toBe('Schedule H1');
+  });
+
+  it('describes the medicine by generic, strength and form', () => {
+    expect(drugOptionView(drug()).detail).toBe('Paracetamol · 650 mg · Tablet');
+    expect(drugOptionView(drug({ genericName: null, dosageForm: null })).detail).toBe('650 mg');
   });
 });

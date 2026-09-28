@@ -12,9 +12,13 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 /// </summary>
 internal static class RadiologyEndpoints
 {
+    /// <summary>Who may open imaging studies (and resolve a report id to its study).</summary>
+    internal static readonly string[] StudyReaders =
+        [DiagnosticsPermissions.RadiologyRead, DiagnosticsPermissions.RadiologyWorklist, DiagnosticsPermissions.RadiologyReportsWrite];
+
     public static void Map(IEndpointRouteBuilder app)
     {
-        string[] readers = [DiagnosticsPermissions.RadiologyRead, DiagnosticsPermissions.RadiologyWorklist, DiagnosticsPermissions.RadiologyReportsWrite];
+        var readers = StudyReaders;
 
         var studies = app.MapGroup("/api/v1/radiology/studies").WithTags("Radiology");
         studies.MapGet("/", List).RequireAnyPermission(readers);
@@ -41,6 +45,7 @@ internal static class RadiologyEndpoints
             .RequirePermission(DiagnosticsPermissions.RadiologyWorklist).WithValidation<SubmitAiFindingRequest>();
 
         var radiology = app.MapGroup("/api/v1/radiology").WithTags("Radiology");
+        radiology.MapGet("/reports/{reportId:guid}", ReportById).RequireAnyPermission(readers);
         radiology.MapGet("/worklist/mwl", async (DateOnly? date, string? station, Modality? modality, ImagingService s, CancellationToken ct) =>
                 TypedResults.Ok(await s.WorklistAsync(date, station, modality, ct)))
             .RequirePermission(DiagnosticsPermissions.RadiologyWorklist);
@@ -122,6 +127,17 @@ internal static class RadiologyEndpoints
             .ThenBy(s => s.AcquiredAt)
             .ToPagedResultAsync(page, ct);
         return TypedResults.Ok(await ToListItemsAsync(paged, db, lookups, time, ct));
+    }
+
+    /// <summary>
+    /// The study of a radiology report (the doctor's worklist carries report ids; the screens route by study id). Only
+    /// ids and the status are returned, so there is no PHI audit here; opening the study audits as usual.
+    /// </summary>
+    private static async Task<IResult> ReportById(Guid reportId, HospitalDbContext db, CancellationToken ct)
+    {
+        var found = await ReportStudyLookup.Radiology(db.Set<RadiologyReport>().AsNoTracking(), db.Set<ImagingStudy>().AsNoTracking(), reportId)
+            .FirstOrDefaultAsync(ct);
+        return found is null ? Error.NotFound("Radiology report", reportId).ToProblem() : TypedResults.Ok(found);
     }
 
     private static async Task<IResult> Get(Guid id, ImagingService service, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)

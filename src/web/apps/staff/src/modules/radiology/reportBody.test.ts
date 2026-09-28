@@ -27,6 +27,7 @@ const view: RadiologyReportView = {
   addenda: [{ id: 'a1', text: 'Compared with MRI: confirmed.', reason: 'MRI done', isCriticalFinding: false, addedAt: '2026-09-27T05:00:00Z', addedBy: 'Dr. Rao' }],
   verificationCode: null,
   verificationPath: null,
+  verificationUrl: null,
 };
 
 describe('printed radiology report', () => {

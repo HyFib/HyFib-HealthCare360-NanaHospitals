@@ -118,6 +118,7 @@ the scope answers 404.
 | POST | `/api/v1/portal/appointments/{id}/reschedule` | `PortalRescheduleAppointmentRequest` (startsAt, reason) → `PortalAppointment` (new booking) |
 | POST | `/api/v1/portal/appointments/{id}/payment` | → `PaymentCheckout { provider, orderId, amount, currency, checkoutKey, paymentLinkUrl }` (422 when the gateway is unavailable) |
 | POST | `/api/v1/portal/appointments/{id}/payment/confirm` | `ConfirmPaymentRequest` (orderId, paymentId, signature) → `PortalAppointment` |
+| POST | `/api/v1/portal/appointments/{id}/payment/verify` | Server-to-server status check with the gateway, for checkouts without a signature (the training gateway) → `PortalAppointment`; 422 `payment.not_captured`, `payment.not_started`, `payment.gateway_unavailable`. Safe to repeat |
 | GET | `/api/v1/portal/waitlist` | → `PortalWaitlistEntry[]` |
 | POST | `/api/v1/portal/waitlist` | `PortalJoinWaitlistRequest` → 201 `PortalWaitlistEntry` |
 | POST | `/api/v1/portal/waitlist/{id}/cancel` | → 204 |
@@ -165,7 +166,11 @@ row version), skips reminders that were due before the booking was made, and exp
 |---|---|---|
 | `scheduling.onlineBookingCutoffMinutes` | 30 | online booking/changes close this long before the slot |
 | `scheduling.onlineBookingWindowDays` | 30 | how far ahead patients can book online |
-| `portal.baseUrl` | — | portal address used in waitlist links (shared with Telehealth) |
+| `portal.baseUrl` | — | the hospital's public https address, used in waitlist links (`{base}/portal/doctors/{practitionerId}`) |
+
+`portal.baseUrl` is the hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+It is read through the Platform helper `PortalAddress` (shared with Engagement, Telehealth and printed QR codes); a
+plain http value reads as "not configured", because patient links can carry personal tokens.
 
 ## Permissions
 

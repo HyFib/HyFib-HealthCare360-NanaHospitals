@@ -138,6 +138,8 @@ internal sealed class RevenueByDepartmentReport : ReportDefinition
         var total = Total(groups);
         return new ReportData(groups.Select(g => RevenueData.AmountRow(Labels.Name(names, g.Key, "Not assigned"), g, total.Net)).ToList())
         {
+            RowKeys = groups.Select(g => g.Key?.ToString()).ToList(),
+            DrillDown = new ReportDrillDown("revenue-by-doctor", ReportKeys.Department, "See doctors"),
             Totals = RevenueData.AmountRow("Total", total, total.Net),
             Summary =
             [

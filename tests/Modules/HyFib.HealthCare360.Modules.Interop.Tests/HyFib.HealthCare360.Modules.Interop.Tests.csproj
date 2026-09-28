@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!--
+      Every element of a Firely FHIR resource is optional, so the SDK annotates them all as nullable. The assertions here
+      read those elements directly (a missing one fails the test with a NullReferenceException or a Shouldly message),
+      so the nullable dereference warnings are noise in this project only.
+    -->
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8604</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Interop\HyFib.HealthCare360.Modules.Interop.csproj" />
+  </ItemGroup>
+</Project>

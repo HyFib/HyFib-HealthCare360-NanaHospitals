@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HL7 FHIR R4 read facade (layer 8, EHR-05): read and search APIs over the patient record for other providers, limited
+    to patients with an active record-sharing consent. It reads other modules' entities through HospitalDbContext, never
+    writes to their schemas and owns no tables (no migration needed).
+  -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Interop</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Firely .NET SDK (ARCHITECTURE.md §1 Interop); version pinned in Directory.Packages.props. -->
+    <PackageReference Include="Hl7.Fhir.R4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+  </ItemGroup>
+</Project>

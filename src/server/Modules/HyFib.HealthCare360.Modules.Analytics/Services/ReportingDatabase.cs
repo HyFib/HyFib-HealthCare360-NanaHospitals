@@ -47,6 +47,10 @@ internal sealed class ReportingDbContextFactory(IServiceProvider services, Modul
         var options = reporting.Options ?? services.GetRequiredService<DbContextOptions<HospitalDbContext>>();
         return new HospitalDbContext(options, modules, new ReportingUser(facilityId));
     }
+
+    /// <summary>A reporting context on the primary database (fallback when the replica is unreachable).</summary>
+    public HospitalDbContext CreatePrimary(Guid? facilityId) =>
+        new(services.GetRequiredService<DbContextOptions<HospitalDbContext>>(), modules, new ReportingUser(facilityId));
 }
 
 /// <summary>The identity a reporting context runs as: only the facility matters (it drives the facility filter).</summary>

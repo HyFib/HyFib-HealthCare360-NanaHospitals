@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, makeStyles, Select, Skeleton, SkeletonItem, Text, tokens } from '@fluentui/react-components';
+import { Badge, Button, Caption1, makeStyles, mergeClasses, Select, Skeleton, SkeletonItem, Text, tokens } from '@fluentui/react-components';
 import { CheckmarkRegular, PillRegular } from '@fluentui/react-icons';
 import { formatTime } from '@hc360/core';
 import { EmptyState, ErrorState, Section } from '@hc360/ui';
@@ -119,7 +119,7 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
                 <Caption1 className={styles.muted}>{group.uhid}</Caption1>
               </div>
               {group.items.map((item) => (
-                <div key={item.entryId} className={`${styles.row} ${item.isOverdue ? styles.overdue : styles.due}`}>
+                <div key={item.entryId} className={mergeClasses(styles.row, item.isOverdue ? styles.overdue : styles.due)}>
                   <span>
                     <Text className={styles.time}>{formatTime(item.scheduledAt)}</Text>
                     {item.isOverdue && (

@@ -35,6 +35,12 @@ public sealed record ReportPatient(Guid Id, string Uhid, string Name, Gender Gen
 /// <summary>Who signed the report (qualification and council registration number are mandatory on Indian reports).</summary>
 public sealed record ReportSignatory(Guid UserId, string Name, string? Qualification, string? RegistrationNumber, Guid? SignatureFileId);
 
+/// <summary>
+/// The study a radiology or cardiology report belongs to: the doctor's worklist and result reviews carry report ids,
+/// while the department screens are keyed by study id. Ids and status only, no clinical content.
+/// </summary>
+public sealed record ReportStudyRef(Guid StudyId, Guid ReportId, DiagnosticReportStatus Status);
+
 public sealed record LabReportResultLine(
     Guid ResultId,
     string Name,
@@ -73,7 +79,9 @@ public sealed record LabAmendmentView(int Revision, string Reason, string Change
 
 /// <summary>
 /// Everything needed to render the A4 report (PrintDocument in the UI) including the QR verification code (LIS-07).
-/// Portal copies contain released tests only.
+/// Portal copies contain released tests only. Print <c>VerificationUrl</c> as the QR code when present (the portal's
+/// public page <c>{portal.baseUrl}/portal/verify/lab/{code}</c>, which resolves outside the hospital LAN); it is null
+/// until <c>portal.baseUrl</c> is configured. <c>VerificationPath</c> (the server-relative API) is kept for compatibility.
 /// </summary>
 public sealed record LabReportView(
     Guid ReportId,
@@ -95,7 +103,8 @@ public sealed record LabReportView(
     bool HasAutoValidatedResults,
     IReadOnlyList<LabAmendmentView> Amendments,
     string? VerificationCode,
-    string? VerificationPath);
+    string? VerificationPath,
+    string? VerificationUrl);
 
 /// <summary>Public QR verification answer: proves the report is genuine without disclosing results or identity.</summary>
 public sealed record ReportAuthenticity(

@@ -35,6 +35,9 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - Access tokens:
   - ES256-signed, valid for 10 minutes, held only in memory.
   - Refresh tokens are opaque and rotate on every use, in an HttpOnly, Secure, SameSite=Strict cookie.
+  - The staff app and the patient portal share one origin but keep separate refresh cookies (`hc360_rt` and
+    `hc360_prt`), so signing in to one never replaces the other's session. A cookie renews only its own app's
+    sessions.
   - Re-using an old refresh token ends the whole session family.
 - Sessions:
   - End after 12 hours, or after 2 hours idle.
@@ -56,6 +59,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - Uploaded documents: encrypted at rest.
 - Masking: lists show masked phone numbers. Logs contain no patient-identifiable data, and integration logs strip
   PHI and secrets.
+- Patient links carry their secret in the address (feedback and unsubscribe tokens, verification codes). Request
+  logs, error logs, traces and idempotency records hold the route template for those endpoints and for portal
+  pages, for example `/api/v1/public/unsubscribe/{token}`, never the token itself (`LoggedPath`,
+  `.WithSensitivePath()` on the endpoint).
 - Consent capture (treatment, data sharing, SMS/WhatsApp, telehealth, research) supports the **DPDP Act 2023** notice
   and consent requirements.
 - **Live updates** (SignalR) follow the same rules as the API. Every topic a screen subscribes to is checked, and
@@ -80,10 +87,13 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
 ### Application hardening
 - Security headers:
-  - Content-Security-Policy: scripts only from the server.
+  - Content-Security-Policy: scripts only from the server. The one exception is patient-portal pages, which may load
+    Razorpay Standard Checkout (`checkout.razorpay.com` and `cdn.razorpay.com` scripts, and the `api.razorpay.com`
+    payment frame). Their opener policy allows the pop-ups some payment methods open.
   - X-Frame-Options through `frame-ancestors 'none'`.
   - `nosniff`, a strict referrer policy, and a Permissions-Policy that allows only camera/microphone for video consults.
   - `no-store` on API responses.
+  - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
 - Rate limits on sign-in, OTP and public endpoints.
 - Input validation on every request, with parameterised SQL through EF Core only.
 - The embedded browser in HC360 Desktop:

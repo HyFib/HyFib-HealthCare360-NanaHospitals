@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Portal;
 
@@ -52,7 +53,8 @@ internal static class PortalEndpoints
             names.GetValueOrDefault(p.PractitionerId), p.Medicines, p.RefillsRemaining)));
     }
 
-    private static async Task<IResult> GetPrescription(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> GetPrescription(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit, ISettingsService settings,
+        CancellationToken ct)
     {
         var p = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(x => x.Items)
             .FirstOrDefaultAsync(x => x.Id == id && x.Status != PrescriptionStatus.Draft, ct);
@@ -76,9 +78,11 @@ internal static class PortalEndpoints
             return new PortalPrescriptionLine(i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Dose, i.FrequencyText, english, hindi, i.DurationDays,
                 i.Quantity, i.Instructions);
         }).ToList();
+        var token = p.Status == PrescriptionStatus.Signed ? p.VerificationToken : null;
+        var publicAddress = token is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
         return TypedResults.Ok(new PortalPrescriptionDetail(p.Id, p.PrescriptionNumber, p.PatientId, p.Status, p.SignedAt, prescriber?.DisplayName,
             prescriber?.Qualification, prescriber?.RegistrationNumber, facility, p.Advice, lines, p.RefillsRemaining,
-            p.Status == PrescriptionStatus.Signed ? p.VerificationToken : null));
+            token, PrescriptionVerificationLinks.Url(publicAddress, token)));
     }
 
     private static async Task<IResult> HealthRecord(Guid patientId, PortalPatientScope scope, HospitalDbContext db, PatientRecordQueries records,

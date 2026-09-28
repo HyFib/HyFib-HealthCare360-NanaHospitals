@@ -26,6 +26,11 @@ public sealed record PortalPrescriptionLine(
     decimal Quantity,
     string? Instructions);
 
+/// <summary>
+/// A prescription as the patient sees it. <see cref="VerificationUrl"/> is the QR address for the printed copy
+/// (<c>{portal.baseUrl}/portal/verify/prescription/{token}</c>); both it and the token are null unless the
+/// prescription is signed, and the URL is null while <c>portal.baseUrl</c> is not configured.
+/// </summary>
 public sealed record PortalPrescriptionDetail(
     Guid Id,
     string PrescriptionNumber,
@@ -39,7 +44,8 @@ public sealed record PortalPrescriptionDetail(
     string? Advice,
     IReadOnlyList<PortalPrescriptionLine> Lines,
     int RefillsRemaining,
-    string? VerificationToken);
+    string? VerificationToken,
+    string? VerificationUrl);
 
 /// <summary>An encounter as shown to the patient: when, who and the diagnoses — never the clinician's free-text notes.</summary>
 public sealed record PortalEncounter(Guid Id, EncounterType Type, DateTimeOffset StartedAt, string? Doctor, string? Department, IReadOnlyList<string> Diagnoses, DateOnly? FollowUpDate);

@@ -14,9 +14,13 @@ internal static class CardiologyEndpoints
 {
     private static readonly string[] DepartmentPermissions = [DiagnosticsPermissions.CardiologyStudiesManage, DiagnosticsPermissions.CardiologyReportsVerify];
 
+    /// <summary>Who may open cardiology studies (and resolve a report id to its study).</summary>
+    internal static readonly string[] StudyReaders =
+        [DiagnosticsPermissions.CardiologyRead, DiagnosticsPermissions.CardiologyStudiesManage, DiagnosticsPermissions.CardiologyReportsVerify];
+
     public static void Map(IEndpointRouteBuilder app)
     {
-        string[] readers = [DiagnosticsPermissions.CardiologyRead, DiagnosticsPermissions.CardiologyStudiesManage, DiagnosticsPermissions.CardiologyReportsVerify];
+        var readers = StudyReaders;
         const string Manage = DiagnosticsPermissions.CardiologyStudiesManage;
         const string Verify = DiagnosticsPermissions.CardiologyReportsVerify;
 
@@ -45,6 +49,18 @@ internal static class CardiologyEndpoints
         studies.MapGet("/{id:guid}/report/print", Print).RequireAnyPermission(readers);
 
         app.MapGet("/api/v1/cardiology/reporting-worklist", ReportingWorklist).WithTags("Cardiology").RequirePermission(Verify);
+        app.MapGet("/api/v1/cardiology/reports/{reportId:guid}", ReportById).WithTags("Cardiology").RequireAnyPermission(readers);
+    }
+
+    /// <summary>
+    /// The study of a cardiology report (the doctor's worklist carries report ids; the screens route by study id). Only
+    /// ids and the status are returned, so there is no PHI audit here; opening the study audits as usual.
+    /// </summary>
+    private static async Task<IResult> ReportById(Guid reportId, HospitalDbContext db, CancellationToken ct)
+    {
+        var found = await ReportStudyLookup.Cardiology(db.Set<CardiologyReport>().AsNoTracking(), db.Set<CardiologyStudy>().AsNoTracking(), reportId)
+            .FirstOrDefaultAsync(ct);
+        return found is null ? Error.NotFound("Cardiology report", reportId).ToProblem() : TypedResults.Ok(found);
     }
 
     private static async Task<IResult> List(

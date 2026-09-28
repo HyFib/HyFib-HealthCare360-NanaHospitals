@@ -5,7 +5,7 @@ import { isApiError } from '@hc360/core';
 import { applyServerErrors } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useNotify } from '@hc360/ui';
+import { useToast } from '@/lib/toast';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -84,7 +84,7 @@ export function BookingSheet({
   const { profile, profiles } = useActiveProfile();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const notify = useNotify();
+  const toast = useToast();
   const now = useNow(60_000, open);
   const [phase, setPhase] = useState<Phase>({ name: 'form' });
   const [error, setError] = useState<string | null>(null);
@@ -159,7 +159,7 @@ export function BookingSheet({
       }
       if (isApiError(err) && err.status === 409) {
         // The seat went to someone else a moment ago: back to the times, which are refreshed.
-        notify.warning(t('booking.slotGone'), err.detail);
+        toast.warning(t('booking.slotGone'));
         close();
         onSlotsChanged();
         return;

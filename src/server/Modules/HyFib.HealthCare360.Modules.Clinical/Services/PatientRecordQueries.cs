@@ -20,6 +20,7 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
         }
 
         var allergies = await db.Set<Allergy>().AsNoTracking().Where(a => a.PatientId == patientId).ToListAsync(ct);
+        var noKnownAllergies = await db.Set<NoKnownAllergiesStatement>().AsNoTracking().AnyAsync(s => s.PatientId == patientId, ct);
         var alerts = await db.Set<PatientAlert>().AsNoTracking().Where(a => a.PatientId == patientId && a.IsActive).ToListAsync(ct);
         var problems = await db.Set<Diagnosis>().AsNoTracking()
             .Where(d => d.PatientId == patientId && d.Type != DiagnosisType.Differential && (d.Status == DiagnosisStatus.Active || d.Status == DiagnosisStatus.Chronic))
@@ -37,6 +38,7 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
         return new PatientClinicalSummary(
             patient,
             allergies.Any(a => a.Status != AllergyStatus.EnteredInError),
+            NoKnownAllergiesStatement.StatusOf(allergies.Any(a => a.IsActive), noKnownAllergies),
             allergies.Where(a => a.IsActive)
                 .OrderByDescending(a => a.Severity)
                 .Select(a => new AllergySummary(a.Id, a.Allergen, a.Type, a.Severity, a.Reaction))

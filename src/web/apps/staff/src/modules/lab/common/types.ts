@@ -19,6 +19,13 @@ export type DiagnosticKind = 'Laboratory' | 'Radiology' | 'Cardiology';
 /** Radiology and cardiology report workflow. */
 export type DiagnosticReportStatus = 'Draft' | 'Reported' | 'Verified' | 'Released';
 
+/** The study a radiology or cardiology report belongs to (`GET /api/v1/{radiology|cardiology}/reports/{reportId}`). */
+export interface ReportStudyRef {
+  studyId: string;
+  reportId: string;
+  status: DiagnosticReportStatus;
+}
+
 export type CommunicationMethod = 'Phone' | 'InPerson' | 'VideoCall' | 'SecureMessage';
 
 /** Documented call for a critical value or finding (read-back is mandatory). */

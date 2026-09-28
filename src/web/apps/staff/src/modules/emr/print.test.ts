@@ -62,6 +62,7 @@ const model: PrescriptionPrintModel = {
   refillsAllowed: 0,
   verificationToken: 'tok',
   verificationPath: '/api/v1/public/prescriptions/verify/tok',
+  verificationUrl: 'https://care.nanahospitals.in/portal/verify/prescription/tok',
 };
 
 describe('prescriptionHtml', () => {

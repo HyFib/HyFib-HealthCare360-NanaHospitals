@@ -77,6 +77,8 @@ internal sealed class PharmacySalesMarginReport : ReportDefinition
         List<object?[]> rows;
         IReadOnlyList<ReportColumn>? columns = null;
         ReportChartHint? chart = null;
+        List<string?>? rowKeys = null;
+        ReportDrillDown? drillDown = null;
         if (groupBy == ByDay)
         {
             var byDay = groups.Where(g => g.Day is not null).ToDictionary(g => g.Day!.Value);
@@ -91,6 +93,11 @@ internal sealed class PharmacySalesMarginReport : ReportDefinition
                 : await Names.StoresAsync(ctx, groups.Select(g => g.Key), ct);
             rows = groups.Select(g => Row(Labels.Name(names, g.Key), g)).ToList();
             columns = [C.Text("key", groupBy == ByItem ? "Medicine" : "Pharmacy store"), .. Descriptor.Columns.Skip(1)];
+            if (groupBy == ByStore)
+            {
+                rowKeys = groups.Select(g => g.Key?.ToString()).ToList();
+                drillDown = new ReportDrillDown("pharmacy-sales-margin", ReportKeys.Store, "See medicines", new Dictionary<string, string> { [ReportKeys.GroupBy] = ByItem });
+            }
             chart = new ReportChartHint(ReportChartType.Bar, "key", ["taxable", "margin"]);
         }
 
@@ -100,6 +107,8 @@ internal sealed class PharmacySalesMarginReport : ReportDefinition
         {
             Columns = columns,
             Chart = chart,
+            RowKeys = rowKeys,
+            DrillDown = drillDown,
             Totals = ["Total", null, groups.Sum(g => g.Quantity), groups.Sum(g => g.Net), Figures.Round2(taxable), Figures.Round2(cost), Figures.Round2(taxable - cost), KpiMath.MarginPercent(taxable, cost)],
             Summary =
             [

@@ -14,8 +14,8 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 * **TelehealthSession** – appointment (optional), patient, practitioner, department, visit, status
   `Scheduled | WaitingRoom | InProgress | Completed | Cancelled | Missed`, scheduled start/end, waiting since,
   started/ended, duration, link sent (count), recording consent (who/when), audio-only used, quality notes.
-* **Join link** – `https://{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}` (relative when `portal.baseUrl`
-  is not set). The 256-bit token is returned once; only `SHA-256("{sessionId}:{token}")` is stored, compared in
+* **Join link** – `{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}` (server-relative when `portal.baseUrl`
+  is not set or is not https). The 256-bit token is returned once; only `SHA-256("{sessionId}:{token}")` is stored, compared in
   constant time, so a token opens exactly one session. It expires two hours after the scheduled end, when the session
   closes, or when a new link is issued. Patients can join from `telehealth.earlyJoinMinutes` (default 30) before.
 * **Media never touches the server** (peer-to-peer WebRTC); the server keeps metadata only. `TelehealthParticipant`
@@ -170,7 +170,10 @@ contact for `rpm.deviceSilenceHours`, nudges the patient and notifies the care t
 | `telehealth.iceServers` | `[{"urls":["stun:stun.l.google.com:19302"]}]` | RTCIceServer array (STUN/TURN with username/credential); may be stored as a secret |
 | `telehealth.earlyJoinMinutes` | 30 | waiting room opens this long before the start |
 | `rpm.deviceSilenceHours` | 24 | silence alert threshold (1–720) |
-| `portal.baseUrl` | — | base of the join link |
+| `portal.baseUrl` | — | the hospital's public https address, base of the join link |
+
+`portal.baseUrl` is the hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+It is read through the Platform helper `PortalAddress`, shared with Engagement, Scheduling and printed QR codes.
 
 ## Permissions
 

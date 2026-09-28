@@ -18,6 +18,11 @@ export type DiagnosticKind = 'Laboratory' | 'Radiology' | 'Cardiology';
 export type AllergyType = 'Drug' | 'Food' | 'Environmental' | 'Other';
 export type AllergySeverity = 'Mild' | 'Moderate' | 'Severe' | 'Anaphylaxis';
 export type AllergyStatus = 'Active' | 'Inactive' | 'Resolved' | 'EnteredInError';
+/**
+ * What the chart may claim about allergies (server `AllergyRecordingStatus`): active allergies on the chart, a
+ * clinician's "no known allergies" statement, or neither (inactive or resolved allergies alone count as not recorded).
+ */
+export type AllergyRecordingStatus = 'Recorded' | 'NoKnownAllergies' | 'NotRecorded';
 export type PatientAlertType = 'Dnr' | 'FallRisk' | 'Isolation' | 'InfectionControl' | 'Pregnancy' | 'Custom';
 export type AlertSeverity = 'Info' | 'Warning' | 'Critical';
 export type DiagnosisType = 'Provisional' | 'Final' | 'Differential';
@@ -229,6 +234,8 @@ export interface RecentEncounter {
 export interface PatientClinicalSummary {
   patient: PatientSummary;
   allergiesEverRecorded: boolean;
+  /** What the banner may claim; "no known allergies" only when a clinician recorded it, never from an empty list. */
+  allergyStatus: AllergyRecordingStatus;
   allergies: AllergySummary[];
   alerts: AlertSummary[];
   activeProblems: ProblemSummary[];
@@ -365,6 +372,17 @@ export interface UpdateAllergyRequest {
   statusReason: string | null;
   notes: string | null;
   version: number;
+}
+
+/**
+ * The chart's allergy status (`GET …/allergies/status`, also returned by `POST …/allergies/none`). `recordedAt` and
+ * `recordedByName` describe the latest active allergy (`Recorded`) or the "no known allergies" statement; both are
+ * null for `NotRecorded`.
+ */
+export interface AllergyStatusDto {
+  status: AllergyRecordingStatus;
+  recordedAt: string | null;
+  recordedByName: string | null;
 }
 
 export interface PatientAlertDto {
@@ -688,6 +706,8 @@ export const emrKeys = {
   encounters: (patientId: string, page: number) => ['emr', 'patient', patientId, 'encounters', page] as const,
   vitals: (patientId: string, encounterId: string | null, page: number, pageSize: number) => ['emr', 'patient', patientId, 'vitals', encounterId, page, pageSize] as const,
   allergies: (patientId: string, includeInactive: boolean) => ['emr', 'patient', patientId, 'allergies', includeInactive] as const,
+  /** Under the patient key, so every allergy change (which invalidates `patient`) refreshes it with the summary. */
+  allergyStatus: (patientId: string) => ['emr', 'patient', patientId, 'allergy-status'] as const,
   alerts: (patientId: string, includeInactive: boolean) => ['emr', 'patient', patientId, 'alerts', includeInactive] as const,
   diagnoses: (patientId: string, encounterId: string | null, problemsOnly: boolean) => ['emr', 'patient', patientId, 'diagnoses', encounterId, problemsOnly] as const,
   notes: (patientId: string, encounterId: string | null, page: number) => ['emr', 'patient', patientId, 'notes', encounterId, page] as const,
@@ -749,6 +769,11 @@ export const emrQueries = {
     queryOptions({
       queryKey: emrKeys.allergies(patientId, includeInactive),
       queryFn: ({ signal }) => api.get<AllergyDto[]>(`/api/v1/emr/patients/${patientId}/allergies`, { query: { includeInactive }, signal }),
+    }),
+  allergyStatus: (patientId: string) =>
+    queryOptions({
+      queryKey: emrKeys.allergyStatus(patientId),
+      queryFn: ({ signal }) => api.get<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/status`, { signal }),
     }),
   alerts: (patientId: string, includeInactive = false) =>
     queryOptions({
@@ -843,6 +868,8 @@ export const emrApi = {
 
   recordAllergy: (patientId: string, request: RecordAllergyRequest) => api.post<AllergyDto>(`/api/v1/emr/patients/${patientId}/allergies`, request),
   updateAllergy: (id: string, request: UpdateAllergyRequest) => api.put<AllergyDto>(`/api/v1/emr/allergies/${id}`, request),
+  /** Idempotent; 409 `allergy.active_exist` (with `data.activeAllergies`) while the patient has active allergies. */
+  recordNoKnownAllergies: (patientId: string) => api.post<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/none`),
   raiseAlert: (patientId: string, request: RaiseAlertRequest) => api.post<PatientAlertDto>(`/api/v1/emr/patients/${patientId}/alerts`, request),
   deactivateAlert: (id: string, reason: string) => api.post<PatientAlertDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
 

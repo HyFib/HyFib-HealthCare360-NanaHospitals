@@ -353,7 +353,8 @@ internal sealed class CardiologyService(
             type is CardiologyStudyType.Abpm or CardiologyStudyType.Other ? report.Abpm : null,
             report.Conclusion, report.Recommendations, report.IsCriticalFinding, report.Status, report.VerifiedAt, report.ReleasedAt,
             signatories.Select(s => new ReportSignatory(s.UserId, s.Name, s.Qualification, s.RegistrationNumber, s.SignatureFileId)).ToList(),
-            files, report.VerificationCode, report.VerificationCode is { } code ? VerificationPathPrefix + code : null);
+            files, report.VerificationCode, report.VerificationCode is { } code ? VerificationPathPrefix + code : null,
+            await lookups.VerificationUrlAsync(study.FacilityId, DiagnosticKind.Cardiology, report.VerificationCode, ct));
     }
 
     private async Task<Result> ReleaseCoreAsync(CardiologyStudy study, CardiologyReport report, DateTimeOffset now, CancellationToken ct)

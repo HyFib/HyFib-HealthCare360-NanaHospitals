@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildUrl, createApiClient } from './client';
+import { buildUrl, createApiClient, fileNameFromDisposition } from './client';
 import { ApiError } from './errors';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -68,6 +68,13 @@ describe('api client', () => {
     const client = createApiClient(baseConfig);
     await expect(client.get('/api/v1/patients')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the file name a download was given', () => {
+    expect(fileNameFromDisposition(`attachment; filename="stock.csv"; filename*=UTF-8''Stock%20report%20%E2%82%B9.csv`)).toBe('Stock report ₹.csv');
+    expect(fileNameFromDisposition('attachment; filename="register-2026-09.csv"')).toBe('register-2026-09.csv');
+    expect(fileNameFromDisposition('attachment; filename=plain.xlsx')).toBe('plain.xlsx');
+    expect(fileNameFromDisposition(null)).toBeNull();
   });
 
   it('refreshes once on 401 and replays the request', async () => {

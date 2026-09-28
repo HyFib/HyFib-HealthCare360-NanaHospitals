@@ -64,7 +64,6 @@ export const Route = createFileRoute('/sign-in')({
     if (state === 'patient') {
       throw redirect({ href: safeRedirect(search.redirect), replace: true });
     }
-    return { otherSession: state === 'other' };
   },
   component: SignInPage,
 });
@@ -162,7 +161,6 @@ function SignInPage() {
   const styles = useStyles();
   const t = useT();
   const { redirect: target, ended } = Route.useSearch();
-  const { otherSession } = Route.useRouteContext();
   const hospital = useHospitalName();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -344,11 +342,6 @@ function SignInPage() {
                   <h1 className={styles.title}>{t('auth.welcome', { hospital })}</h1>
                   <Text className={styles.muted}>{t('auth.noPassword')}</Text>
                 </div>
-                {otherSession && (
-                  <MessageBar intent="warning" layout="multiline">
-                    <MessageBarBody>{t('auth.staffSession')}</MessageBarBody>
-                  </MessageBar>
-                )}
                 {endedNotice && (
                   <MessageBar intent="info" layout="multiline">
                     <MessageBarBody>{endedNotice}</MessageBarBody>

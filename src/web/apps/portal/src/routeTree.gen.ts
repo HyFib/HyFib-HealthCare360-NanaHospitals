@@ -11,19 +11,17 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/_auth'
-import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as OpenRouteImport } from './routes/_open'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthHomeRouteImport } from './routes/_auth/home'
+import { Route as OpenPrivacyRouteImport } from './routes/_open/privacy'
 import { Route as FeedbackTokenRouteImport } from './routes/feedback/$token'
 import { Route as TelehealthSessionIdRouteImport } from './routes/telehealth/$sessionId'
 import { Route as UnsubscribeTokenRouteImport } from './routes/unsubscribe/$token'
-import { Route as VerifyIndexRouteImport } from './routes/verify/index'
 import { Route as AuthAppointmentsIndexRouteImport } from './routes/_auth/appointments/index'
 import { Route as AuthAppointmentsAppointmentIdRouteImport } from './routes/_auth/appointments/$appointmentId'
 import { Route as AuthBillsIndexRouteImport } from './routes/_auth/bills/index'
 import { Route as AuthBillsBillIdRouteImport } from './routes/_auth/bills/$billId'
-import { Route as AuthDoctorsIndexRouteImport } from './routes/_auth/doctors/index'
-import { Route as AuthDoctorsDoctorIdRouteImport } from './routes/_auth/doctors/$doctorId'
 import { Route as AuthMyFeedbackIndexRouteImport } from './routes/_auth/my-feedback/index'
 import { Route as AuthMyFeedbackFormIdRouteImport } from './routes/_auth/my-feedback/$formId'
 import { Route as AuthPrescriptionsIndexRouteImport } from './routes/_auth/prescriptions/index'
@@ -35,10 +33,13 @@ import { Route as AuthRecordsRequestRouteImport } from './routes/_auth/records/r
 import { Route as AuthReportsIndexRouteImport } from './routes/_auth/reports/index'
 import { Route as AuthVideoIndexRouteImport } from './routes/_auth/video/index'
 import { Route as AuthVideoSessionIdRouteImport } from './routes/_auth/video/$sessionId'
+import { Route as OpenDoctorsIndexRouteImport } from './routes/_open/doctors/index'
+import { Route as OpenDoctorsDoctorIdRouteImport } from './routes/_open/doctors/$doctorId'
+import { Route as OpenVerifyIndexRouteImport } from './routes/_open/verify/index'
 import { Route as FeedbackFormTokenRouteImport } from './routes/feedback/form/$token'
-import { Route as VerifyKindCodeRouteImport } from './routes/verify/$kind/$code'
 import { Route as AuthRecordsDischargeSummaryIdRouteImport } from './routes/_auth/records/discharge/$summaryId'
 import { Route as AuthReportsKindReportIdRouteImport } from './routes/_auth/reports/$kind/$reportId'
+import { Route as OpenVerifyKindCodeRouteImport } from './routes/_open/verify/$kind/$code'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -49,9 +50,8 @@ const AuthRoute = AuthRouteImport.update({
   id: '/_auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
+const OpenRoute = OpenRouteImport.update({
+  id: '/_open',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -63,6 +63,11 @@ const AuthHomeRoute = AuthHomeRouteImport.update({
   id: '/home',
   path: '/home',
   getParentRoute: () => AuthRoute,
+} as any)
+const OpenPrivacyRoute = OpenPrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => OpenRoute,
 } as any)
 const FeedbackTokenRoute = FeedbackTokenRouteImport.update({
   id: '/feedback/$token',
@@ -77,11 +82,6 @@ const TelehealthSessionIdRoute = TelehealthSessionIdRouteImport.update({
 const UnsubscribeTokenRoute = UnsubscribeTokenRouteImport.update({
   id: '/unsubscribe/$token',
   path: '/unsubscribe/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VerifyIndexRoute = VerifyIndexRouteImport.update({
-  id: '/verify/',
-  path: '/verify/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthAppointmentsIndexRoute = AuthAppointmentsIndexRouteImport.update({
@@ -103,16 +103,6 @@ const AuthBillsIndexRoute = AuthBillsIndexRouteImport.update({
 const AuthBillsBillIdRoute = AuthBillsBillIdRouteImport.update({
   id: '/bills/$billId',
   path: '/bills/$billId',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthDoctorsIndexRoute = AuthDoctorsIndexRouteImport.update({
-  id: '/doctors/',
-  path: '/doctors/',
-  getParentRoute: () => AuthRoute,
-} as any)
-const AuthDoctorsDoctorIdRoute = AuthDoctorsDoctorIdRouteImport.update({
-  id: '/doctors/$doctorId',
-  path: '/doctors/$doctorId',
   getParentRoute: () => AuthRoute,
 } as any)
 const AuthMyFeedbackIndexRoute = AuthMyFeedbackIndexRouteImport.update({
@@ -171,14 +161,24 @@ const AuthVideoSessionIdRoute = AuthVideoSessionIdRouteImport.update({
   path: '/video/$sessionId',
   getParentRoute: () => AuthRoute,
 } as any)
+const OpenDoctorsIndexRoute = OpenDoctorsIndexRouteImport.update({
+  id: '/doctors/',
+  path: '/doctors/',
+  getParentRoute: () => OpenRoute,
+} as any)
+const OpenDoctorsDoctorIdRoute = OpenDoctorsDoctorIdRouteImport.update({
+  id: '/doctors/$doctorId',
+  path: '/doctors/$doctorId',
+  getParentRoute: () => OpenRoute,
+} as any)
+const OpenVerifyIndexRoute = OpenVerifyIndexRouteImport.update({
+  id: '/verify/',
+  path: '/verify/',
+  getParentRoute: () => OpenRoute,
+} as any)
 const FeedbackFormTokenRoute = FeedbackFormTokenRouteImport.update({
   id: '/feedback/form/$token',
   path: '/feedback/form/$token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const VerifyKindCodeRoute = VerifyKindCodeRouteImport.update({
-  id: '/verify/$kind/$code',
-  path: '/verify/$kind/$code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRecordsDischargeSummaryIdRoute =
@@ -192,210 +192,215 @@ const AuthReportsKindReportIdRoute = AuthReportsKindReportIdRouteImport.update({
   path: '/reports/$kind/$reportId',
   getParentRoute: () => AuthRoute,
 } as any)
+const OpenVerifyKindCodeRoute = OpenVerifyKindCodeRouteImport.update({
+  id: '/verify/$kind/$code',
+  path: '/verify/$kind/$code',
+  getParentRoute: () => OpenRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/home': typeof AuthHomeRoute
+  '/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
-  '/verify/': typeof VerifyIndexRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
-  '/doctors/$doctorId': typeof AuthDoctorsDoctorIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
   '/profile/preferences': typeof AuthProfilePreferencesRoute
   '/records/request': typeof AuthRecordsRequestRoute
   '/video/$sessionId': typeof AuthVideoSessionIdRoute
+  '/doctors/$doctorId': typeof OpenDoctorsDoctorIdRoute
   '/feedback/form/$token': typeof FeedbackFormTokenRoute
-  '/verify/$kind/$code': typeof VerifyKindCodeRoute
   '/appointments/': typeof AuthAppointmentsIndexRoute
   '/bills/': typeof AuthBillsIndexRoute
-  '/doctors/': typeof AuthDoctorsIndexRoute
   '/my-feedback/': typeof AuthMyFeedbackIndexRoute
   '/prescriptions/': typeof AuthPrescriptionsIndexRoute
   '/profile/': typeof AuthProfileIndexRoute
   '/records/': typeof AuthRecordsIndexRoute
   '/reports/': typeof AuthReportsIndexRoute
   '/video/': typeof AuthVideoIndexRoute
+  '/doctors/': typeof OpenDoctorsIndexRoute
+  '/verify/': typeof OpenVerifyIndexRoute
   '/records/discharge/$summaryId': typeof AuthRecordsDischargeSummaryIdRoute
   '/reports/$kind/$reportId': typeof AuthReportsKindReportIdRoute
+  '/verify/$kind/$code': typeof OpenVerifyKindCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/privacy': typeof PrivacyRoute
   '/sign-in': typeof SignInRoute
   '/home': typeof AuthHomeRoute
+  '/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
-  '/verify': typeof VerifyIndexRoute
   '/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/bills/$billId': typeof AuthBillsBillIdRoute
-  '/doctors/$doctorId': typeof AuthDoctorsDoctorIdRoute
   '/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
   '/profile/preferences': typeof AuthProfilePreferencesRoute
   '/records/request': typeof AuthRecordsRequestRoute
   '/video/$sessionId': typeof AuthVideoSessionIdRoute
+  '/doctors/$doctorId': typeof OpenDoctorsDoctorIdRoute
   '/feedback/form/$token': typeof FeedbackFormTokenRoute
-  '/verify/$kind/$code': typeof VerifyKindCodeRoute
   '/appointments': typeof AuthAppointmentsIndexRoute
   '/bills': typeof AuthBillsIndexRoute
-  '/doctors': typeof AuthDoctorsIndexRoute
   '/my-feedback': typeof AuthMyFeedbackIndexRoute
   '/prescriptions': typeof AuthPrescriptionsIndexRoute
   '/profile': typeof AuthProfileIndexRoute
   '/records': typeof AuthRecordsIndexRoute
   '/reports': typeof AuthReportsIndexRoute
   '/video': typeof AuthVideoIndexRoute
+  '/doctors': typeof OpenDoctorsIndexRoute
+  '/verify': typeof OpenVerifyIndexRoute
   '/records/discharge/$summaryId': typeof AuthRecordsDischargeSummaryIdRoute
   '/reports/$kind/$reportId': typeof AuthReportsKindReportIdRoute
+  '/verify/$kind/$code': typeof OpenVerifyKindCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_auth': typeof AuthRouteWithChildren
-  '/privacy': typeof PrivacyRoute
+  '/_open': typeof OpenRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/_auth/home': typeof AuthHomeRoute
+  '/_open/privacy': typeof OpenPrivacyRoute
   '/feedback/$token': typeof FeedbackTokenRoute
   '/telehealth/$sessionId': typeof TelehealthSessionIdRoute
   '/unsubscribe/$token': typeof UnsubscribeTokenRoute
-  '/verify/': typeof VerifyIndexRoute
   '/_auth/appointments/$appointmentId': typeof AuthAppointmentsAppointmentIdRoute
   '/_auth/bills/$billId': typeof AuthBillsBillIdRoute
-  '/_auth/doctors/$doctorId': typeof AuthDoctorsDoctorIdRoute
   '/_auth/my-feedback/$formId': typeof AuthMyFeedbackFormIdRoute
   '/_auth/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
   '/_auth/profile/preferences': typeof AuthProfilePreferencesRoute
   '/_auth/records/request': typeof AuthRecordsRequestRoute
   '/_auth/video/$sessionId': typeof AuthVideoSessionIdRoute
+  '/_open/doctors/$doctorId': typeof OpenDoctorsDoctorIdRoute
   '/feedback/form/$token': typeof FeedbackFormTokenRoute
-  '/verify/$kind/$code': typeof VerifyKindCodeRoute
   '/_auth/appointments/': typeof AuthAppointmentsIndexRoute
   '/_auth/bills/': typeof AuthBillsIndexRoute
-  '/_auth/doctors/': typeof AuthDoctorsIndexRoute
   '/_auth/my-feedback/': typeof AuthMyFeedbackIndexRoute
   '/_auth/prescriptions/': typeof AuthPrescriptionsIndexRoute
   '/_auth/profile/': typeof AuthProfileIndexRoute
   '/_auth/records/': typeof AuthRecordsIndexRoute
   '/_auth/reports/': typeof AuthReportsIndexRoute
   '/_auth/video/': typeof AuthVideoIndexRoute
+  '/_open/doctors/': typeof OpenDoctorsIndexRoute
+  '/_open/verify/': typeof OpenVerifyIndexRoute
   '/_auth/records/discharge/$summaryId': typeof AuthRecordsDischargeSummaryIdRoute
   '/_auth/reports/$kind/$reportId': typeof AuthReportsKindReportIdRoute
+  '/_open/verify/$kind/$code': typeof OpenVerifyKindCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/privacy'
     | '/sign-in'
     | '/home'
+    | '/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
-    | '/verify/'
     | '/appointments/$appointmentId'
     | '/bills/$billId'
-    | '/doctors/$doctorId'
     | '/my-feedback/$formId'
     | '/prescriptions/$prescriptionId'
     | '/profile/preferences'
     | '/records/request'
     | '/video/$sessionId'
+    | '/doctors/$doctorId'
     | '/feedback/form/$token'
-    | '/verify/$kind/$code'
     | '/appointments/'
     | '/bills/'
-    | '/doctors/'
     | '/my-feedback/'
     | '/prescriptions/'
     | '/profile/'
     | '/records/'
     | '/reports/'
     | '/video/'
+    | '/doctors/'
+    | '/verify/'
     | '/records/discharge/$summaryId'
     | '/reports/$kind/$reportId'
+    | '/verify/$kind/$code'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/privacy'
     | '/sign-in'
     | '/home'
+    | '/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
-    | '/verify'
     | '/appointments/$appointmentId'
     | '/bills/$billId'
-    | '/doctors/$doctorId'
     | '/my-feedback/$formId'
     | '/prescriptions/$prescriptionId'
     | '/profile/preferences'
     | '/records/request'
     | '/video/$sessionId'
+    | '/doctors/$doctorId'
     | '/feedback/form/$token'
-    | '/verify/$kind/$code'
     | '/appointments'
     | '/bills'
-    | '/doctors'
     | '/my-feedback'
     | '/prescriptions'
     | '/profile'
     | '/records'
     | '/reports'
     | '/video'
+    | '/doctors'
+    | '/verify'
     | '/records/discharge/$summaryId'
     | '/reports/$kind/$reportId'
+    | '/verify/$kind/$code'
   id:
     | '__root__'
     | '/'
     | '/_auth'
-    | '/privacy'
+    | '/_open'
     | '/sign-in'
     | '/_auth/home'
+    | '/_open/privacy'
     | '/feedback/$token'
     | '/telehealth/$sessionId'
     | '/unsubscribe/$token'
-    | '/verify/'
     | '/_auth/appointments/$appointmentId'
     | '/_auth/bills/$billId'
-    | '/_auth/doctors/$doctorId'
     | '/_auth/my-feedback/$formId'
     | '/_auth/prescriptions/$prescriptionId'
     | '/_auth/profile/preferences'
     | '/_auth/records/request'
     | '/_auth/video/$sessionId'
+    | '/_open/doctors/$doctorId'
     | '/feedback/form/$token'
-    | '/verify/$kind/$code'
     | '/_auth/appointments/'
     | '/_auth/bills/'
-    | '/_auth/doctors/'
     | '/_auth/my-feedback/'
     | '/_auth/prescriptions/'
     | '/_auth/profile/'
     | '/_auth/records/'
     | '/_auth/reports/'
     | '/_auth/video/'
+    | '/_open/doctors/'
+    | '/_open/verify/'
     | '/_auth/records/discharge/$summaryId'
     | '/_auth/reports/$kind/$reportId'
+    | '/_open/verify/$kind/$code'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRouteWithChildren
-  PrivacyRoute: typeof PrivacyRoute
+  OpenRoute: typeof OpenRouteWithChildren
   SignInRoute: typeof SignInRoute
   FeedbackTokenRoute: typeof FeedbackTokenRoute
   TelehealthSessionIdRoute: typeof TelehealthSessionIdRoute
   UnsubscribeTokenRoute: typeof UnsubscribeTokenRoute
-  VerifyIndexRoute: typeof VerifyIndexRoute
   FeedbackFormTokenRoute: typeof FeedbackFormTokenRoute
-  VerifyKindCodeRoute: typeof VerifyKindCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -414,11 +419,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
+    '/_open': {
+      id: '/_open'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof OpenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -434,6 +439,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/home'
       preLoaderRoute: typeof AuthHomeRouteImport
       parentRoute: typeof AuthRoute
+    }
+    '/_open/privacy': {
+      id: '/_open/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof OpenPrivacyRouteImport
+      parentRoute: typeof OpenRoute
     }
     '/feedback/$token': {
       id: '/feedback/$token'
@@ -454,13 +466,6 @@ declare module '@tanstack/react-router' {
       path: '/unsubscribe/$token'
       fullPath: '/unsubscribe/$token'
       preLoaderRoute: typeof UnsubscribeTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/verify/': {
-      id: '/verify/'
-      path: '/verify'
-      fullPath: '/verify/'
-      preLoaderRoute: typeof VerifyIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth/appointments/': {
@@ -489,20 +494,6 @@ declare module '@tanstack/react-router' {
       path: '/bills/$billId'
       fullPath: '/bills/$billId'
       preLoaderRoute: typeof AuthBillsBillIdRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/_auth/doctors/': {
-      id: '/_auth/doctors/'
-      path: '/doctors'
-      fullPath: '/doctors/'
-      preLoaderRoute: typeof AuthDoctorsIndexRouteImport
-      parentRoute: typeof AuthRoute
-    }
-    '/_auth/doctors/$doctorId': {
-      id: '/_auth/doctors/$doctorId'
-      path: '/doctors/$doctorId'
-      fullPath: '/doctors/$doctorId'
-      preLoaderRoute: typeof AuthDoctorsDoctorIdRouteImport
       parentRoute: typeof AuthRoute
     }
     '/_auth/my-feedback/': {
@@ -582,18 +573,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthVideoSessionIdRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_open/doctors/': {
+      id: '/_open/doctors/'
+      path: '/doctors'
+      fullPath: '/doctors/'
+      preLoaderRoute: typeof OpenDoctorsIndexRouteImport
+      parentRoute: typeof OpenRoute
+    }
+    '/_open/doctors/$doctorId': {
+      id: '/_open/doctors/$doctorId'
+      path: '/doctors/$doctorId'
+      fullPath: '/doctors/$doctorId'
+      preLoaderRoute: typeof OpenDoctorsDoctorIdRouteImport
+      parentRoute: typeof OpenRoute
+    }
+    '/_open/verify/': {
+      id: '/_open/verify/'
+      path: '/verify'
+      fullPath: '/verify/'
+      preLoaderRoute: typeof OpenVerifyIndexRouteImport
+      parentRoute: typeof OpenRoute
+    }
     '/feedback/form/$token': {
       id: '/feedback/form/$token'
       path: '/feedback/form/$token'
       fullPath: '/feedback/form/$token'
       preLoaderRoute: typeof FeedbackFormTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/verify/$kind/$code': {
-      id: '/verify/$kind/$code'
-      path: '/verify/$kind/$code'
-      fullPath: '/verify/$kind/$code'
-      preLoaderRoute: typeof VerifyKindCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_auth/records/discharge/$summaryId': {
@@ -610,6 +615,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthReportsKindReportIdRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_open/verify/$kind/$code': {
+      id: '/_open/verify/$kind/$code'
+      path: '/verify/$kind/$code'
+      fullPath: '/verify/$kind/$code'
+      preLoaderRoute: typeof OpenVerifyKindCodeRouteImport
+      parentRoute: typeof OpenRoute
+    }
   }
 }
 
@@ -617,7 +629,6 @@ interface AuthRouteChildren {
   AuthHomeRoute: typeof AuthHomeRoute
   AuthAppointmentsAppointmentIdRoute: typeof AuthAppointmentsAppointmentIdRoute
   AuthBillsBillIdRoute: typeof AuthBillsBillIdRoute
-  AuthDoctorsDoctorIdRoute: typeof AuthDoctorsDoctorIdRoute
   AuthMyFeedbackFormIdRoute: typeof AuthMyFeedbackFormIdRoute
   AuthPrescriptionsPrescriptionIdRoute: typeof AuthPrescriptionsPrescriptionIdRoute
   AuthProfilePreferencesRoute: typeof AuthProfilePreferencesRoute
@@ -625,7 +636,6 @@ interface AuthRouteChildren {
   AuthVideoSessionIdRoute: typeof AuthVideoSessionIdRoute
   AuthAppointmentsIndexRoute: typeof AuthAppointmentsIndexRoute
   AuthBillsIndexRoute: typeof AuthBillsIndexRoute
-  AuthDoctorsIndexRoute: typeof AuthDoctorsIndexRoute
   AuthMyFeedbackIndexRoute: typeof AuthMyFeedbackIndexRoute
   AuthPrescriptionsIndexRoute: typeof AuthPrescriptionsIndexRoute
   AuthProfileIndexRoute: typeof AuthProfileIndexRoute
@@ -640,7 +650,6 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthHomeRoute: AuthHomeRoute,
   AuthAppointmentsAppointmentIdRoute: AuthAppointmentsAppointmentIdRoute,
   AuthBillsBillIdRoute: AuthBillsBillIdRoute,
-  AuthDoctorsDoctorIdRoute: AuthDoctorsDoctorIdRoute,
   AuthMyFeedbackFormIdRoute: AuthMyFeedbackFormIdRoute,
   AuthPrescriptionsPrescriptionIdRoute: AuthPrescriptionsPrescriptionIdRoute,
   AuthProfilePreferencesRoute: AuthProfilePreferencesRoute,
@@ -648,7 +657,6 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthVideoSessionIdRoute: AuthVideoSessionIdRoute,
   AuthAppointmentsIndexRoute: AuthAppointmentsIndexRoute,
   AuthBillsIndexRoute: AuthBillsIndexRoute,
-  AuthDoctorsIndexRoute: AuthDoctorsIndexRoute,
   AuthMyFeedbackIndexRoute: AuthMyFeedbackIndexRoute,
   AuthPrescriptionsIndexRoute: AuthPrescriptionsIndexRoute,
   AuthProfileIndexRoute: AuthProfileIndexRoute,
@@ -661,17 +669,33 @@ const AuthRouteChildren: AuthRouteChildren = {
 
 const AuthRouteWithChildren = AuthRoute._addFileChildren(AuthRouteChildren)
 
+interface OpenRouteChildren {
+  OpenPrivacyRoute: typeof OpenPrivacyRoute
+  OpenDoctorsDoctorIdRoute: typeof OpenDoctorsDoctorIdRoute
+  OpenDoctorsIndexRoute: typeof OpenDoctorsIndexRoute
+  OpenVerifyIndexRoute: typeof OpenVerifyIndexRoute
+  OpenVerifyKindCodeRoute: typeof OpenVerifyKindCodeRoute
+}
+
+const OpenRouteChildren: OpenRouteChildren = {
+  OpenPrivacyRoute: OpenPrivacyRoute,
+  OpenDoctorsDoctorIdRoute: OpenDoctorsDoctorIdRoute,
+  OpenDoctorsIndexRoute: OpenDoctorsIndexRoute,
+  OpenVerifyIndexRoute: OpenVerifyIndexRoute,
+  OpenVerifyKindCodeRoute: OpenVerifyKindCodeRoute,
+}
+
+const OpenRouteWithChildren = OpenRoute._addFileChildren(OpenRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRouteWithChildren,
-  PrivacyRoute: PrivacyRoute,
+  OpenRoute: OpenRouteWithChildren,
   SignInRoute: SignInRoute,
   FeedbackTokenRoute: FeedbackTokenRoute,
   TelehealthSessionIdRoute: TelehealthSessionIdRoute,
   UnsubscribeTokenRoute: UnsubscribeTokenRoute,
-  VerifyIndexRoute: VerifyIndexRoute,
   FeedbackFormTokenRoute: FeedbackFormTokenRoute,
-  VerifyKindCodeRoute: VerifyKindCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

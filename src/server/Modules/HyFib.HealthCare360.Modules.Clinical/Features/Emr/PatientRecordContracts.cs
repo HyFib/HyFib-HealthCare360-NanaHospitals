@@ -54,11 +54,14 @@ public sealed record RecentEncounter(
 /// <summary>
 /// Everything the persistent EMR banner and summary panel need in one call (EHR-03, UX-04): allergies (with
 /// "never recorded" distinguished from "none active"), current critical/infection-control alerts, active problems,
-/// current medications, the last vitals with their flags and the last five encounters.
+/// current medications, the last vitals with their flags and the last five encounters. <see cref="AllergyStatus"/> is
+/// what the banner may claim: <c>Recorded</c>, <c>NoKnownAllergies</c> (only when a clinician recorded it) or
+/// <c>NotRecorded</c>.
 /// </summary>
 public sealed record PatientClinicalSummary(
     PatientSummary Patient,
     bool AllergiesEverRecorded,
+    AllergyRecordingStatus AllergyStatus,
     IReadOnlyList<AllergySummary> Allergies,
     IReadOnlyList<AlertSummary> Alerts,
     IReadOnlyList<ProblemSummary> ActiveProblems,
