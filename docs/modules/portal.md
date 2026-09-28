@@ -34,8 +34,8 @@ Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, pro
   (30 s, 60 s, 2 min, then 5 min), so patients do not hit the server limit. A code that seems to expire implausibly (a
   wrong phone clock) falls back to a five-minute countdown.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
-  portal and the staff console share one origin, so they share that cookie: on one browser, signing in to one replaces
-  the other's session. The sign-in page warns when a staff session is active.
+  portal and the staff console share one origin but keep separate refresh cookies, so signing in to one never signs
+  the other out.
 * **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number. The patient
   chooses whose records to see, and the switcher is always in the header. Every query key starts
   `['portal', patientId, …]`, and family-wide lists are filtered to the person being viewed. A record that belongs to
@@ -128,7 +128,8 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
   After any of these, `POST …/payments/{orderRowId}/verify` asks the server to confirm with the gateway server to
   server. The check is safe to repeat ("Check payment status"). The portal never handles card numbers or UPI PINs.
 * **Appointments.** Paying online uses `…/payment`, then `…/payment/confirm` with Razorpay's order id, payment id and
-  signature. A payment problem never loses the booked slot.
+  signature. The training gateway gives no signature, so its payments are confirmed with `…/payment/verify`, a
+  server-to-server check. A payment problem never loses the booked slot.
 
 ## Printing and downloads
 
@@ -167,19 +168,9 @@ Every value in a template is escaped. The QR code SVG is the only markup accepte
 
 ## Known gaps (server follow-ups)
 
-* **Razorpay blocked.** The server's `Content-Security-Policy` (`script-src 'self'`) blocks Razorpay's checkout
-  script. The portal falls back to a hosted payment link when the server returns one; otherwise it says online payment
-  is unavailable. The CSP needs `https://checkout.razorpay.com` in `script-src` and `https://api.razorpay.com` in
-  `frame-src`.
-* **Training payments for appointments.** With the simulator gateway, `…/payment/confirm` needs a Razorpay signature,
-  so the portal cannot confirm a training payment for an appointment. Bills are unaffected: they use server-to-server
-  verification.
-* **Tokens in server logs.** Personal link tokens travel in URL paths (`/api/v1/public/feedback/invitations/{token}`,
-  `/unsubscribe/{token}`, the SPA page request), so server request logs record them. Redact these paths in logging,
-  or accept the token in a header or body.
-* **Prescription QR address.** The portal detail (`PortalPrescriptionDetail`) has the verification token but no
-  `verificationUrl`. The portal therefore builds the QR address from the address the patient is using. Reports already
-  send `verificationUrl` (`{portal.baseUrl}/portal/verify/…`), and the portal prints that one.
+* **Hosted payment pages for appointments.** Appointments are paid with Razorpay Checkout (or the training gateway).
+  A hosted payment link is used for bills only, because nothing would confirm an appointment payment when the patient
+  comes back from the gateway's page.
 * **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
   only and are shown as sent.
 * **No server PDFs.** Documents are printed from the page; the server offers no PDF endpoints for patients.

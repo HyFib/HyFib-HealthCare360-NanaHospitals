@@ -23,12 +23,13 @@ internal static class PublicFeedbackEndpoints
     {
         var group = app.MapGroup("/api/v1/public").WithTags("Public").AllowAnonymous().RequireRateLimiting(RateLimitPolicies.Public);
 
-        group.MapGet("/feedback/forms/{token}", GetForm);
-        group.MapPost("/feedback/forms/{token}", SubmitToForm).WithValidation<SubmitFeedbackRequest>();
-        group.MapGet("/feedback/invitations/{token}", GetInvitation);
-        group.MapPost("/feedback/invitations/{token}", SubmitInvitation).WithValidation<SubmitFeedbackRequest>();
-        group.MapGet("/unsubscribe/{token}", GetOptOut);
-        group.MapPost("/unsubscribe/{token}", OptOut);
+        // The tokens are the patients' links: logs record the route template instead of the path.
+        group.MapGet("/feedback/forms/{token}", GetForm).WithSensitivePath();
+        group.MapPost("/feedback/forms/{token}", SubmitToForm).WithValidation<SubmitFeedbackRequest>().WithSensitivePath();
+        group.MapGet("/feedback/invitations/{token}", GetInvitation).WithSensitivePath();
+        group.MapPost("/feedback/invitations/{token}", SubmitInvitation).WithValidation<SubmitFeedbackRequest>().WithSensitivePath();
+        group.MapGet("/unsubscribe/{token}", GetOptOut).WithSensitivePath();
+        group.MapPost("/unsubscribe/{token}", OptOut).WithSensitivePath();
     }
 
     private static async Task<IResult> GetForm(string token, HospitalDbContext db, CancellationToken ct)

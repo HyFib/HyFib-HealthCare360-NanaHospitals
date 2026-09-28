@@ -10,9 +10,9 @@ export const SESSION_KEYS = {
 } as const;
 
 /**
- * Restores the session from the HttpOnly refresh cookie (once per page load) and says whether it belongs to a
- * patient-portal user. A staff session in the same browser (the refresh cookie is shared per origin) is "other":
- * the portal never shows or uses it.
+ * Restores the session from the portal's HttpOnly refresh cookie (once per page load) and says whether it belongs to
+ * a patient-portal user. The staff app keeps its own cookie, so a staff session in the same browser is neither seen
+ * nor replaced; any session that is not a patient's is "other", and the portal never shows or uses it.
  */
 export async function ensurePortalSession(): Promise<PortalSessionState> {
   const { status } = useSession.getState();

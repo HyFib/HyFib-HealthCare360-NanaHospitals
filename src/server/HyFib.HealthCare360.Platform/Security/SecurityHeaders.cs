@@ -5,7 +5,8 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// <summary>
 /// Adds defensive HTTP headers. The CSP allows only same-origin scripts; inline styles are permitted
 /// because Fluent UI (Griffel) injects runtime styles. Camera/microphone are limited to this origin
-/// (telehealth, voice assistant).
+/// (telehealth, voice assistant). Patient-portal pages may also open Razorpay Standard Checkout, the only
+/// third-party script the server allows.
 /// </summary>
 public sealed class SecurityHeadersMiddleware(RequestDelegate next)
 {
@@ -13,6 +14,13 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
         "font-src 'self' data:; connect-src 'self' wss: https:; media-src 'self' blob:; worker-src 'self' blob:; " +
         "frame-src 'self' blob:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'; form-action 'self'";
+
+    // Razorpay Standard Checkout: its script, and the payment frame it opens (Razorpay's documented origins).
+    private const string PortalCsp =
+        "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://cdn.razorpay.com; style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data: blob: https://cdn.razorpay.com; font-src 'self' data:; connect-src 'self' wss: https:; media-src 'self' blob:; " +
+        "worker-src 'self' blob:; frame-src 'self' blob: https://checkout.razorpay.com https://api.razorpay.com; frame-ancestors 'none'; " +
+        "object-src 'none'; base-uri 'self'; form-action 'self'";
 
     // The interactive API reference (admin-only, disabled by default) loads its assets from a CDN.
     private const string DocsCsp =
@@ -28,13 +36,18 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
             headers.XContentTypeOptions = "nosniff";
             headers.XFrameOptions = "DENY";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Permissions-Policy"] = "camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(), serial=(), bluetooth=()";
-            headers["Cross-Origin-Opener-Policy"] = "same-origin";
+            var portal = ctx.Request.Path.StartsWithSegments("/portal");
+            headers["Permissions-Policy"] = portal
+                ? "camera=(self), microphone=(self), geolocation=(), payment=(self \"https://api.razorpay.com\"), usb=(), serial=(), bluetooth=()"
+                : "camera=(self), microphone=(self), geolocation=(), payment=(self), usb=(), serial=(), bluetooth=()";
+
+            // Net banking and some UPI flows open the bank's page in a pop-up that reports back to the checkout.
+            headers["Cross-Origin-Opener-Policy"] = portal ? "same-origin-allow-popups" : "same-origin";
             headers["Cross-Origin-Resource-Policy"] = "same-origin";
 
             if (!headers.ContainsKey("Content-Security-Policy"))
             {
-                headers.ContentSecurityPolicy = ctx.Request.Path.StartsWithSegments("/docs") ? DocsCsp : AppCsp;
+                headers.ContentSecurityPolicy = portal ? PortalCsp : ctx.Request.Path.StartsWithSegments("/docs") ? DocsCsp : AppCsp;
             }
 
             if (ctx.Request.Path.StartsWithSegments("/api") || ctx.Request.Path.StartsWithSegments("/fhir"))

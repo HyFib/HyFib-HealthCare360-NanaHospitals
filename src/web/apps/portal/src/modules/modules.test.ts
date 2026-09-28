@@ -10,7 +10,7 @@ import { splitLines } from './records/labels';
 import { parseRange, parseResultNumber, rangePosition, summarizeResults } from './reports/labResults';
 import { reportVerifyUrl } from './reports/verifyLink';
 import { canFallBackToAudio, classifyJoinError, classifyMediaError, detectPlatform, isInAppBrowser, mediaSupport } from './video/media';
-import { isWellFormedCode, normalizeReportCode, parseVerificationInput, verificationPagePath } from './verify/verification';
+import { isWellFormedCode, normalizeReportCode, parseVerificationInput, verificationPagePath, verificationPageUrl } from './verify/verification';
 
 describe('slots', () => {
   const slot = (localTime: string, seatsLeft = 1): PublicSlot =>
@@ -108,6 +108,15 @@ describe('report QR codes', () => {
     expect(reportVerifyUrl('radiology', { verificationCode: code, verificationUrl: null }, 'https://lan.local')).toBe(`https://lan.local/portal/verify/radiology/${code}`);
     expect(reportVerifyUrl('lab', { verificationCode: code, verificationUrl: 'javascript:alert(1)' }, 'https://h')).toBe(`https://h/portal/verify/lab/${code}`);
     expect(reportVerifyUrl('cardiology', { verificationCode: null }, 'https://h')).toBeNull();
+  });
+
+  it('gives prescriptions the same choice of address', () => {
+    const token = 'k3P9xLr0bPz7Kd2Nf5Hs';
+    expect(verificationPageUrl('prescription', token, `https://care.example/portal/verify/prescription/${token}`, 'https://lan.local')).toBe(
+      `https://care.example/portal/verify/prescription/${token}`,
+    );
+    expect(verificationPageUrl('prescription', token, undefined, 'https://lan.local')).toBe(`https://lan.local/portal/verify/prescription/${token}`);
+    expect(verificationPageUrl('prescription', null, null, 'https://lan.local')).toBeNull();
   });
 });
 

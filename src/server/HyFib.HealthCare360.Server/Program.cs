@@ -3,6 +3,7 @@ using System.Security.Authentication;
 using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Server;
@@ -140,7 +141,19 @@ builder.Services.AddOpenApi(openApi =>
 if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
 {
     builder.Services.AddOpenTelemetry()
-        .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddNpgsql().AddOtlpExporter(o => o.Endpoint = new Uri(otlp)))
+        .WithTracing(tracing => tracing
+            .AddAspNetCoreInstrumentation(aspNet => aspNet.EnrichWithHttpResponse = static (activity, response) =>
+            {
+                // Patient link tokens travel in the path: those requests export their route template instead.
+                var path = LoggedPath.Of(response.HttpContext);
+                if (!string.Equals(path, response.HttpContext.Request.Path.Value, StringComparison.Ordinal))
+                {
+                    activity.SetTag("url.path", path);
+                }
+            })
+            .AddHttpClientInstrumentation()
+            .AddNpgsql()
+            .AddOtlpExporter(o => o.Endpoint = new Uri(otlp)))
         .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddMeter("Npgsql").AddOtlpExporter(o => o.Endpoint = new Uri(otlp)));
 }
 
@@ -155,6 +168,9 @@ if (platformOptions.HttpRedirectPort > 0)
 {
     app.UseHttpsRedirection();
 }
+
+// Before static files, so the staff and portal shells and their assets carry the security headers too.
+app.UseHospitalSecurityHeaders();
 
 // Never compress token-bearing auth responses (BREACH); everything else is compressed to save WiFi airtime.
 app.Use((context, next) =>
@@ -190,6 +206,15 @@ app.UseSerilogRequestLogging(logging =>
         exception is not null || http.Response.StatusCode >= 500 ? LogEventLevel.Error
         : http.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
         : LogEventLevel.Information;
+
+    // Patient link tokens travel in the path: those requests are logged with their route template (see LoggedPath).
+    logging.GetMessageTemplateProperties = static (http, _, elapsed, status) =>
+    [
+        new LogEventProperty("RequestMethod", new ScalarValue(http.Request.Method)),
+        new LogEventProperty("RequestPath", new ScalarValue(LoggedPath.Of(http))),
+        new LogEventProperty("StatusCode", new ScalarValue(status)),
+        new LogEventProperty("Elapsed", new ScalarValue(elapsed)),
+    ];
 });
 
 app.UseHospitalPlatform();
@@ -206,15 +231,19 @@ if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
 
 // Unknown API routes must be a 404, never the SPA shell.
 app.Map("/api/{**rest}", () => Results.Problem(title: "Not found", statusCode: StatusCodes.Status404NotFound)).AllowAnonymous();
-app.MapFallbackToFile("/portal/{**path}", "portal/index.html").AllowAnonymous();
+// Portal pages opened from SMS links carry the patient's token in the path (/portal/feedback/{token}). The page is sent
+// without rewriting the path, so this endpoint stays current and logs and traces record its route template.
+app.MapFallback("/portal/{**path}", async context =>
+{
+    if (!await TrySendAppPageAsync(context, app.Environment, "portal/index.html"))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+    }
+}).AllowAnonymous().WithSensitivePath();
 app.MapFallback(async context =>
 {
-    var index = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"), "index.html");
-    if (File.Exists(index))
+    if (await TrySendAppPageAsync(context, app.Environment, "index.html"))
     {
-        context.Response.ContentType = "text/html; charset=utf-8";
-        context.Response.Headers.CacheControl = "no-cache";
-        await context.Response.SendFileAsync(index);
         return;
     }
 
@@ -231,6 +260,22 @@ app.MapFallback(async context =>
 await InitializeDatabaseAsync(app);
 await app.RunAsync();
 return 0;
+
+// The single-page apps' shell (staff app or portal), never cached, so a new release is picked up at once. It is read
+// through the web root's file provider, as static files are (in development that includes the project's wwwroot).
+static async Task<bool> TrySendAppPageAsync(HttpContext context, IWebHostEnvironment environment, string page)
+{
+    var file = environment.WebRootFileProvider.GetFileInfo(page);
+    if (!file.Exists || file.IsDirectory)
+    {
+        return false;
+    }
+
+    context.Response.ContentType = "text/html; charset=utf-8";
+    context.Response.Headers.CacheControl = "no-cache";
+    await context.Response.SendFileAsync(file);
+    return true;
+}
 
 // PostgreSQL may still be starting when the service boots after a power cut: retry for up to ~3 minutes.
 static async Task InitializeDatabaseAsync(WebApplication app)

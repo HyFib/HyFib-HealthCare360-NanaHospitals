@@ -590,6 +590,8 @@ export interface PortalPrescriptionDetail {
   lines: PortalPrescriptionLine[];
   refillsRemaining: number;
   verificationToken: string | null;
+  /** The public check page for the printed QR code, when the server knows the hospital's public address. */
+  verificationUrl?: string | null;
 }
 
 /** Public QR verification of a printed prescription (no patient data). */

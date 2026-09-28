@@ -81,3 +81,15 @@ export function parseVerificationInput(input: string, selectedKind: VerifyKind):
 export function verificationPagePath(kind: VerifyKind, code: string): string {
   return `/verify/${kind}/${encodeURIComponent(code)}`;
 }
+
+/**
+ * The address a printed QR code opens: the server's public check page when it knows the hospital's public address
+ * (`portal.baseUrl`, sent as `verificationUrl`), otherwise the same page on the address the patient is using now.
+ * Null without a code.
+ */
+export function verificationPageUrl(kind: VerifyKind, code: string | null, serverUrl: string | null | undefined, origin: string): string | null {
+  if (serverUrl && /^https:\/\//i.test(serverUrl)) {
+    return serverUrl;
+  }
+  return code ? `${origin}/portal${verificationPagePath(kind, code)}` : null;
+}

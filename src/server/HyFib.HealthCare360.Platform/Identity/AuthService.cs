@@ -88,6 +88,12 @@ public sealed class AuthService(
     TimeProvider time)
 {
     public const string RefreshCookieName = "hc360_rt";
+
+    /// <summary>
+    /// The patient portal's refresh cookie. The staff app and the portal are served from one origin, so each keeps its
+    /// own cookie: signing in to one never replaces the other's session in the same browser.
+    /// </summary>
+    public const string PortalRefreshCookieName = "hc360_prt";
     public const string RefreshCookiePath = "/api/v1/auth";
     public const string ClientHeader = "X-HC360-Client";
     public const string RestrictionPasswordChange = "password";
@@ -340,7 +346,7 @@ public sealed class AuthService(
             return Error.Forbidden("auth.client_header", $"Missing {ClientHeader} header.");
         }
 
-        var raw = http.Request.Cookies[RefreshCookieName];
+        var raw = http.Request.Cookies[RefreshCookieFor(ClientTypeOf(http))];
         if (string.IsNullOrEmpty(raw))
         {
             return SessionEnded;
@@ -352,7 +358,8 @@ public sealed class AuthService(
         var session = token is null ? null : await db.Set<UserSession>().FirstOrDefaultAsync(s => s.Id == token.SessionId, ct);
 
         if (token is null || session is null || session.RevokedAt is not null || session.ExpiresAt <= now || token.ExpiresAt <= now
-            || now - session.LastSeenAt > TimeSpan.FromMinutes(Security.SessionIdleMinutes))
+            || now - session.LastSeenAt > TimeSpan.FromMinutes(Security.SessionIdleMinutes)
+            || RefreshCookieFor(session.ClientType) != RefreshCookieFor(ClientTypeOf(http)))
         {
             ClearRefreshCookie(http);
             return SessionEnded;
@@ -398,7 +405,7 @@ public sealed class AuthService(
         session.LastSeenAt = now;
         await db.SaveChangesAsync(ct);
 
-        SetRefreshCookie(http, next.Raw, next.Entity.ExpiresAt);
+        SetRefreshCookie(http, session.ClientType, next.Raw, next.Entity.ExpiresAt);
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
@@ -409,7 +416,7 @@ public sealed class AuthService(
     {
         var now = time.GetUtcNow();
         UserSession? session = null;
-        if (http.Request.Cookies[RefreshCookieName] is { Length: > 0 } raw)
+        if (http.Request.Cookies[RefreshCookieFor(ClientTypeOf(http))] is { Length: > 0 } raw)
         {
             var hash = SecretTokens.Hash(raw);
             var token = await db.Set<RefreshToken>().FirstOrDefaultAsync(t => t.TokenHash == hash, ct);
@@ -583,7 +590,7 @@ public sealed class AuthService(
             });
             await db.SaveChangesAsync(ct);
             sessionValidator.Invalidate(session.Id);
-            ClearRefreshCookie(http);
+            ClearRefreshCookie(http, session.ClientType);
             return SessionEnded;
         }
 
@@ -742,7 +749,7 @@ public sealed class AuthService(
         audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login", $"Signed in ({clientType})") { UserId = user.Id, UserName = user.UserName });
         await db.SaveChangesAsync(ct);
 
-        SetRefreshCookie(http, refresh.Raw, refresh.Entity.ExpiresAt);
+        SetRefreshCookie(http, clientType, refresh.Raw, refresh.Entity.ExpiresAt);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));
         return new AuthResult(access.Token, access.ExpiresAt, await BuildAuthUserAsync(user, roles, facility?.Id, restriction, ct), Restriction: restriction);
     }
@@ -896,8 +903,11 @@ public sealed class AuthService(
             _ => "web",
         };
 
-    private static void SetRefreshCookie(HttpContext http, string token, DateTimeOffset expires) =>
-        http.Response.Cookies.Append(RefreshCookieName, token, new CookieOptions
+    /// <summary>The refresh cookie of an app: the portal's, or the staff app's (browser and HC360 Desktop).</summary>
+    internal static string RefreshCookieFor(string clientType) => clientType == "portal" ? PortalRefreshCookieName : RefreshCookieName;
+
+    private static void SetRefreshCookie(HttpContext http, string clientType, string token, DateTimeOffset expires) =>
+        http.Response.Cookies.Append(RefreshCookieFor(clientType), token, new CookieOptions
         {
             HttpOnly = true,
             Secure = true,
@@ -907,8 +917,9 @@ public sealed class AuthService(
             IsEssential = true,
         });
 
-    private static void ClearRefreshCookie(HttpContext http) =>
-        http.Response.Cookies.Delete(RefreshCookieName, new CookieOptions { Path = RefreshCookiePath, Secure = true, SameSite = SameSiteMode.Strict, HttpOnly = true });
+    /// <summary>Clears the refresh cookie of the given app, by default the app that sent the request.</summary>
+    private static void ClearRefreshCookie(HttpContext http, string? clientType = null) =>
+        http.Response.Cookies.Delete(RefreshCookieFor(clientType ?? ClientTypeOf(http)), new CookieOptions { Path = RefreshCookiePath, Secure = true, SameSite = SameSiteMode.Strict, HttpOnly = true });
 
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }

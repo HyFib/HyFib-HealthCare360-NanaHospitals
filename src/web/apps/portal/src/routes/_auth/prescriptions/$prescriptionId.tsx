@@ -19,7 +19,7 @@ import { prescriptionQueries } from '@/modules/prescriptions/api';
 import { frequencyText, medicineName, RX_STATUS } from '@/modules/prescriptions/labels';
 import { prescriptionDocument } from '@/modules/prescriptions/print';
 import { RefillSheet } from '@/modules/prescriptions/RefillSheet';
-import { verificationPagePath } from '@/modules/verify/verification';
+import { verificationPageUrl } from '@/modules/verify/verification';
 import { ReportCard } from '@/modules/reports/ReportParts';
 import { useActiveProfile } from '@/shell/profileContext';
 
@@ -83,7 +83,7 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
   const [refillOpen, setRefillOpen] = useState(false);
   const status = RX_STATUS[rx.status];
   const refillable = refills.data?.prescriptions.find((item) => item.prescriptionNumber === rx.prescriptionNumber) ?? null;
-  const verifyUrl = rx.verificationToken ? `${window.location.origin}/portal${verificationPagePath('prescription', rx.verificationToken)}` : null;
+  const verifyUrl = verificationPageUrl('prescription', rx.verificationToken, rx.verificationUrl, window.location.origin);
 
   return (
     <PortalPage

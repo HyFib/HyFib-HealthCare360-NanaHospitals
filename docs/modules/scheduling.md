@@ -118,6 +118,7 @@ the scope answers 404.
 | POST | `/api/v1/portal/appointments/{id}/reschedule` | `PortalRescheduleAppointmentRequest` (startsAt, reason) → `PortalAppointment` (new booking) |
 | POST | `/api/v1/portal/appointments/{id}/payment` | → `PaymentCheckout { provider, orderId, amount, currency, checkoutKey, paymentLinkUrl }` (422 when the gateway is unavailable) |
 | POST | `/api/v1/portal/appointments/{id}/payment/confirm` | `ConfirmPaymentRequest` (orderId, paymentId, signature) → `PortalAppointment` |
+| POST | `/api/v1/portal/appointments/{id}/payment/verify` | Server-to-server status check with the gateway, for checkouts without a signature (the training gateway) → `PortalAppointment`; 422 `payment.not_captured`, `payment.not_started`, `payment.gateway_unavailable`. Safe to repeat |
 | GET | `/api/v1/portal/waitlist` | → `PortalWaitlistEntry[]` |
 | POST | `/api/v1/portal/waitlist` | `PortalJoinWaitlistRequest` → 201 `PortalWaitlistEntry` |
 | POST | `/api/v1/portal/waitlist/{id}/cancel` | → 204 |

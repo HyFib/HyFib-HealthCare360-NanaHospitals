@@ -16,7 +16,8 @@ internal static class PrescriptionVerificationEndpoints
         app.MapGet("/api/v1/public/prescriptions/verify/{token}", Verify)
             .WithTags("Public")
             .AllowAnonymous()
-            .RequireRateLimiting(PublicRateLimit);
+            .RequireRateLimiting(PublicRateLimit)
+            .WithSensitivePath();
 
     private static async Task<IResult> Verify(string token, HospitalDbContext db, CancellationToken ct)
     {

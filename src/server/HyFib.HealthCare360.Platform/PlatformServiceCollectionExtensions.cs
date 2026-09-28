@@ -249,12 +249,24 @@ public static class PlatformServiceCollectionExtensions
         return catalog;
     }
 
-    /// <summary>HTTP pipeline for the platform (call after UseRouting-sensitive middleware such as static files).</summary>
+    /// <summary>
+    /// Defensive response headers (CSP, framing, MIME sniffing). Call before static files, so the app shells
+    /// (<c>/</c>, <c>/portal/</c>) and their assets carry them as well as the API.
+    /// </summary>
+    public static WebApplication UseHospitalSecurityHeaders(this WebApplication app)
+    {
+        app.UseMiddleware<SecurityHeadersMiddleware>();
+        return app;
+    }
+
+    /// <summary>
+    /// HTTP pipeline for the platform (call after <see cref="UseHospitalSecurityHeaders"/> and after
+    /// UseRouting-sensitive middleware such as static files).
+    /// </summary>
     public static WebApplication UseHospitalPlatform(this WebApplication app)
     {
         app.UseExceptionHandler();
         app.UseMiddleware<CorrelationIdMiddleware>();
-        app.UseMiddleware<SecurityHeadersMiddleware>();
         app.UseRouting();
         app.UseRateLimiter();
         app.UseAuthentication();

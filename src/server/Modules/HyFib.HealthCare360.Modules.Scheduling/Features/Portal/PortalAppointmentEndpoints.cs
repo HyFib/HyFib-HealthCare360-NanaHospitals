@@ -25,6 +25,7 @@ internal static class PortalAppointmentEndpoints
         group.MapPost("/{id:guid}/reschedule", Reschedule).WithValidation<PortalRescheduleAppointmentRequest>();
         group.MapPost("/{id:guid}/payment", StartPayment);
         group.MapPost("/{id:guid}/payment/confirm", ConfirmPayment).WithValidation<ConfirmPaymentRequest>();
+        group.MapPost("/{id:guid}/payment/verify", VerifyPayment);
 
         var waitlist = app.MapGroup("/api/v1/portal/waitlist").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
         waitlist.MapGet("/", ListWaitlist);
@@ -243,6 +244,43 @@ internal static class PortalAppointmentEndpoints
 
         await db.SaveChangesAsync(ct);
         await booking.PublishAsync(appointment, ct);
+        var dto = await LoadOwnAsync(appointment.Id, patients, db, settings, payments, time, ct);
+        return dto is null ? Error.NotFound(nameof(Appointment), id).ToProblem() : TypedResults.Ok(dto);
+    }
+
+    /// <summary>
+    /// Confirms a payment by asking the gateway directly, for checkouts that return no signature (a hosted payment page,
+    /// the training gateway). Safe to repeat.
+    /// </summary>
+    private static async Task<IResult> VerifyPayment(
+        Guid id,
+        PortalPatientScope patients,
+        AppointmentPaymentService payments,
+        AppointmentBookingService booking,
+        HospitalDbContext db,
+        SchedulingSettings settings,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var appointment = await FindOwnAsync(id, patients, db, ct);
+        if (appointment is null)
+        {
+            return Error.NotFound(nameof(Appointment), id).ToProblem();
+        }
+
+        var alreadyPaid = appointment.PaymentStatus == AppointmentPaymentStatus.PaidOnline;
+        var result = await payments.VerifyWithGatewayAsync(appointment, ct);
+        if (result.IsFailure)
+        {
+            return result.Error!.ToProblem();
+        }
+
+        if (!alreadyPaid)
+        {
+            await db.SaveChangesAsync(ct);
+            await booking.PublishAsync(appointment, ct);
+        }
+
         var dto = await LoadOwnAsync(appointment.Id, patients, db, settings, payments, time, ct);
         return dto is null ? Error.NotFound(nameof(Appointment), id).ToProblem() : TypedResults.Ok(dto);
     }

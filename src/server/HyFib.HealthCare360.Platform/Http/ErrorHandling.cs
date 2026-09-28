@@ -41,7 +41,7 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logge
                 return true;
 
             default:
-                logger.LogError(exception, "Unhandled exception for {Method} {Path}", httpContext.Request.Method, httpContext.Request.Path);
+                logger.LogError(exception, "Unhandled exception for {Method} {Path}", httpContext.Request.Method, LoggedPath.Of(httpContext));
                 result = TypedResults.Problem(
                     title: "Something went wrong",
                     detail: "The server could not complete the request. Quote the reference ID if you contact support.",

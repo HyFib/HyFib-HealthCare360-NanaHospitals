@@ -115,4 +115,42 @@ public sealed class AppointmentPaymentService(
 
         return appointment.MarkPaidOnline(orderId, paymentId, amount, time.GetUtcNow());
     }
+
+    /// <summary>
+    /// Asks the gateway, server to server, whether the appointment's order was paid, and records the payment if so. A
+    /// hosted payment page and the training gateway return no checkout signature, so the portal confirms those with this
+    /// check. It is safe to repeat. The caller saves.
+    /// </summary>
+    public async Task<Result> VerifyWithGatewayAsync(Appointment appointment, CancellationToken ct)
+    {
+        if (appointment.PaymentStatus == AppointmentPaymentStatus.PaidOnline)
+        {
+            return Result.Success();
+        }
+
+        if (Gateway is null)
+        {
+            return Error.Rule("payment.unavailable", "Online payment is not available right now. Please pay at the hospital.");
+        }
+
+        if (appointment.GatewayOrderId is not { } orderId)
+        {
+            return Error.Rule("payment.not_started", "No online payment was started for this appointment.");
+        }
+
+        PaymentStatusResult status;
+        try
+        {
+            status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not read the status of gateway order {OrderId} for appointment {AppointmentId}", orderId, appointment.Id);
+            return Error.Rule("payment.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
+        }
+
+        return status is { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId }
+            ? appointment.MarkPaidOnline(orderId, paymentId, status.AmountPaid ?? appointment.FeeAmount, time.GetUtcNow())
+            : Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
+    }
 }
