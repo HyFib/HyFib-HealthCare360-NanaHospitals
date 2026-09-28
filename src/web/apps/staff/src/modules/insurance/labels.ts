@@ -22,7 +22,11 @@ export const PREAUTH_STATUS_LABEL: Record<PreAuthStatus, string> = {
 
 export const ENHANCEMENT_STATUSES = ['Pending', 'Approved', 'Rejected'] as const;
 export type EnhancementStatus = (typeof ENHANCEMENT_STATUSES)[number];
-export const ENHANCEMENT_STATUS_LABEL: Record<EnhancementStatus, string> = { Pending: 'Waiting for insurer', Approved: 'Approved', Rejected: 'Rejected' };
+export const ENHANCEMENT_STATUS_LABEL: Record<EnhancementStatus, string> = {
+  Pending: 'Waiting for insurer',
+  Approved: 'Approved',
+  Rejected: 'Rejected',
+};
 
 export const CLAIM_STATUSES = ['Submitted', 'Query', 'Approved', 'Settled', 'PartiallySettled', 'Rejected'] as const;
 export type ClaimStatus = (typeof CLAIM_STATUSES)[number];
@@ -36,7 +40,12 @@ export const CLAIM_STATUS_LABEL: Record<ClaimStatus, string> = {
 };
 
 /** Claims still owed money or an answer. */
-export const OPEN_CLAIM_STATUSES = ['Submitted', 'Query', 'Approved', 'PartiallySettled'] as const satisfies readonly ClaimStatus[];
+export const OPEN_CLAIM_STATUSES = [
+  'Submitted',
+  'Query',
+  'Approved',
+  'PartiallySettled',
+] as const satisfies readonly ClaimStatus[];
 
 export function preAuthTone(status: PreAuthStatus): 'success' | 'warning' | 'danger' | 'informative' | 'brand' {
   switch (status) {

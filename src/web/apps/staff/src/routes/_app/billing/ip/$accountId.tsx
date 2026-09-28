@@ -56,7 +56,13 @@ function IpAccountPage() {
   if (account.error || !account.data) {
     return (
       <Page maxWidth={900}>
-        <PageHeader title="In-patient account" breadcrumbs={[{ label: 'In-patient accounts', onClick: () => void navigate({ to: '/billing/ip' }) }, { label: 'Account' }]} />
+        <PageHeader
+          title="In-patient account"
+          breadcrumbs={[
+            { label: 'In-patient accounts', onClick: () => void navigate({ to: '/billing/ip' }) },
+            { label: 'Account' },
+          ]}
+        />
         {isApiError(account.error) && account.error.status === 404 ? (
           <EmptyState title="This IP account was not found" />
         ) : (
@@ -72,7 +78,10 @@ function IpAccountPage() {
   const printRunningBill = async () => {
     try {
       const bill = await queryClient.fetchQuery(ipQueries.runningBill(a.id));
-      await sendToPrinter(buildRunningBillHtml(bill, facility, { name: a.patientName ?? '', uhid: a.uhid }, new Date().toISOString()), 'A4');
+      await sendToPrinter(
+        buildRunningBillHtml(bill, facility, { name: a.patientName ?? '', uhid: a.uhid }, new Date().toISOString()),
+        'A4',
+      );
     } catch (error) {
       notify.error(error, 'Could not print the running bill');
     }
@@ -86,10 +95,14 @@ function IpAccountPage() {
         subtitle={
           <>
             <IpStatusBadge status={a.status} /> Admitted {formatDateTime(a.admittedAt)}
-            {a.dischargedAt ? ` · discharged ${formatDateTime(a.dischargedAt)}` : ''} {a.packageName && <Badge appearance="outline">{a.packageName}</Badge>}
+            {a.dischargedAt ? ` · discharged ${formatDateTime(a.dischargedAt)}` : ''}{' '}
+            {a.packageName && <Badge appearance="outline">{a.packageName}</Badge>}
           </>
         }
-        breadcrumbs={[{ label: 'In-patient accounts', onClick: () => void navigate({ to: '/billing/ip' }) }, { label: a.admissionNumber }]}
+        breadcrumbs={[
+          { label: 'In-patient accounts', onClick: () => void navigate({ to: '/billing/ip' }) },
+          { label: a.admissionNumber },
+        ]}
         actions={
           <>
             <Button icon={<PrintRegular />} onClick={() => void printRunningBill()}>
@@ -114,13 +127,19 @@ function IpAccountPage() {
         <MessageBar intent="warning">
           <MessageBarBody>
             <MessageBarTitle>Admission cancelled</MessageBarTitle>
-            No new advance or package can be added. Services already charged can still be billed, and any advance held is refunded through the refund flow.
+            No new advance or package can be added. Services already charged can still be billed, and any advance held
+            is refunded through the refund flow.
           </MessageBarBody>
         </MessageBar>
       )}
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'bill' ? undefined : (d.value as TabId) }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'bill' ? undefined : (d.value as TabId) }, replace: true })
+            }
+          >
             <Tab value="bill">Running bill</Tab>
             <Tab value="payments">Bills and advances</Tab>
             <Tab value="package">Package</Tab>
@@ -138,12 +157,21 @@ function IpAccountPage() {
       </Section>
       {dialog === 'deposit' && (
         <CollectDepositDialog
-          account={{ id: a.id, admissionNumber: a.admissionNumber, patientName: a.patientName, uhid: a.uhid, depositBalance: a.depositBalance, estimatedAmount: a.estimatedAmount }}
+          account={{
+            id: a.id,
+            admissionNumber: a.admissionNumber,
+            patientName: a.patientName,
+            uhid: a.uhid,
+            depositBalance: a.depositBalance,
+            estimatedAmount: a.estimatedAmount,
+          }}
           open
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog === 'link' && <PaymentLinkDialog open target={{ kind: 'ip', ipAccountId: a.id }} onClose={() => setDialog(null)} />}
+      {dialog === 'link' && (
+        <PaymentLinkDialog open target={{ kind: 'ip', ipAccountId: a.id }} onClose={() => setDialog(null)} />
+      )}
     </Page>
   );
 }

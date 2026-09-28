@@ -34,7 +34,12 @@ import { Attachments } from './Attachments';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 640px)': { gridTemplateColumns: '1fr' } },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 640px)': { gridTemplateColumns: '1fr' },
+  },
   deduction: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 150px auto', gap: '8px', alignItems: 'end' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -51,8 +56,13 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
   const [diagnosis, setDiagnosis] = useState('');
   const [procedures, setProcedures] = useState('');
   const [documents, setDocuments] = useState<string[]>([]);
-  const bills = useQuery({ ...billingQueries.bills({ patientId: patient?.id, pageSize: 50 }), enabled: patient !== null });
-  const claimable = (bills.data?.items ?? []).filter((b) => b.payerAmount > 0 && (b.status === 'Finalized' || b.status === 'PartiallyPaid' || b.status === 'Paid'));
+  const bills = useQuery({
+    ...billingQueries.bills({ patientId: patient?.id, pageSize: 50 }),
+    enabled: patient !== null,
+  });
+  const claimable = (bills.data?.items ?? []).filter(
+    (b) => b.payerAmount > 0 && (b.status === 'Finalized' || b.status === 'PartiallyPaid' || b.status === 'Paid'),
+  );
   const bill = claimable.find((b) => b.id === billId);
   const parsed = amount.trim() ? parseRupees(amount, { max: bill?.payerAmount }) : null;
   const valid = bill !== undefined && (parsed === null || parsed.ok);
@@ -97,7 +107,15 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
                 required
               />
               {patient && (
-                <Field label="Bill" required hint={bills.data && claimable.length === 0 ? 'This patient has no finalised bill with an insurer share.' : undefined}>
+                <Field
+                  label="Bill"
+                  required
+                  hint={
+                    bills.data && claimable.length === 0
+                      ? 'This patient has no finalised bill with an insurer share.'
+                      : undefined
+                  }
+                >
                   <RadioGroup value={billId} onChange={(_, d) => setBillId(d.value)}>
                     {claimable.map((b) => (
                       <Radio
@@ -116,7 +134,13 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
                       label="Amount claimed"
                       value={amount}
                       onChange={setAmount}
-                      error={parsed && !parsed.ok ? (parsed.error === 'The amount is too large.' ? `At most ${formatInr(bill.payerAmount)}` : parsed.error) : null}
+                      error={
+                        parsed && !parsed.ok
+                          ? parsed.error === 'The amount is too large.'
+                            ? `At most ${formatInr(bill.payerAmount)}`
+                            : parsed.error
+                          : null
+                      }
                       hint="Empty claims the whole outstanding insurer share"
                     />
                     <Field label="Insurer / TPA claim number" hint="Optional, from their portal">
@@ -127,7 +151,12 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
                     <Textarea value={diagnosis} onChange={(_, d) => setDiagnosis(d.value)} maxLength={1000} rows={2} />
                   </Field>
                   <Field label="Procedures" hint="Empty uses the codes of the pre-authorisation">
-                    <Textarea value={procedures} onChange={(_, d) => setProcedures(d.value)} maxLength={1000} rows={2} />
+                    <Textarea
+                      value={procedures}
+                      onChange={(_, d) => setProcedures(d.value)}
+                      maxLength={1000}
+                      rows={2}
+                    />
                   </Field>
                   <Field label="Claim documents" hint="Final bill, discharge summary, reports">
                     <Attachments fileIds={documents} patientId={bill.patientId} onChange={setDocuments} />
@@ -140,7 +169,12 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
               <Button onClick={onClose} disabled={create.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || create.isPending}
+                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Submit claim
               </Button>
             </DialogActions>
@@ -188,7 +222,13 @@ export function ApproveClaimDialog({ claim, onClose }: { claim: ClaimDetail; onC
                 required
                 value={amount}
                 onChange={setAmount}
-                error={amount && !parsed.ok ? (parsed.error === 'The amount is too large.' ? `At most the claimed ${formatInr(claim.claimedAmount)}` : parsed.error) : null}
+                error={
+                  amount && !parsed.ok
+                    ? parsed.error === 'The amount is too large.'
+                      ? `At most the claimed ${formatInr(claim.claimedAmount)}`
+                      : parsed.error
+                    : null
+                }
                 autoFocus
               />
               <ActionError error={approve.error} />
@@ -197,7 +237,12 @@ export function ApproveClaimDialog({ claim, onClose }: { claim: ClaimDetail; onC
               <Button onClick={onClose} disabled={approve.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!parsed.ok || approve.isPending} icon={approve.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!parsed.ok || approve.isPending}
+                icon={approve.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record approval
               </Button>
             </DialogActions>
@@ -247,7 +292,12 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
         claim.id,
         {
           amount: received.ok ? received.rupees : 0,
-          deductions: parsedDeductions.length ? parsedDeductions.map((d) => ({ reason: d.draft.reason.trim(), amount: d.amount.ok ? d.amount.rupees : 0 })) : null,
+          deductions: parsedDeductions.length
+            ? parsedDeductions.map((d) => ({
+                reason: d.draft.reason.trim(),
+                amount: d.amount.ok ? d.amount.rupees : 0,
+              }))
+            : null,
           utrNumber: utr.trim() || null,
           reference: reference.trim() || null,
           settledOn,
@@ -255,7 +305,10 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
         attemptKey,
       ),
     onSuccess: () => {
-      notify.success('Settlement recorded', left > 0 ? `${formatInr(left)} is still outstanding.` : 'The claim is fully settled.');
+      notify.success(
+        'Settlement recorded',
+        left > 0 ? `${formatInr(left)} is still outstanding.` : 'The claim is fully settled.',
+      );
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.all });
       void refresh();
       onClose();
@@ -277,8 +330,20 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
             <DialogTitle>Record settlement · {claim.claimNumber}</DialogTitle>
             <DialogContent className={styles.body}>
               <div className={styles.grid}>
-                <AmountField label="Amount received" value={amount} onChange={setAmount} error={amount && !received.ok ? received.error : null} hint="Enter 0 if this tranche only has deductions" autoFocus />
-                <Field label="Bank UTR" required={received.ok && received.paise > 0n} validationMessage={needsUtr ? 'Enter the UTR of the bank transfer.' : undefined} validationState={needsUtr ? 'error' : 'none'}>
+                <AmountField
+                  label="Amount received"
+                  value={amount}
+                  onChange={setAmount}
+                  error={amount && !received.ok ? received.error : null}
+                  hint="Enter 0 if this tranche only has deductions"
+                  autoFocus
+                />
+                <Field
+                  label="Bank UTR"
+                  required={received.ok && received.paise > 0n}
+                  validationMessage={needsUtr ? 'Enter the UTR of the bank transfer.' : undefined}
+                  validationState={needsUtr ? 'error' : 'none'}
+                >
                   <Input value={utr} onChange={(_, d) => setUtr(d.value)} maxLength={64} />
                 </Field>
                 <Field label="Settlement letter reference">
@@ -295,26 +360,45 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
                   <Field label="Reason">
                     <Input
                       value={d.reason}
-                      onChange={(_, e) => setDeductions((list) => list.map((x) => (x.key === d.key ? { ...x, reason: e.value } : x)))}
+                      onChange={(_, e) =>
+                        setDeductions((list) => list.map((x) => (x.key === d.key ? { ...x, reason: e.value } : x)))
+                      }
                       placeholder="e.g. Non-payable consumables, room rent above limit"
                       maxLength={300}
                     />
                   </Field>
-                  <AmountField label="Amount" value={d.amount} onChange={(value) => setDeductions((list) => list.map((x) => (x.key === d.key ? { ...x, amount: value } : x)))} />
-                  <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Remove deduction" onClick={() => setDeductions((list) => list.filter((x) => x.key !== d.key))} />
+                  <AmountField
+                    label="Amount"
+                    value={d.amount}
+                    onChange={(value) =>
+                      setDeductions((list) => list.map((x) => (x.key === d.key ? { ...x, amount: value } : x)))
+                    }
+                  />
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label="Remove deduction"
+                    onClick={() => setDeductions((list) => list.filter((x) => x.key !== d.key))}
+                  />
                 </div>
               ))}
               {deductions.length < 50 && (
                 <div>
                   <Button
                     icon={<AddRegular />}
-                    onClick={() => setDeductions((list) => [...list, { key: (list.at(-1)?.key ?? 0) + 1, reason: '', amount: '' }])}
+                    onClick={() =>
+                      setDeductions((list) => [...list, { key: (list.at(-1)?.key ?? 0) + 1, reason: '', amount: '' }])
+                    }
                   >
                     Add a deduction
                   </Button>
                 </div>
               )}
-              {deductionProblem && <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>Every deduction needs a reason and an amount.</Caption1>}
+              {deductionProblem && (
+                <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>
+                  Every deduction needs a reason and an amount.
+                </Caption1>
+              )}
 
               <SummaryList>
                 <SummaryRow label="Outstanding on the claim">
@@ -329,17 +413,27 @@ export function SettleClaimDialog({ claim, onClose }: { claim: ClaimDetail; onCl
               </SummaryList>
               {exceeds && (
                 <MessageBar intent="error">
-                  <MessageBarBody>Received plus deductions cannot be more than the {formatInr(claim.outstanding)} outstanding.</MessageBarBody>
+                  <MessageBarBody>
+                    Received plus deductions cannot be more than the {formatInr(claim.outstanding)} outstanding.
+                  </MessageBarBody>
                 </MessageBar>
               )}
-              <Caption1 className={styles.muted}>The money is recorded as an insurer settlement receipt against the bill; deductions are written off in the day book.</Caption1>
+              <Caption1 className={styles.muted}>
+                The money is recorded as an insurer settlement receipt against the bill; deductions are written off in
+                the day book.
+              </Caption1>
               <ActionError error={settle.error} />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={settle.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || settle.isPending} icon={settle.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || settle.isPending}
+                icon={settle.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record settlement
               </Button>
             </DialogActions>

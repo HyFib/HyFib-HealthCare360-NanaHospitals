@@ -63,7 +63,17 @@ function PackagesPage() {
           )
         }
       />
-      <Section flush actions={<Switch checked={Boolean(search.inactive)} onChange={(_, d) => void navigate({ search: { inactive: d.checked ? true : undefined } })} label="Show inactive" />} title="All packages">
+      <Section
+        flush
+        actions={
+          <Switch
+            checked={Boolean(search.inactive)}
+            onChange={(_, d) => void navigate({ search: { inactive: d.checked ? true : undefined } })}
+            label="Show inactive"
+          />
+        }
+        title="All packages"
+      >
         <DataTable
           ariaLabel="Packages"
           rows={packages.data}
@@ -87,10 +97,29 @@ function PackagesPage() {
               ),
             },
             { key: 'price', header: 'Price', align: 'end', render: (p) => <Amount value={p.price} strong /> },
-            { key: 'stay', header: 'Stay', align: 'end', render: (p) => (p.lengthOfStayDays ? `${p.lengthOfStayDays} days` : '—') },
+            {
+              key: 'stay',
+              header: 'Stay',
+              align: 'end',
+              render: (p) => (p.lengthOfStayDays ? `${p.lengthOfStayDays} days` : '—'),
+            },
             { key: 'inclusions', header: 'Inclusions', align: 'end', priority: 'low', render: (p) => p.inclusionCount },
-            { key: 'plan', header: 'Tariff', priority: 'low', render: (p) => plans.data?.find((plan) => plan.id === p.tariffPlanId)?.name ?? 'Any' },
-            { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.isActive ? 'Active' : 'Inactive'} tone={p.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'plan',
+              header: 'Tariff',
+              priority: 'low',
+              render: (p) => plans.data?.find((plan) => plan.id === p.tariffPlanId)?.name ?? 'Any',
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (p) => (
+                <StatusBadge
+                  status={p.isActive ? 'Active' : 'Inactive'}
+                  tone={p.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No packages yet"
           emptyDescription="Create a package, then assign it from the IP account of an admitted patient."

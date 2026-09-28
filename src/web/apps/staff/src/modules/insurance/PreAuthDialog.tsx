@@ -32,7 +32,12 @@ import { Attachments } from './Attachments';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 640px)': { gridTemplateColumns: '1fr' } },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 640px)': { gridTemplateColumns: '1fr' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -40,13 +45,25 @@ const useStyles = makeStyles({
  * Cashless pre-authorisation request (INS-04): the policy, the admission, the estimate, codes and clinical summary, and
  * supporting documents. Saved as a draft; submitting it to the insurer is a separate step.
  */
-export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSaved }: { preAuth: PreAuthDetail | null; patient?: PickedPatient | null; onClose: () => void; onSaved: (id: string) => void }) {
+export function PreAuthDialog({
+  preAuth,
+  patient: presetPatient,
+  onClose,
+  onSaved,
+}: {
+  preAuth: PreAuthDetail | null;
+  patient?: PickedPatient | null;
+  onClose: () => void;
+  onSaved: (id: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canSeeAdmissions = usePermission(['billing.ip.manage', 'billing.charges.read']);
   const [patient, setPatient] = useState<PickedPatient | null>(
-    preAuth ? { id: preAuth.patientId, uhid: preAuth.uhid ?? '', fullName: preAuth.patientName ?? '' } : (presetPatient ?? null),
+    preAuth
+      ? { id: preAuth.patientId, uhid: preAuth.uhid ?? '', fullName: preAuth.patientName ?? '' }
+      : (presetPatient ?? null),
   );
   const [policyId, setPolicyId] = useState(preAuth?.policyId ?? '');
   const [admissionId, setAdmissionId] = useState(preAuth?.admissionId ?? '');
@@ -58,8 +75,14 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
   const [documents, setDocuments] = useState<string[]>(preAuth?.documentFileIds ?? []);
 
   const policies = useQuery({ ...insuranceQueries.policies(patient?.id ?? ''), enabled: patient !== null });
-  const patientDetail = useQuery({ ...patientQueries.detail(patient?.id ?? ''), enabled: patient !== null && canSeeAdmissions });
-  const admissions = useQuery({ ...ipQueries.accounts({ search: patientDetail.data?.uhid }), enabled: canSeeAdmissions && Boolean(patientDetail.data?.uhid) });
+  const patientDetail = useQuery({
+    ...patientQueries.detail(patient?.id ?? ''),
+    enabled: patient !== null && canSeeAdmissions,
+  });
+  const admissions = useQuery({
+    ...ipQueries.accounts({ search: patientDetail.data?.uhid }),
+    enabled: canSeeAdmissions && Boolean(patientDetail.data?.uhid),
+  });
   const patientAdmissions = (admissions.data?.items ?? []).filter((a) => a.patientId === patient?.id);
 
   const parsedAmount = amount.trim() ? parseRupees(amount, { allowZero: true }) : null;
@@ -88,7 +111,10 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
       return (await insuranceApi.createPreAuth(request)).id;
     },
     onSuccess: (id) => {
-      notify.success(preAuth ? 'Pre-authorisation saved' : 'Pre-authorisation drafted', 'Submit it to the insurer when the details are complete.');
+      notify.success(
+        preAuth ? 'Pre-authorisation saved' : 'Pre-authorisation drafted',
+        'Submit it to the insurer when the details are complete.',
+      );
       void queryClient.invalidateQueries({ queryKey: insuranceKeys.preAuths });
       onSaved(id);
     },
@@ -106,7 +132,9 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
           }}
         >
           <DialogBody>
-            <DialogTitle>{preAuth ? `Pre-authorisation ${preAuth.number || '(draft)'}` : 'New pre-authorisation'}</DialogTitle>
+            <DialogTitle>
+              {preAuth ? `Pre-authorisation ${preAuth.number || '(draft)'}` : 'New pre-authorisation'}
+            </DialogTitle>
             <DialogContent className={styles.body}>
               {!preAuth && !presetPatient ? (
                 <PatientPicker
@@ -128,7 +156,13 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
                   <Field
                     label="Policy"
                     required
-                    hint={preAuth ? 'To use another policy, create a new pre-authorisation.' : policies.data && policies.data.length === 0 ? 'No active policy: record it on the Policies screen first.' : undefined}
+                    hint={
+                      preAuth
+                        ? 'To use another policy, create a new pre-authorisation.'
+                        : policies.data && policies.data.length === 0
+                          ? 'No active policy: record it on the Policies screen first.'
+                          : undefined
+                    }
                   >
                     <Select value={policyId} onChange={(_, d) => setPolicyId(d.value)} disabled={Boolean(preAuth)}>
                       <option value="">Choose…</option>
@@ -144,7 +178,10 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
                   <Field label="Admission" hint={canSeeAdmissions ? 'Leave empty for a planned admission' : undefined}>
                     <Select value={admissionId} onChange={(_, d) => setAdmissionId(d.value)}>
                       <option value="">Planned / not admitted yet</option>
-                      {preAuth?.admissionId && !patientAdmissions.some((a) => a.admissionId === preAuth.admissionId) && <option value={preAuth.admissionId}>Linked admission</option>}
+                      {preAuth?.admissionId &&
+                        !patientAdmissions.some((a) => a.admissionId === preAuth.admissionId) && (
+                          <option value={preAuth.admissionId}>Linked admission</option>
+                        )}
                       {patientAdmissions.map((a) => (
                         <option key={a.admissionId} value={a.admissionId}>
                           {a.admissionNumber} · admitted {formatDate(a.admittedAt)}
@@ -161,7 +198,11 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
                     hint="What you ask the insurer to approve"
                     autoFocus={Boolean(preAuth)}
                   />
-                  <Field label="Expected stay (days)" validationMessage={stayOk ? undefined : 'Between 1 and 365 days'} validationState={stayOk ? 'none' : 'error'}>
+                  <Field
+                    label="Expected stay (days)"
+                    validationMessage={stayOk ? undefined : 'Between 1 and 365 days'}
+                    validationState={stayOk ? 'none' : 'error'}
+                  >
                     <Input value={stay} onChange={(_, d) => setStay(d.value.replace(/\D/g, ''))} inputMode="numeric" />
                   </Field>
                 </div>
@@ -182,17 +223,26 @@ export function PreAuthDialog({ preAuth, patient: presetPatient, onClose, onSave
               )}
               {parsedAmount?.ok && parsedAmount.rupees === 0 && (
                 <MessageBar intent="info">
-                  <MessageBarBody>You can save a draft without an estimate, but it must be filled in before the request is submitted.</MessageBarBody>
+                  <MessageBarBody>
+                    You can save a draft without an estimate, but it must be filled in before the request is submitted.
+                  </MessageBarBody>
                 </MessageBar>
               )}
-              <Caption1 className={styles.muted}>Saved as a draft. Nothing is sent to the insurer until you submit it.</Caption1>
+              <Caption1 className={styles.muted}>
+                Saved as a draft. Nothing is sent to the insurer until you submit it.
+              </Caption1>
               <ActionError error={save.error} />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 {preAuth ? 'Save' : 'Save draft'}
               </Button>
             </DialogActions>

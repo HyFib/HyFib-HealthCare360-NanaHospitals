@@ -39,13 +39,15 @@ export const tallyQueries = {
   exports: (from: string, to: string) =>
     queryOptions({
       queryKey: ['billing', 'tally', 'exports', from, to],
-      queryFn: ({ signal }) => api.get<TallyExportDto[]>('/api/v1/billing/tally/exports', { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<TallyExportDto[]>('/api/v1/billing/tally/exports', { query: { from, to }, signal }),
       refetchInterval: 30_000,
     }),
   dayBook: (date: string) =>
     queryOptions({
       queryKey: ['billing', 'tally', 'day-book', date],
-      queryFn: ({ signal }) => api.get<AccountingVoucher[]>('/api/v1/billing/tally/day-book', { query: { date }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<AccountingVoucher[]>('/api/v1/billing/tally/day-book', { query: { date }, signal }),
     }),
 };
 

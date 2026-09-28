@@ -1,4 +1,16 @@
-import { Button, Caption1, Combobox, Field, Input, makeStyles, Option, Select, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Combobox,
+  Field,
+  Input,
+  makeStyles,
+  Option,
+  Select,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue, useHotkey } from '@hc360/core';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -33,7 +45,15 @@ function parseQuantity(text: string): number | null {
  * Adds a service to a draft OP bill (posted as an ad-hoc charge): search the catalogue, see the tariff price that
  * applies to this patient's visit, set the quantity and press Enter. F2 jumps here from anywhere on the screen.
  */
-export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDetail; onAdded: (bill: BillDetail) => void; enabled?: boolean }) {
+export function ServicePicker({
+  bill,
+  onAdded,
+  enabled = true,
+}: {
+  bill: BillDetail;
+  onAdded: (bill: BillDetail) => void;
+  enabled?: boolean;
+}) {
   const styles = useStyles();
   const searchRef = useRef<HTMLInputElement>(null);
   const quantityRef = useRef<HTMLInputElement>(null);
@@ -54,7 +74,12 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
   });
   const quote = useQuery({
     queryKey: ['billing', 'quote', item?.id ?? '', bill.visitId ?? '', bill.tariffPlanId ?? ''],
-    queryFn: () => quotePrice({ serviceItemId: item!.id, visitId: bill.visitId, tariffPlanId: bill.visitId ? null : bill.tariffPlanId }),
+    queryFn: () =>
+      quotePrice({
+        serviceItemId: item!.id,
+        visitId: bill.visitId,
+        tariffPlanId: bill.visitId ? null : bill.tariffPlanId,
+      }),
     enabled: item !== null,
     staleTime: 60_000,
   });
@@ -64,7 +89,10 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
   const editable = quote.data?.isPriceEditable ?? false;
   const override = editable && price.trim() ? parseRupees(price, { allowZero: true }) : null;
   const unitPrice = override?.ok ? override.rupees : (quote.data?.unitPrice ?? null);
-  const lineAmount = qty !== null && unitPrice !== null ? fromPaise(roundDiv(toPaise(unitPrice) * BigInt(Math.round(qty * 1000)), 1000n)) : null;
+  const lineAmount =
+    qty !== null && unitPrice !== null
+      ? fromPaise(roundDiv(toPaise(unitPrice) * BigInt(Math.round(qty * 1000)), 1000n))
+      : null;
 
   const clearSelection = () => {
     setItem(null);
@@ -92,7 +120,8 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
     },
   });
 
-  const canAdd = item !== null && qty !== null && quote.data !== undefined && (override === null || override.ok) && !add.isPending;
+  const canAdd =
+    item !== null && qty !== null && quote.data !== undefined && (override === null || override.ok) && !add.isPending;
   const submit = () => {
     if (canAdd) {
       add.mutate();
@@ -154,7 +183,11 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
             ))}
           </Combobox>
         </Field>
-        <Field label="Qty" validationMessage={quantity && qty === null ? 'More than 0, at most 3 decimals' : undefined} validationState={quantity && qty === null ? 'error' : 'none'}>
+        <Field
+          label="Qty"
+          validationMessage={quantity && qty === null ? 'More than 0, at most 3 decimals' : undefined}
+          validationState={quantity && qty === null ? 'error' : 'none'}
+        >
           <Input
             ref={quantityRef}
             className={styles.small}
@@ -171,8 +204,18 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
           />
         </Field>
         {editable && (
-          <Field label="Price (₹)" validationMessage={override && !override.ok ? override.error : undefined} validationState={override && !override.ok ? 'error' : 'none'}>
-            <Input className={styles.price} value={price} onChange={(_, data) => setPrice(data.value)} inputMode="decimal" contentBefore={<Text>₹</Text>} />
+          <Field
+            label="Price (₹)"
+            validationMessage={override && !override.ok ? override.error : undefined}
+            validationState={override && !override.ok ? 'error' : 'none'}
+          >
+            <Input
+              className={styles.price}
+              value={price}
+              onChange={(_, data) => setPrice(data.value)}
+              inputMode="decimal"
+              contentBefore={<Text>₹</Text>}
+            />
           </Field>
         )}
         {item && (doctors.data?.length ?? 0) > 0 && (
@@ -187,7 +230,12 @@ export function ServicePicker({ bill, onAdded, enabled = true }: { bill: BillDet
             </Select>
           </Field>
         )}
-        <Button appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />} disabled={!canAdd} onClick={submit}>
+        <Button
+          appearance="primary"
+          icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+          disabled={!canAdd}
+          onClick={submit}
+        >
           Add
         </Button>
       </div>

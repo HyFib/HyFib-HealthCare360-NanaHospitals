@@ -19,7 +19,13 @@ export const Route = createFileRoute('/_app/insurance/')({
 
 const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' },
-  grid: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', alignItems: 'start', '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  grid: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    alignItems: 'start',
+    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
 });
 
 function PreAuthKpi({ status, label, hint }: { status: PreAuthStatus; label: string; hint: string }) {
@@ -64,7 +70,9 @@ function InsuranceDeskPage() {
         icon={<ShieldCheckmarkRegular />}
         actions={
           <>
-            {canPolicies && <Button onClick={() => void navigate({ to: '/insurance/policies' })}>Patient policies</Button>}
+            {canPolicies && (
+              <Button onClick={() => void navigate({ to: '/insurance/policies' })}>Patient policies</Button>
+            )}
             {canClaims && (
               <Button icon={<DocumentCheckmarkRegular />} onClick={() => setDialog('claim')}>
                 New claim
@@ -102,9 +110,29 @@ function InsuranceDeskPage() {
               columns={[
                 { key: 'patient', header: 'Patient', render: (p) => p.patientName ?? p.uhid ?? '—' },
                 { key: 'payer', header: 'Insurer', priority: 'low', render: (p) => p.payerName ?? '—' },
-                { key: 'amount', header: 'Requested', align: 'end', render: (p) => <Amount value={p.requestedAmount} /> },
-                { key: 'when', header: 'Submitted', priority: 'low', render: (p) => formatRelative(p.submittedAt ?? p.createdAt) },
-                { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} tone={preAuthTone(p.status)} label={PREAUTH_STATUS_LABEL[p.status]} /> },
+                {
+                  key: 'amount',
+                  header: 'Requested',
+                  align: 'end',
+                  render: (p) => <Amount value={p.requestedAmount} />,
+                },
+                {
+                  key: 'when',
+                  header: 'Submitted',
+                  priority: 'low',
+                  render: (p) => formatRelative(p.submittedAt ?? p.createdAt),
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (p) => (
+                    <StatusBadge
+                      status={p.status}
+                      tone={preAuthTone(p.status)}
+                      label={PREAUTH_STATUS_LABEL[p.status]}
+                    />
+                  ),
+                },
               ]}
               emptyTitle="No open questions"
               emptyDescription="Nothing is waiting for an answer."
@@ -113,9 +141,18 @@ function InsuranceDeskPage() {
         )}
       </div>
       {dialog === 'preauth' && (
-        <PreAuthDialog preAuth={null} onClose={() => setDialog(null)} onSaved={(id) => void navigate({ to: '/insurance/preauths/$preAuthId', params: { preAuthId: id } })} />
+        <PreAuthDialog
+          preAuth={null}
+          onClose={() => setDialog(null)}
+          onSaved={(id) => void navigate({ to: '/insurance/preauths/$preAuthId', params: { preAuthId: id } })}
+        />
       )}
-      {dialog === 'claim' && <CreateClaimDialog onClose={() => setDialog(null)} onCreated={(id) => void navigate({ to: '/insurance/claims/$claimId', params: { claimId: id } })} />}
+      {dialog === 'claim' && (
+        <CreateClaimDialog
+          onClose={() => setDialog(null)}
+          onCreated={(id) => void navigate({ to: '/insurance/claims/$claimId', params: { claimId: id } })}
+        />
+      )}
     </Page>
   );
 }

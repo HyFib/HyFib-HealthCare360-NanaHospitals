@@ -8,7 +8,14 @@ import { useEffect, useState } from 'react';
 import { Can, usePermission } from '@/lib/permissions';
 import { billingQueries, type BillFilters } from '@/modules/billing/api';
 import { useBillingLive } from '@/modules/billing/hooks';
-import { BILL_STATUS_LABEL, BILL_STATUSES, BILL_TYPE_LABEL, BILL_TYPES, type BillStatus, type BillType } from '@/modules/billing/labels';
+import {
+  BILL_STATUS_LABEL,
+  BILL_STATUSES,
+  BILL_TYPE_LABEL,
+  BILL_TYPES,
+  type BillStatus,
+  type BillType,
+} from '@/modules/billing/labels';
 import { dateParam, enumParam, flagParam, pageParam, textParam } from '@/modules/billing/searchParams';
 import { Amount, BillStatusBadge, NoAccess } from '@/modules/billing/ui';
 
@@ -52,7 +59,12 @@ const PRESETS = [
 function BillsPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const canRead = usePermission(['billing.charges.read', 'billing.op.create', 'billing.ip.manage', 'billing.payments.collect']);
+  const canRead = usePermission([
+    'billing.charges.read',
+    'billing.op.create',
+    'billing.ip.manage',
+    'billing.payments.collect',
+  ]);
   const [term, setTerm] = useState(search.q ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
   useBillingLive();
@@ -75,7 +87,8 @@ function BillsPage() {
     page: search.page ?? 1,
   };
   const bills = useQuery({ ...billingQueries.bills(filters), enabled: canRead });
-  const set = (patch: Partial<BillsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<BillsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   if (!canRead) {
     return (
@@ -93,7 +106,11 @@ function BillsPage() {
         subtitle="Find a bill to reprint, collect a balance, issue a credit note or cancel it"
         actions={
           <Can permission="billing.op.create">
-            <Button appearance="primary" icon={<ReceiptAddRegular />} onClick={() => void navigate({ to: '/billing/op' })}>
+            <Button
+              appearance="primary"
+              icon={<ReceiptAddRegular />}
+              onClick={() => void navigate({ to: '/billing/op' })}
+            >
               New OP bill
             </Button>
           </Can>
@@ -103,13 +120,28 @@ function BillsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Bill number, UHID, mobile or name" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Bill number, UHID, mobile or name"
+                autoFocus
+              />
             </Field>
             <Field label="From">
-              <Input type="date" value={search.from ?? ''} max={todayIso()} onChange={(_, d) => set({ from: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.from ?? ''}
+                max={todayIso()}
+                onChange={(_, d) => set({ from: d.value || undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={search.to ?? ''} max={todayIso()} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? ''}
+                max={todayIso()}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Field label="Quick range">
               <Select
@@ -133,7 +165,10 @@ function BillsPage() {
               </Select>
             </Field>
             <Field label="Type">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as BillType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as BillType | undefined })}
+              >
                 <option value="">OP and IP</option>
                 {BILL_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -143,7 +178,10 @@ function BillsPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as BillStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as BillStatus | undefined })}
+              >
                 <option value="">All</option>
                 {BILL_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -152,7 +190,11 @@ function BillsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(search.due)} onChange={(_, d) => set({ due: d.checked ? true : undefined })} label="Only with balance due" />
+            <Switch
+              checked={Boolean(search.due)}
+              onChange={(_, d) => set({ due: d.checked ? true : undefined })}
+              label="Only with balance due"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -183,7 +225,13 @@ function BillsPage() {
                 </span>
               ),
             },
-            { key: 'createdAt', header: 'Date', sortable: true, width: 170, render: (b) => formatDateTime(b.finalizedAt ?? b.createdAt) },
+            {
+              key: 'createdAt',
+              header: 'Date',
+              sortable: true,
+              width: 170,
+              render: (b) => formatDateTime(b.finalizedAt ?? b.createdAt),
+            },
             {
               key: 'patient',
               header: 'Patient',
@@ -196,9 +244,32 @@ function BillsPage() {
             },
             { key: 'type', header: 'Type', width: 70, priority: 'low', render: (b) => BILL_TYPE_LABEL[b.type] },
             { key: 'payer', header: 'Payer', priority: 'low', render: (b) => b.payerName ?? 'Self pay' },
-            { key: 'netAmount', header: 'Bill total', align: 'end', sortable: true, render: (b) => <Amount value={b.netAmount} /> },
-            { key: 'paid', header: 'Paid', align: 'end', priority: 'low', render: (b) => <Amount value={b.paidAmount} /> },
-            { key: 'dueAmount', header: 'Due', align: 'end', sortable: true, render: (b) => (b.dueAmount > 0 ? <Amount value={b.dueAmount} strong tone="negative" /> : <Amount value={0} tone="muted" />) },
+            {
+              key: 'netAmount',
+              header: 'Bill total',
+              align: 'end',
+              sortable: true,
+              render: (b) => <Amount value={b.netAmount} />,
+            },
+            {
+              key: 'paid',
+              header: 'Paid',
+              align: 'end',
+              priority: 'low',
+              render: (b) => <Amount value={b.paidAmount} />,
+            },
+            {
+              key: 'dueAmount',
+              header: 'Due',
+              align: 'end',
+              sortable: true,
+              render: (b) =>
+                b.dueAmount > 0 ? (
+                  <Amount value={b.dueAmount} strong tone="negative" />
+                ) : (
+                  <Amount value={0} tone="muted" />
+                ),
+            },
             { key: 'status', header: 'Status', width: 140, render: (b) => <BillStatusBadge status={b.status} /> },
           ]}
           emptyTitle={search.q ? 'No bill matches your search' : 'No bills for these filters'}

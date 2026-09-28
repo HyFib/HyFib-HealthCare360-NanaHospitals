@@ -26,7 +26,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AlertUrgentRegular, DismissRegular, OpenRegular, WrenchRegular } from '@fluentui/react-icons';
-import { formatDateTime, formatInr, formatRelative, humanize, isApiError, useDebouncedValue } from '@hc360/core';
+import { formatDateTime, formatInr, formatRelative, isApiError, useDebouncedValue } from '@hc360/core';
 import { ConfirmDialog, DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -48,7 +48,6 @@ interface TicketSearch {
   q?: string;
   page?: number;
   id?: string;
-  report?: boolean;
 }
 
 export const Route = createFileRoute('/_app/assets/tickets')({
@@ -59,7 +58,6 @@ export const Route = createFileRoute('/_app/assets/tickets')({
     q: typeof s.q === 'string' && s.q ? s.q : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
     id: typeof s.id === 'string' && s.id ? s.id : undefined,
-    report: s.report === true || s.report === 'true' ? true : undefined,
   }),
   component: TicketsPage,
 });
@@ -96,12 +94,14 @@ function TicketsPage() {
     assetQueries.tickets({ status: search.status, priority: search.priority, openOnly: search.status || search.all ? undefined : true, search: search.q, page: search.page }),
   );
   const set = (patch: Partial<TicketSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  /** Opens or closes the ticket drawer without losing the list page. */
+  const show = (id: string | undefined) => void navigate({ search: (prev) => ({ ...prev, id }) });
 
   return (
     <Page>
       <PageHeader
         title="Breakdown tickets"
-        subtitle="Anyone can report equipment that is not working. Critical equipment comes first."
+        subtitle="Anyone can report equipment that is not working. Biomedical engineering assigns, repairs and closes each ticket; downtime counts towards equipment uptime."
         actions={
           <Button appearance="primary" icon={<WrenchRegular />} onClick={() => setReporting(true)}>
             Report breakdown
@@ -111,8 +111,8 @@ function TicketsPage() {
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
-            <Field label="Ticket number" style={{ flex: '0 1 200px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
+            <Field label="Ticket or asset tag" style={{ flex: '0 1 240px' }}>
+              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Full ticket number or scan the tag" />
             </Field>
             <Field label="Status">
               <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as TicketStatus | undefined })}>
@@ -144,7 +144,7 @@ function TicketsPage() {
           error={tickets.error}
           onRetry={() => void tickets.refetch()}
           getRowId={(t) => t.id}
-          onRowClick={(t) => set({ id: t.id })}
+          onRowClick={(t) => show(t.id)}
           size="small"
           columns={[
             { key: 'priority', header: 'Priority', width: 110, render: (t) => <PriorityBadge priority={t.priority} /> },
@@ -182,18 +182,8 @@ function TicketsPage() {
           onPageChange={(p) => void navigate({ search: (prev) => ({ ...prev, page: p > 1 ? p : undefined }) })}
         />
       </Section>
-      {search.id && <TicketDrawer ticketId={search.id} onClose={() => set({ id: undefined })} />}
-      {(reporting || search.report) && (
-        <BreakdownDialog
-          onClose={() => {
-            setReporting(false);
-            if (search.report) {
-              set({ report: undefined });
-            }
-          }}
-          onReported={(id) => set({ id, report: undefined })}
-        />
-      )}
+      {search.id && <TicketDrawer key={search.id} ticketId={search.id} onClose={() => show(undefined)} />}
+      {reporting && <BreakdownDialog onClose={() => setReporting(false)} onReported={show} />}
     </Page>
   );
 }
@@ -396,5 +386,3 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
     </Dialog>
   );
 }
-
-export const ticketStatusText = (status: TicketStatus) => STATUS_LABEL[status] ?? humanize(status);

@@ -29,7 +29,12 @@ import { ActionError, AmountField } from './ui';
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 600px)': { gridTemplateColumns: '1fr' } },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 600px)': { gridTemplateColumns: '1fr' },
+  },
   inclusion: {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 2fr) 90px 120px auto',
@@ -56,7 +61,17 @@ let inclusionSequence = 0;
 const nextKey = () => `inc-${++inclusionSequence}`;
 
 /** A small search box for one catalogue service (optionally of one category). */
-function ServiceSearch({ label, category, onPick, required }: { label: string; category?: ServiceCategory; onPick: (item: { id: string; name: string; code: string }) => void; required?: boolean }) {
+function ServiceSearch({
+  label,
+  category,
+  onPick,
+  required,
+}: {
+  label: string;
+  category?: ServiceCategory;
+  onPick: (item: { id: string; name: string; code: string }) => void;
+  required?: boolean;
+}) {
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
   const results = useQuery({
@@ -89,7 +104,13 @@ function ServiceSearch({ label, category, onPick, required }: { label: string; c
 }
 
 /** Create or edit a treatment package: price, stay, and what it includes (a service or a whole category, with caps). */
-export function PackageDrawer({ packageDetail, onClose }: { packageDetail: PackageDetail | null; onClose: () => void }) {
+export function PackageDrawer({
+  packageDetail,
+  onClose,
+}: {
+  packageDetail: PackageDetail | null;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -97,7 +118,9 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
   const p = packageDetail;
   const [code, setCode] = useState(p?.code ?? '');
   const [name, setName] = useState(p?.name ?? '');
-  const [billing, setBilling] = useState<{ id: string; label: string } | null>(p ? { id: p.serviceItemId, label: p.serviceCode ?? 'Package service' } : null);
+  const [billing, setBilling] = useState<{ id: string; label: string } | null>(
+    p ? { id: p.serviceItemId, label: p.serviceCode ?? 'Package service' } : null,
+  );
   const [price, setPrice] = useState(p ? amountInputText(p.price) : '');
   const [stay, setStay] = useState(p?.lengthOfStayDays ? String(p.lengthOfStayDays) : '');
   const [planId, setPlanId] = useState(p?.tariffPlanId ?? '');
@@ -135,7 +158,8 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
   const codeOk = /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(code.trim()) && code.trim().length <= 32;
   const valid = codeOk && name.trim().length > 0 && billing !== null && parsedPrice.ok && stayOk && !inclusionProblem;
 
-  const update = (key: string, patch: Partial<InclusionDraft>) => setInclusions((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
+  const update = (key: string, patch: Partial<InclusionDraft>) =>
+    setInclusions((list) => list.map((i) => (i.key === key ? { ...i, ...patch } : i)));
 
   const save = useMutation({
     mutationFn: () => {
@@ -181,19 +205,44 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
         style={{ display: 'contents' }}
       >
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>{p ? p.name : 'New package'}</DrawerHeaderTitle>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
+            {p ? p.name : 'New package'}
+          </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <div className={styles.grid}>
-              <Field label="Code" required validationMessage={code && !codeOk ? 'Use letters, digits, dots, dashes or underscores.' : undefined} validationState={code && !codeOk ? 'error' : 'none'}>
-                <Input value={code} onChange={(_, d) => setCode(d.value)} disabled={Boolean(p)} maxLength={32} autoFocus={!p} />
+              <Field
+                label="Code"
+                required
+                validationMessage={code && !codeOk ? 'Use letters, digits, dots, dashes or underscores.' : undefined}
+                validationState={code && !codeOk ? 'error' : 'none'}
+              >
+                <Input
+                  value={code}
+                  onChange={(_, d) => setCode(d.value)}
+                  disabled={Boolean(p)}
+                  maxLength={32}
+                  autoFocus={!p}
+                />
               </Field>
               <Field label="Name" required>
                 <Input value={name} onChange={(_, d) => setName(d.value)} maxLength={200} />
               </Field>
-              <AmountField label="Package price" required value={price} onChange={setPrice} error={price && !parsedPrice.ok ? parsedPrice.error : null} />
-              <Field label="Length of stay (days)" validationMessage={stayOk ? undefined : 'Between 1 and 365 days'} validationState={stayOk ? 'none' : 'error'}>
+              <AmountField
+                label="Package price"
+                required
+                value={price}
+                onChange={setPrice}
+                error={price && !parsedPrice.ok ? parsedPrice.error : null}
+              />
+              <Field
+                label="Length of stay (days)"
+                validationMessage={stayOk ? undefined : 'Between 1 and 365 days'}
+                validationState={stayOk ? 'none' : 'error'}
+              >
                 <Input value={stay} onChange={(_, d) => setStay(d.value.replace(/\D/g, ''))} inputMode="numeric" />
               </Field>
               <Field label="Only for tariff" hint="Leave empty for every payer">
@@ -223,14 +272,21 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
                 </div>
               </Field>
             ) : (
-              <ServiceSearch label="Billed as (catalogue service of category Package)" category="Package" required onPick={(item) => setBilling({ id: item.id, label: `${item.name} (${item.code})` })} />
+              <ServiceSearch
+                label="Billed as (catalogue service of category Package)"
+                category="Package"
+                required
+                onPick={(item) => setBilling({ id: item.id, label: `${item.name} (${item.code})` })}
+              />
             )}
             <Field label="Description">
               <Input value={description} onChange={(_, d) => setDescription(d.value)} maxLength={1000} />
             </Field>
 
             <Text weight="semibold">What the package includes</Text>
-            <Caption1 className={styles.muted}>Name a service or a whole category. Caps limit what the package absorbs; the rest is billed as excess.</Caption1>
+            <Caption1 className={styles.muted}>
+              Name a service or a whole category. Caps limit what the package absorbs; the rest is billed as excess.
+            </Caption1>
             {inclusions.map((i) => (
               <div key={i.key} className={styles.inclusion}>
                 {i.serviceItemId ? (
@@ -239,7 +295,10 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
                   </Field>
                 ) : (
                   <Field label="Category">
-                    <Select value={i.category ?? ''} onChange={(_, d) => update(i.key, { category: (d.value || null) as ServiceCategory | null })}>
+                    <Select
+                      value={i.category ?? ''}
+                      onChange={(_, d) => update(i.key, { category: (d.value || null) as ServiceCategory | null })}
+                    >
                       <option value="">Choose…</option>
                       {SERVICE_CATEGORIES.map((c) => (
                         <option key={c} value={c}>
@@ -250,12 +309,25 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
                   </Field>
                 )}
                 <Field label="Max qty">
-                  <Input value={i.maxQuantity} onChange={(_, d) => update(i.key, { maxQuantity: d.value })} inputMode="decimal" />
+                  <Input
+                    value={i.maxQuantity}
+                    onChange={(_, d) => update(i.key, { maxQuantity: d.value })}
+                    inputMode="decimal"
+                  />
                 </Field>
                 <Field label="Max ₹">
-                  <Input value={i.maxAmount} onChange={(_, d) => update(i.key, { maxAmount: d.value })} inputMode="decimal" />
+                  <Input
+                    value={i.maxAmount}
+                    onChange={(_, d) => update(i.key, { maxAmount: d.value })}
+                    inputMode="decimal"
+                  />
                 </Field>
-                <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Remove inclusion" onClick={() => setInclusions((list) => list.filter((x) => x.key !== i.key))} />
+                <Button
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label="Remove inclusion"
+                  onClick={() => setInclusions((list) => list.filter((x) => x.key !== i.key))}
+                />
               </div>
             ))}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
@@ -263,23 +335,54 @@ export function PackageDrawer({ packageDetail, onClose }: { packageDetail: Packa
                 <ServiceSearch
                   label="Add a service"
                   onPick={(item) =>
-                    setInclusions((list) => [...list, { key: nextKey(), serviceItemId: item.id, label: `${item.name} (${item.code})`, category: null, maxQuantity: '', maxAmount: '', notes: '' }])
+                    setInclusions((list) => [
+                      ...list,
+                      {
+                        key: nextKey(),
+                        serviceItemId: item.id,
+                        label: `${item.name} (${item.code})`,
+                        category: null,
+                        maxQuantity: '',
+                        maxAmount: '',
+                        notes: '',
+                      },
+                    ])
                   }
                 />
               </div>
               <Button
                 icon={<AddRegular />}
-                onClick={() => setInclusions((list) => [...list, { key: nextKey(), serviceItemId: null, label: '', category: null, maxQuantity: '', maxAmount: '', notes: '' }])}
+                onClick={() =>
+                  setInclusions((list) => [
+                    ...list,
+                    {
+                      key: nextKey(),
+                      serviceItemId: null,
+                      label: '',
+                      category: null,
+                      maxQuantity: '',
+                      maxAmount: '',
+                      notes: '',
+                    },
+                  ])
+                }
               >
                 Add a category
               </Button>
             </div>
-            {inclusionProblem && <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{inclusionProblem}</Caption1>}
+            {inclusionProblem && (
+              <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{inclusionProblem}</Caption1>
+            )}
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={!valid || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={!valid || save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {p ? 'Save package' : 'Create package'}
           </Button>
           <Button onClick={onClose} disabled={save.isPending}>

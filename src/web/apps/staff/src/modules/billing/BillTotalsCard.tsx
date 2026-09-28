@@ -15,11 +15,24 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorBrandBackground2,
     border: `1px solid ${tokens.colorBrandStroke2}`,
   },
-  heroPaid: { backgroundColor: tokens.colorPaletteGreenBackground1, border: `1px solid ${tokens.colorPaletteGreenBorder1}` },
+  heroPaid: {
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+    border: `1px solid ${tokens.colorPaletteGreenBorder1}`,
+  },
   heroLabel: { textTransform: 'uppercase', letterSpacing: '0.5px', color: tokens.colorNeutralForeground2 },
-  heroValue: { fontSize: '40px', lineHeight: '46px', fontWeight: tokens.fontWeightBold, color: tokens.colorNeutralForeground1, fontVariantNumeric: 'tabular-nums' },
+  heroValue: {
+    fontSize: '40px',
+    lineHeight: '46px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorNeutralForeground1,
+    fontVariantNumeric: 'tabular-nums',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
-  gst: { padding: '8px 10px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  gst: {
+    padding: '8px 10px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
 });
 
 const nonZero = (value: number) => toPaise(value) !== 0n;
@@ -104,7 +117,14 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
         </SummaryRow>
         {bill.payerAmount > 0 && (
           <>
-            <SummaryRow label={`Payable by ${bill.payerName ?? 'insurer'}`} hint={bill.nonPayableAmount > 0 ? `Items the insurer does not pay: ${formatInr(bill.nonPayableAmount)}` : undefined}>
+            <SummaryRow
+              label={`Payable by ${bill.payerName ?? 'insurer'}`}
+              hint={
+                bill.nonPayableAmount > 0
+                  ? `Items the insurer does not pay: ${formatInr(bill.nonPayableAmount)}`
+                  : undefined
+              }
+            >
               <Amount value={bill.payerAmount} />
             </SummaryRow>
             <SummaryRow label="Payable by patient">
@@ -130,7 +150,11 @@ export function BillTotalsCard({ bill }: { bill: BillDetail }) {
           </>
         )}
       </SummaryList>
-      {bill.isTaxInvoice && <Text className={styles.muted}>GST is charged on the discounted value and split equally into CGST and SGST.</Text>}
+      {bill.isTaxInvoice && (
+        <Text className={styles.muted}>
+          GST is charged on the discounted value and split equally into CGST and SGST.
+        </Text>
+      )}
     </div>
   );
 }

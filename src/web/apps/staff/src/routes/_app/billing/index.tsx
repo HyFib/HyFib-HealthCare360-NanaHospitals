@@ -37,7 +37,12 @@ function CashierDeskPage() {
   const styles = useStyles();
   const navigate = useNavigate();
   useBillingLive();
-  const canUse = usePermission(['billing.payments.collect', 'billing.shifts', 'billing.charges.read', 'billing.op.create']);
+  const canUse = usePermission([
+    'billing.payments.collect',
+    'billing.shifts',
+    'billing.charges.read',
+    'billing.op.create',
+  ]);
   const canCollect = usePermission('billing.payments.collect');
   const canShifts = usePermission('billing.shifts');
   const canCreate = usePermission('billing.op.create');
@@ -45,15 +50,31 @@ function CashierDeskPage() {
   const canApproveDiscounts = usePermission('billing.discounts.approve');
   const canApproveRefunds = usePermission('billing.refunds.approve');
   const canReadRefunds = usePermission(['billing.refunds.request', 'billing.refunds.approve', 'billing.charges.read']);
-  const canReadBills = usePermission(['billing.charges.read', 'billing.op.create', 'billing.ip.manage', 'billing.payments.collect']);
-  const [refundAction, setRefundAction] = useState<{ refund: RefundDto; action: 'approve' | 'reject' | 'pay' } | null>(null);
+  const canReadBills = usePermission([
+    'billing.charges.read',
+    'billing.op.create',
+    'billing.ip.manage',
+    'billing.payments.collect',
+  ]);
+  const [refundAction, setRefundAction] = useState<{ refund: RefundDto; action: 'approve' | 'reject' | 'pay' } | null>(
+    null,
+  );
 
   const today = todayIso();
   const shift = useQuery({ ...billingQueries.currentShift(), enabled: canShifts });
   const dayEnd = useQuery({ ...billingQueries.dayEnd(today), enabled: canShifts, refetchInterval: 60_000 });
-  const dues = useQuery({ ...billingQueries.bills({ withDueOnly: true, sort: 'dueAmount', desc: true, pageSize: 8 }), enabled: canReadBills });
-  const toApprove = useQuery({ ...billingQueries.refunds({ status: 'Requested', pageSize: 8 }), enabled: canReadRefunds && canApproveRefunds });
-  const toPay = useQuery({ ...billingQueries.refunds({ status: 'Approved', pageSize: 8 }), enabled: canReadRefunds && canCollect });
+  const dues = useQuery({
+    ...billingQueries.bills({ withDueOnly: true, sort: 'dueAmount', desc: true, pageSize: 8 }),
+    enabled: canReadBills,
+  });
+  const toApprove = useQuery({
+    ...billingQueries.refunds({ status: 'Requested', pageSize: 8 }),
+    enabled: canReadRefunds && canApproveRefunds,
+  });
+  const toPay = useQuery({
+    ...billingQueries.refunds({ status: 'Approved', pageSize: 8 }),
+    enabled: canReadRefunds && canCollect,
+  });
 
   if (!canUse) {
     return (
@@ -81,7 +102,11 @@ function CashierDeskPage() {
               </Button>
             )}
             {canCreate && (
-              <Button appearance="primary" icon={<ReceiptAddRegular />} onClick={() => void navigate({ to: '/billing/op' })}>
+              <Button
+                appearance="primary"
+                icon={<ReceiptAddRegular />}
+                onClick={() => void navigate({ to: '/billing/op' })}
+              >
                 OP billing
               </Button>
             )}
@@ -92,10 +117,28 @@ function CashierDeskPage() {
 
       {canShifts && (
         <div className={styles.kpis}>
-          <KpiCard label="Net collection today" value={<Amount value={d?.netCollection ?? null} />} hint="All counters, after refunds" onClick={() => void navigate({ to: '/billing/day-end' })} />
-          <KpiCard label="My shift" value={s ? <Amount value={s.expectedCash} /> : 'Closed'} hint={s ? `Cash expected · since ${formatTime(s.openedAt)}` : 'Open a shift to collect'} />
-          <KpiCard label="Bills finalised" value={d ? d.billsFinalized.toLocaleString('en-IN') : '…'} hint={d ? <Amount value={d.billedAmount} /> : undefined} onClick={() => void navigate({ to: '/billing/bills' })} />
-          <KpiCard label="Discounts given" value={<Amount value={d?.discountGiven ?? null} />} hint={d && d.billsCancelled > 0 ? `${d.billsCancelled} bill(s) cancelled` : 'Today'} />
+          <KpiCard
+            label="Net collection today"
+            value={<Amount value={d?.netCollection ?? null} />}
+            hint="All counters, after refunds"
+            onClick={() => void navigate({ to: '/billing/day-end' })}
+          />
+          <KpiCard
+            label="My shift"
+            value={s ? <Amount value={s.expectedCash} /> : 'Closed'}
+            hint={s ? `Cash expected · since ${formatTime(s.openedAt)}` : 'Open a shift to collect'}
+          />
+          <KpiCard
+            label="Bills finalised"
+            value={d ? d.billsFinalized.toLocaleString('en-IN') : '…'}
+            hint={d ? <Amount value={d.billedAmount} /> : undefined}
+            onClick={() => void navigate({ to: '/billing/bills' })}
+          />
+          <KpiCard
+            label="Discounts given"
+            value={<Amount value={d?.discountGiven ?? null} />}
+            hint={d && d.billsCancelled > 0 ? `${d.billsCancelled} bill(s) cancelled` : 'Today'}
+          />
         </div>
       )}
 
@@ -123,7 +166,12 @@ function CashierDeskPage() {
             title="Refunds awaiting approval"
             description={toApprove.data ? `${toApprove.data.totalCount} waiting` : undefined}
             actions={
-              <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/billing/refunds', search: { status: 'Requested' } })}>
+              <Button
+                appearance="transparent"
+                icon={<ArrowRightRegular />}
+                iconPosition="after"
+                onClick={() => void navigate({ to: '/billing/refunds', search: { status: 'Requested' } })}
+              >
                 All
               </Button>
             }
@@ -148,7 +196,11 @@ function CashierDeskPage() {
                   <Button size="small" onClick={() => setRefundAction({ refund: r, action: 'approve' })}>
                     Approve
                   </Button>{' '}
-                  <Button size="small" appearance="subtle" onClick={() => setRefundAction({ refund: r, action: 'reject' })}>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => setRefundAction({ refund: r, action: 'reject' })}
+                  >
                     Reject
                   </Button>
                 </>
@@ -163,7 +215,12 @@ function CashierDeskPage() {
             title="Approved refunds to pay out"
             description={toPay.data ? `${toPay.data.totalCount} ready` : undefined}
             actions={
-              <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/billing/refunds', search: { status: 'Approved' } })}>
+              <Button
+                appearance="transparent"
+                icon={<ArrowRightRegular />}
+                iconPosition="after"
+                onClick={() => void navigate({ to: '/billing/refunds', search: { status: 'Approved' } })}
+              >
                 All
               </Button>
             }
@@ -179,7 +236,12 @@ function CashierDeskPage() {
               size="small"
               columns={[
                 { key: 'patient', header: 'Patient', render: (r) => r.patientName ?? r.uhid ?? '—' },
-                { key: 'no', header: 'Refund', priority: 'low', render: (r) => <Text font="monospace">{r.refundNumber}</Text> },
+                {
+                  key: 'no',
+                  header: 'Refund',
+                  priority: 'low',
+                  render: (r) => <Text font="monospace">{r.refundNumber}</Text>,
+                },
                 { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
               ]}
               rowActions={(r) => (
@@ -197,7 +259,12 @@ function CashierDeskPage() {
             title="Dues"
             description="Finalised bills with a balance, largest first"
             actions={
-              <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/billing/bills', search: { due: true, sort: 'dueAmount' } })}>
+              <Button
+                appearance="transparent"
+                icon={<ArrowRightRegular />}
+                iconPosition="after"
+                onClick={() => void navigate({ to: '/billing/bills', search: { due: true, sort: 'dueAmount' } })}
+              >
                 All dues
               </Button>
             }
@@ -225,8 +292,18 @@ function CashierDeskPage() {
                     </span>
                   ),
                 },
-                { key: 'status', header: 'Status', priority: 'low', render: (b) => <BillStatusBadge status={b.status} /> },
-                { key: 'due', header: 'Due', align: 'end', render: (b) => <Amount value={b.dueAmount} strong tone="negative" /> },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  priority: 'low',
+                  render: (b) => <BillStatusBadge status={b.status} />,
+                },
+                {
+                  key: 'due',
+                  header: 'Due',
+                  align: 'end',
+                  render: (b) => <Amount value={b.dueAmount} strong tone="negative" />,
+                },
               ]}
               emptyTitle="No dues"
               emptyDescription="Every finalised bill is paid."
@@ -235,8 +312,16 @@ function CashierDeskPage() {
         )}
       </div>
 
-      {refundAction?.action === 'pay' && <PayRefundDialog refund={refundAction.refund} onClose={() => setRefundAction(null)} />}
-      {refundAction && refundAction.action !== 'pay' && <DecideRefundDialog refund={refundAction.refund} decision={refundAction.action} onClose={() => setRefundAction(null)} />}
+      {refundAction?.action === 'pay' && (
+        <PayRefundDialog refund={refundAction.refund} onClose={() => setRefundAction(null)} />
+      )}
+      {refundAction && refundAction.action !== 'pay' && (
+        <DecideRefundDialog
+          refund={refundAction.refund}
+          decision={refundAction.action}
+          onClose={() => setRefundAction(null)}
+        />
+      )}
     </Page>
   );
 }

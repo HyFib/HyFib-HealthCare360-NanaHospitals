@@ -37,7 +37,17 @@ export type RefundTarget =
  * Asks for a refund (MB-05). Nothing leaves the drawer yet: a second person approves the request, then the counter
  * pays it out in a stated mode.
  */
-export function RequestRefundDialog({ open, target, onClose, onRequested }: { open: boolean; target: RefundTarget; onClose: () => void; onRequested?: (id: string) => void }) {
+export function RequestRefundDialog({
+  open,
+  target,
+  onClose,
+  onRequested,
+}: {
+  open: boolean;
+  target: RefundTarget;
+  onClose: () => void;
+  onRequested?: (id: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useRefreshBilling();
@@ -52,7 +62,12 @@ export function RequestRefundDialog({ open, target, onClose, onRequested }: { op
     }
   }
   const parsed = parseRupees(amount, { max: target.max });
-  const amountError = amount && !parsed.ok ? (parsed.error === 'The amount is too large.' ? `At most ${formatInr(target.max)} can be refunded.` : parsed.error) : null;
+  const amountError =
+    amount && !parsed.ok
+      ? parsed.error === 'The amount is too large.'
+        ? `At most ${formatInr(target.max)} can be refunded.`
+        : parsed.error
+      : null;
   const valid = parsed.ok && reason.trim().length >= 5;
 
   const request = useMutation({
@@ -89,9 +104,22 @@ export function RequestRefundDialog({ open, target, onClose, onRequested }: { op
               <Text>
                 {target.label}. Up to <Amount value={target.max} strong /> can be refunded.
               </Text>
-              <AmountField label="Amount to refund" required value={amount} onChange={setAmount} error={amountError} autoFocus />
+              <AmountField
+                label="Amount to refund"
+                required
+                value={amount}
+                onChange={setAmount}
+                error={amountError}
+                autoFocus
+              />
               <Field label="Reason" required hint="At least 5 characters. The approver sees this.">
-                <Textarea value={reason} onChange={(_, data) => setReason(data.value)} maxLength={300} rows={2} placeholder="e.g. Test not done, duplicate payment, unused advance at discharge" />
+                <Textarea
+                  value={reason}
+                  onChange={(_, data) => setReason(data.value)}
+                  maxLength={300}
+                  rows={2}
+                  placeholder="e.g. Test not done, duplicate payment, unused advance at discharge"
+                />
               </Field>
               <ActionError error={request.error} />
             </DialogContent>
@@ -99,7 +127,12 @@ export function RequestRefundDialog({ open, target, onClose, onRequested }: { op
               <Button onClick={onClose} disabled={request.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || request.isPending} icon={request.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || request.isPending}
+                icon={request.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Request refund
               </Button>
             </DialogActions>
@@ -111,13 +144,27 @@ export function RequestRefundDialog({ open, target, onClose, onRequested }: { op
 }
 
 /** Approve (optional remarks) or reject (reason) a refund request; the requester cannot decide their own request. */
-export function DecideRefundDialog({ refund, decision, onClose }: { refund: RefundDto; decision: 'approve' | 'reject'; onClose: () => void }) {
+export function DecideRefundDialog({
+  refund,
+  decision,
+  onClose,
+}: {
+  refund: RefundDto;
+  decision: 'approve' | 'reject';
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const refresh = useRefreshBilling();
   const decide = useMutation({
-    mutationFn: (text: string) => (decision === 'approve' ? billingApi.approveRefund(refund.id, text || null) : billingApi.rejectRefund(refund.id, text)),
+    mutationFn: (text: string) =>
+      decision === 'approve'
+        ? billingApi.approveRefund(refund.id, text || null)
+        : billingApi.rejectRefund(refund.id, text),
     onSuccess: () => {
-      notify.success(decision === 'approve' ? 'Refund approved' : 'Refund rejected', `${refund.refundNumber} · ${formatInr(refund.amount)}`);
+      notify.success(
+        decision === 'approve' ? 'Refund approved' : 'Refund rejected',
+        `${refund.refundNumber} · ${formatInr(refund.amount)}`,
+      );
       void refresh();
       onClose();
     },
@@ -125,7 +172,11 @@ export function DecideRefundDialog({ refund, decision, onClose }: { refund: Refu
   return (
     <ReasonDialog
       open
-      title={decision === 'approve' ? `Approve refund of ${formatInr(refund.amount)}?` : `Reject refund of ${formatInr(refund.amount)}?`}
+      title={
+        decision === 'approve'
+          ? `Approve refund of ${formatInr(refund.amount)}?`
+          : `Reject refund of ${formatInr(refund.amount)}?`
+      }
       description={`${refund.patientName ?? 'Patient'} (${refund.uhid ?? '—'}) · ${REFUND_PURPOSE_LABEL[refund.purpose]} · requested by ${refund.requestedByName ?? 'the system'}: “${refund.reason}”`}
       label={decision === 'approve' ? 'Remarks' : 'Why is it rejected?'}
       optional={decision === 'approve'}
@@ -156,7 +207,13 @@ export function PayRefundDialog({ refund, onClose }: { refund: RefundDto; onClos
     onSuccess: () => {
       notify.success('Refund paid', `${formatInr(refund.amount)} to ${refund.patientName ?? 'the patient'}`);
       void refresh();
-      void printRefund({ ...refund, status: 'Paid', mode, reference: reference.trim() || null, paidAt: new Date().toISOString() });
+      void printRefund({
+        ...refund,
+        status: 'Paid',
+        mode,
+        reference: reference.trim() || null,
+        paidAt: new Date().toISOString(),
+      });
       onClose();
     },
   });
@@ -195,7 +252,9 @@ export function PayRefundDialog({ refund, onClose }: { refund: RefundDto; onClos
                 <Field
                   label={mode === 'PaymentGateway' ? 'Reference (optional)' : 'Reversal, transfer or cheque reference'}
                   required={needsReference}
-                  hint={mode === 'PaymentGateway' ? 'The original online payment is reversed by the gateway.' : undefined}
+                  hint={
+                    mode === 'PaymentGateway' ? 'The original online payment is reversed by the gateway.' : undefined
+                  }
                 >
                   <Input value={reference} onChange={(_, data) => setReference(data.value)} maxLength={64} />
                 </Field>
@@ -207,7 +266,12 @@ export function PayRefundDialog({ refund, onClose }: { refund: RefundDto; onClos
               <Button onClick={onClose} disabled={pay.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || pay.isPending} icon={pay.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || pay.isPending}
+                icon={pay.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Mark as paid · {formatInr(refund.amount)}
               </Button>
             </DialogActions>

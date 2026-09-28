@@ -30,7 +30,17 @@ const useStyles = makeStyles({
  * Supporting documents of a pre-authorisation or claim (discharge summary, investigation reports, ID and policy
  * card): open them in place (decrypted in memory only) and, when editing, upload more (PDF or images, 25 MB).
  */
-export function Attachments({ fileIds, patientId, onChange, disabled }: { fileIds: string[]; patientId: string; onChange?: (ids: string[]) => void; disabled?: boolean }) {
+export function Attachments({
+  fileIds,
+  patientId,
+  onChange,
+  disabled,
+}: {
+  fileIds: string[];
+  patientId: string;
+  onChange?: (ids: string[]) => void;
+  disabled?: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const canUpload = usePermission('files.write');
@@ -94,19 +104,39 @@ export function Attachments({ fileIds, patientId, onChange, disabled }: { fileId
             Document {index + 1}
           </Button>
           {onChange && !disabled && (
-            <Button size="small" appearance="subtle" icon={<DismissRegular />} aria-label={`Remove document ${index + 1}`} onClick={() => onChange(fileIds.filter((f) => f !== id))} />
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<DismissRegular />}
+              aria-label={`Remove document ${index + 1}`}
+              onClick={() => onChange(fileIds.filter((f) => f !== id))}
+            />
           )}
         </span>
       ))}
       {onChange && !disabled && canUpload && (
         <>
-          <input ref={inputRef} type="file" accept="application/pdf,image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => void upload(event.target.files)} />
-          <Button size="small" icon={uploading ? <Spinner size="tiny" /> : <ArrowUploadRegular />} disabled={uploading} onClick={() => inputRef.current?.click()}>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp"
+            multiple
+            hidden
+            onChange={(event) => void upload(event.target.files)}
+          />
+          <Button
+            size="small"
+            icon={uploading ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+            disabled={uploading}
+            onClick={() => inputRef.current?.click()}
+          >
             Attach documents
           </Button>
         </>
       )}
-      {onChange && !disabled && !canUpload && <Caption1 className={styles.muted}>Your role cannot upload files.</Caption1>}
+      {onChange && !disabled && !canUpload && (
+        <Caption1 className={styles.muted}>Your role cannot upload files.</Caption1>
+      )}
       <Dialog open={viewer !== null} onOpenChange={(_, d) => !d.open && setViewer(null)}>
         <DialogSurface style={{ maxWidth: '90vw', width: 1000 }}>
           <DialogBody>

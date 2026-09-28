@@ -18,7 +18,14 @@ import {
 /** Same defaults as TestData.Line in tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests. */
 function line(
   gross: number,
-  options: { discountAllowed?: boolean; taxRate?: number; payable?: boolean; lineDiscount?: number; covered?: number; tariffPercent?: number } = {},
+  options: {
+    discountAllowed?: boolean;
+    taxRate?: number;
+    payable?: boolean;
+    lineDiscount?: number;
+    covered?: number;
+    tariffPercent?: number;
+  } = {},
 ): BillLineInput {
   return {
     gross,
@@ -31,7 +38,8 @@ function line(
   };
 }
 
-const calculate = (discount: BillDiscountInput, ...lines: BillLineInput[]) => calculateBillTotals(lines, discount, SELF_PAY);
+const calculate = (discount: BillDiscountInput, ...lines: BillLineInput[]) =>
+  calculateBillTotals(lines, discount, SELF_PAY);
 const percent = (value: number): BillDiscountInput => ({ percent: value, amount: null });
 const amount = (value: number): BillDiscountInput => ({ percent: null, amount: value });
 
@@ -40,12 +48,15 @@ describe('BillTotalsCalculator (mirrors BillTotalsCalculatorTests)', () => {
     [100.4, 50.35, 151, 0.25],
     [100.4, 50.09, 150, -0.49],
     [100.25, 50.25, 151, 0.5],
-  ])('rounds the patient amount %s + %s to the nearest rupee half away from zero', (first, second, expectedNet, expectedRoundOff) => {
-    const totals = calculate(NO_BILL_DISCOUNT, line(first), line(second));
-    expect(totals.patientAmount).toBe(expectedNet);
-    expect(totals.net).toBe(expectedNet);
-    expect(totals.roundOff).toBe(expectedRoundOff);
-  });
+  ])(
+    'rounds the patient amount %s + %s to the nearest rupee half away from zero',
+    (first, second, expectedNet, expectedRoundOff) => {
+      const totals = calculate(NO_BILL_DISCOUNT, line(first), line(second));
+      expect(totals.patientAmount).toBe(expectedNet);
+      expect(totals.net).toBe(expectedNet);
+      expect(totals.roundOff).toBe(expectedRoundOff);
+    },
+  );
 
   it('never lets a line discount exceed the line value', () => {
     const totals = calculate(NO_BILL_DISCOUNT, line(100, { lineDiscount: 150 }));
@@ -133,7 +144,11 @@ describe('BillTotalsCalculator (mirrors BillTotalsCalculatorTests)', () => {
 
 describe('Insurance split (mirrors InsuranceSplitTests)', () => {
   it('makes co-pay the patient share of payable services', () => {
-    const totals = calculateBillTotals([line(10_000)], NO_BILL_DISCOUNT, { hasPayer: true, coPayPercent: 10, coverageLimit: null });
+    const totals = calculateBillTotals([line(10_000)], NO_BILL_DISCOUNT, {
+      hasPayer: true,
+      coPayPercent: 10,
+      coverageLimit: null,
+    });
     expect(totals.coPay).toBe(1_000);
     expect(totals.payerAmount).toBe(9_000);
     expect(totals.patientAmount).toBe(1_000);
@@ -141,20 +156,32 @@ describe('Insurance split (mirrors InsuranceSplitTests)', () => {
   });
 
   it('caps the payer share at the approved amount', () => {
-    const totals = calculateBillTotals([line(50_000)], NO_BILL_DISCOUNT, { hasPayer: true, coPayPercent: 0, coverageLimit: 40_000 });
+    const totals = calculateBillTotals([line(50_000)], NO_BILL_DISCOUNT, {
+      hasPayer: true,
+      coPayPercent: 0,
+      coverageLimit: 40_000,
+    });
     expect(totals.payerAmount).toBe(40_000);
     expect(totals.patientAmount).toBe(10_000);
   });
 
   it('makes the patient pay for non-payable items', () => {
-    const totals = calculateBillTotals([line(10_000), line(500, { payable: false })], NO_BILL_DISCOUNT, { hasPayer: true, coPayPercent: 0, coverageLimit: null });
+    const totals = calculateBillTotals([line(10_000), line(500, { payable: false })], NO_BILL_DISCOUNT, {
+      hasPayer: true,
+      coPayPercent: 0,
+      coverageLimit: null,
+    });
     expect(totals.payerAmount).toBe(10_000);
     expect(totals.nonPayable).toBe(500);
     expect(totals.patientAmount).toBe(500);
   });
 
   it('rounds only the patient share', () => {
-    const totals = calculateBillTotals([line(10_000.4)], NO_BILL_DISCOUNT, { hasPayer: true, coPayPercent: 5, coverageLimit: null });
+    const totals = calculateBillTotals([line(10_000.4)], NO_BILL_DISCOUNT, {
+      hasPayer: true,
+      coPayPercent: 5,
+      coverageLimit: null,
+    });
     expect(totals.coPay).toBe(500.02);
     expect(totals.payerAmount).toBe(9_500.38);
     expect(totals.patientAmount).toBe(500);
@@ -163,7 +190,11 @@ describe('Insurance split (mirrors InsuranceSplitTests)', () => {
   });
 
   it('leaves nothing for the patient on a fully covered bill, even with paise', () => {
-    const totals = calculateBillTotals([line(10_000.4)], NO_BILL_DISCOUNT, { hasPayer: true, coPayPercent: 0, coverageLimit: 20_000 });
+    const totals = calculateBillTotals([line(10_000.4)], NO_BILL_DISCOUNT, {
+      hasPayer: true,
+      coPayPercent: 0,
+      coverageLimit: 20_000,
+    });
     expect(totals.payerAmount).toBe(10_000.4);
     expect(totals.patientAmount).toBe(0);
     expect(totals.roundOff).toBe(0);
@@ -179,7 +210,11 @@ describe('Insurance split (mirrors InsuranceSplitTests)', () => {
 
 describe('Returns and credits (mirrors ReturnsAndCreditsTests)', () => {
   it('credits a return at the sale concession and gives it its share of the bill discount', () => {
-    const totals = calculateBillTotals([line(1_000, { tariffPercent: 10 }), line(-200, { tariffPercent: 10 })], percent(10), SELF_PAY);
+    const totals = calculateBillTotals(
+      [line(1_000, { tariffPercent: 10 }), line(-200, { tariffPercent: 10 })],
+      percent(10),
+      SELF_PAY,
+    );
     expect(totals.lines[1]!.tariffDiscount).toBe(-20);
     expect(totals.lines[1]!.billDiscountShare).toBe(-18);
     expect(totals.lines[1]!.net).toBe(-162);
@@ -201,7 +236,11 @@ describe('Returns and credits (mirrors ReturnsAndCreditsTests)', () => {
   });
 
   it('gives returns alone no discount and no negative co-pay', () => {
-    const totals = calculateBillTotals([line(-150.4)], percent(10), { hasPayer: true, coPayPercent: 10, coverageLimit: null });
+    const totals = calculateBillTotals([line(-150.4)], percent(10), {
+      hasPayer: true,
+      coPayPercent: 10,
+      coverageLimit: null,
+    });
     expect(totals.billDiscount).toBe(0);
     expect(totals.coPay).toBe(0);
     expect(totals.payerAmount).toBe(0);
@@ -286,7 +325,11 @@ describe('discount preview on a saved bill', () => {
   });
 
   it('previews a bill discount with GST exactly like the server', () => {
-    const bill = savedBill([savedLine('a', 1000, { taxRate: 18 })], { netAmount: 1180, patientAmount: 1180, taxAmount: 180 });
+    const bill = savedBill([savedLine('a', 1000, { taxRate: 18 })], {
+      netAmount: 1180,
+      patientAmount: 1180,
+      taxAmount: 180,
+    });
     const preview = previewDiscount(bill, { billPercent: 10, billAmount: null, lines: [] });
     expect(preview.ok).toBe(true);
     if (preview.ok) {
@@ -301,7 +344,11 @@ describe('discount preview on a saved bill', () => {
       patientAmount: 1150,
       discountAmount: 100,
     });
-    const preview = previewDiscount(bill, { billPercent: null, billAmount: null, lines: [{ lineId: 'a', percent: 10, amount: null }] });
+    const preview = previewDiscount(bill, {
+      billPercent: null,
+      billAmount: null,
+      lines: [{ lineId: 'a', percent: 10, amount: null }],
+    });
     expect(preview.ok).toBe(true);
     if (preview.ok) {
       expect(preview.lineAmounts.get('a')).toBe(90);
@@ -310,13 +357,31 @@ describe('discount preview on a saved bill', () => {
   });
 
   it('refuses a line discount larger than the line and discounts on protected services', () => {
-    const bill = savedBill([savedLine('a', 100), savedLine('b', 50, { isDiscountAllowed: false })], { netAmount: 150, patientAmount: 150 });
-    expect(previewDiscount(bill, { billPercent: null, billAmount: null, lines: [{ lineId: 'a', percent: null, amount: 101 }] })).toMatchObject({ ok: false, kind: 'invalid' });
-    expect(previewDiscount(bill, { billPercent: null, billAmount: null, lines: [{ lineId: 'b', percent: null, amount: 1 }] })).toMatchObject({ ok: false, kind: 'invalid' });
+    const bill = savedBill([savedLine('a', 100), savedLine('b', 50, { isDiscountAllowed: false })], {
+      netAmount: 150,
+      patientAmount: 150,
+    });
+    expect(
+      previewDiscount(bill, {
+        billPercent: null,
+        billAmount: null,
+        lines: [{ lineId: 'a', percent: null, amount: 101 }],
+      }),
+    ).toMatchObject({ ok: false, kind: 'invalid' });
+    expect(
+      previewDiscount(bill, {
+        billPercent: null,
+        billAmount: null,
+        lines: [{ lineId: 'b', percent: null, amount: 1 }],
+      }),
+    ).toMatchObject({ ok: false, kind: 'invalid' });
   });
 
   it('switches itself off when the saved totals cannot be reproduced', () => {
     const bill = savedBill([savedLine('a', 1000)], { netAmount: 999, patientAmount: 999 });
-    expect(previewDiscount(bill, { billPercent: 5, billAmount: null, lines: [] })).toMatchObject({ ok: false, kind: 'unavailable' });
+    expect(previewDiscount(bill, { billPercent: 5, billAmount: null, lines: [] })).toMatchObject({
+      ok: false,
+      kind: 'unavailable',
+    });
   });
 });

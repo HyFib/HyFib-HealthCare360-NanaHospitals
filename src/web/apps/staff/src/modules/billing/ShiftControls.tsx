@@ -19,7 +19,12 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { CalculatorRegular, DoorArrowLeftRegular, DoorArrowRightRegular, LockClosedRegular } from '@fluentui/react-icons';
+import {
+  CalculatorRegular,
+  DoorArrowLeftRegular,
+  DoorArrowRightRegular,
+  LockClosedRegular,
+} from '@fluentui/react-icons';
 import { formatInr, formatTime } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -79,8 +84,9 @@ export function ShiftBar({ onShift }: { onShift?: (shift: ShiftDto | null) => vo
             Shift open
           </Badge>
           <Text className={styles.grow}>
-            <Text weight="semibold">{shift.counter}</Text> since {formatTime(shift.openedAt)} · cash expected in drawer <Amount value={shift.expectedCash} strong /> ·{' '}
-            {shift.receiptCount} receipt{shift.receiptCount === 1 ? '' : 's'}
+            <Text weight="semibold">{shift.counter}</Text> since {formatTime(shift.openedAt)} · cash expected in drawer{' '}
+            <Amount value={shift.expectedCash} strong /> · {shift.receiptCount} receipt
+            {shift.receiptCount === 1 ? '' : 's'}
           </Text>
           <Button icon={<DoorArrowLeftRegular />} onClick={() => setDialog('close')}>
             Close shift
@@ -120,7 +126,15 @@ export function ShiftBar({ onShift }: { onShift?: (shift: ShiftDto | null) => vo
   );
 }
 
-export function OpenShiftDialog({ open, onClose, onOpened }: { open: boolean; onClose: () => void; onOpened: (shift: ShiftDto) => void }) {
+export function OpenShiftDialog({
+  open,
+  onClose,
+  onOpened,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onOpened: (shift: ShiftDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useRefreshBilling();
@@ -162,8 +176,17 @@ export function OpenShiftDialog({ open, onClose, onOpened }: { open: boolean; on
           <DialogBody>
             <DialogTitle>Open cash shift</DialogTitle>
             <DialogContent className={styles.body}>
-              <Field label="Counter" required hint="As printed on receipts, e.g. OPD Counter 1. Remembered on this computer.">
-                <Input value={counter} onChange={(_, data) => setCounter(data.value)} maxLength={64} autoFocus={!prefs.counter} />
+              <Field
+                label="Counter"
+                required
+                hint="As printed on receipts, e.g. OPD Counter 1. Remembered on this computer."
+              >
+                <Input
+                  value={counter}
+                  onChange={(_, data) => setCounter(data.value)}
+                  maxLength={64}
+                  autoFocus={!prefs.counter}
+                />
               </Field>
               <AmountField
                 label="Opening cash in the drawer"
@@ -179,7 +202,12 @@ export function OpenShiftDialog({ open, onClose, onOpened }: { open: boolean; on
               <Button onClick={onClose} disabled={openShift.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || openShift.isPending} icon={openShift.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || openShift.isPending}
+                icon={openShift.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Open shift
               </Button>
             </DialogActions>
@@ -200,7 +228,17 @@ function varianceText(variance: bigint): { text: string; tone: 'positive' | 'neg
     : { text: `Excess of ${formatInr(fromPaise(variance))}`, tone: 'neutral' };
 }
 
-export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: ShiftDto; open: boolean; onClose: () => void; onClosed: (shift: ShiftDto) => void }) {
+export function CloseShiftDialog({
+  shift,
+  open,
+  onClose,
+  onClosed,
+}: {
+  shift: ShiftDto;
+  open: boolean;
+  onClose: () => void;
+  onClosed: (shift: ShiftDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useRefreshBilling();
@@ -224,7 +262,10 @@ export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: Sh
   const live = useQuery({ ...billingQueries.shift(shift.id), enabled: open, refetchInterval: open ? 30_000 : false });
   const current = live.data ?? shift;
 
-  const countedPaise = NOTES.reduce((total, note) => total + BigInt(Math.max(0, Math.floor(Number(counts[String(note)] || 0)))) * BigInt(note) * 100n, 0n);
+  const countedPaise = NOTES.reduce(
+    (total, note) => total + BigInt(Math.max(0, Math.floor(Number(counts[String(note)] || 0)))) * BigInt(note) * 100n,
+    0n,
+  );
   const coins = parseRupees(counts.coins ?? '', { allowZero: true });
   const countTotal = countedPaise + (coins.ok ? coins.paise : 0n);
 
@@ -234,9 +275,13 @@ export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: Sh
   const needsNote = variance !== null && variance !== 0n && !notes.trim();
 
   const close = useMutation({
-    mutationFn: () => billingApi.closeShift(shift.id, parsed.ok ? parsed.rupees : 0, notes.trim() || null, current.version),
+    mutationFn: () =>
+      billingApi.closeShift(shift.id, parsed.ok ? parsed.rupees : 0, notes.trim() || null, current.version),
     onSuccess: (closed) => {
-      notify.success('Shift closed', closed.variance ? `Variance ${formatInr(closed.variance)} recorded` : 'The drawer tallied');
+      notify.success(
+        'Shift closed',
+        closed.variance ? `Variance ${formatInr(closed.variance)} recorded` : 'The drawer tallied',
+      );
       void refresh();
       onClosed(closed);
     },
@@ -248,13 +293,19 @@ export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: Sh
         <DialogBody>
           <DialogTitle>Close shift at {shift.counter}</DialogTitle>
           <DialogContent className={styles.body}>
-            <Text>Count the cash in the drawer and enter it. Closing is final: later collections need a new shift.</Text>
+            <Text>
+              Count the cash in the drawer and enter it. Closing is final: later collections need a new shift.
+            </Text>
             <SummaryList>
               <SummaryRow label="Opening cash">
                 <Amount value={current.openingFloat} />
               </SummaryRow>
               {current.totals.map((total) => (
-                <SummaryRow key={total.mode} label={`${PAYMENT_MODE_LABEL[total.mode]} collected`} hint={total.refunded ? `Refunded ${formatInr(total.refunded)}` : undefined}>
+                <SummaryRow
+                  key={total.mode}
+                  label={`${PAYMENT_MODE_LABEL[total.mode]} collected`}
+                  hint={total.refunded ? `Refunded ${formatInr(total.refunded)}` : undefined}
+                >
                   <Amount value={total.net} />
                 </SummaryRow>
               ))}
@@ -269,18 +320,31 @@ export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: Sh
                   <Field key={note} label={`₹${note} notes`}>
                     <Input
                       value={counts[String(note)] ?? ''}
-                      onChange={(_, data) => setCounts((c) => ({ ...c, [String(note)]: data.value.replace(/\D/g, '') }))}
+                      onChange={(_, data) =>
+                        setCounts((c) => ({ ...c, [String(note)]: data.value.replace(/\D/g, '') }))
+                      }
                       inputMode="numeric"
                     />
                   </Field>
                 ))}
-                <AmountField label="Coins" value={counts.coins ?? ''} onChange={(value) => setCounts((c) => ({ ...c, coins: value }))} />
+                <AmountField
+                  label="Coins"
+                  value={counts.coins ?? ''}
+                  onChange={(value) => setCounts((c) => ({ ...c, coins: value }))}
+                />
                 <Field label="Counted">
                   <Text weight="semibold">{formatInr(fromPaise(countTotal))}</Text>
                 </Field>
               </div>
             ) : (
-              <AmountField label="Cash counted in the drawer" required value={declared} onChange={setDeclared} error={declared && !parsed.ok ? parsed.error : null} autoFocus />
+              <AmountField
+                label="Cash counted in the drawer"
+                required
+                value={declared}
+                onChange={setDeclared}
+                error={declared && !parsed.ok ? parsed.error : null}
+                autoFocus
+              />
             )}
             <div>
               <Button appearance="transparent" icon={<CalculatorRegular />} onClick={() => setCounting((c) => !c)}>
@@ -289,13 +353,23 @@ export function CloseShiftDialog({ shift, open, onClose, onClosed }: { shift: Sh
             </div>
 
             {verdict && (
-              <MessageBar intent={verdict.tone === 'positive' ? 'success' : verdict.tone === 'negative' ? 'error' : 'warning'}>
+              <MessageBar
+                intent={verdict.tone === 'positive' ? 'success' : verdict.tone === 'negative' ? 'error' : 'warning'}
+              >
                 <MessageBarBody>
                   <span className={styles.variance}>{verdict.text}</span>
                 </MessageBarBody>
               </MessageBar>
             )}
-            <Field label="Notes" hint={variance !== null && variance !== 0n ? 'Explain the difference; it is recorded against the shift.' : 'Optional'} required={needsNote}>
+            <Field
+              label="Notes"
+              hint={
+                variance !== null && variance !== 0n
+                  ? 'Explain the difference; it is recorded against the shift.'
+                  : 'Optional'
+              }
+              required={needsNote}
+            >
               <Textarea value={notes} onChange={(_, data) => setNotes(data.value)} maxLength={500} rows={2} />
             </Field>
             <Caption1 className={styles.muted}>Receipts in this shift: {current.receiptCount}</Caption1>

@@ -1,4 +1,18 @@
-import { Button, Caption1, Field, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Select, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  SearchBox,
+  Select,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { MoreHorizontalRegular, PrintRegular, ReceiptRegular } from '@fluentui/react-icons';
 import { formatDateTime, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -8,7 +22,12 @@ import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { billingQueries } from '@/modules/billing/api';
 import { useBillingLive, useBillingPrint } from '@/modules/billing/hooks';
-import { modeSummaryLabel, RECEIPT_PURPOSE_LABEL, RECEIPT_PURPOSES, type ReceiptPurpose } from '@/modules/billing/labels';
+import {
+  modeSummaryLabel,
+  RECEIPT_PURPOSE_LABEL,
+  RECEIPT_PURPOSES,
+  type ReceiptPurpose,
+} from '@/modules/billing/labels';
 import { sumRupees } from '@/modules/billing/money';
 import { dateParam, enumParam, pageParam, textParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
@@ -62,7 +81,8 @@ function ReceiptsPage() {
     }),
     enabled: canRead,
   });
-  const set = (patch: Partial<ReceiptsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<ReceiptsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   if (!canRead) {
     return (
@@ -77,7 +97,11 @@ function ReceiptsPage() {
 
   return (
     <Page>
-      <PageHeader title="Receipts" subtitle="Money received at the counters, terminals and online" icon={<ReceiptRegular />} />
+      <PageHeader
+        title="Receipts"
+        subtitle="Money received at the counters, terminals and online"
+        icon={<ReceiptRegular />}
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
@@ -85,13 +109,26 @@ function ReceiptsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="e.g. NHRC260000123" />
             </Field>
             <Field label="From">
-              <Input type="date" value={search.from ?? today} max={today} onChange={(_, d) => set({ from: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.from ?? today}
+                max={today}
+                onChange={(_, d) => set({ from: d.value || undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={search.to ?? search.from ?? today} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? search.from ?? today}
+                max={today}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Field label="For">
-              <Select value={search.purpose ?? ''} onChange={(_, d) => set({ purpose: (d.value || undefined) as ReceiptPurpose | undefined })}>
+              <Select
+                value={search.purpose ?? ''}
+                onChange={(_, d) => set({ purpose: (d.value || undefined) as ReceiptPurpose | undefined })}
+              >
                 <option value="">Everything</option>
                 {RECEIPT_PURPOSES.map((p) => (
                   <option key={p} value={p}>
@@ -101,12 +138,17 @@ function ReceiptsPage() {
               </Select>
             </Field>
             <Field label="Counter">
-              <Input value={search.counter ?? ''} onChange={(_, d) => set({ counter: d.value || undefined })} placeholder="All counters" />
+              <Input
+                value={search.counter ?? ''}
+                onChange={(_, d) => set({ counter: d.value || undefined })}
+                placeholder="All counters"
+              />
             </Field>
           </FilterBar>
           {pageTotal !== null && receipts.data && receipts.data.items.length > 0 && (
             <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
-              {receipts.data.totalCount} receipt{receipts.data.totalCount === 1 ? '' : 's'} · this page <Amount value={pageTotal} strong />
+              {receipts.data.totalCount} receipt{receipts.data.totalCount === 1 ? '' : 's'} · this page{' '}
+              <Amount value={pageTotal} strong />
             </Caption1>
           )}
         </div>
@@ -117,9 +159,18 @@ function ReceiptsPage() {
           error={receipts.error}
           onRetry={() => void receipts.refetch()}
           getRowId={(r) => r.id}
-          onRowClick={(r) => (r.billId ? void navigate({ to: '/billing/bills/$billId', params: { billId: r.billId } }) : void printReceiptById(r.id))}
+          onRowClick={(r) =>
+            r.billId
+              ? void navigate({ to: '/billing/bills/$billId', params: { billId: r.billId } })
+              : void printReceiptById(r.id)
+          }
           columns={[
-            { key: 'no', header: 'Receipt', width: 160, render: (r) => <Text font="monospace">{r.receiptNumber}</Text> },
+            {
+              key: 'no',
+              header: 'Receipt',
+              width: 160,
+              render: (r) => <Text font="monospace">{r.receiptNumber}</Text>,
+            },
             { key: 'at', header: 'Received', width: 170, render: (r) => formatDateTime(r.receivedAt) },
             {
               key: 'patient',
@@ -133,13 +184,23 @@ function ReceiptsPage() {
             },
             { key: 'purpose', header: 'For', priority: 'low', render: (r) => RECEIPT_PURPOSE_LABEL[r.purpose] },
             { key: 'mode', header: 'Mode', render: (r) => modeSummaryLabel(r.modes) },
-            { key: 'by', header: 'Received by', priority: 'low', render: (r) => `${r.receivedByName ?? '—'}${r.counter ? ` · ${r.counter}` : ''}` },
+            {
+              key: 'by',
+              header: 'Received by',
+              priority: 'low',
+              render: (r) => `${r.receivedByName ?? '—'}${r.counter ? ` · ${r.counter}` : ''}`,
+            },
             { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
           ]}
           rowActions={(r) => (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Reprint ${r.receiptNumber}`} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<MoreHorizontalRegular />}
+                  aria-label={`Reprint ${r.receiptNumber}`}
+                />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

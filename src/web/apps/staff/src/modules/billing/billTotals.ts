@@ -107,7 +107,11 @@ function billableFor(gross: bigint, covered: bigint): bigint {
   return gross >= 0n ? maxBig(gross - maxBig(covered, 0n), 0n) : minBig(gross - minBig(covered, 0n), 0n);
 }
 
-function allocateBillDiscount(lines: readonly BillLineInput[], afterLine: readonly bigint[], discount: BillDiscountInput): bigint[] {
+function allocateBillDiscount(
+  lines: readonly BillLineInput[],
+  afterLine: readonly bigint[],
+  discount: BillDiscountInput,
+): bigint[] {
   const shares = lines.map(() => 0n);
   // Credit lines are part of the basis with their negative value: the discount is a share of what was really supplied.
   const discountable = lines.map((_, i) => i).filter((i) => lines[i]!.discountAllowed && afterLine[i] !== 0n);
@@ -143,13 +147,18 @@ function allocateBillDiscount(lines: readonly BillLineInput[], afterLine: readon
 }
 
 /** `BillTotalsCalculator.Calculate`. */
-export function calculateBillTotals(lines: readonly BillLineInput[], discount: BillDiscountInput, terms: SplitTerms): BillTotals {
+export function calculateBillTotals(
+  lines: readonly BillLineInput[],
+  discount: BillDiscountInput,
+  terms: SplitTerms,
+): BillTotals {
   const work: LineWork[] = lines.map((line) => {
     const gross = toPaise(line.gross);
     const tariffPercent = clampBig(toCentiPercent(line.tariffDiscountPercent), 0n, WHOLE);
     const billable = billableFor(gross, toPaise(line.packageCovered));
     const tariff = tariffFor(gross, billable, tariffPercent, line.discountAllowed);
-    const lineDiscount = gross >= 0n && line.discountAllowed ? clampBig(toPaise(line.lineDiscount), 0n, billable - tariff) : 0n;
+    const lineDiscount =
+      gross >= 0n && line.discountAllowed ? clampBig(toPaise(line.lineDiscount), 0n, billable - tariff) : 0n;
     return { billable, tariff, lineDiscount, afterLine: billable - tariff - lineDiscount };
   });
 
@@ -164,12 +173,25 @@ export function calculateBillTotals(lines: readonly BillLineInput[], discount: B
     const rate = toCentiPercent(lines[i]!.taxRate);
     const tax = rate > 0n ? percentOfPaise(taxable, rate) : 0n;
     const { cgst, sgst } = splitGstPaise(tax);
-    return { billable: w.billable, tariff: w.tariff, lineDiscount: w.lineDiscount, share: shares[i]!, taxable, cgst, sgst, tax, net: taxable + tax };
+    return {
+      billable: w.billable,
+      tariff: w.tariff,
+      lineDiscount: w.lineDiscount,
+      share: shares[i]!,
+      taxable,
+      cgst,
+      sgst,
+      tax,
+      net: taxable + tax,
+    };
   });
 
   const netBeforeRounding = sum(results.map((r) => r.net));
   const payable = terms.hasPayer ? sum(results.filter((_, i) => lines[i]!.payerPayable).map((r) => r.net)) : 0n;
-  const coPay = terms.hasPayer && payable > 0n ? percentOfPaise(payable, clampBig(toCentiPercent(terms.coPayPercent), 0n, WHOLE)) : 0n;
+  const coPay =
+    terms.hasPayer && payable > 0n
+      ? percentOfPaise(payable, clampBig(toCentiPercent(terms.coPayPercent), 0n, WHOLE))
+      : 0n;
   const cap = terms.coverageLimit !== null ? maxBig(toPaise(terms.coverageLimit), 0n) : null;
   const payerShare = cap === null ? payable - coPay : minBig(payable - coPay, cap);
   const payerAmount = terms.hasPayer ? maxBig(payerShare, 0n) : 0n;
@@ -239,7 +261,12 @@ export function allowedWithoutApproval(discountBase: number, authority: Discount
 }
 
 /** `DiscountPolicy.RequiresApproval`. */
-export function requiresApproval(userDiscount: number, discountBase: number, authority: DiscountAuthority, approvedAmount: number): boolean {
+export function requiresApproval(
+  userDiscount: number,
+  discountBase: number,
+  authority: DiscountAuthority,
+  approvedAmount: number,
+): boolean {
   const discount = toPaise(userDiscount);
   return (
     discount > 0n &&
@@ -301,7 +328,9 @@ export function lineDiscountable(line: PreviewLine): number {
   if (!line.isDiscountAllowed) {
     return 0;
   }
-  return fromPaise(maxBig(toPaise(line.grossAmount) - toPaise(line.packageCoveredAmount) - toPaise(line.tariffDiscountAmount), 0n));
+  return fromPaise(
+    maxBig(toPaise(line.grossAmount) - toPaise(line.packageCoveredAmount) - toPaise(line.tariffDiscountAmount), 0n),
+  );
 }
 
 /**
@@ -325,8 +354,14 @@ export function inferTariffPercent(line: PreviewLine): number | null {
   return null;
 }
 
-export function splitTermsOf(bill: Pick<PreviewBill, 'payerType' | 'payerId' | 'coPayPercent' | 'payerCoverageLimit'>): SplitTerms {
-  return { hasPayer: isThirdPartyPayer(bill.payerType, bill.payerId), coPayPercent: bill.coPayPercent, coverageLimit: bill.payerCoverageLimit };
+export function splitTermsOf(
+  bill: Pick<PreviewBill, 'payerType' | 'payerId' | 'coPayPercent' | 'payerCoverageLimit'>,
+): SplitTerms {
+  return {
+    hasPayer: isThirdPartyPayer(bill.payerType, bill.payerId),
+    coPayPercent: bill.coPayPercent,
+    coverageLimit: bill.payerCoverageLimit,
+  };
 }
 
 /**
@@ -337,7 +372,11 @@ export function splitTermsOf(bill: Pick<PreviewBill, 'payerType' | 'payerId' | '
 export function previewDiscount(bill: PreviewBill, draft: DiscountDraft): DiscountPreview {
   const percents = bill.lines.map(inferTariffPercent);
   if (percents.some((p) => p === null)) {
-    return { ok: false, kind: 'unavailable', message: 'A live preview is not available for this bill. The new total appears after you apply the discount.' };
+    return {
+      ok: false,
+      kind: 'unavailable',
+      message: 'A live preview is not available for this bill. The new total appears after you apply the discount.',
+    };
   }
   const baseInputs: BillLineInput[] = bill.lines.map((line, i) => ({
     gross: line.grossAmount,
@@ -350,7 +389,11 @@ export function previewDiscount(bill: PreviewBill, draft: DiscountDraft): Discou
   }));
   const terms = splitTermsOf(bill);
 
-  const baseline = calculateBillTotals(baseInputs, { percent: bill.billDiscountPercent, amount: bill.billDiscountValue }, terms);
+  const baseline = calculateBillTotals(
+    baseInputs,
+    { percent: bill.billDiscountPercent, amount: bill.billDiscountValue },
+    terms,
+  );
   const matches =
     toPaise(baseline.net) === toPaise(bill.netAmount) &&
     toPaise(baseline.patientAmount) === toPaise(bill.patientAmount) &&
@@ -358,7 +401,11 @@ export function previewDiscount(bill: PreviewBill, draft: DiscountDraft): Discou
     toPaise(baseline.tax) === toPaise(bill.taxAmount) &&
     toPaise(baseline.totalDiscount) === toPaise(bill.discountAmount);
   if (!matches) {
-    return { ok: false, kind: 'unavailable', message: 'A live preview is not available for this bill. The new total appears after you apply the discount.' };
+    return {
+      ok: false,
+      kind: 'unavailable',
+      message: 'A live preview is not available for this bill. The new total appears after you apply the discount.',
+    };
   }
 
   // DiscountService.ResolveLineDiscounts: percentages become rupees of the line's discountable value.
@@ -386,7 +433,9 @@ export function previewDiscount(bill: PreviewBill, draft: DiscountDraft): Discou
 
   const inputs = baseInputs.map((input, i) => ({ ...input, lineDiscount: lineAmounts.get(bill.lines[i]!.id) ?? 0 }));
   const discount: BillDiscountInput =
-    draft.billPercent !== null && draft.billPercent > 0 ? { percent: draft.billPercent, amount: null } : { percent: null, amount: draft.billAmount };
+    draft.billPercent !== null && draft.billPercent > 0
+      ? { percent: draft.billPercent, amount: null }
+      : { percent: null, amount: draft.billAmount };
   return { ok: true, totals: calculateBillTotals(inputs, discount, terms), lineAmounts };
 }
 

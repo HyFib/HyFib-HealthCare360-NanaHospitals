@@ -20,7 +20,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowUndoRegular, CheckmarkRegular, DismissRegular, MoneyHandRegular, MoreHorizontalRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  ArrowUndoRegular,
+  CheckmarkRegular,
+  DismissRegular,
+  MoneyHandRegular,
+  MoreHorizontalRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr } from '@hc360/core';
 import { DataTable, EmptyState, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -80,11 +87,22 @@ function RefundsPage() {
   const [requesting, setRequesting] = useState(false);
   useBillingLive();
 
-  const patientDetail = useQuery({ ...patientQueries.detail(search.patientId ?? ''), enabled: Boolean(search.patientId) && picked === null });
-  const pickerValue = picked ?? (patientDetail.data && search.patientId ? { id: patientDetail.data.id, uhid: patientDetail.data.uhid, fullName: patientDetail.data.fullName } : null);
+  const patientDetail = useQuery({
+    ...patientQueries.detail(search.patientId ?? ''),
+    enabled: Boolean(search.patientId) && picked === null,
+  });
+  const pickerValue =
+    picked ??
+    (patientDetail.data && search.patientId
+      ? { id: patientDetail.data.id, uhid: patientDetail.data.uhid, fullName: patientDetail.data.fullName }
+      : null);
   const status = search.status ?? (canApprove ? 'Requested' : canPay ? 'Approved' : 'all');
   const refunds = useQuery({
-    ...billingQueries.refunds({ status: status === 'all' ? undefined : status, patientId: search.patientId, page: search.page ?? 1 }),
+    ...billingQueries.refunds({
+      status: status === 'all' ? undefined : status,
+      patientId: search.patientId,
+      page: search.page ?? 1,
+    }),
     enabled: canRead,
   });
 
@@ -112,7 +130,14 @@ function RefundsPage() {
       />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={status} onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, status: d.value as RefundsSearch['status'], page: undefined }) })}>
+          <TabList
+            selectedValue={status}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: (prev) => ({ ...prev, status: d.value as RefundsSearch['status'], page: undefined }),
+              })
+            }
+          >
             {(['Requested', 'Approved', 'Paid', 'Rejected', 'all'] as const).map((s) => (
               <Tab key={s} value={s}>
                 {TAB_LABEL[s]}
@@ -184,7 +209,13 @@ function RefundsPage() {
               onPrint={() => void printRefund(r)}
             />
           )}
-          emptyTitle={status === 'Requested' ? 'No refund is waiting for approval' : status === 'Approved' ? 'No approved refund to pay out' : 'No refunds here'}
+          emptyTitle={
+            status === 'Requested'
+              ? 'No refund is waiting for approval'
+              : status === 'Approved'
+                ? 'No approved refund to pay out'
+                : 'No refunds here'
+          }
           emptyDescription="Refunds of bills are requested from the bill; unused IP advances from the IP account."
           page={search.page ?? 1}
           pageSize={25}
@@ -195,7 +226,9 @@ function RefundsPage() {
       </Section>
 
       {action?.kind === 'pay' && <PayRefundDialog refund={action.refund} onClose={() => setAction(null)} />}
-      {action && action.kind !== 'pay' && <DecideRefundDialog refund={action.refund} decision={action.kind} onClose={() => setAction(null)} />}
+      {action && action.kind !== 'pay' && (
+        <DecideRefundDialog refund={action.refund} decision={action.kind} onClose={() => setAction(null)} />
+      )}
       {requesting && <AdvanceRefundDialog onClose={() => setRequesting(false)} />}
     </Page>
   );
@@ -245,7 +278,12 @@ function RefundRowActions({
   return (
     <Menu>
       <MenuTrigger disableButtonEnhancement>
-        <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for refund ${refund.refundNumber}`} />
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<MoreHorizontalRegular />}
+          aria-label={`Actions for refund ${refund.refundNumber}`}
+        />
       </MenuTrigger>
       <MenuPopover>
         <MenuList>{items}</MenuList>
@@ -270,7 +308,12 @@ function AdvanceRefundDialog({ onClose }: { onClose: () => void }) {
     return (
       <RequestRefundDialog
         open
-        target={{ kind: 'advance', advanceId: chosen.advance.id, max: chosen.available, label: `Advance ${chosen.advance.receiptNumber} of ${patient.fullName}` }}
+        target={{
+          kind: 'advance',
+          advanceId: chosen.advance.id,
+          max: chosen.available,
+          label: `Advance ${chosen.advance.receiptNumber} of ${patient.fullName}`,
+        }}
         onClose={onClose}
       />
     );

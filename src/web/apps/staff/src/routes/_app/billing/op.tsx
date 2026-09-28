@@ -15,7 +15,16 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowLeftRegular, BedRegular, DocumentRegular, PersonAddRegular, ReceiptAddRegular, SearchRegular, SettingsRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowLeftRegular,
+  BedRegular,
+  DocumentRegular,
+  PersonAddRegular,
+  ReceiptAddRegular,
+  SearchRegular,
+  SettingsRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateTime, formatInr, humanize, todayIso, useHotkey, type PagedResult } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -23,7 +32,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
-import { billingApi, billingQueries, existingDraftId, type BillDetail, type BillListItem, type ChargeDto } from '@/modules/billing/api';
+import {
+  billingApi,
+  billingQueries,
+  existingDraftId,
+  type BillDetail,
+  type BillListItem,
+  type ChargeDto,
+} from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
 import { BillWorkspace } from '@/modules/billing/BillWorkspace';
 import { CounterSettingsDialog } from '@/modules/billing/CounterSettingsDialog';
@@ -43,12 +59,22 @@ interface OpSearch {
 }
 
 export const Route = createFileRoute('/_app/billing/op')({
-  validateSearch: (s: Record<string, unknown>): OpSearch => ({ patientId: idParam(s.patientId), visitId: idParam(s.visitId), billId: idParam(s.billId) }),
+  validateSearch: (s: Record<string, unknown>): OpSearch => ({
+    patientId: idParam(s.patientId),
+    visitId: idParam(s.visitId),
+    billId: idParam(s.billId),
+  }),
   component: OpBillingPage,
 });
 
 const useStyles = makeStyles({
-  find: { display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(200px, 1fr)', gap: '12px', alignItems: 'end', '@media (max-width: 800px)': { gridTemplateColumns: '1fr' } },
+  find: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 2fr) minmax(200px, 1fr)',
+    gap: '12px',
+    alignItems: 'end',
+    '@media (max-width: 800px)': { gridTemplateColumns: '1fr' },
+  },
   cards: { display: 'flex', flexDirection: 'column', gap: '12px' },
   card: {
     display: 'flex',
@@ -60,7 +86,13 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
   },
   highlight: { border: `2px solid ${tokens.colorBrandStroke1}` },
-  cardHead: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'flex-start', flexWrap: 'wrap' },
+  cardHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
   charges: { display: 'flex', flexDirection: 'column', gap: '4px' },
   charge: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '12px', alignItems: 'center' },
   foot: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
@@ -81,7 +113,9 @@ function OpBillingPage() {
   useBillingLive();
 
   const patient = useQuery({ ...patientQueries.detail(search.patientId ?? ''), enabled: Boolean(search.patientId) });
-  const picked: PickedPatient | null = patient.data ? { id: patient.data.id, uhid: patient.data.uhid, fullName: patient.data.fullName } : null;
+  const picked: PickedPatient | null = patient.data
+    ? { id: patient.data.id, uhid: patient.data.uhid, fullName: patient.data.fullName }
+    : null;
 
   const newBill = () => {
     void navigate({ search: {} });
@@ -93,12 +127,16 @@ function OpBillingPage() {
   const lookup = useMutation({
     mutationFn: async (text: string) => {
       const term = text.trim().toUpperCase();
-      const bills = await api.get<PagedResult<BillListItem>>('/api/v1/billing/bills', { query: { search: term, pageSize: 5 } });
+      const bills = await api.get<PagedResult<BillListItem>>('/api/v1/billing/bills', {
+        query: { search: term, pageSize: 5 },
+      });
       const bill = bills.items.find((b) => b.billNumber === term);
       if (bill) {
         return { patientId: bill.patientId, billId: bill.id } as OpSearch;
       }
-      const visits = await api.get<PagedResult<VisitListItem>>('/api/v1/visits', { query: { search: term, from: todayIso(-60), to: todayIso(), pageSize: 5 } });
+      const visits = await api.get<PagedResult<VisitListItem>>('/api/v1/visits', {
+        query: { search: term, from: todayIso(-60), to: todayIso(), pageSize: 5 },
+      });
       const visit = visits.items.find((v) => v.visitNumber.toUpperCase() === term);
       return visit ? ({ patientId: visit.patientId, visitId: visit.id } as OpSearch) : null;
     },
@@ -106,7 +144,10 @@ function OpBillingPage() {
       if (found) {
         void navigate({ search: found });
       } else {
-        notify.warning('No visit or bill with that number', 'Check the number, or find the patient by UHID, mobile or name.');
+        notify.warning(
+          'No visit or bill with that number',
+          'Check the number, or find the patient by UHID, mobile or name.',
+        );
       }
     },
     onError: (error) => notify.error(error, 'Search failed'),
@@ -182,7 +223,11 @@ function OpBillingPage() {
         <>
           <BillingPatientBanner patientId={search.patientId} />
           {search.billId ? (
-            <BillView patientId={search.patientId} billId={search.billId} onBack={() => void navigate({ search: { patientId: search.patientId } })} />
+            <BillView
+              patientId={search.patientId}
+              billId={search.billId}
+              onBack={() => void navigate({ search: { patientId: search.patientId } })}
+            />
           ) : (
             <VisitChooser
               patientId={search.patientId}
@@ -213,7 +258,12 @@ function BillView({ patientId, billId, onBack }: { patientId: string; billId: st
   }
   const b = bill.data;
   if (b.patientId !== patientId) {
-    return <EmptyState title="This bill belongs to another patient" description="Search for the patient again to continue." />;
+    return (
+      <EmptyState
+        title="This bill belongs to another patient"
+        description="Search for the patient again to continue."
+      />
+    );
   }
   return (
     <>
@@ -242,7 +292,17 @@ interface VisitGroup {
 }
 
 /** Visits of the patient with their unbilled services, open drafts and unpaid bills: pick one and start billing. */
-function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patientId: string; uhid: string | null; highlightVisitId: string | null; onOpenBill: (billId: string) => void }) {
+function VisitChooser({
+  patientId,
+  uhid,
+  highlightVisitId,
+  onOpenBill,
+}: {
+  patientId: string;
+  uhid: string | null;
+  highlightVisitId: string | null;
+  onOpenBill: (billId: string) => void;
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
   const charges = useQuery(billingQueries.unbilledCharges(patientId));
@@ -291,7 +351,8 @@ function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patie
   }
   // Visits with something to bill first (the highlighted one on top), then the rest by date.
   const ordered = [...groups.values()].sort((a, b) => {
-    const score = (g: VisitGroup) => (g.visitId === highlightVisitId ? 3 : 0) + (g.draft ? 2 : 0) + (g.charges.length > 0 ? 1 : 0);
+    const score = (g: VisitGroup) =>
+      (g.visitId === highlightVisitId ? 3 : 0) + (g.draft ? 2 : 0) + (g.charges.length > 0 ? 1 : 0);
     return score(b) - score(a) || (b.visit?.visitedAt ?? '').localeCompare(a.visit?.visitedAt ?? '');
   });
   const unpaid = dues.data?.bills ?? [];
@@ -302,10 +363,14 @@ function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patie
         <MessageBar intent="info">
           <MessageBarBody>
             <MessageBarTitle>In-patient services</MessageBarTitle>
-            {ipCharges.length} service{ipCharges.length === 1 ? '' : 's'} of an admission are billed from the IP account, not here.
+            {ipCharges.length} service{ipCharges.length === 1 ? '' : 's'} of an admission are billed from the IP
+            account, not here.
           </MessageBarBody>
           <MessageBarActions>
-            <Button icon={<BedRegular />} onClick={() => void navigate({ to: '/billing/ip', search: { search: uhid ?? undefined } })}>
+            <Button
+              icon={<BedRegular />}
+              onClick={() => void navigate({ to: '/billing/ip', search: { search: uhid ?? undefined } })}
+            >
               IP accounts
             </Button>
           </MessageBarActions>
@@ -330,7 +395,10 @@ function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patie
         </Section>
       )}
 
-      <Section title="Visits and services to bill" description="Unbilled services are grouped by visit. Untick anything the patient is not paying for today.">
+      <Section
+        title="Visits and services to bill"
+        description="Unbilled services are grouped by visit. Untick anything the patient is not paying for today."
+      >
         {ordered.length === 0 ? (
           <EmptyState
             icon={<DocumentRegular />}
@@ -341,7 +409,13 @@ function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patie
         ) : (
           <div className={styles.cards}>
             {ordered.map((group) => (
-              <VisitCard key={group.key} patientId={patientId} group={group} highlighted={group.visitId !== null && group.visitId === highlightVisitId} onOpenBill={onOpenBill} />
+              <VisitCard
+                key={group.key}
+                patientId={patientId}
+                group={group}
+                highlighted={group.visitId !== null && group.visitId === highlightVisitId}
+                onOpenBill={onOpenBill}
+              />
             ))}
             {!groups.has('no-visit') && (
               <div>
@@ -358,7 +432,8 @@ function VisitChooser({ patientId, uhid, highlightVisitId, onOpenBill }: { patie
 function useStartBill(onOpenBill: (billId: string) => void) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (request: { visitId: string | null; patientId: string | null; chargeIds: string[] | null }) => billingApi.createBill(request),
+    mutationFn: (request: { visitId: string | null; patientId: string | null; chargeIds: string[] | null }) =>
+      billingApi.createBill(request),
     onSuccess: (detail: BillDetail) => {
       queryClient.setQueryData(billingQueries.bill(detail.id).queryKey, detail);
       void queryClient.invalidateQueries({ queryKey: ['billing', 'charges'] });
@@ -373,7 +448,15 @@ function useStartBill(onOpenBill: (billId: string) => void) {
   });
 }
 
-function PatientLevelStart({ patientId, onOpenBill, subtle }: { patientId: string; onOpenBill: (billId: string) => void; subtle?: boolean }) {
+function PatientLevelStart({
+  patientId,
+  onOpenBill,
+  subtle,
+}: {
+  patientId: string;
+  onOpenBill: (billId: string) => void;
+  subtle?: boolean;
+}) {
   const start = useStartBill(onOpenBill);
   return (
     <>
@@ -390,7 +473,17 @@ function PatientLevelStart({ patientId, onOpenBill, subtle }: { patientId: strin
   );
 }
 
-function VisitCard({ patientId, group, highlighted, onOpenBill }: { patientId: string; group: VisitGroup; highlighted: boolean; onOpenBill: (billId: string) => void }) {
+function VisitCard({
+  patientId,
+  group,
+  highlighted,
+  onOpenBill,
+}: {
+  patientId: string;
+  group: VisitGroup;
+  highlighted: boolean;
+  onOpenBill: (billId: string) => void;
+}) {
   const styles = useStyles();
   const start = useStartBill(onOpenBill);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
@@ -420,7 +513,9 @@ function VisitCard({ patientId, group, highlighted, onOpenBill }: { patientId: s
     <div className={mergeClasses(styles.card, highlighted && styles.highlight)}>
       <div className={styles.cardHead}>
         <span>
-          <Text weight="semibold">{visit ? `Visit ${visit.visitNumber}` : group.visitId ? 'Earlier visit' : 'Services without a visit'}</Text>
+          <Text weight="semibold">
+            {visit ? `Visit ${visit.visitNumber}` : group.visitId ? 'Earlier visit' : 'Services without a visit'}
+          </Text>
           {visit && (
             <Caption1 block className={styles.muted}>
               {formatDateTime(visit.visitedAt)} · {humanize(visit.type)} · {visit.departmentName ?? 'No department'}
@@ -430,7 +525,12 @@ function VisitCard({ patientId, group, highlighted, onOpenBill }: { patientId: s
           )}
         </span>
         <span>
-          {visit && <StatusBadge status={visit.status} />} {group.draft && <Badge appearance="tint" color="informative">Draft bill open</Badge>}
+          {visit && <StatusBadge status={visit.status} />}{' '}
+          {group.draft && (
+            <Badge appearance="tint" color="informative">
+              Draft bill open
+            </Badge>
+          )}
         </span>
       </div>
 
@@ -452,7 +552,8 @@ function VisitCard({ patientId, group, highlighted, onOpenBill }: { patientId: s
                     )}
                     <Caption1 block className={styles.muted}>
                       {charge.quantity} × {formatInr(charge.unitPrice)} · {SERVICE_CATEGORY_LABEL[charge.category]}
-                      {charge.practitionerName ? ` · ${charge.practitionerName}` : ''} · {formatDate(charge.serviceDate)}
+                      {charge.practitionerName ? ` · ${charge.practitionerName}` : ''} ·{' '}
+                      {formatDate(charge.serviceDate)}
                     </Caption1>
                   </span>
                 }
@@ -462,7 +563,11 @@ function VisitCard({ patientId, group, highlighted, onOpenBill }: { patientId: s
           ))}
         </div>
       ) : (
-        !group.draft && <Caption1 className={styles.muted}>No unbilled services on this visit. You can still start a bill and add services.</Caption1>
+        !group.draft && (
+          <Caption1 className={styles.muted}>
+            No unbilled services on this visit. You can still start a bill and add services.
+          </Caption1>
+        )
       )}
 
       <div className={styles.foot}>

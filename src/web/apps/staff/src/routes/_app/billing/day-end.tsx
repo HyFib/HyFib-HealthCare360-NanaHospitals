@@ -1,7 +1,28 @@
-import { Button, Field, Input, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  Input,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { DocumentTableRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso, useDebouncedValue, useSession } from '@hc360/core';
-import { DataTable, ErrorState, FilterBar, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  ErrorState,
+  FilterBar,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -19,13 +40,22 @@ interface DayEndSearch {
 }
 
 export const Route = createFileRoute('/_app/billing/day-end')({
-  validateSearch: (s: Record<string, unknown>): DayEndSearch => ({ date: dateParam(s.date), counter: textParam(s.counter, 64) }),
+  validateSearch: (s: Record<string, unknown>): DayEndSearch => ({
+    date: dateParam(s.date),
+    counter: textParam(s.counter, 64),
+  }),
   component: DayEndPage,
 });
 
 const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' },
-  grid: { display: 'grid', gap: '16px', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)', alignItems: 'start', '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  grid: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 2fr)',
+    alignItems: 'start',
+    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -56,7 +86,9 @@ function DayEndPage() {
   const r = report.data;
   const print = () => {
     if (r) {
-      void sendToPrinter(buildDayEndHtml(r, facility, printedBy, new Date().toISOString()), 'A4').catch((error: unknown) => notify.error(error, 'Printing failed'));
+      void sendToPrinter(buildDayEndHtml(r, facility, printedBy, new Date().toISOString()), 'A4').catch(
+        (error: unknown) => notify.error(error, 'Printing failed'),
+      );
     }
   };
 
@@ -75,7 +107,12 @@ function DayEndPage() {
       <Section>
         <FilterBar>
           <Field label="Date">
-            <Input type="date" value={date} max={todayIso()} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, date: d.value || undefined }) })} />
+            <Input
+              type="date"
+              value={date}
+              max={todayIso()}
+              onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, date: d.value || undefined }) })}
+            />
           </Field>
           <Field label="Counter" hint="Leave empty for all counters">
             <Input
@@ -107,11 +144,23 @@ function DayEndPage() {
             </MessageBar>
           )}
           <div className={styles.kpis}>
-            <KpiCard label="Net collection" value={<Amount value={r.netCollection} />} hint={`Collected ${formatInr(r.totalCollected)} · refunded ${formatInr(r.totalRefunded)}`} />
+            <KpiCard
+              label="Net collection"
+              value={<Amount value={r.netCollection} />}
+              hint={`Collected ${formatInr(r.totalCollected)} · refunded ${formatInr(r.totalRefunded)}`}
+            />
             <KpiCard label="IP advances collected" value={<Amount value={r.depositsCollected} />} />
-            <KpiCard label="Bills finalised" value={r.billsFinalized.toLocaleString('en-IN')} hint={`Billed ${formatInr(r.billedAmount)}`} />
+            <KpiCard
+              label="Bills finalised"
+              value={r.billsFinalized.toLocaleString('en-IN')}
+              hint={`Billed ${formatInr(r.billedAmount)}`}
+            />
             <KpiCard label="Discounts given" value={<Amount value={r.discountGiven} />} />
-            <KpiCard label="Bills cancelled" value={r.billsCancelled.toLocaleString('en-IN')} hint={r.billsCancelled ? formatInr(r.cancelledAmount) : undefined} />
+            <KpiCard
+              label="Bills cancelled"
+              value={r.billsCancelled.toLocaleString('en-IN')}
+              hint={r.billsCancelled ? formatInr(r.cancelledAmount) : undefined}
+            />
           </div>
           <div className={styles.grid}>
             <Section title="By payment mode" flush>
@@ -122,7 +171,12 @@ function DayEndPage() {
                 size="small"
                 columns={[
                   { key: 'mode', header: 'Mode', render: (m) => PAYMENT_MODE_LABEL[m.mode] },
-                  { key: 'collected', header: 'Collected', align: 'end', render: (m) => <Amount value={m.collected} /> },
+                  {
+                    key: 'collected',
+                    header: 'Collected',
+                    align: 'end',
+                    render: (m) => <Amount value={m.collected} />,
+                  },
                   { key: 'refunded', header: 'Refunded', align: 'end', render: (m) => <Amount value={m.refunded} /> },
                   { key: 'net', header: 'Net', align: 'end', render: (m) => <Amount value={m.net} strong /> },
                 ]}
@@ -148,15 +202,45 @@ function DayEndPage() {
                       </span>
                     ),
                   },
-                  { key: 'collected', header: 'Collected', align: 'end', render: (s) => <Amount value={s.collected} /> },
-                  { key: 'refunded', header: 'Refunded', align: 'end', priority: 'low', render: (s) => <Amount value={s.refunded} /> },
-                  { key: 'expected', header: 'Expected cash', align: 'end', render: (s) => <Amount value={s.expectedCash} /> },
-                  { key: 'declared', header: 'Declared', align: 'end', render: (s) => <Amount value={s.declaredCash} /> },
+                  {
+                    key: 'collected',
+                    header: 'Collected',
+                    align: 'end',
+                    render: (s) => <Amount value={s.collected} />,
+                  },
+                  {
+                    key: 'refunded',
+                    header: 'Refunded',
+                    align: 'end',
+                    priority: 'low',
+                    render: (s) => <Amount value={s.refunded} />,
+                  },
+                  {
+                    key: 'expected',
+                    header: 'Expected cash',
+                    align: 'end',
+                    render: (s) => <Amount value={s.expectedCash} />,
+                  },
+                  {
+                    key: 'declared',
+                    header: 'Declared',
+                    align: 'end',
+                    render: (s) => <Amount value={s.declaredCash} />,
+                  },
                   {
                     key: 'variance',
                     header: 'Short / excess',
                     align: 'end',
-                    render: (s) => (s.variance === null ? '—' : <Amount value={s.variance} strong tone={s.variance < 0 ? 'negative' : s.variance > 0 ? 'neutral' : 'positive'} />),
+                    render: (s) =>
+                      s.variance === null ? (
+                        '—'
+                      ) : (
+                        <Amount
+                          value={s.variance}
+                          strong
+                          tone={s.variance < 0 ? 'negative' : s.variance > 0 ? 'neutral' : 'positive'}
+                        />
+                      ),
                   },
                   { key: 'status', header: 'Shift', priority: 'low', render: (s) => <StatusBadge status={s.status} /> },
                 ]}

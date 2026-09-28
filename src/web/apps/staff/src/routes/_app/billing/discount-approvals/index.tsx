@@ -1,12 +1,39 @@
-import { Button, Caption1, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Tab, TabList, Text, tokens } from '@fluentui/react-components';
-import { AddRegular, CheckmarkRegular, DeleteRegular, DismissRegular, EditRegular, MoreHorizontalRegular, TagPercentRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  AddRegular,
+  CheckmarkRegular,
+  DeleteRegular,
+  DismissRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+  TagPercentRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr } from '@hc360/core';
 import { ConfirmDialog, DataTable, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { billingApi, billingKeys, billingQueries, type DiscountApprovalDto, type DiscountLimitDto } from '@/modules/billing/api';
+import {
+  billingApi,
+  billingKeys,
+  billingQueries,
+  type DiscountApprovalDto,
+  type DiscountLimitDto,
+} from '@/modules/billing/api';
 import { DecideDiscountDialog, DiscountLimitDialog } from '@/modules/billing/DiscountDecision';
 import { DISCOUNT_APPROVAL_STATUSES, type DiscountApprovalStatus } from '@/modules/billing/labels';
 import { formatPercent } from '@/modules/billing/money';
@@ -58,10 +85,19 @@ function DiscountApprovalsPage() {
 
   return (
     <Page>
-      <PageHeader title="Discount approvals" subtitle="Discounts above a cashier's limit wait here; the requester cannot approve their own" icon={<TagPercentRegular />} />
+      <PageHeader
+        title="Discount approvals"
+        subtitle="Discounts above a cashier's limit wait here; the requester cannot approve their own"
+        icon={<TagPercentRegular />}
+      />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={view} onTabSelect={(_, d) => void navigate({ search: { view: d.value === 'Pending' ? undefined : (d.value as View) } })}>
+          <TabList
+            selectedValue={view}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { view: d.value === 'Pending' ? undefined : (d.value as View) } })
+            }
+          >
             {(['Pending', 'Approved', 'Rejected', 'Withdrawn', 'limits'] as const).map((v) => (
               <Tab key={v} value={v}>
                 {VIEW_LABEL[v]}
@@ -72,14 +108,26 @@ function DiscountApprovalsPage() {
         {view === 'limits' ? (
           <LimitsView />
         ) : (
-          <RequestsView status={view} page={search.page ?? 1} onPage={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })} />
+          <RequestsView
+            status={view}
+            page={search.page ?? 1}
+            onPage={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+          />
         )}
       </Section>
     </Page>
   );
 }
 
-function RequestsView({ status, page, onPage }: { status: DiscountApprovalStatus; page: number; onPage: (page: number) => void }) {
+function RequestsView({
+  status,
+  page,
+  onPage,
+}: {
+  status: DiscountApprovalStatus;
+  page: number;
+  onPage: (page: number) => void;
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
   const approvals = useQuery(billingQueries.discountApprovals(status, page));
@@ -94,7 +142,9 @@ function RequestsView({ status, page, onPage }: { status: DiscountApprovalStatus
         error={approvals.error}
         onRetry={() => void approvals.refetch()}
         getRowId={(a) => a.id}
-        onRowClick={(a) => void navigate({ to: '/billing/discount-approvals/$approvalId', params: { approvalId: a.id } })}
+        onRowClick={(a) =>
+          void navigate({ to: '/billing/discount-approvals/$approvalId', params: { approvalId: a.id } })
+        }
         columns={[
           {
             key: 'patient',
@@ -116,7 +166,9 @@ function RequestsView({ status, page, onPage }: { status: DiscountApprovalStatus
               <span>
                 <Amount value={a.requestedAmount} strong />
                 <Caption1 block className={styles.muted}>
-                  {a.discountBase > 0 ? `${formatPercent((a.requestedAmount / a.discountBase) * 100)} of ${formatInr(a.discountBase)}` : ''}
+                  {a.discountBase > 0
+                    ? `${formatPercent((a.requestedAmount / a.discountBase) * 100)} of ${formatInr(a.discountBase)}`
+                    : ''}
                 </Caption1>
               </span>
             ),
@@ -158,10 +210,19 @@ function RequestsView({ status, page, onPage }: { status: DiscountApprovalStatus
           status === 'Pending'
             ? (a) => (
                 <>
-                  <Button size="small" appearance="primary" icon={<CheckmarkRegular />} onClick={() => setDecision({ approval: a, kind: 'approve' })}>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    icon={<CheckmarkRegular />}
+                    onClick={() => setDecision({ approval: a, kind: 'approve' })}
+                  >
                     Approve
                   </Button>{' '}
-                  <Button size="small" icon={<DismissRegular />} onClick={() => setDecision({ approval: a, kind: 'reject' })}>
+                  <Button
+                    size="small"
+                    icon={<DismissRegular />}
+                    onClick={() => setDecision({ approval: a, kind: 'reject' })}
+                  >
                     Reject
                   </Button>
                 </>
@@ -169,14 +230,18 @@ function RequestsView({ status, page, onPage }: { status: DiscountApprovalStatus
             : undefined
         }
         emptyTitle={status === 'Pending' ? 'No discount is waiting for a decision' : 'Nothing here'}
-        emptyDescription={status === 'Pending' ? 'Requests appear here when a cashier asks for more than their limit.' : undefined}
+        emptyDescription={
+          status === 'Pending' ? 'Requests appear here when a cashier asks for more than their limit.' : undefined
+        }
         page={page}
         pageSize={25}
         totalCount={approvals.data?.totalCount}
         onPageChange={onPage}
         size="small"
       />
-      {decision && <DecideDiscountDialog approval={decision.approval} decision={decision.kind} onClose={() => setDecision(null)} />}
+      {decision && (
+        <DecideDiscountDialog approval={decision.approval} decision={decision.kind} onClose={() => setDecision(null)} />
+      )}
     </>
   );
 }
@@ -203,7 +268,8 @@ function LimitsView() {
           Add a limit
         </Button>
         <Caption1 block style={{ marginTop: 6 }}>
-          Users without a limit may give only the hospital default (usually 0 %), so every discount they give needs approval.
+          Users without a limit may give only the hospital default (usually 0 %), so every discount they give needs
+          approval.
         </Caption1>
       </div>
       <DataTable
@@ -217,13 +283,23 @@ function LimitsView() {
         columns={[
           { key: 'user', header: 'User', render: (l) => <Text weight="semibold">{l.userName ?? '—'}</Text> },
           { key: 'percent', header: 'Up to', align: 'end', render: (l) => formatPercent(l.maxPercent) },
-          { key: 'cap', header: 'Rupee cap', align: 'end', render: (l) => (l.maxAmount !== null ? <Amount value={l.maxAmount} /> : 'No cap') },
+          {
+            key: 'cap',
+            header: 'Rupee cap',
+            align: 'end',
+            render: (l) => (l.maxAmount !== null ? <Amount value={l.maxAmount} /> : 'No cap'),
+          },
           { key: 'notes', header: 'Notes', priority: 'low', render: (l) => l.notes ?? '—' },
         ]}
         rowActions={(l) => (
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${l.userName ?? 'user'}`} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<MoreHorizontalRegular />}
+                aria-label={`Actions for ${l.userName ?? 'user'}`}
+              />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>

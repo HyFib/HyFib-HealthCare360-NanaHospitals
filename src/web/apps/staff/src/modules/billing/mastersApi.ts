@@ -157,7 +157,8 @@ export const mastersQueries = {
   tariffPlans: (includeInactive = false) =>
     queryOptions({
       queryKey: [...mastersKeys.tariffs, 'plans', includeInactive],
-      queryFn: ({ signal }) => api.get<TariffPlanListItem[]>('/api/v1/billing/tariffs', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<TariffPlanListItem[]>('/api/v1/billing/tariffs', { query: { includeInactive }, signal }),
       staleTime: 5 * 60_000,
     }),
   tariffPlan: (id: string) =>
@@ -169,13 +170,17 @@ export const mastersQueries = {
     queryOptions({
       queryKey: [...mastersKeys.tariffs, 'prices', planId, filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<TariffPriceDto>>(`/api/v1/billing/tariffs/${planId}/prices`, { query: { pageSize: 25, ...filters }, signal }),
+        api.get<PagedResult<TariffPriceDto>>(`/api/v1/billing/tariffs/${planId}/prices`, {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   packages: (includeInactive = false) =>
     queryOptions({
       queryKey: [...mastersKeys.packages, 'list', includeInactive],
-      queryFn: ({ signal }) => api.get<PackageListItem[]>('/api/v1/billing/packages', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PackageListItem[]>('/api/v1/billing/packages', { query: { includeInactive }, signal }),
       staleTime: 5 * 60_000,
     }),
   package: (id: string) =>
@@ -187,23 +192,37 @@ export const mastersQueries = {
 
 export const mastersApi = {
   createPlan: (request: SaveTariffPlanRequest) => api.post<TariffPlanDetail>('/api/v1/billing/tariffs', request),
-  updatePlan: (id: string, request: SaveTariffPlanRequest) => api.put<TariffPlanDetail>(`/api/v1/billing/tariffs/${id}`, request),
-  savePrice: (planId: string, request: SaveTariffPriceRequest) => api.put<BulkTariffPricesResult>(`/api/v1/billing/tariffs/${planId}/prices`, request),
+  updatePlan: (id: string, request: SaveTariffPlanRequest) =>
+    api.put<TariffPlanDetail>(`/api/v1/billing/tariffs/${id}`, request),
+  savePrice: (planId: string, request: SaveTariffPriceRequest) =>
+    api.put<BulkTariffPricesResult>(`/api/v1/billing/tariffs/${planId}/prices`, request),
   savePrices: (planId: string, prices: SaveTariffPriceRequest[]) =>
-    api.post<BulkTariffPricesResult>(`/api/v1/billing/tariffs/${planId}/prices/bulk`, { prices }, { timeoutMs: 120_000 }),
-  deletePrice: (planId: string, priceId: string) => api.delete<void>(`/api/v1/billing/tariffs/${planId}/prices/${priceId}`),
+    api.post<BulkTariffPricesResult>(
+      `/api/v1/billing/tariffs/${planId}/prices/bulk`,
+      { prices },
+      { timeoutMs: 120_000 },
+    ),
+  deletePrice: (planId: string, priceId: string) =>
+    api.delete<void>(`/api/v1/billing/tariffs/${planId}/prices/${priceId}`),
   createPackage: (request: SavePackageRequest) => api.post<PackageDetail>('/api/v1/billing/packages', request),
-  updatePackage: (id: string, request: SavePackageRequest) => api.put<PackageDetail>(`/api/v1/billing/packages/${id}`, request),
+  updatePackage: (id: string, request: SavePackageRequest) =>
+    api.put<PackageDetail>(`/api/v1/billing/packages/${id}`, request),
 };
 
 /**
  * Every price of a plan matching a search (for bulk revisions), page by page. Stops at `limit` rows so a mistaken
  * empty search on a huge plan cannot flood the WiFi.
  */
-export async function loadAllPrices(planId: string, filters: Pick<TariffPriceFilters, 'search' | 'onDate'>, limit = 5000): Promise<{ prices: TariffPriceDto[]; truncated: boolean }> {
+export async function loadAllPrices(
+  planId: string,
+  filters: Pick<TariffPriceFilters, 'search' | 'onDate'>,
+  limit = 5000,
+): Promise<{ prices: TariffPriceDto[]; truncated: boolean }> {
   const prices: TariffPriceDto[] = [];
   for (let page = 1; ; page++) {
-    const result = await api.get<PagedResult<TariffPriceDto>>(`/api/v1/billing/tariffs/${planId}/prices`, { query: { ...filters, page, pageSize: 200 } });
+    const result = await api.get<PagedResult<TariffPriceDto>>(`/api/v1/billing/tariffs/${planId}/prices`, {
+      query: { ...filters, page, pageSize: 200 },
+    });
     prices.push(...result.items);
     if (prices.length >= result.totalCount || result.items.length === 0) {
       return { prices, truncated: false };
@@ -218,7 +237,9 @@ export async function loadAllPrices(planId: string, filters: Pick<TariffPriceFil
 export async function loadServiceCatalogue(limit = 10_000): Promise<ServiceItemDto[]> {
   const items: ServiceItemDto[] = [];
   for (let page = 1; ; page++) {
-    const result = await api.get<PagedResult<ServiceItemDto>>('/api/v1/masters/services', { query: { active: true, page, pageSize: 200, sort: 'code' } });
+    const result = await api.get<PagedResult<ServiceItemDto>>('/api/v1/masters/services', {
+      query: { active: true, page, pageSize: 200, sort: 'code' },
+    });
     items.push(...result.items);
     if (items.length >= result.totalCount || result.items.length === 0 || items.length >= limit) {
       return items;

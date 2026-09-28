@@ -1,8 +1,28 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, makeStyles, MessageBar, MessageBarBody, OverlayDrawer, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  OverlayDrawer,
+  Spinner,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { normalizePhone } from '@hc360/core';
-import { applyServerErrors, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -43,8 +63,16 @@ const schema = z.object({
     .trim()
     .refine((v) => !v || GSTIN.test(v.toUpperCase()), 'Enter a valid 15-character GSTIN.'),
   tariffPlanId: z.string().nullable(),
-  creditDays: z.number({ error: 'Enter the credit days.' }).int('Whole days only.').min(0).max(365, 'At most 365 days.'),
-  defaultCoPayPercent: z.number({ error: 'Enter a percentage.' }).min(0).max(100, 'At most 100 %.').refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
+  creditDays: z
+    .number({ error: 'Enter the credit days.' })
+    .int('Whole days only.')
+    .min(0)
+    .max(365, 'At most 365 days.'),
+  defaultCoPayPercent: z
+    .number({ error: 'Enter a percentage.' })
+    .min(0)
+    .max(100, 'At most 100 %.')
+    .refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
   portalUrl: z
     .string()
     .trim()
@@ -119,13 +147,31 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>{payer ? payer.name : 'Add a payer'}</DrawerHeaderTitle>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
+            {payer ? payer.name : 'Add a payer'}
+          </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <FormGrid columns={2} minColumnWidth={180}>
-              <TextField control={form.control} name="code" label="Code" required disabled={Boolean(payer)} hint={payer ? 'Codes cannot be changed.' : 'e.g. STAR, MEDIASSIST'} autoFocus={!payer} />
-              <SelectField control={form.control} name="category" label="Kind" required options={PAYER_CATEGORIES.map((c) => ({ value: c, label: PAYER_CATEGORY_LABEL[c] }))} />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Code"
+                required
+                disabled={Boolean(payer)}
+                hint={payer ? 'Codes cannot be changed.' : 'e.g. STAR, MEDIASSIST'}
+                autoFocus={!payer}
+              />
+              <SelectField
+                control={form.control}
+                name="category"
+                label="Kind"
+                required
+                options={PAYER_CATEGORIES.map((c) => ({ value: c, label: PAYER_CATEGORY_LABEL[c] }))}
+              />
             </FormGrid>
             <TextField control={form.control} name="name" label="Name" required autoFocus={Boolean(payer)} />
             <FormGrid columns={2} minColumnWidth={180}>
@@ -143,10 +189,31 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
                 placeholder="Hospital default"
                 options={(plans.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
               />
-              <NumberField control={form.control} name="creditDays" label="Credit period (days)" min={0} max={365} step={1} hint="Used for receivable ageing" />
-              <NumberField control={form.control} name="defaultCoPayPercent" label="Default co-pay (%)" min={0} max={100} step={0.5} />
+              <NumberField
+                control={form.control}
+                name="creditDays"
+                label="Credit period (days)"
+                min={0}
+                max={365}
+                step={1}
+                hint="Used for receivable ageing"
+              />
+              <NumberField
+                control={form.control}
+                name="defaultCoPayPercent"
+                label="Default co-pay (%)"
+                min={0}
+                max={100}
+                step={0.5}
+              />
             </FormGrid>
-            <TextField control={form.control} name="portalUrl" label="Claims portal address" type="url" hint="https:// address of the insurer or TPA portal" />
+            <TextField
+              control={form.control}
+              name="portalUrl"
+              label="Claims portal address"
+              type="url"
+              hint="https:// address of the insurer or TPA portal"
+            />
             <SwitchField control={form.control} name="isActive" label="Active" />
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
             {form.formState.errors.root && (
@@ -158,7 +225,12 @@ export function PayerDrawer({ payer, onClose }: { payer: PayerDetail | null; onC
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {payer ? 'Save' : 'Add payer'}
           </Button>
           <Button onClick={onClose} disabled={save.isPending}>

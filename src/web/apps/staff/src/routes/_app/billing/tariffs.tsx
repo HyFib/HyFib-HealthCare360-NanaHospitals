@@ -22,14 +22,31 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowSyncRegular, DeleteRegular, EditRegular, TableRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatInr, todayIso, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { searchServices, type ServiceItemDto } from '@/modules/billing/api';
 import { SERVICE_CATEGORY_LABEL, TARIFF_TYPE_LABEL } from '@/modules/billing/labels';
-import { mastersApi, mastersKeys, mastersQueries, type TariffPlanDetail, type TariffPriceDto } from '@/modules/billing/mastersApi';
+import {
+  mastersApi,
+  mastersKeys,
+  mastersQueries,
+  type TariffPlanDetail,
+  type TariffPriceDto,
+} from '@/modules/billing/mastersApi';
 import { amountInputText, formatPercent, parseRupees } from '@/modules/billing/money';
 import { dateParam, flagParam, idParam, pageParam, textParam } from '@/modules/billing/searchParams';
 import { TariffBulkDialog } from '@/modules/billing/TariffBulkDialog';
@@ -56,7 +73,13 @@ export const Route = createFileRoute('/_app/billing/tariffs')({
 });
 
 const useStyles = makeStyles({
-  layout: { display: 'grid', gridTemplateColumns: 'minmax(220px, 300px) minmax(0, 1fr)', gap: '16px', alignItems: 'start', '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(220px, 300px) minmax(0, 1fr)',
+    gap: '16px',
+    alignItems: 'start',
+    '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   plans: { display: 'flex', flexDirection: 'column', gap: '4px' },
   plan: {
     display: 'flex',
@@ -70,7 +93,10 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
-  selected: { backgroundColor: tokens.colorBrandBackground2, ':hover': { backgroundColor: tokens.colorBrandBackground2Hover } },
+  selected: {
+    backgroundColor: tokens.colorBrandBackground2,
+    ':hover': { backgroundColor: tokens.colorBrandBackground2Hover },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
   right: { display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 },
@@ -81,7 +107,12 @@ function TariffsPage() {
   const styles = useStyles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
-  const canRead = usePermission(['billing.tariffs.manage', 'billing.charges.read', 'billing.op.create', 'billing.ip.manage']);
+  const canRead = usePermission([
+    'billing.tariffs.manage',
+    'billing.charges.read',
+    'billing.op.create',
+    'billing.ip.manage',
+  ]);
   const canManage = usePermission('billing.tariffs.manage');
   const [editingPlan, setEditingPlan] = useState<TariffPlanDetail | 'new' | null>(null);
   const [bulk, setBulk] = useState(false);
@@ -115,7 +146,18 @@ function TariffsPage() {
         }
       />
       <div className={styles.layout}>
-        <Section title="Plans" actions={<Switch checked={Boolean(search.inactive)} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, inactive: d.checked ? true : undefined }) })} label="Inactive too" />}>
+        <Section
+          title="Plans"
+          actions={
+            <Switch
+              checked={Boolean(search.inactive)}
+              onChange={(_, d) =>
+                void navigate({ search: (prev) => ({ ...prev, inactive: d.checked ? true : undefined }) })
+              }
+              label="Inactive too"
+            />
+          }
+        >
           {plans.isLoading ? (
             <LoadingState />
           ) : plans.error ? (
@@ -128,7 +170,9 @@ function TariffsPage() {
                   type="button"
                   className={mergeClasses(styles.plan, p.id === selectedId && styles.selected)}
                   aria-current={p.id === selectedId ? 'true' : undefined}
-                  onClick={() => void navigate({ search: (prev) => ({ ...prev, plan: p.id, page: undefined, q: undefined }) })}
+                  onClick={() =>
+                    void navigate({ search: (prev) => ({ ...prev, plan: p.id, page: undefined, q: undefined }) })
+                  }
                 >
                   <Text weight="semibold">
                     {p.name}{' '}
@@ -155,7 +199,10 @@ function TariffsPage() {
 
         <div className={styles.right}>
           {!selectedId ? (
-            <EmptyState title="No tariff plan yet" description="Create the general plan first; services without a plan price use their standard price." />
+            <EmptyState
+              title="No tariff plan yet"
+              description="Create the general plan first; services without a plan price use their standard price."
+            />
           ) : plan.isLoading ? (
             <LoadingState />
           ) : plan.error || !plan.data ? (
@@ -183,7 +230,10 @@ function TariffsPage() {
                 {plan.data.description && <Text block>{plan.data.description}</Text>}
                 {plan.data.bedMultipliers.length > 0 && (
                   <Caption1 className={styles.muted}>
-                    Room-class multipliers: {plan.data.bedMultipliers.map((m) => `${m.bedServiceName ?? m.bedServiceCode} × ${m.multiplier}`).join(' · ')}
+                    Room-class multipliers:{' '}
+                    {plan.data.bedMultipliers
+                      .map((m) => `${m.bedServiceName ?? m.bedServiceCode} × ${m.multiplier}`)
+                      .join(' · ')}
                   </Caption1>
                 )}
               </Section>
@@ -215,7 +265,13 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
   const debounced = useDebouncedValue(term.trim(), 300);
   const [editing, setEditing] = useState<TariffPriceDto | 'new' | null>(null);
   const [deleting, setDeleting] = useState<TariffPriceDto | null>(null);
-  const prices = useQuery(mastersQueries.tariffPrices(planId, { search: debounced || undefined, onDate: search.onDate, page: search.page ?? 1 }));
+  const prices = useQuery(
+    mastersQueries.tariffPrices(planId, {
+      search: debounced || undefined,
+      onDate: search.onDate,
+      page: search.page ?? 1,
+    }),
+  );
 
   const remove = useMutation({
     mutationFn: (price: TariffPriceDto) => mastersApi.deletePrice(planId, price.id),
@@ -245,7 +301,13 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
             <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name or code" />
           </Field>
           <Field label="Prices in force on" hint="Empty shows every revision">
-            <Input type="date" value={search.onDate ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, onDate: d.value || undefined, page: undefined }) })} />
+            <Input
+              type="date"
+              value={search.onDate ?? ''}
+              onChange={(_, d) =>
+                void navigate({ search: (prev) => ({ ...prev, onDate: d.value || undefined, page: undefined }) })
+              }
+            />
           </Field>
         </FilterBar>
       </div>
@@ -270,14 +332,28 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
               </span>
             ),
           },
-          { key: 'base', header: 'Standard', align: 'end', priority: 'low', render: (p) => <Amount value={p.basePrice} tone="muted" /> },
+          {
+            key: 'base',
+            header: 'Standard',
+            align: 'end',
+            priority: 'low',
+            render: (p) => <Amount value={p.basePrice} tone="muted" />,
+          },
           { key: 'price', header: 'Plan price', align: 'end', render: (p) => <Amount value={p.price} strong /> },
           { key: 'from', header: 'From', render: (p) => formatDateOnly(p.effectiveFrom) },
           { key: 'to', header: 'Until', render: (p) => (p.effectiveTo ? formatDateOnly(p.effectiveTo) : 'Open') },
         ]}
         rowActions={
           canManage
-            ? (p) => <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove the price of ${p.serviceName}`} onClick={() => setDeleting(p)} />
+            ? (p) => (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label={`Remove the price of ${p.serviceName}`}
+                  onClick={() => setDeleting(p)}
+                />
+              )
             : undefined
         }
         emptyTitle={debounced ? 'No price matches' : 'No plan prices yet'}
@@ -288,7 +364,9 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
         onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
         size="small"
       />
-      {editing && <PriceDialog planId={planId} price={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <PriceDialog planId={planId} price={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      )}
       <ConfirmDialog
         open={deleting !== null}
         title={`Remove the price of ${deleting?.serviceName ?? 'this service'}?`}
@@ -298,31 +376,53 @@ function PricesSection({ planId, canManage, search }: { planId: string; canManag
         onConfirm={() => deleting && remove.mutate(deleting)}
         onCancel={() => setDeleting(null)}
       >
-        {deleting ? `${formatInr(deleting.price)} from ${formatDateOnly(deleting.effectiveFrom)}. Services already charged keep their price.` : null}
+        {deleting
+          ? `${formatInr(deleting.price)} from ${formatDateOnly(deleting.effectiveFrom)}. Services already charged keep their price.`
+          : null}
         <ActionError error={remove.error} />
       </ConfirmDialog>
     </Section>
   );
 }
 
-function PriceDialog({ planId, price, onClose }: { planId: string; price: TariffPriceDto | null; onClose: () => void }) {
+function PriceDialog({
+  planId,
+  price,
+  onClose,
+}: {
+  planId: string;
+  price: TariffPriceDto | null;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [service, setService] = useState<Pick<ServiceItemDto, 'id' | 'name' | 'code' | 'basePrice'> | null>(
-    price ? { id: price.serviceItemId, name: price.serviceName, code: price.serviceCode, basePrice: price.basePrice } : null,
+    price
+      ? { id: price.serviceItemId, name: price.serviceName, code: price.serviceCode, basePrice: price.basePrice }
+      : null,
   );
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
   const [amount, setAmount] = useState(price ? amountInputText(price.price) : '');
   const [from, setFrom] = useState(price?.effectiveFrom ?? todayIso());
   const [to, setTo] = useState(price?.effectiveTo ?? '');
-  const results = useQuery({ queryKey: ['billing', 'service-search', debounced], queryFn: () => searchServices(debounced), enabled: !price && debounced.length >= 2 });
+  const results = useQuery({
+    queryKey: ['billing', 'service-search', debounced],
+    queryFn: () => searchServices(debounced),
+    enabled: !price && debounced.length >= 2,
+  });
   const parsed = parseRupees(amount, { allowZero: true });
   const datesOk = !to || to >= from;
   const valid = service !== null && parsed.ok && Boolean(from) && datesOk;
 
   const save = useMutation({
-    mutationFn: () => mastersApi.savePrice(planId, { serviceItemId: service!.id, price: parsed.ok ? parsed.rupees : 0, effectiveFrom: from, effectiveTo: to || null }),
+    mutationFn: () =>
+      mastersApi.savePrice(planId, {
+        serviceItemId: service!.id,
+        price: parsed.ok ? parsed.rupees : 0,
+        effectiveFrom: from,
+        effectiveTo: to || null,
+      }),
     onSuccess: (result) => {
       notify.success(result.created ? 'Price added' : 'Price updated', service?.name);
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
@@ -374,10 +474,21 @@ function PriceDialog({ planId, price, onClose }: { planId: string; price: Tariff
                 hint={service ? `Standard price ${formatInr(service.basePrice)}` : undefined}
                 autoFocus={Boolean(price)}
               />
-              <Field label="From" required hint={price ? 'Changing the start date adds a new revision' : 'The previous open price ends the day before'}>
+              <Field
+                label="From"
+                required
+                hint={
+                  price ? 'Changing the start date adds a new revision' : 'The previous open price ends the day before'
+                }
+              >
                 <Input type="date" value={from} onChange={(_, d) => setFrom(d.value)} />
               </Field>
-              <Field label="Until" hint="Optional" validationMessage={datesOk ? undefined : 'The end date must be on or after the start date.'} validationState={datesOk ? 'none' : 'error'}>
+              <Field
+                label="Until"
+                hint="Optional"
+                validationMessage={datesOk ? undefined : 'The end date must be on or after the start date.'}
+                validationState={datesOk ? 'none' : 'error'}
+              >
                 <Input type="date" value={to} min={from} onChange={(_, d) => setTo(d.value)} />
               </Field>
               <ActionError error={save.error} />
@@ -386,7 +497,12 @@ function PriceDialog({ planId, price, onClose }: { planId: string; price: Tariff
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Save price
               </Button>
             </DialogActions>

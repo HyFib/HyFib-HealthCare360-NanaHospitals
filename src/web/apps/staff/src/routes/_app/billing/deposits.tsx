@@ -31,8 +31,14 @@ function DepositsPage() {
   useBillingLive();
 
   const today = todayIso();
-  const accounts = useQuery({ ...ipQueries.accounts({ search: debounced || undefined, status: debounced ? undefined : 'Open' }), enabled: canDeposit && canReadAccounts });
-  const receipts = useQuery({ ...billingQueries.receipts({ from: today, to: today, purpose: 'Deposit', pageSize: 10 }), enabled: canDeposit && canReadReceipts });
+  const accounts = useQuery({
+    ...ipQueries.accounts({ search: debounced || undefined, status: debounced ? undefined : 'Open' }),
+    enabled: canDeposit && canReadAccounts,
+  });
+  const receipts = useQuery({
+    ...billingQueries.receipts({ from: today, to: today, purpose: 'Deposit', pageSize: 10 }),
+    enabled: canDeposit && canReadReceipts,
+  });
 
   if (!canDeposit) {
     return (
@@ -64,12 +70,19 @@ function DepositsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 320px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Admission number, UHID, mobile or name" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Admission number, UHID, mobile or name"
+                autoFocus
+              />
             </Field>
           </FilterBar>
         </div>
         {!canReadAccounts ? (
-          <Caption1 style={{ padding: '0 16px 16px', display: 'block' }}>Your role cannot list admissions. Collect the advance from the patient’s IP account screen.</Caption1>
+          <Caption1 style={{ padding: '0 16px 16px', display: 'block' }}>
+            Your role cannot list admissions. Collect the advance from the patient’s IP account screen.
+          </Caption1>
         ) : (
           <DataTable
             ariaLabel="Admitted patients"
@@ -78,7 +91,16 @@ function DepositsPage() {
             error={accounts.error}
             onRetry={() => void accounts.refetch()}
             getRowId={(a) => a.id}
-            onRowClick={(a) => setAccount({ id: a.id, admissionNumber: a.admissionNumber, patientName: a.patientName, uhid: a.uhid, depositBalance: a.depositBalance, estimatedAmount: a.estimatedAmount })}
+            onRowClick={(a) =>
+              setAccount({
+                id: a.id,
+                admissionNumber: a.admissionNumber,
+                patientName: a.patientName,
+                uhid: a.uhid,
+                depositBalance: a.depositBalance,
+                estimatedAmount: a.estimatedAmount,
+              })
+            }
             columns={[
               {
                 key: 'patient',
@@ -92,9 +114,25 @@ function DepositsPage() {
                   </span>
                 ),
               },
-              { key: 'payer', header: 'Payer', priority: 'low', render: (a) => a.payerName ?? PAYER_TYPE_LABEL[a.payerType] },
-              { key: 'estimate', header: 'Estimate', align: 'end', priority: 'low', render: (a) => <Amount value={a.estimatedAmount} /> },
-              { key: 'deposit', header: 'Advance held', align: 'end', render: (a) => <Amount value={a.depositBalance} strong /> },
+              {
+                key: 'payer',
+                header: 'Payer',
+                priority: 'low',
+                render: (a) => a.payerName ?? PAYER_TYPE_LABEL[a.payerType],
+              },
+              {
+                key: 'estimate',
+                header: 'Estimate',
+                align: 'end',
+                priority: 'low',
+                render: (a) => <Amount value={a.estimatedAmount} />,
+              },
+              {
+                key: 'deposit',
+                header: 'Advance held',
+                align: 'end',
+                render: (a) => <Amount value={a.depositBalance} strong />,
+              },
               { key: 'status', header: 'Status', priority: 'low', render: (a) => <IpStatusBadge status={a.status} /> },
             ]}
             rowActions={(a) => (
@@ -102,7 +140,16 @@ function DepositsPage() {
                 size="small"
                 appearance="primary"
                 icon={<WalletRegular />}
-                onClick={() => setAccount({ id: a.id, admissionNumber: a.admissionNumber, patientName: a.patientName, uhid: a.uhid, depositBalance: a.depositBalance, estimatedAmount: a.estimatedAmount })}
+                onClick={() =>
+                  setAccount({
+                    id: a.id,
+                    admissionNumber: a.admissionNumber,
+                    patientName: a.patientName,
+                    uhid: a.uhid,
+                    depositBalance: a.depositBalance,
+                    estimatedAmount: a.estimatedAmount,
+                  })
+                }
               >
                 Collect
               </Button>
@@ -130,7 +177,15 @@ function DepositsPage() {
               { key: 'mode', header: 'Mode', priority: 'low', render: (r) => modeSummaryLabel(r.modes) },
               { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
             ]}
-            rowActions={(r) => <Button size="small" appearance="subtle" icon={<PrintRegular />} aria-label={`Reprint ${r.receiptNumber}`} onClick={() => void printReceiptById(r.id)} />}
+            rowActions={(r) => (
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<PrintRegular />}
+                aria-label={`Reprint ${r.receiptNumber}`}
+                onClick={() => void printReceiptById(r.id)}
+              />
+            )}
             emptyTitle="No advance collected yet today"
             size="small"
           />

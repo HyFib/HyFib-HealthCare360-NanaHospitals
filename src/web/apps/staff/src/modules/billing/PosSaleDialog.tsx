@@ -32,7 +32,14 @@ import { ActionError, AmountField } from './ui';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  status: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px 0', textAlign: 'center' },
+  status: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 0',
+    textAlign: 'center',
+  },
   big: { fontSize: '28px', fontWeight: tokens.fontWeightBold },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -81,7 +88,12 @@ export function PosSaleDialog({
   }
 
   const parsed = parseRupees(amount, { max: maxAmount ?? undefined });
-  const amountError = amount && !parsed.ok ? (parsed.error === 'The amount is too large.' && maxAmount ? `The balance is ${formatInr(maxAmount)}.` : parsed.error) : null;
+  const amountError =
+    amount && !parsed.ok
+      ? parsed.error === 'The amount is too large.' && maxAmount
+        ? `The balance is ${formatInr(maxAmount)}.`
+        : parsed.error
+      : null;
 
   const start = useMutation({
     mutationFn: () =>
@@ -131,7 +143,11 @@ export function PosSaleDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && !pending && !start.isPending && finish()} modalType="alert">
+    <Dialog
+      open={open}
+      onOpenChange={(_, data) => !data.open && !pending && !start.isPending && finish()}
+      modalType="alert"
+    >
       <DialogSurface style={{ maxWidth: 480 }}>
         <DialogBody>
           <DialogTitle>Card / UPI terminal</DialogTitle>
@@ -148,12 +164,23 @@ export function PosSaleDialog({
                 }}
               >
                 <Field label="Paid by">
-                  <RadioGroup layout="horizontal" value={mode} onChange={(_, data) => setMode(data.value as 'Card' | 'Upi')}>
+                  <RadioGroup
+                    layout="horizontal"
+                    value={mode}
+                    onChange={(_, data) => setMode(data.value as 'Card' | 'Upi')}
+                  >
                     <Radio value="Card" label="Card (tap, insert or swipe)" />
                     <Radio value="Upi" label="UPI QR on the terminal" />
                   </RadioGroup>
                 </Field>
-                <AmountField label="Amount" required value={amount} onChange={setAmount} error={amountError} autoFocus />
+                <AmountField
+                  label="Amount"
+                  required
+                  value={amount}
+                  onChange={setAmount}
+                  error={amountError}
+                  autoFocus
+                />
                 <Field label="Terminal" required hint="The terminal id on its label. Remembered on this computer.">
                   <Input value={terminal} onChange={(_, data) => setTerminal(data.value)} maxLength={64} />
                 </Field>
@@ -162,19 +189,29 @@ export function PosSaleDialog({
             ) : (
               <div className={styles.status} role="status" aria-live="polite">
                 {pending && <Spinner size="large" />}
-                {current.status === 'Approved' && <CheckmarkCircleRegular fontSize={48} color={tokens.colorPaletteGreenForeground1} />}
-                {!pending && current.status !== 'Approved' && <DismissCircleRegular fontSize={48} color={tokens.colorPaletteRedForeground1} />}
+                {current.status === 'Approved' && (
+                  <CheckmarkCircleRegular fontSize={48} color={tokens.colorPaletteGreenForeground1} />
+                )}
+                {!pending && current.status !== 'Approved' && (
+                  <DismissCircleRegular fontSize={48} color={tokens.colorPaletteRedForeground1} />
+                )}
                 <span className={styles.big}>{formatInr(current.amount)}</span>
                 <Text weight="semibold">{POS_STATUS_LABEL[current.status]}</Text>
                 {current.message && <Caption1 className={styles.muted}>{current.message}</Caption1>}
                 {current.status === 'Approved' && (
                   <Caption1>
-                    {[current.cardLast4 ? `Card ending ${current.cardLast4}` : null, current.approvalCode ? `Approval ${current.approvalCode}` : null, current.rrn ? `RRN ${current.rrn}` : null]
+                    {[
+                      current.cardLast4 ? `Card ending ${current.cardLast4}` : null,
+                      current.approvalCode ? `Approval ${current.approvalCode}` : null,
+                      current.rrn ? `RRN ${current.rrn}` : null,
+                    ]
                       .filter(Boolean)
                       .join(' · ')}
                   </Caption1>
                 )}
-                {current.status === 'Approved' && <Caption1 className={styles.muted}>The receipt has been recorded.</Caption1>}
+                {current.status === 'Approved' && (
+                  <Caption1 className={styles.muted}>The receipt has been recorded.</Caption1>
+                )}
                 {sale.error && (
                   <MessageBar intent="warning">
                     <MessageBarBody>

@@ -14,14 +14,24 @@ const useStyles = makeStyles({
 });
 
 function discountOf(line: BillLineDto): number {
-  return fromPaise(toPaise(line.tariffDiscountAmount) + toPaise(line.lineDiscountAmount) + toPaise(line.billDiscountShare));
+  return fromPaise(
+    toPaise(line.tariffDiscountAmount) + toPaise(line.lineDiscountAmount) + toPaise(line.billDiscountShare),
+  );
 }
 
 /**
  * Services on a bill. Returns (negative lines, e.g. ward stock sent back to pharmacy) are labelled as returns and
  * shown with a minus sign, never hidden or netted away; GST is shown per line with its CGST/SGST split.
  */
-export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail; onRemove?: (line: BillLineDto) => void; removing?: string | null }) {
+export function BillLinesTable({
+  bill,
+  onRemove,
+  removing,
+}: {
+  bill: BillDetail;
+  onRemove?: (line: BillLineDto) => void;
+  removing?: string | null;
+}) {
   const styles = useStyles();
   const hasPackage = bill.lines.some((line) => line.packageCoveredAmount !== 0);
   const hasTax = bill.lines.some((line) => line.taxRate > 0);
@@ -40,7 +50,10 @@ export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail;
               </Badge>
             )}
             {!line.isPayerPayable && bill.payerId && (
-              <Tooltip content="The insurer does not pay for this item; the patient pays it." relationship="description">
+              <Tooltip
+                content="The insurer does not pay for this item; the patient pays it."
+                relationship="description"
+              >
                 <Badge size="small" appearance="outline" color="warning">
                   Patient pays
                 </Badge>
@@ -55,12 +68,38 @@ export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail;
         </span>
       ),
     },
-    { key: 'qty', header: 'Qty', align: 'end', width: 70, render: (line) => line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 }) },
-    { key: 'rate', header: 'Rate', align: 'end', width: 110, priority: 'low', render: (line) => <Amount value={line.unitPrice} /> },
-    { key: 'amount', header: 'Amount', align: 'end', width: 120, render: (line) => <Amount value={line.grossAmount} /> },
+    {
+      key: 'qty',
+      header: 'Qty',
+      align: 'end',
+      width: 70,
+      render: (line) => line.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 }),
+    },
+    {
+      key: 'rate',
+      header: 'Rate',
+      align: 'end',
+      width: 110,
+      priority: 'low',
+      render: (line) => <Amount value={line.unitPrice} />,
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      align: 'end',
+      width: 120,
+      render: (line) => <Amount value={line.grossAmount} />,
+    },
   ];
   if (hasPackage) {
-    columns.push({ key: 'package', header: 'Package covers', align: 'end', width: 130, priority: 'low', render: (line) => <Amount value={line.packageCoveredAmount} tone="muted" /> });
+    columns.push({
+      key: 'package',
+      header: 'Package covers',
+      align: 'end',
+      width: 130,
+      priority: 'low',
+      render: (line) => <Amount value={line.packageCoveredAmount} tone="muted" />,
+    });
   }
   columns.push({
     key: 'discount',
@@ -92,9 +131,13 @@ export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail;
       priority: 'low',
       render: (line) =>
         line.taxRate > 0 ? (
-          <Tooltip relationship="description" content={`CGST ${formatInr(line.cgstAmount)} + SGST ${formatInr(line.sgstAmount)} on ${formatInr(line.taxableAmount)}`}>
+          <Tooltip
+            relationship="description"
+            content={`CGST ${formatInr(line.cgstAmount)} + SGST ${formatInr(line.sgstAmount)} on ${formatInr(line.taxableAmount)}`}
+          >
             <span>
-              {formatPercent(line.taxRate)} · <Amount value={fromPaise(toPaise(line.cgstAmount) + toPaise(line.sgstAmount))} />
+              {formatPercent(line.taxRate)} ·{' '}
+              <Amount value={fromPaise(toPaise(line.cgstAmount) + toPaise(line.sgstAmount))} />
             </span>
           </Tooltip>
         ) : (
@@ -102,7 +145,13 @@ export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail;
         ),
     });
   }
-  columns.push({ key: 'net', header: 'Net', align: 'end', width: 120, render: (line) => <Amount value={line.netAmount} strong tone={line.isReturn ? 'negative' : undefined} /> });
+  columns.push({
+    key: 'net',
+    header: 'Net',
+    align: 'end',
+    width: 120,
+    render: (line) => <Amount value={line.netAmount} strong tone={line.isReturn ? 'negative' : undefined} />,
+  });
 
   return (
     <DataTable
@@ -112,7 +161,11 @@ export function BillLinesTable({ bill, onRemove, removing }: { bill: BillDetail;
       columns={columns}
       size="small"
       emptyTitle="No services on this bill yet"
-      emptyDescription={bill.status === 'Draft' ? 'Add a service below, or refresh the bill to pick up services charged since it was started.' : undefined}
+      emptyDescription={
+        bill.status === 'Draft'
+          ? 'Add a service below, or refresh the bill to pick up services charged since it was started.'
+          : undefined
+      }
       rowActions={
         onRemove
           ? (line) => (

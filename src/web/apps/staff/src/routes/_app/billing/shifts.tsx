@@ -34,7 +34,11 @@ interface ShiftsSearch {
 }
 
 export const Route = createFileRoute('/_app/billing/shifts')({
-  validateSearch: (s: Record<string, unknown>): ShiftsSearch => ({ date: dateParam(s.date), status: enumParam(s.status, SHIFT_STATUSES), page: pageParam(s.page) }),
+  validateSearch: (s: Record<string, unknown>): ShiftsSearch => ({
+    date: dateParam(s.date),
+    status: enumParam(s.status, SHIFT_STATUSES),
+    page: pageParam(s.page),
+  }),
   component: ShiftsPage,
 });
 
@@ -46,7 +50,10 @@ function Variance({ value }: { value: number | null }) {
     return <Text style={{ color: tokens.colorPaletteGreenForeground1 }}>Tallied</Text>;
   }
   return (
-    <Text weight="semibold" style={{ color: value < 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteMarigoldForeground1 }}>
+    <Text
+      weight="semibold"
+      style={{ color: value < 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteMarigoldForeground1 }}
+    >
       {value < 0 ? `Short ${formatInr(-value)}` : `Excess ${formatInr(value)}`}
     </Text>
   );
@@ -63,7 +70,10 @@ function ShiftsPage() {
   const [closing, setClosing] = useState<ShiftDto | null>(null);
   useBillingLive();
   const date = search.date ?? todayIso();
-  const shifts = useQuery({ ...billingQueries.shifts({ date, status: search.status, page: search.page ?? 1 }), enabled: canShifts });
+  const shifts = useQuery({
+    ...billingQueries.shifts({ date, status: search.status, page: search.page ?? 1 }),
+    enabled: canShifts,
+  });
   const detail = useQuery({ ...billingQueries.shift(viewing ?? ''), enabled: viewing !== null });
 
   if (!canShifts) {
@@ -83,7 +93,10 @@ function ShiftsPage() {
         subtitle="Each cashier opens a shift at a counter and declares the drawer when closing it"
         icon={<LockClosedRegular />}
         actions={
-          <Button icon={<DocumentTableRegular />} onClick={() => void navigate({ to: '/billing/day-end', search: { date: search.date } })}>
+          <Button
+            icon={<DocumentTableRegular />}
+            onClick={() => void navigate({ to: '/billing/day-end', search: { date: search.date } })}
+          >
             Day-end report
           </Button>
         }
@@ -93,10 +106,28 @@ function ShiftsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Date">
-              <Input type="date" value={date} max={todayIso()} onChange={(_, e) => void navigate({ search: (prev) => ({ ...prev, date: e.value || undefined, page: undefined }) })} />
+              <Input
+                type="date"
+                value={date}
+                max={todayIso()}
+                onChange={(_, e) =>
+                  void navigate({ search: (prev) => ({ ...prev, date: e.value || undefined, page: undefined }) })
+                }
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, e) => void navigate({ search: (prev) => ({ ...prev, status: (e.value || undefined) as ShiftStatus | undefined, page: undefined }) })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, e) =>
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      status: (e.value || undefined) as ShiftStatus | undefined,
+                      page: undefined,
+                    }),
+                  })
+                }
+              >
                 <option value="">Open and closed</option>
                 <option value="Open">Open</option>
                 <option value="Closed">Closed</option>
@@ -124,8 +155,19 @@ function ShiftsPage() {
               ),
             },
             { key: 'opened', header: 'Opened', render: (s) => formatDateTime(s.openedAt) },
-            { key: 'closed', header: 'Closed', priority: 'low', render: (s) => (s.closedAt ? formatDateTime(s.closedAt) : 'Still open') },
-            { key: 'expected', header: 'Expected cash', align: 'end', priority: 'low', render: (s) => (s.status === 'Closed' ? <Amount value={s.expectedCash} /> : 'Open the shift to see') },
+            {
+              key: 'closed',
+              header: 'Closed',
+              priority: 'low',
+              render: (s) => (s.closedAt ? formatDateTime(s.closedAt) : 'Still open'),
+            },
+            {
+              key: 'expected',
+              header: 'Expected cash',
+              align: 'end',
+              priority: 'low',
+              render: (s) => (s.status === 'Closed' ? <Amount value={s.expectedCash} /> : 'Open the shift to see'),
+            },
             { key: 'declared', header: 'Declared', align: 'end', render: (s) => <Amount value={s.declaredCash} /> },
             { key: 'variance', header: 'Short / excess', align: 'end', render: (s) => <Variance value={s.variance} /> },
             { key: 'status', header: 'Status', width: 100, render: (s) => <StatusBadge status={s.status} /> },
@@ -156,7 +198,15 @@ function ShiftsPage() {
                     <Amount value={d.openingFloat} />
                   </SummaryRow>
                   {d.totals.map((t) => (
-                    <SummaryRow key={t.mode} label={PAYMENT_MODE_LABEL[t.mode]} hint={t.refunded ? `Collected ${formatInr(t.collected)} · refunded ${formatInr(t.refunded)}` : undefined}>
+                    <SummaryRow
+                      key={t.mode}
+                      label={PAYMENT_MODE_LABEL[t.mode]}
+                      hint={
+                        t.refunded
+                          ? `Collected ${formatInr(t.collected)} · refunded ${formatInr(t.refunded)}`
+                          : undefined
+                      }
+                    >
                       <Amount value={t.net} />
                     </SummaryRow>
                   ))}
@@ -193,7 +243,9 @@ function ShiftsPage() {
           </DialogBody>
         </DialogSurface>
       </Dialog>
-      {closing && <CloseShiftDialog shift={closing} open onClose={() => setClosing(null)} onClosed={() => setClosing(null)} />}
+      {closing && (
+        <CloseShiftDialog shift={closing} open onClose={() => setClosing(null)} onClosed={() => setClosing(null)} />
+      )}
     </Page>
   );
 }

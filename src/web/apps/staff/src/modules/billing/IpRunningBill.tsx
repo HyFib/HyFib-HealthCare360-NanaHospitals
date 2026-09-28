@@ -49,29 +49,50 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
   return (
     <div className={styles.root}>
       <div className={styles.kpis}>
-        <KpiCard label="Services so far" value={<Amount value={bill.netTotal} />} hint={`${bill.lines.length} items${bill.returnsNet !== 0 ? ` · returns ${formatInr(bill.returnsNet)}` : ''}`} />
+        <KpiCard
+          label="Services so far"
+          value={<Amount value={bill.netTotal} />}
+          hint={`${bill.lines.length} items${bill.returnsNet !== 0 ? ` · returns ${formatInr(bill.returnsNet)}` : ''}`}
+        />
         <KpiCard
           label="Estimated payable by patient"
           value={<Amount value={bill.estimatedPatientPayable} />}
-          hint={bill.insurance ? `${bill.insurance.payerName ?? 'Insurer'} share ${formatInr(bill.insurance.payerShare)}` : 'Self pay'}
+          hint={
+            bill.insurance
+              ? `${bill.insurance.payerName ?? 'Insurer'} share ${formatInr(bill.insurance.payerShare)}`
+              : 'Self pay'
+          }
         />
-        <KpiCard label="Advance held" value={<Amount value={bill.depositBalance} />} hint={`Paid on bills ${formatInr(bill.paidOnBills)}`} />
+        <KpiCard
+          label="Advance held"
+          value={<Amount value={bill.depositBalance} />}
+          hint={`Paid on bills ${formatInr(bill.paidOnBills)}`}
+        />
         <KpiCard
           label={refund ? 'Estimated refund' : 'Estimated balance to pay'}
-          value={<Amount value={Math.abs(bill.estimatedBalance)} tone={refund ? 'positive' : bill.estimatedBalance > 0 ? 'negative' : undefined} />}
+          value={
+            <Amount
+              value={Math.abs(bill.estimatedBalance)}
+              tone={refund ? 'positive' : bill.estimatedBalance > 0 ? 'negative' : undefined}
+            />
+          }
           hint={bill.estimatedAmount > 0 ? `Estimate given: ${formatInr(bill.estimatedAmount)}` : undefined}
         />
       </div>
       {bill.estimatedAmount > 0 && bill.netTotal > bill.estimatedAmount && (
         <Caption1 className={styles.muted}>
-          The stay has passed the estimate given at admission by {formatInr(bill.netTotal - bill.estimatedAmount)}. Consider asking for a further advance.
+          The stay has passed the estimate given at admission by {formatInr(bill.netTotal - bill.estimatedAmount)}.
+          Consider asking for a further advance.
         </Caption1>
       )}
       {bill.insurance && (
         <Caption1 className={styles.muted}>
-          {bill.insurance.payerName ?? 'Insurer'}: {bill.insurance.coverageLimit !== null ? `approved up to ${formatInr(bill.insurance.coverageLimit)}` : 'no cap'}
-          {bill.insurance.coPayPercent > 0 ? ` · co-pay ${formatPercent(bill.insurance.coPayPercent)}` : ''} · estimated insurer share {formatInr(bill.insurance.payerShare)}, patient share{' '}
-          {formatInr(bill.insurance.patientShare)}
+          {bill.insurance.payerName ?? 'Insurer'}:{' '}
+          {bill.insurance.coverageLimit !== null
+            ? `approved up to ${formatInr(bill.insurance.coverageLimit)}`
+            : 'no cap'}
+          {bill.insurance.coPayPercent > 0 ? ` · co-pay ${formatPercent(bill.insurance.coPayPercent)}` : ''} · estimated
+          insurer share {formatInr(bill.insurance.payerShare)}, patient share {formatInr(bill.insurance.patientShare)}
         </Caption1>
       )}
 
@@ -92,8 +113,20 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
             columns={[
               { key: 'category', header: 'Category', render: (c) => SERVICE_CATEGORY_LABEL[c.category] },
               { key: 'items', header: 'Items', align: 'end', width: 80, render: (c) => c.items },
-              { key: 'gross', header: 'Amount', align: 'end', priority: 'low', render: (c) => <Amount value={c.gross} /> },
-              { key: 'discount', header: 'Discount', align: 'end', priority: 'low', render: (c) => <Amount value={c.discount} /> },
+              {
+                key: 'gross',
+                header: 'Amount',
+                align: 'end',
+                priority: 'low',
+                render: (c) => <Amount value={c.gross} />,
+              },
+              {
+                key: 'discount',
+                header: 'Discount',
+                align: 'end',
+                priority: 'low',
+                render: (c) => <Amount value={c.discount} />,
+              },
               { key: 'tax', header: 'GST', align: 'end', priority: 'low', render: (c) => <Amount value={c.tax} /> },
               { key: 'net', header: 'Net', align: 'end', render: (c) => <Amount value={c.net} strong /> },
             ]}
@@ -102,7 +135,11 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
         )}
         {view === 'day' && (
           <div style={{ padding: '8px 16px 16px' }}>
-            {bill.byDate.length === 0 ? <Text className={styles.muted}>No services charged yet.</Text> : <DayChart bill={bill} />}
+            {bill.byDate.length === 0 ? (
+              <Text className={styles.muted}>No services charged yet.</Text>
+            ) : (
+              <DayChart bill={bill} />
+            )}
           </div>
         )}
         {view === 'lines' && (
@@ -132,9 +169,26 @@ export function IpRunningBill({ accountId }: { accountId: string }) {
                 ),
               },
               { key: 'qty', header: 'Qty', align: 'end', width: 70, render: (l) => l.quantity },
-              { key: 'rate', header: 'Rate', align: 'end', priority: 'low', render: (l) => <Amount value={l.unitPrice} /> },
-              { key: 'net', header: 'Net', align: 'end', render: (l) => <Amount value={l.netAmount} strong tone={l.isReturn ? 'negative' : undefined} /> },
-              { key: 'status', header: 'Billed', width: 110, priority: 'low', render: (l) => (l.billId ? 'On a bill' : l.status === 'Unbilled' ? 'Not yet' : l.status) },
+              {
+                key: 'rate',
+                header: 'Rate',
+                align: 'end',
+                priority: 'low',
+                render: (l) => <Amount value={l.unitPrice} />,
+              },
+              {
+                key: 'net',
+                header: 'Net',
+                align: 'end',
+                render: (l) => <Amount value={l.netAmount} strong tone={l.isReturn ? 'negative' : undefined} />,
+              },
+              {
+                key: 'status',
+                header: 'Billed',
+                width: 110,
+                priority: 'low',
+                render: (l) => (l.billId ? 'On a bill' : l.status === 'Unbilled' ? 'Not yet' : l.status),
+              },
             ]}
             emptyTitle="No services charged yet"
           />

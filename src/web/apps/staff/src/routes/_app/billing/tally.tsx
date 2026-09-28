@@ -1,7 +1,42 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, mergeClasses, Spinner, Tab, TabList, Text, tokens } from '@fluentui/react-components';
-import { ArrowDownloadRegular, ArrowSyncRegular, BookRegular, MoreHorizontalRegular, SendRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  mergeClasses,
+  Spinner,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  ArrowDownloadRegular,
+  ArrowSyncRegular,
+  BookRegular,
+  MoreHorizontalRegular,
+  SendRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -18,19 +53,33 @@ interface TallySearch {
 }
 
 export const Route = createFileRoute('/_app/billing/tally')({
-  validateSearch: (s: Record<string, unknown>): TallySearch => ({ view: s.view === 'daybook' ? 'daybook' : undefined, date: dateParam(s.date) }),
+  validateSearch: (s: Record<string, unknown>): TallySearch => ({
+    view: s.view === 'daybook' ? 'daybook' : undefined,
+    date: dateParam(s.date),
+  }),
   component: TallyPage,
 });
 
 const useStyles = makeStyles({
-  voucher: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  voucher: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    padding: '10px 12px',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   entries: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 130px 130px', gap: '2px 12px' },
   head: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
   num: { textAlign: 'end' },
 });
 
-const STATUS_TONE: Record<TallyExportStatus, 'success' | 'warning' | 'danger' | 'informative'> = { Posted: 'success', Queued: 'warning', NotConfigured: 'informative', Failed: 'danger' };
+const STATUS_TONE: Record<TallyExportStatus, 'success' | 'warning' | 'danger' | 'informative'> = {
+  Posted: 'success',
+  Queued: 'warning',
+  NotConfigured: 'informative',
+  Failed: 'danger',
+};
 
 /** Saves the Tally import file of a date (used when Tally cannot be reached from the server). */
 async function download(date: string): Promise<void> {
@@ -64,15 +113,31 @@ function TallyPage() {
 
   return (
     <Page>
-      <PageHeader title="Tally export" subtitle="The day book of bills, receipts, refunds, credit notes and doctor fees, posted to Tally every night" icon={<BookRegular />} />
+      <PageHeader
+        title="Tally export"
+        subtitle="The day book of bills, receipts, refunds, credit notes and doctor fees, posted to Tally every night"
+        icon={<BookRegular />}
+      />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={view} onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, view: d.value === 'daybook' ? 'daybook' : undefined }) })}>
+          <TabList
+            selectedValue={view}
+            onTabSelect={(_, d) =>
+              void navigate({ search: (prev) => ({ ...prev, view: d.value === 'daybook' ? 'daybook' : undefined }) })
+            }
+          >
             <Tab value="exports">Posting log</Tab>
             <Tab value="daybook">Day book preview</Tab>
           </TabList>
         </div>
-        {view === 'exports' ? <ExportsView /> : <DayBookView date={search.date ?? todayIso(-1)} onDate={(date) => void navigate({ search: (prev) => ({ ...prev, date }) })} />}
+        {view === 'exports' ? (
+          <ExportsView />
+        ) : (
+          <DayBookView
+            date={search.date ?? todayIso(-1)}
+            onDate={(date) => void navigate({ search: (prev) => ({ ...prev, date }) })}
+          />
+        )}
       </Section>
     </Page>
   );
@@ -121,10 +186,19 @@ function ExportsView() {
           <Field label="Post the day book of">
             <Input type="date" value={postDate} max={todayIso()} onChange={(_, d) => setPostDate(d.value)} />
           </Field>
-          <Button appearance="primary" icon={<SendRegular />} disabled={!postDate} onClick={() => setConfirming(postDate)}>
+          <Button
+            appearance="primary"
+            icon={<SendRegular />}
+            disabled={!postDate}
+            onClick={() => setConfirming(postDate)}
+          >
             Post to Tally
           </Button>
-          <Button icon={downloading === postDate ? <Spinner size="tiny" /> : <ArrowDownloadRegular />} disabled={!postDate || downloading !== null} onClick={() => void save(postDate)}>
+          <Button
+            icon={downloading === postDate ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            disabled={!postDate || downloading !== null}
+            onClick={() => void save(postDate)}
+          >
             Download file
           </Button>
         </FilterBar>
@@ -137,17 +211,49 @@ function ExportsView() {
         onRetry={() => void exports.refetch()}
         getRowId={(e) => e.id}
         columns={[
-          { key: 'date', header: 'Day', width: 130, render: (e) => <Text weight="semibold">{formatDateOnly(e.date)}</Text> },
-          { key: 'status', header: 'Status', width: 170, render: (e) => <StatusBadge status={e.status} tone={STATUS_TONE[e.status]} label={TALLY_EXPORT_STATUS_LABEL[e.status]} /> },
+          {
+            key: 'date',
+            header: 'Day',
+            width: 130,
+            render: (e) => <Text weight="semibold">{formatDateOnly(e.date)}</Text>,
+          },
+          {
+            key: 'status',
+            header: 'Status',
+            width: 170,
+            render: (e) => (
+              <StatusBadge status={e.status} tone={STATUS_TONE[e.status]} label={TALLY_EXPORT_STATUS_LABEL[e.status]} />
+            ),
+          },
           { key: 'vouchers', header: 'Vouchers', align: 'end', render: (e) => e.voucherCount },
-          { key: 'result', header: 'Created / altered / errors', priority: 'low', render: (e) => `${e.createdCount} / ${e.alteredCount} / ${e.errorCount}` },
-          { key: 'attempt', header: 'Last attempt', priority: 'low', render: (e) => (e.lastAttemptAt ? `${formatDateTime(e.lastAttemptAt)} (${e.attempts})` : '—') },
-          { key: 'message', header: 'Message', priority: 'low', render: (e) => e.message ?? (e.postedAt ? `Posted ${formatDateTime(e.postedAt)}` : '—') },
+          {
+            key: 'result',
+            header: 'Created / altered / errors',
+            priority: 'low',
+            render: (e) => `${e.createdCount} / ${e.alteredCount} / ${e.errorCount}`,
+          },
+          {
+            key: 'attempt',
+            header: 'Last attempt',
+            priority: 'low',
+            render: (e) => (e.lastAttemptAt ? `${formatDateTime(e.lastAttemptAt)} (${e.attempts})` : '—'),
+          },
+          {
+            key: 'message',
+            header: 'Message',
+            priority: 'low',
+            render: (e) => e.message ?? (e.postedAt ? `Posted ${formatDateTime(e.postedAt)}` : '—'),
+          },
         ]}
         rowActions={(e) => (
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${formatDateOnly(e.date)}`} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<MoreHorizontalRegular />}
+                aria-label={`Actions for ${formatDateOnly(e.date)}`}
+              />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -176,7 +282,8 @@ function ExportsView() {
           queue.reset();
         }}
       >
-        Vouchers already in Tally are updated, not duplicated. When no Tally connection is configured, the day book stays ready to download.
+        Vouchers already in Tally are updated, not duplicated. When no Tally connection is configured, the day book
+        stays ready to download.
         <ActionError error={queue.error} />
       </ConfirmDialog>
     </>
@@ -184,7 +291,9 @@ function ExportsView() {
 }
 
 function sumEntries(voucher: AccountingVoucher, debit: boolean): number {
-  return fromPaise(voucher.entries.filter((e) => e.isDebit === debit).reduce((total, e) => total + toPaise(e.amount), 0n));
+  return fromPaise(
+    voucher.entries.filter((e) => e.isDebit === debit).reduce((total, e) => total + toPaise(e.amount), 0n),
+  );
 }
 
 function DayBookView({ date, onDate }: { date: string; onDate: (date: string) => void }) {
@@ -204,7 +313,8 @@ function DayBookView({ date, onDate }: { date: string; onDate: (date: string) =>
           </Field>
           {vouchers.data && (
             <Caption1 className={styles.muted}>
-              {all.length} voucher{all.length === 1 ? '' : 's'} · debit <Amount value={debit} /> · credit <Amount value={credit} />
+              {all.length} voucher{all.length === 1 ? '' : 's'} · debit <Amount value={debit} /> · credit{' '}
+              <Amount value={credit} />
               {unbalanced.length > 0 ? ` · ${unbalanced.length} unbalanced` : ' · balanced'}
             </Caption1>
           )}

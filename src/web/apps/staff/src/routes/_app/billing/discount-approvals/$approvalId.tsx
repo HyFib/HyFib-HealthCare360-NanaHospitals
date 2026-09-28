@@ -26,7 +26,10 @@ export const Route = createFileRoute('/_app/billing/discount-approvals/$approval
  */
 async function findApproval(id: string, signal: AbortSignal): Promise<DiscountApprovalDto | null> {
   for (const status of DISCOUNT_APPROVAL_STATUSES) {
-    const page = await api.get<PagedResult<DiscountApprovalDto>>('/api/v1/billing/discount-approvals', { query: { status, pageSize: 200 }, signal });
+    const page = await api.get<PagedResult<DiscountApprovalDto>>('/api/v1/billing/discount-approvals', {
+      query: { status, pageSize: 200 },
+      signal,
+    });
     const found = page.items.find((a) => a.id === id);
     if (found) {
       return found;
@@ -45,7 +48,10 @@ function DiscountApprovalPage() {
     queryFn: ({ signal }) => findApproval(approvalId, signal),
     enabled: canApprove,
   });
-  const bill = useQuery({ ...billingQueries.bill(approval.data?.billId ?? ''), enabled: Boolean(approval.data?.billId) });
+  const bill = useQuery({
+    ...billingQueries.bill(approval.data?.billId ?? ''),
+    enabled: Boolean(approval.data?.billId),
+  });
 
   if (!canApprove) {
     return (
@@ -70,8 +76,15 @@ function DiscountApprovalPage() {
   if (!a) {
     return (
       <Page maxWidth={900}>
-        <PageHeader title="Discount request" breadcrumbs={[{ label: 'Discount approvals', onClick: back }, { label: 'Request' }]} />
-        <EmptyState title="This request is no longer listed" description="It may be older than the recent requests. Open the list to see the latest." action={<Button onClick={back}>Discount approvals</Button>} />
+        <PageHeader
+          title="Discount request"
+          breadcrumbs={[{ label: 'Discount approvals', onClick: back }, { label: 'Request' }]}
+        />
+        <EmptyState
+          title="This request is no longer listed"
+          description="It may be older than the recent requests. Open the list to see the latest."
+          action={<Button onClick={back}>Discount approvals</Button>}
+        />
       </Page>
     );
   }
@@ -102,13 +115,23 @@ function DiscountApprovalPage() {
           <Detail label="Discount asked">
             <Amount value={a.requestedAmount} size="large" />
           </Detail>
-          <Detail label="Share of the discountable value">{a.discountBase > 0 ? `${formatPercent((a.requestedAmount / a.discountBase) * 100)} of ${formatInr(a.discountBase)}` : '—'}</Detail>
+          <Detail label="Share of the discountable value">
+            {a.discountBase > 0
+              ? `${formatPercent((a.requestedAmount / a.discountBase) * 100)} of ${formatInr(a.discountBase)}`
+              : '—'}
+          </Detail>
           <Detail label="How">
-            {a.billDiscountPercent !== null ? `${formatPercent(a.billDiscountPercent)} on the bill` : a.billDiscountAmount !== null ? `${formatInr(a.billDiscountAmount)} on the bill` : 'On individual services'}
+            {a.billDiscountPercent !== null
+              ? `${formatPercent(a.billDiscountPercent)} on the bill`
+              : a.billDiscountAmount !== null
+                ? `${formatInr(a.billDiscountAmount)} on the bill`
+                : 'On individual services'}
           </Detail>
           <Detail label="Reason">{a.reason}</Detail>
           <Detail label="Requested">{`${a.requestedByName ?? '—'} · ${formatDateTime(a.requestedAt)}`}</Detail>
-          {a.decidedAt && <Detail label="Decided">{`${formatDateTime(a.decidedAt)}${a.remarks ? ` · ${a.remarks}` : ''}`}</Detail>}
+          {a.decidedAt && (
+            <Detail label="Decided">{`${formatDateTime(a.decidedAt)}${a.remarks ? ` · ${a.remarks}` : ''}`}</Detail>
+          )}
         </DetailGrid>
       </Section>
       {bill.data && (
@@ -129,7 +152,14 @@ function DiscountApprovalPage() {
           </Section>
         </>
       )}
-      {decision && <DecideDiscountDialog approval={a} decision={decision} onClose={() => setDecision(null)} onDecided={() => void approval.refetch()} />}
+      {decision && (
+        <DecideDiscountDialog
+          approval={a}
+          decision={decision}
+          onClose={() => setDecision(null)}
+          onDecided={() => void approval.refetch()}
+        />
+      )}
     </Page>
   );
 }

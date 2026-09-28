@@ -624,7 +624,8 @@ export const billingQueries = {
   bills: (filters: BillFilters) =>
     queryOptions({
       queryKey: [...billingKeys.bills(), 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<BillListItem>>('/api/v1/billing/bills', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<BillListItem>>('/api/v1/billing/bills', { query: { pageSize: 25, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   bill: (id: string) =>
@@ -636,7 +637,10 @@ export const billingQueries = {
     queryOptions({
       queryKey: [...billingKeys.charges(), 'unbilled', patientId],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ChargeDto>>('/api/v1/billing/charges', { query: { patientId, unbilledOnly: true, pageSize: 200 }, signal }),
+        api.get<PagedResult<ChargeDto>>('/api/v1/billing/charges', {
+          query: { patientId, unbilledOnly: true, pageSize: 200 },
+          signal,
+        }),
     }),
   dues: (patientId: string) =>
     queryOptions({
@@ -646,12 +650,17 @@ export const billingQueries = {
   advances: (patientId: string, openOnly: boolean) =>
     queryOptions({
       queryKey: [...billingKeys.dues(patientId), 'advances', openOnly],
-      queryFn: ({ signal }) => api.get<PatientAdvanceDto[]>(`/api/v1/billing/patients/${patientId}/advances`, { query: { openOnly }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PatientAdvanceDto[]>(`/api/v1/billing/patients/${patientId}/advances`, { query: { openOnly }, signal }),
     }),
   receipts: (filters: ReceiptFilters) =>
     queryOptions({
       queryKey: [...billingKeys.receipts(), 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ReceiptListItem>>('/api/v1/billing/receipts', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ReceiptListItem>>('/api/v1/billing/receipts', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   receipt: (id: string) =>
@@ -663,7 +672,8 @@ export const billingQueries = {
   refunds: (filters: RefundFilters) =>
     queryOptions({
       queryKey: [...billingKeys.refunds(), 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<RefundDto>>('/api/v1/billing/refunds', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RefundDto>>('/api/v1/billing/refunds', { query: { pageSize: 25, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   refund: (id: string) =>
@@ -675,7 +685,10 @@ export const billingQueries = {
     queryOptions({
       queryKey: [...billingKeys.discounts(), 'approvals', status, page, pageSize],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<DiscountApprovalDto>>('/api/v1/billing/discount-approvals', { query: { status, page, pageSize }, signal }),
+        api.get<PagedResult<DiscountApprovalDto>>('/api/v1/billing/discount-approvals', {
+          query: { status, page, pageSize },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   discountLimits: () =>
@@ -693,13 +706,15 @@ export const billingQueries = {
     queryOptions({
       queryKey: [...billingKeys.shifts(), 'current'],
       // 204 (no open shift) arrives as undefined; React Query needs null.
-      queryFn: async ({ signal }) => (await api.get<ShiftDto | undefined>('/api/v1/billing/shifts/current', { signal })) ?? null,
+      queryFn: async ({ signal }) =>
+        (await api.get<ShiftDto | undefined>('/api/v1/billing/shifts/current', { signal })) ?? null,
       refetchInterval: 60_000,
     }),
   shifts: (filters: ShiftFilters) =>
     queryOptions({
       queryKey: [...billingKeys.shifts(), 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ShiftDto>>('/api/v1/billing/shifts', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ShiftDto>>('/api/v1/billing/shifts', { query: { pageSize: 25, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   shift: (id: string) =>
@@ -710,12 +725,17 @@ export const billingQueries = {
   dayEnd: (date: string, counter?: string) =>
     queryOptions({
       queryKey: [...billingKeys.shifts(), 'day-end', date, counter ?? ''],
-      queryFn: ({ signal }) => api.get<DayEndReport>('/api/v1/billing/reports/day-end', { query: { date, counter }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DayEndReport>('/api/v1/billing/reports/day-end', { query: { date, counter }, signal }),
     }),
   paymentLinks: (filters: PaymentLinkFilters) =>
     queryOptions({
       queryKey: [...billingKeys.links(), 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<GatewayOrderDto>>('/api/v1/billing/payment-links', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<GatewayOrderDto>>('/api/v1/billing/payment-links', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   posSale: (id: string) =>
@@ -740,34 +760,51 @@ export interface WriteOptions {
 
 export const billingApi = {
   createBill: (request: CreateBillRequest) => api.post<BillDetail>('/api/v1/billing/bills', request),
-  addLine: (billId: string, request: AddBillLineRequest) => api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
+  addLine: (billId: string, request: AddBillLineRequest) =>
+    api.post<BillDetail>(`/api/v1/billing/bills/${billId}/lines`, request),
   removeLine: (billId: string, lineId: string, version: number) =>
     api.delete<BillDetail>(`/api/v1/billing/bills/${billId}/lines/${lineId}`, { query: { version } }),
-  refresh: (billId: string, version: number) => api.post<BillDetail>(`/api/v1/billing/bills/${billId}/refresh`, { version }),
-  applyDiscount: (billId: string, request: ApplyDiscountRequest) => api.post<DiscountOutcome>(`/api/v1/billing/bills/${billId}/discount`, request),
-  finalize: (billId: string, version: number) => api.post<BillDetail>(`/api/v1/billing/bills/${billId}/finalize`, { version }),
-  cancel: (billId: string, reason: string, version: number) => api.post<BillDetail>(`/api/v1/billing/bills/${billId}/cancel`, { reason, version }),
-  discard: (billId: string, version: number) => api.delete<void>(`/api/v1/billing/bills/${billId}`, { query: { version } }),
+  refresh: (billId: string, version: number) =>
+    api.post<BillDetail>(`/api/v1/billing/bills/${billId}/refresh`, { version }),
+  applyDiscount: (billId: string, request: ApplyDiscountRequest) =>
+    api.post<DiscountOutcome>(`/api/v1/billing/bills/${billId}/discount`, request),
+  finalize: (billId: string, version: number) =>
+    api.post<BillDetail>(`/api/v1/billing/bills/${billId}/finalize`, { version }),
+  cancel: (billId: string, reason: string, version: number) =>
+    api.post<BillDetail>(`/api/v1/billing/bills/${billId}/cancel`, { reason, version }),
+  discard: (billId: string, version: number) =>
+    api.delete<void>(`/api/v1/billing/bills/${billId}`, { query: { version } }),
   issueCreditNote: (billId: string, kind: CreditNoteKind, amount: number, reason: string) =>
     api.post<BillDetail>(`/api/v1/billing/bills/${billId}/credit-notes`, { kind, amount, reason }),
-  adjustAdvance: (billId: string, advanceId: string, amount: number | null, version: number, options: WriteOptions = {}) =>
-    api.post<ReceiptDto>(`/api/v1/billing/bills/${billId}/adjust-advance`, { advanceId, amount, version }, options),
-  collectPayment: (request: CollectPaymentRequest, options: WriteOptions = {}) => api.post<ReceiptDto>('/api/v1/billing/receipts', request, options),
+  adjustAdvance: (
+    billId: string,
+    advanceId: string,
+    amount: number | null,
+    version: number,
+    options: WriteOptions = {},
+  ) => api.post<ReceiptDto>(`/api/v1/billing/bills/${billId}/adjust-advance`, { advanceId, amount, version }, options),
+  collectPayment: (request: CollectPaymentRequest, options: WriteOptions = {}) =>
+    api.post<ReceiptDto>('/api/v1/billing/receipts', request, options),
   collectDeposit: (ipAccountId: string, request: CollectDepositRequest, options: WriteOptions = {}) =>
     api.post<ReceiptDto>(`/api/v1/billing/ip-accounts/${ipAccountId}/deposits`, request, options),
   requestRefund: (request: RequestRefundRequest) => api.post<{ id: string }>('/api/v1/billing/refunds', request),
-  approveRefund: (id: string, remarks: string | null) => api.post<void>(`/api/v1/billing/refunds/${id}/approve`, { remarks }),
+  approveRefund: (id: string, remarks: string | null) =>
+    api.post<void>(`/api/v1/billing/refunds/${id}/approve`, { remarks }),
   rejectRefund: (id: string, reason: string) => api.post<void>(`/api/v1/billing/refunds/${id}/reject`, { reason }),
   payRefund: (id: string, mode: PaymentMode, reference: string | null, options: WriteOptions = {}) =>
     api.post<void>(`/api/v1/billing/refunds/${id}/pay`, { mode, reference }, options),
-  approveDiscount: (id: string, remarks: string | null) => api.post<void>(`/api/v1/billing/discount-approvals/${id}/approve`, { remarks }),
-  rejectDiscount: (id: string, remarks: string | null) => api.post<void>(`/api/v1/billing/discount-approvals/${id}/reject`, { remarks }),
+  approveDiscount: (id: string, remarks: string | null) =>
+    api.post<void>(`/api/v1/billing/discount-approvals/${id}/approve`, { remarks }),
+  rejectDiscount: (id: string, remarks: string | null) =>
+    api.post<void>(`/api/v1/billing/discount-approvals/${id}/reject`, { remarks }),
   saveDiscountLimit: (request: SaveDiscountLimitRequest) => api.put<void>('/api/v1/billing/discount-limits', request),
   deleteDiscountLimit: (id: string) => api.delete<void>(`/api/v1/billing/discount-limits/${id}`),
-  openShift: (counter: string, openingFloat: number) => api.post<ShiftDto>('/api/v1/billing/shifts/open', { counter, openingFloat }),
+  openShift: (counter: string, openingFloat: number) =>
+    api.post<ShiftDto>('/api/v1/billing/shifts/open', { counter, openingFloat }),
   closeShift: (id: string, declaredCash: number, notes: string | null, version: number) =>
     api.post<ShiftDto>(`/api/v1/billing/shifts/${id}/close`, { declaredCash, notes, version }),
-  startPosSale: (request: StartPosSaleRequest, options: WriteOptions = {}) => api.post<PosSaleDto>('/api/v1/billing/pos/sales', request, options),
+  startPosSale: (request: StartPosSaleRequest, options: WriteOptions = {}) =>
+    api.post<PosSaleDto>('/api/v1/billing/pos/sales', request, options),
   cancelPosSale: (id: string) => api.post<PosSaleDto>(`/api/v1/billing/pos/sales/${id}/cancel`),
   createPaymentLink: (request: CreatePaymentLinkRequest, options: WriteOptions = {}) =>
     api.post<GatewayOrderDto>('/api/v1/billing/payment-links', request, options),
@@ -780,15 +817,31 @@ export function searchServices(search: string, category?: ServiceCategory): Prom
 }
 
 /** The price a service would be charged at for a visit, an admission or a tariff plan. */
-export function quotePrice(params: { serviceItemId: string; visitId?: string | null; admissionId?: string | null; tariffPlanId?: string | null; date?: string }) {
+export function quotePrice(params: {
+  serviceItemId: string;
+  visitId?: string | null;
+  admissionId?: string | null;
+  tariffPlanId?: string | null;
+  date?: string;
+}) {
   return api.get<PriceQuoteDto>('/api/v1/billing/tariffs/quote', { query: { ...params } });
 }
 
 /** The draft-exists conflict carries the existing draft's id (`data.billId`). */
 export function existingDraftId(error: unknown): string | null {
-  if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === 'billing.draft_exists') {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: string }).code === 'billing.draft_exists'
+  ) {
     const data = (error as { data?: unknown }).data;
-    if (typeof data === 'object' && data !== null && 'billId' in data && typeof (data as { billId: unknown }).billId === 'string') {
+    if (
+      typeof data === 'object' &&
+      data !== null &&
+      'billId' in data &&
+      typeof (data as { billId: unknown }).billId === 'string'
+    ) {
       return (data as { billId: string }).billId;
     }
   }

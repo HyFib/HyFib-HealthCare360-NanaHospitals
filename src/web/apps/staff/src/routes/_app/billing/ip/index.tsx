@@ -9,7 +9,12 @@ import { usePermission } from '@/lib/permissions';
 import { CollectDepositDialog, type DepositAccount } from '@/modules/billing/CollectDepositDialog';
 import { useBillingLive } from '@/modules/billing/hooks';
 import { ipQueries } from '@/modules/billing/ipApi';
-import { IP_ACCOUNT_STATUS_LABEL, IP_ACCOUNT_STATUSES, PAYER_TYPE_LABEL, type IpAccountStatus } from '@/modules/billing/labels';
+import {
+  IP_ACCOUNT_STATUS_LABEL,
+  IP_ACCOUNT_STATUSES,
+  PAYER_TYPE_LABEL,
+  type IpAccountStatus,
+} from '@/modules/billing/labels';
 import { enumParam, pageParam, textParam } from '@/modules/billing/searchParams';
 import { Amount, IpStatusBadge, NoAccess } from '@/modules/billing/ui';
 
@@ -41,11 +46,17 @@ function IpAccountsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const accounts = useQuery({ ...ipQueries.accounts({ search: search.search, status: search.status, page: search.page ?? 1 }), enabled: canRead });
+  const accounts = useQuery({
+    ...ipQueries.accounts({ search: search.search, status: search.status, page: search.page ?? 1 }),
+    enabled: canRead,
+  });
 
   if (!canRead) {
     return (
@@ -58,15 +69,35 @@ function IpAccountsPage() {
 
   return (
     <Page>
-      <PageHeader title="In-patient accounts" subtitle="Running bills, advances, packages and discharge billing" icon={<BedRegular />} />
+      <PageHeader
+        title="In-patient accounts"
+        subtitle="Running bills, advances, packages and discharge billing"
+        icon={<BedRegular />}
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 280px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Admission number, UHID, mobile or name" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Admission number, UHID, mobile or name"
+                autoFocus
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, status: (d.value || undefined) as IpAccountStatus | undefined, page: undefined }) })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) =>
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      status: (d.value || undefined) as IpAccountStatus | undefined,
+                      page: undefined,
+                    }),
+                  })
+                }
+              >
                 <option value="">In hospital or with dues</option>
                 {IP_ACCOUNT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -114,8 +145,19 @@ function IpAccountsPage() {
                 </span>
               ),
             },
-            { key: 'estimate', header: 'Estimate', align: 'end', priority: 'low', render: (a) => <Amount value={a.estimatedAmount} /> },
-            { key: 'deposit', header: 'Advance held', align: 'end', render: (a) => <Amount value={a.depositBalance} strong /> },
+            {
+              key: 'estimate',
+              header: 'Estimate',
+              align: 'end',
+              priority: 'low',
+              render: (a) => <Amount value={a.estimatedAmount} />,
+            },
+            {
+              key: 'deposit',
+              header: 'Advance held',
+              align: 'end',
+              render: (a) => <Amount value={a.depositBalance} strong />,
+            },
             { key: 'status', header: 'Status', width: 170, render: (a) => <IpStatusBadge status={a.status} /> },
           ]}
           rowActions={
@@ -125,7 +167,16 @@ function IpAccountsPage() {
                     <Button
                       size="small"
                       icon={<WalletRegular />}
-                      onClick={() => setDeposit({ id: a.id, admissionNumber: a.admissionNumber, patientName: a.patientName, uhid: a.uhid, depositBalance: a.depositBalance, estimatedAmount: a.estimatedAmount })}
+                      onClick={() =>
+                        setDeposit({
+                          id: a.id,
+                          admissionNumber: a.admissionNumber,
+                          patientName: a.patientName,
+                          uhid: a.uhid,
+                          depositBalance: a.depositBalance,
+                          estimatedAmount: a.estimatedAmount,
+                        })
+                      }
                     >
                       Advance
                     </Button>

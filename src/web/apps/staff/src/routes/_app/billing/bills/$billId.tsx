@@ -21,7 +21,12 @@ export const Route = createFileRoute('/_app/billing/bills/$billId')({
 function BillDetailPage() {
   const { billId } = Route.useParams();
   const navigate = useNavigate();
-  const canRead = usePermission(['billing.charges.read', 'billing.op.create', 'billing.ip.manage', 'billing.payments.collect']);
+  const canRead = usePermission([
+    'billing.charges.read',
+    'billing.op.create',
+    'billing.ip.manage',
+    'billing.payments.collect',
+  ]);
   useBillingLive();
   const bill = useQuery({
     ...billingQueries.bill(billId),
@@ -43,9 +48,15 @@ function BillDetailPage() {
   if (bill.error || !bill.data) {
     return (
       <Page maxWidth={900}>
-        <PageHeader title="Bill" breadcrumbs={[{ label: 'Bills', onClick: () => void navigate({ to: '/billing/bills' }) }, { label: 'Bill' }]} />
+        <PageHeader
+          title="Bill"
+          breadcrumbs={[{ label: 'Bills', onClick: () => void navigate({ to: '/billing/bills' }) }, { label: 'Bill' }]}
+        />
         {isApiError(bill.error) && bill.error.status === 404 ? (
-          <EmptyState title="This bill was not found" description="A discarded draft disappears; search the bill list again." />
+          <EmptyState
+            title="This bill was not found"
+            description="A discarded draft disappears; search the bill list again."
+          />
         ) : (
           <ErrorState error={bill.error} onRetry={() => void bill.refetch()} />
         )}
@@ -62,7 +73,8 @@ function BillDetailPage() {
         icon={<ReceiptRegular />}
         subtitle={
           <>
-            {billTitle(b)} <BillStatusBadge status={b.status} /> {b.payerName && <Badge appearance="outline">{b.payerName}</Badge>}
+            {billTitle(b)} <BillStatusBadge status={b.status} />{' '}
+            {b.payerName && <Badge appearance="outline">{b.payerName}</Badge>}
           </>
         }
         breadcrumbs={[{ label: 'Bills', onClick: () => void navigate({ to: '/billing/bills' }) }, { label: title }]}

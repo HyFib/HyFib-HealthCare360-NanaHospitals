@@ -7,7 +7,14 @@ import { usePermission } from '@/lib/permissions';
 import { billingQueries, type BillDetail, type ReceiptDto, type RefundDto } from './api';
 import { NO_DISCOUNT_AUTHORITY, type DiscountAuthority } from './billTotals';
 import { useCounterPrefs } from './counterPrefs';
-import { buildBillHtml, buildReceiptHtml, buildRefundVoucherHtml, sendToPrinter, type PrintFacility, type PrintFormat } from './print';
+import {
+  buildBillHtml,
+  buildReceiptHtml,
+  buildRefundVoucherHtml,
+  sendToPrinter,
+  type PrintFacility,
+  type PrintFormat,
+} from './print';
 
 /** Billing data that changes when money moves (masters, the facility header and Tally logs do not). */
 const LIVE_KEYS = new Set(['bills', 'dues', 'receipts', 'ip', 'shifts', 'refunds', 'charges', 'payment-links', 'pos']);
@@ -65,13 +72,17 @@ export function useBillingPrint() {
 
   const printBill = useCallback(
     (bill: BillDetail, format: PrintFormat = 'A4') =>
-      sendToPrinter(buildBillHtml(bill, facility, format), format).catch((error: unknown) => notify.error(error, 'Printing failed')),
+      sendToPrinter(buildBillHtml(bill, facility, format), format).catch((error: unknown) =>
+        notify.error(error, 'Printing failed'),
+      ),
     [facility, notify],
   );
 
   const printReceipt = useCallback(
     (receipt: ReceiptDto, format: PrintFormat = prefs.receiptFormat) =>
-      sendToPrinter(buildReceiptHtml(receipt, facility, format), format).catch((error: unknown) => notify.error(error, 'Printing failed')),
+      sendToPrinter(buildReceiptHtml(receipt, facility, format), format).catch((error: unknown) =>
+        notify.error(error, 'Printing failed'),
+      ),
     [facility, notify, prefs.receiptFormat],
   );
 
@@ -88,7 +99,10 @@ export function useBillingPrint() {
   );
 
   const printRefund = useCallback(
-    (refund: RefundDto) => sendToPrinter(buildRefundVoucherHtml(refund, facility), 'A4').catch((error: unknown) => notify.error(error, 'Printing failed')),
+    (refund: RefundDto) =>
+      sendToPrinter(buildRefundVoucherHtml(refund, facility), 'A4').catch((error: unknown) =>
+        notify.error(error, 'Printing failed'),
+      ),
     [facility, notify],
   );
 

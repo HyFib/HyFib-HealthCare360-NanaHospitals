@@ -1,4 +1,13 @@
-import { Badge, Button, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Skeleton, SkeletonItem } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Skeleton,
+  SkeletonItem,
+} from '@fluentui/react-components';
 import { PersonRegular, WalletRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatInr, isApiError } from '@hc360/core';
 import { PatientBanner } from '@hc360/ui';
@@ -18,7 +27,15 @@ const useStyles = makeStyles({
  * Patient context on billing screens: the standard banner plus what matters at the counter — unpaid bills and any
  * advance that can be used. Restricted (VIP) records explain themselves instead of failing silently.
  */
-export function BillingPatientBanner({ patientId, actions, showDues = true }: { patientId: string; actions?: ReactNode; showDues?: boolean }) {
+export function BillingPatientBanner({
+  patientId,
+  actions,
+  showDues = true,
+}: {
+  patientId: string;
+  actions?: ReactNode;
+  showDues?: boolean;
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
   const canSeeDues = usePermission(['billing.payments.collect', 'billing.charges.read']);
@@ -44,7 +61,10 @@ export function BillingPatientBanner({ patientId, actions, showDues = true }: { 
               ? patient.error.userMessage
               : 'Try again in a moment.'}
         </MessageBarBody>
-        <Button icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}>
+        <Button
+          icon={<PersonRegular />}
+          onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}
+        >
           Patient profile
         </Button>
       </MessageBar>
@@ -56,7 +76,18 @@ export function BillingPatientBanner({ patientId, actions, showDues = true }: { 
   return (
     <div className={styles.root}>
       <PatientBanner
-        patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName, gender: p.gender, age: p.age, phone: p.phone, bloodGroup: p.bloodGroup, category: p.category, isVip: p.isVip, isDeceased: p.isDeceased }}
+        patient={{
+          id: p.id,
+          uhid: p.uhid,
+          fullName: p.fullName,
+          gender: p.gender,
+          age: p.age,
+          phone: p.phone,
+          bloodGroup: p.bloodGroup,
+          category: p.category,
+          isVip: p.isVip,
+          isDeceased: p.isDeceased,
+        }}
         actions={actions}
       />
       {p.mergedIntoPatientId && (

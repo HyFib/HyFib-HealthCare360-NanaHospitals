@@ -13,7 +13,17 @@ import {
 const TODAY = '2026-09-25';
 
 function input(mode: PaymentMode, amount: number, extra: Partial<PaymentLineInput> = {}): PaymentLineInput {
-  return { mode, amount, reference: null, cardLast4: null, cardNetwork: null, chequeNumber: null, chequeBank: null, chequeDate: null, ...extra };
+  return {
+    mode,
+    amount,
+    reference: null,
+    cardLast4: null,
+    cardNetwork: null,
+    chequeNumber: null,
+    chequeBank: null,
+    chequeDate: null,
+    ...extra,
+  };
 }
 
 const valid = (line: PaymentLineInput, atCounter = true) => validatePaymentLine(line, TODAY, atCounter) === null;
@@ -66,7 +76,11 @@ describe('cheque validity dates', () => {
 });
 
 describe('typed payment lines', () => {
-  const draft = (mode: PaymentLineDraft['mode'], amount: string, extra: Partial<PaymentLineDraft> = {}): PaymentLineDraft => ({
+  const draft = (
+    mode: PaymentLineDraft['mode'],
+    amount: string,
+    extra: Partial<PaymentLineDraft> = {},
+  ): PaymentLineDraft => ({
     ...newPaymentLine(mode, null),
     amount,
     ...extra,
@@ -76,18 +90,39 @@ describe('typed payment lines', () => {
     const check = checkPaymentLine(draft('Upi', '1,250.50', { reference: ' 4256 ', cardLast4: '9999' }), TODAY);
     expect(check).toEqual({
       ok: true,
-      input: { mode: 'Upi', amount: 1250.5, reference: '4256', cardLast4: null, cardNetwork: null, chequeNumber: null, chequeBank: null, chequeDate: null },
+      input: {
+        mode: 'Upi',
+        amount: 1250.5,
+        reference: '4256',
+        cardLast4: null,
+        cardNetwork: null,
+        chequeNumber: null,
+        chequeBank: null,
+        chequeDate: null,
+      },
     });
   });
 
   it('explains what is missing', () => {
-    expect(checkPaymentLine(draft('Card', '500'), TODAY)).toEqual({ ok: false, error: 'Enter the last 4 digits of the card.' });
-    expect(checkPaymentLine(draft('Cash', '10.005'), TODAY)).toEqual({ ok: false, error: 'Use at most 2 decimal places.' });
+    expect(checkPaymentLine(draft('Card', '500'), TODAY)).toEqual({
+      ok: false,
+      error: 'Enter the last 4 digits of the card.',
+    });
+    expect(checkPaymentLine(draft('Cash', '10.005'), TODAY)).toEqual({
+      ok: false,
+      error: 'Use at most 2 decimal places.',
+    });
   });
 
   it('works out the balance and the change to return from the cash handed over', () => {
     const lines = [draft('Card', '1000', { cardLast4: '1234' }), draft('Cash', '249.50')];
-    expect(summariseSplit(lines, 1249.5, '500')).toEqual({ total: 1249.5, remaining: 0, cash: 249.5, change: 250.5, shortTendered: false });
+    expect(summariseSplit(lines, 1249.5, '500')).toEqual({
+      total: 1249.5,
+      remaining: 0,
+      cash: 249.5,
+      change: 250.5,
+      shortTendered: false,
+    });
     expect(summariseSplit(lines, 1500, '')).toMatchObject({ remaining: 250.5, change: null, shortTendered: false });
     expect(summariseSplit(lines, 1000, '200')).toMatchObject({ remaining: -249.5, shortTendered: true, change: null });
   });

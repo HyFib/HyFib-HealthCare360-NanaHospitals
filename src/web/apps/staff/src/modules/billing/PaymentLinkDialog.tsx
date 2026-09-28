@@ -38,7 +38,15 @@ export type LinkTarget = { kind: 'bill'; billId: string; due: number } | { kind:
  * Remote payment (INT-PG): a gateway link sent by SMS/WhatsApp, also shown as a QR code the patient can scan at the
  * counter. The receipt is recorded automatically when the gateway confirms the payment.
  */
-export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; target: LinkTarget; onClose: () => void }) {
+export function PaymentLinkDialog({
+  open,
+  target,
+  onClose,
+}: {
+  open: boolean;
+  target: LinkTarget;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useRefreshBilling();
@@ -57,7 +65,12 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
   }
 
   const parsed = parseRupees(amount, { max: target.kind === 'bill' ? target.due : undefined });
-  const amountError = amount && !parsed.ok ? (target.kind === 'bill' && parsed.error === 'The amount is too large.' ? `The balance is ${formatInr(target.due)}.` : parsed.error) : null;
+  const amountError =
+    amount && !parsed.ok
+      ? target.kind === 'bill' && parsed.error === 'The amount is too large.'
+        ? `The balance is ${formatInr(target.due)}.`
+        : parsed.error
+      : null;
 
   const create = useMutation({
     mutationFn: () =>
@@ -113,7 +126,10 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
                   }
                 }}
               >
-                <Text>The patient pays online by UPI, card or net banking. The receipt is recorded automatically when the payment succeeds.</Text>
+                <Text>
+                  The patient pays online by UPI, card or net banking. The receipt is recorded automatically when the
+                  payment succeeds.
+                </Text>
                 <AmountField
                   label={target.kind === 'ip' ? 'Advance to request' : 'Amount'}
                   required
@@ -124,7 +140,11 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
                   autoFocus
                 />
                 <Checkbox checked={sms} onChange={(_, data) => setSms(Boolean(data.checked))} label="Send by SMS" />
-                <Checkbox checked={whatsApp} onChange={(_, data) => setWhatsApp(Boolean(data.checked))} label="Send on WhatsApp" />
+                <Checkbox
+                  checked={whatsApp}
+                  onChange={(_, data) => setWhatsApp(Boolean(data.checked))}
+                  label="Send on WhatsApp"
+                />
                 <ActionError error={create.error} />
               </form>
             ) : (
@@ -149,7 +169,13 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
                   </div>
                 </div>
                 {order.linkUrl && (
-                  <Input value={order.linkUrl} readOnly contentBefore={<LinkRegular />} aria-label="Payment link" onFocus={(event) => event.target.select()} />
+                  <Input
+                    value={order.linkUrl}
+                    readOnly
+                    contentBefore={<LinkRegular />}
+                    aria-label="Payment link"
+                    onFocus={(event) => event.target.select()}
+                  />
                 )}
                 <ActionError error={check.error} />
               </>
@@ -161,7 +187,13 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
                 <Button onClick={onClose} disabled={create.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" form="payment-link" appearance="primary" disabled={!parsed.ok || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : <LinkRegular />}>
+                <Button
+                  type="submit"
+                  form="payment-link"
+                  appearance="primary"
+                  disabled={!parsed.ok || create.isPending}
+                  icon={create.isPending ? <Spinner size="tiny" /> : <LinkRegular />}
+                >
                   Create link
                 </Button>
               </>
@@ -172,7 +204,11 @@ export function PaymentLinkDialog({ open, target, onClose }: { open: boolean; ta
                     Copy link
                   </Button>
                 )}
-                <Button icon={check.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => check.mutate()} disabled={check.isPending || order.status !== 'Created'}>
+                <Button
+                  icon={check.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+                  onClick={() => check.mutate()}
+                  disabled={check.isPending || order.status !== 'Created'}
+                >
                   Check payment
                 </Button>
                 <Button appearance="primary" onClick={onClose}>

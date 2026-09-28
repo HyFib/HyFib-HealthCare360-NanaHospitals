@@ -21,7 +21,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, BedRegular, CopyRegular, LinkRegular, MoreHorizontalRegular, ReceiptRegular } from '@fluentui/react-icons';
+import {
+  ArrowClockwiseRegular,
+  BedRegular,
+  CopyRegular,
+  LinkRegular,
+  MoreHorizontalRegular,
+  ReceiptRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -42,7 +49,10 @@ interface LinksSearch {
 }
 
 export const Route = createFileRoute('/_app/billing/payment-links')({
-  validateSearch: (s: Record<string, unknown>): LinksSearch => ({ status: enumParam(s.status, GATEWAY_ORDER_STATUSES), page: pageParam(s.page) }),
+  validateSearch: (s: Record<string, unknown>): LinksSearch => ({
+    status: enumParam(s.status, GATEWAY_ORDER_STATUSES),
+    page: pageParam(s.page),
+  }),
   component: PaymentLinksPage,
 });
 
@@ -62,7 +72,10 @@ function PaymentLinksPage() {
   const [choosing, setChoosing] = useState(false);
   const [target, setTarget] = useState<LinkTarget | null>(null);
   useBillingLive();
-  const links = useQuery({ ...billingQueries.paymentLinks({ status: search.status, page: search.page ?? 1 }), enabled: canRead });
+  const links = useQuery({
+    ...billingQueries.paymentLinks({ status: search.status, page: search.page ?? 1 }),
+    enabled: canRead,
+  });
 
   const check = useMutation({
     mutationFn: (id: string) => billingApi.refreshPaymentLink(id),
@@ -106,7 +119,12 @@ function PaymentLinksPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => void navigate({ search: { status: (d.value || undefined) as GatewayOrderStatus | undefined } })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) =>
+                  void navigate({ search: { status: (d.value || undefined) as GatewayOrderStatus | undefined } })
+                }
+              >
                 <option value="">All</option>
                 {GATEWAY_ORDER_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -126,10 +144,25 @@ function PaymentLinksPage() {
           getRowId={(o) => o.id}
           columns={[
             { key: 'created', header: 'Created', width: 170, render: (o) => formatDateTime(o.createdAt) },
-            { key: 'for', header: 'For', render: (o) => (o.billId ? 'Bill balance' : o.ipAccountId ? 'IP advance' : '—') },
-            { key: 'channel', header: 'Started from', priority: 'low', render: (o) => (o.channel === 'Portal' ? 'Patient portal' : o.kind === 'PaymentLink' ? 'Link from staff' : 'Checkout') },
+            {
+              key: 'for',
+              header: 'For',
+              render: (o) => (o.billId ? 'Bill balance' : o.ipAccountId ? 'IP advance' : '—'),
+            },
+            {
+              key: 'channel',
+              header: 'Started from',
+              priority: 'low',
+              render: (o) =>
+                o.channel === 'Portal' ? 'Patient portal' : o.kind === 'PaymentLink' ? 'Link from staff' : 'Checkout',
+            },
             { key: 'amount', header: 'Amount', align: 'end', render: (o) => <Amount value={o.amount} strong /> },
-            { key: 'paid', header: 'Paid', priority: 'low', render: (o) => (o.paidAt ? formatDateTime(o.paidAt) : '—') },
+            {
+              key: 'paid',
+              header: 'Paid',
+              priority: 'low',
+              render: (o) => (o.paidAt ? formatDateTime(o.paidAt) : '—'),
+            },
             { key: 'status', header: 'Status', width: 170, render: (o) => <LinkStatusBadge status={o.status} /> },
           ]}
           rowActions={(o) => (
@@ -150,12 +183,20 @@ function PaymentLinksPage() {
                     </MenuItem>
                   )}
                   {o.billId && (
-                    <MenuItem icon={<ReceiptRegular />} onClick={() => void navigate({ to: '/billing/bills/$billId', params: { billId: o.billId! } })}>
+                    <MenuItem
+                      icon={<ReceiptRegular />}
+                      onClick={() => void navigate({ to: '/billing/bills/$billId', params: { billId: o.billId! } })}
+                    >
                       Open the bill
                     </MenuItem>
                   )}
                   {o.ipAccountId && (
-                    <MenuItem icon={<BedRegular />} onClick={() => void navigate({ to: '/billing/ip/$accountId', params: { accountId: o.ipAccountId! } })}>
+                    <MenuItem
+                      icon={<BedRegular />}
+                      onClick={() =>
+                        void navigate({ to: '/billing/ip/$accountId', params: { accountId: o.ipAccountId! } })
+                      }
+                    >
                       Open the IP account
                     </MenuItem>
                   )}
@@ -192,8 +233,14 @@ function ChooseTargetDialog({ onClose, onChosen }: { onClose: () => void; onChos
   const [kind, setKind] = useState<'bill' | 'ip'>('bill');
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 300);
-  const bills = useQuery({ ...billingQueries.bills({ withDueOnly: true, search: debounced || undefined, pageSize: 8 }), enabled: kind === 'bill' });
-  const accounts = useQuery({ ...ipQueries.accounts({ search: debounced || undefined, status: 'Open' }), enabled: kind === 'ip' });
+  const bills = useQuery({
+    ...billingQueries.bills({ withDueOnly: true, search: debounced || undefined, pageSize: 8 }),
+    enabled: kind === 'bill',
+  });
+  const accounts = useQuery({
+    ...ipQueries.accounts({ search: debounced || undefined, status: 'Open' }),
+    enabled: kind === 'ip',
+  });
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
@@ -205,7 +252,13 @@ function ChooseTargetDialog({ onClose, onChosen }: { onClose: () => void; onChos
               <Radio value="bill" label="Balance of a bill" />
               <Radio value="ip" label="Advance for an admission" />
             </RadioGroup>
-            <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder={kind === 'bill' ? 'Bill number, UHID or name' : 'Admission number, UHID or name'} autoFocus aria-label="Search" />
+            <SearchBox
+              value={term}
+              onChange={(_, d) => setTerm(d.value)}
+              placeholder={kind === 'bill' ? 'Bill number, UHID or name' : 'Admission number, UHID or name'}
+              autoFocus
+              aria-label="Search"
+            />
             {kind === 'bill' ? (
               <DataTable
                 ariaLabel="Bills with a balance"
@@ -254,7 +307,12 @@ function ChooseTargetDialog({ onClose, onChosen }: { onClose: () => void; onChos
                       </span>
                     ),
                   },
-                  { key: 'deposit', header: 'Advance held', align: 'end', render: (a) => <Amount value={a.depositBalance} /> },
+                  {
+                    key: 'deposit',
+                    header: 'Advance held',
+                    align: 'end',
+                    render: (a) => <Amount value={a.depositBalance} />,
+                  },
                 ]}
                 emptyTitle="No current admission matches"
               />

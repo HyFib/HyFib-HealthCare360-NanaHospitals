@@ -99,7 +99,16 @@ function bill(overrides: Partial<BillDetail> = {}): BillDetail {
     cancelReason: null,
     notes: null,
     lines: [billLine()],
-    receipts: [{ id: 'r1', receiptNumber: 'NHRC260000001', purpose: 'BillPayment', amount: 500, modes: 'Cash + Upi', receivedAt: '2026-09-25T06:36:00Z' }],
+    receipts: [
+      {
+        id: 'r1',
+        receiptNumber: 'NHRC260000001',
+        purpose: 'BillPayment',
+        amount: 500,
+        modes: 'Cash + Upi',
+        receivedAt: '2026-09-25T06:36:00Z',
+      },
+    ],
     refunds: [],
     creditNotes: [],
     pendingDiscount: null,
@@ -126,8 +135,20 @@ describe('bill prints', () => {
   });
 
   it('shows CGST and SGST columns and a GST summary on a tax invoice', () => {
-    const taxed = billLine({ taxRate: 18, taxableAmount: 1000, cgstAmount: 90, sgstAmount: 90, netAmount: 1180, grossAmount: 1000, unitPrice: 1000 });
-    const html = buildBillHtml(bill({ isTaxInvoice: true, lines: [taxed], cgstAmount: 90, sgstAmount: 90, taxAmount: 180 }), facility, 'A4');
+    const taxed = billLine({
+      taxRate: 18,
+      taxableAmount: 1000,
+      cgstAmount: 90,
+      sgstAmount: 90,
+      netAmount: 1180,
+      grossAmount: 1000,
+      unitPrice: 1000,
+    });
+    const html = buildBillHtml(
+      bill({ isTaxInvoice: true, lines: [taxed], cgstAmount: 90, sgstAmount: 90, taxAmount: 180 }),
+      facility,
+      'A4',
+    );
     expect(html).toContain('<th class="num">CGST</th>');
     expect(html).toContain('GST summary');
     expect(html).toContain('9%');
@@ -135,7 +156,12 @@ describe('bill prints', () => {
 
   it('marks returns and cancelled bills', () => {
     const html = buildBillHtml(
-      bill({ status: 'Cancelled', cancelReason: 'Wrong patient', cancelledAt: '2026-09-25T07:00:00Z', lines: [billLine({ isReturn: true, grossAmount: -100, netAmount: -100 })] }),
+      bill({
+        status: 'Cancelled',
+        cancelReason: 'Wrong patient',
+        cancelledAt: '2026-09-25T07:00:00Z',
+        lines: [billLine({ isReturn: true, grossAmount: -100, netAmount: -100 })],
+      }),
       facility,
       'Receipt80',
     );
@@ -177,8 +203,26 @@ describe('receipt prints', () => {
     receivedAt: '2026-09-25T06:36:00Z',
     notes: null,
     payments: [
-      { mode: 'Card', amount: 1000, reference: null, cardLast4: '4242', cardNetwork: 'Visa', chequeNumber: null, chequeBank: null, chequeDate: null },
-      { mode: 'Cash', amount: 250.5, reference: null, cardLast4: null, cardNetwork: null, chequeNumber: null, chequeBank: null, chequeDate: null },
+      {
+        mode: 'Card',
+        amount: 1000,
+        reference: null,
+        cardLast4: '4242',
+        cardNetwork: 'Visa',
+        chequeNumber: null,
+        chequeBank: null,
+        chequeDate: null,
+      },
+      {
+        mode: 'Cash',
+        amount: 250.5,
+        reference: null,
+        cardLast4: null,
+        cardNetwork: null,
+        chequeNumber: null,
+        chequeBank: null,
+        chequeDate: null,
+      },
     ],
   };
 
@@ -191,6 +235,8 @@ describe('receipt prints', () => {
   });
 
   it('titles IP advances as advance receipts', () => {
-    expect(buildReceiptHtml({ ...receipt, purpose: 'Deposit', billNumber: null }, facility, 'A4')).toContain('Advance receipt (in-patient)');
+    expect(buildReceiptHtml({ ...receipt, purpose: 'Deposit', billNumber: null }, facility, 'A4')).toContain(
+      'Advance receipt (in-patient)',
+    );
   });
 });

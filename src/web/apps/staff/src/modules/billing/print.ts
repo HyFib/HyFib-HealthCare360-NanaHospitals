@@ -1,5 +1,21 @@
-import { escapeHtml, formatDate, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
-import type { BillDetail, BillLineDto, DayEndReport, FacilityDto, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
+import {
+  escapeHtml,
+  formatDate,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  printDocument,
+  printHtml,
+} from '@hc360/core';
+import type {
+  BillDetail,
+  BillLineDto,
+  DayEndReport,
+  FacilityDto,
+  ReceiptDto,
+  ReceiptPaymentDto,
+  RefundDto,
+} from './api';
 import type { RunningBill } from './ipApi';
 import {
   BILL_STATUS_LABEL,
@@ -19,7 +35,13 @@ import { amountInWords, formatPercent, fromPaise, toPaise } from './money';
 export type PrintFormat = 'A4' | 'Receipt80';
 
 /** The hospital as printed at the top of bills (FacilityDto, or just a name while it loads). */
-export type PrintFacility = Pick<FacilityDto, 'name'> & Partial<Pick<FacilityDto, 'legalName' | 'address' | 'phone' | 'email' | 'gstin' | 'pan' | 'registrationNumber' | 'letterheadNote'>>;
+export type PrintFacility = Pick<FacilityDto, 'name'> &
+  Partial<
+    Pick<
+      FacilityDto,
+      'legalName' | 'address' | 'phone' | 'email' | 'gstin' | 'pan' | 'registrationNumber' | 'letterheadNote'
+    >
+  >;
 
 const e = escapeHtml;
 const money = (value: number | null | undefined) => e(formatInr(value));
@@ -32,7 +54,9 @@ function facilityAddress(facility: PrintFacility): string {
 function header(facility: PrintFacility, title: string, meta: [string, string][], compact: boolean): string {
   const address = facilityAddress(facility);
   const contact = [facility.phone ? `Phone ${facility.phone}` : '', facility.email ?? ''].filter(Boolean).join(' · ');
-  const tax = [facility.gstin ? `GSTIN ${facility.gstin}` : '', facility.pan ? `PAN ${facility.pan}` : ''].filter(Boolean).join(' · ');
+  const tax = [facility.gstin ? `GSTIN ${facility.gstin}` : '', facility.pan ? `PAN ${facility.pan}` : '']
+    .filter(Boolean)
+    .join(' · ');
   if (compact) {
     return `<div class="center">
       <div class="h-name">${e(facility.legalName || facility.name)}</div>
@@ -113,7 +137,9 @@ export function billTitle(bill: Pick<BillDetail, 'isTaxInvoice' | 'status' | 'ty
 }
 
 function lineDiscount(line: BillLineDto): number {
-  return fromPaise(toPaise(line.tariffDiscountAmount) + toPaise(line.lineDiscountAmount) + toPaise(line.billDiscountShare));
+  return fromPaise(
+    toPaise(line.tariffDiscountAmount) + toPaise(line.lineDiscountAmount) + toPaise(line.billDiscountShare),
+  );
 }
 
 interface GstRow {
@@ -138,7 +164,13 @@ export function gstSummary(lines: readonly BillLineDto[]): GstRow[] {
     row.sgst += toPaise(line.sgstAmount);
     rows.set(key, row);
   }
-  return [...rows.values()].map((row) => ({ sac: row.sac, rate: row.rate, taxable: fromPaise(row.taxable), cgst: fromPaise(row.cgst), sgst: fromPaise(row.sgst) }));
+  return [...rows.values()].map((row) => ({
+    sac: row.sac,
+    rate: row.rate,
+    taxable: fromPaise(row.taxable),
+    cgst: fromPaise(row.cgst),
+    sgst: fromPaise(row.sgst),
+  }));
 }
 
 function totalsRows(bill: BillDetail): [string, number, boolean?][] {
@@ -161,7 +193,10 @@ function totalsRows(bill: BillDetail): [string, number, boolean?][] {
   }
   rows.push(['Net amount', bill.netAmount, true]);
   if (bill.payerAmount !== 0) {
-    rows.push([`Payable by ${bill.payerName ?? 'insurer'}`, bill.payerAmount], ['Payable by patient', bill.patientAmount, true]);
+    rows.push(
+      [`Payable by ${bill.payerName ?? 'insurer'}`, bill.payerAmount],
+      ['Payable by patient', bill.patientAmount, true],
+    );
   }
   if (bill.creditAmount !== 0) {
     rows.push(['Credit notes / write-off', -bill.creditAmount]);
@@ -171,7 +206,11 @@ function totalsRows(bill: BillDetail): [string, number, boolean?][] {
     if (bill.refundedAmount !== 0) {
       rows.push(['Refunded', -bill.refundedAmount]);
     }
-    rows.push(bill.refundableAmount > 0 ? ['Refundable to patient', bill.refundableAmount, true] : ['Balance due', bill.dueAmount, true]);
+    rows.push(
+      bill.refundableAmount > 0
+        ? ['Refundable to patient', bill.refundableAmount, true]
+        : ['Balance due', bill.dueAmount, true],
+    );
   }
   return rows;
 }
@@ -197,7 +236,10 @@ export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format:
       )
       .join('');
     const sums = totalsRows(bill)
-      .map(([label, value, strong]) => `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`)
+      .map(
+        ([label, value, strong]) =>
+          `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`,
+      )
       .join('');
     const body = `${stamp ? `<div class="stamp">${e(stamp)}</div>` : ''}
       ${header(facility, title, [...billMeta(bill), ['Patient', patient]], true)}
@@ -209,7 +251,11 @@ export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format:
       ${bill.receipts.length ? `<div class="rule"></div>${bill.receipts.map((r) => `<div class="small">${e(r.receiptNumber)} · ${e(modeSummaryLabel(r.modes))} · ${money(r.amount)}</div>`).join('')}` : ''}
       <div class="rule"></div>
       <div class="center small">Thank you. Get well soon.</div>`;
-    return printDocument(body, { title: `${title} ${bill.billNumber ?? ''}`.trim(), pageSize: 'Receipt80', styles: RECEIPT80_STYLES });
+    return printDocument(body, {
+      title: `${title} ${bill.billNumber ?? ''}`.trim(),
+      pageSize: 'Receipt80',
+      styles: RECEIPT80_STYLES,
+    });
   }
 
   const hasPackage = bill.lines.some((l) => l.packageCoveredAmount !== 0);
@@ -232,7 +278,10 @@ export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format:
     )
     .join('');
   const sums = totalsRows(bill)
-    .map(([label, value, strong]) => `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`)
+    .map(
+      ([label, value, strong]) =>
+        `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`,
+    )
     .join('');
   const gst = tax ? gstSummary(bill.lines) : [];
   const gstTable = gst.length
@@ -268,9 +317,19 @@ export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format:
 function paymentDetail(payment: ReceiptPaymentDto): string {
   switch (payment.mode) {
     case 'Card':
-      return [payment.cardNetwork, payment.cardLast4 ? `ending ${payment.cardLast4}` : '', payment.reference ? `ref ${payment.reference}` : ''].filter(Boolean).join(' ');
+      return [
+        payment.cardNetwork,
+        payment.cardLast4 ? `ending ${payment.cardLast4}` : '',
+        payment.reference ? `ref ${payment.reference}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
     case 'Cheque':
-      return [payment.chequeNumber ? `No. ${payment.chequeNumber}` : '', payment.chequeBank ?? '', payment.chequeDate ? `dated ${formatDateOnly(payment.chequeDate)}` : '']
+      return [
+        payment.chequeNumber ? `No. ${payment.chequeNumber}` : '',
+        payment.chequeBank ?? '',
+        payment.chequeDate ? `dated ${formatDateOnly(payment.chequeDate)}` : '',
+      ]
         .filter(Boolean)
         .join(', ');
     default:
@@ -318,11 +377,18 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
       <div class="small">Received by ${e(receipt.receivedByName ?? '—')}${receipt.counter ? ` at ${e(receipt.counter)}` : ''}</div>
       ${receipt.notes ? `<div class="small">${e(receipt.notes)}</div>` : ''}
       <div class="center small">Please keep this receipt for refunds and claims.</div>`;
-    return printDocument(body, { title: `${title} ${receipt.receiptNumber}`, pageSize: 'Receipt80', styles: RECEIPT80_STYLES });
+    return printDocument(body, {
+      title: `${title} ${receipt.receiptNumber}`,
+      pageSize: 'Receipt80',
+      styles: RECEIPT80_STYLES,
+    });
   }
 
   const rows = receipt.payments
-    .map((p) => `<tr><td>${e(PAYMENT_MODE_LABEL[p.mode])}</td><td>${e(paymentDetail(p) || '—')}</td><td class="num">${money(p.amount)}</td></tr>`)
+    .map(
+      (p) =>
+        `<tr><td>${e(PAYMENT_MODE_LABEL[p.mode])}</td><td>${e(paymentDetail(p) || '—')}</td><td class="num">${money(p.amount)}</td></tr>`,
+    )
     .join('');
   const body = `${header(facility, title, meta, false)}
     <div class="box grid">
@@ -340,17 +406,27 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
 }
 
 /** Day-end collection report (A4) for the accounts office. */
-export function buildDayEndHtml(report: DayEndReport, facility: PrintFacility, printedBy: string, printedAt: string): string {
+export function buildDayEndHtml(
+  report: DayEndReport,
+  facility: PrintFacility,
+  printedBy: string,
+  printedAt: string,
+): string {
   const meta: [string, string][] = [
     ['Date', formatDateOnly(report.date)],
     ['Counter', report.counter ?? 'All counters'],
   ];
   const byMode = report.byMode
-    .map((m) => `<tr><td>${e(PAYMENT_MODE_LABEL[m.mode])}</td><td class="num">${money(m.collected)}</td><td class="num">${money(m.refunded)}</td><td class="num">${money(m.net)}</td></tr>`)
+    .map(
+      (m) =>
+        `<tr><td>${e(PAYMENT_MODE_LABEL[m.mode])}</td><td class="num">${money(m.collected)}</td><td class="num">${money(m.refunded)}</td><td class="num">${money(m.net)}</td></tr>`,
+    )
     .join('');
   const shifts = report.shifts
     .map(
-      (s) => `<tr><td>${e(s.userName)}</td><td>${e(s.counter)}</td><td>${e(formatDateTime(s.openedAt))}</td><td>${e(s.closedAt ? formatDateTime(s.closedAt) : 'Still open')}</td>
+      (
+        s,
+      ) => `<tr><td>${e(s.userName)}</td><td>${e(s.counter)}</td><td>${e(formatDateTime(s.openedAt))}</td><td>${e(s.closedAt ? formatDateTime(s.closedAt) : 'Still open')}</td>
       <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}</td></tr>`,
     )
     .join('');
@@ -394,15 +470,28 @@ export function buildRefundVoucherHtml(refund: RefundDto, facility: PrintFacilit
 }
 
 /** In-patient running bill: an interim statement for the patient's family (not a bill). */
-export function buildRunningBillHtml(bill: RunningBill, facility: PrintFacility, patient: { name: string; uhid: string | null }, printedAt: string): string {
+export function buildRunningBillHtml(
+  bill: RunningBill,
+  facility: PrintFacility,
+  patient: { name: string; uhid: string | null },
+  printedAt: string,
+): string {
   const meta: [string, string][] = [
     ['Admission', bill.admissionNumber],
     ['As on', formatDateTime(printedAt)],
   ];
   const categories = bill.byCategory
-    .map((c) => `<tr><td>${e(SERVICE_CATEGORY_LABEL[c.category])}</td><td class="num">${e(c.items)}</td><td class="num">${money(c.gross)}</td><td class="num">${money(c.discount)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(c.net)}</td></tr>`)
+    .map(
+      (c) =>
+        `<tr><td>${e(SERVICE_CATEGORY_LABEL[c.category])}</td><td class="num">${e(c.items)}</td><td class="num">${money(c.gross)}</td><td class="num">${money(c.discount)}</td><td class="num">${money(c.tax)}</td><td class="num">${money(c.net)}</td></tr>`,
+    )
     .join('');
-  const days = bill.byDate.map((d) => `<tr><td>${e(formatDateOnly(d.date))}</td><td class="num">${e(d.items)}</td><td class="num">${money(d.net)}</td></tr>`).join('');
+  const days = bill.byDate
+    .map(
+      (d) =>
+        `<tr><td>${e(formatDateOnly(d.date))}</td><td class="num">${e(d.items)}</td><td class="num">${money(d.net)}</td></tr>`,
+    )
+    .join('');
   const body = `${header(facility, 'Running bill (interim statement)', meta, false)}
     <div class="box grid"><div>Patient: <b>${e(patient.name)}</b></div><div>UHID: <b>${e(patient.uhid ?? '—')}</b></div></div>
     <h3>By category</h3>
@@ -423,6 +512,14 @@ export function buildRunningBillHtml(bill: RunningBill, facility: PrintFacility,
 }
 
 /** Sends a document to the printer: 80 mm prints go silently to the counter's receipt printer. */
-export async function sendToPrinter(html: string, format: PrintFormat, options: { silent?: boolean; copies?: number } = {}): Promise<void> {
-  await printHtml(html, { pageSize: format, silent: format === 'Receipt80' ? (options.silent ?? true) : false, copies: options.copies });
+export async function sendToPrinter(
+  html: string,
+  format: PrintFormat,
+  options: { silent?: boolean; copies?: number } = {},
+): Promise<void> {
+  await printHtml(html, {
+    pageSize: format,
+    silent: format === 'Receipt80' ? (options.silent ?? true) : false,
+    copies: options.copies,
+  });
 }

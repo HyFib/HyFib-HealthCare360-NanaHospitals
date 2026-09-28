@@ -26,9 +26,23 @@ import { formatDateOnly, formatInr, todayIso } from '@hc360/core';
 import { DataTable, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { loadAllPrices, loadServiceCatalogue, mastersApi, mastersKeys, type SaveTariffPriceRequest, type TariffPlanListItem } from './mastersApi';
+import {
+  loadAllPrices,
+  loadServiceCatalogue,
+  mastersApi,
+  mastersKeys,
+  type SaveTariffPriceRequest,
+  type TariffPlanListItem,
+} from './mastersApi';
 import { parsePercent } from './money';
-import { inBatches, parsePriceSheet, PRICE_ROUNDING, PRICE_ROUNDING_LABEL, revisePrice, type PriceRounding } from './tariffBulk';
+import {
+  inBatches,
+  parsePriceSheet,
+  PRICE_ROUNDING,
+  PRICE_ROUNDING_LABEL,
+  revisePrice,
+  type PriceRounding,
+} from './tariffBulk';
 import { ActionError } from './ui';
 
 const useStyles = makeStyles({
@@ -72,12 +86,19 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
   const [progress, setProgress] = useState<number | null>(null);
 
   const parsedPercent = parsePercent(percent.replace(/^[+-]/, ''), { allowZero: false });
-  const signedPercent = parsedPercent.ok ? (percent.trim().startsWith('-') ? -parsedPercent.percent : parsedPercent.percent) : null;
+  const signedPercent = parsedPercent.ok
+    ? percent.trim().startsWith('-')
+      ? -parsedPercent.percent
+      : parsedPercent.percent
+    : null;
 
   const prepare = useMutation({
     mutationFn: async (): Promise<Prepared> => {
       if (mode === 'percent') {
-        const { prices, truncated } = await loadAllPrices(plan.id, { search: search.trim() || undefined, onDate: from });
+        const { prices, truncated } = await loadAllPrices(plan.id, {
+          search: search.trim() || undefined,
+          onDate: from,
+        });
         const rows = prices.map((p) => ({
           key: p.id,
           serviceItemId: p.serviceItemId,
@@ -88,9 +109,17 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
         }));
         const changed = rows.filter((r) => r.next !== r.current);
         return {
-          prices: changed.map((r) => ({ serviceItemId: r.serviceItemId, price: r.next, effectiveFrom: from, effectiveTo: null })),
+          prices: changed.map((r) => ({
+            serviceItemId: r.serviceItemId,
+            price: r.next,
+            effectiveFrom: from,
+            effectiveTo: null,
+          })),
           preview: changed,
-          problems: prices.length === 0 ? ['No prices on this plan match. Services without a plan price are charged at their standard price.'] : [],
+          problems:
+            prices.length === 0
+              ? ['No prices on this plan match. Services without a plan price are charged at their standard price.']
+              : [],
           truncated,
         };
       }
@@ -132,7 +161,10 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
       return { created, updated };
     },
     onSuccess: (result) => {
-      notify.success('Prices updated', `${result.created} new and ${result.updated} changed prices from ${formatDateOnly(from)}`);
+      notify.success(
+        'Prices updated',
+        `${result.created} new and ${result.updated} changed prices from ${formatDateOnly(from)}`,
+      );
       void queryClient.invalidateQueries({ queryKey: mastersKeys.tariffs });
       onClose();
     },
@@ -165,11 +197,27 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
             </TabList>
             {mode === 'percent' ? (
               <div className={styles.row}>
-                <Field label="Services" hint="Name or code; empty for every price on the plan" style={{ flex: '1 1 220px' }}>
+                <Field
+                  label="Services"
+                  hint="Name or code; empty for every price on the plan"
+                  style={{ flex: '1 1 220px' }}
+                >
                   <Input value={search} onChange={(_, d) => edit(() => setSearch(d.value))} />
                 </Field>
-                <Field label="Change (%)" hint="e.g. 10 or -5" validationMessage={percent && signedPercent === null ? 'Enter a percentage, e.g. 7.5 or -5' : undefined}>
-                  <Input value={percent} onChange={(_, d) => edit(() => setPercent(d.value))} inputMode="decimal" style={{ width: 120 }} autoFocus />
+                <Field
+                  label="Change (%)"
+                  hint="e.g. 10 or -5"
+                  validationMessage={
+                    percent && signedPercent === null ? 'Enter a percentage, e.g. 7.5 or -5' : undefined
+                  }
+                >
+                  <Input
+                    value={percent}
+                    onChange={(_, d) => edit(() => setPercent(d.value))}
+                    inputMode="decimal"
+                    style={{ width: 120 }}
+                    autoFocus
+                  />
                 </Field>
                 <Field label="Round to">
                   <Select value={rounding} onChange={(_, d) => edit(() => setRounding(d.value as PriceRounding))}>
@@ -182,12 +230,27 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 </Field>
               </div>
             ) : (
-              <Field label="Service code and price, one per line" hint="Copy two columns from Excel (code, price). A header row is ignored.">
-                <Textarea className={styles.sheet} value={sheet} onChange={(_, d) => edit(() => setSheet(d.value))} rows={8} placeholder={'CBC\t350\nLFT\t900\nXRAY-CHEST\t450'} />
+              <Field
+                label="Service code and price, one per line"
+                hint="Copy two columns from Excel (code, price). A header row is ignored."
+              >
+                <Textarea
+                  className={styles.sheet}
+                  value={sheet}
+                  onChange={(_, d) => edit(() => setSheet(d.value))}
+                  rows={8}
+                  placeholder={'CBC\t350\nLFT\t900\nXRAY-CHEST\t450'}
+                />
               </Field>
             )}
             <Field label="New prices apply from" hint="The current prices end the day before.">
-              <Input type="date" value={from} min={todayIso()} onChange={(_, d) => edit(() => setFrom(d.value))} style={{ width: 180 }} />
+              <Input
+                type="date"
+                value={from}
+                min={todayIso()}
+                onChange={(_, d) => edit(() => setFrom(d.value))}
+                style={{ width: 180 }}
+              />
             </Field>
 
             {prepared && (
@@ -205,11 +268,14 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                 )}
                 {prepared.truncated && (
                   <MessageBar intent="warning">
-                    <MessageBarBody>Only the first 5,000 prices were loaded. Narrow the search and repeat for the rest.</MessageBarBody>
+                    <MessageBarBody>
+                      Only the first 5,000 prices were loaded. Narrow the search and repeat for the rest.
+                    </MessageBarBody>
                   </MessageBar>
                 )}
                 <Text weight="semibold">
-                  {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'} will be saved from {formatDateOnly(from)}
+                  {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'} will be saved from{' '}
+                  {formatDateOnly(from)}
                 </Text>
                 <DataTable
                   ariaLabel="Price changes"
@@ -218,8 +284,18 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
                   size="small"
                   columns={[
                     { key: 'service', header: 'Service', render: (r) => `${r.name} (${r.code})` },
-                    { key: 'current', header: 'Now', align: 'end', render: (r) => (r.current === null ? '—' : formatInr(r.current)) },
-                    { key: 'next', header: 'New', align: 'end', render: (r) => <Text weight="semibold">{formatInr(r.next)}</Text> },
+                    {
+                      key: 'current',
+                      header: 'Now',
+                      align: 'end',
+                      render: (r) => (r.current === null ? '—' : formatInr(r.current)),
+                    },
+                    {
+                      key: 'next',
+                      header: 'New',
+                      align: 'end',
+                      render: (r) => <Text weight="semibold">{formatInr(r.next)}</Text>,
+                    },
                   ]}
                   emptyTitle="Nothing to change"
                 />
@@ -234,11 +310,21 @@ export function TariffBulkDialog({ plan, onClose }: { plan: TariffPlanListItem; 
               Cancel
             </Button>
             {!prepared ? (
-              <Button appearance="primary" disabled={!canPrepare || busy} onClick={() => prepare.mutate()} icon={prepare.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                appearance="primary"
+                disabled={!canPrepare || busy}
+                onClick={() => prepare.mutate()}
+                icon={prepare.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Preview changes
               </Button>
             ) : (
-              <Button appearance="primary" disabled={prepared.prices.length === 0 || busy} onClick={() => apply.mutate()} icon={apply.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                appearance="primary"
+                disabled={prepared.prices.length === 0 || busy}
+                onClick={() => apply.mutate()}
+                icon={apply.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Save {prepared.prices.length} price{prepared.prices.length === 1 ? '' : 's'}
               </Button>
             )}

@@ -72,7 +72,9 @@ type DialogKind = 'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | '
 
 /** Refundable balance less refunds already requested or approved (they count against it until paid). */
 function refundableNow(bill: BillDetail): number {
-  const outstanding = bill.refunds.filter((r) => r.status === 'Requested' || r.status === 'Approved').reduce((sum, r) => sum + toPaise(r.amount), 0n);
+  const outstanding = bill.refunds
+    .filter((r) => r.status === 'Requested' || r.status === 'Approved')
+    .reduce((sum, r) => sum + toPaise(r.amount), 0n);
   return fromPaise(maxBig(toPaise(bill.refundableAmount) - outstanding, 0n));
 }
 
@@ -81,7 +83,15 @@ function refundableNow(bill: BillDetail): number {
  * or sent for approval, finalisation (allocates the gap-free bill number), collection, printing, and afterwards
  * credit notes, refunds and cancellation. Keyboard: F2 add service, F4 discount, F8 finalise / collect, F9 print.
  */
-export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: { bill: BillDetail; onDiscarded?: () => void; allowServiceEntry?: boolean }) {
+export function BillWorkspace({
+  bill,
+  onDiscarded,
+  allowServiceEntry = true,
+}: {
+  bill: BillDetail;
+  onDiscarded?: () => void;
+  allowServiceEntry?: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -128,7 +138,10 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
     onSuccess: (detail) => {
       const added = detail.lines.length - bill.lines.length;
       store(detail);
-      notify.info(added > 0 ? `${added} new service${added === 1 ? '' : 's'} added` : 'No new services', added > 0 ? 'Charged since the bill was started.' : undefined);
+      notify.info(
+        added > 0 ? `${added} new service${added === 1 ? '' : 's'} added` : 'No new services',
+        added > 0 ? 'Charged since the bill was started.' : undefined,
+      );
     },
   });
 
@@ -136,7 +149,10 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
     mutationFn: () => billingApi.finalize(bill.id, bill.version),
     onSuccess: (detail) => {
       store(detail);
-      notify.success(`Bill ${detail.billNumber} finalised`, detail.dueAmount > 0 ? `${formatInr(detail.dueAmount)} to collect` : 'Nothing to collect');
+      notify.success(
+        `Bill ${detail.billNumber} finalised`,
+        detail.dueAmount > 0 ? `${formatInr(detail.dueAmount)} to collect` : 'Nothing to collect',
+      );
       setDialog(detail.dueAmount > 0 && canCollect ? 'collect' : null);
       if (detail.dueAmount === 0 && prefs.autoPrint) {
         void printBill(detail, prefs.receiptFormat);
@@ -160,25 +176,53 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
     onSuccess: (detail) => {
       store(detail);
       setDialog(null);
-      notify.warning(`Bill ${detail.billNumber} cancelled`, detail.refundableAmount > 0 ? `A refund request of ${formatInr(detail.refundableAmount)} awaits approval.` : undefined);
+      notify.warning(
+        `Bill ${detail.billNumber} cancelled`,
+        detail.refundableAmount > 0
+          ? `A refund request of ${formatInr(detail.refundableAmount)} awaits approval.`
+          : undefined,
+      );
     },
   });
 
   const openDialog = (kind: DialogKind) => () => setDialog(kind);
   const noDialog = dialog === null;
-  useHotkey('f4', () => canDiscount && isDraft && setDialog('discount'), { enabled: noDialog && isDraft, allowInInputs: true });
-  useHotkey('f8', () => (isDraft ? canFinalize && setDialog('finalize') : hasDue && canCollect && setDialog('collect')), { enabled: noDialog, allowInInputs: true });
-  useHotkey('f9', () => void printBill(bill, isDraft ? 'A4' : prefs.receiptFormat), { enabled: noDialog, allowInInputs: true });
+  useHotkey('f4', () => canDiscount && isDraft && setDialog('discount'), {
+    enabled: noDialog && isDraft,
+    allowInInputs: true,
+  });
+  useHotkey(
+    'f8',
+    () => (isDraft ? canFinalize && setDialog('finalize') : hasDue && canCollect && setDialog('collect')),
+    { enabled: noDialog, allowInInputs: true },
+  );
+  useHotkey('f9', () => void printBill(bill, isDraft ? 'A4' : prefs.receiptFormat), {
+    enabled: noDialog,
+    allowInInputs: true,
+  });
 
   const primary = isDraft ? (
     canFinalize && (
-      <Button appearance="primary" size="large" className={styles.big} icon={<DocumentCheckmarkRegular />} onClick={openDialog('finalize')} disabled={bill.lines.length === 0 || Boolean(bill.pendingDiscount)}>
+      <Button
+        appearance="primary"
+        size="large"
+        className={styles.big}
+        icon={<DocumentCheckmarkRegular />}
+        onClick={openDialog('finalize')}
+        disabled={bill.lines.length === 0 || Boolean(bill.pendingDiscount)}
+      >
         {bill.type === 'OutPatient' && canCollect ? 'Finalise and collect' : 'Finalise bill'}
         <KeyHint>F8</KeyHint>
       </Button>
     )
   ) : hasDue && canCollect ? (
-    <Button appearance="primary" size="large" className={styles.big} icon={<MoneyHandRegular />} onClick={openDialog('collect')}>
+    <Button
+      appearance="primary"
+      size="large"
+      className={styles.big}
+      icon={<MoneyHandRegular />}
+      onClick={openDialog('collect')}
+    >
       Collect {formatInr(bill.dueAmount)}
       <KeyHint>F8</KeyHint>
     </Button>
@@ -190,9 +234,12 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
         {bill.pendingDiscount && (
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
-              <MessageBarTitle>Discount of {formatInr(bill.pendingDiscount.requestedAmount)} is waiting for approval</MessageBarTitle>
-              Requested by {bill.pendingDiscount.requestedByName ?? 'a cashier'} {formatDateTime(bill.pendingDiscount.requestedAt)}: “{bill.pendingDiscount.reason}”. The bill can be finalised
-              once accounts decide; this screen updates by itself.
+              <MessageBarTitle>
+                Discount of {formatInr(bill.pendingDiscount.requestedAmount)} is waiting for approval
+              </MessageBarTitle>
+              Requested by {bill.pendingDiscount.requestedByName ?? 'a cashier'}{' '}
+              {formatDateTime(bill.pendingDiscount.requestedAt)}: “{bill.pendingDiscount.reason}”. The bill can be
+              finalised once accounts decide; this screen updates by itself.
             </MessageBarBody>
             <MessageBarActions>
               <Button icon={<ArrowClockwiseRegular />} onClick={reload}>
@@ -212,10 +259,18 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
 
         <Section
           title="Services"
-          description={isDraft ? 'Draft: services can still be added, removed and discounted.' : `${bill.lines.length} service${bill.lines.length === 1 ? '' : 's'}`}
+          description={
+            isDraft
+              ? 'Draft: services can still be added, removed and discounted.'
+              : `${bill.lines.length} service${bill.lines.length === 1 ? '' : 's'}`
+          }
           actions={
             isOpDraft && canEditOp ? (
-              <Button icon={refreshServices.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => refreshServices.mutate()} disabled={refreshServices.isPending}>
+              <Button
+                icon={refreshServices.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+                onClick={() => refreshServices.mutate()}
+                disabled={refreshServices.isPending}
+              >
                 Pick up new services
               </Button>
             ) : undefined
@@ -230,7 +285,11 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
           <div style={{ padding: '0 16px' }}>
             <ActionError error={removeLine.error ?? refreshServices.error} onReload={reload} />
           </div>
-          <BillLinesTable bill={bill} onRemove={isOpDraft && canEditOp ? (line) => removeLine.mutate(line) : undefined} removing={removing} />
+          <BillLinesTable
+            bill={bill}
+            onRemove={isOpDraft && canEditOp ? (line) => removeLine.mutate(line) : undefined}
+            removing={removing}
+          />
         </Section>
 
         {!isDraft && (bill.receipts.length > 0 || bill.refunds.length > 0 || bill.creditNotes.length > 0) && (
@@ -249,7 +308,13 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
                   { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
                 ]}
                 rowActions={(r) => (
-                  <Button size="small" appearance="subtle" icon={<PrintRegular />} aria-label={`Print receipt ${r.receiptNumber}`} onClick={() => void printReceiptById(r.id)} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<PrintRegular />}
+                    aria-label={`Print receipt ${r.receiptNumber}`}
+                    onClick={() => void printReceiptById(r.id)}
+                  />
                 )}
               />
             )}
@@ -263,7 +328,11 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
                 columns={[
                   { key: 'no', header: 'Refund', render: (r) => <Text font="monospace">{r.refundNumber}</Text> },
                   { key: 'at', header: 'Requested', render: (r) => formatDateTime(r.requestedAt) },
-                  { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} label={REFUND_STATUS_LABEL[r.status]} /> },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    render: (r) => <StatusBadge status={r.status} label={REFUND_STATUS_LABEL[r.status]} />,
+                  },
                   { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
                 ]}
               />
@@ -277,7 +346,12 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
                 columns={[
                   { key: 'no', header: 'Credit note', render: (c) => <Text font="monospace">{c.number}</Text> },
                   { key: 'kind', header: 'Type', render: (c) => CREDIT_NOTE_KIND_LABEL[c.kind] },
-                  { key: 'reason', header: 'Reason', priority: 'low', render: (c) => `${c.reason}${c.issuedByName ? ` · ${c.issuedByName}` : ''}` },
+                  {
+                    key: 'reason',
+                    header: 'Reason',
+                    priority: 'low',
+                    render: (c) => `${c.reason}${c.issuedByName ? ` · ${c.issuedByName}` : ''}`,
+                  },
                   { key: 'amount', header: 'Amount', align: 'end', render: (c) => <Amount value={c.amount} strong /> },
                 ]}
               />
@@ -319,7 +393,12 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
                     </MenuItem>
                   )}
                   {bill.ipAccountId && (
-                    <MenuItem icon={<BedRegular />} onClick={() => void navigate({ to: '/billing/ip/$accountId', params: { accountId: bill.ipAccountId! } })}>
+                    <MenuItem
+                      icon={<BedRegular />}
+                      onClick={() =>
+                        void navigate({ to: '/billing/ip/$accountId', params: { accountId: bill.ipAccountId! } })
+                      }
+                    >
                       Open the IP account
                     </MenuItem>
                   )}
@@ -349,10 +428,14 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
             </Menu>
           </div>
           {isDraft && bill.lines.length > 0 && !canFinalize && (
-            <Caption1 className={styles.muted}>Ask a cashier to finalise this bill; your role can prepare it but not allocate the bill number.</Caption1>
+            <Caption1 className={styles.muted}>
+              Ask a cashier to finalise this bill; your role can prepare it but not allocate the bill number.
+            </Caption1>
           )}
           <Caption1 className={styles.muted}>
-            {bill.billNumber ? `Bill ${bill.billNumber} · finalised ${formatDateTime(bill.finalizedAt)}` : `Draft started ${formatDateTime(bill.createdAt)}`}
+            {bill.billNumber
+              ? `Bill ${bill.billNumber} · finalised ${formatDateTime(bill.finalizedAt)}`
+              : `Draft started ${formatDateTime(bill.createdAt)}`}
             {bill.tariffPlanName ? ` · tariff ${bill.tariffPlanName}` : ''}
           </Caption1>
         </div>
@@ -375,7 +458,9 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
           The bill number is allocated now and the services can no longer be changed. Amount payable by the patient:{' '}
           <Amount value={bill.patientAmount} strong />.
         </Text>
-        {bill.type === 'OutPatient' && <Caption1 block>An online prepayment for this visit is adjusted automatically.</Caption1>}
+        {bill.type === 'OutPatient' && (
+          <Caption1 block>An online prepayment for this visit is adjusted automatically.</Caption1>
+        )}
         <ActionError error={finalize.error} onReload={reload} />
       </ConfirmDialog>
 
@@ -388,7 +473,10 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
         onConfirm={() => discard.mutate()}
         onCancel={() => setDialog(null)}
       >
-        <Text block>The services go back to the unbilled list; services added on this screen are cancelled. No bill number is used.</Text>
+        <Text block>
+          The services go back to the unbilled list; services added on this screen are cancelled. No bill number is
+          used.
+        </Text>
         <ActionError error={discard.error} onReload={reload} />
       </ConfirmDialog>
 
@@ -408,14 +496,23 @@ export function BillWorkspace({ bill, onDiscarded, allowServiceEntry = true }: {
         onCancel={() => setDialog(null)}
       />
 
-      {!isDraft && (
-        <CollectPaymentDialog bill={bill} open={dialog === 'collect'} onClose={() => setDialog(null)} />
+      {!isDraft && <CollectPaymentDialog bill={bill} open={dialog === 'collect'} onClose={() => setDialog(null)} />}
+      {dialog === 'link' && (
+        <PaymentLinkDialog
+          open
+          target={{ kind: 'bill', billId: bill.id, due: bill.dueAmount }}
+          onClose={() => setDialog(null)}
+        />
       )}
-      {dialog === 'link' && <PaymentLinkDialog open target={{ kind: 'bill', billId: bill.id, due: bill.dueAmount }} onClose={() => setDialog(null)} />}
       {dialog === 'refund' && (
         <RequestRefundDialog
           open
-          target={{ kind: 'bill', billId: bill.id, max: refundable, label: `Bill ${bill.billNumber} · ${bill.patientName}` }}
+          target={{
+            kind: 'bill',
+            billId: bill.id,
+            max: refundable,
+            label: `Bill ${bill.billNumber} · ${bill.patientName}`,
+          }}
           onClose={() => setDialog(null)}
         />
       )}

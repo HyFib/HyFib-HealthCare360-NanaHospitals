@@ -155,7 +155,12 @@ export function parseRupees(text: string, options: { allowZero?: boolean; max?: 
   }
   const match = /^(\d+)(?:\.(\d*))?$/.exec(cleaned);
   if (!match) {
-    return { ok: false, error: cleaned.startsWith('-') ? 'The amount cannot be negative.' : 'Enter the amount in rupees, for example 1250 or 99.50.' };
+    return {
+      ok: false,
+      error: cleaned.startsWith('-')
+        ? 'The amount cannot be negative.'
+        : 'Enter the amount in rupees, for example 1250 or 99.50.',
+    };
   }
   const fraction = match[2] ?? '';
   if (fraction.length > 2) {

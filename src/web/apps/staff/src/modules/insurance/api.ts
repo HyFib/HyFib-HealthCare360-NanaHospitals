@@ -365,12 +365,14 @@ export const insuranceQueries = {
   nonPayables: (payerId?: string) =>
     queryOptions({
       queryKey: [...insuranceKeys.nonPayables, payerId ?? 'all'],
-      queryFn: ({ signal }) => api.get<NonPayableItemDto[]>('/api/v1/insurance/non-payable-items', { query: { payerId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<NonPayableItemDto[]>('/api/v1/insurance/non-payable-items', { query: { payerId }, signal }),
     }),
   policies: (patientId: string, includeInactive = false) =>
     queryOptions({
       queryKey: [...insuranceKeys.policies, 'patient', patientId, includeInactive],
-      queryFn: ({ signal }) => api.get<PolicyDto[]>('/api/v1/insurance/policies', { query: { patientId, includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PolicyDto[]>('/api/v1/insurance/policies', { query: { patientId, includeInactive }, signal }),
     }),
   policy: (id: string) =>
     queryOptions({
@@ -380,7 +382,11 @@ export const insuranceQueries = {
   preAuths: (filters: PreAuthFilters) =>
     queryOptions({
       queryKey: [...insuranceKeys.preAuths, 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<PreAuthListItem>>('/api/v1/insurance/preauths', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<PreAuthListItem>>('/api/v1/insurance/preauths', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   preAuth: (id: string) =>
@@ -391,19 +397,35 @@ export const insuranceQueries = {
   claims: (filters: ClaimFilters) =>
     queryOptions({
       queryKey: [...insuranceKeys.claims, 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ClaimListItem>>('/api/v1/insurance/claims', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ClaimListItem>>('/api/v1/insurance/claims', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   claimCount: (status: ClaimStatus) =>
     queryOptions({
       queryKey: [...insuranceKeys.claims, 'count', status],
-      queryFn: async ({ signal }) => (await api.get<PagedResult<ClaimListItem>>('/api/v1/insurance/claims', { query: { status, pageSize: 1 }, signal })).totalCount,
+      queryFn: async ({ signal }) =>
+        (
+          await api.get<PagedResult<ClaimListItem>>('/api/v1/insurance/claims', {
+            query: { status, pageSize: 1 },
+            signal,
+          })
+        ).totalCount,
       refetchInterval: 120_000,
     }),
   preAuthCount: (status: PreAuthStatus) =>
     queryOptions({
       queryKey: [...insuranceKeys.preAuths, 'count', status],
-      queryFn: async ({ signal }) => (await api.get<PagedResult<PreAuthListItem>>('/api/v1/insurance/preauths', { query: { status, pageSize: 1 }, signal })).totalCount,
+      queryFn: async ({ signal }) =>
+        (
+          await api.get<PagedResult<PreAuthListItem>>('/api/v1/insurance/preauths', {
+            query: { status, pageSize: 1 },
+            signal,
+          })
+        ).totalCount,
       refetchInterval: 120_000,
     }),
   claim: (id: string) =>
@@ -414,7 +436,8 @@ export const insuranceQueries = {
   ageing: (asOf?: string) =>
     queryOptions({
       queryKey: ['insurance', 'ageing', asOf ?? 'today'],
-      queryFn: ({ signal }) => api.get<ReceivablesAgeingReport>('/api/v1/insurance/receivables/ageing', { query: { asOf }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ReceivablesAgeingReport>('/api/v1/insurance/receivables/ageing', { query: { asOf }, signal }),
     }),
 };
 
@@ -422,32 +445,52 @@ export const insuranceQueries = {
 
 export const insuranceApi = {
   createPayer: (request: SavePayerRequest) => api.post<PayerDetail>('/api/v1/insurance/payers', request),
-  updatePayer: (id: string, request: SavePayerRequest) => api.put<PayerDetail>(`/api/v1/insurance/payers/${id}`, request),
-  addNonPayable: (request: SaveNonPayableItemRequest) => api.post<{ id: string }>('/api/v1/insurance/non-payable-items', request),
+  updatePayer: (id: string, request: SavePayerRequest) =>
+    api.put<PayerDetail>(`/api/v1/insurance/payers/${id}`, request),
+  addNonPayable: (request: SaveNonPayableItemRequest) =>
+    api.post<{ id: string }>('/api/v1/insurance/non-payable-items', request),
   deleteNonPayable: (id: string) => api.delete<void>(`/api/v1/insurance/non-payable-items/${id}`),
-  searchPolicies: (policyNumber: string) => api.get<PolicyDto[]>('/api/v1/insurance/policies/search', { query: { policyNumber } }),
+  searchPolicies: (policyNumber: string) =>
+    api.get<PolicyDto[]>('/api/v1/insurance/policies/search', { query: { policyNumber } }),
   revealPolicyNumber: (id: string) => api.get<PolicyNumberDto>(`/api/v1/insurance/policies/${id}/policy-number`),
   createPolicy: (request: SavePolicyRequest) => api.post<PolicyDto>('/api/v1/insurance/policies', request),
   updatePolicy: (id: string, request: SavePolicyRequest) => api.put<void>(`/api/v1/insurance/policies/${id}`, request),
-  verifyPolicy: (id: string, notes: string | null) => api.post<void>(`/api/v1/insurance/policies/${id}/verify`, { notes }),
+  verifyPolicy: (id: string, notes: string | null) =>
+    api.post<void>(`/api/v1/insurance/policies/${id}/verify`, { notes }),
   createPreAuth: (request: SavePreAuthRequest) => api.post<{ id: string }>('/api/v1/insurance/preauths', request),
-  updatePreAuth: (id: string, request: SavePreAuthRequest) => api.put<void>(`/api/v1/insurance/preauths/${id}`, request),
+  updatePreAuth: (id: string, request: SavePreAuthRequest) =>
+    api.put<void>(`/api/v1/insurance/preauths/${id}`, request),
   submitPreAuth: (id: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/submit`),
   preAuthQuery: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/query`, { text }),
   preAuthAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/answer`, { text }),
   approvePreAuth: (id: string, approvedAmount: number, reference: string | null) =>
     api.post<void>(`/api/v1/insurance/preauths/${id}/approve`, { approvedAmount, reference }),
   rejectPreAuth: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/reject`, { reason }),
-  requestEnhancement: (id: string, amount: number, reason: string) => api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements`, { amount, reason }),
-  respondEnhancement: (id: string, enhancementId: string, approved: boolean, approvedAmount: number, reference: string | null) =>
-    api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, { approved, approvedAmount, reference }),
-  finalApproval: (id: string, amount: number, reference: string | null) => api.post<void>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference }),
+  requestEnhancement: (id: string, amount: number, reason: string) =>
+    api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements`, { amount, reason }),
+  respondEnhancement: (
+    id: string,
+    enhancementId: string,
+    approved: boolean,
+    approvedAmount: number,
+    reference: string | null,
+  ) =>
+    api.post<void>(`/api/v1/insurance/preauths/${id}/enhancements/${enhancementId}/respond`, {
+      approved,
+      approvedAmount,
+      reference,
+    }),
+  finalApproval: (id: string, amount: number, reference: string | null) =>
+    api.post<void>(`/api/v1/insurance/preauths/${id}/final-approval`, { amount, reference }),
   createClaim: (request: CreateClaimRequest) => api.post<{ id: string }>('/api/v1/insurance/claims', request),
-  updateClaimCoding: (id: string, request: UpdateClaimCodingRequest) => api.put<void>(`/api/v1/insurance/claims/${id}/coding`, request),
+  updateClaimCoding: (id: string, request: UpdateClaimCodingRequest) =>
+    api.put<void>(`/api/v1/insurance/claims/${id}/coding`, request),
   claimQuery: (id: string, text: string) => api.post<void>(`/api/v1/insurance/claims/${id}/query`, { text }),
   claimAnswer: (id: string, text: string) => api.post<void>(`/api/v1/insurance/claims/${id}/answer`, { text }),
-  approveClaim: (id: string, approvedAmount: number) => api.post<void>(`/api/v1/insurance/claims/${id}/approve`, { approvedAmount }),
-  settleClaim: (id: string, request: SettleClaimRequest, idempotencyKey?: string) => api.post<void>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
+  approveClaim: (id: string, approvedAmount: number) =>
+    api.post<void>(`/api/v1/insurance/claims/${id}/approve`, { approvedAmount }),
+  settleClaim: (id: string, request: SettleClaimRequest, idempotencyKey?: string) =>
+    api.post<void>(`/api/v1/insurance/claims/${id}/settle`, request, { idempotencyKey }),
   rejectClaim: (id: string, reason: string) => api.post<void>(`/api/v1/insurance/claims/${id}/reject`, { reason }),
 };
 

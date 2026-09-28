@@ -53,14 +53,22 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
   }
 
   const parsed = parseRupees(amount, { max });
-  const amountError = amount && !parsed.ok ? (parsed.error === 'The amount is too large.' ? `At most ${formatInr(max)} can be credited on this bill.` : parsed.error) : null;
+  const amountError =
+    amount && !parsed.ok
+      ? parsed.error === 'The amount is too large.'
+        ? `At most ${formatInr(max)} can be credited on this bill.`
+        : parsed.error
+      : null;
   const valid = parsed.ok && reason.trim().length >= 5;
 
   const issue = useMutation({
     mutationFn: () => billingApi.issueCreditNote(bill.id, kind, parsed.ok ? parsed.rupees : 0, reason.trim()),
     onSuccess: (updated) => {
       const note = updated.creditNotes.at(-1);
-      notify.success(`${CREDIT_NOTE_KIND_LABEL[kind]} issued`, note ? `${note.number} · ${formatInr(note.amount)}` : undefined);
+      notify.success(
+        `${CREDIT_NOTE_KIND_LABEL[kind]} issued`,
+        note ? `${note.number} · ${formatInr(note.amount)}` : undefined,
+      );
       void refresh();
       onClose();
     },
@@ -81,7 +89,8 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
             <DialogTitle>Credit note or write-off</DialogTitle>
             <DialogContent className={styles.body}>
               <Text>
-                Bill {bill.billNumber} · {bill.patientName}. Up to <Amount value={max} strong /> can be credited. This cannot be undone.
+                Bill {bill.billNumber} · {bill.patientName}. Up to <Amount value={max} strong /> can be credited. This
+                cannot be undone.
               </Text>
               <Field label="Type" required>
                 <RadioGroup value={kind} onChange={(_, data) => setKind(data.value as CreditNoteKind)}>
@@ -89,23 +98,41 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
                     <Radio
                       key={k}
                       value={k}
-                      label={k === 'CreditNote' ? `${CREDIT_NOTE_KIND_LABEL[k]} — wrong rate or service not given` : `${CREDIT_NOTE_KIND_LABEL[k]} — the due cannot be recovered`}
+                      label={
+                        k === 'CreditNote'
+                          ? `${CREDIT_NOTE_KIND_LABEL[k]} — wrong rate or service not given`
+                          : `${CREDIT_NOTE_KIND_LABEL[k]} — the due cannot be recovered`
+                      }
                     />
                   ))}
                 </RadioGroup>
               </Field>
               <AmountField label="Amount" required value={amount} onChange={setAmount} error={amountError} autoFocus />
-              <Field label="Reason" required hint="At least 5 characters. Printed on the credit note and kept in the audit trail.">
+              <Field
+                label="Reason"
+                required
+                hint="At least 5 characters. Printed on the credit note and kept in the audit trail."
+              >
                 <Textarea value={reason} onChange={(_, data) => setReason(data.value)} maxLength={300} rows={2} />
               </Field>
-              {bill.paidAmount > 0 && <Text>If the patient has already paid, the credited amount becomes refundable and can then be requested as a refund.</Text>}
+              {bill.paidAmount > 0 && (
+                <Text>
+                  If the patient has already paid, the credited amount becomes refundable and can then be requested as a
+                  refund.
+                </Text>
+              )}
               <ActionError error={issue.error} />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={issue.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || issue.isPending} icon={issue.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || issue.isPending}
+                icon={issue.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Issue {CREDIT_NOTE_KIND_LABEL[kind].toLowerCase()}
               </Button>
             </DialogActions>

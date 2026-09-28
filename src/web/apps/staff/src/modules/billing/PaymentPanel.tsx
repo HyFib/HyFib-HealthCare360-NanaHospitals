@@ -1,4 +1,16 @@
-import { Button, Caption1, Field, Input, makeStyles, MessageBar, MessageBarBody, Select, Text, tokens, ToggleButton } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Select,
+  Text,
+  tokens,
+  ToggleButton,
+} from '@fluentui/react-components';
 import {
   AddRegular,
   BuildingBankRegular,
@@ -13,7 +25,13 @@ import type { FluentIcon } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
 import { COUNTER_PAYMENT_MODES, PAYMENT_MODE_LABEL, type CounterPaymentMode } from './labels';
 import { amountInputText, fromPaise, parseRupees, toPaise } from './money';
-import { checkPaymentLine, MAX_SPLIT_MODES, newPaymentLine, summariseSplit, type PaymentLineDraft } from './paymentRules';
+import {
+  checkPaymentLine,
+  MAX_SPLIT_MODES,
+  newPaymentLine,
+  summariseSplit,
+  type PaymentLineDraft,
+} from './paymentRules';
 import { Amount, AmountField } from './ui';
 
 const MODE_ICON: Record<CounterPaymentMode, FluentIcon> = {
@@ -54,7 +72,12 @@ const useStyles = makeStyles({
   },
   cash: { display: 'flex', gap: '16px', alignItems: 'end', flexWrap: 'wrap' },
   change: { display: 'flex', flexDirection: 'column', gap: '2px' },
-  changeValue: { fontSize: '28px', lineHeight: '34px', fontWeight: tokens.fontWeightBold, color: tokens.colorPaletteGreenForeground1 },
+  changeValue: {
+    fontSize: '28px',
+    lineHeight: '34px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorPaletteGreenForeground1,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -76,12 +99,22 @@ export interface PaymentPanelProps {
  * Split payment at the counter (OPB-05): one line per mode with the evidence the bank reconciliation needs (card last
  * 4 digits, UPI/transfer reference, cheque details), the running balance and — for cash — the change to hand back.
  */
-export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTenderedChange, showErrors, today, disabled }: PaymentPanelProps) {
+export function PaymentPanel({
+  due,
+  lines,
+  onLinesChange,
+  cashTendered,
+  onCashTenderedChange,
+  showErrors,
+  today,
+  disabled,
+}: PaymentPanelProps) {
   const styles = useStyles();
   const summary = summariseSplit(lines, due, cashTendered);
   const hasCash = lines.some((line) => line.mode === 'Cash');
 
-  const update = (key: string, patch: Partial<PaymentLineDraft>) => onLinesChange(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  const update = (key: string, patch: Partial<PaymentLineDraft>) =>
+    onLinesChange(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)));
 
   const pickMode = (mode: CounterPaymentMode) => {
     const only = lines.length === 1 ? lines[0] : undefined;
@@ -112,7 +145,14 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
           const Icon = MODE_ICON[mode];
           const active = lines.some((line) => line.mode === mode);
           return (
-            <ToggleButton key={mode} checked={active} icon={<Icon />} onClick={() => pickMode(mode)} disabled={disabled} appearance={active ? 'primary' : 'secondary'}>
+            <ToggleButton
+              key={mode}
+              checked={active}
+              icon={<Icon />}
+              onClick={() => pickMode(mode)}
+              disabled={disabled}
+              appearance={active ? 'primary' : 'secondary'}
+            >
               {PAYMENT_MODE_LABEL[mode]}
             </ToggleButton>
           );
@@ -124,7 +164,11 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
         return (
           <div key={line.key} className={styles.line}>
             <Field label={`Mode ${lines.length > 1 ? index + 1 : ''}`.trim()}>
-              <Select value={line.mode} onChange={(_, data) => update(line.key, { mode: data.value as CounterPaymentMode })} disabled={disabled}>
+              <Select
+                value={line.mode}
+                onChange={(_, data) => update(line.key, { mode: data.value as CounterPaymentMode })}
+                disabled={disabled}
+              >
                 {COUNTER_PAYMENT_MODES.map((mode) => (
                   <option key={mode} value={mode}>
                     {PAYMENT_MODE_LABEL[mode]}
@@ -153,7 +197,11 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
                     />
                   </Field>
                   <Field label="Network">
-                    <Select value={line.cardNetwork} onChange={(_, data) => update(line.key, { cardNetwork: data.value })} disabled={disabled}>
+                    <Select
+                      value={line.cardNetwork}
+                      onChange={(_, data) => update(line.key, { cardNetwork: data.value })}
+                      disabled={disabled}
+                    >
                       <option value="">Not noted</option>
                       {CARD_NETWORKS.map((network) => (
                         <option key={network} value={network}>
@@ -165,8 +213,17 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
                 </>
               )}
               {(line.mode === 'Upi' || line.mode === 'NetBanking' || line.mode === 'Wallet') && (
-                <Field label={line.mode === 'Upi' ? 'UPI reference (UTR)' : 'Transaction reference'} required style={{ minWidth: 220 }}>
-                  <Input value={line.reference} onChange={(_, data) => update(line.key, { reference: data.value })} maxLength={64} disabled={disabled} />
+                <Field
+                  label={line.mode === 'Upi' ? 'UPI reference (UTR)' : 'Transaction reference'}
+                  required
+                  style={{ minWidth: 220 }}
+                >
+                  <Input
+                    value={line.reference}
+                    onChange={(_, data) => update(line.key, { reference: data.value })}
+                    maxLength={64}
+                    disabled={disabled}
+                  />
                 </Field>
               )}
               {line.mode === 'Cheque' && (
@@ -174,7 +231,9 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
                   <Field label="Cheque no." required>
                     <Input
                       value={line.chequeNumber}
-                      onChange={(_, data) => update(line.key, { chequeNumber: data.value.replace(/\D/g, '').slice(0, 6) })}
+                      onChange={(_, data) =>
+                        update(line.key, { chequeNumber: data.value.replace(/\D/g, '').slice(0, 6) })
+                      }
                       inputMode="numeric"
                       maxLength={6}
                       style={{ width: 110 }}
@@ -182,15 +241,30 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
                     />
                   </Field>
                   <Field label="Bank" required>
-                    <Input value={line.chequeBank} onChange={(_, data) => update(line.key, { chequeBank: data.value })} maxLength={100} disabled={disabled} />
+                    <Input
+                      value={line.chequeBank}
+                      onChange={(_, data) => update(line.key, { chequeBank: data.value })}
+                      maxLength={100}
+                      disabled={disabled}
+                    />
                   </Field>
                   <Field label="Cheque date" required>
-                    <Input type="date" value={line.chequeDate} max={today} onChange={(_, data) => update(line.key, { chequeDate: data.value })} disabled={disabled} />
+                    <Input
+                      type="date"
+                      value={line.chequeDate}
+                      max={today}
+                      onChange={(_, data) => update(line.key, { chequeDate: data.value })}
+                      disabled={disabled}
+                    />
                   </Field>
                 </>
               )}
               {due !== null && balanceFor(line) !== null && (
-                <Button appearance="subtle" onClick={() => update(line.key, { amount: amountInputText(balanceFor(line)) })} disabled={disabled}>
+                <Button
+                  appearance="subtle"
+                  onClick={() => update(line.key, { amount: amountInputText(balanceFor(line)) })}
+                  disabled={disabled}
+                >
                   Make it {formatInr(balanceFor(line))}
                 </Button>
               )}
@@ -237,7 +311,9 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
           )}
           {summary.shortTendered && (
             <MessageBar intent="warning">
-              <MessageBarBody>The cash handed over is less than the cash amount of {formatInr(summary.cash)}.</MessageBarBody>
+              <MessageBarBody>
+                The cash handed over is less than the cash amount of {formatInr(summary.cash)}.
+              </MessageBarBody>
             </MessageBar>
           )}
         </div>
@@ -259,9 +335,15 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
               </Text>
             </span>
             <span>
-              <Caption1 className={styles.muted}>{summary.remaining < 0 ? 'More than the balance by' : 'Left to collect'}</Caption1>
+              <Caption1 className={styles.muted}>
+                {summary.remaining < 0 ? 'More than the balance by' : 'Left to collect'}
+              </Caption1>
               <Text block>
-                <Amount value={Math.abs(summary.remaining)} strong tone={summary.remaining < 0 ? 'negative' : summary.remaining === 0 ? 'positive' : 'neutral'} />
+                <Amount
+                  value={Math.abs(summary.remaining)}
+                  strong
+                  tone={summary.remaining < 0 ? 'negative' : summary.remaining === 0 ? 'positive' : 'neutral'}
+                />
               </Text>
             </span>
           </>
@@ -269,7 +351,9 @@ export function PaymentPanel({ due, lines, onLinesChange, cashTendered, onCashTe
       </div>
       {due !== null && summary.remaining < 0 && (
         <MessageBar intent="error">
-          <MessageBarBody>The counter cannot collect more than the balance. Reduce an amount, or use the change field for cash.</MessageBarBody>
+          <MessageBarBody>
+            The counter cannot collect more than the balance. Reduce an amount, or use the change field for cash.
+          </MessageBarBody>
         </MessageBar>
       )}
     </div>

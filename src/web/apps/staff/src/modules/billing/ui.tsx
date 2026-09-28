@@ -106,7 +106,17 @@ export function Amount({
 }
 
 /** A label/value row in a totals list; `strong` draws the separator used before a grand total. */
-export function SummaryRow({ label, children, strong, hint }: { label: ReactNode; children: ReactNode; strong?: boolean; hint?: ReactNode }) {
+export function SummaryRow({
+  label,
+  children,
+  strong,
+  hint,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  strong?: boolean;
+  hint?: ReactNode;
+}) {
   const styles = useStyles();
   return (
     <div className={mergeClasses(styles.row, strong && styles.rowStrong)}>
@@ -131,7 +141,12 @@ export function SummaryList({ children }: { children: ReactNode }) {
 export function DetailGrid({ children, minColumnWidth }: { children: ReactNode; minColumnWidth?: number }) {
   const styles = useStyles();
   return (
-    <div className={styles.details} style={minColumnWidth ? { gridTemplateColumns: `repeat(auto-fill, minmax(${minColumnWidth}px, 1fr))` } : undefined}>
+    <div
+      className={styles.details}
+      style={
+        minColumnWidth ? { gridTemplateColumns: `repeat(auto-fill, minmax(${minColumnWidth}px, 1fr))` } : undefined
+      }
+    >
       {children}
     </div>
   );
@@ -173,7 +188,8 @@ export function BillStatusBadge({ status }: { status: BillStatus }) {
 }
 
 export function RefundStatusBadge({ status }: { status: RefundStatus }) {
-  const tone = status === 'Paid' ? 'success' : status === 'Rejected' ? 'danger' : status === 'Approved' ? 'brand' : 'warning';
+  const tone =
+    status === 'Paid' ? 'success' : status === 'Rejected' ? 'danger' : status === 'Approved' ? 'brand' : 'warning';
   return <StatusBadge status={status} tone={tone} label={REFUND_STATUS_LABEL[status]} />;
 }
 
@@ -182,11 +198,18 @@ export function DiscountStatusBadge({ status }: { status: DiscountApprovalStatus
 }
 
 export function LinkStatusBadge({ status }: { status: GatewayOrderStatus }) {
-  return <StatusBadge status={status} tone={status === 'Created' ? 'warning' : undefined} label={GATEWAY_ORDER_STATUS_LABEL[status]} />;
+  return (
+    <StatusBadge
+      status={status}
+      tone={status === 'Created' ? 'warning' : undefined}
+      label={GATEWAY_ORDER_STATUS_LABEL[status]}
+    />
+  );
 }
 
 export function IpStatusBadge({ status }: { status: IpAccountStatus }) {
-  const tone = status === 'Open' ? 'brand' : status === 'Closed' ? 'success' : status === 'Cancelled' ? 'danger' : 'warning';
+  const tone =
+    status === 'Open' ? 'brand' : status === 'Closed' ? 'success' : status === 'Cancelled' ? 'danger' : 'warning';
   return <StatusBadge status={status} tone={tone} label={IP_ACCOUNT_STATUS_LABEL[status]} />;
 }
 
@@ -228,7 +251,11 @@ export function ActionError({ error, title, onReload }: { error: unknown; title?
         ? 'Please check the details'
         : (title ?? error.title);
   return (
-    <MessageBar intent={error.isNetworkError || conflict ? 'warning' : 'error'} layout="multiline" politeness="assertive">
+    <MessageBar
+      intent={error.isNetworkError || conflict ? 'warning' : 'error'}
+      layout="multiline"
+      politeness="assertive"
+    >
       <MessageBarBody>
         <MessageBarTitle>{heading}</MessageBarTitle>
         {conflict ? 'Reload to see the latest version, then try again.' : error.userMessage}
@@ -274,7 +301,13 @@ export function AmountField({
   onKeyDown?: InputProps['onKeyDown'];
 }) {
   return (
-    <Field label={label} hint={hint} required={required} validationMessage={error ?? undefined} validationState={error ? 'error' : 'none'}>
+    <Field
+      label={label}
+      hint={hint}
+      required={required}
+      validationMessage={error ?? undefined}
+      validationState={error ? 'error' : 'none'}
+    >
       <Input
         ref={inputRef}
         value={value}
@@ -342,7 +375,11 @@ export function ReasonDialog(props: ReasonDialogProps) {
   };
 
   return (
-    <Dialog open={props.open} onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()} modalType="alert">
+    <Dialog
+      open={props.open}
+      onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()}
+      modalType="alert"
+    >
       <DialogSurface style={{ maxWidth: 540 }}>
         <form onSubmit={submit}>
           <DialogBody>

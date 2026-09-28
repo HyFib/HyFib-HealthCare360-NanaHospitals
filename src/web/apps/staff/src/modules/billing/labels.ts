@@ -65,7 +65,17 @@ export const SERVICE_CATEGORY_LABEL: Record<ServiceCategory, string> = {
   Miscellaneous: 'Other',
 };
 
-export const PAYMENT_MODES = ['Cash', 'Card', 'Upi', 'NetBanking', 'Cheque', 'PaymentGateway', 'Insurance', 'Wallet', 'Advance'] as const;
+export const PAYMENT_MODES = [
+  'Cash',
+  'Card',
+  'Upi',
+  'NetBanking',
+  'Cheque',
+  'PaymentGateway',
+  'Insurance',
+  'Wallet',
+  'Advance',
+] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
 export const PAYMENT_MODE_LABEL: Record<PaymentMode, string> = {
   Cash: 'Cash',
@@ -80,11 +90,25 @@ export const PAYMENT_MODE_LABEL: Record<PaymentMode, string> = {
 };
 
 /** Modes a cashier may key in at the counter (advances, insurance and gateway payments are recorded by the system). */
-export const COUNTER_PAYMENT_MODES = ['Cash', 'Card', 'Upi', 'NetBanking', 'Cheque', 'Wallet'] as const satisfies readonly PaymentMode[];
+export const COUNTER_PAYMENT_MODES = [
+  'Cash',
+  'Card',
+  'Upi',
+  'NetBanking',
+  'Cheque',
+  'Wallet',
+] as const satisfies readonly PaymentMode[];
 export type CounterPaymentMode = (typeof COUNTER_PAYMENT_MODES)[number];
 
 /** Ways money can be returned to a patient (PayRefundRequest). */
-export const REFUND_PAYOUT_MODES = ['Cash', 'Card', 'Upi', 'NetBanking', 'Cheque', 'PaymentGateway'] as const satisfies readonly PaymentMode[];
+export const REFUND_PAYOUT_MODES = [
+  'Cash',
+  'Card',
+  'Upi',
+  'NetBanking',
+  'Cheque',
+  'PaymentGateway',
+] as const satisfies readonly PaymentMode[];
 export const REFUND_PAYOUT_MODE_LABEL: Record<(typeof REFUND_PAYOUT_MODES)[number], string> = {
   Cash: 'Cash from the counter',
   Card: 'Card reversal',
@@ -115,7 +139,13 @@ export const RECEIPT_PURPOSE_LABEL: Record<ReceiptPurpose, string> = {
   Advance: 'Patient advance',
 };
 
-export const RECEIPT_SOURCES = ['Counter', 'PosTerminal', 'PaymentGateway', 'InsuranceDesk', 'DepositAdjustment'] as const;
+export const RECEIPT_SOURCES = [
+  'Counter',
+  'PosTerminal',
+  'PaymentGateway',
+  'InsuranceDesk',
+  'DepositAdjustment',
+] as const;
 export type ReceiptSource = (typeof RECEIPT_SOURCES)[number];
 export const RECEIPT_SOURCE_LABEL: Record<ReceiptSource, string> = {
   Counter: 'Counter',
@@ -144,7 +174,10 @@ export const REFUND_PURPOSE_LABEL: Record<RefundPurpose, string> = {
 
 export const CREDIT_NOTE_KINDS = ['CreditNote', 'WriteOff'] as const;
 export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number];
-export const CREDIT_NOTE_KIND_LABEL: Record<CreditNoteKind, string> = { CreditNote: 'Credit note', WriteOff: 'Write-off (bad debt)' };
+export const CREDIT_NOTE_KIND_LABEL: Record<CreditNoteKind, string> = {
+  CreditNote: 'Credit note',
+  WriteOff: 'Write-off (bad debt)',
+};
 
 export const DISCOUNT_APPROVAL_STATUSES = ['Pending', 'Approved', 'Rejected', 'Withdrawn'] as const;
 export type DiscountApprovalStatus = (typeof DISCOUNT_APPROVAL_STATUSES)[number];
@@ -232,13 +265,18 @@ export const PAYER_TYPE_LABEL: Record<PayerTypeValue, string> = {
 
 /** Payer types whose bills are split with a third party (BillPayerTerms.HasPayer). */
 export function isThirdPartyPayer(payerType: string, payerId: string | null | undefined): boolean {
-  return Boolean(payerId) && (payerType === 'Insurance' || payerType === 'Corporate' || payerType === 'GovernmentScheme');
+  return (
+    Boolean(payerId) && (payerType === 'Insurance' || payerType === 'Corporate' || payerType === 'GovernmentScheme')
+  );
 }
 
 export function labelOf<T extends string>(labels: Record<T, string>, value: T | null | undefined): string {
   return value ? (labels[value] ?? value) : '—';
 }
 
-export function optionsOf<T extends string>(values: readonly T[], labels: Record<T, string>): { value: T; label: string }[] {
+export function optionsOf<T extends string>(
+  values: readonly T[],
+  labels: Record<T, string>,
+): { value: T; label: string }[] {
   return values.map((value) => ({ value, label: labels[value] }));
 }

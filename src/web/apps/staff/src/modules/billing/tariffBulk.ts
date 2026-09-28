@@ -70,7 +70,10 @@ export function parsePriceSheet(text: string): { rows: PriceSheetRow[]; problems
       if (rows.length === 0 && problems.length === 0 && !/\d/.test(priceText)) {
         return; // header row such as "Code  Price"
       }
-      problems.push({ line: lineNumber, message: priceText ? `${code}: ${price.error}` : `${code}: the price is missing.` });
+      problems.push({
+        line: lineNumber,
+        message: priceText ? `${code}: ${price.error}` : `${code}: the price is missing.`,
+      });
       return;
     }
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(code)) {

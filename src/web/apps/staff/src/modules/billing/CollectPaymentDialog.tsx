@@ -25,7 +25,14 @@ import {
   tokens,
   type MenuButtonProps,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DoorArrowRightRegular, LinkRegular, PaymentRegular, PrintRegular, WalletRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DoorArrowRightRegular,
+  LinkRegular,
+  PaymentRegular,
+  PrintRegular,
+  WalletRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -47,14 +54,28 @@ const useStyles = makeStyles({
   dueLabel: { color: tokens.colorNeutralForeground3, textTransform: 'uppercase', letterSpacing: '0.5px' },
   due: { fontSize: '40px', lineHeight: '46px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
   advance: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '8px 0', textAlign: 'center' },
-  change: { fontSize: '44px', lineHeight: '52px', fontWeight: tokens.fontWeightBold, color: tokens.colorPaletteGreenForeground1 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 0',
+    textAlign: 'center',
+  },
+  change: {
+    fontSize: '44px',
+    lineHeight: '52px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorPaletteGreenForeground1,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   alternatives: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
 });
 
 /** Patient advances still available (balance less refunds awaiting payout). */
-function usableAdvances(advances: PatientAdvanceDto[] | undefined): { advance: PatientAdvanceDto; available: number }[] {
+function usableAdvances(
+  advances: PatientAdvanceDto[] | undefined,
+): { advance: PatientAdvanceDto; available: number }[] {
   return (advances ?? [])
     .map((advance) => ({ advance, available: fromPaise(toPaise(advance.balance) - toPaise(advance.refundPending)) }))
     .filter((a) => a.available > 0);
@@ -117,7 +138,8 @@ export function CollectPaymentDialog({
   };
 
   const adjust = useMutation({
-    mutationFn: (advance: { id: string; amount: number }) => billingApi.adjustAdvance(bill.id, advance.id, advance.amount, bill.version, { idempotencyKey: adjustKey }),
+    mutationFn: (advance: { id: string; amount: number }) =>
+      billingApi.adjustAdvance(bill.id, advance.id, advance.amount, bill.version, { idempotencyKey: adjustKey }),
     onSuccess: (receipt) => {
       renewAdjustKey();
       notify.success('Advance applied', `${formatInr(receipt.amount)} adjusted · receipt ${receipt.receiptNumber}`);
@@ -129,7 +151,10 @@ export function CollectPaymentDialog({
     mutationFn: () => {
       const checked = lines.map((line) => checkPaymentLine(line, today));
       const payments = checked.flatMap((c) => (c.ok ? [c.input] : []));
-      return billingApi.collectPayment({ billId: bill.id, payments, notes: notes.trim() || null }, { idempotencyKey: attemptKey });
+      return billingApi.collectPayment(
+        { billId: bill.id, payments, notes: notes.trim() || null },
+        { idempotencyKey: attemptKey },
+      );
     },
     onSuccess: (receipt) => {
       renewAttempt();
@@ -158,7 +183,11 @@ export function CollectPaymentDialog({
   useHotkey('mod+enter', submit, { enabled: open && !done && side === null, allowInInputs: true });
 
   const shiftMissing = canShift && shift.data === null;
-  const shiftRequired = collect.error && typeof collect.error === 'object' && 'code' in collect.error && collect.error.code === 'billing.shift_required';
+  const shiftRequired =
+    collect.error &&
+    typeof collect.error === 'object' &&
+    'code' in collect.error &&
+    collect.error.code === 'billing.shift_required';
 
   return (
     <>
@@ -183,7 +212,9 @@ export function CollectPaymentDialog({
                     </>
                   )}
                   <Caption1 className={styles.muted}>
-                    {bill.dueAmount > 0 ? `Balance still due on the bill: ${formatInr(bill.dueAmount)}` : 'The bill is fully paid.'}
+                    {bill.dueAmount > 0
+                      ? `Balance still due on the bill: ${formatInr(bill.dueAmount)}`
+                      : 'The bill is fully paid.'}
                     {prefs.autoPrint ? ' The receipt was sent to the printer.' : ''}
                   </Caption1>
                 </div>
@@ -227,7 +258,10 @@ export function CollectPaymentDialog({
                           return (
                             <div key={advance.id} className={styles.advance}>
                               <Text>
-                                {formatInr(available)} from {advance.appointmentNumber ? `the online payment for appointment ${advance.appointmentNumber}` : `receipt ${advance.receiptNumber}`}
+                                {formatInr(available)} from{' '}
+                                {advance.appointmentNumber
+                                  ? `the online payment for appointment ${advance.appointmentNumber}`
+                                  : `receipt ${advance.receiptNumber}`}
                               </Text>
                               <Button
                                 size="small"
@@ -266,7 +300,13 @@ export function CollectPaymentDialog({
                   </div>
 
                   <Field label="Note on the receipt" hint="Optional">
-                    <Textarea value={notes} onChange={(_, data) => setNotes(data.value)} maxLength={500} rows={1} resize="vertical" />
+                    <Textarea
+                      value={notes}
+                      onChange={(_, data) => setNotes(data.value)}
+                      maxLength={500}
+                      rows={1}
+                      resize="vertical"
+                    />
                   </Field>
 
                   <ActionError error={collect.error} onReload={() => void refresh()} />
@@ -284,17 +324,25 @@ export function CollectPaymentDialog({
                   <Menu>
                     <MenuTrigger disableButtonEnhancement>
                       {(triggerProps: MenuButtonProps) => (
-                        <SplitButton menuButton={triggerProps} icon={<PrintRegular />} primaryActionButton={{ onClick: () => void printReceipt(done.receipt) }}>
+                        <SplitButton
+                          menuButton={triggerProps}
+                          icon={<PrintRegular />}
+                          primaryActionButton={{ onClick: () => void printReceipt(done.receipt) }}
+                        >
                           Print receipt
                         </SplitButton>
                       )}
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
-                        <MenuItem onClick={() => void printReceipt(done.receipt, 'Receipt80')}>Receipt printer (80 mm)</MenuItem>
+                        <MenuItem onClick={() => void printReceipt(done.receipt, 'Receipt80')}>
+                          Receipt printer (80 mm)
+                        </MenuItem>
                         <MenuItem onClick={() => void printReceipt(done.receipt, 'A4')}>A4 receipt</MenuItem>
                         <MenuItem onClick={() => void printBill(bill, 'A4')}>A4 bill with GST details</MenuItem>
-                        <MenuItem onClick={() => void printBill(bill, 'Receipt80')}>Bill on the receipt printer</MenuItem>
+                        <MenuItem onClick={() => void printBill(bill, 'Receipt80')}>
+                          Bill on the receipt printer
+                        </MenuItem>
                       </MenuList>
                     </MenuPopover>
                   </Menu>
@@ -340,7 +388,13 @@ export function CollectPaymentDialog({
           }}
         />
       )}
-      {side === 'link' && <PaymentLinkDialog open target={{ kind: 'bill', billId: bill.id, due: bill.dueAmount }} onClose={() => setSide(null)} />}
+      {side === 'link' && (
+        <PaymentLinkDialog
+          open
+          target={{ kind: 'bill', billId: bill.id, due: bill.dueAmount }}
+          onClose={() => setSide(null)}
+        />
+      )}
       <OpenShiftDialog open={side === 'shift'} onClose={() => setSide(null)} onOpened={() => setSide(null)} />
     </>
   );

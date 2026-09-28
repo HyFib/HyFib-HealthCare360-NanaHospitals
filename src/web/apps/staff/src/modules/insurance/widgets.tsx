@@ -21,7 +21,11 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     ':hover': { backgroundColor: tokens.colorNeutralBackground2Hover },
   },
-  count: { fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700, fontWeight: tokens.fontWeightSemibold },
+  count: {
+    fontSize: tokens.fontSizeHero700,
+    lineHeight: tokens.lineHeightHero700,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -30,7 +34,11 @@ function StatusTile({ status }: { status: ClaimStatus }) {
   const navigate = useNavigate();
   const count = useQuery(insuranceQueries.claimCount(status));
   return (
-    <button type="button" className={styles.tile} onClick={() => void navigate({ to: '/insurance/claims', search: { status } })}>
+    <button
+      type="button"
+      className={styles.tile}
+      onClick={() => void navigate({ to: '/insurance/claims', search: { status } })}
+    >
       <span className={styles.count}>{count.data === undefined ? '…' : count.data.toLocaleString('en-IN')}</span>
       <Caption1 className={styles.muted}>{CLAIM_STATUS_LABEL[status]}</Caption1>
     </button>
@@ -46,9 +54,18 @@ export function ClaimsPendingWidget() {
   return (
     <Section
       title="Claims pending"
-      description={ageing.data ? `Insurers owe ${formatInr(ageing.data.total)}${ageing.data.over90 > 0 ? ` · ${formatInr(ageing.data.over90)} over 90 days` : ''}` : undefined}
+      description={
+        ageing.data
+          ? `Insurers owe ${formatInr(ageing.data.total)}${ageing.data.over90 > 0 ? ` · ${formatInr(ageing.data.over90)} over 90 days` : ''}`
+          : undefined
+      }
       actions={
-        <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/insurance/ageing' })}>
+        <Button
+          appearance="transparent"
+          icon={<ArrowRightRegular />}
+          iconPosition="after"
+          onClick={() => void navigate({ to: '/insurance/ageing' })}
+        >
           Ageing
         </Button>
       }
@@ -62,7 +79,9 @@ export function ClaimsPendingWidget() {
           ))}
         </div>
       )}
-      {ageing.data && ageing.data.payers.length === 0 && <Text className={styles.muted}>No money is outstanding from insurers.</Text>}
+      {ageing.data && ageing.data.payers.length === 0 && (
+        <Text className={styles.muted}>No money is outstanding from insurers.</Text>
+      )}
     </Section>
   );
 }

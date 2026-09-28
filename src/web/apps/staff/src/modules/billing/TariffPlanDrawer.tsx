@@ -14,7 +14,16 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { applyServerErrors, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -61,12 +70,24 @@ const schema = z.object({
 type PlanForm = z.infer<typeof schema>;
 
 /** Create or edit a tariff plan: who it is for, its default concession and room-class multipliers (MB-02). */
-export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanDetail | null; onClose: () => void; onSaved: (plan: TariffPlanDetail) => void }) {
+export function TariffPlanDrawer({
+  plan,
+  onClose,
+  onSaved,
+}: {
+  plan: TariffPlanDetail | null;
+  onClose: () => void;
+  onSaved: (plan: TariffPlanDetail) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const payers = useQuery(insuranceQueries.payers());
-  const beds = useQuery({ queryKey: ['billing', 'bed-services'], queryFn: () => searchServices('', 'BedCharge'), staleTime: 10 * 60_000 });
+  const beds = useQuery({
+    queryKey: ['billing', 'bed-services'],
+    queryFn: () => searchServices('', 'BedCharge'),
+    staleTime: 10 * 60_000,
+  });
 
   const form = useForm<PlanForm>({
     resolver: zodResolver(schema),
@@ -79,7 +100,11 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
       isDefault: plan?.isDefault ?? false,
       isActive: plan?.isActive ?? true,
       description: plan?.description ?? '',
-      bedMultipliers: (plan?.bedMultipliers ?? []).map((m) => ({ bedServiceItemId: m.bedServiceItemId, label: m.bedServiceName ?? m.bedServiceCode ?? '', multiplier: m.multiplier })),
+      bedMultipliers: (plan?.bedMultipliers ?? []).map((m) => ({
+        bedServiceItemId: m.bedServiceItemId,
+        label: m.bedServiceName ?? m.bedServiceCode ?? '',
+        multiplier: m.multiplier,
+      })),
     },
   });
   const multipliers = useFieldArray({ control: form.control, name: 'bedMultipliers' });
@@ -98,7 +123,10 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
         isDefault: values.isDefault,
         isActive: values.isActive,
         description: values.description.trim() || null,
-        bedMultipliers: values.bedMultipliers.map((m) => ({ bedServiceItemId: m.bedServiceItemId, multiplier: m.multiplier })),
+        bedMultipliers: values.bedMultipliers.map((m) => ({
+          bedServiceItemId: m.bedServiceItemId,
+          multiplier: m.multiplier,
+        })),
         version: plan?.version ?? null,
       };
       return plan ? mastersApi.updatePlan(plan.id, request) : mastersApi.createPlan(request);
@@ -113,25 +141,57 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
     },
   });
 
-  const payerCategories: Record<TariffType, string[]> = { General: [], Staff: [], Corporate: ['Corporate'], Insurance: ['Insurer', 'Tpa'], GovernmentScheme: ['GovernmentScheme'] };
-  const payerOptions = (payers.data ?? []).filter((p) => payerCategories[type].includes(p.category)).map((p) => ({ value: p.id, label: p.name }));
+  const payerCategories: Record<TariffType, string[]> = {
+    General: [],
+    Staff: [],
+    Corporate: ['Corporate'],
+    Insurance: ['Insurer', 'Tpa'],
+    GovernmentScheme: ['GovernmentScheme'],
+  };
+  const payerOptions = (payers.data ?? [])
+    .filter((p) => payerCategories[type].includes(p.category))
+    .map((p) => ({ value: p.id, label: p.name }));
   const unusedBeds = (beds.data ?? []).filter((b) => !chosenBeds.some((m) => m.bedServiceItemId === b.id));
 
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {plan ? plan.name : 'New tariff plan'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <FormGrid columns={2} minColumnWidth={180}>
-              <TextField control={form.control} name="code" label="Code" required disabled={Boolean(plan)} hint={plan ? 'Codes cannot be changed.' : 'e.g. CGHS, STAR-GOLD'} autoFocus={!plan} />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Code"
+                required
+                disabled={Boolean(plan)}
+                hint={plan ? 'Codes cannot be changed.' : 'e.g. CGHS, STAR-GOLD'}
+                autoFocus={!plan}
+              />
               <TextField control={form.control} name="name" label="Name" required autoFocus={Boolean(plan)} />
-              <SelectField control={form.control} name="type" label="For" required options={optionsOf(TARIFF_TYPES, TARIFF_TYPE_LABEL)} />
-              {payerOptions.length > 0 && <SelectField control={form.control} name="payerId" label="Payer" placeholder="Any payer of this kind" options={payerOptions} />}
+              <SelectField
+                control={form.control}
+                name="type"
+                label="For"
+                required
+                options={optionsOf(TARIFF_TYPES, TARIFF_TYPE_LABEL)}
+              />
+              {payerOptions.length > 0 && (
+                <SelectField
+                  control={form.control}
+                  name="payerId"
+                  label="Payer"
+                  placeholder="Any payer of this kind"
+                  options={payerOptions}
+                />
+              )}
             </FormGrid>
             <NumberField
               control={form.control}
@@ -146,13 +206,28 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
             <SwitchField control={form.control} name="isActive" label="Active" />
             <TextAreaField control={form.control} name="description" label="Description" rows={2} maxLength={500} />
 
-            <Field label="Room-class multipliers" hint="Procedures, surgery, nursing and doctor visits are priced × this factor for patients in that room class">
+            <Field
+              label="Room-class multipliers"
+              hint="Procedures, surgery, nursing and doctor visits are priced × this factor for patients in that room class"
+            >
               <div className={styles.form}>
                 {multipliers.fields.map((field, index) => (
                   <div key={field.id} className={styles.multiplier}>
                     <Caption1>{field.label || 'Room / bed service'}</Caption1>
-                    <NumberField control={form.control} name={`bedMultipliers.${index}.multiplier`} label="× price" min={0.1} max={10} step={0.05} />
-                    <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${field.label}`} onClick={() => multipliers.remove(index)} />
+                    <NumberField
+                      control={form.control}
+                      name={`bedMultipliers.${index}.multiplier`}
+                      label="× price"
+                      min={0.1}
+                      max={10}
+                      step={0.05}
+                    />
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label={`Remove ${field.label}`}
+                      onClick={() => multipliers.remove(index)}
+                    />
                   </div>
                 ))}
                 {unusedBeds.length > 0 && (
@@ -162,7 +237,11 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
                     onChange={(_, d) => {
                       const bed = unusedBeds.find((b) => b.id === d.value);
                       if (bed) {
-                        multipliers.append({ bedServiceItemId: bed.id, label: `${bed.name} (${bed.code})`, multiplier: 1 });
+                        multipliers.append({
+                          bedServiceItemId: bed.id,
+                          label: `${bed.name} (${bed.code})`,
+                          multiplier: 1,
+                        });
                       }
                     }}
                   >
@@ -174,14 +253,23 @@ export function TariffPlanDrawer({ plan, onClose, onSaved }: { plan: TariffPlanD
                     ))}
                   </Select>
                 )}
-                {form.formState.errors.bedMultipliers && <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>Check the multipliers: each must be between 0.1 and 10.</Caption1>}
+                {form.formState.errors.bedMultipliers && (
+                  <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>
+                    Check the multipliers: each must be between 0.1 and 10.
+                  </Caption1>
+                )}
               </div>
             </Field>
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : <AddRegular />}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+          >
             {plan ? 'Save' : 'Create plan'}
           </Button>
           <Button onClick={onClose} disabled={save.isPending}>

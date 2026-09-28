@@ -30,16 +30,35 @@ const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
 
-/** Approve (optional remarks) or reject (a reason is required) a discount above the requester's limit. */
-export function DecideDiscountDialog({ approval, decision, onClose, onDecided }: { approval: DiscountApprovalDto; decision: 'approve' | 'reject'; onClose: () => void; onDecided?: () => void }) {
+/** Approve or reject a discount above the requester's limit; either way the decision carries a reason (kept for audit). */
+export function DecideDiscountDialog({
+  approval,
+  decision,
+  onClose,
+  onDecided,
+}: {
+  approval: DiscountApprovalDto;
+  decision: 'approve' | 'reject';
+  onClose: () => void;
+  onDecided?: () => void;
+}) {
   const notify = useNotify();
   const refresh = useRefreshBilling();
   const queryClient = useQueryClient();
-  const share = approval.discountBase > 0 ? ` (${formatPercent((approval.requestedAmount / approval.discountBase) * 100)} of ${formatInr(approval.discountBase)})` : '';
+  const share =
+    approval.discountBase > 0
+      ? ` (${formatPercent((approval.requestedAmount / approval.discountBase) * 100)} of ${formatInr(approval.discountBase)})`
+      : '';
   const decide = useMutation({
-    mutationFn: (remarks: string) => (decision === 'approve' ? billingApi.approveDiscount(approval.id, remarks || null) : billingApi.rejectDiscount(approval.id, remarks)),
+    mutationFn: (remarks: string) =>
+      decision === 'approve'
+        ? billingApi.approveDiscount(approval.id, remarks || null)
+        : billingApi.rejectDiscount(approval.id, remarks),
     onSuccess: () => {
-      notify.success(decision === 'approve' ? 'Discount approved' : 'Discount rejected', `${approval.patientName ?? 'Patient'} · ${formatInr(approval.requestedAmount)}`);
+      notify.success(
+        decision === 'approve' ? 'Discount approved' : 'Discount rejected',
+        `${approval.patientName ?? 'Patient'} · ${formatInr(approval.requestedAmount)}`,
+      );
       void queryClient.invalidateQueries({ queryKey: billingKeys.discounts() });
       void refresh();
       onDecided?.();
@@ -49,11 +68,19 @@ export function DecideDiscountDialog({ approval, decision, onClose, onDecided }:
   return (
     <ReasonDialog
       open
-      title={decision === 'approve' ? `Approve a discount of ${formatInr(approval.requestedAmount)}?` : `Reject the discount of ${formatInr(approval.requestedAmount)}?`}
+      title={
+        decision === 'approve'
+          ? `Approve a discount of ${formatInr(approval.requestedAmount)}?`
+          : `Reject the discount of ${formatInr(approval.requestedAmount)}?`
+      }
       description={`${approval.patientName ?? 'Patient'} (${approval.uhid ?? '—'})${share}. Requested by ${approval.requestedByName ?? 'a cashier'}: “${approval.reason}”.`}
-      label={decision === 'approve' ? 'Remarks' : 'Why is it rejected?'}
-      hint={decision === 'approve' ? 'Optional. The requester sees your remarks.' : 'The requester sees this. At least 5 characters.'}
-      optional={decision === 'approve'}
+      label={decision === 'approve' ? 'Why is it approved?' : 'Why is it rejected?'}
+      hint="The requester sees this and it is kept with the bill. At least 5 characters."
+      placeholder={
+        decision === 'approve'
+          ? 'e.g. Senior citizen, as per the management circular'
+          : 'e.g. Concession already given on the package'
+      }
       confirmLabel={decision === 'approve' ? 'Approve discount' : 'Reject discount'}
       destructive={decision === 'reject'}
       busy={decide.isPending}
@@ -76,16 +103,24 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canPickUsers = usePermission('admin.users.read');
-  const [user, setUser] = useState<UserOption | null>(limit ? { id: limit.userId, displayName: limit.userName ?? 'User', userName: '' } : null);
+  const [user, setUser] = useState<UserOption | null>(
+    limit ? { id: limit.userId, displayName: limit.userName ?? 'User', userName: '' } : null,
+  );
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 300);
   const [percent, setPercent] = useState(limit ? String(limit.maxPercent) : '');
-  const [cap, setCap] = useState(limit?.maxAmount !== null && limit?.maxAmount !== undefined ? String(limit.maxAmount) : '');
+  const [cap, setCap] = useState(
+    limit?.maxAmount !== null && limit?.maxAmount !== undefined ? String(limit.maxAmount) : '',
+  );
   const [notes, setNotes] = useState(limit?.notes ?? '');
 
   const users = useQuery({
     queryKey: ['billing', 'discount-limit-users', debounced],
-    queryFn: ({ signal }) => api.get<PagedResult<UserOption>>('/api/v1/admin/users', { query: { search: debounced, active: true, pageSize: 10 }, signal }),
+    queryFn: ({ signal }) =>
+      api.get<PagedResult<UserOption>>('/api/v1/admin/users', {
+        query: { search: debounced, active: true, pageSize: 10 },
+        signal,
+      }),
     enabled: canPickUsers && !limit && debounced.length >= 2,
   });
 
@@ -120,7 +155,9 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
           }}
         >
           <DialogBody>
-            <DialogTitle>{limit ? `Discount limit of ${limit.userName ?? 'user'}` : 'Add a discount limit'}</DialogTitle>
+            <DialogTitle>
+              {limit ? `Discount limit of ${limit.userName ?? 'user'}` : 'Add a discount limit'}
+            </DialogTitle>
             <DialogContent className={styles.body}>
               {!limit &&
                 (canPickUsers ? (
@@ -153,9 +190,21 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
                 validationMessage={percent && !parsedPercent.ok ? parsedPercent.error : undefined}
                 validationState={percent && !parsedPercent.ok ? 'error' : 'none'}
               >
-                <Input value={percent} onChange={(_, d) => setPercent(d.value)} inputMode="decimal" contentAfter={<Text>%</Text>} autoFocus={Boolean(limit)} />
+                <Input
+                  value={percent}
+                  onChange={(_, d) => setPercent(d.value)}
+                  inputMode="decimal"
+                  contentAfter={<Text>%</Text>}
+                  autoFocus={Boolean(limit)}
+                />
               </Field>
-              <AmountField label="Rupee cap per bill" hint="Optional. The lower of the two limits applies." value={cap} onChange={setCap} error={parsedCap && !parsedCap.ok ? parsedCap.error : null} />
+              <AmountField
+                label="Rupee cap per bill"
+                hint="Optional. The lower of the two limits applies."
+                value={cap}
+                onChange={setCap}
+                error={parsedCap && !parsedCap.ok ? parsedCap.error : null}
+              />
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={300} rows={2} />
               </Field>
@@ -165,7 +214,12 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Save limit
               </Button>
             </DialogActions>

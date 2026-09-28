@@ -1,8 +1,29 @@
-import { Button, Caption1, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, makeStyles, OverlayDrawer, Spinner, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  makeStyles,
+  OverlayDrawer,
+  Spinner,
+  tokens,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -31,12 +52,23 @@ function schemaFor(isNew: boolean) {
       relationToHolder: z.string().trim().max(64),
       validFrom: z.string({ error: 'Enter the start date.' }).min(1, 'Enter the start date.'),
       validTo: z.string({ error: 'Enter the end date.' }).min(1, 'Enter the end date.'),
-      sumInsured: z.number({ error: 'Enter the sum insured.' }).min(0).max(100_000_000, 'The amount is too large.').refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
-      coPayPercent: z.number({ error: 'Enter a percentage.' }).min(0).max(100, 'At most 100 %.').refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
+      sumInsured: z
+        .number({ error: 'Enter the sum insured.' })
+        .min(0)
+        .max(100_000_000, 'The amount is too large.')
+        .refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
+      coPayPercent: z
+        .number({ error: 'Enter a percentage.' })
+        .min(0)
+        .max(100, 'At most 100 %.')
+        .refine(hasAtMostTwoDecimals, 'Use at most 2 decimal places.'),
       isActive: z.boolean(),
       notes: z.string().max(1000),
     })
-    .refine((v) => !v.validFrom || !v.validTo || v.validTo >= v.validFrom, { path: ['validTo'], message: 'The policy must end after it starts.' });
+    .refine((v) => !v.validFrom || !v.validTo || v.validTo >= v.validFrom, {
+      path: ['validTo'],
+      message: 'The policy must end after it starts.',
+    });
 }
 
 type PolicyForm = z.infer<ReturnType<typeof schemaFor>>;
@@ -44,7 +76,15 @@ type PolicyForm = z.infer<ReturnType<typeof schemaFor>>;
 const blank = (value: string) => (value.trim() ? value.trim() : null);
 
 /** Record or update a patient's insurance policy (INS-03). The number is stored encrypted and shown masked. */
-export function PolicyDrawer({ patientId, policy, onClose }: { patientId: string; policy: PolicyDto | null; onClose: () => void }) {
+export function PolicyDrawer({
+  patientId,
+  policy,
+  onClose,
+}: {
+  patientId: string;
+  policy: PolicyDto | null;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -67,8 +107,8 @@ export function PolicyDrawer({ patientId, policy, onClose }: { patientId: string
     },
   });
 
-  const save = useMutation({
-    mutationFn: (values: PolicyForm) => {
+  const save = useMutation<void, unknown, PolicyForm>({
+    mutationFn: async (values) => {
       const request = {
         patientId,
         payerId: values.payerId,
@@ -86,7 +126,11 @@ export function PolicyDrawer({ patientId, policy, onClose }: { patientId: string
         notes: blank(values.notes),
         version: policy?.version ?? null,
       };
-      return policy ? insuranceApi.updatePolicy(policy.id, request) : insuranceApi.createPolicy(request);
+      if (policy) {
+        await insuranceApi.updatePolicy(policy.id, request);
+      } else {
+        await insuranceApi.createPolicy(request);
+      }
     },
     onSuccess: () => {
       notify.success(policy ? 'Policy saved' : 'Policy recorded');
@@ -105,27 +149,51 @@ export function PolicyDrawer({ patientId, policy, onClose }: { patientId: string
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {policy ? `Policy ${policy.policyNumberMasked}` : 'Record a policy'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
-            <SelectField control={form.control} name="payerId" label="Insurer or scheme" required placeholder="Choose…" options={insurers} />
-            <SelectField control={form.control} name="tpaId" label="TPA" placeholder="No TPA (insurer settles directly)" options={tpas} />
+            <SelectField
+              control={form.control}
+              name="payerId"
+              label="Insurer or scheme"
+              required
+              placeholder="Choose…"
+              options={insurers}
+            />
+            <SelectField
+              control={form.control}
+              name="tpaId"
+              label="TPA"
+              placeholder="No TPA (insurer settles directly)"
+              options={tpas}
+            />
             <TextField
               control={form.control}
               name="policyNumber"
               label="Policy or card number"
               required={!policy}
-              hint={policy ? `Stored as ${policy.policyNumberMasked}. Leave empty to keep it; type a new number only to correct it.` : 'Stored encrypted; lists show it masked.'}
+              hint={
+                policy
+                  ? `Stored as ${policy.policyNumberMasked}. Leave empty to keep it; type a new number only to correct it.`
+                  : 'Stored encrypted; lists show it masked.'
+              }
               autoComplete="off"
               autoFocus
             />
             <FormGrid columns={2} minColumnWidth={180}>
               <TextField control={form.control} name="memberId" label="Member id" />
               <TextField control={form.control} name="policyHolderName" label="Policy holder" />
-              <TextField control={form.control} name="relationToHolder" label="Relation to holder" hint="e.g. Self, Spouse, Son" />
+              <TextField
+                control={form.control}
+                name="relationToHolder"
+                label="Relation to holder"
+                hint="e.g. Self, Spouse, Son"
+              />
               <DateField control={form.control} name="validFrom" label="Valid from" required />
               <DateField control={form.control} name="validTo" label="Valid to" required />
               <NumberField control={form.control} name="sumInsured" label="Sum insured (₹)" min={0} step={1000} />
@@ -133,12 +201,19 @@ export function PolicyDrawer({ patientId, policy, onClose }: { patientId: string
             </FormGrid>
             <SwitchField control={form.control} name="isActive" label="Active" />
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
-            <Caption1 className={styles.muted}>Scan the insurance card into the patient&apos;s documents on the patient profile.</Caption1>
+            <Caption1 className={styles.muted}>
+              Scan the insurance card into the patient&apos;s documents on the patient profile.
+            </Caption1>
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {policy ? 'Save policy' : 'Record policy'}
           </Button>
           <Button onClick={onClose} disabled={save.isPending}>

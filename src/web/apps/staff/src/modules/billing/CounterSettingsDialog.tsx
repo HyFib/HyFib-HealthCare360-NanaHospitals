@@ -56,18 +56,39 @@ export function CounterSettingsDialog({ open, onClose }: { open: boolean; onClos
             <DialogContent className={styles.body}>
               <Text>These settings belong to this computer, not to your user.</Text>
               <Field label="Counter name" hint="Used when you open a cash shift, e.g. OPD Counter 1">
-                <Input value={draft.counter} onChange={(_, data) => setDraft({ ...draft, counter: data.value })} maxLength={64} autoFocus />
+                <Input
+                  value={draft.counter}
+                  onChange={(_, data) => setDraft({ ...draft, counter: data.value })}
+                  maxLength={64}
+                  autoFocus
+                />
               </Field>
-              <Field label="Card / UPI terminal id" hint="Printed on the terminal. Leave blank if no terminal is connected.">
-                <Input value={draft.terminalId} onChange={(_, data) => setDraft({ ...draft, terminalId: data.value })} maxLength={64} />
+              <Field
+                label="Card / UPI terminal id"
+                hint="Printed on the terminal. Leave blank if no terminal is connected."
+              >
+                <Input
+                  value={draft.terminalId}
+                  onChange={(_, data) => setDraft({ ...draft, terminalId: data.value })}
+                  maxLength={64}
+                />
               </Field>
               <Field label="Receipts print on">
-                <RadioGroup value={draft.receiptFormat} onChange={(_, data) => setDraft({ ...draft, receiptFormat: data.value === 'A4' ? 'A4' : 'Receipt80' })}>
+                <RadioGroup
+                  value={draft.receiptFormat}
+                  onChange={(_, data) =>
+                    setDraft({ ...draft, receiptFormat: data.value === 'A4' ? 'A4' : 'Receipt80' })
+                  }
+                >
                   <Radio value="Receipt80" label="Receipt printer (80 mm), without asking" />
                   <Radio value="A4" label="A4 paper, choosing the printer each time" />
                 </RadioGroup>
               </Field>
-              <Switch checked={draft.autoPrint} onChange={(_, data) => setDraft({ ...draft, autoPrint: data.checked })} label="Print the receipt as soon as a payment is recorded" />
+              <Switch
+                checked={draft.autoPrint}
+                onChange={(_, data) => setDraft({ ...draft, autoPrint: data.checked })}
+                label="Print the receipt as soon as a payment is recorded"
+              />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose}>Cancel</Button>

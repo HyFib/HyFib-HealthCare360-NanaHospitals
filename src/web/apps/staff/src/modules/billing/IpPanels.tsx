@@ -51,7 +51,18 @@ import { BILL_TYPE_LABEL, modeSummaryLabel, PAYER_TYPE_LABEL, PAYER_TYPES, REFUN
 import { mastersQueries } from './mastersApi';
 import { amountInputText, formatPercent, fromPaise, maxBig, parseRupees, toPaise } from './money';
 import { RequestRefundDialog } from './RefundDialogs';
-import { ActionError, Amount, AmountField, BillStatusBadge, Detail, DetailGrid, ReasonDialog, RefundStatusBadge, SummaryList, SummaryRow } from './ui';
+import {
+  ActionError,
+  Amount,
+  AmountField,
+  BillStatusBadge,
+  Detail,
+  DetailGrid,
+  ReasonDialog,
+  RefundStatusBadge,
+  SummaryList,
+  SummaryRow,
+} from './ui';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -75,10 +86,18 @@ export function IpBillsPanel({ account }: { account: IpAccountDetail }) {
   const { printReceiptById } = useBillingPrint();
   const [refunding, setRefunding] = useState(false);
   const bills = useQuery(billingQueries.bills({ admissionId: account.admissionId, pageSize: 50 }));
-  const receipts = useQuery({ ...billingQueries.receipts({ ipAccountId: account.id, pageSize: 50 }), enabled: canReadReceipts });
-  const refunds = useQuery({ ...billingQueries.refunds({ patientId: account.patientId, pageSize: 50 }), enabled: canReadRefunds });
+  const receipts = useQuery({
+    ...billingQueries.receipts({ ipAccountId: account.id, pageSize: 50 }),
+    enabled: canReadReceipts,
+  });
+  const refunds = useQuery({
+    ...billingQueries.refunds({ patientId: account.patientId, pageSize: 50 }),
+    enabled: canReadRefunds,
+  });
   const accountRefunds = (refunds.data?.items ?? []).filter((r) => r.ipAccountId === account.id);
-  const pending = accountRefunds.filter((r) => r.status === 'Requested' || r.status === 'Approved').reduce((sum, r) => sum + toPaise(r.amount), 0n);
+  const pending = accountRefunds
+    .filter((r) => r.status === 'Requested' || r.status === 'Approved')
+    .reduce((sum, r) => sum + toPaise(r.amount), 0n);
   const refundable = fromPaise(maxBig(toPaise(account.depositBalance) - pending, 0n));
 
   return (
@@ -95,11 +114,31 @@ export function IpBillsPanel({ account }: { account: IpAccountDetail }) {
           size="small"
           columns={[
             { key: 'no', header: 'Bill', render: (b) => <Text font="monospace">{b.billNumber ?? 'Draft'}</Text> },
-            { key: 'kind', header: 'Kind', render: (b) => (b.isFinalBill ? 'Final bill' : `${BILL_TYPE_LABEL[b.type]} bill`) },
-            { key: 'date', header: 'Date', priority: 'low', render: (b) => formatDateTime(b.finalizedAt ?? b.createdAt) },
+            {
+              key: 'kind',
+              header: 'Kind',
+              render: (b) => (b.isFinalBill ? 'Final bill' : `${BILL_TYPE_LABEL[b.type]} bill`),
+            },
+            {
+              key: 'date',
+              header: 'Date',
+              priority: 'low',
+              render: (b) => formatDateTime(b.finalizedAt ?? b.createdAt),
+            },
             { key: 'net', header: 'Total', align: 'end', render: (b) => <Amount value={b.netAmount} /> },
-            { key: 'payer', header: 'Insurer pays', align: 'end', priority: 'low', render: (b) => <Amount value={b.payerAmount} /> },
-            { key: 'due', header: 'Due', align: 'end', render: (b) => <Amount value={b.dueAmount} strong tone={b.dueAmount > 0 ? 'negative' : 'muted'} /> },
+            {
+              key: 'payer',
+              header: 'Insurer pays',
+              align: 'end',
+              priority: 'low',
+              render: (b) => <Amount value={b.payerAmount} />,
+            },
+            {
+              key: 'due',
+              header: 'Due',
+              align: 'end',
+              render: (b) => <Amount value={b.dueAmount} strong tone={b.dueAmount > 0 ? 'negative' : 'muted'} />,
+            },
             { key: 'status', header: 'Status', render: (b) => <BillStatusBadge status={b.status} /> },
           ]}
           emptyTitle="No bills yet"
@@ -133,11 +172,24 @@ export function IpBillsPanel({ account }: { account: IpAccountDetail }) {
             columns={[
               { key: 'no', header: 'Receipt', render: (r) => <Text font="monospace">{r.receiptNumber}</Text> },
               { key: 'at', header: 'Received', render: (r) => formatDateTime(r.receivedAt) },
-              { key: 'purpose', header: 'For', priority: 'low', render: (r) => (r.purpose === 'Deposit' ? 'Advance' : r.billId ? 'Bill payment' : r.purpose) },
+              {
+                key: 'purpose',
+                header: 'For',
+                priority: 'low',
+                render: (r) => (r.purpose === 'Deposit' ? 'Advance' : r.billId ? 'Bill payment' : r.purpose),
+              },
               { key: 'mode', header: 'Mode', render: (r) => modeSummaryLabel(r.modes) },
               { key: 'amount', header: 'Amount', align: 'end', render: (r) => <Amount value={r.amount} strong /> },
             ]}
-            rowActions={(r) => <Button size="small" appearance="subtle" icon={<PrintRegular />} aria-label={`Reprint ${r.receiptNumber}`} onClick={() => void printReceiptById(r.id)} />}
+            rowActions={(r) => (
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<PrintRegular />}
+                aria-label={`Reprint ${r.receiptNumber}`}
+                onClick={() => void printReceiptById(r.id)}
+              />
+            )}
             emptyTitle="No advance received yet"
           />
         </Section>
@@ -164,7 +216,12 @@ export function IpBillsPanel({ account }: { account: IpAccountDetail }) {
       {refunding && (
         <RequestRefundDialog
           open
-          target={{ kind: 'deposit', ipAccountId: account.id, max: refundable, label: `Unused advance of admission ${account.admissionNumber}` }}
+          target={{
+            kind: 'deposit',
+            ipAccountId: account.id,
+            max: refundable,
+            label: `Unused advance of admission ${account.admissionNumber}`,
+          }}
           onClose={() => setRefunding(false)}
         />
       )}
@@ -213,7 +270,11 @@ export function IpPackagePanel({ account }: { account: IpAccountDetail }) {
           canManage &&
           isActive(account) && (
             <div className={styles.row}>
-              <Select value={choice ?? ''} onChange={(_, d) => setChoice(d.value || undefined)} aria-label="Choose a package">
+              <Select
+                value={choice ?? ''}
+                onChange={(_, d) => setChoice(d.value || undefined)}
+                aria-label="Choose a package"
+              >
                 <option value="">{p ? 'Change package…' : 'Choose a package…'}</option>
                 {(packages.data ?? [])
                   .filter((x) => x.id !== account.packageId)
@@ -251,7 +312,9 @@ export function IpPackagePanel({ account }: { account: IpAccountDetail }) {
                 <Amount value={Math.abs(p.variance)} tone={p.variance >= 0 ? 'positive' : 'negative'} />
               </Detail>
             </DetailGrid>
-            <Field label={`Package used: ${p.packagePrice > 0 ? formatPercent(Math.min((p.covered / p.packagePrice) * 100, 999)) : '—'}`}>
+            <Field
+              label={`Package used: ${p.packagePrice > 0 ? formatPercent(Math.min((p.covered / p.packagePrice) * 100, 999)) : '—'}`}
+            >
               <ProgressBar
                 value={p.packagePrice > 0 ? Math.min(p.covered / p.packagePrice, 1) : 0}
                 color={p.covered > p.packagePrice ? 'error' : 'brand'}
@@ -268,13 +331,21 @@ export function IpPackagePanel({ account }: { account: IpAccountDetail }) {
                 { key: 'service', header: 'Service', render: (l) => `${l.description} (${l.serviceCode})` },
                 { key: 'gross', header: 'Amount', align: 'end', render: (l) => <Amount value={l.gross} /> },
                 { key: 'covered', header: 'Covered', align: 'end', render: (l) => <Amount value={l.covered} /> },
-                { key: 'excess', header: 'Excess', align: 'end', render: (l) => <Amount value={l.excess} tone={l.excess > 0 ? 'negative' : 'muted'} /> },
+                {
+                  key: 'excess',
+                  header: 'Excess',
+                  align: 'end',
+                  render: (l) => <Amount value={l.excess} tone={l.excess > 0 ? 'negative' : 'muted'} />,
+                },
               ]}
               emptyTitle="No services charged yet"
             />
           </div>
         ) : (
-          <Text className={styles.muted}>Assign a package (for example a normal delivery or a fixed-price surgery) to bill the stay at the package price.</Text>
+          <Text className={styles.muted}>
+            Assign a package (for example a normal delivery or a fixed-price surgery) to bill the stay at the package
+            price.
+          </Text>
         )}
       </Section>
       <ConfirmDialog
@@ -289,7 +360,9 @@ export function IpPackagePanel({ account }: { account: IpAccountDetail }) {
           assign.reset();
         }}
       >
-        {choice ? 'The stay is billed at the package price; services beyond its inclusions are billed separately.' : 'Every service of the stay is billed item by item again.'}
+        {choice
+          ? 'The stay is billed at the package price; services beyond its inclusions are billed separately.'
+          : 'Every service of the stay is billed item by item again.'}
         <ActionError error={assign.error} />
       </ConfirmDialog>
     </div>
@@ -308,7 +381,10 @@ export function IpPayerPanel({ account }: { account: IpAccountDetail }) {
   const canSeePreAuths = usePermission(['insurance.preauth.manage', 'insurance.claims.manage', 'billing.ip.manage']);
   const [editing, setEditing] = useState(false);
   const policy = useQuery({ ...insuranceQueries.policy(account.policyId ?? ''), enabled: Boolean(account.policyId) });
-  const preAuths = useQuery({ ...insuranceQueries.preAuths({ admissionId: account.admissionId }), enabled: canSeePreAuths });
+  const preAuths = useQuery({
+    ...insuranceQueries.preAuths({ admissionId: account.admissionId }),
+    enabled: canSeePreAuths,
+  });
 
   return (
     <div className={styles.stack}>
@@ -328,7 +404,11 @@ export function IpPayerPanel({ account }: { account: IpAccountDetail }) {
           <Detail label="Insurer / corporate / scheme">{account.payerName}</Detail>
           <Detail label="Tariff">{account.tariffPlanName}</Detail>
           <Detail label="Policy">
-            {policy.data ? `${policy.data.payerName ?? ''} ${policy.data.policyNumberMasked}${policy.data.tpaName ? ` · TPA ${policy.data.tpaName}` : ''}` : account.policyId ? '…' : null}
+            {policy.data
+              ? `${policy.data.payerName ?? ''} ${policy.data.policyNumberMasked}${policy.data.tpaName ? ` · TPA ${policy.data.tpaName}` : ''}`
+              : account.policyId
+                ? '…'
+                : null}
           </Detail>
           <Detail label="Estimate given">
             <Amount value={account.estimatedAmount} />
@@ -352,12 +432,32 @@ export function IpPayerPanel({ account }: { account: IpAccountDetail }) {
             columns={[
               { key: 'no', header: 'Number', render: (p) => <Text font="monospace">{p.number || 'Draft'}</Text> },
               { key: 'payer', header: 'Insurer', render: (p) => p.payerName ?? '—' },
-              { key: 'requested', header: 'Requested', align: 'end', render: (p) => <Amount value={p.requestedAmount} /> },
-              { key: 'approved', header: 'Approved', align: 'end', render: (p) => <Amount value={p.effectiveApprovedAmount} strong /> },
-              { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} tone={preAuthTone(p.status)} label={PREAUTH_STATUS_LABEL[p.status]} /> },
+              {
+                key: 'requested',
+                header: 'Requested',
+                align: 'end',
+                render: (p) => <Amount value={p.requestedAmount} />,
+              },
+              {
+                key: 'approved',
+                header: 'Approved',
+                align: 'end',
+                render: (p) => <Amount value={p.effectiveApprovedAmount} strong />,
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                render: (p) => (
+                  <StatusBadge status={p.status} tone={preAuthTone(p.status)} label={PREAUTH_STATUS_LABEL[p.status]} />
+                ),
+              },
             ]}
             emptyTitle="No pre-authorisation"
-            emptyDescription={account.payerType === 'Insurance' ? 'The insurance desk requests cashless approval from the Insurance screens.' : undefined}
+            emptyDescription={
+              account.payerType === 'Insurance'
+                ? 'The insurance desk requests cashless approval from the Insurance screens.'
+                : undefined
+            }
           />
         </Section>
       )}
@@ -384,10 +484,17 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
   const policies = useQuery({ ...insuranceQueries.policies(account.patientId), enabled: payerType === 'Insurance' });
   const parsedEstimate = parseRupees(estimate, { allowZero: true });
   const payerOptions = (payers.data ?? []).filter((p) =>
-    payerType === 'Insurance' ? p.category === 'Insurer' || p.category === 'Tpa' : payerType === 'Corporate' ? p.category === 'Corporate' : p.category === 'GovernmentScheme',
+    payerType === 'Insurance'
+      ? p.category === 'Insurer' || p.category === 'Tpa'
+      : payerType === 'Corporate'
+        ? p.category === 'Corporate'
+        : p.category === 'GovernmentScheme',
   );
   const valid = parsedEstimate.ok && (!needsPayer || payerId !== '');
-  const changesPricing = payerType !== account.payerType || (payerId || null) !== account.payerId || (tariffPlanId || null) !== account.tariffPlanId;
+  const changesPricing =
+    payerType !== account.payerType ||
+    (payerId || null) !== account.payerId ||
+    (tariffPlanId || null) !== account.tariffPlanId;
 
   const save = useMutation({
     mutationFn: () =>
@@ -402,7 +509,10 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
         version: account.version,
       }),
     onSuccess: () => {
-      notify.success('IP account updated', changesPricing && reprice ? 'Unbilled services were priced again on the new tariff.' : undefined);
+      notify.success(
+        'IP account updated',
+        changesPricing && reprice ? 'Unbilled services were priced again on the new tariff.' : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: ipKeys.account(account.id) });
       void refresh();
       onClose();
@@ -467,9 +577,18 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
                   ))}
                 </Select>
               </Field>
-              <AmountField label="Estimate given to the patient" value={estimate} onChange={setEstimate} error={parsedEstimate.ok ? null : parsedEstimate.error} />
+              <AmountField
+                label="Estimate given to the patient"
+                value={estimate}
+                onChange={setEstimate}
+                error={parsedEstimate.ok ? null : parsedEstimate.error}
+              />
               {changesPricing && (
-                <Switch checked={reprice} onChange={(_, d) => setReprice(d.checked)} label="Price the services not yet billed again on the new tariff" />
+                <Switch
+                  checked={reprice}
+                  onChange={(_, d) => setReprice(d.checked)}
+                  label="Price the services not yet billed again on the new tariff"
+                />
               )}
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={1000} rows={2} />
@@ -480,7 +599,12 @@ function IpPayerDialog({ account, onClose }: { account: IpAccountDetail; onClose
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Save
               </Button>
             </DialogActions>
@@ -528,7 +652,10 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
     mutationFn: () => ipApi.prepareFinalBill(account.id),
     onSuccess: (bill) => {
       afterChange();
-      notify.success(bill.isFinalBill ? 'Final bill prepared' : 'Supplementary bill prepared', 'Check it, apply any discount, then finalise.');
+      notify.success(
+        bill.isFinalBill ? 'Final bill prepared' : 'Supplementary bill prepared',
+        'Check it, apply any discount, then finalise.',
+      );
       void navigate({ to: '/billing/bills/$billId', params: { billId: bill.id } });
     },
   });
@@ -545,7 +672,10 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
     mutationFn: (reason: string) => ipApi.approveDischargeWithDues(account.id, reason),
     onSuccess: () => {
       setDialog(null);
-      notify.warning('Discharge with dues approved', 'The ward can discharge the patient; the dues stay on the account.');
+      notify.warning(
+        'Discharge with dues approved',
+        'The ward can discharge the patient; the dues stay on the account.',
+      );
       afterChange();
     },
   });
@@ -578,10 +708,23 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               </span>
             </div>
             <SummaryList>
-              <SummaryRow label="Services not billed yet" hint={c.unbilledCount > 0 ? `${c.unbilledCount} item(s)` : undefined}>
+              <SummaryRow
+                label="Services not billed yet"
+                hint={c.unbilledCount > 0 ? `${c.unbilledCount} item(s)` : undefined}
+              >
                 <Amount value={c.unbilledAmount} />
               </SummaryRow>
-              <SummaryRow label="Final bill">{c.hasFinalBill ? <Badge appearance="tint" color="success">Finalised</Badge> : <Badge appearance="tint" color="warning">Not finalised</Badge>}</SummaryRow>
+              <SummaryRow label="Final bill">
+                {c.hasFinalBill ? (
+                  <Badge appearance="tint" color="success">
+                    Finalised
+                  </Badge>
+                ) : (
+                  <Badge appearance="tint" color="warning">
+                    Not finalised
+                  </Badge>
+                )}
+              </SummaryRow>
               <SummaryRow label="Patient's share still due">
                 <Amount value={c.patientDue} />
               </SummaryRow>
@@ -605,14 +748,22 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
       </Section>
 
       {canManage && (
-        <Section title="Billing steps" description="Interim bills are for self-pay stays; insured and package stays are billed on the final bill.">
+        <Section
+          title="Billing steps"
+          description="Interim bills are for self-pay stays; insured and package stays are billed on the final bill."
+        >
           <div className={styles.row}>
             {isActive(account) && (
               <Button icon={<ReceiptRegular />} onClick={() => setDialog('interim')} disabled={interim.isPending}>
                 Interim bill
               </Button>
             )}
-            <Button appearance="primary" icon={finalBill.isPending ? <Spinner size="tiny" /> : <DocumentCheckmarkRegular />} onClick={() => finalBill.mutate()} disabled={finalBill.isPending}>
+            <Button
+              appearance="primary"
+              icon={finalBill.isPending ? <Spinner size="tiny" /> : <DocumentCheckmarkRegular />}
+              onClick={() => finalBill.mutate()}
+              disabled={finalBill.isPending}
+            >
               {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
             </Button>
             <Button icon={<HandshakeRegular />} onClick={() => setDialog('settle')} disabled={!c?.hasFinalBill}>
@@ -633,15 +784,29 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
           <MessageBarBody>
             <MessageBarTitle>Account settled</MessageBarTitle>
             {formatInr(settlement.advanceAdjusted)} of the advance was adjusted against the bills.{' '}
-            {settlement.remainingDue > 0 ? `${formatInr(settlement.remainingDue)} is still to be collected.` : 'Nothing is left to collect.'}{' '}
-            {settlement.refundRequested > 0 ? `A refund of ${formatInr(settlement.refundRequested)} (unused advance) now waits for approval.` : ''}
+            {settlement.remainingDue > 0
+              ? `${formatInr(settlement.remainingDue)} is still to be collected.`
+              : 'Nothing is left to collect.'}{' '}
+            {settlement.refundRequested > 0
+              ? `A refund of ${formatInr(settlement.refundRequested)} (unused advance) now waits for approval.`
+              : ''}
           </MessageBarBody>
           <div className={styles.row}>
-            <Button icon={<DoorArrowRightRegular />} onClick={() => void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId } })}>
+            <Button
+              icon={<DoorArrowRightRegular />}
+              onClick={() =>
+                void navigate({ to: '/billing/bills/$billId', params: { billId: settlement.finalBillId } })
+              }
+            >
               Open the final bill
             </Button>
             {settlement.refundId && (
-              <Button icon={<ArrowUndoRegular />} onClick={() => void navigate({ to: '/billing/refunds/$refundId', params: { refundId: settlement.refundId! } })}>
+              <Button
+                icon={<ArrowUndoRegular />}
+                onClick={() =>
+                  void navigate({ to: '/billing/refunds/$refundId', params: { refundId: settlement.refundId! } })
+                }
+              >
                 Open the refund
               </Button>
             )}
@@ -656,7 +821,13 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
             <DialogContent className={styles.body}>
               <Text>Bills the services charged so far (or up to a date) so the family can pay during the stay.</Text>
               <Field label="Services up to" hint="Leave empty for everything charged so far">
-                <Input type="date" value={upTo} max={todayIso()} min={istDateOf(account.admittedAt)} onChange={(_, d) => setUpTo(d.value)} />
+                <Input
+                  type="date"
+                  value={upTo}
+                  max={todayIso()}
+                  min={istDateOf(account.admittedAt)}
+                  onChange={(_, d) => setUpTo(d.value)}
+                />
               </Field>
               <ActionError error={interim.error} />
             </DialogContent>
@@ -664,7 +835,12 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
               <Button onClick={() => setDialog(null)} disabled={interim.isPending}>
                 Cancel
               </Button>
-              <Button appearance="primary" onClick={() => interim.mutate()} disabled={interim.isPending} icon={interim.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                appearance="primary"
+                onClick={() => interim.mutate()}
+                disabled={interim.isPending}
+                icon={interim.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Draft interim bill
               </Button>
             </DialogActions>
@@ -684,7 +860,8 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
         }}
       >
         <Text block>
-          The advance of <Amount value={account.depositBalance} strong /> is adjusted against the open bills of this admission, oldest first. Any unused advance becomes a refund request for approval.
+          The advance of <Amount value={account.depositBalance} strong /> is adjusted against the open bills of this
+          admission, oldest first. Any unused advance becomes a refund request for approval.
         </Text>
         <ActionError error={settle.error} />
       </ConfirmDialog>
@@ -692,7 +869,11 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
       <ReasonDialog
         open={dialog === 'dues'}
         title="Approve discharge with dues?"
-        description={c ? `${formatInr(c.outstanding)} is outstanding. The patient may leave; the dues stay on the account and are recorded against your name.` : undefined}
+        description={
+          c
+            ? `${formatInr(c.outstanding)} is outstanding. The patient may leave; the dues stay on the account and are recorded against your name.`
+            : undefined
+        }
         confirmLabel="Approve discharge"
         destructive
         busy={approveDues.isPending}

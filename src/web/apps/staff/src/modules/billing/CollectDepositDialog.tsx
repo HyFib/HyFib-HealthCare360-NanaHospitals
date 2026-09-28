@@ -18,7 +18,13 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DoorArrowRightRegular, LinkRegular, PaymentRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DoorArrowRightRegular,
+  LinkRegular,
+  PaymentRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -37,9 +43,26 @@ const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '14px' },
   head: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '16px', flexWrap: 'wrap' },
   label: { color: tokens.colorNeutralForeground3, textTransform: 'uppercase', letterSpacing: '0.5px' },
-  total: { fontSize: '36px', lineHeight: '42px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '8px 0', textAlign: 'center' },
-  change: { fontSize: '40px', lineHeight: '48px', fontWeight: tokens.fontWeightBold, color: tokens.colorPaletteGreenForeground1 },
+  total: {
+    fontSize: '36px',
+    lineHeight: '42px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 0',
+    textAlign: 'center',
+  },
+  change: {
+    fontSize: '40px',
+    lineHeight: '48px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorPaletteGreenForeground1,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   row: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
 });
@@ -57,7 +80,17 @@ export interface DepositAccount {
  * In-patient advance (IPB-01) collected at the counter: any split of cash, card, UPI, cheque; or a card terminal, or a
  * payment link sent to the family. Prints the advance receipt on the counter printer.
  */
-export function CollectDepositDialog({ account, open, onClose, onCollected }: { account: DepositAccount; open: boolean; onClose: () => void; onCollected?: (receipt: ReceiptDto) => void }) {
+export function CollectDepositDialog({
+  account,
+  open,
+  onClose,
+  onCollected,
+}: {
+  account: DepositAccount;
+  open: boolean;
+  onClose: () => void;
+  onCollected?: (receipt: ReceiptDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useRefreshBilling();
@@ -94,7 +127,11 @@ export function CollectDepositDialog({ account, open, onClose, onCollected }: { 
   const collect = useMutation({
     mutationFn: () => {
       const payments = lines.map((line) => checkPaymentLine(line, today)).flatMap((c) => (c.ok ? [c.input] : []));
-      return billingApi.collectDeposit(account.id, { payments, notes: notes.trim() || null }, { idempotencyKey: attemptKey });
+      return billingApi.collectDeposit(
+        account.id,
+        { payments, notes: notes.trim() || null },
+        { idempotencyKey: attemptKey },
+      );
     },
     onSuccess: (receipt) => {
       renewAttempt();
@@ -149,7 +186,8 @@ export function CollectDepositDialog({ account, open, onClose, onCollected }: { 
                     <div>
                       <Text weight="semibold">{account.patientName}</Text>
                       <Caption1 block className={styles.muted}>
-                        {account.uhid} · Admission {account.admissionNumber} · advance held <Amount value={account.depositBalance} />
+                        {account.uhid} · Admission {account.admissionNumber} · advance held{' '}
+                        <Amount value={account.depositBalance} />
                         {account.estimatedAmount ? ` · estimate ${formatInr(account.estimatedAmount)}` : ''}
                       </Caption1>
                     </div>
@@ -192,7 +230,13 @@ export function CollectDepositDialog({ account, open, onClose, onCollected }: { 
                     </Button>
                   </div>
                   <Field label="Note on the receipt" hint="Optional">
-                    <Textarea value={notes} onChange={(_, data) => setNotes(data.value)} maxLength={500} rows={1} resize="vertical" />
+                    <Textarea
+                      value={notes}
+                      onChange={(_, data) => setNotes(data.value)}
+                      maxLength={500}
+                      rows={1}
+                      resize="vertical"
+                    />
                   </Field>
                   <ActionError error={collect.error} />
                 </>
@@ -216,7 +260,13 @@ export function CollectDepositDialog({ account, open, onClose, onCollected }: { 
                   <Button onClick={onClose} disabled={collect.isPending}>
                     Cancel
                   </Button>
-                  <Button appearance="primary" size="large" onClick={submit} disabled={!canCollect} icon={collect.isPending ? <Spinner size="tiny" /> : undefined}>
+                  <Button
+                    appearance="primary"
+                    size="large"
+                    onClick={submit}
+                    disabled={!canCollect}
+                    icon={collect.isPending ? <Spinner size="tiny" /> : undefined}
+                  >
                     Collect {formatInr(summary.total)}
                     <KeyHint>Ctrl+Enter</KeyHint>
                   </Button>
@@ -242,7 +292,9 @@ export function CollectDepositDialog({ account, open, onClose, onCollected }: { 
           }}
         />
       )}
-      {side === 'link' && <PaymentLinkDialog open target={{ kind: 'ip', ipAccountId: account.id }} onClose={() => setSide(null)} />}
+      {side === 'link' && (
+        <PaymentLinkDialog open target={{ kind: 'ip', ipAccountId: account.id }} onClose={() => setSide(null)} />
+      )}
       <OpenShiftDialog open={side === 'shift'} onClose={() => setSide(null)} onOpened={() => setSide(null)} />
     </>
   );

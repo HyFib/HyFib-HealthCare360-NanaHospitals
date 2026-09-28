@@ -30,7 +30,12 @@ const useStyles = makeStyles({
   row: { display: 'inline-flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' },
 });
 
-const PURPOSES = ['Filling the pre-authorisation form', 'Submitting or following up a claim', 'Verification call with the insurer or TPA', 'Correcting the policy record'] as const;
+const PURPOSES = [
+  'Filling the pre-authorisation form',
+  'Submitting or following up a claim',
+  'Verification call with the insurer or TPA',
+  'Correcting the policy record',
+] as const;
 
 /** Seconds the full number stays on screen. */
 const VISIBLE_FOR = 60;
@@ -85,7 +90,13 @@ export function PolicyNumberReveal({ policyId, masked }: { policyId: string; mas
           aria-label="Copy the policy number"
           onClick={() => void navigator.clipboard?.writeText(number).then(() => notify.info('Policy number copied'))}
         />
-        <Button size="small" appearance="subtle" icon={<EyeOffRegular />} aria-label="Hide the policy number" onClick={() => setNumber(null)} />
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<EyeOffRegular />}
+          aria-label="Hide the policy number"
+          onClick={() => setNumber(null)}
+        />
       </span>
     );
   }
@@ -104,7 +115,10 @@ export function PolicyNumberReveal({ policyId, masked }: { policyId: string; mas
             <DialogTitle>Show the full policy number?</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <MessageBar intent="warning">
-                <MessageBarBody>Your name and the time are recorded in the patient&apos;s access log. The number hides again after a minute.</MessageBarBody>
+                <MessageBarBody>
+                  Your name and the time are recorded in the patient&apos;s access log. The number hides again after a
+                  minute.
+                </MessageBarBody>
               </MessageBar>
               <Field label="Why do you need it?" required>
                 <RadioGroup value={purpose} onChange={(_, d) => setPurpose(d.value)}>
@@ -120,7 +134,12 @@ export function PolicyNumberReveal({ policyId, masked }: { policyId: string; mas
               <Button onClick={() => setAsking(false)} disabled={busy}>
                 Cancel
               </Button>
-              <Button appearance="primary" disabled={!purpose || busy} icon={busy ? <Spinner size="tiny" /> : <EyeRegular />} onClick={() => void reveal()}>
+              <Button
+                appearance="primary"
+                disabled={!purpose || busy}
+                icon={busy ? <Spinner size="tiny" /> : <EyeRegular />}
+                onClick={() => void reveal()}
+              >
                 Show number
               </Button>
             </DialogActions>

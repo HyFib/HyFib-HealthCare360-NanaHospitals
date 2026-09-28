@@ -41,7 +41,11 @@ export function TodaysCollectionsWidget() {
   const canShifts = usePermission('billing.shifts');
   const today = todayIso();
   const report = useQuery({ ...billingQueries.dayEnd(today), enabled: canShifts, refetchInterval: 60_000 });
-  const receipts = useQuery({ ...billingQueries.receipts({ from: today, to: today, pageSize: 200 }), enabled: !canShifts, refetchInterval: 60_000 });
+  const receipts = useQuery({
+    ...billingQueries.receipts({ from: today, to: today, pageSize: 200 }),
+    enabled: !canShifts,
+    refetchInterval: 60_000,
+  });
 
   const error = canShifts ? report.error : receipts.error;
   if (error) {
@@ -61,7 +65,12 @@ export function TodaysCollectionsWidget() {
       title="Today's collections"
       description={canShifts ? 'All counters, net of refunds' : 'Receipts recorded today'}
       actions={
-        <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: canShifts ? '/billing/day-end' : '/billing/receipts' })}>
+        <Button
+          appearance="transparent"
+          icon={<ArrowRightRegular />}
+          iconPosition="after"
+          onClick={() => void navigate({ to: canShifts ? '/billing/day-end' : '/billing/receipts' })}
+        >
           {canShifts ? 'Day-end report' : 'Receipts'}
         </Button>
       }
@@ -91,7 +100,11 @@ export function TodaysCollectionsWidget() {
                   <Text>{PAYMENT_MODE_LABEL[mode.mode]}</Text>
                   <Amount value={mode.net} strong />
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <ProgressBar value={Math.abs(mode.net) / max} thickness="large" aria-label={`${PAYMENT_MODE_LABEL[mode.mode]}: ${formatInr(mode.net)}`} />
+                    <ProgressBar
+                      value={Math.abs(mode.net) / max}
+                      thickness="large"
+                      aria-label={`${PAYMENT_MODE_LABEL[mode.mode]}: ${formatInr(mode.net)}`}
+                    />
                   </div>
                 </div>
               ))}
@@ -133,7 +146,12 @@ export function DiscountApprovalsWidget() {
       title="Discounts awaiting approval"
       description={pending.data ? `${pending.data.totalCount} waiting` : undefined}
       actions={
-        <Button appearance="transparent" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/billing/discount-approvals' })}>
+        <Button
+          appearance="transparent"
+          icon={<ArrowRightRegular />}
+          iconPosition="after"
+          onClick={() => void navigate({ to: '/billing/discount-approvals' })}
+        >
           All requests
         </Button>
       }
@@ -149,7 +167,9 @@ export function DiscountApprovalsWidget() {
               key={request.id}
               type="button"
               className={styles.item}
-              onClick={() => void navigate({ to: '/billing/discount-approvals/$approvalId', params: { approvalId: request.id } })}
+              onClick={() =>
+                void navigate({ to: '/billing/discount-approvals/$approvalId', params: { approvalId: request.id } })
+              }
             >
               <Text weight="semibold">{request.patientName ?? request.uhid ?? 'Patient'}</Text>
               <Amount value={request.requestedAmount} strong />

@@ -141,7 +141,8 @@ export function checkPaymentLine(line: PaymentLineDraft, today: string): Payment
   const input: PaymentLineInput = {
     mode: line.mode,
     amount: amount.rupees,
-    reference: line.mode === 'Upi' || line.mode === 'NetBanking' || line.mode === 'Wallet' ? blankToNull(line.reference) : null,
+    reference:
+      line.mode === 'Upi' || line.mode === 'NetBanking' || line.mode === 'Wallet' ? blankToNull(line.reference) : null,
     cardLast4: line.mode === 'Card' ? blankToNull(line.cardLast4) : null,
     cardNetwork: line.mode === 'Card' ? blankToNull(line.cardNetwork) : null,
     chequeNumber: line.mode === 'Cheque' ? blankToNull(line.chequeNumber) : null,
@@ -166,7 +167,11 @@ export interface SplitSummary {
 }
 
 /** Totals of a split payment, with the change to return from the cash handed over (cash tendered). */
-export function summariseSplit(lines: readonly PaymentLineDraft[], due: number | null, cashTendered: string): SplitSummary {
+export function summariseSplit(
+  lines: readonly PaymentLineDraft[],
+  due: number | null,
+  cashTendered: string,
+): SplitSummary {
   let total = 0n;
   let cash = 0n;
   for (const line of lines) {

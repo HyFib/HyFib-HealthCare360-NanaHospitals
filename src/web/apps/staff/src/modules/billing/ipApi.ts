@@ -187,7 +187,11 @@ export const ipQueries = {
   accounts: (filters: IpAccountFilters) =>
     queryOptions({
       queryKey: [...ipKeys.all, 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<IpAccountListItem>>('/api/v1/billing/ip-accounts', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<IpAccountListItem>>('/api/v1/billing/ip-accounts', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   account: (id: string) =>
@@ -204,7 +208,10 @@ export const ipQueries = {
     queryOptions({
       queryKey: [...ipKeys.account(id), 'package'],
       // No package assigned comes back as an empty body.
-      queryFn: async ({ signal }) => (await api.get<PackageStatus | null | undefined>(`/api/v1/billing/ip-accounts/${id}/package-status`, { signal })) ?? null,
+      queryFn: async ({ signal }) =>
+        (await api.get<PackageStatus | null | undefined>(`/api/v1/billing/ip-accounts/${id}/package-status`, {
+          signal,
+        })) ?? null,
     }),
   clearance: (id: string) =>
     queryOptions({
@@ -215,9 +222,13 @@ export const ipQueries = {
 
 export const ipApi = {
   update: (id: string, request: UpdateIpAccountRequest) => api.put<void>(`/api/v1/billing/ip-accounts/${id}`, request),
-  assignPackage: (id: string, packageId: string | null, version: number) => api.put<void>(`/api/v1/billing/ip-accounts/${id}/package`, { packageId, version }),
-  createInterimBill: (id: string, upTo: string | null) => api.post<BillDetail>(`/api/v1/billing/ip-accounts/${id}/interim-bills`, { upTo }),
+  assignPackage: (id: string, packageId: string | null, version: number) =>
+    api.put<void>(`/api/v1/billing/ip-accounts/${id}/package`, { packageId, version }),
+  createInterimBill: (id: string, upTo: string | null) =>
+    api.post<BillDetail>(`/api/v1/billing/ip-accounts/${id}/interim-bills`, { upTo }),
   prepareFinalBill: (id: string) => api.post<BillDetail>(`/api/v1/billing/ip-accounts/${id}/final-bill`),
-  settle: (id: string, idempotencyKey?: string) => api.post<SettlementResult>(`/api/v1/billing/ip-accounts/${id}/settle`, undefined, { idempotencyKey }),
-  approveDischargeWithDues: (id: string, reason: string) => api.post<void>(`/api/v1/billing/ip-accounts/${id}/discharge-approval`, { reason }),
+  settle: (id: string, idempotencyKey?: string) =>
+    api.post<SettlementResult>(`/api/v1/billing/ip-accounts/${id}/settle`, undefined, { idempotencyKey }),
+  approveDischargeWithDues: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/billing/ip-accounts/${id}/discharge-approval`, { reason }),
 };
