@@ -1,0 +1,53 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.rsuser
+.vs/
+*.DotSettings.user
+TestResults/
+*.trx
+coverage*/
+artifacts/
+publish/
+
+# Node / web
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+.pnpm-store/
+playwright-report/
+test-results/
+blob-report/
+.eslintcache
+
+# Server runtime data (never commit PHI, keys, certificates or logs)
+**/App_Data/
+**/hc360-data/
+*.pfx
+*.pem
+*.key
+*.crt
+!deploy/**/sample-*.crt
+logs/
+*.log
+
+# Local configuration and secrets
+appsettings.*.local.json
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Server-embedded web build output (produced during publish)
+# Web builds are copied into the server's wwwroot by `pnpm build` (staff app at /, portal at /portal).
+src/server/HyFib.HealthCare360.Server/wwwroot/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+*.swp

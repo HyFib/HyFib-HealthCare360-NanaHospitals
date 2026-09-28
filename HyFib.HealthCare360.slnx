@@ -1,0 +1,56 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/server/">
+    <Project Path="src/server/HyFib.HealthCare360.Integrations/HyFib.HealthCare360.Integrations.csproj" />
+    <Project Path="src/server/HyFib.HealthCare360.Platform/HyFib.HealthCare360.Platform.csproj" />
+    <Project Path="src/server/HyFib.HealthCare360.Server/HyFib.HealthCare360.Server.csproj" />
+    <Project Path="src/server/HyFib.HealthCare360.SharedKernel/HyFib.HealthCare360.SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/src/server/Modules/">
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.AI/HyFib.HealthCare360.Modules.AI.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Analytics/HyFib.HealthCare360.Modules.Analytics.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Billing/HyFib.HealthCare360.Modules.Billing.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Clinical/HyFib.HealthCare360.Modules.Clinical.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics/HyFib.HealthCare360.Modules.Diagnostics.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Engagement/HyFib.HealthCare360.Modules.Engagement.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.HR/HyFib.HealthCare360.Modules.HR.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Inpatient/HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Patients/HyFib.HealthCare360.Modules.Patients.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy/HyFib.HealthCare360.Modules.Pharmacy.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Quality/HyFib.HealthCare360.Modules.Quality.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Scheduling/HyFib.HealthCare360.Modules.Scheduling.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare/HyFib.HealthCare360.Modules.SpecialtyCare.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.SupplyChain/HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.SupportServices/HyFib.HealthCare360.Modules.SupportServices.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/HyFib.HealthCare360.Modules.VirtualCare.csproj" />
+  </Folder>
+  <Folder Name="/src/desktop/">
+    <Project Path="src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj" />
+  </Folder>
+  <Folder Name="/src/shared/">
+    <Project Path="src/shared/HyFib.HealthCare360.WindowsInterop/HyFib.HealthCare360.WindowsInterop.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HyFib.HealthCare360.ArchitectureTests/HyFib.HealthCare360.ArchitectureTests.csproj" />
+    <Project Path="tests/HyFib.HealthCare360.Desktop.Tests/HyFib.HealthCare360.Desktop.Tests.csproj" />
+    <Project Path="tests/HyFib.HealthCare360.Integrations.Tests/HyFib.HealthCare360.Integrations.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/Modules/">
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.AI.Tests/HyFib.HealthCare360.Modules.AI.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Analytics.Tests/HyFib.HealthCare360.Modules.Analytics.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests/HyFib.HealthCare360.Modules.Billing.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests/HyFib.HealthCare360.Modules.Clinical.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests/HyFib.HealthCare360.Modules.Diagnostics.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Engagement.Tests/HyFib.HealthCare360.Modules.Engagement.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.HR.Tests/HyFib.HealthCare360.Modules.HR.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests/HyFib.HealthCare360.Modules.Inpatient.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Patients.Tests/HyFib.HealthCare360.Modules.Patients.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests/HyFib.HealthCare360.Modules.Pharmacy.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Quality.Tests/HyFib.HealthCare360.Modules.Quality.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Scheduling.Tests/HyFib.HealthCare360.Modules.Scheduling.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.SpecialtyCare.Tests/HyFib.HealthCare360.Modules.SpecialtyCare.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.SupplyChain.Tests/HyFib.HealthCare360.Modules.SupplyChain.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests/HyFib.HealthCare360.Modules.SupportServices.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests/HyFib.HealthCare360.Modules.VirtualCare.Tests.csproj" />
+  </Folder>
+</Solution>
