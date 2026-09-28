@@ -28,12 +28,15 @@ import {
 } from '@fluentui/react-components';
 import {
   ArrowUploadRegular,
+  BedRegular,
   CalendarAddRegular,
+  CalendarLtrRegular,
   DocumentRegular,
   EditRegular,
   MoreHorizontalRegular,
   PrintRegular,
   ShieldErrorRegular,
+  StethoscopeRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
@@ -83,6 +86,9 @@ function PatientProfilePage() {
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const canEdit = usePermission('patients.register');
   const canCheckIn = usePermission('visits.manage');
+  const canOpenChart = usePermission('clinical.emr.read');
+  const canBook = usePermission('scheduling.appointments.book');
+  const canAdmit = usePermission('inpatient.admissions.admit');
   const [checkIn, setCheckIn] = useState(false);
   const patient = useQuery(patientQueries.detail(patientId));
 
@@ -127,6 +133,21 @@ function PatientProfilePage() {
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
+                  {canOpenChart && (
+                    <MenuItem icon={<StethoscopeRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId }, search: {} })}>
+                      Open clinical chart
+                    </MenuItem>
+                  )}
+                  {canBook && !p.isDeceased && (
+                    <MenuItem icon={<CalendarLtrRegular />} onClick={() => void navigate({ to: '/scheduling/book', search: { patientId } })}>
+                      Book appointment
+                    </MenuItem>
+                  )}
+                  {canAdmit && !p.isDeceased && (
+                    <MenuItem icon={<BedRegular />} onClick={() => void navigate({ to: '/inpatient/admit', search: { patientId } })}>
+                      Admit
+                    </MenuItem>
+                  )}
                   <MenuItem
                     icon={<PrintRegular />}
                     onClick={() =>
