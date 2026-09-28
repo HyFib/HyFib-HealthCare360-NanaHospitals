@@ -61,5 +61,5 @@ export function saveCsv(rows: (string | number | null | undefined)[][], fileName
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   const csv = rows.map((row) => row.map(escape).join(',')).join('\r\n');
-  saveBlob(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }), fileName);
+  saveBlob(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }), fileName);
 }

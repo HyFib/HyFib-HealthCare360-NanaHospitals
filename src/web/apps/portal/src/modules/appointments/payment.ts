@@ -42,9 +42,9 @@ export async function payAppointment(
       return { status: 'not-paid', messageKey: 'payment.dismissed' };
     case 'failed':
       return { status: 'not-paid', messageKey: 'payment.failed' };
-    case 'captured':
     // Training gateway: appointment payments are confirmed only with a gateway signature, which the training gateway
     // cannot give the browser (reported); the appointment stays "pay at the hospital".
+    case 'captured':
     case 'redirected':
     case 'unavailable':
     default:

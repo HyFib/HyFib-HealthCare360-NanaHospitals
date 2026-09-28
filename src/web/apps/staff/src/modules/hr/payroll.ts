@@ -99,7 +99,7 @@ const MAX_AMOUNT = 10_000_000;
 export function previewInputsCsv(csv: string): CsvPreview {
   const lines: CsvInputLine[] = [];
   const errors: { line: number; message: string }[] = [];
-  const rows = csv.replace(/^﻿/, '').split(/\r?\n/);
+  const rows = csv.replace(/^\uFEFF/, '').split(/\r?\n/);
   let seenData = false;
 
   rows.forEach((raw, index) => {
