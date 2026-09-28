@@ -1,0 +1,247 @@
+namespace HyFib.HealthCare360.Modules.Clinical.Domain;
+
+public enum PrescriptionStatus
+{
+    Draft = 0,
+    Signed,
+    Cancelled,
+}
+
+/// <summary>Dosing frequency as written on Indian prescriptions. <see cref="Custom"/> accepts patterns such as "1-0-1".</summary>
+public enum DoseFrequency
+{
+    /// <summary>Once daily.</summary>
+    OD = 0,
+
+    /// <summary>Twice daily.</summary>
+    BD,
+
+    /// <summary>Three times daily.</summary>
+    TDS,
+
+    /// <summary>Four times daily.</summary>
+    QID,
+
+    /// <summary>At bedtime.</summary>
+    HS,
+
+    /// <summary>When required.</summary>
+    SOS,
+
+    /// <summary>Immediately, once.</summary>
+    STAT,
+    Custom,
+    Weekly,
+}
+
+/// <summary>What the prescriber confirmed when signing (safety override, controlled-drug confirmation).</summary>
+public sealed record PrescriptionSignature(
+    Guid? UserId,
+    string VerificationToken,
+    string? OverrideReason,
+    string? SafetyAlertsJson,
+    bool ControlledDrugsConfirmed);
+
+/// <summary>
+/// An e-prescription (ERX-01..06). Drafts are freely editable; signing runs the safety checks (in the service),
+/// allocates a verification token for the printed QR code and raises <see cref="PrescriptionSigned"/>, which puts
+/// it in the OP or IP pharmacy queue — no paper is needed for dispensing.
+/// </summary>
+public sealed class Prescription : AuditableEntity, IFacilityScoped
+{
+    public Guid FacilityId { get; set; }
+    public string PrescriptionNumber { get; set; } = string.Empty;
+    public Guid PatientId { get; set; }
+    public Guid? EncounterId { get; set; }
+    public Guid? VisitId { get; set; }
+    public Guid? AdmissionId { get; set; }
+    public Guid PractitionerId { get; set; }
+    public bool IsInpatient { get; set; }
+    public PrescriptionStatus Status { get; private set; }
+    public DateTimeOffset PrescribedAt { get; set; }
+    public DateTimeOffset? SignedAt { get; private set; }
+    public Guid? SignedByUserId { get; private set; }
+
+    /// <summary>Notes for the pharmacist/nurse.</summary>
+    public string? Notes { get; set; }
+
+    /// <summary>General advice printed for the patient (diet, rest, warning signs).</summary>
+    public string? Advice { get; set; }
+
+    public int RefillsAllowed { get; set; }
+    public int RefillsRemaining { get; private set; }
+
+    /// <summary>Set on prescriptions issued as a refill of an earlier signed prescription.</summary>
+    public Guid? RefillOfPrescriptionId { get; set; }
+
+    /// <summary>Unguessable token printed as a QR code; the public verification page shows only non-PHI facts.</summary>
+    public string? VerificationToken { get; private set; }
+
+    public string? SafetyOverrideReason { get; private set; }
+
+    /// <summary>JSON snapshot of the safety alerts shown at signing (medico-legal record of what the prescriber saw).</summary>
+    public string? SafetyAlerts { get; private set; }
+
+    public bool ControlledDrugsConfirmed { get; private set; }
+    public DateTimeOffset? CancelledAt { get; private set; }
+    public string? CancelReason { get; private set; }
+    public List<PrescriptionItem> Items { get; set; } = [];
+
+    public bool HasControlledDrugs => Items.Any(i => i.IsControlledDrug);
+
+    public Result ReplaceItems(IEnumerable<PrescriptionItem> items)
+    {
+        if (Status != PrescriptionStatus.Draft)
+        {
+            return Error.Rule("prescription.not_draft", "Only draft prescriptions can be edited. Cancel and re-prescribe instead.");
+        }
+
+        Items.Clear();
+        var sequence = 0;
+        foreach (var item in items)
+        {
+            item.PrescriptionId = Id;
+            item.Sequence = ++sequence;
+            Items.Add(item);
+        }
+
+        return Result.Success();
+    }
+
+    public Result Sign(PrescriptionSignature signature, DateTimeOffset now)
+    {
+        if (Status != PrescriptionStatus.Draft)
+        {
+            return Error.Rule("prescription.not_draft", Status == PrescriptionStatus.Signed ? "This prescription is already signed." : "This prescription is cancelled.");
+        }
+
+        if (Items.Count == 0)
+        {
+            return Error.Rule("prescription.empty", "Add at least one medicine before signing.");
+        }
+
+        if (Items.FirstOrDefault(i => i.Quantity <= 0) is { } missing)
+        {
+            return Error.Rule("prescription.quantity_missing", $"Enter the quantity to dispense for {missing.DrugName}.");
+        }
+
+        if (HasControlledDrugs && !signature.ControlledDrugsConfirmed)
+        {
+            return Error.Rule("prescription.controlled_confirmation_required",
+                "This prescription contains Schedule H1/X (narcotic or psychotropic) medicines. Confirm them explicitly to sign.");
+        }
+
+        Status = PrescriptionStatus.Signed;
+        SignedAt = now;
+        SignedByUserId = signature.UserId;
+        VerificationToken = signature.VerificationToken;
+        SafetyOverrideReason = string.IsNullOrWhiteSpace(signature.OverrideReason) ? null : signature.OverrideReason.Trim();
+        SafetyAlerts = signature.SafetyAlertsJson;
+        ControlledDrugsConfirmed = HasControlledDrugs;
+        RefillsRemaining = RefillsAllowed;
+
+        Raise(new PrescriptionSigned(Id, PrescriptionNumber, PatientId, VisitId, AdmissionId, FacilityId, PractitionerId, IsInpatient,
+            Items.OrderBy(i => i.Sequence).Select(ToLine).ToList(), now));
+        return Result.Success();
+    }
+
+    /// <summary>Cancelling a signed prescription withdraws it from the pharmacy queue.</summary>
+    public Result Cancel(string reason, DateTimeOffset now)
+    {
+        if (Status == PrescriptionStatus.Cancelled)
+        {
+            return Error.Rule("prescription.cancelled", "This prescription is already cancelled.");
+        }
+
+        var wasSigned = Status == PrescriptionStatus.Signed;
+        var trimmed = reason.Trim();
+        Status = PrescriptionStatus.Cancelled;
+        CancelledAt = now;
+        CancelReason = trimmed;
+        RefillsRemaining = 0;
+        if (wasSigned)
+        {
+            Raise(new PrescriptionCancelled(Id, PatientId, trimmed));
+        }
+
+        return Result.Success();
+    }
+
+    /// <summary>Consumes one authorised refill (ERX-05). The refill itself is issued as a new signed prescription.</summary>
+    public Result UseRefill()
+    {
+        if (Status != PrescriptionStatus.Signed)
+        {
+            return Error.Rule("prescription.not_signed", "Only signed prescriptions can be refilled.");
+        }
+
+        if (RefillsRemaining <= 0)
+        {
+            return Error.Rule("prescription.no_refills", "No refills remain on this prescription. A new prescription is needed.");
+        }
+
+        RefillsRemaining--;
+        return Result.Success();
+    }
+
+    /// <summary>Last day of the longest course, counting the signing day as day 1.</summary>
+    public DateOnly? CourseEndsOn(DateOnly startDate) =>
+        Items.Count == 0 ? null : startDate.AddDays(Math.Max(Items.Max(i => i.DurationDays), 1) - 1);
+
+    public static PrescriptionLine ToLine(PrescriptionItem i) => new(
+        i.Id, i.DrugItemId, i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Route, i.Dose, i.FrequencyText, i.DurationDays,
+        i.Quantity, i.Instructions, i.IsControlledDrug);
+}
+
+/// <summary>One medicine line with a snapshot of the drug master (name, generic, strength, form, route).</summary>
+public sealed class PrescriptionItem : AuditableEntity
+{
+    public Guid PrescriptionId { get; set; }
+    public int Sequence { get; set; }
+
+    /// <summary>Inventory item master id (SupplyChain) chosen by the prescriber; null for free-text medicines.</summary>
+    public Guid? DrugItemId { get; set; }
+
+    public string DrugName { get; set; } = string.Empty;
+    public string? GenericName { get; set; }
+    public string? Strength { get; set; }
+    public string? DosageForm { get; set; }
+    public string? Route { get; set; }
+
+    /// <summary>Dose per administration as written ("1 tab", "500 mg", "5 ml").</summary>
+    public string Dose { get; set; } = string.Empty;
+
+    public DoseFrequency Frequency { get; set; }
+    public string? CustomFrequency { get; set; }
+
+    /// <summary>Administrations per day used for quantity and dose checks (fractional for weekly schedules).</summary>
+    public decimal? DosesPerDay { get; set; }
+
+    public int DurationDays { get; set; }
+    public decimal Quantity { get; set; }
+    public string? Instructions { get; set; }
+
+    /// <summary>Schedule H1/X narcotic or psychotropic medicine (ERX-06).</summary>
+    public bool IsControlledDrug { get; set; }
+
+    public string? ControlledSchedule { get; set; }
+
+    public string FrequencyText => Frequency == DoseFrequency.Custom ? CustomFrequency ?? "Custom" : Frequency.ToString();
+}
+
+/// <summary>Bilingual (English/Hindi) directions printed on prescriptions (ERX-04).</summary>
+public static class FrequencyLabels
+{
+    public static (string English, string Hindi) For(DoseFrequency frequency, string? custom) => frequency switch
+    {
+        DoseFrequency.OD => ("Once a day", "दिन में एक बार"),
+        DoseFrequency.BD => ("Twice a day", "दिन में दो बार"),
+        DoseFrequency.TDS => ("Three times a day", "दिन में तीन बार"),
+        DoseFrequency.QID => ("Four times a day", "दिन में चार बार"),
+        DoseFrequency.HS => ("At bedtime", "सोते समय"),
+        DoseFrequency.SOS => ("Only when required", "आवश्यकता होने पर"),
+        DoseFrequency.STAT => ("Immediately, once", "तुरंत, एक बार"),
+        DoseFrequency.Weekly => ("Once a week", "सप्ताह में एक बार"),
+        _ => (custom ?? "As directed", custom ?? "निर्देशानुसार"),
+    };
+}

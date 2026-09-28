@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Laboratory information system with quality control, radiology / medical imaging with PACS, and cardiology (LIS, IMG, RAD, CAR). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Diagnostics</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,183 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Notifications;
+using Microsoft.Extensions.Caching.Memory;
+
+namespace HyFib.HealthCare360.Modules.Patients.Services;
+
+/// <summary>Reusable patient look-ups for this and higher-layer modules.</summary>
+public static class PatientQueries
+{
+    /// <summary>
+    /// Front-desk "type anything" search: UHID (exact/prefix), mobile number, ABHA (blind index), UHID/mobile
+    /// suffix, or name words (each word must match; served by the trigram index).
+    /// </summary>
+    public static IQueryable<Patient> Search(this IQueryable<Patient> patients, string? term, IFieldProtector protector)
+    {
+        if (string.IsNullOrWhiteSpace(term))
+        {
+            return patients;
+        }
+
+        term = term.Trim();
+        var digits = new string(term.Where(char.IsAsciiDigit).ToArray());
+        var hasLetters = term.Any(char.IsLetter);
+
+        if (hasLetters && digits.Length >= 3 && !term.Contains(' ', StringComparison.Ordinal))
+        {
+            var uhid = term.ToUpperInvariant();
+            return patients.Where(p => p.Uhid == uhid || p.Uhid.StartsWith(uhid));
+        }
+
+        if (!hasLetters && digits.Length >= 10)
+        {
+            var phone = Phone.Normalize(digits);
+            var abhaIndex = digits.Length == 14 ? protector.BlindIndex(digits) : null;
+            var aadhaarIndex = digits.Length == 12 ? protector.BlindIndex(digits) : null;
+            return patients.Where(p => (phone != null && (p.Phone == phone || p.AlternatePhone == phone))
+                                       || (abhaIndex != null && p.AbhaNumberIndex == abhaIndex)
+                                       || (aadhaarIndex != null && p.AadhaarIndex == aadhaarIndex));
+        }
+
+        if (!hasLetters && digits.Length >= 4)
+        {
+            return patients.Where(p => p.Uhid.EndsWith(digits) || (p.Phone != null && p.Phone.EndsWith(digits)));
+        }
+
+        foreach (var word in term.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(4))
+        {
+            var like = word.ToLikePattern();
+            patients = patients.Where(p => EF.Functions.ILike(p.FullName, like));
+        }
+
+        return patients;
+    }
+
+    /// <summary>Summaries for a set of patients (age is computed in memory).</summary>
+    public static async Task<Dictionary<Guid, PatientSummary>> SummariesAsync(HospitalDbContext db, IEnumerable<Guid> ids, DateOnly today, CancellationToken ct)
+    {
+        var idList = ids.Distinct().ToList();
+        var rows = await db.Set<Patient>().AsNoTracking()
+            .Where(p => idList.Contains(p.Id))
+            .Select(p => new { p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(p => p.Id, p => new PatientSummary(
+            p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
+            p.Phone, p.BloodGroup, p.Category, p.IsVip, p.IsDeceased, p.PhotoFileId));
+    }
+
+    public static DateOnly Today(this TimeProvider time) => DateOnly.FromDateTime(IndiaTime(time).DateTime);
+
+    /// <summary>Current time in the hospital's time zone (IST by default).</summary>
+    public static DateTimeOffset IndiaTime(TimeProvider time)
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTime(time.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata"));
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return time.GetUtcNow();
+        }
+    }
+}
+
+/// <summary>
+/// Enforces restricted-record rules (EHR-07): VIP/confidential patients can be opened only with the
+/// <c>patients.restricted.read</c> permission or after an audited, time-boxed break-the-glass request.
+/// Higher modules (EMR, billing, lab) should call <see cref="EnsureCanOpenAsync"/> before showing PHI.
+/// </summary>
+public sealed class PatientAccessGuard(
+    HospitalDbContext db,
+    ICurrentUser currentUser,
+    IPermissionService permissions,
+    IMemoryCache cache,
+    IAuditLogger audit,
+    INotificationService notifications,
+    TimeProvider time)
+{
+    private static readonly TimeSpan GrantDuration = TimeSpan.FromMinutes(30);
+
+    public async Task<Result> EnsureCanOpenAsync(Guid patientId, CancellationToken ct)
+    {
+        var isVip = await db.Set<Patient>().Where(p => p.Id == patientId).Select(p => (bool?)p.IsVip).FirstOrDefaultAsync(ct);
+        return isVip switch
+        {
+            null => Error.NotFound(nameof(Patient), patientId),
+            false => Result.Success(),
+            true => await CheckRestrictedAsync(patientId, ct),
+        };
+    }
+
+    public async Task<Result<BreakGlassGrant>> BreakGlassAsync(Guid patientId, string reason, CancellationToken ct)
+    {
+        var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => new { p.Id, p.Uhid, p.IsVip }).FirstOrDefaultAsync(ct);
+        if (patient is null)
+        {
+            return Error.NotFound(nameof(Patient), patientId);
+        }
+
+        if (currentUser.UserId is not { } userId)
+        {
+            return Error.Forbidden("auth.required", "Sign in first.");
+        }
+
+        var expires = time.GetUtcNow() + GrantDuration;
+        cache.Set(GrantKey(userId, patientId), true, expires);
+
+        await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "patient.break_glass", reason)
+        {
+            PatientId = patientId,
+            EntityType = nameof(Patient),
+            EntityId = patientId.ToString(),
+            Severity = AuditSeverity.Critical,
+        }, ct);
+
+        await notifications.NotifyPermissionHoldersAsync(
+            PlatformPermissions.AuditRead,
+            currentUser.FacilityId,
+            "Emergency access to a restricted record",
+            $"{currentUser.DisplayName} opened restricted record {patient.Uhid}. Reason: {reason}",
+            $"/admin/audit?patientId={patientId}",
+            "security",
+            "critical",
+            ct);
+
+        return new BreakGlassGrant(patientId, expires);
+    }
+
+    private async Task<Result> CheckRestrictedAsync(Guid patientId, CancellationToken ct)
+    {
+        if (currentUser.UserId is not { } userId)
+        {
+            return Error.Forbidden("auth.required", "Sign in first.");
+        }
+
+        if (await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct) || cache.TryGetValue(GrantKey(userId, patientId), out _))
+        {
+            return Result.Success();
+        }
+
+        return new Error("patient.restricted", "This is a restricted record. Request emergency access (break-the-glass) if it is clinically necessary.", ErrorType.Forbidden)
+        {
+            Data = new { breakGlassAvailable = true },
+        };
+    }
+
+    private static string GrantKey(Guid userId, Guid patientId) => $"breakglass:{userId:N}:{patientId:N}";
+}
+
+/// <summary>Links a patient-portal sign-in (mobile OTP) to the earliest active patient record with that mobile number.</summary>
+internal sealed class PortalAccountResolver(HospitalDbContext db) : IPortalAccountResolver
+{
+    public async Task<PortalAccount?> ResolveAsync(string phoneE164, CancellationToken cancellationToken)
+    {
+        var patient = await db.Set<Patient>().AsNoTracking()
+            .Where(p => p.Phone == phoneE164 && p.IsActive && p.MergedIntoPatientId == null)
+            .OrderBy(p => p.RegisteredAt)
+            .Select(p => new { p.Id, p.FullName })
+            .FirstOrDefaultAsync(cancellationToken);
+        return patient is null ? null : new PortalAccount(patient.Id, patient.FullName);
+    }
+}

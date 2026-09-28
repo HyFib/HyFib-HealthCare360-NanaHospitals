@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    MIS reports and managed BI (layer 8): a permission-filtered report catalogue over every module's data, Excel/CSV
+    exports, an executive KPI set, saved dashboards and scheduled report e-mails. Reads other modules' entities through
+    HospitalDbContext (optionally on a read-only reporting replica) and never writes to their schemas.
+  -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Analytics</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Version pinned centrally in Directory.Packages.props. -->
+    <PackageReference Include="ClosedXML" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Scheduling\HyFib.HealthCare360.Modules.Scheduling.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Pharmacy\HyFib.HealthCare360.Modules.Pharmacy.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Inpatient\HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.VirtualCare\HyFib.HealthCare360.Modules.VirtualCare.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.SpecialtyCare\HyFib.HealthCare360.Modules.SpecialtyCare.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupportServices\HyFib.HealthCare360.Modules.SupportServices.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Billing\HyFib.HealthCare360.Modules.Billing.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.HR\HyFib.HealthCare360.Modules.HR.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Engagement\HyFib.HealthCare360.Modules.Engagement.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Quality\HyFib.HealthCare360.Modules.Quality.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.AI\HyFib.HealthCare360.Modules.AI.csproj" />
+  </ItemGroup>
+</Project>

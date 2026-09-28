@@ -1,0 +1,117 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Scheduling.Domain;
+using HyFib.HealthCare360.Platform.Integrations;
+using Microsoft.Extensions.Logging;
+
+namespace HyFib.HealthCare360.Modules.Scheduling.Services;
+
+/// <summary>What the portal needs to open the payment gateway's checkout.</summary>
+public sealed record PaymentCheckout(string Provider, string OrderId, decimal Amount, string Currency, string? CheckoutKey, string? PaymentLinkUrl);
+
+/// <summary>
+/// Optional online prepayment for portal bookings (OA-03, PP-03). The gateway is a Platform abstraction that may not
+/// be configured (or may be unreachable while the hospital's internet is down): in that case the booking simply
+/// becomes "pay at hospital" — a payment problem must never cost the patient their slot. A payment is accepted only
+/// after the gateway signature ("order_id|payment_id", Razorpay convention) verifies. Nothing is posted to billing
+/// here; <see cref="AppointmentPaymentCaptured"/> is raised for Billing to act on.
+/// </summary>
+public sealed class AppointmentPaymentService(
+    HospitalDbContext db,
+    IEnumerable<IPaymentGateway> gateways,
+    TimeProvider time,
+    ILogger<AppointmentPaymentService> logger)
+{
+    public const string Currency = "INR";
+
+    /// <summary>The configured gateway (the last registration wins, as with any DI service), if any.</summary>
+    private IPaymentGateway? Gateway { get; } = gateways.LastOrDefault();
+
+    public bool IsAvailable => Gateway is not null;
+
+    /// <summary>Creates a gateway order for the fee, or switches the booking to pay-at-hospital. The caller saves.</summary>
+    public async Task<PaymentCheckout?> StartCheckoutAsync(Appointment appointment, CancellationToken ct)
+    {
+        if (Gateway is null || appointment.FeeAmount <= 0 || !appointment.IsOpen)
+        {
+            appointment.ChoosePayAtHospital();
+            return null;
+        }
+
+        var patient = await db.Set<Patient>().AsNoTracking()
+            .Where(p => p.Id == appointment.PatientId)
+            .Select(p => new { p.FullName, p.Phone, p.Email })
+            .FirstOrDefaultAsync(ct);
+
+        try
+        {
+            var order = await Gateway.CreateOrderAsync(
+                new CreatePaymentOrder(
+                    appointment.FeeAmount,
+                    Currency,
+                    appointment.Number,
+                    $"Consultation fee {appointment.Number}",
+                    patient?.FullName,
+                    patient?.Phone,
+                    patient?.Email,
+                    new Dictionary<string, string> { ["appointmentId"] = appointment.Id.ToString(), ["module"] = "scheduling" }),
+                ct);
+
+            var attached = appointment.AttachPaymentOrder(order.Provider, order.OrderId);
+            if (attached.IsFailure)
+            {
+                return null;
+            }
+
+            return new PaymentCheckout(order.Provider, order.OrderId, order.Amount, order.Currency, order.CheckoutKey, order.PaymentLinkUrl);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Payment gateway {Provider} could not create an order for appointment {AppointmentId}; switching to pay at hospital",
+                Gateway.Provider, appointment.Id);
+            appointment.ChoosePayAtHospital();
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Verifies the checkout signature and records the payment. When the gateway can report the order status, a
+    /// failed/unpaid order is rejected even if a signature was supplied. The caller saves.
+    /// </summary>
+    public async Task<Result> ConfirmAsync(Appointment appointment, string orderId, string paymentId, string signature, CancellationToken ct)
+    {
+        if (Gateway is null)
+        {
+            return Error.Rule("payment.unavailable", "Online payment is not available right now. Please pay at the hospital.");
+        }
+
+        if (!string.Equals(appointment.GatewayOrderId, orderId, StringComparison.Ordinal))
+        {
+            return Error.Rule("payment.order_mismatch", "This payment does not belong to this appointment.");
+        }
+
+        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature))
+        {
+            logger.LogWarning("Rejected payment confirmation with an invalid signature for appointment {AppointmentId}", appointment.Id);
+            return Error.Forbidden("payment.invalid_signature", "The payment could not be verified. If money was deducted, it will be refunded automatically.");
+        }
+
+        var amount = appointment.FeeAmount;
+        try
+        {
+            var status = await Gateway.GetStatusAsync(orderId, ct);
+            if (status.Status is GatewayPaymentStatus.Failed or GatewayPaymentStatus.Created or GatewayPaymentStatus.Refunded)
+            {
+                return Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
+            }
+
+            amount = status.AmountPaid ?? amount;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The signature already proves the payment; the status call is a second opinion only.
+            logger.LogInformation(ex, "Could not fetch gateway status for order {OrderId}; relying on the verified signature", orderId);
+        }
+
+        return appointment.MarkPaidOnline(orderId, paymentId, amount, time.GetUtcNow());
+    }
+}

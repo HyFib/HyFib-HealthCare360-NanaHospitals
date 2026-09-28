@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Operation theatre, dialysis, physiotherapy and blood bank (OT, DIA, PHY, BB). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.SpecialtyCare</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- OT implants and consumables are issued from the OT store (layer 6 → 2 is allowed). -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Practice management schedules, appointments and online doctor appointment booking (PMS-01/02, OA-01..05). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Scheduling</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+  </ItemGroup>
+</Project>

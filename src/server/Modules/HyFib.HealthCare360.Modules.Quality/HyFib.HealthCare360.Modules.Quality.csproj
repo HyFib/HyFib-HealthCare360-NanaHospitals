@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- IRMS: incident reporting, root-cause analysis, CAPA, risk register and quality indicators (IRMS). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Quality</RootNamespace>
+  </PropertyGroup>
+
+</Project>

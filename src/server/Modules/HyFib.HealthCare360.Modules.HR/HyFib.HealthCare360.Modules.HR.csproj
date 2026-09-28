@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- HRMS: employees, shifts, biometric attendance, leave and payroll (HR). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.HR</RootNamespace>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,36 @@
+<Project>
+  <!-- Shared settings for every module project in src/server/Modules. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)../HyFib.HealthCare360.Platform/HyFib.HealthCare360.Platform.csproj" />
+  </ItemGroup>
+
+  <!-- Global usings keep module files focused on domain code. -->
+  <ItemGroup>
+    <Using Include="HyFib.HealthCare360.SharedKernel" />
+    <Using Include="HyFib.HealthCare360.Platform.Modules" />
+    <Using Include="HyFib.HealthCare360.Platform.Persistence" />
+    <Using Include="HyFib.HealthCare360.Platform.Security" />
+    <Using Include="HyFib.HealthCare360.Platform.Http" />
+    <Using Include="HyFib.HealthCare360.Platform.Auditing" />
+    <Using Include="HyFib.HealthCare360.Platform.Organization" />
+    <Using Include="HyFib.HealthCare360.Platform.Contracts" />
+    <Using Include="Microsoft.EntityFrameworkCore" />
+    <Using Include="Microsoft.EntityFrameworkCore.Metadata.Builders" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Configuration" />
+    <Using Include="FluentValidation" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Each module's own test project (tests/Modules/<Module>.Tests) may exercise internal rules and services. -->
+    <InternalsVisibleTo Include="$(MSBuildProjectName).Tests" />
+    <InternalsVisibleTo Include="HyFib.HealthCare360.UnitTests" />
+    <InternalsVisibleTo Include="HyFib.HealthCare360.IntegrationTests" />
+  </ItemGroup>
+</Project>

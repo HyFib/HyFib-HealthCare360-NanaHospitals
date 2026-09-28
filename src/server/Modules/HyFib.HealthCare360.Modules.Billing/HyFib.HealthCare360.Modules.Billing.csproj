@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tariffs, charge capture, OP/IP billing, payments, insurance/TPA, medical coding and doctor fee accounting (MB, OPB, IPB, INS, DFA). -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Billing</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- Online appointment prepayments (AppointmentPaymentCaptured, reschedule chain) become patient advances. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Scheduling\HyFib.HealthCare360.Modules.Scheduling.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,185 @@
+using HyFib.HealthCare360.Modules.Pharmacy.Domain;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+
+namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
+
+/// <summary>An outside (paper) prescription presented at the counter for prescription-only medicines.</summary>
+public sealed record ExternalPrescription(string PrescriberName, string? PrescriberRegistrationNumber, DateOnly? PrescriptionDate, string? Reference);
+
+public sealed record CounterSaleLine(Guid ItemId, decimal Quantity, Guid? BatchId);
+
+/// <param name="PatientId">Registered patient (enables credit and the medication history); walk-in customers leave it empty.</param>
+/// <param name="Prescription">Required for Schedule H/H1/X medicines.</param>
+public sealed record CounterSaleRequest(
+    Guid StoreId,
+    Guid? PatientId,
+    string? CustomerName,
+    string? CustomerPhone,
+    ExternalPrescription? Prescription,
+    IReadOnlyList<CounterSaleLine> Lines,
+    decimal DiscountPercent,
+    IReadOnlyList<SalePayment> Payments,
+    bool ConfirmControlledDrugs);
+
+public sealed record PharmacySaleCreated(Guid Id, string InvoiceNumber, decimal NetAmount, decimal PaidAmount, decimal DueAmount, SaleStatus Status);
+
+public sealed record PharmacySaleListItem(
+    Guid Id,
+    string InvoiceNumber,
+    SaleType Type,
+    DateTimeOffset SoldAt,
+    Guid StoreId,
+    Guid? PatientId,
+    string? CustomerName,
+    string? PrescriptionNumber,
+    decimal NetAmount,
+    decimal PaidAmount,
+    decimal DueAmount,
+    decimal ReturnedAmount,
+    SaleStatus Status);
+
+public sealed record PharmacySaleItemDto(
+    Guid Id,
+    Guid ItemId,
+    string ItemName,
+    string? GenericName,
+    string? HsnCode,
+    DrugSchedule Schedule,
+    string BatchNumber,
+    DateOnly? ExpiryDate,
+    decimal Quantity,
+    decimal UnitMrp,
+    decimal GstRate,
+    decimal GrossAmount,
+    decimal DiscountAmount,
+    decimal TaxableAmount,
+    decimal CgstAmount,
+    decimal SgstAmount,
+    decimal NetAmount,
+    decimal ReturnedQuantity,
+    bool IsSubstitution,
+    string? PrescribedDrugName,
+    string? SubstitutionReason);
+
+public sealed record PharmacyPaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset ReceivedAt, bool IsRefund);
+
+/// <summary>Everything the GST invoice print needs (letterhead comes from the facility master).</summary>
+public sealed record PharmacySaleDetail(
+    Guid Id,
+    string InvoiceNumber,
+    SaleType Type,
+    Guid StoreId,
+    string StoreName,
+    Guid? PatientId,
+    string? PatientUhid,
+    string? CustomerName,
+    string? CustomerPhone,
+    string? PrescriptionNumber,
+    string? PrescriberName,
+    string? PrescriberRegistrationNumber,
+    DateTimeOffset SoldAt,
+    string? SoldBy,
+    string? CounsellingNotes,
+    decimal DiscountPercent,
+    decimal GrossAmount,
+    decimal DiscountAmount,
+    decimal TaxableAmount,
+    decimal CgstAmount,
+    decimal SgstAmount,
+    decimal RoundOff,
+    decimal NetAmount,
+    decimal PaidAmount,
+    decimal DueAmount,
+    decimal ReturnedAmount,
+    decimal RefundedAmount,
+    SaleStatus Status,
+    string? CancelReason,
+    IReadOnlyList<PharmacySaleItemDto> Items,
+    IReadOnlyList<PharmacyPaymentDto> Payments,
+    uint Version);
+
+public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
+
+/// <param name="Restock">Put the returned quantity back on the shelf (unopened and in date); damaged returns are not restocked.</param>
+public sealed record SaleReturnLine(Guid SaleItemId, decimal Quantity, bool Restock);
+
+public sealed record SaleReturnRequest(IReadOnlyList<SaleReturnLine> Lines, string Reason, PaymentMode RefundMode, string? RefundReference);
+
+public sealed record SaleReturnCreated(Guid Id, string ReturnNumber, decimal RefundAmount, decimal AdjustedAgainstDue, decimal CashRefund);
+
+public sealed record SaleReturnDto(
+    Guid Id,
+    string ReturnNumber,
+    DateTimeOffset ReturnedAt,
+    string Reason,
+    decimal RefundAmount,
+    decimal AdjustedAgainstDue,
+    decimal CashRefund,
+    PaymentMode RefundMode,
+    IReadOnlyList<SaleReturnItemDto> Items);
+
+public sealed record SaleReturnItemDto(Guid SaleItemId, string ItemName, string BatchNumber, decimal Quantity, decimal RefundAmount, bool Restocked);
+
+/// <summary>Counter picker row: what the store can sell now, at which MRP, and whether a prescription is needed.</summary>
+public sealed record PharmacyStockRow(
+    Guid ItemId,
+    string Code,
+    string Name,
+    string? GenericName,
+    string? Strength,
+    DrugSchedule Schedule,
+    bool IsControlled,
+    bool RequiresPrescription,
+    bool IsColdChain,
+    string BaseUnit,
+    decimal Available,
+    decimal? Mrp,
+    DateOnly? NearestExpiry);
+
+public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleRequest>
+{
+    public CounterSaleRequestValidator()
+    {
+        RuleFor(x => x.StoreId).NotEmpty();
+        RuleFor(x => x.CustomerName).SafeText(200);
+        RuleFor(x => x.CustomerPhone).PhoneNumber();
+        RuleFor(x => x.Prescription!.PrescriberName).NotEmpty().SafeText(200).When(x => x.Prescription is not null);
+        RuleFor(x => x.Prescription!.PrescriberRegistrationNumber).MaximumLength(64).When(x => x.Prescription is not null);
+        RuleFor(x => x.Prescription!.Reference).MaximumLength(64).When(x => x.Prescription is not null);
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("Add at least one item.").Must(l => l.Count <= 100);
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.ItemId).NotEmpty();
+            line.RuleFor(l => l.Quantity).GreaterThan(0);
+        });
+        RuleFor(x => x.DiscountPercent).InclusiveBetween(0, 100);
+        RuleFor(x => x.Payments).Must(p => p.Count <= 6).WithMessage("Split the bill into at most 6 payments.");
+        RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
+    }
+}
+
+public sealed class CollectPaymentRequestValidator : AbstractValidator<CollectPaymentRequest>
+{
+    public CollectPaymentRequestValidator()
+    {
+        RuleFor(x => x.Amount).GreaterThan(0);
+        RuleFor(x => x.Mode).NotEqual(PaymentMode.Credit).WithMessage("Collect the balance in cash, card or UPI.");
+        RuleFor(x => x.Reference).MaximumLength(64);
+    }
+}
+
+public sealed class SaleReturnRequestValidator : AbstractValidator<SaleReturnRequest>
+{
+    public SaleReturnRequestValidator()
+    {
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what is being returned.");
+        RuleForEach(x => x.Lines).ChildRules(line =>
+        {
+            line.RuleFor(l => l.SaleItemId).NotEmpty();
+            line.RuleFor(l => l.Quantity).GreaterThan(0);
+        });
+        RuleFor(x => x.Reason).NotEmpty().SafeText(300);
+        RuleFor(x => x.RefundReference).MaximumLength(64);
+    }
+}

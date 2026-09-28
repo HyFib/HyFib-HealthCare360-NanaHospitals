@@ -1,0 +1,70 @@
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Dashboard;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Refills;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Registers;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
+using HyFib.HealthCare360.Modules.Pharmacy.Services;
+
+namespace HyFib.HealthCare360.Modules.Pharmacy;
+
+public static class PharmacyPermissions
+{
+    public const string QueueRead = "pharmacy.queue.read";
+    public const string Dispense = "pharmacy.dispense";
+    public const string Sales = "pharmacy.sales";
+    public const string Returns = "pharmacy.returns";
+    public const string IpIssue = "pharmacy.ip.issue";
+
+    /// <summary>Nurses raise ward indents for their admitted patients.</summary>
+    public const string IpIndent = "pharmacy.ip.indent";
+
+    public const string Registers = "pharmacy.registers";
+    public const string Refills = "pharmacy.refills";
+
+    /// <summary>Anyone working a pharmacy counter (stock pickers, queue, batch lists).</summary>
+    internal static readonly string[] CounterStaff = [QueueRead, Dispense, Sales, IpIssue];
+
+    private static readonly string[] Pharmacy = [SystemRoles.Pharmacist, SystemRoles.HospitalAdmin];
+
+    internal static IEnumerable<PermissionDefinition> All { get; } =
+    [
+        new(QueueRead, "Pharmacy", "View the e-prescription queue and pharmacy stock", Pharmacy),
+        new(Dispense, "Pharmacy", "Dispense prescriptions (FEFO batches, substitution, counselling)", Pharmacy),
+        new(Sales, "Pharmacy", "Counter sales, GST invoices and collection of dues", Pharmacy),
+        new(Returns, "Pharmacy", "Sales returns and same-day invoice cancellation", Pharmacy),
+        new(IpIssue, "Pharmacy", "Issue medicines to admitted patients and accept ward returns", Pharmacy),
+        new(IpIndent, "Pharmacy", "Raise ward indents for admitted patients", [.. Pharmacy, SystemRoles.Nurse]),
+        new(Registers, "Pharmacy", "View and export the Schedule H/H1/X and narcotic registers", Pharmacy),
+        new(Refills, "Pharmacy", "Authorise, approve and reject prescription refills", Pharmacy),
+    ];
+}
+
+/// <summary>OP and IP pharmacy: e-prescription queue, dispensing, counter sales, returns, refills and controlled-drug registers (SRS PH-01..06).</summary>
+public sealed class PharmacyModule : IModule
+{
+    public string Name => "pharmacy";
+
+    public IEnumerable<PermissionDefinition> Permissions => PharmacyPermissions.All;
+
+    public void AddServices(IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddScoped<DispensingService>();
+        services.AddScoped<SaleAdjustmentService>();
+        services.AddScoped<InpatientPharmacyService>();
+        services.AddScoped<ControlledDrugRegisterService>();
+        services.AddScoped<RefillService>();
+        services.AddScoped<PharmacyRealtime>();
+        services.AddHostedService<RefillReminderJob>();
+    }
+
+    public void MapEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        QueueEndpoints.Map(endpoints);
+        SaleEndpoints.Map(endpoints);
+        InpatientEndpoints.Map(endpoints);
+        RegisterEndpoints.Map(endpoints);
+        RefillEndpoints.Map(endpoints);
+        DashboardEndpoints.Map(endpoints);
+    }
+}
