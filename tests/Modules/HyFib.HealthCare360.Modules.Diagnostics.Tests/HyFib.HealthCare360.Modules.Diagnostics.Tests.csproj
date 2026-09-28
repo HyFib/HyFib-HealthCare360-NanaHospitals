@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\server\Modules\HyFib.HealthCare360.Modules.Diagnostics\HyFib.HealthCare360.Modules.Diagnostics.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="HyFib.HealthCare360.SharedKernel" />
+  </ItemGroup>
+</Project>

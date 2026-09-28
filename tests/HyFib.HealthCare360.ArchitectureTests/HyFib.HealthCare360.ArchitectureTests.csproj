@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Enforces the module layering in docs/architecture/ARCHITECTURE.md §4 by inspecting assembly references. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\server\HyFib.HealthCare360.Server\HyFib.HealthCare360.Server.csproj" />
+  </ItemGroup>
+</Project>
