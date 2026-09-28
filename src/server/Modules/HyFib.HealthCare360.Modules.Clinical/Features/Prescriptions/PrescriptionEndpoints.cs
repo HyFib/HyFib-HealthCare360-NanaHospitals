@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 
@@ -86,9 +87,12 @@ internal static class PrescriptionEndpoints
     private static async Task<IResult> Refill(Guid id, RefillPrescriptionRequest request, PrescriptionService prescriptions, CancellationToken ct) =>
         (await prescriptions.RefillAsync(id, request, ct)).ToCreated(r => $"/api/v1/clinical/prescriptions/{r.Prescription.Id}");
 
-    /// <summary>Print/share model (ERX-04). Only signed prescriptions are printed; each print is recorded in the audit trail.</summary>
-    private static async Task<IResult> Print(Guid id, PrescriptionService prescriptions, ClinicalAccess access, HospitalDbContext db, TimeProvider time,
-        CancellationToken ct)
+    /// <summary>
+    /// Print/share model (ERX-04). Only signed prescriptions are printed; each print is recorded in the audit trail. The
+    /// QR code points at the portal's public verification page when the hospital's public address is configured.
+    /// </summary>
+    private static async Task<IResult> Print(Guid id, PrescriptionService prescriptions, ClinicalAccess access, HospitalDbContext db,
+        ISettingsService settings, TimeProvider time, CancellationToken ct)
     {
         var loaded = await prescriptions.LoadAsync(id, ct);
         if (loaded.IsFailure)
@@ -123,6 +127,7 @@ internal static class PrescriptionEndpoints
             return new PrescriptionPrintLine(i.Sequence, i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Route, i.Dose, i.FrequencyText, english, hindi,
                 i.DurationDays, i.Quantity, i.Instructions, i.IsControlledDrug);
         }).ToList();
+        var publicAddress = p.VerificationToken is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
 
         return TypedResults.Ok(new PrescriptionPrintModel(
             p.Id, p.PrescriptionNumber, p.Status, p.SignedAt,
@@ -131,6 +136,7 @@ internal static class PrescriptionEndpoints
             new PrescriptionPrintPatient(patient.Id, patient.Uhid, patient.FullName, patient.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
                 patient.Gender, patient.PreferredLanguage),
             diagnoses, allergies, lines, p.Advice, encounter?.FollowUpDate, encounter?.FollowUpAdvice, p.RefillsAllowed, p.VerificationToken,
-            p.VerificationToken is null ? null : $"/api/v1/public/prescriptions/verify/{p.VerificationToken}"));
+            PrescriptionVerificationLinks.Path(p.VerificationToken),
+            PrescriptionVerificationLinks.Url(publicAddress, p.VerificationToken)));
     }
 }

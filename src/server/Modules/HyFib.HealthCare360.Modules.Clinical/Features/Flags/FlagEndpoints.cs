@@ -1,14 +1,17 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
+using HyFib.HealthCare360.Modules.Clinical.Persistence;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Realtime;
+using Npgsql;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Flags;
 
 /// <summary>
-/// /api/v1/emr — allergies and patient alerts, the flags of the persistent patient banner (EHR-03). Every change is
-/// pushed on the patient's real-time topic so open banners refresh immediately.
+/// /api/v1/emr — allergies, the "no known allergies" statement and patient alerts, the flags of the persistent patient
+/// banner (EHR-03). Every change is pushed on the patient's real-time topic so open banners refresh immediately.
 /// </summary>
 internal static class FlagEndpoints
 {
@@ -18,6 +21,8 @@ internal static class FlagEndpoints
 
         group.MapGet("/patients/{patientId:guid}/allergies", ListAllergies).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapPost("/patients/{patientId:guid}/allergies", RecordAllergy).RequirePermission(ClinicalPermissions.AllergiesManage).WithValidation<RecordAllergyRequest>();
+        group.MapGet("/patients/{patientId:guid}/allergies/status", AllergyStatusOf).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapPost("/patients/{patientId:guid}/allergies/none", RecordNoKnownAllergies).RequirePermission(ClinicalPermissions.AllergiesManage);
         group.MapPut("/allergies/{id:guid}", UpdateAllergy).RequirePermission(ClinicalPermissions.AllergiesManage).WithValidation<UpdateAllergyRequest>();
 
         group.MapGet("/patients/{patientId:guid}/alerts", ListAlerts).RequirePermission(ClinicalPermissions.EmrRead);
@@ -73,9 +78,94 @@ internal static class FlagEndpoints
             Notes = request.Notes?.Trim(),
         };
         db.Add(allergy);
+        await EndNoKnownAllergiesAsync(db, patientId, ct);
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(Topics.Patient(patientId), "clinical.flags.changed", new { allergy.Id }, ct);
         return TypedResults.Created($"/api/v1/emr/patients/{patientId}/allergies", ToDto(allergy));
+    }
+
+    /// <summary>Recorded, "no known allergies" or not recorded: the banner claims NKA only when it was recorded (EHR-03).</summary>
+    private static async Task<IResult> AllergyStatusOf(Guid patientId, ClinicalAccess access, HospitalDbContext db, CancellationToken ct)
+    {
+        var opened = await access.OpenAsync(patientId, "Viewed allergy status", ct);
+        if (opened.IsFailure)
+        {
+            return opened.Error!.ToProblem();
+        }
+
+        var latestAllergy = await db.Set<Allergy>().AsNoTracking()
+            .Where(a => a.PatientId == patientId && a.Status == AllergyStatus.Active)
+            .OrderByDescending(a => a.RecordedAt)
+            .Select(a => new { a.RecordedAt, a.RecordedByUserId })
+            .FirstOrDefaultAsync(ct);
+        var statement = await db.Set<NoKnownAllergiesStatement>().AsNoTracking()
+            .Where(s => s.PatientId == patientId)
+            .OrderByDescending(s => s.RecordedAt)
+            .FirstOrDefaultAsync(ct);
+
+        var status = NoKnownAllergiesStatement.StatusOf(latestAllergy is not null, statement is not null);
+        return TypedResults.Ok(status switch
+        {
+            AllergyRecordingStatus.Recorded => new AllergyStatusDto(status, latestAllergy!.RecordedAt,
+                latestAllergy.RecordedByUserId is { } userId
+                    ? await db.Set<User>().AsNoTracking().Where(u => u.Id == userId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct)
+                    : null),
+            AllergyRecordingStatus.NoKnownAllergies => ToDto(statement!),
+            _ => new AllergyStatusDto(status, null, null),
+        });
+    }
+
+    /// <summary>
+    /// Records that the patient has no known allergies. Refused with 409 <c>allergy.active_exist</c> while an active
+    /// allergy is on the chart; repeating it (or a double submit from two desks) returns the existing statement.
+    /// A concurrent allergy recorded at the same moment can leave both rows, which is safe: active allergies always
+    /// win in <see cref="NoKnownAllergiesStatement.StatusOf"/>, and the next allergy change removes the statement.
+    /// </summary>
+    private static async Task<IResult> RecordNoKnownAllergies(Guid patientId, ClinicalAccess access, HospitalDbContext db, ICurrentUser user,
+        IRealtimePublisher realtime, TimeProvider time, CancellationToken ct)
+    {
+        var allowed = await access.EnsureCanRecordAsync(patientId, ct);
+        if (allowed.IsFailure)
+        {
+            return allowed.Error!.ToProblem();
+        }
+
+        var active = await db.Set<Allergy>().CountAsync(a => a.PatientId == patientId && a.Status == AllergyStatus.Active, ct);
+        var permitted = NoKnownAllergiesStatement.CanRecord(active);
+        if (permitted.IsFailure)
+        {
+            return permitted.Error!.ToProblem();
+        }
+
+        var existing = await db.Set<NoKnownAllergiesStatement>().AsNoTracking().FirstOrDefaultAsync(s => s.PatientId == patientId, ct);
+        if (existing is not null)
+        {
+            return TypedResults.Ok(ToDto(existing));
+        }
+
+        var statement = new NoKnownAllergiesStatement
+        {
+            PatientId = patientId,
+            RecordedAt = time.GetUtcNow(),
+            RecordedByUserId = user.UserId,
+            RecordedByName = user.DisplayName ?? user.UserName,
+        };
+        db.Add(statement);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
+            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: NoKnownAllergiesStatementConfiguration.OnePerPatientIndex })
+        {
+            // Recorded from another desk a moment ago; the outcome is the same, so answer with that statement.
+            db.ChangeTracker.Clear();
+            var recorded = await db.Set<NoKnownAllergiesStatement>().AsNoTracking().FirstOrDefaultAsync(s => s.PatientId == patientId, ct);
+            return recorded is null ? Error.ConcurrencyConflict.ToProblem() : TypedResults.Ok(ToDto(recorded));
+        }
+
+        await realtime.PublishAsync(Topics.Patient(patientId), "clinical.flags.changed", new { statement.Id }, ct);
+        return TypedResults.Ok(ToDto(statement));
     }
 
     private static async Task<IResult> UpdateAllergy(Guid id, UpdateAllergyRequest request, ClinicalAccess access, HospitalDbContext db,
@@ -103,10 +193,20 @@ internal static class FlagEndpoints
         allergy.Reaction = request.Reaction?.Trim();
         allergy.Severity = request.Severity;
         allergy.Notes = request.Notes?.Trim();
+        if (allergy.IsActive)
+        {
+            // A re-activated allergy contradicts "no known allergies" just like a new one.
+            await EndNoKnownAllergiesAsync(db, allergy.PatientId, ct);
+        }
+
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(Topics.Patient(allergy.PatientId), "clinical.flags.changed", new { allergy.Id }, ct);
         return TypedResults.Ok(ToDto(allergy));
     }
+
+    /// <summary>An active allergy on the chart ends any "no known allergies" statement, soft-deleted in the caller's save.</summary>
+    private static async Task EndNoKnownAllergiesAsync(HospitalDbContext db, Guid patientId, CancellationToken ct) =>
+        db.RemoveRange(await db.Set<NoKnownAllergiesStatement>().Where(s => s.PatientId == patientId).ToListAsync(ct));
 
     private static async Task<IResult> ListAlerts(Guid patientId, bool? includeInactive, ClinicalAccess access, HospitalDbContext db, TimeProvider time,
         CancellationToken ct)
@@ -192,6 +292,8 @@ internal static class FlagEndpoints
 
     internal static AllergyDto ToDto(Allergy a) => new(
         a.Id, a.PatientId, a.Allergen, a.Type, a.Reaction, a.Severity, a.Status, a.StatusReason, a.OnsetDate, a.RecordedAt, a.RecordedByUserId, a.Notes, a.Version);
+
+    internal static AllergyStatusDto ToDto(NoKnownAllergiesStatement s) => new(AllergyRecordingStatus.NoKnownAllergies, s.RecordedAt, s.RecordedByName);
 
     internal static PatientAlertDto ToDto(PatientAlert a, DateOnly today) => new(
         a.Id, a.PatientId, a.Type, a.Title, a.Detail, a.Severity, a.EffectiveFrom, a.ExpiresOn, a.IsActive, a.IsCurrent(today), a.DeactivatedAt,

@@ -131,6 +131,10 @@ public sealed record PrescriptionPrintLine(
 /// <summary>
 /// Everything needed to print or share the prescription (ERX-04): letterhead, prescriber registration, bilingual
 /// directions, known allergies and the QR verification token. The UI renders it with the PrintDocument layout.
+/// Print <see cref="VerificationUrl"/> as the QR code when present: the absolute portal verification page
+/// (<c>{portal.baseUrl}/portal/verify/prescription/{token}</c>), which resolves outside the hospital LAN.
+/// <see cref="VerificationPath"/> is the server-relative verification API, kept for compatibility; the URL is null
+/// until <c>portal.baseUrl</c> is configured.
 /// </summary>
 public sealed record PrescriptionPrintModel(
     Guid Id,
@@ -148,7 +152,8 @@ public sealed record PrescriptionPrintModel(
     string? FollowUpAdvice,
     int RefillsAllowed,
     string? VerificationToken,
-    string? VerificationPath);
+    string? VerificationPath,
+    string? VerificationUrl);
 
 /// <summary>Anonymous verification answer: deliberately free of patient data.</summary>
 public sealed record PrescriptionVerification(

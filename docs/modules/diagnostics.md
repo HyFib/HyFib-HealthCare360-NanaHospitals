@@ -6,9 +6,10 @@ the lab counter, charged through Billing (`IChargePoster`), and every released r
 `DiagnosticReportReleased` for the EHR, the patient portal and patient notifications.
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics` (references Patients). Schema `diagnostics`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (353 unit tests: range/flag evaluation, delta check,
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (365 unit tests: range/flag evaluation, delta check,
 auto-validation, Westgard rules, sample state machine, tube planning, payment gate, report release/amendment, imaging and
-cardiology workflows, DICOM formatting, critical call register, seeded catalogue checks incl. LOINC check digits, EF model).
+cardiology workflows, DICOM formatting, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
+QR verification links and report id → study look-ups).
 
 ## Permissions
 
@@ -94,7 +95,7 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?status&from&to` | `lab.orders.read` | → `PagedResult<LabReportListItem>` |
-| GET | `/{id}` | `lab.orders.read` | → `LabReportView` (letterhead, patient, sections → tests → result lines, signatories, amendment history, auto-validation note, QR `verificationCode` + `verificationPath`) |
+| GET | `/{id}` | `lab.orders.read` | → `LabReportView` (letterhead, patient, sections → tests → result lines, signatories, amendment history, auto-validation note, QR `verificationCode` + `verificationPath` + `verificationUrl`) |
 | POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode) |
 | POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced |
 
@@ -134,13 +135,14 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | POST | `/ai-findings/{findingId}/review` | reports.write or reports.verify | `ReviewAiFindingRequest` (acknowledge, note) → `AiFindingDto` |
 | GET | `/worklist/mwl?date&station&modality` | `radiology.worklist` | → `ModalityWorklistItem[]` (DICOM-formatted: PN names, `yyyyMMdd`/`HHmmss`, sex M/F/O, XR sent as CR, 2.25 UIDs) for the MWL gateway |
 | GET | `/reporting-worklist?modality` | reports.write or reports.verify | → `PagedResult<ImagingStudyListItem>` (urgent AI findings, then STAT, then oldest acquisition) |
+| GET | `/reports/{reportId}` | studies.read, worklist or reports.write (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist (`WorklistResult.reportId`) on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit (opening the study audits) |
 | GET | `/tat?from&to&modality` | studies.read or reports.verify | → `RadiologyTatReport` (order→acquisition→report median/P90 per modality, repeat rate and reasons) |
 
 ### Radiology reports — `/api/v1/radiology`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/studies/{id}/report` | studies.read, reports.write or reports.verify | → `RadiologyReportDto` (findings, impression, critical flag, status, addenda) |
-| GET | `/studies/{id}/report/print` | same | → `RadiologyReportView` (letterhead, signatories, QR) |
+| GET | `/studies/{id}/report/print` | same | → `RadiologyReportView` (letterhead, signatories, QR `verificationCode` + `verificationPath` + `verificationUrl`) |
 | PUT | `/studies/{id}/report` | `radiology.reports.write` | `SaveRadiologyReportRequest` (templateId, technique, clinicalHistory, comparison, findings, impression, isCriticalFinding, criticalFindingNote, version) → `RadiologyReportDto` |
 | POST | `/studies/{id}/report/submit` | `radiology.reports.write` | → `RadiologyReportDto` |
 | POST | `/studies/{id}/report/verify` | `radiology.reports.verify` | `SignReportRequest` (criticalCall — required for a critical finding, release = true) → `RadiologyReportDto`; 422 `radiology.critical_call_required` |
@@ -164,8 +166,9 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | POST | `/studies/{id}/report/submit` | studies.manage or reports.verify | → `CardiologyStudyDetail` |
 | POST | `/studies/{id}/report/verify` | `cardiology.reports.verify` | `SignCardiologyReportRequest` (criticalCall, release = true) → `CardiologyStudyDetail`; 422 `cardiology.critical_call_required` |
 | POST | `/studies/{id}/report/release` | `cardiology.reports.verify` | → `CardiologyStudyDetail` |
-| GET | `/studies/{id}/report/print` | studies.read, studies.manage or reports.verify | → `CardiologyReportView` (only the measurements of the study type) |
+| GET | `/studies/{id}/report/print` | studies.read, studies.manage or reports.verify | → `CardiologyReportView` (only the measurements of the study type; QR `verificationCode` + `verificationPath` + `verificationUrl`) |
 | GET | `/reporting-worklist?studyType` | `cardiology.reports.verify` | → `PagedResult<CardiologyStudyListItem>` |
+| GET | `/reports/{reportId}` | studies.read, studies.manage or reports.verify (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit |
 
 ### Patient portal — `/api/v1/portal/reports` (permission `portal.access`, `PortalPatientScope`, PHI audit)
 | Method | Path | Response |
@@ -178,6 +181,13 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 → `ReportAuthenticity` (valid, report number, facility, patient initials, released at, test names, revision). No result
 values are revealed. Codes are 20 symbols from a 32-symbol alphabet without 0/O/1/I (100 bits); malformed codes are
 refused before the database is queried.
+
+**QR links on printed reports.** `LabReportView`, `RadiologyReportView` and `CardiologyReportView` carry
+`verificationPath` (the server-relative API above, which resolves only on the hospital LAN; kept for compatibility) and
+`verificationUrl`, the absolute page to print as the QR code: `{portal.baseUrl}/portal/verify/{lab|radiology|cardiology}/{code}`,
+the patient portal's public verification page, which calls the API. `verificationUrl` is null until the report has a
+code (release) or while `portal.baseUrl` is not configured. `portal.baseUrl` is the hospital's public https address
+(for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
 
 ## Workflow rules
 

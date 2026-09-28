@@ -1,6 +1,6 @@
 # SpecialtyCare module — Operation Theatre, Dialysis, Physiotherapy, Blood Bank
 
-Project `src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare` · schema `specialtycare` · layer 6 (references Patients)
+Project `src/server/Modules/HyFib.HealthCare360.Modules.SpecialtyCare` · schema `specialtycare` · layer 6 (references Patients and SupplyChain)
 · SRS **OT-01..07, DIA-01..05, PHY-01..04, BB-01..07**.
 
 All times are UTC `timestamptz`; `date` query parameters are hospital-local (IST) calendar dates. Money is INR.
@@ -15,6 +15,7 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 |---|---|---|
 | Surgery cannot start (knife to skin) before the WHO **Sign-in** and **Time-out** are complete, and cannot be completed before the **Sign-out**. Phases run in order, each item records who confirmed it and when, and a completed phase is locked. Sign-in requires a complete pre-op checklist. | `SurgeryBooking.Start/Complete/ConfirmSafety` | `SurgicalSafetyChecklistTests` |
 | No double booking of a theatre, surgeon, anaesthetist or patient. Overlap uses half-open intervals, so back-to-back cases are allowed. The check runs under PostgreSQL advisory locks, across all facilities. | `SurgeryScheduling`, `SurgeryService`, `SchedulingLocks` | `SurgerySchedulingTests` |
+| The OT store look-up offers only stock that can be issued now (not expired, blocked or fully reserved), from the same OT store materials are consumed from, with batches in FEFO order. | `OtStoreLookup` | `OtStoreLookupTests` |
 | A dialysis machine must match the patient's sero status (Negative/HBsAg/HCV/HIV). This is checked when the session is scheduled and again when it starts. The machine must also be disinfected after its last session and not be running another one. | `SeroSegregation`, `DialysisMachine.EnsureReadyFor` | `SeroSegregationTests`, `DialysisSessionTests` |
 | A dialyzer is used only for its own patient and only up to its maximum uses. HBsAg-positive patients are always single-use. | `Dialyzer.Use`, `DialysisPatientProfile.EffectiveMaxDialyzerUses` | `DialyzerTests` |
 | Donor eligibility (NBTC 2017): Hb ≥ 12.5 g/dL; weight ≥ 45 kg (≥ 55 kg for 450 ml); age 18–65 (first-time donors ≤ 60); BP 100–140/60–90; pulse 60–100; temperature ≤ 37.5 °C; whole-blood interval 90 days (men) / 120 days (women); questionnaire deferrals. | `DonorEligibility` | `DonorEligibilityTests` |
@@ -51,6 +52,7 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | POST | `/bookings/{id}/anaesthesia/vitals` | `ot.anaesthesia.record` | `AddAnaesthesiaVitalsRequest` {rows[at, HR, BP, SpO₂, EtCO₂, temp, RR]} → `AnaesthesiaRecordDto` |
 | GET/PUT | `/bookings/{id}/operation-note` | `ot.read` / `ot.surgery.perform` | `SaveOperationNoteRequest` (diagnoses, procedure performed, findings, details, specimens[], drains, blood loss, complications, **postOpOrders**, sign) → `OperationNoteDto` |
 | GET | `/bookings/{id}/materials` | `ot.read` | → `SurgeryMaterialDto[]` |
+| GET | `/store-items?search=&take=` | `ot.materials.record` | → `OtStoreItem[]` for the materials dialog: active items with issuable stock (unreserved, unexpired, unblocked) in the facility's OT store — the store `POST /bookings/{id}/materials` issues from, resolved with `StockService.ResolveStoreAsync(facility, OT)`. Fields: itemId, code, name, genericName, manufacturer, type, baseUnit, available, nearestExpiry, mrp (of the batch FEFO issues first) and `batches[]` (batchId, batchNumber, expiryDate, available, mrp; the first 3 in FEFO order). Search matches code, barcode, name, generic or brand; name order; `take` 20 by default, at most 50. 422 `stock.no_store` when the facility has no active OT store, `stock.store_ambiguous` when it has more than one, `facility.required` without a signed-in facility. Record the pick with `AddSurgeryMaterialRequest` (`supplyItemId = itemId`, `itemName = name`, `lotNumber = batchNumber`, `expiryDate`) |
 | POST | `/bookings/{id}/materials` | `ot.materials.record` | `AddSurgeryMaterialRequest` (kind Implant/Consumable, supplyItemId?, itemName, manufacturer, lot/serial (required for implants), expiry, quantity, unitPrice) → 201 `SurgeryMaterialDto`. With `supplyItemId` the item is issued from the facility's OT store (stock ledger source `specialtycare.ot`), in the same transaction as the charge; without it (consignment or patient-supplied) only the charge is posted. Stock errors (no OT store, not enough stock) are returned as 422 |
 | DELETE | `/bookings/{id}/materials/{materialId}` | `ot.materials.record` | → 204 (withdraws the charge first, then returns the item to the OT store) |
 | GET | `/api/v1/patients/{patientId}/surgeries` | `ot.read` | → paged surgery history |

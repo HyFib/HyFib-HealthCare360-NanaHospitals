@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Persistence;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.SupplyChain;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
@@ -22,15 +23,24 @@ public sealed class ClinicalModelTests
 {
     private static readonly Lazy<IModel> Model = new(() =>
     {
-        var options = new DbContextOptionsBuilder<HospitalDbContext>()
-            .UseNpgsql("Host=localhost;Database=hc360_model_check")
-            .UseSnakeCaseNamingConvention()
-            .Options;
-        using var db = new HospitalDbContext(options, new ModuleCatalog([new PatientsModule(), new ClinicalModule()]));
+        using var db = CreateContext();
 
         // The design-time model keeps the provider annotations (index method, operator classes) the runtime model drops.
         return db.GetService<IDesignTimeModel>().Model;
     });
+
+    /// <summary>
+    /// A model-only context with Clinical and the modules it references. EF caches one model per context type, so every
+    /// test in this assembly that needs a context must use this one module set.
+    /// </summary>
+    internal static HospitalDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<HospitalDbContext>()
+            .UseNpgsql("Host=localhost;Database=hc360_model_check")
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        return new HospitalDbContext(options, new ModuleCatalog([new PatientsModule(), new SupplyChainModule(), new ClinicalModule()]));
+    }
 
     private static List<IEntityType> ClinicalEntities =>
     [
@@ -133,6 +143,20 @@ public sealed class ClinicalModelTests
 
         constraint.ModelName.ShouldBe("ck_clinical_order_items_quantity");
         constraint.Sql.ShouldBe("quantity >= 1");
+    }
+
+    [Fact]
+    public void A_patient_has_at_most_one_live_no_known_allergies_statement()
+    {
+        var entity = Model.Value.FindEntityType(typeof(NoKnownAllergiesStatement))!;
+        var index = entity.GetIndexes().Single(i => i.Properties.Count == 1 && i.Properties[0].Name == nameof(NoKnownAllergiesStatement.PatientId));
+
+        entity.GetTableName().ShouldBe("no_known_allergies");
+        index.IsUnique.ShouldBeTrue();
+        index.GetFilter().ShouldBe("is_deleted = false"); // removed statements stay as soft-deleted history
+        index.GetDatabaseName().ShouldBe(NoKnownAllergiesStatementConfiguration.OnePerPatientIndex);
+        entity.GetForeignKeys().Single().DeleteBehavior.ShouldBe(DeleteBehavior.Restrict);
+        entity.FindProperty(nameof(NoKnownAllergiesStatement.RecordedByName))!.GetMaxLength().ShouldBe(200);
     }
 
     [Fact]

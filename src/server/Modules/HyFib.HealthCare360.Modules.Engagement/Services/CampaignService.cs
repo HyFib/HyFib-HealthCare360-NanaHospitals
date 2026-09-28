@@ -111,7 +111,7 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
         if (await links.BaseUrlAsync(campaign.FacilityId, ct) is null)
         {
             return Error.Rule("campaign.no_portal_url",
-                $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's https portal address first; every message must carry an opt-out link.");
+                $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's public https address first; every message must carry an opt-out link.");
         }
 
         var audience = await Audience(campaign.FacilityId, campaign.Segment).CountAsync(ct);

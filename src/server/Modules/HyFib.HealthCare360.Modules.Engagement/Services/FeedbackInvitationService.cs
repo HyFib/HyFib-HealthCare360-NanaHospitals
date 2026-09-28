@@ -73,7 +73,7 @@ public sealed class FeedbackInvitationService(
         var baseUrl = await links.BaseUrlAsync(form.FacilityId, ct);
         if (baseUrl is null)
         {
-            return Error.Rule("feedback.no_portal_url", $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's https portal address first.");
+            return Error.Rule("feedback.no_portal_url", $"Set the '{PublicLinks.BaseUrlSetting}' setting to the hospital's public https address first.");
         }
 
         var now = time.GetUtcNow();

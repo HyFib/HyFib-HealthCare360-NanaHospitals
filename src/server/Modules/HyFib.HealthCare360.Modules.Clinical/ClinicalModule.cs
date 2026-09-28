@@ -55,6 +55,7 @@ public sealed class ClinicalModule : IModule
         TemplateEndpoints.Map(endpoints);
         OrderEndpoints.Map(endpoints);
         PrescriptionEndpoints.Map(endpoints);
+        DrugSearchEndpoints.Map(endpoints);
         DrugSafetyEndpoints.Map(endpoints);
         PrescriptionVerificationEndpoints.Map(endpoints);
         DischargeSummaryEndpoints.Map(endpoints);

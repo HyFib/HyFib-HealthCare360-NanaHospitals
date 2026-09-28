@@ -1,29 +1,30 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
-using HyFib.HealthCare360.Modules.Scheduling.Services;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Services;
 
 /// <summary>
-/// Builds and sends the patient's join link (TEL-01): <c>https://{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}</c>
-/// (a relative link when the portal address is not configured). Sent by SMS and WhatsApp through the outbox, so the
-/// message goes out only if the booking commits, and expires with the link.
+/// Builds and sends the patient's join link (TEL-01): <c>{portal.baseUrl}/portal/telehealth/{sessionId}?t={token}</c>,
+/// where <c>portal.baseUrl</c> is the hospital's public https address (<see cref="PortalAddress"/>); a server-relative
+/// link when it is not configured. Sent by SMS and WhatsApp through the outbox, so the message goes out only if the
+/// booking commits, and expires with the link.
 /// </summary>
-public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationService notifications, SchedulingSettings settings, TimeProvider time)
+public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationService notifications, ISettingsService settings, TimeProvider time)
 {
     public const string Template = "telehealth.link";
 
     private static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
-    public async Task<string> JoinUrlAsync(TelehealthSession session, string token, CancellationToken ct)
-    {
-        var baseUrl = await settings.PortalBaseUrlAsync(session.FacilityId, ct);
-        var path = $"/portal/telehealth/{session.Id}?t={Uri.EscapeDataString(token)}";
-        return baseUrl is null ? path : baseUrl + path;
-    }
+    public async Task<string> JoinUrlAsync(TelehealthSession session, string token, CancellationToken ct) =>
+        JoinUrl(await PortalAddress.BaseUrlAsync(settings, session.FacilityId, ct), session.Id, token);
+
+    /// <summary>The portal's telehealth page for the session; relative (<c>/portal/telehealth/…</c>) without a public address.</summary>
+    public static string JoinUrl(string? baseUrl, Guid sessionId, string token) =>
+        PortalAddress.Page(baseUrl ?? string.Empty, $"telehealth/{sessionId}?t={Uri.EscapeDataString(token)}");
 
     /// <summary>Queues the link in the current unit of work. Returns false when the patient has no mobile or e-mail.</summary>
     public async Task<bool> SendAsync(TelehealthSession session, string joinUrl, CancellationToken ct)

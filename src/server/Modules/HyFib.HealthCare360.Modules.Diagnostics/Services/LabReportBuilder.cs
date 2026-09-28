@@ -96,7 +96,8 @@ internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups 
             report.Amendments.OrderBy(a => a.Revision).Select(a => new LabAmendmentView(
                 a.Revision, a.Reason, a.Changes, a.AmendedAt, a.AmendedBy is { } by ? amendedBy.GetValueOrDefault(by) : null)).ToList(),
             report.VerificationCode,
-            report.VerificationCode is { } code ? VerificationPathPrefix + code : null);
+            report.VerificationCode is { } code ? VerificationPathPrefix + code : null,
+            await lookups.VerificationUrlAsync(order.FacilityId, DiagnosticKind.Laboratory, report.VerificationCode, ct));
     }
 
     internal static ReportLetterhead Letterhead(FacilitySnapshot? facility) =>

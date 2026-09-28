@@ -165,7 +165,11 @@ row version), skips reminders that were due before the booking was made, and exp
 |---|---|---|
 | `scheduling.onlineBookingCutoffMinutes` | 30 | online booking/changes close this long before the slot |
 | `scheduling.onlineBookingWindowDays` | 30 | how far ahead patients can book online |
-| `portal.baseUrl` | — | portal address used in waitlist links (shared with Telehealth) |
+| `portal.baseUrl` | — | the hospital's public https address, used in waitlist links (`{base}/portal/doctors/{practitionerId}`) |
+
+`portal.baseUrl` is the hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+It is read through the Platform helper `PortalAddress` (shared with Engagement, Telehealth and printed QR codes); a
+plain http value reads as "not configured", because patient links can carry personal tokens.
 
 ## Permissions
 

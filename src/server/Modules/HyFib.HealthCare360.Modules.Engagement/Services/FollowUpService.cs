@@ -128,7 +128,7 @@ public sealed class FollowUpService(
             {
                 ["doctor"] = doctor ?? "your doctor",
                 ["date"] = task.DueDate.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture),
-                ["link"] = baseUrl ?? "the hospital front desk",
+                ["link"] = baseUrl is null ? "the hospital front desk" : PublicLinks.PortalHome(baseUrl),
             },
             [NotificationChannel.Sms],
             TimeSpan.FromDays(1),

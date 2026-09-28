@@ -10,39 +10,45 @@ namespace HyFib.HealthCare360.Modules.Engagement.Tests;
 public sealed class PublicLinksTests
 {
     [Theory]
-    [InlineData("https://portal.nanahospitals.in", "https://portal.nanahospitals.in")]
-    [InlineData("https://portal.nanahospitals.in/", "https://portal.nanahospitals.in")]
-    [InlineData(" portal.nanahospitals.in ", "https://portal.nanahospitals.in")]
-    [InlineData("https://nanahospitals.in/portal/?x=1#top", "https://nanahospitals.in/portal")]
-    public void The_base_address_is_normalised_to_https(string configured, string expected) =>
+    [InlineData("https://care.nanahospitals.in", "https://care.nanahospitals.in")]
+    [InlineData("https://care.nanahospitals.in/", "https://care.nanahospitals.in")]
+    [InlineData(" care.nanahospitals.in ", "https://care.nanahospitals.in")]
+    [InlineData("https://care.nanahospitals.in/portal/?x=1#top", "https://care.nanahospitals.in")]
+    public void The_base_address_is_the_hospitals_https_origin(string configured, string expected) =>
         PublicLinks.Normalize(configured).ShouldBe(expected);
 
     [Theory]
-    [InlineData("http://portal.nanahospitals.in")]
-    [InlineData("ftp://portal.nanahospitals.in")]
-    [InlineData("https://admin:secret@portal.nanahospitals.in")]
+    [InlineData("http://care.nanahospitals.in")]
+    [InlineData("ftp://care.nanahospitals.in")]
+    [InlineData("https://admin:secret@care.nanahospitals.in")]
     [InlineData("")]
     [InlineData(null)]
     public void Plain_text_or_credential_bearing_addresses_are_never_used(string? configured) =>
         PublicLinks.Normalize(configured).ShouldBeNull();
 
     [Fact]
-    public void Links_are_built_under_the_portal_address()
+    public void Links_are_pages_of_the_patient_portal()
     {
-        PublicLinks.Feedback("https://p.in", "tok").ShouldBe("https://p.in/feedback/tok");
-        PublicLinks.FeedbackForm("https://p.in", "tok").ShouldBe("https://p.in/feedback/form/tok");
-        PublicLinks.OptOut("https://p.in", "tok").ShouldBe("https://p.in/unsubscribe/tok");
+        PublicLinks.Feedback("https://p.in", "tok").ShouldBe("https://p.in/portal/feedback/tok");
+        PublicLinks.FeedbackForm("https://p.in", "tok").ShouldBe("https://p.in/portal/feedback/form/tok");
+        PublicLinks.OptOut("https://p.in", "tok").ShouldBe("https://p.in/portal/unsubscribe/tok");
+        PublicLinks.PortalHome("https://p.in").ShouldBe("https://p.in/portal/");
     }
 
-    [Fact]
-    public async Task The_setting_is_read_per_facility()
+    [Theory]
+    [InlineData("care.nanahospitals.in")]
+    [InlineData("https://care.nanahospitals.in/portal")]
+    public async Task The_setting_is_read_per_facility_and_either_spelling_gives_the_same_links(string configured)
     {
         var facility = Guid.NewGuid();
         var settings = Substitute.For<ISettingsService>();
         settings.GetAsync<JsonElement?>(PublicLinks.BaseUrlSetting, facility, Arg.Any<CancellationToken>())
-            .Returns(JsonSerializer.SerializeToElement("portal.nanahospitals.in"));
+            .Returns(JsonSerializer.SerializeToElement(configured));
 
-        (await new PublicLinks(settings).BaseUrlAsync(facility, TestContext.Current.CancellationToken)).ShouldBe("https://portal.nanahospitals.in");
+        var baseUrl = await new PublicLinks(settings).BaseUrlAsync(facility, TestContext.Current.CancellationToken);
+
+        baseUrl.ShouldBe("https://care.nanahospitals.in");
+        PublicLinks.Feedback(baseUrl!, "tok").ShouldBe("https://care.nanahospitals.in/portal/feedback/tok");
     }
 
     [Fact]
