@@ -34,6 +34,7 @@ public sealed class LayeringTests
         ["Modules.Billing"] = 7,
         ["Modules.Analytics"] = 8,
         ["Modules.AI"] = 8,
+        ["Modules.Interop"] = 8,
     };
 
     public static TheoryData<string> Components() => [.. Layers.Keys];

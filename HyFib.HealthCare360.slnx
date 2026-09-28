@@ -15,6 +15,7 @@
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Engagement/HyFib.HealthCare360.Modules.Engagement.csproj" />
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.HR/HyFib.HealthCare360.Modules.HR.csproj" />
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Inpatient/HyFib.HealthCare360.Modules.Inpatient.csproj" />
+    <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Interop/HyFib.HealthCare360.Modules.Interop.csproj" />
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Patients/HyFib.HealthCare360.Modules.Patients.csproj" />
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Pharmacy/HyFib.HealthCare360.Modules.Pharmacy.csproj" />
     <Project Path="src/server/Modules/HyFib.HealthCare360.Modules.Quality/HyFib.HealthCare360.Modules.Quality.csproj" />
@@ -45,6 +46,7 @@
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Engagement.Tests/HyFib.HealthCare360.Modules.Engagement.Tests.csproj" />
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.HR.Tests/HyFib.HealthCare360.Modules.HR.Tests.csproj" />
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests/HyFib.HealthCare360.Modules.Inpatient.Tests.csproj" />
+    <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Interop.Tests/HyFib.HealthCare360.Modules.Interop.Tests.csproj" />
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Patients.Tests/HyFib.HealthCare360.Modules.Patients.Tests.csproj" />
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Pharmacy.Tests/HyFib.HealthCare360.Modules.Pharmacy.Tests.csproj" />
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.Quality.Tests/HyFib.HealthCare360.Modules.Quality.Tests.csproj" />

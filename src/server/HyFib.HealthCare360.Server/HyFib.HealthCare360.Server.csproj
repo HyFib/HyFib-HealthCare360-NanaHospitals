@@ -32,6 +32,7 @@
     <ProjectReference Include="..\Modules\HyFib.HealthCare360.Modules.Quality\HyFib.HealthCare360.Modules.Quality.csproj" />
     <ProjectReference Include="..\Modules\HyFib.HealthCare360.Modules.AI\HyFib.HealthCare360.Modules.AI.csproj" />
     <ProjectReference Include="..\Modules\HyFib.HealthCare360.Modules.Analytics\HyFib.HealthCare360.Modules.Analytics.csproj" />
+    <ProjectReference Include="..\Modules\HyFib.HealthCare360.Modules.Interop\HyFib.HealthCare360.Modules.Interop.csproj" />
     <ProjectReference Include="..\HyFib.HealthCare360.Integrations\HyFib.HealthCare360.Integrations.csproj" />
   </ItemGroup>
 

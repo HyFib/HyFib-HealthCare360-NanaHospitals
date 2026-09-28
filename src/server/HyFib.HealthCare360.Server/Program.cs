@@ -120,7 +120,7 @@ builder.Services.AddResponseCompression(compression =>
     compression.EnableForHttps = true;
     compression.Providers.Add<BrotliCompressionProvider>();
     compression.Providers.Add<GzipCompressionProvider>();
-    compression.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/problem+json", "image/svg+xml"]);
+    compression.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/problem+json", "application/fhir+json", "image/svg+xml"]);
 });
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
