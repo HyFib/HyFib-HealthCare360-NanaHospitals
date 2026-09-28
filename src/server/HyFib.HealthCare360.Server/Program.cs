@@ -1,0 +1,253 @@
+using System.IO.Compression;
+using System.Security.Authentication;
+using System.Text.Json.Serialization;
+using HyFib.HealthCare360.Platform;
+using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Server;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.StaticFiles;
+using Npgsql;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+using Scalar.AspNetCore;
+using Serilog;
+using Serilog.Events;
+
+// ---------------------------------------------------------------------------------------------------------
+// Maintenance commands (run from an elevated prompt on the Server Node), e.g.
+//   HyFib.HealthCare360.Server.exe backup decrypt --in <file.hc360bak> --out <file.dump> --key <base64>
+// ---------------------------------------------------------------------------------------------------------
+if (args.Length > 0 && ServerCli.IsCommand(args[0]))
+{
+    return await ServerCli.RunAsync(args);
+}
+
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
+
+// Site-specific settings live beside the data (survive upgrades): %ProgramData%\HyFib\HealthCare360\config\hc360.settings.json
+var platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();
+var directories = new DataDirectories(platformOptions);
+directories.EnsureCreated();
+builder.Configuration.AddJsonFile(Path.Combine(directories.Root, "config", "hc360.settings.json"), optional: true, reloadOnChange: false);
+builder.Configuration.AddEnvironmentVariables("HC360_");
+platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? platformOptions;
+
+builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
+
+builder.Services.AddSerilog((services, logger) =>
+{
+    logger.ReadFrom.Configuration(builder.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "HC360.Server")
+        .WriteTo.Console(restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
+        .WriteTo.File(
+            Path.Combine(directories.Logs, "hc360-server-.log"),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 60,
+            fileSizeLimitBytes: 100 * 1024 * 1024,
+            rollOnFileSizeLimit: true,
+            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}");
+
+    if (OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment())
+    {
+        logger.WriteTo.EventLog("HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
+    }
+});
+
+// TLS for the hospital LAN/WiFi: generated hospital CA + server certificate (or an admin-supplied PFX).
+var bootstrapProtection = DataProtectionProvider.Create(
+    new DirectoryInfo(Path.Combine(directories.Keys, "dataprotection")),
+    protection =>
+    {
+        protection.SetApplicationName("HyFib.HealthCare360");
+        if (OperatingSystem.IsWindows())
+        {
+            protection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+        }
+    });
+using var bootstrapLoggers = LoggerFactory.Create(logging => logging.AddSimpleConsole());
+var certificates = new LanCertificateManager(directories, platformOptions, bootstrapProtection, bootstrapLoggers.CreateLogger<LanCertificateManager>());
+certificates.EnsureCertificates();
+
+builder.WebHost.ConfigureKestrel(kestrel =>
+{
+    kestrel.AddServerHeader = false;
+    kestrel.Limits.MaxRequestBodySize = 30 * 1024 * 1024;
+    kestrel.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
+    kestrel.ListenAnyIP(platformOptions.HttpsPort, listen => listen.UseHttps(https =>
+    {
+        https.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
+        https.ServerCertificateSelector = (_, _) => certificates.ServerCertificate;
+    }));
+    if (platformOptions.HttpRedirectPort > 0)
+    {
+        kestrel.ListenAnyIP(platformOptions.HttpRedirectPort);
+    }
+});
+
+builder.Services.AddHospitalPlatform(
+    builder.Configuration,
+    builder.Environment,
+    ServerModules.All,
+    typeof(ServerModules).Assembly.GetName().Name!,
+    certificates);
+
+builder.Services.ConfigureHttpJsonOptions(json =>
+{
+    json.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    json.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
+});
+
+var signalR = builder.Services.AddSignalR()
+    .AddJsonProtocol(json => json.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+if (builder.Configuration.GetConnectionString("Redis") is { Length: > 0 } redis)
+{
+    // Scale-out (SCAL-02): several API nodes share real-time groups through Redis.
+    signalR.AddStackExchangeRedis(redis, redisOptions => redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("hc360"));
+}
+
+builder.Services.AddResponseCompression(compression =>
+{
+    compression.EnableForHttps = true;
+    compression.Providers.Add<BrotliCompressionProvider>();
+    compression.Providers.Add<GzipCompressionProvider>();
+    compression.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["application/problem+json", "image/svg+xml"]);
+});
+builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+
+builder.Services.AddOpenApi(openApi =>
+{
+    openApi.CreateSchemaReferenceId = OpenApiSchemaIds.Create;
+    openApi.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info.Title = "HyFib HealthCare360 API";
+        document.Info.Version = "v1";
+        document.Info.Description = "Hospital information system API. All endpoints require a bearer token unless marked anonymous.";
+        return Task.CompletedTask;
+    });
+});
+
+if (builder.Configuration["OpenTelemetry:OtlpEndpoint"] is { Length: > 0 } otlp)
+{
+    builder.Services.AddOpenTelemetry()
+        .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddNpgsql().AddOtlpExporter(o => o.Endpoint = new Uri(otlp)))
+        .WithMetrics(metrics => metrics.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddMeter("Npgsql").AddOtlpExporter(o => o.Endpoint = new Uri(otlp)));
+}
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+if (platformOptions.HttpRedirectPort > 0)
+{
+    app.UseHttpsRedirection();
+}
+
+// Never compress token-bearing auth responses (BREACH); everything else is compressed to save WiFi airtime.
+app.Use((context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/v1/auth") && context.Features.Get<IHttpsCompressionFeature>() is { } compression)
+    {
+        compression.Mode = HttpsCompressionMode.DoNotCompress;
+    }
+
+    return next(context);
+});
+app.UseResponseCompression();
+
+var contentTypes = new FileExtensionContentTypeProvider();
+contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+app.UseDefaultFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = contentTypes,
+    OnPrepareResponse = static context =>
+    {
+        // Vite emits content-hashed assets: cache them for a year; always revalidate HTML.
+        var headers = context.Context.Response.Headers;
+        headers.CacheControl = context.Context.Request.Path.StartsWithSegments("/assets") || context.Context.Request.Path.StartsWithSegments("/portal/assets")
+            ? "public, max-age=31536000, immutable"
+            : "no-cache";
+    },
+});
+
+app.UseSerilogRequestLogging(logging =>
+{
+    logging.GetLevel = (http, _, exception) =>
+        exception is not null || http.Response.StatusCode >= 500 ? LogEventLevel.Error
+        : http.Request.Path.StartsWithSegments("/health") ? LogEventLevel.Verbose
+        : LogEventLevel.Information;
+});
+
+app.UseHospitalPlatform();
+app.MapHospitalPlatform();
+
+app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new() { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
+
+if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
+{
+    app.MapOpenApi().AllowAnonymous();
+    app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
+}
+
+// Unknown API routes must be a 404, never the SPA shell.
+app.Map("/api/{**rest}", () => Results.Problem(title: "Not found", statusCode: StatusCodes.Status404NotFound)).AllowAnonymous();
+app.MapFallbackToFile("/portal/{**path}", "portal/index.html").AllowAnonymous();
+app.MapFallback(async context =>
+{
+    var index = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(AppContext.BaseDirectory, "wwwroot"), "index.html");
+    if (File.Exists(index))
+    {
+        context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.Headers.CacheControl = "no-cache";
+        await context.Response.SendFileAsync(index);
+        return;
+    }
+
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.WriteAsync("""
+        <!doctype html><html lang="en"><head><meta charset="utf-8"><title>HC360 Server</title></head>
+        <body style="font-family:Segoe UI,system-ui,sans-serif;padding:2rem">
+        <h1>HyFib HealthCare360 server is running</h1>
+        <p>The staff UI is not bundled in this build. In development run <code>pnpm dev</code> in <code>src/web</code>.</p>
+        </body></html>
+        """);
+}).AllowAnonymous();
+
+await InitializeDatabaseAsync(app);
+await app.RunAsync();
+return 0;
+
+// PostgreSQL may still be starting when the service boots after a power cut: retry for up to ~3 minutes.
+static async Task InitializeDatabaseAsync(WebApplication app)
+{
+    var initializer = app.Services.GetRequiredService<DatabaseInitializer>();
+    var logger = app.Services.GetRequiredService<ILogger<DatabaseInitializer>>();
+    for (var attempt = 1; ; attempt++)
+    {
+        try
+        {
+            await initializer.InitializeAsync(CancellationToken.None);
+            return;
+        }
+        catch (Exception ex) when (attempt < 12 && ex is NpgsqlException or TimeoutException or InvalidOperationException { InnerException: NpgsqlException })
+        {
+            logger.LogWarning(ex, "Database not ready (attempt {Attempt}); retrying in 15 seconds", attempt);
+            await Task.Delay(TimeSpan.FromSeconds(15));
+        }
+    }
+}
