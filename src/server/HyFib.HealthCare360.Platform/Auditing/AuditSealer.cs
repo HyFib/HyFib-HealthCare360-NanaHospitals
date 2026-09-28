@@ -91,6 +91,14 @@ public sealed class AuditChainService(HospitalDbContext db)
             }
         }
 
+        // A seal without a chain position would hide the row from the walk above: treat it as tampering.
+        var outsideChain = await db.Set<AuditEvent>().LongCountAsync(e => e.Hash != null && e.ChainIndex == null, cancellationToken);
+        if (outsideChain > 0)
+        {
+            return new AuditVerification(false, checkedCount, null, 0,
+                $"{outsideChain:N0} audit record(s) carry a seal outside the chain. Records may have been altered.");
+        }
+
         var unsealed = await db.Set<AuditEvent>().LongCountAsync(e => e.Hash == null, cancellationToken);
         return new AuditVerification(true, checkedCount, null, unsealed, $"Verified {checkedCount:N0} audit records.");
     }

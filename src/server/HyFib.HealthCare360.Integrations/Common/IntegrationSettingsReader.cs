@@ -94,10 +94,10 @@ internal sealed class IntegrationSettingsReader(ISettingsService settings, ICurr
     /// <c>IAccountingExporter.BuildImportFile</c>). Settings are memory-cached by the settings service for a minute,
     /// so this blocks on the database only on a cache miss; ASP.NET Core has no synchronisation context to deadlock.
     /// </summary>
-    public IntegrationConfig<TSettings, TSecrets> Read<TSettings, TSecrets>(string integration, bool requireEnabled)
+    public IntegrationConfig<TSettings, TSecrets> Read<TSettings, TSecrets>(string integration, Guid? facilityId, bool requireEnabled)
         where TSettings : class, IIntegrationSettings
         where TSecrets : class, new() =>
-        ReadAsync<TSettings, TSecrets>(integration, null, requireEnabled, CancellationToken.None).GetAwaiter().GetResult();
+        ReadAsync<TSettings, TSecrets>(integration, facilityId, requireEnabled, CancellationToken.None).GetAwaiter().GetResult();
 
     /// <summary>A plain (non-integration-shaped) setting such as the analyser list; invalid JSON reads as missing.</summary>
     public async Task<T?> ReadValueAsync<T>(string key, Guid? facilityId, CancellationToken cancellationToken)

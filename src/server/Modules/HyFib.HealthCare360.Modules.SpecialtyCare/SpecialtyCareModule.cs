@@ -18,6 +18,7 @@ public sealed class SpecialtyCareModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        SpecialtyCareRealtimeTopics.Register(services);
         services.AddScoped<SpecialtyChargeService>();
         services.AddScoped<SurgeryService>();
         services.AddScoped<OtClinicalService>();

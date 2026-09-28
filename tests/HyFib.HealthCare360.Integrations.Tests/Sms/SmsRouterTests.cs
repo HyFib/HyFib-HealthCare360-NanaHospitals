@@ -45,6 +45,21 @@ public sealed class SmsRouterTests
     }
 
     [Fact]
+    public async Task Queued_messages_use_the_settings_of_their_facility()
+    {
+        // Outbox deliveries run with no signed-in user: the facility travels with the message.
+        var branch = Guid.Parse("0f3e2d1c-0000-4000-8000-00000000000a");
+        Configure(null);
+        _settings.GetAsync<SmsSettings>("integrations.sms", branch, Arg.Any<CancellationToken>())
+            .Returns(new SmsSettings { Enabled = true, Provider = "MSG91", SenderId = "NANABR" });
+
+        var result = await Router.SendAsync(new SmsMessage("+919876543210", "Hello", FacilityId: branch), Ct);
+
+        result.ShouldBe(SendResult.Ok("id-1"));
+        await _msg91.Received(1).SendAsync(Arg.Is<SmsMessage>(m => m.SenderId == "NANABR"), Arg.Any<SmsSettings>(), Arg.Any<SmsSecrets>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task Fails_clearly_when_sms_is_not_configured()
     {
         Configure(null);

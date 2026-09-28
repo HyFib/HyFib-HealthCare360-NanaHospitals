@@ -71,6 +71,7 @@ public sealed class DiagnosticsModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        DiagnosticsRealtimeTopics.Register(services);
         services.AddScoped<DiagnosticsLookups>();
         services.AddScoped<DiagnosticsRealtime>();
         services.AddScoped<ChargeService>();

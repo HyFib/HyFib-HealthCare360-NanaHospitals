@@ -368,7 +368,7 @@ public sealed class RefundService(
             return Error.Rule("billing.gateway_payment_missing", "No online payment large enough to reverse was found. Refund by another mode.");
         }
 
-        var result = await gateway.RefundAsync(paymentId, refund.Amount, refund.Reason, ct);
+        var result = await gateway.RefundAsync(paymentId, refund.Amount, refund.Reason, refund.FacilityId, ct);
         if (!result.Success || string.IsNullOrWhiteSpace(result.RefundId))
         {
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");

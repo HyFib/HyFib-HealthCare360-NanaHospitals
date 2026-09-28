@@ -34,6 +34,7 @@
     <Project Path="tests/HyFib.HealthCare360.ArchitectureTests/HyFib.HealthCare360.ArchitectureTests.csproj" />
     <Project Path="tests/HyFib.HealthCare360.Desktop.Tests/HyFib.HealthCare360.Desktop.Tests.csproj" />
     <Project Path="tests/HyFib.HealthCare360.Integrations.Tests/HyFib.HealthCare360.Integrations.Tests.csproj" />
+    <Project Path="tests/HyFib.HealthCare360.Platform.Tests/HyFib.HealthCare360.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Modules/">
     <Project Path="tests/Modules/HyFib.HealthCare360.Modules.AI.Tests/HyFib.HealthCare360.Modules.AI.Tests.csproj" />

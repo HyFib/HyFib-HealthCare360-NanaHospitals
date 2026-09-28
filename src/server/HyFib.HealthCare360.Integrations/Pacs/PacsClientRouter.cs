@@ -41,7 +41,7 @@ internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, Int
     /// </summary>
     public string? BuildViewerUrl(string studyInstanceUid, string? accessionNumber)
     {
-        var config = settings.Read<PacsSettings, PacsSecrets>(IntegrationNames.Pacs, requireEnabled: false);
+        var config = settings.Read<PacsSettings, PacsSecrets>(IntegrationNames.Pacs, null, requireEnabled: false);
         return QidoQuery.ViewerUrl(config.Settings?.ViewerUrlTemplate, studyInstanceUid, accessionNumber);
     }
 

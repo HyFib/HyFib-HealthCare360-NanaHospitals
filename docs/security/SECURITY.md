@@ -58,12 +58,20 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   PHI and secrets.
 - Consent capture (treatment, data sharing, SMS/WhatsApp, telehealth, research) supports the **DPDP Act 2023** notice
   and consent requirements.
+- **Live updates** (SignalR) follow the same rules as the API. Every topic a screen subscribes to is checked, and
+  anything else is refused:
+  - Staff need the module's permission and may follow only their own facility's topics (lab, pharmacy, bed board, OT)
+    and records (wards, department queues, telehealth sessions).
+  - Restricted patients' topics need restricted-record access.
+  - Portal users may follow only their own record and their own consultations.
+  - Tokens limited to a mandatory step (MFA enrolment, password change) may follow nothing.
 
 ### Integrity and audit
 - **Tamper-evident audit log**:
   - Each entry is hash-chained to the previous one.
-  - A database trigger blocks updates and deletes.
-  - Administration › Audit log › *Verify integrity* re-checks the chain.
+  - Database triggers block deletes, rows inserted pre-sealed, and every update except a complete seal: hash, chain
+    position and previous hash together, linked to the sealed entry before it (checked at commit).
+  - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
 - Records carry who and when on every change, and deletes are soft deletes.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.

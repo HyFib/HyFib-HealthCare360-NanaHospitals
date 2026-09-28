@@ -55,6 +55,7 @@ public sealed class InpatientModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        InpatientRealtimeTopics.Register(services);
         services.AddScoped<AdmissionService>();
         services.AddScoped<DischargeService>();
         services.AddScoped<BedService>();

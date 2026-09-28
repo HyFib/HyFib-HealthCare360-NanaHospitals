@@ -171,7 +171,12 @@ HyFib.HealthCare360.Modules.<Name>/
 * **Authorisation:** every endpoint declares `.RequirePermission(Permissions.X)`. Anonymous endpoints are explicit (`AllowAnonymous`) and rate-limited.
 * **OpenAPI:** `/openapi/v1.json`. There is an interactive reference at `/docs` (Scalar) when enabled.
 * **FHIR:** `/fhir/r4/{resource}` read facade for interoperability (EHR-05).
-* **Realtime:** SignalR hub `/hubs/events` (groups: `facility:{id}`, `dept:{id}`, `user:{id}`, `beds:{facilityId}`, `queue:{deptId}`) and `/hubs/telehealth` (WebRTC signalling).
+* **Realtime:** SignalR hub `/hubs/events` and `/hubs/telehealth` (WebRTC signalling).
+  * Connections join `user:{id}` and `facility:{id}`.
+  * Screens subscribe to module topics: `queue:{deptId}`, `patient:{id}`, `beds:{facilityId}`, `ward:{id}`,
+    `lab:{facilityId}`, `pharmacy:{facilityId}`, `ot:{facilityId}`, `tele:{sessionId}`.
+  * Each module registers a `RealtimeTopicPolicy` for its topics (permission, plus the facility or a record check).
+    Topics without a policy cannot be followed.
 
 ---
 

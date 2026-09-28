@@ -58,6 +58,7 @@ public sealed class PatientsModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        PatientsRealtimeTopics.Register(services);
         services.AddScoped<PatientRegistrationService>();
         services.AddScoped<PatientAccessGuard>();
         services.AddScoped<VisitService>();

@@ -72,7 +72,8 @@ internal static class GatewayEndpoints
     /// Gateway webhook: body capped at 64 KB, signature verified by the gateway adapter (constant time), then the order's
     /// real status is fetched from the gateway. 401 for a bad signature; 200 for anything else we accept or ignore.
     /// </summary>
-    private static async Task<IResult> Webhook(HttpRequest request, PaymentGatewayService gateway, CancellationToken ct)
+    /// <param name="facility">Optional <c>?facility=</c> for facilities with their own merchant account; the order in the payload decides first.</param>
+    private static async Task<IResult> Webhook(HttpRequest request, Guid? facility, PaymentGatewayService gateway, CancellationToken ct)
     {
         if (request.ContentLength is > MaxWebhookChars)
         {
@@ -95,7 +96,7 @@ internal static class GatewayEndpoints
         }
 
         var signature = SignatureHeaders.Select(h => request.Headers[h].ToString()).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-        return await gateway.HandleWebhookAsync(payload, signature, ct) switch
+        return await gateway.HandleWebhookAsync(payload, signature, facility, ct) switch
         {
             WebhookOutcome.InvalidSignature => Results.Unauthorized(),
             WebhookOutcome.NotConfigured => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),

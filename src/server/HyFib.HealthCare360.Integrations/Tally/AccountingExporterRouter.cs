@@ -35,7 +35,7 @@ internal sealed class AccountingExporterRouter(IEnumerable<IAccountingProvider> 
             throw new IntegrationException($"Voucher {invalid.Number} cannot be exported: {invalid.Problem}.");
         }
 
-        var config = settings.Read<TallySettings, NoSecrets>(IntegrationNames.Tally, requireEnabled: false);
+        var config = settings.Read<TallySettings, NoSecrets>(IntegrationNames.Tally, null, requireEnabled: false);
         var options = config.Settings is null ? new TallyImportOptions(null, "Primary Cost Category", null) : TallyImportOptions.From(config.Settings);
         return TallyXml.BuildImport(vouchers, options);
     }

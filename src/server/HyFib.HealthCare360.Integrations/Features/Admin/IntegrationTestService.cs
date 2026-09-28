@@ -105,7 +105,7 @@ internal sealed class IntegrationTestService(
         try
         {
             var order = await payments.CreateOrderAsync(
-                new CreatePaymentOrder(1m, "INR", reference, "HC360 integration test", null, null, null), cancellationToken);
+                new CreatePaymentOrder(1m, "INR", reference, "HC360 integration test", null, null, null), null, cancellationToken);
             return new IntegrationTestResult(true, $"Created a ₹1 test order with {order.Provider}. It expires unpaid.",
                 new Dictionary<string, string?> { ["provider"] = order.Provider, ["orderId"] = order.OrderId });
         }

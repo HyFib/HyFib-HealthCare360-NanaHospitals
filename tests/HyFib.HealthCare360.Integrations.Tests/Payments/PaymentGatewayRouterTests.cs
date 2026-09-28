@@ -50,8 +50,8 @@ public sealed class PaymentGatewayRouterTests
         const string orderId = "order_IluGWxBm9U8zJ8";
         const string paymentId = "pay_IH4NVgf4Dreq1l";
 
-        Router.VerifySignature($"{orderId}|{paymentId}", Sign(KeySecret, $"{orderId}|{paymentId}")).ShouldBeTrue();
-        Router.VerifySignature($"{orderId}|{paymentId}", Sign(KeySecret, $"{orderId}|pay_other")).ShouldBeFalse();
+        Router.VerifySignature($"{orderId}|{paymentId}", Sign(KeySecret, $"{orderId}|{paymentId}"), null).ShouldBeTrue();
+        Router.VerifySignature($"{orderId}|{paymentId}", Sign(KeySecret, $"{orderId}|pay_other"), null).ShouldBeFalse();
     }
 
     [Fact]
@@ -59,8 +59,8 @@ public sealed class PaymentGatewayRouterTests
     {
         const string body = """{"event":"payment.captured","payload":{"payment":{"entity":{"order_id":"order_IluGWxBm9U8zJ8"}}}}""";
 
-        Router.VerifySignature(body, Sign(WebhookSecret, body)).ShouldBeTrue();
-        Router.VerifySignature(body, Sign(KeySecret, body)).ShouldBeFalse();
+        Router.VerifySignature(body, Sign(WebhookSecret, body), null).ShouldBeTrue();
+        Router.VerifySignature(body, Sign(KeySecret, body), null).ShouldBeFalse();
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class PaymentGatewayRouterTests
     {
         Configure(new PaymentSettings { Enabled = false, Provider = "razorpay" });
 
-        Router.VerifySignature("order_A|pay_B", Sign(KeySecret, "order_A|pay_B")).ShouldBeTrue();
+        Router.VerifySignature("order_A|pay_B", Sign(KeySecret, "order_A|pay_B"), null).ShouldBeTrue();
     }
 
     [Theory]
@@ -78,14 +78,14 @@ public sealed class PaymentGatewayRouterTests
     {
         Configure(provider is null ? null : new PaymentSettings { Enabled = true, Provider = provider });
 
-        Router.VerifySignature("order_A|pay_B", Sign(KeySecret, "order_A|pay_B")).ShouldBeFalse();
+        Router.VerifySignature("order_A|pay_B", Sign(KeySecret, "order_A|pay_B"), null).ShouldBeFalse();
     }
 
     [Fact]
     public void Empty_payloads_and_signatures_never_verify()
     {
-        Router.VerifySignature("", Sign(KeySecret, "")).ShouldBeFalse();
-        Router.VerifySignature("order_A|pay_B", " ").ShouldBeFalse();
+        Router.VerifySignature("", Sign(KeySecret, ""), null).ShouldBeFalse();
+        Router.VerifySignature("order_A|pay_B", " ", null).ShouldBeFalse();
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class PaymentGatewayRouterTests
         Configure(new PaymentSettings { Enabled = false, Provider = "razorpay" });
 
         var failure = await Should.ThrowAsync<InvalidOperationException>(() =>
-            Router.CreateOrderAsync(new CreatePaymentOrder(500m, "INR", "APT-1", "Consultation fee", null, null, null), Ct));
+            Router.CreateOrderAsync(new CreatePaymentOrder(500m, "INR", "APT-1", "Consultation fee", null, null, null), null, Ct));
 
         failure.ShouldBeOfType<IntegrationException>().Message.ShouldBe("Payment gateway is disabled.");
     }
@@ -104,11 +104,24 @@ public sealed class PaymentGatewayRouterTests
     {
         Configure(null);
 
-        var status = await Router.GetStatusAsync("order_A", Ct);
-        var refund = await Router.RefundAsync("pay_B", 100m, "duplicate", Ct);
+        var status = await Router.GetStatusAsync("order_A", null, Ct);
+        var refund = await Router.RefundAsync("pay_B", 100m, "duplicate", null, Ct);
 
         status.Status.ShouldBe(GatewayPaymentStatus.Pending);
         status.Error!.ShouldContain("not configured");
         refund.Success.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_facility_with_its_own_account_verifies_with_its_own_webhook_secret()
+    {
+        var facility = Guid.Parse("0f3e2d1c-0000-4000-8000-00000000000a");
+        _settings.GetAsync<PaymentSecrets>("integrations.payment.secret", facility, Arg.Any<CancellationToken>())
+            .Returns(new PaymentSecrets { KeySecret = "branch-key-secret", WebhookSecret = "branch-webhook-secret" });
+        const string body = "{\"event\":\"payment.captured\"}";
+
+        Router.VerifySignature(body, Sign("branch-webhook-secret", body), facility).ShouldBeTrue();
+        Router.VerifySignature(body, Sign(WebhookSecret, body), facility).ShouldBeFalse();
+        Router.VerifySignature(body, Sign(WebhookSecret, body), null).ShouldBeTrue();
     }
 }

@@ -186,6 +186,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<NotificationTemplateRenderer>();
         services.AddSingleton<IRealtimePublisher, SignalRRealtimePublisher>();
+        services.AddScoped<RealtimeTopicAuthorizer>();
+
+        // Staff always join their own facility's topic on connect; re-subscribing is allowed for that facility only.
+        services.AddRealtimeTopic(new RealtimeTopicPolicy("facility", RealtimeTopicScope.Facility, []));
         services.AddScoped<IFileStore, EncryptedFileStore>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();

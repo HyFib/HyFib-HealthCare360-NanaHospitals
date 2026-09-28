@@ -49,6 +49,7 @@ public sealed class PharmacyModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        PharmacyRealtimeTopics.Register(services);
         services.AddScoped<DispensingService>();
         services.AddScoped<SaleAdjustmentService>();
         services.AddScoped<InpatientPharmacyService>();

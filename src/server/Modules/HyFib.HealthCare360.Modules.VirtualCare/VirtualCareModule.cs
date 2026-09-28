@@ -45,6 +45,7 @@ public sealed class VirtualCareModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
+        VirtualCareRealtimeTopics.Register(services);
         services.AddScoped<VirtualCareSettings>();
         services.AddScoped<TelehealthLinkSender>();
         services.AddScoped<TelehealthBroadcaster>();

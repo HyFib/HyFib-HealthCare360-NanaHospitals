@@ -131,7 +131,13 @@ SMTP over STARTTLS, normally on port 587. Implicit TLS on 465 is rejected with a
   (`POST v1/payments/{id}/refund`). Amounts travel in paise and must be between ₹1 and ₹1,00,00,000. Ids are
   validated (`order_…`, `plink_…`, `pay_…`) before they are put in a URL. When one order has several attempts, a
   captured attempt wins over earlier failures.
-* **`IPaymentGateway.VerifySignature(payload, signature)`** is a hex HMAC-SHA256, compared in constant time:
+* **Every `IPaymentGateway` call names a facility.** A facility may have its own merchant account, and webhooks,
+  patient checkouts and background re-checks have no signed-in facility, so callers pass the order's facility. Null
+  means the signed-in facility, then the all-facility settings.
+* **Channel messages carry the facility too.** `SmsMessage`, `WhatsAppTemplateMessage`, `WhatsAppDocumentMessage` and
+  `EmailMessage` have a `FacilityId`, set by the platform's outbox handlers, so queued notifications use that
+  facility's provider settings.
+* **`IPaymentGateway.VerifySignature(payload, signature, facilityId)`** is a hex HMAC-SHA256, compared in constant time:
   * `"{orderId}|{paymentId}"` (Checkout) and `"{plinkId}|{referenceId}|{status}|{paymentId}"` (payment-link callback)
     are verified with the **key secret**. This is exactly the convention Scheduling's portal prepayment and Billing
     use.

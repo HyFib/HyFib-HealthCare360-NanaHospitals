@@ -13,7 +13,7 @@ internal sealed class SmsRouter(IEnumerable<ISmsProvider> providers, Integration
     public async Task<SendResult> SendAsync(SmsMessage message, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var config = await settings.ReadAsync<SmsSettings, SmsSecrets>(IntegrationNames.Sms, cancellationToken);
+        var config = await settings.ReadAsync<SmsSettings, SmsSecrets>(IntegrationNames.Sms, message.FacilityId, requireEnabled: true, cancellationToken);
         if (config.ActiveProvider is not { } key)
         {
             return await FailAsync(message, "none", started, config.Problem ?? "SMS is not available.");

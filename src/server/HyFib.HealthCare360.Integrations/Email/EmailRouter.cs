@@ -6,7 +6,7 @@ internal sealed class EmailRouter(IEnumerable<IEmailProvider> providers, Integra
     public async Task<SendResult> SendAsync(EmailMessage message, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var config = await settings.ReadAsync<EmailSettings, EmailSecrets>(IntegrationNames.Email, cancellationToken);
+        var config = await settings.ReadAsync<EmailSettings, EmailSecrets>(IntegrationNames.Email, message.FacilityId, requireEnabled: true, cancellationToken);
         string? error = null;
         IEmailProvider? provider = null;
         if (config.ActiveProvider is not { } key)

@@ -137,7 +137,7 @@ public sealed class PaymentGatewayService(
         PaymentStatusResult status;
         try
         {
-            status = await gateway.GetStatusAsync(order.OrderId, ct);
+            status = await gateway.GetStatusAsync(order.OrderId, order.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -161,8 +161,13 @@ public sealed class PaymentGatewayService(
         return order;
     }
 
-    /// <summary>Signed webhook from the gateway (anonymous endpoint).</summary>
-    public async Task<WebhookOutcome> HandleWebhookAsync(string payload, string? signature, CancellationToken ct)
+    /// <summary>
+    /// Signed webhook from the gateway (anonymous endpoint). A facility may have its own merchant account and webhook
+    /// secret, so the ids in the (not yet trusted) payload are used only to find which of our orders it is about, and the
+    /// signature is then checked with that order's facility account. <paramref name="facilityHint"/> (<c>?facility=</c>
+    /// on the webhook URL) is used when the payload names none of our orders.
+    /// </summary>
+    public async Task<WebhookOutcome> HandleWebhookAsync(string payload, string? signature, Guid? facilityHint, CancellationToken ct)
     {
         var gateway = services.GetService<IPaymentGateway>();
         if (gateway is null)
@@ -170,20 +175,18 @@ public sealed class PaymentGatewayService(
             return WebhookOutcome.NotConfigured;
         }
 
-        if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature))
+        var candidates = ExtractCandidates(payload);
+        var order = candidates.Count == 0
+            ? null
+            : await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .FirstOrDefaultAsync(o => candidates.Contains(o.OrderId) || candidates.Contains(o.MerchantReference), ct);
+
+        if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, order?.FacilityId ?? facilityHint))
         {
             logger.LogWarning("Rejected a payment-gateway webhook with a missing or invalid signature");
             return WebhookOutcome.InvalidSignature;
         }
 
-        var candidates = ExtractCandidates(payload);
-        if (candidates.Count == 0)
-        {
-            return WebhookOutcome.Ignored;
-        }
-
-        var order = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
-            .FirstOrDefaultAsync(o => candidates.Contains(o.OrderId) || candidates.Contains(o.MerchantReference), ct);
         if (order is null)
         {
             return WebhookOutcome.Ignored;
@@ -283,8 +286,8 @@ public sealed class PaymentGatewayService(
         try
         {
             created = kind == GatewayOrderKind.PaymentLink
-                ? await gateway.CreatePaymentLinkAsync(request, ct)
-                : await gateway.CreateOrderAsync(request, ct);
+                ? await gateway.CreatePaymentLinkAsync(request, target.FacilityId, ct)
+                : await gateway.CreateOrderAsync(request, target.FacilityId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -12,7 +12,8 @@ public sealed record SendResult(bool Success, string? ProviderMessageId = null, 
 }
 
 // ---------- SMS ----------
-public sealed record SmsMessage(string To, string Text, string? DltTemplateId = null, string? SenderId = null, string? Reference = null);
+/// <param name="FacilityId">Facility whose SMS settings apply (null: the signed-in facility, then the all-facility settings).</param>
+public sealed record SmsMessage(string To, string Text, string? DltTemplateId = null, string? SenderId = null, string? Reference = null, Guid? FacilityId = null);
 
 public interface ISmsSender
 {
@@ -22,9 +23,9 @@ public interface ISmsSender
 }
 
 // ---------- WhatsApp ----------
-public sealed record WhatsAppTemplateMessage(string To, string TemplateName, string Language, IReadOnlyList<string> BodyParameters, string? Reference = null);
+public sealed record WhatsAppTemplateMessage(string To, string TemplateName, string Language, IReadOnlyList<string> BodyParameters, string? Reference = null, Guid? FacilityId = null);
 
-public sealed record WhatsAppDocumentMessage(string To, string FileName, byte[] Content, string ContentType, string? Caption = null, string? Reference = null);
+public sealed record WhatsAppDocumentMessage(string To, string FileName, byte[] Content, string ContentType, string? Caption = null, string? Reference = null, Guid? FacilityId = null);
 
 public interface IWhatsAppSender
 {
@@ -38,7 +39,7 @@ public interface IWhatsAppSender
 // ---------- E-mail ----------
 public sealed record EmailAttachment(string FileName, byte[] Content, string ContentType);
 
-public sealed record EmailMessage(string To, string Subject, string HtmlBody, IReadOnlyList<EmailAttachment>? Attachments = null, string? Reference = null);
+public sealed record EmailMessage(string To, string Subject, string HtmlBody, IReadOnlyList<EmailAttachment>? Attachments = null, string? Reference = null, Guid? FacilityId = null);
 
 public interface IEmailSender
 {
@@ -67,17 +68,21 @@ public interface IPaymentGateway
 {
     string Provider { get; }
 
-    Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, CancellationToken cancellationToken);
+    // Every call names the facility whose merchant account applies (null: the signed-in user's facility, then the
+    // all-facility settings). Webhooks, patient checkouts and background re-checks have no signed-in facility, and a
+    // facility may have its own account and webhook secret, so callers pass the facility of the order.
+
+    Task<PaymentOrder> CreateOrderAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken);
 
     /// <summary>A shareable link (SMS/WhatsApp) for remote payment of dues.</summary>
-    Task<PaymentOrder> CreatePaymentLinkAsync(CreatePaymentOrder request, CancellationToken cancellationToken);
+    Task<PaymentOrder> CreatePaymentLinkAsync(CreatePaymentOrder request, Guid? facilityId, CancellationToken cancellationToken);
 
-    Task<PaymentStatusResult> GetStatusAsync(string orderId, CancellationToken cancellationToken);
+    Task<PaymentStatusResult> GetStatusAsync(string orderId, Guid? facilityId, CancellationToken cancellationToken);
 
-    /// <summary>Verifies a webhook or checkout signature with the provider secret (constant-time).</summary>
-    bool VerifySignature(string payload, string signature);
+    /// <summary>Verifies a webhook or checkout signature with the provider secret of the facility's account (constant-time).</summary>
+    bool VerifySignature(string payload, string signature, Guid? facilityId);
 
-    Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, CancellationToken cancellationToken);
+    Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, Guid? facilityId, CancellationToken cancellationToken);
 }
 
 // ---------- Card/UPI POS terminal ----------

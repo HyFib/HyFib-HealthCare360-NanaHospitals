@@ -11,7 +11,7 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var (provider, config, error) = await ResolveAsync(message.To, cancellationToken);
+        var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
         if (provider is null)
         {
             return await FailAsync("template", message.Reference, started, error!);
@@ -28,7 +28,7 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
     public async Task<SendResult> SendDocumentAsync(WhatsAppDocumentMessage message, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var (provider, config, error) = await ResolveAsync(message.To, cancellationToken);
+        var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
         if (provider is null)
         {
             return await FailAsync("document", message.Reference, started, error!);
@@ -43,9 +43,9 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
     }
 
     private async Task<(IWhatsAppProvider? Provider, IntegrationConfig<WhatsAppSettings, WhatsAppSecrets>? Config, string? Error)> ResolveAsync(
-        string to, CancellationToken cancellationToken)
+        string to, Guid? facilityId, CancellationToken cancellationToken)
     {
-        var config = await settings.ReadAsync<WhatsAppSettings, WhatsAppSecrets>(IntegrationNames.WhatsApp, cancellationToken);
+        var config = await settings.ReadAsync<WhatsAppSettings, WhatsAppSecrets>(IntegrationNames.WhatsApp, facilityId, requireEnabled: true, cancellationToken);
         if (config.ActiveProvider is not { } key)
         {
             return (null, null, config.Problem ?? "WhatsApp is not available.");

@@ -431,7 +431,7 @@ internal sealed class SmsDeliveryHandler(HospitalDbContext db, NotificationTempl
     public override string Type => NotificationService.SmsType;
 
     protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
-        sms.SendAsync(new SmsMessage(delivery.To, body, template?.DltTemplateId, null, delivery.LogId.ToString("N")), cancellationToken);
+        sms.SendAsync(new SmsMessage(delivery.To, body, template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
 }
 
 internal sealed class WhatsAppDeliveryHandler(HospitalDbContext db, NotificationTemplateRenderer renderer, IWhatsAppSender whatsApp, TimeProvider time, ILogger<WhatsAppDeliveryHandler> logger)
@@ -442,7 +442,7 @@ internal sealed class WhatsAppDeliveryHandler(HospitalDbContext db, Notification
     protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
             new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), delivery.Language,
-                [body], delivery.LogId.ToString("N")),
+                [body], delivery.LogId.ToString("N"), delivery.FacilityId),
             cancellationToken);
 }
 
@@ -452,7 +452,7 @@ internal sealed class EmailDeliveryHandler(HospitalDbContext db, NotificationTem
     public override string Type => NotificationService.EmailType;
 
     protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
-        email.SendAsync(new EmailMessage(delivery.To, subject ?? "Message from the hospital", body, null, delivery.LogId.ToString("N")), cancellationToken);
+        email.SendAsync(new EmailMessage(delivery.To, subject ?? "Message from the hospital", body, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
 }
 
 /// <summary>Fallback channel providers used until an integration is configured: they log and report failure, never silently succeed.</summary>

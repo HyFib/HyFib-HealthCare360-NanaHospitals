@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -10,12 +9,10 @@ public static class Topics
 {
     public static string User(Guid id) => $"user:{id}";
     public static string Facility(Guid id) => $"facility:{id}";
-    public static string Department(Guid id) => $"dept:{id}";
     public static string Queue(Guid departmentId) => $"queue:{departmentId}";
     public static string Beds(Guid facilityId) => $"beds:{facilityId}";
     public static string Patient(Guid id) => $"patient:{id}";
     public static string Ward(Guid id) => $"ward:{id}";
-    public static string Display(Guid id) => $"display:{id}";
     public static string Lab(Guid facilityId) => $"lab:{facilityId}";
     public static string Pharmacy(Guid facilityId) => $"pharmacy:{facilityId}";
     public static string Telehealth(Guid sessionId) => $"tele:{sessionId}";
@@ -46,11 +43,11 @@ internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeP
 
 /// <summary>
 /// Single real-time hub (<c>/hubs/events</c>). Every connection joins its user and facility groups;
-/// screens subscribe to extra topics (queue, bed board, ward…). SignalR reconnects automatically after
-/// WiFi drops and clients refetch on reconnect.
+/// screens subscribe to extra topics (queue, bed board, ward…), each checked by <see cref="RealtimeTopicAuthorizer"/>.
+/// SignalR reconnects automatically after WiFi drops and clients refetch on reconnect.
 /// </summary>
 [Authorize]
-public sealed partial class EventsHub : Hub
+public sealed class EventsHub(RealtimeTopicAuthorizer topics) : Hub
 {
     public override async Task OnConnectedAsync()
     {
@@ -70,35 +67,10 @@ public sealed partial class EventsHub : Hub
 
     public async Task Subscribe(string topic)
     {
-        if (!IsAllowed(topic))
-        {
-            throw new HubException("Subscription not allowed.");
-        }
-
-        await Groups.AddToGroupAsync(Context.ConnectionId, topic);
+        var allowed = await topics.AuthorizeAsync(Context.User, topic, Context.ConnectionAborted)
+            ?? throw new HubException("Subscription not allowed.");
+        await Groups.AddToGroupAsync(Context.ConnectionId, allowed);
     }
 
     public Task Unsubscribe(string topic) => Groups.RemoveFromGroupAsync(Context.ConnectionId, topic);
-
-    private bool IsAllowed(string topic)
-    {
-        if (string.IsNullOrWhiteSpace(topic) || !TopicRegex().IsMatch(topic))
-        {
-            return false;
-        }
-
-        var user = Context.User;
-        var isPatient = string.Equals(user?.FindFirst(HcClaims.UserType)?.Value, HcClaims.PatientType, StringComparison.Ordinal);
-        if (!isPatient)
-        {
-            return !topic.StartsWith("user:", StringComparison.Ordinal);
-        }
-
-        // Portal users may only follow their own record and their telehealth rooms (validated by the telehealth module).
-        var patientId = user?.FindFirst(HcClaims.Patient)?.Value;
-        return (patientId is not null && topic == $"patient:{patientId}") || topic.StartsWith("tele:", StringComparison.Ordinal);
-    }
-
-    [GeneratedRegex("^(dept|queue|beds|patient|ward|display|lab|pharmacy|tele|ot|facility|user):[0-9a-fA-F-]{36}$")]
-    private static partial Regex TopicRegex();
 }

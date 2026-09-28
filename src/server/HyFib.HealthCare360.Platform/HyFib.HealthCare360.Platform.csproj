@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HyFib.HealthCare360.UnitTests" />
+    <InternalsVisibleTo Include="HyFib.HealthCare360.Platform.Tests" />
     <InternalsVisibleTo Include="HyFib.HealthCare360.IntegrationTests" />
   </ItemGroup>
 </Project>

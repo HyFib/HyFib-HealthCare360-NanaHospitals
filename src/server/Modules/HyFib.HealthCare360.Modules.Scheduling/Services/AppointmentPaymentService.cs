@@ -54,6 +54,7 @@ public sealed class AppointmentPaymentService(
                     patient?.Phone,
                     patient?.Email,
                     new Dictionary<string, string> { ["appointmentId"] = appointment.Id.ToString(), ["module"] = "scheduling" }),
+                appointment.FacilityId,
                 ct);
 
             var attached = appointment.AttachPaymentOrder(order.Provider, order.OrderId);
@@ -89,7 +90,7 @@ public sealed class AppointmentPaymentService(
             return Error.Rule("payment.order_mismatch", "This payment does not belong to this appointment.");
         }
 
-        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature))
+        if (!Gateway.VerifySignature($"{orderId}|{paymentId}", signature, appointment.FacilityId))
         {
             logger.LogWarning("Rejected payment confirmation with an invalid signature for appointment {AppointmentId}", appointment.Id);
             return Error.Forbidden("payment.invalid_signature", "The payment could not be verified. If money was deducted, it will be refunded automatically.");
@@ -98,7 +99,7 @@ public sealed class AppointmentPaymentService(
         var amount = appointment.FeeAmount;
         try
         {
-            var status = await Gateway.GetStatusAsync(orderId, ct);
+            var status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
             if (status.Status is GatewayPaymentStatus.Failed or GatewayPaymentStatus.Created or GatewayPaymentStatus.Refunded)
             {
                 return Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
