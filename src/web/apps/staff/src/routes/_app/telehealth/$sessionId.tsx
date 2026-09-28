@@ -23,7 +23,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { hubErrorMessage } from '@/modules/virtualcare/signalling/hubProtocol';
+import { hubErrorMessage } from '@hc360/core';
 import {
   telehealthApi,
   telehealthKeys,

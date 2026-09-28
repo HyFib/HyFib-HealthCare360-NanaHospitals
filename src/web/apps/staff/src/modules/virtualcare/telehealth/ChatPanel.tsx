@@ -3,7 +3,7 @@ import { SendRegular } from '@fluentui/react-icons';
 import { formatTime } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useEffect, useRef, useState } from 'react';
-import { hubErrorMessage } from '../signalling/hubProtocol';
+import { hubErrorMessage } from '@hc360/core';
 import type { TelehealthMessageDto } from './api';
 
 const MAX_LENGTH = 2000;

@@ -1,6 +1,4 @@
-import { auth, bridge, useSession } from '@hc360/core';
-import { HubConnection } from '../signalling/HubConnection';
-import { hubErrorMessage } from '../signalling/hubProtocol';
+import { auth, bridge, createHubClient, hubErrorMessage, useSession, type HubClient } from '@hc360/core';
 import {
   telehealthApi,
   type IceServerDto,
@@ -123,7 +121,7 @@ export class TelehealthCall {
   private state: CallState = INITIAL_STATE;
   private readonly listeners = new Set<() => void>();
   private generation = 0;
-  private hub: HubConnection | null = null;
+  private hub: HubClient | null = null;
   private hubSubscriptions: (() => void)[] = [];
   private pc: RTCPeerConnection | null = null;
   private remoteId: string | null = null;
@@ -258,7 +256,7 @@ export class TelehealthCall {
   // ------------------------------------------------------------------ signalling
 
   private async connect(generation: number): Promise<void> {
-    const hub = new HubConnection({ path: this.options.hubPath, accessTokenFactory: freshAccessToken });
+    const hub = createHubClient(this.options.hubPath, freshAccessToken);
     this.hub = hub;
     this.hubSubscriptions = this.subscribeToHub(hub, generation);
     try {
@@ -325,7 +323,7 @@ export class TelehealthCall {
     }
   }
 
-  private subscribeToHub(hub: HubConnection, generation: number): (() => void)[] {
+  private subscribeToHub(hub: HubClient, generation: number): (() => void)[] {
     const live = () => generation === this.generation && this.hub === hub;
     return [
       hub.on<WaitingParticipant>('waitingRoomChanged', (participant) => {
@@ -416,7 +414,7 @@ export class TelehealthCall {
     }
   }
 
-  private requireHub(): HubConnection {
+  private requireHub(): HubClient {
     if (!this.hub || this.hub.state !== 'Connected') {
       throw new Error('Not connected to the video service. Please wait while the connection is restored.');
     }

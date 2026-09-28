@@ -7,5 +7,6 @@ export * from './connection/connection';
 export * from './format/format';
 export * from './hooks/hooks';
 export * from './print/print';
+export * from './realtime/hub';
 export * from './realtime/realtime';
 export * from './types/common';
