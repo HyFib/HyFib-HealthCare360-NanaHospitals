@@ -1,4 +1,4 @@
-import { Button, Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
+import { Button, Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { CalendarAddRegular, CalendarEditRegular, PersonRegular } from '@fluentui/react-icons';
 import { formatDateOnly, humanize, todayIso } from '@hc360/core';
 import { DataTable, KpiCard, Section, StatusBadge } from '@hc360/ui';
@@ -109,7 +109,7 @@ function Overview({ profile, correcting, onCorrectingChange }: { profile: MyProf
                 const head = dayHeader(date);
                 return (
                   <div key={date} className={styles.day}>
-                    <Text className={`${styles.dayLabel} ${date === today ? styles.today : ''}`}>
+                    <Text className={mergeClasses(styles.dayLabel, date === today ? styles.today : '')}>
                       {date === today ? 'Today' : `${head.weekday} ${head.day} ${head.month}`}
                     </Text>
                     {entries.length === 0 ? (

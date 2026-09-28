@@ -1,7 +1,8 @@
-import { HubConnectionBuilder, HubConnectionState, LogLevel, type HubConnection } from '@microsoft/signalr';
+import { HubConnectionBuilder, HubConnectionState, type HubConnection } from '@microsoft/signalr';
 import { useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useEffectEvent, useState, type ReactNode } from 'react';
 import { useConnection } from '../connection/connection';
+import { hubLogger } from './hub';
 
 export interface RealtimeEnvelope<T = unknown> {
   topic: string;
@@ -33,7 +34,7 @@ export class RealtimeClient {
           return (steps[context.previousRetryCount] ?? 30000) + Math.random() * 1000;
         },
       })
-      .configureLogging(LogLevel.Warning)
+      .configureLogging(hubLogger)
       .build();
 
     this.connection.on('event', (envelope: RealtimeEnvelope) => this.handlers.forEach((handler) => handler(envelope)));
@@ -45,9 +46,7 @@ export class RealtimeClient {
     });
     this.connection.onclose(() => {
       useConnection.getState().setRealtime('disconnected');
-      if (!this.stopped) {
-        setTimeout(() => void this.start(), 5000);
-      }
+      this.retryLater();
     });
   }
 
@@ -61,7 +60,7 @@ export class RealtimeClient {
         await this.resubscribe();
       } catch {
         useConnection.getState().setRealtime('disconnected');
-        setTimeout(() => void this.start(), 5000);
+        this.retryLater();
       } finally {
         this.startPromise = null;
       }
@@ -95,6 +94,18 @@ export class RealtimeClient {
   onEvent(handler: Handler): () => void {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  /** Starts again in 5 seconds, unless the app stopped the connection (signed out) before or during the wait. */
+  private retryLater(): void {
+    if (this.stopped) {
+      return;
+    }
+    setTimeout(() => {
+      if (!this.stopped) {
+        void this.start();
+      }
+    }, 5000);
   }
 
   private async resubscribe(): Promise<void> {

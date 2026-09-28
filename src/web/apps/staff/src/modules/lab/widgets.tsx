@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, makeStyles, ProgressBar, Text, tokens } from '@fluentui/react-components';
+import { Badge, Button, Caption1, makeStyles, mergeClasses, ProgressBar, Text, tokens } from '@fluentui/react-components';
 import { AlertUrgentRegular, CheckmarkCircleRegular } from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
 import { ErrorState, Section } from '@hc360/ui';
@@ -135,7 +135,7 @@ export function LabTatWidget() {
             </div>
             <div className={styles.stat}>
               <Caption1 className={styles.muted}>On time</Caption1>
-              <span className={`${styles.value} ${styles[complianceTone(within)]}`}>{within === null ? '—' : `${within}%`}</span>
+              <span className={mergeClasses(styles.value, styles[complianceTone(within)])}>{within === null ? '—' : `${within}%`}</span>
             </div>
             <div className={styles.stat}>
               <Caption1 className={styles.muted}>Released tests</Caption1>

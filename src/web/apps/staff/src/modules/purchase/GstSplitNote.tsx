@@ -1,4 +1,4 @@
-import { Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
+import { Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { InfoRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
 import type { DocumentTotals } from '@/modules/inventory/gst';
@@ -68,11 +68,11 @@ export function PurchaseTotals({ totals, interState, preview }: { totals: Docume
       {totals.roundOff !== 0 && (
         <>
           <Caption1 className={styles.muted}>Round off</Caption1>
-          <Caption1 className={`${styles.muted} ${styles.right}`}>{formatInr(totals.roundOff)}</Caption1>
+          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.roundOff)}</Caption1>
         </>
       )}
       <Text weight="semibold">{preview ? 'Estimated total' : 'Total'}</Text>
-      <span className={`${styles.net} ${styles.right}`}>{formatInr(totals.net)}</span>
+      <span className={mergeClasses(styles.net, styles.right)}>{formatInr(totals.net)}</span>
     </div>
   );
 }

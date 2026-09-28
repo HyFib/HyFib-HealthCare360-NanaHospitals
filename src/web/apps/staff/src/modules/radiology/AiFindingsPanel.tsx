@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Spinner, Text, tokens } from '@fluentui/react-components';
+import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Spinner, Text, tokens } from '@fluentui/react-components';
 import { AlertUrgentRegular, BotRegular, CheckmarkRegular, DismissRegular, TextBulletListAddRegular } from '@fluentui/react-icons';
 import { formatDateTime } from '@hc360/core';
 import { ErrorState, Section, useNotify } from '@hc360/ui';
@@ -70,7 +70,7 @@ function FindingItem({ finding, studyId, canReview, onInsert }: { finding: AiFin
   });
 
   return (
-    <li className={`${styles.item} ${finding.isUrgent ? styles.urgent : ''}`}>
+    <li className={mergeClasses(styles.item, finding.isUrgent ? styles.urgent : '')}>
       <div className={styles.head}>
         <BotRegular aria-hidden />
         <Text weight="semibold">{finding.engine}</Text>

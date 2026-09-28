@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Select, Spinner, Text, tokens } from '@fluentui/react-components';
+import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Select, Spinner, Text, tokens } from '@fluentui/react-components';
 import { BarcodeScannerRegular, DropRegular, InfoRegular } from '@fluentui/react-icons';
 import { formatRelative, useHotkey } from '@hc360/core';
 import { EmptyState, ErrorState, FilterBar, Page, PageHeader, Pagination, Section } from '@hc360/ui';
@@ -248,7 +248,7 @@ function CollectionPage() {
             const stat = group.tubes.some((tube) => tube.priority === 'Stat');
             const preparation = [...new Set(group.tubes.flatMap((tube) => tube.preparation))];
             return (
-              <section key={group.orderId} className={`${styles.card} ${stat ? styles.stat : ''}`} aria-label={`${first.patientName}, ${group.tubes.length} tubes`}>
+              <section key={group.orderId} className={mergeClasses(styles.card, stat ? styles.stat : '')} aria-label={`${first.patientName}, ${group.tubes.length} tubes`}>
                 <div>
                   <div className={styles.head}>
                     <Text weight="semibold" size={400}>

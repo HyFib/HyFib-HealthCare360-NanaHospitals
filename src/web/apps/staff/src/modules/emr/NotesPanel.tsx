@@ -10,6 +10,7 @@ import {
   DialogTitle,
   Field,
   makeStyles,
+  mergeClasses,
   Menu,
   MenuItem,
   MenuList,
@@ -358,7 +359,7 @@ export function NotesList({ patientId, encounterId, emptyHint }: { patientId: st
       {items.map((note) => {
         const mine = note.authorUserId === userId;
         return (
-          <article key={note.id} className={[styles.note, note.amendsNoteId ? styles.addendum : undefined].filter(Boolean).join(' ')} aria-label={note.title ?? noteTypeLabel[note.type]}>
+          <article key={note.id} className={mergeClasses(styles.note, note.amendsNoteId ? styles.addendum : undefined)} aria-label={note.title ?? noteTypeLabel[note.type]}>
             <div className={styles.noteHeader}>
               <span className={styles.noteTitle}>
                 <Text weight="semibold">{note.title ?? noteTypeLabel[note.type]}</Text>

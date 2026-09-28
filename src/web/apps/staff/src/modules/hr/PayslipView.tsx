@@ -8,6 +8,7 @@ import {
   DialogSurface,
   DialogTitle,
   makeStyles,
+  mergeClasses,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
@@ -77,7 +78,7 @@ function LinesTable({ title, lines, total }: { title: string; lines: PayslipLine
         )}
         <TableRow>
           <TableCell className={styles.total}>Total</TableCell>
-          <TableCell className={`${styles.right} ${styles.total}`}>{formatInr(total)}</TableCell>
+          <TableCell className={mergeClasses(styles.right, styles.total)}>{formatInr(total)}</TableCell>
         </TableRow>
       </TableBody>
     </Table>

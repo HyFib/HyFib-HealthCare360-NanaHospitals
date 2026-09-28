@@ -1,6 +1,7 @@
 import {
   Button,
   makeStyles,
+  mergeClasses,
   Skeleton,
   SkeletonItem,
   Table,
@@ -89,7 +90,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
 
   const showSkeleton = loading && !rows;
   const colClass = (column: Column<T>) =>
-    [column.priority === 'low' ? styles.lowPriority : '', column.align === 'end' ? styles.alignEnd : ''].filter(Boolean).join(' ');
+    mergeClasses(column.priority === 'low' && styles.lowPriority, column.align === 'end' && styles.alignEnd);
 
   const onRowKey = (event: KeyboardEvent, row: T) => {
     if (event.key === 'Enter' && props.onRowClick) {

@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, Link, makeStyles, Text, tokens, Tooltip } from '@fluentui/react-components';
+import { Badge, Button, Caption1, Link, makeStyles, mergeClasses, Text, tokens, Tooltip } from '@fluentui/react-components';
 import { AlertUrgentRegular, HeartPulseRegular, PillRegular, TaskListLtrRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatRelative } from '@hc360/core';
 import { Section, StatusBadge } from '@hc360/ui';
@@ -56,7 +56,7 @@ export function VitalChipList({ chips }: { chips: VitalChip[] }) {
       {chips.map((chip) => {
         const tone = chip.flag ? (chip.flag.severity === 'Critical' ? styles.chipDanger : styles.chipWarning) : undefined;
         const content = (
-          <span className={[styles.chip, tone].filter(Boolean).join(' ')} key={chip.label}>
+          <span className={mergeClasses(styles.chip, tone)} key={chip.label}>
             <span className={styles.chipLabel}>{chip.label}</span>
             <span className={styles.chipValue}>{chip.value}</span>
             {chip.flag && <span className={styles.chipFlag}>{chip.flag.severity === 'Critical' ? '‼' : chip.flag.direction === 'High' ? '↑' : '↓'}</span>}

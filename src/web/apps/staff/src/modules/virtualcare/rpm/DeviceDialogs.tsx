@@ -10,6 +10,7 @@ import {
   DialogTitle,
   Field,
   makeStyles,
+  mergeClasses,
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
@@ -178,7 +179,7 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
         </MessageBar>
         <Field label="Device key">
           <div className={styles.row}>
-            <div className={`${styles.secret} ${styles.grow}`}>{issued.apiKey}</div>
+            <div className={mergeClasses(styles.secret, styles.grow)}>{issued.apiKey}</div>
             <Button icon={copied === 'key' ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => copy('key', issued.apiKey)}>
               {copied === 'key' ? 'Copied' : 'Copy'}
             </Button>
@@ -186,7 +187,7 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
         </Field>
         <Field label="Readings are sent to">
           <div className={styles.row}>
-            <div className={`${styles.secret} ${styles.grow}`}>POST {ingestUrl}</div>
+            <div className={mergeClasses(styles.secret, styles.grow)}>POST {ingestUrl}</div>
             <Button icon={copied === 'url' ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => copy('url', ingestUrl)}>
               {copied === 'url' ? 'Copied' : 'Copy'}
             </Button>

@@ -1,4 +1,4 @@
-import { HubConnectionBuilder, LogLevel, type HubConnectionState } from '@microsoft/signalr';
+import { HubConnectionBuilder, LogLevel, type HubConnectionState, type ILogger } from '@microsoft/signalr';
 
 export type HubState = `${HubConnectionState}`;
 
@@ -19,6 +19,27 @@ export interface HubClient {
   onclose(callback: (error?: Error) => void): () => void;
 }
 
+/**
+ * SignalR's own messages, warnings and errors only. Stopping a connection before it finished connecting (the screen was
+ * closed, or the user signed out) is reported by SignalR as an error, but it is expected, so it is left out.
+ */
+export const hubLogger: ILogger = {
+  log(level, message) {
+    if (level < LogLevel.Warning || isStoppedWhileConnecting(message)) {
+      return;
+    }
+    if (level >= LogLevel.Error) {
+      console.error(`[SignalR] ${message}`);
+    } else {
+      console.warn(`[SignalR] ${message}`);
+    }
+  },
+};
+
+function isStoppedWhileConnecting(message: string): boolean {
+  return message.includes('stopped during negotiation') || message.includes('stopped before the hub handshake could complete');
+}
+
 /** Reconnect at once, then after 2, 5, 10 and 20 seconds, then every 30 seconds, for as long as the screen is open. */
 export function hubReconnectDelay(previousRetryCount: number): number {
   const steps = [0, 2_000, 5_000, 10_000, 20_000];
@@ -30,7 +51,7 @@ export function createHubClient(path: string, accessTokenFactory: () => string |
   const connection = new HubConnectionBuilder()
     .withUrl(path, { accessTokenFactory: async () => (await accessTokenFactory()) ?? '' })
     .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (context) => hubReconnectDelay(context.previousRetryCount) })
-    .configureLogging(LogLevel.Warning)
+    .configureLogging(hubLogger)
     .build();
 
   const reconnecting = new Set<(error?: Error) => void>();

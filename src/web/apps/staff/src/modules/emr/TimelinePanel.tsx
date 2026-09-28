@@ -1,4 +1,4 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Select, Text, ToggleButton, tokens } from '@fluentui/react-components';
+import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Select, Text, ToggleButton, tokens } from '@fluentui/react-components';
 import {
   BeakerRegular,
   ClipboardPulseRegular,
@@ -133,7 +133,7 @@ export function TimelinePanel({
               {day.entries.map((entry: TimelineEntry) => (
                 <div
                   key={`${entry.type}-${entry.id}`}
-                  className={[styles.entry, entry.isCritical ? styles.critical : undefined].filter(Boolean).join(' ')}
+                  className={mergeClasses(styles.entry, entry.isCritical ? styles.critical : undefined)}
                   role="button"
                   tabIndex={0}
                   onClick={() => onOpen(timelineTarget(entry))}

@@ -1,4 +1,4 @@
-import { Caption1, Divider, makeStyles, Text, tokens } from '@fluentui/react-components';
+import { Caption1, Divider, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
 import { formatInr } from '@hc360/core';
 import { formatPercent } from '@/modules/inventory/format';
 import type { SaleTotals } from './pricing';
@@ -29,11 +29,11 @@ export function BillSummary({ totals, discountPercent, label = 'To collect' }: {
       {totals.gstKnown ? (
         <>
           <Caption1 className={styles.muted}>Taxable value</Caption1>
-          <Caption1 className={`${styles.muted} ${styles.right}`}>{formatInr(totals.taxable)}</Caption1>
+          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.taxable)}</Caption1>
           <Caption1 className={styles.muted}>CGST (included)</Caption1>
-          <Caption1 className={`${styles.muted} ${styles.right}`}>{formatInr(totals.cgst)}</Caption1>
+          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.cgst)}</Caption1>
           <Caption1 className={styles.muted}>SGST (included)</Caption1>
-          <Caption1 className={`${styles.muted} ${styles.right}`}>{formatInr(totals.sgst)}</Caption1>
+          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.sgst)}</Caption1>
         </>
       ) : (
         <Caption1 className={styles.muted} style={{ gridColumn: '1 / -1' }}>
@@ -43,12 +43,12 @@ export function BillSummary({ totals, discountPercent, label = 'To collect' }: {
       {totals.roundOff !== 0 && (
         <>
           <Caption1 className={styles.muted}>Round off</Caption1>
-          <Caption1 className={`${styles.muted} ${styles.right}`}>{formatInr(totals.roundOff)}</Caption1>
+          <Caption1 className={mergeClasses(styles.muted, styles.right)}>{formatInr(totals.roundOff)}</Caption1>
         </>
       )}
       <Divider style={{ gridColumn: '1 / -1' }} />
       <Text weight="semibold">{label}</Text>
-      <span className={`${styles.net} ${styles.right}`}>{formatInr(totals.net)}</span>
+      <span className={mergeClasses(styles.net, styles.right)}>{formatInr(totals.net)}</span>
     </div>
   );
 }

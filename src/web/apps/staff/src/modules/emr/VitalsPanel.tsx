@@ -9,6 +9,7 @@ import {
   Field,
   Input,
   makeStyles,
+  mergeClasses,
   Menu,
   MenuItem,
   MenuList,
@@ -312,7 +313,7 @@ function FlaggedValue({ value, flag }: { value: string; flag: VitalFlag | undefi
   }
   return (
     <Tooltip content={flag.message} relationship="description">
-      <span className={[styles.flagged, flag.severity === 'Critical' ? styles.critical : styles.high].join(' ')}>
+      <span className={mergeClasses(styles.flagged, flag.severity === 'Critical' ? styles.critical : styles.high)}>
         {value} {flag.severity === 'Critical' ? '‼' : flag.direction === 'High' ? '↑' : '↓'}
       </span>
     </Tooltip>

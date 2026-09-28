@@ -4,6 +4,7 @@ import {
   Caption1,
   Field,
   makeStyles,
+  mergeClasses,
   MessageBar,
   MessageBarActions,
   MessageBarBody,
@@ -351,7 +352,7 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
                 .map((stop) => {
                   const closed = stop.status !== 'Pending';
                   return (
-                    <li key={stop.id} className={[styles.stop, closed ? styles.stopClosed : undefined, started && next?.id === stop.id ? styles.stopNext : undefined].filter(Boolean).join(' ')}>
+                    <li key={stop.id} className={mergeClasses(styles.stop, closed ? styles.stopClosed : undefined, started && next?.id === stop.id ? styles.stopNext : undefined)}>
                       {stop.status === 'Done' ? (
                         <span className={styles.done} aria-label="Done">
                           <CheckmarkCircleRegular />
