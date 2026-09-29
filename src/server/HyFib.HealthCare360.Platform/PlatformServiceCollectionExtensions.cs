@@ -153,7 +153,10 @@ public static class PlatformServiceCollectionExtensions
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
             .Configure<SigningKeyStore>((jwt, keys) => jwt.TokenValidationParameters.IssuerSigningKey = keys.Key);
 
-        services.AddAuthorization();
+        // Deny by default: a request whose endpoint states no authorization of its own requires a signed-in user. Every
+        // endpoint states it (checked by EndpointAuthorizationTests), so this only guards against one that forgets.
+        services.AddAuthorization(authorization =>
+            authorization.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
 

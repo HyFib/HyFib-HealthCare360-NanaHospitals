@@ -71,6 +71,10 @@ generate them after all modules compile.
   (public booking, webhooks) must be explicit (`.AllowAnonymous()` + `.RequireRateLimiting(RateLimitPolicies.Public)`).
   Machines that present their own credential (RPM gateways, biometric terminals) use `RateLimitPolicies.Device`
   instead, which is counted per credential rather than per client address.
+* `EndpointAuthorizationTests` (ArchitectureTests) fails the build for an endpoint that states nothing. An anonymous
+  endpoint, or one open to any signed-in user through a bare `RequireAuthorization()` (patients on the portal
+  included), must also be added to that test's reviewed lists, with the reason it is safe. At run time a request whose
+  endpoint states nothing still requires sign-in (the fallback policy).
 * Bodies: `.WithValidation<TRequest>()` + a public `AbstractValidator<TRequest>` (use `CommonRules`: `PhoneNumber()`,
   `IndianMobile()`, `PinCode()`, `Gstin()`, `SafeText(max)`).
 * Lists: `[AsParameters] PageQuery query` → `query.ToRequest()` → `.ToPagedResultAsync(page, ct)`; sort only via

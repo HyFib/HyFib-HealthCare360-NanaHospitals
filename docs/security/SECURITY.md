@@ -49,6 +49,13 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
 ### Authorisation and privacy
 - Permission-based access: every API endpoint requires a named permission, and screens hide what a role cannot use.
+- **Access is denied by default.** Every endpoint states who may call it. The exceptions to a named permission are:
+  - a short list open to any signed-in user, for their own account and notifications only;
+  - a short list open to anyone: sign-in, patient links, and provider and device callbacks, each checked by its own
+    token, signature or key.
+
+  An architecture test checks every endpoint and holds both lists, so a new exception is a reviewed change. A request
+  whose endpoint states nothing still requires sign-in.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review.
