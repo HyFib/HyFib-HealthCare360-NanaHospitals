@@ -160,8 +160,9 @@ distribution tool).
      .\Restore-HC360.ps1 -BackupFile '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
      ```
 
-     It asks for the recovery key and checks the whole backup before it changes anything. It then installs the backup's
-     encryption key and puts the documents back. The current database is kept under a new name; nothing is dropped.
+     It asks for the recovery key and checks the whole backup before it changes anything. It restores the database first,
+     keeping the current one under a new name (nothing is dropped). Only then does it put the documents back and install
+     the backup's encryption key. If a step fails, the previous database is put back and HC360 starts again on it.
   3. Workstations see a new server certificate. Re-run HC360 Desktop setup (Change server…) and compare the
      fingerprint.
 

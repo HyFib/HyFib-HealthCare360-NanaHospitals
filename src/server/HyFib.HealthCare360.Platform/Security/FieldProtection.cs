@@ -173,6 +173,8 @@ public static class FieldMasterKey
     /// <summary>
     /// Installs a recovered master key, wrapped for this machine. A different key already here is kept under a new name
     /// (<c>field-master.key.replaced-&lt;time&gt;</c>), never deleted, because data encrypted with it may still be needed.
+    /// The new key is written before the current one is moved aside, and the current one is put back if the new one cannot
+    /// take its place, so the machine is never left without a key (the service would otherwise create a new, empty one).
     /// </summary>
     /// <returns>The name the previous key was kept under, or null when there was none (or it was the same key).</returns>
     public static string? Install(string path, IDataProtector protector, byte[] masterKey, DateTimeOffset now)
@@ -189,16 +191,31 @@ public static class FieldMasterKey
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        string? keptAs = null;
-        if (existing is not null)
-        {
-            keptAs = $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}";
-            File.Move(path, keptAs, overwrite: false);
-        }
-
         var temp = path + ".tmp";
         File.WriteAllBytes(temp, protector.Protect(masterKey));
-        File.Move(temp, path, overwrite: false);
+
+        string? keptAs = null;
+        try
+        {
+            if (existing is not null)
+            {
+                keptAs = $"{path}.replaced-{now.UtcDateTime:yyyyMMdd-HHmmss}";
+                File.Move(path, keptAs, overwrite: false);
+            }
+
+            File.Move(temp, path, overwrite: false);
+        }
+        catch
+        {
+            if (keptAs is not null && File.Exists(keptAs) && !File.Exists(path))
+            {
+                File.Move(keptAs, path);
+            }
+
+            File.Delete(temp);
+            throw;
+        }
+
         return keptAs is null ? null : Path.GetFileName(keptAs);
     }
 }

@@ -68,6 +68,30 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task A_document_saved_while_the_database_is_dumped_is_in_the_backup()
+    {
+        // The file store writes a document, then commits its row. A row that made it into the dump must find its file in
+        // the backup, so the documents are listed after the dump.
+        var document = Path.Combine(_directories.Files, "2026", "09", "saved-during-dump.bin");
+        _postgres.DuringDump = () =>
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(document)!);
+            File.WriteAllBytes(document, RandomNumberGenerator.GetBytes(40));
+        };
+
+        var ct = TestContext.Current.CancellationToken;
+        var result = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], ct);
+
+        result.DocumentCount.ShouldBe(1);
+        var restored = Path.Combine(_root, "restored");
+        await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
+        await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(DocumentsFolder: restored), ct);
+        contents.Manifest.DocumentCount.ShouldBe(1);
+        File.ReadAllBytes(Path.Combine(restored, "2026", "09", "saved-during-dump.bin")).ShouldBe(File.ReadAllBytes(document));
+    }
+
+    [Fact]
     public async Task A_backup_is_refused_when_the_disk_has_no_room_for_it()
     {
         _postgres.DatabaseSize = long.MaxValue / 4;
@@ -125,12 +149,16 @@ public sealed class BackupServiceTests : IDisposable
 
         public byte[]? Validated { get; private set; }
 
+        /// <summary>Something that happens on the server while pg_dump runs.</summary>
+        public Action? DuringDump { get; set; }
+
         public string DatabaseName => "hc360_test";
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(DatabaseSize);
 
         public async Task DumpAsync(string outputFile, CancellationToken ct)
         {
+            DuringDump?.Invoke();
             Dumped = [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)];
             await File.WriteAllBytesAsync(outputFile, Dumped, ct);
         }

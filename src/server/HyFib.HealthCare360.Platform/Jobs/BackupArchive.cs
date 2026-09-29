@@ -260,12 +260,19 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 /// key installed (wrapped for this machine) and are the documents moved into place, so a damaged backup changes nothing.
 /// The database dump is written for pg_restore, which the script runs next.
 /// </summary>
+/// <summary>
+/// Puts back what a backup holds besides its database, on the Server Node with the service stopped: the stored documents,
+/// then the field encryption key. The whole archive is read and checked first, and the key comes last, so a failure never
+/// leaves this machine with the backup's key but not its database. Restore-HC360.ps1 restores the database first, runs
+/// this after it succeeds, and puts the previous database back if this fails.
+/// </summary>
 public static class BackupRestore
 {
+    /// <param name="databaseDumpPath">Where to write the database dump as well, or null to only check it.</param>
     public static async Task<BackupRestoreResult> RestoreAsync(
         string backupFile,
         byte[] recoveryKey,
-        string databaseDumpPath,
+        string? databaseDumpPath,
         DataDirectories directories,
         IDataProtectionProvider dataProtection,
         TimeProvider time,
@@ -275,8 +282,16 @@ public static class BackupRestore
         await using var payload = await BackupEncryption.OpenAsync(input, recoveryKey, ct);
         if (payload.Version == BackupEncryption.LegacyVersion)
         {
-            await using var dump = new FileStream(databaseDumpPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
-            await payload.CopyToAsync(dump, ct);
+            if (databaseDumpPath is null)
+            {
+                await payload.CopyToAsync(Stream.Null, ct);
+            }
+            else
+            {
+                await using var dump = new FileStream(databaseDumpPath, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
+                await payload.CopyToAsync(dump, ct);
+            }
+
             return new BackupRestoreResult(payload.Version, null, 0, 0, KeyInstalled: false, null);
         }
 
@@ -284,18 +299,20 @@ public static class BackupRestore
         try
         {
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(databaseDumpPath, staging), ct);
-
-            // The recovery key is the backup key derived from the escrowed master key: a mismatch means the archive's key
-            // is not the one its data was encrypted with, so it must not be installed.
-            if (!CryptographicOperations.FixedTimeEquals(FieldMasterKey.DeriveKey(contents.MasterKey, "backup"), recoveryKey))
+            try
             {
-                throw new InvalidDataException("The encryption key in the backup does not belong to this recovery key.");
-            }
+                CheckKey(contents.MasterKey, recoveryKey);
 
-            var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), FieldMasterKey.CreateProtector(dataProtection), contents.MasterKey, time.GetUtcNow());
-            var (restored, present) = MoveDocuments(staging, directories.Files);
-            CryptographicOperations.ZeroMemory(contents.MasterKey);
-            return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs);
+                // Documents first: they are only ever added, and one the database does not refer to is harmless. The key
+                // last: until it is installed, this machine keeps the key its current database was encrypted with.
+                var (restored, present) = MoveDocuments(staging, directories.Files);
+                var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), FieldMasterKey.CreateProtector(dataProtection), contents.MasterKey, time.GetUtcNow());
+                return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs);
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(contents.MasterKey);
+            }
         }
         finally
         {
@@ -303,6 +320,19 @@ public static class BackupRestore
             {
                 Directory.Delete(staging, recursive: true);
             }
+        }
+    }
+
+    /// <summary>
+    /// The recovery key is the backup key derived from the escrowed master key. A mismatch means the archive's key is not the
+    /// one its data was encrypted with, so it must not be installed.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The key in the backup does not belong to the recovery key.</exception>
+    public static void CheckKey(byte[] masterKey, byte[] recoveryKey)
+    {
+        if (!CryptographicOperations.FixedTimeEquals(FieldMasterKey.DeriveKey(masterKey, "backup"), recoveryKey))
+        {
+            throw new InvalidDataException("The encryption key in the backup does not belong to this recovery key.");
         }
     }
 

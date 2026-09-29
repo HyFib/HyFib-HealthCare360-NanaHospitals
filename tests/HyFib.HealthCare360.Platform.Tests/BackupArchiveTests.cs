@@ -200,6 +200,43 @@ public sealed class BackupArchiveTests : IDisposable
     }
 
     [Fact]
+    public async Task Without_a_dump_path_a_restore_puts_back_the_documents_and_the_key_only()
+    {
+        var oldServer = Machine("old");
+        WriteDocument(oldServer, "2026/09/a.bin", 30);
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, masterKey);
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, newServer, protection, TimeProvider.System, TestContext.Current.CancellationToken);
+
+        result.KeyInstalled.ShouldBeTrue();
+        result.DocumentsRestored.ShouldBe(1);
+        FieldMasterKey.Load(FieldMasterKey.PathIn(newServer), FieldMasterKey.CreateProtector(protection)).ShouldBe(masterKey);
+        File.Exists(Path.Combine(newServer.Files, "2026", "09", "a.bin")).ShouldBeTrue();
+        Directory.EnumerateFiles(newServer.Temp, "*", SearchOption.AllDirectories).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task When_the_documents_cannot_be_put_back_the_machine_keeps_its_own_key()
+    {
+        var oldServer = Machine("old");
+        WriteDocument(oldServer, "2026/09/a.bin", 30);
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, RandomNumberGenerator.GetBytes(32));
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+        var ownKey = new FieldProtector(newServer, protection).ExportMasterKey();
+        File.WriteAllText(Path.Combine(newServer.Files, "2026"), "a file where the documents' folder should be");
+
+        await Should.ThrowAsync<IOException>(() =>
+            BackupRestore.RestoreAsync(backup, recoveryKey, null, newServer, protection, TimeProvider.System, TestContext.Current.CancellationToken));
+
+        FieldMasterKey.Load(FieldMasterKey.PathIn(newServer), FieldMasterKey.CreateProtector(protection)).ShouldBe(ownKey);
+        Directory.GetFiles(newServer.Keys, "field-master.key*").Length.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task An_older_backup_restores_its_database()
     {
         var recoveryKey = RandomNumberGenerator.GetBytes(32);

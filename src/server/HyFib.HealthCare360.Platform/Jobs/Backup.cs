@@ -162,7 +162,7 @@ internal sealed class BackupService(
     internal static BackupRunDto ToDto(BackupRun r) =>
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt);
 
-    private async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
+    internal async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
     {
         Directory.CreateDirectory(directories.Temp);
         Directory.CreateDirectory(directories.Backups);
@@ -173,9 +173,13 @@ internal sealed class BackupService(
         var backupKey = protector.DeriveKey("backup");
         try
         {
-            var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
-            await EnsureRoomAsync(documents.Sum(d => d.Length), ct);
+            await EnsureRoomAsync(includeDocuments ? BackupArchive.ListDocuments(directories.Files).Sum(d => d.Length) : 0, ct);
             await postgres.DumpAsync(dump, ct);
+
+            // The documents are listed after the database snapshot. The file store writes a document in full before its row
+            // is committed and never changes or removes it, so every document the dump refers to is on disk by now. One
+            // saved since is not in the dump and is only an extra file in the backup.
+            var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
                 includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint);
 

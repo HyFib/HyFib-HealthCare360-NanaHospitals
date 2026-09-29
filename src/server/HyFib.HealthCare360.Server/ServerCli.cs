@@ -17,13 +17,14 @@ internal static class ServerCli
               Reads a backup in full and checks it: every part decrypts, and the database, the encryption key and the
               documents match its manifest. Use it for the quarterly restore test and for copies on a NAS or USB drive.
 
-          backup restore --in <backup.hc360bak> --database-out <database.dump> [--data-dir <folder>] [--key <recovery-key>]
-              Restores a backup on this Server Node, with the HC360 service stopped (Restore-HC360.ps1 runs this). It installs
-              the backup's field encryption key (a different key already here is kept under a new name), puts the stored
-              documents back, and writes the database dump for pg_restore. Nothing changes if the backup is damaged.
-
           backup decrypt --in <backup.hc360bak> --out <database.dump> [--key <recovery-key>]
-              Writes only the database dump (all that backups made before archive backups hold).
+              Checks the whole backup and writes only its database dump, for pg_restore. Nothing else changes.
+
+          backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
+              Puts back the stored documents and then the backup's field encryption key on this Server Node, with the HC360
+              service stopped. A different key already here is kept under a new name. The whole backup is checked first,
+              so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
+              machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order.
 
         The recovery key is shown once in Administration > Backups > Recovery key; keep it offline. Without --key it is
         read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or from a hidden
@@ -40,7 +41,7 @@ internal static class ServerCli
             return args switch
             {
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
-                ["backup", "restore", ..] when options.ContainsKey("in") && options.ContainsKey("database-out") => await RestoreAsync(options),
+                ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
                 _ => PrintUsage(args),
             };
@@ -100,40 +101,51 @@ internal static class ServerCli
         var directories = new DataDirectories(platform);
         directories.EnsureCreated();
 
-        // A backup from a newer HC360 has a schema this version does not know: install that version first.
-        await using (var input = File.OpenRead(options["in"]))
-        await using (var payload = await BackupEncryption.OpenAsync(input, key, CancellationToken.None))
+        if (await IsFromNewerVersionAsync(options["in"], key))
         {
-            if (payload.Version == BackupEncryption.ArchiveVersion && WarnIfNewer(await BackupArchive.ReadManifestAsync(payload, CancellationToken.None)))
-            {
-                return 3;
-            }
+            return 3;
         }
 
-        var result = await BackupRestore.RestoreAsync(options["in"], key, options["database-out"], directories,
+        var databaseOut = options.GetValueOrDefault("database-out");
+        var result = await BackupRestore.RestoreAsync(options["in"], key, databaseOut, directories,
             HospitalDataProtection.CreateProvider(directories), TimeProvider.System, CancellationToken.None);
         if (result.Manifest is null)
         {
-            Console.WriteLine($"Decrypted the database to {options["database-out"]}. This older backup holds the database only:");
+            Console.WriteLine(databaseOut is null
+                ? "This older backup holds the database only: there was nothing else to put back."
+                : $"Decrypted the database to {databaseOut}. This older backup holds the database only:");
             Console.WriteLine($"copy the old server's keys folder to {directories.Keys} as well, or encrypted identifiers stay unreadable.");
             return 0;
         }
 
         Describe(result.Manifest);
+        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present.");
         Console.WriteLine($"Installed the backup's field encryption key in {directories.Keys}.");
         if (result.PreviousKeyKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");
         }
 
-        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present.");
-        Console.WriteLine($"Database written to {options["database-out"]}. Restore it with pg_restore.");
+        if (databaseOut is not null)
+        {
+            Console.WriteLine($"Database written to {databaseOut}. Restore it with pg_restore.");
+        }
+
         return 0;
     }
 
+    /// <summary>
+    /// The first step of a restore: checks everything the later steps need (the archive, its manifest, the key, and that
+    /// this version knows the backup's database), then writes the database dump. Nothing else changes.
+    /// </summary>
     private static async Task<int> DecryptAsync(Dictionary<string, string> options)
     {
         var key = ReadRecoveryKey(options);
+        if (await IsFromNewerVersionAsync(options["in"], key))
+        {
+            return 3;
+        }
+
         await using var input = File.OpenRead(options["in"]);
         await using var payload = await BackupEncryption.OpenAsync(input, key, CancellationToken.None);
         if (payload.Version == BackupEncryption.LegacyVersion)
@@ -144,12 +156,36 @@ internal static class ServerCli
         else
         {
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(DatabaseDumpPath: options["out"]), CancellationToken.None);
-            CryptographicOperations.ZeroMemory(contents.MasterKey);
-            Console.WriteLine("Only the database was written. Use 'backup restore' to restore the encryption key and documents too.");
+            try
+            {
+                BackupRestore.CheckKey(contents.MasterKey, key);
+            }
+            catch
+            {
+                File.Delete(options["out"]);
+                throw;
+            }
+            finally
+            {
+                CryptographicOperations.ZeroMemory(contents.MasterKey);
+            }
+
+            Console.WriteLine("Only the database was written. After it is restored, 'backup restore' puts back the encryption key and documents.");
         }
 
         Console.WriteLine($"Decrypted to {options["out"]}. Restore it with pg_restore.");
         return 0;
+    }
+
+    /// <summary>
+    /// True (after saying so) when the backup's database has migrations this build does not know: its schema would not match
+    /// this version, so that version must be installed first.
+    /// </summary>
+    private static async Task<bool> IsFromNewerVersionAsync(string backupFile, byte[] key)
+    {
+        await using var input = File.OpenRead(backupFile);
+        await using var payload = await BackupEncryption.OpenAsync(input, key, CancellationToken.None);
+        return payload.Version == BackupEncryption.ArchiveVersion && WarnIfNewer(await BackupArchive.ReadManifestAsync(payload, CancellationToken.None));
     }
 
     private static void Describe(BackupManifest manifest) =>

@@ -115,7 +115,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - The recovery key opens every backup. It is shown on request, each view is audited, and it must be stored **offline**.
 - Signing and encryption keys are generated on the Server Node and protected with Windows Data Protection (DPAPI).
   A restore installs the field encryption key protected for the new machine, and a different key already there is
-  kept under a new name, never deleted.
+  kept under a new name, never deleted. The key is installed last, after the backup's database is in place. If an
+  earlier step fails, the previous database is put back and the machine keeps its own key.
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
 
