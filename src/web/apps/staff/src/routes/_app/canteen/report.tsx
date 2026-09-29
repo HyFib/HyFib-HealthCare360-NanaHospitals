@@ -1,6 +1,6 @@
 import { Button, Field, Input, makeStyles, Text, tokens } from '@fluentui/react-components';
 import { DataBarVerticalRegular, PrintRegular, ReceiptRegular } from '@fluentui/react-icons';
-import { formatDateOnly, formatInr, todayIso, useSession } from '@hc360/core';
+import { formatDateOnly, formatInr, todayIso } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, FilterBar, KpiCard, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -9,6 +9,7 @@ import { EChart, type ChartOption } from '@/lib/EChart';
 import { usePermission } from '@/lib/permissions';
 import { canteenQueries, CUSTOMER_LABEL, PAYMENT_LABEL, type AmountByKey, type DailySalesSummary } from '@/modules/canteen/api';
 import { printDailyReport } from '@/modules/canteen/print';
+import { useLetterhead } from '@/modules/pharmacy/counter';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -29,7 +30,7 @@ function CanteenReportPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canSeeBills = usePermission(['canteen.sales.create', 'canteen.reports.read']);
   const today = todayIso();
   const date = search.date ?? today;
@@ -49,7 +50,7 @@ function CanteenReportPage() {
                 Bills of the day
               </Button>
             )}
-            <Button appearance="primary" icon={<PrintRegular />} disabled={!r} onClick={() => r && void printDailyReport(r, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button appearance="primary" icon={<PrintRegular />} disabled={!r} onClick={() => r && void printDailyReport(r, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
               Print report
             </Button>
           </>
@@ -90,6 +91,7 @@ function CanteenReportPage() {
                     <BreakdownChart rows={r.byCategory} name="category" />
                   </Section>
                 </div>
+                <HsnSacTable report={r} />
                 <ItemsTable report={r} lowStockClass={styles.low} />
               </>
             )
@@ -122,6 +124,29 @@ function BreakdownChart({ rows, labels, name }: { rows: AmountByKey[]; labels?: 
     return <Text>No sales.</Text>;
   }
   return <EChart option={option} height={240} ariaLabel={`Sales by ${name}: ${rows.map((row) => `${label(row.key)} ${formatInr(row.amount)}`).join(', ')}`} />;
+}
+
+function HsnSacTable({ report }: { report: DailySalesSummary }) {
+  return (
+    <Section title="HSN/SAC summary" description="Completed bills by HSN/SAC code and GST rate, for the GSTR-1 HSN summary" flush>
+      <DataTable
+        ariaLabel="HSN/SAC summary"
+        rows={report.byHsnSac}
+        getRowId={(h) => `${h.hsnSac ?? 'none'}-${h.gstRate}`}
+        size="small"
+        columns={[
+          { key: 'code', header: 'HSN/SAC', render: (h) => (h.hsnSac ? <Text font="monospace">{h.hsnSac}</Text> : 'Not recorded') },
+          { key: 'rate', header: 'GST', width: 80, align: 'end', render: (h) => `${h.gstRate}%` },
+          { key: 'qty', header: 'Qty', width: 80, align: 'end', priority: 'low', render: (h) => h.quantity },
+          { key: 'taxable', header: 'Taxable value', width: 130, align: 'end', render: (h) => formatInr(h.taxableAmount) },
+          { key: 'cgst', header: 'CGST', width: 110, align: 'end', render: (h) => formatInr(h.cgst) },
+          { key: 'sgst', header: 'SGST', width: 110, align: 'end', render: (h) => formatInr(h.sgst) },
+          { key: 'total', header: 'Total', width: 120, align: 'end', render: (h) => formatInr(h.total) },
+        ]}
+        emptyTitle="No sales"
+      />
+    </Section>
+  );
 }
 
 function ItemsTable({ report, lowStockClass }: { report: DailySalesSummary; lowStockClass: string }) {

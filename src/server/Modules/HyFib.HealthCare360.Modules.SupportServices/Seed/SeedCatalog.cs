@@ -13,7 +13,10 @@ internal static class SeedCatalog
 
     public sealed record SetSeed(string Code, string Name, string Category, string? Department, SterilizationMethod Method, int ShelfLifeDays, (string Name, int Quantity)[] Items);
 
-    public sealed record MenuSeed(string Code, string Name, MenuCategory Category, decimal Price, bool IsVeg, decimal GstRate = MenuItem.StandardGstRate, bool TrackStock = false);
+    /// <param name="HsnSac">Goods only; food and drink made in the canteen is billed under <see cref="MenuItem.DefaultSac"/>.</param>
+    public sealed record MenuSeed(
+        string Code, string Name, MenuCategory Category, decimal Price, bool IsVeg, decimal GstRate = MenuItem.StandardGstRate, bool TrackStock = false,
+        string? HsnSac = null);
 
     /// <summary>Diet charges posted per admission per day when a facility enables diet billing.</summary>
     public static readonly ServiceSeed[] DietServices =
@@ -109,10 +112,10 @@ internal static class SeedCatalog
         new("MILK", "Hot milk", MenuCategory.Beverages, 15m, true),
         new("LIME-JUICE", "Fresh lime juice", MenuCategory.Juices, 25m, true),
         new("BUTTERMILK", "Buttermilk", MenuCategory.Juices, 15m, true),
-        new("TENDER-COCONUT", "Tender coconut", MenuCategory.Juices, 50m, true, GstRate: 0m),
+        new("TENDER-COCONUT", "Tender coconut", MenuCategory.Juices, 50m, true, GstRate: 0m, HsnSac: "080119"),
         new("KESARI", "Rava kesari", MenuCategory.Sweets, 25m, true),
         new("GULAB-JAMUN", "Gulab jamun (2 pcs)", MenuCategory.Sweets, 30m, true),
-        new("WATER-1L", "Packaged drinking water 1 L", MenuCategory.Packaged, 20m, true, GstRate: 18m, TrackStock: true),
-        new("BISCUITS", "Biscuit pack", MenuCategory.Packaged, 10m, true, GstRate: 18m, TrackStock: true),
+        new("WATER-1L", "Packaged drinking water 1 L", MenuCategory.Packaged, 20m, true, GstRate: 18m, TrackStock: true, HsnSac: "220190"),
+        new("BISCUITS", "Biscuit pack", MenuCategory.Packaged, 10m, true, GstRate: 18m, TrackStock: true, HsnSac: "190531"),
     ];
 }

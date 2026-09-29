@@ -20,7 +20,7 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, CartRegular, DeleteRegular, OpenRegular, PrintRegular, ReceiptRegular, SubtractRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatInr, isApiError, useHotkey, useSession } from '@hc360/core';
+import { formatInr, isApiError, useHotkey } from '@hc360/core';
 import { applyServerErrors, EmptyState, ErrorState, Page, PageHeader, Section, TextField, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -47,6 +47,7 @@ import { isValidEmployeeCode } from '@/modules/canteen/rules';
 import { SaleDrawer } from '@/modules/canteen/SaleDrawer';
 import { useStoredState } from '@/modules/inpatient/hooks';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
+import { useLetterhead } from '@/modules/pharmacy/counter';
 
 export const Route = createFileRoute('/_app/canteen/')({
   component: CanteenPosPage,
@@ -163,7 +164,7 @@ function CanteenPosPage() {
   const navigate = useNavigate();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canSell = usePermission('canteen.sales.create');
   const canReport = usePermission('canteen.reports.read');
   const menu = useQuery({ ...canteenQueries.menu(true), enabled: canSell });
@@ -235,7 +236,7 @@ function CanteenPosPage() {
       form.reset({ ...form.getValues(), ...RESET_FIELDS });
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
       if (autoPrint === '1') {
-        void printCanteenReceipt(result, facilityName).catch((error: unknown) => notify.error(error, 'The receipt did not print. Use Reprint.'));
+        void printCanteenReceipt(result, letterhead).catch((error: unknown) => notify.error(error, 'The receipt did not print. Use Reprint.'));
       }
       notify.success(`Bill ${result.billNumber}: ${formatInr(result.netAmount)}`, PAYMENT_LABEL[result.paymentMode]);
       focusSearch();
@@ -534,7 +535,7 @@ function CanteenPosPage() {
                   <Button
                     size="small"
                     icon={<PrintRegular />}
-                    onClick={() => void printCanteenReceipt(lastSale, facilityName, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+                    onClick={() => void printCanteenReceipt(lastSale, letterhead, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
                   >
                     Reprint
                   </Button>

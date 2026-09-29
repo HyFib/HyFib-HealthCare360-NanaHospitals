@@ -123,6 +123,7 @@ internal sealed class SupportServicesSeeder : ISeeder
                 Category = item.Category,
                 Price = item.Price,
                 GstRate = item.GstRate,
+                HsnSac = item.HsnSac,
                 PriceIncludesGst = true,
                 IsVeg = item.IsVeg,
                 TrackStock = item.TrackStock,

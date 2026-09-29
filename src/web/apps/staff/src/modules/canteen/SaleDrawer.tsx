@@ -21,13 +21,14 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { DismissCircleRegular, DismissRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateTime, formatInr, todayIso, useSession } from '@hc360/core';
+import { formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { ErrorState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
-import { canteenApi, canteenKeys, canteenQueries, CUSTOMER_LABEL, PAYMENT_LABEL } from './api';
+import { useLetterhead } from '@/modules/pharmacy/counter';
+import { canteenApi, canteenKeys, canteenQueries, CUSTOMER_LABEL, hsnSacLabel, PAYMENT_LABEL } from './api';
 import { printCanteenReceipt } from './print';
 
 const useStyles = makeStyles({
@@ -43,7 +44,7 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canCancel = usePermission('canteen.sales.cancel');
   const sale = useQuery(canteenQueries.sale(saleId));
   const [cancelling, setCancelling] = useState(false);
@@ -107,7 +108,14 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               <TableBody>
                 {s.lines.map((l) => (
                   <TableRow key={l.menuItemId}>
-                    <TableCell>{l.itemName}</TableCell>
+                    <TableCell>
+                      {l.itemName}
+                      {l.hsnSac && (
+                        <Caption1 block className={styles.muted}>
+                          {hsnSacLabel(l.hsnSac)}
+                        </Caption1>
+                      )}
+                    </TableCell>
                     <TableCell className={styles.right}>{l.quantity}</TableCell>
                     <TableCell className={styles.right}>{formatInr(l.unitPrice)}</TableCell>
                     <TableCell className={styles.right}>{l.gstRate}%</TableCell>
@@ -140,7 +148,7 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
         <Button
           icon={<PrintRegular />}
           disabled={!s}
-          onClick={() => s && void printCanteenReceipt(s, facilityName, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+          onClick={() => s && void printCanteenReceipt(s, letterhead, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
         >
           Reprint
         </Button>

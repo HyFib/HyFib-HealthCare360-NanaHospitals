@@ -93,14 +93,14 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/menu?category&availableOnly` | `canteen.sales.create` or `canteen.menu.manage` | → `MenuItemDto[]` |
-| POST | `/menu` | `canteen.menu.manage` | `SaveMenuItemRequest` (code, name, category, price, gstRate 0/5/12/18/28, priceIncludesGst, isVeg, isAvailable, trackStock) → 201 |
+| POST | `/menu` | `canteen.menu.manage` | `SaveMenuItemRequest` (code, name, category, price, gstRate 0/5/12/18/28, hsnSac (4, 6 or 8 digits; empty = SAC 996333), priceIncludesGst, isVeg, isAvailable, trackStock) → 201 |
 | PUT | `/menu/{id}` | `canteen.menu.manage` | `SaveMenuItemRequest` (+`version`) → 204 |
 | POST | `/menu/{id}/stock` | `canteen.menu.manage` | `StockMovementRequest` (Receipt/Adjustment/Wastage, quantity, reason) → `MenuItemDto` |
-| POST | `/sales` | `canteen.sales.create` | `CreateSaleRequest` (customerType Staff/Attendant/Visitor/Patient, customerName, employeeCode + name (StaffCredit), patientId, paymentMode Cash/Upi/Card/StaffCredit, paymentReference, lines[menuItemId, quantity]) → 201 `CanteenSaleDto` (bill number, taxable, CGST, SGST, gross, round-off, net, lines) |
+| POST | `/sales` | `canteen.sales.create` | `CreateSaleRequest` (customerType Staff/Attendant/Visitor/Patient, customerName, employeeCode + name (StaffCredit), patientId, paymentMode Cash/Upi/Card/StaffCredit, paymentReference, lines[menuItemId, quantity]) → 201 `CanteenSaleDto` (bill number, taxable, CGST, SGST, gross, round-off, net, lines with HSN/SAC code and GST rate) |
 | GET | `/sales?date&status&paymentMode&employeeCode&search` (paged) | sales.create or reports.read | → `PagedResult<CanteenSaleListItem>` |
 | GET | `/sales/{id}` | same | → `CanteenSaleDto` |
 | POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → `CanteenSaleDto` (same business day only; stock restored; staff credit reversed) |
-| GET | `/reports/daily?date` | `canteen.reports.read` | → `DailySalesSummary` (bills, cancelled, taxable, CGST, SGST, round-off, net; by payment mode, customer type, category; item consumption and closing stock) |
+| GET | `/reports/daily?date` | `canteen.reports.read` | → `DailySalesSummary` (bills, cancelled, taxable, CGST, SGST, round-off, net; by payment mode, customer type, category; item consumption and closing stock; `byHsnSac`: quantity, taxable, CGST, SGST and total per HSN/SAC code and GST rate, for the GSTR-1 HSN summary) |
 
 ### Staff credit — `/api/v1/canteen/staff-credit`
 | Method | Path | Permission | Request → response |
@@ -112,7 +112,13 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | POST | `/payments` | `canteen.credit.manage` or `canteen.sales.create` | `StaffPaymentRequest` (employeeCode, amount, reference) → `StaffBalanceDto` |
 
 GST: 5 % restaurant GST by default, prices GST-inclusive (taxable = price × 100 ÷ 105); tax per line, split equally into
-CGST/SGST (SGST takes the odd paisa); bill rounded to the nearest rupee with a round-off line. Staff credit is only for
+CGST/SGST (CGST takes the odd paisa); bill rounded to the nearest rupee with a round-off line. Each menu item may carry an
+HSN code (packaged goods) or SAC; food and drink made in the canteen without one is billed under SAC 996333 (services
+provided by canteens, `MenuItem.DefaultSac`). The code, like the name, price and rate, is copied onto the bill line when
+the bill is made. The receipt is a tax invoice (CGST Rules, rule 46): the facility's legal name, address and GSTIN from
+the facility master (the GSTIN line is left out when none is configured), bill number and date, each line's HSN/SAC code
+and GST rate, taxable value, CGST, SGST (also by rate) and the total; a bill with only nil-rated items is titled "Bill of
+supply", and one with both "Invoice-cum-bill of supply" (rules 49 and 46A). Staff credit is only for
 active employees in the HR directory (unknown codes → field error on `employeeCode`, separated staff → 422
 `canteen.employee_inactive`); the bill carries the employee's name from HR, and the outstanding balance must stay within
 `supportservices.canteen.staffCreditLimit`.
@@ -137,7 +143,7 @@ No integration events are raised.
 * Number series (yearly): `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
-* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock).
+* Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
 
 ## Tables (schema `supportservices`)
 `instrument_sets`, `instrument_set_items`, `cssd_requests`, `cssd_request_lines`, `soiled_receipts`,

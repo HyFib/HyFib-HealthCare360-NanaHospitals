@@ -29,55 +29,15 @@ import { applyServerErrors, FormGrid, NumberField, SelectField, SwitchField, Tex
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
-import { z } from 'zod';
-import { canteenApi, canteenKeys, GST_RATES, MENU_CATEGORIES, type MenuItemDto, type StockMovementKind } from './api';
+import { CANTEEN_SAC, canteenApi, canteenKeys, GST_RATES, MENU_CATEGORIES, type MenuItemDto, type StockMovementKind } from './api';
 import { calculateLine } from './billCalculator';
-
-const schema = z.object({
-  code: z
-    .string()
-    .trim()
-    .min(1, 'Enter a short code, e.g. TEA.')
-    .max(24)
-    .regex(/^[A-Za-z0-9-]+$/, 'Use letters, digits or dashes.'),
-  name: z.string().trim().min(1, 'Enter the item name.').max(100),
-  category: z.enum(MENU_CATEGORIES),
-  price: z
-    .number({ message: 'Enter the price.' })
-    .gt(0, 'The price must be more than zero.')
-    .max(10_000)
-    .refine((v) => Math.round(v * 100) === v * 100, 'Use at most two decimals.'),
-  gstRate: z.string(),
-  priceIncludesGst: z.boolean(),
-  isVeg: z.boolean(),
-  isAvailable: z.boolean(),
-  trackStock: z.boolean(),
-  displayOrder: z.number({ message: 'Enter a number.' }).int().min(0).max(10_000),
-  description: z.string().trim().max(300),
-});
-
-type MenuValues = z.infer<typeof schema>;
+import { menuFormValues, menuItemRequest, menuItemSchema, type MenuValues } from './menuForm';
 
 /** Add or edit a menu item. Prices are normally GST-inclusive, as shown on the canteen board (5 % restaurant GST). */
 export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<MenuValues>({
-    resolver: zodResolver(schema),
-    defaultValues: {
-      code: item?.code ?? '',
-      name: item?.name ?? '',
-      category: item?.category ?? 'Snacks',
-      price: item?.price ?? (null as unknown as number),
-      gstRate: String(item?.gstRate ?? 5),
-      priceIncludesGst: item?.priceIncludesGst ?? true,
-      isVeg: item?.isVeg ?? true,
-      isAvailable: item?.isAvailable ?? true,
-      trackStock: item?.trackStock ?? false,
-      displayOrder: item?.displayOrder ?? 0,
-      description: item?.description ?? '',
-    },
-  });
+  const form = useForm<MenuValues>({ resolver: zodResolver(menuItemSchema), defaultValues: menuFormValues(item) });
   const [price, gstRate, inclusive] = useWatch({ control: form.control, name: ['price', 'gstRate', 'priceIncludesGst'] });
   const preview =
     typeof price === 'number' && price > 0
@@ -86,7 +46,7 @@ export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; on
 
   const save = useMutation({
     mutationFn: async (v: MenuValues): Promise<void> => {
-      const body = { ...v, gstRate: Number(v.gstRate), description: v.description || null, version: item?.version ?? null };
+      const body = menuItemRequest(v, item);
       if (item) {
         await canteenApi.updateMenuItem(item.id, body);
       } else {
@@ -118,6 +78,15 @@ export function MenuItemDrawer({ item, onClose }: { item: MenuItemDto | null; on
               <SelectField control={form.control} name="category" label="Category" options={MENU_CATEGORIES.map((c) => ({ value: c, label: c }))} />
               <NumberField control={form.control} name="price" label="Price (₹)" required min={0.01} max={10_000} step={0.5} />
               <SelectField control={form.control} name="gstRate" label="GST rate" options={GST_RATES.map((r) => ({ value: String(r), label: `${r}%` }))} />
+              <TextField
+                control={form.control}
+                name="hsnSac"
+                label="HSN/SAC code"
+                maxLength={8}
+                placeholder={CANTEEN_SAC}
+                autoComplete="off"
+                hint={`Leave empty for food made in the canteen (SAC ${CANTEEN_SAC}). For packaged goods, enter the HSN code from the supplier's invoice.`}
+              />
               <NumberField control={form.control} name="displayOrder" label="Display order" min={0} max={10_000} />
             </FormGrid>
             <SwitchField control={form.control} name="priceIncludesGst" label="Price includes GST (as on the menu board)" />

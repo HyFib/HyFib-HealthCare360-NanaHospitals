@@ -27,6 +27,14 @@ export const CREDIT_KIND_LABEL: Record<StaffCreditEntryKind, string> = {
 /** GST slabs the server accepts for menu items. */
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
 
+/** SAC "services provided by canteens" that the server puts on bills for items without their own code (`MenuItem.DefaultSac`). */
+export const CANTEEN_SAC = '996333';
+
+/** "SAC 996333" for services (SAC codes are chapter 99), "HSN 220190" for goods. */
+export function hsnSacLabel(code: string): string {
+  return `${code.startsWith('99') ? 'SAC' : 'HSN'} ${code}`;
+}
+
 export interface MenuItemDto {
   id: string;
   code: string;
@@ -34,6 +42,8 @@ export interface MenuItemDto {
   category: MenuCategory;
   price: number;
   gstRate: number;
+  /** HSN code of packaged goods or a SAC; null for food made in the canteen (billed under {@link CANTEEN_SAC}). */
+  hsnSac: string | null;
   priceIncludesGst: boolean;
   isVeg: boolean;
   isAvailable: boolean;
@@ -50,6 +60,7 @@ export interface SaveMenuItemRequest {
   category: MenuCategory;
   price: number;
   gstRate: number;
+  hsnSac: string | null;
   priceIncludesGst: boolean;
   isVeg: boolean;
   isAvailable: boolean;
@@ -73,6 +84,8 @@ export interface CreateSaleRequest {
 export interface CanteenSaleLineDto {
   menuItemId: string;
   itemName: string;
+  /** Copied from the menu item when the bill was made; null only on bills made before codes were recorded. */
+  hsnSac: string | null;
   quantity: number;
   unitPrice: number;
   gstRate: number;
@@ -134,6 +147,19 @@ export interface ItemConsumption {
   closingStock: number | null;
 }
 
+/** Completed bill lines of one HSN/SAC code and GST rate (for the GSTR-1 HSN summary). */
+export interface HsnSacSummary {
+  /** Null for lines billed before codes were recorded. */
+  hsnSac: string | null;
+  gstRate: number;
+  quantity: number;
+  taxableAmount: number;
+  cgst: number;
+  sgst: number;
+  /** Taxable value + CGST + SGST, before the bills' round-off. */
+  total: number;
+}
+
 export interface DailySalesSummary {
   date: string;
   bills: number;
@@ -147,6 +173,7 @@ export interface DailySalesSummary {
   byCustomerType: AmountByKey[];
   byCategory: AmountByKey[];
   items: ItemConsumption[];
+  byHsnSac: HsnSacSummary[];
 }
 
 export interface StaffBalanceDto {
@@ -260,6 +287,7 @@ export function menuItemBody(item: MenuItemDto, patch: Partial<SaveMenuItemReque
     category: item.category,
     price: item.price,
     gstRate: item.gstRate,
+    hsnSac: item.hsnSac,
     priceIncludesGst: item.priceIncludesGst,
     isVeg: item.isVeg,
     isAvailable: item.isAvailable,
