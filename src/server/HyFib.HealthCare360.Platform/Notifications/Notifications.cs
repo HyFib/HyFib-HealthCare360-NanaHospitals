@@ -32,6 +32,9 @@ public enum NotificationStatus
 
     /// <summary>The provider confirmed delivery to the handset or inbox (delivery receipt).</summary>
     Delivered,
+
+    /// <summary>Deliberately not sent, and never retried: the number opted out of the channel (see the log's error).</summary>
+    Suppressed,
 }
 
 /// <summary>Editable message template. Placeholders use <c>{{name}}</c>; SMS templates carry the TRAI DLT template id.</summary>
@@ -281,7 +284,10 @@ internal sealed class NotificationService(
     private static string? Truncate(string? value, int max) => value is null || value.Length <= max ? value : value[..max];
 }
 
-/// <summary>Built-in templates seeded into the database (admins can edit wording and DLT ids).</summary>
+/// <summary>
+/// Built-in templates seeded into the database (admins can edit wording and DLT ids). Each key must be classified in
+/// <see cref="WhatsAppOptOutPolicy"/> (a unit test checks it).
+/// </summary>
 public static class DefaultNotificationTemplates
 {
     public static IReadOnlyList<(string Key, NotificationChannel Channel, string? Subject, string Body, string Description)> All { get; } =
@@ -399,10 +405,25 @@ internal abstract class NotificationDeliveryHandler(HospitalDbContext db, Notifi
 {
     public abstract string Type { get; }
 
+    protected HospitalDbContext Db => db;
+
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var delivery = message.Read<NotificationDelivery>();
         var log = await db.Set<NotificationLog>().FirstOrDefaultAsync(l => l.Id == delivery.LogId, cancellationToken);
+        if (await SuppressionReasonAsync(delivery, cancellationToken) is { } reason)
+        {
+            if (log is not null)
+            {
+                log.Status = NotificationStatus.Suppressed;
+                log.Error = reason;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            logger.LogInformation("Notification {TemplateKey} via {Channel} not sent: {Reason}", delivery.TemplateKey, delivery.Channel, reason);
+            return;
+        }
+
         var (template, subject, body) = await renderer.RenderAsync(delivery, cancellationToken);
 
         var result = await SendAsync(delivery, template, subject, body, cancellationToken);
@@ -422,6 +443,10 @@ internal abstract class NotificationDeliveryHandler(HospitalDbContext db, Notifi
         }
     }
 
+    /// <summary>Why this message must not be sent at all (it is then marked suppressed, not retried), or null to send it.</summary>
+    protected virtual Task<string?> SuppressionReasonAsync(NotificationDelivery delivery, CancellationToken cancellationToken) =>
+        Task.FromResult<string?>(null);
+
     protected abstract Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken);
 }
 
@@ -438,6 +463,21 @@ internal sealed class WhatsAppDeliveryHandler(HospitalDbContext db, Notification
     : NotificationDeliveryHandler(db, renderer, time, logger)
 {
     public override string Type => NotificationService.WhatsAppType;
+
+    /// <summary>
+    /// A number that replied STOP gets only essential messages on WhatsApp. The check runs at delivery time, so messages
+    /// queued before the STOP, and reminders queued for later, stop too.
+    /// </summary>
+    protected override async Task<string?> SuppressionReasonAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
+    {
+        if (WhatsAppOptOutPolicy.IsEssential(delivery.TemplateKey) || Phone.Normalize(delivery.To) is not { } phone)
+        {
+            return null;
+        }
+
+        var optedOut = await Db.Set<WhatsAppOptOut>().AnyAsync(WhatsAppOptOutPolicy.InForceFor(phone), cancellationToken);
+        return WhatsAppOptOutPolicy.Stops(delivery.Channel, delivery.TemplateKey, optedOut) ? WhatsAppOptOutPolicy.SuppressedReason : null;
+    }
 
     protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
@@ -465,6 +505,8 @@ internal sealed class UnconfiguredChannelSender(ILogger<UnconfiguredChannelSende
     public Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, CancellationToken cancellationToken) => NotConfigured("WhatsApp");
 
     public Task<SendResult> SendDocumentAsync(WhatsAppDocumentMessage message, CancellationToken cancellationToken) => NotConfigured("WhatsApp");
+
+    public Task<SendResult> SendTextAsync(WhatsAppTextMessage message, CancellationToken cancellationToken) => NotConfigured("WhatsApp");
 
     public Task<SendResult> SendAsync(EmailMessage message, CancellationToken cancellationToken) => NotConfigured("e-mail");
 

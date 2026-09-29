@@ -4,9 +4,9 @@ using System.Text.RegularExpressions;
 namespace HyFib.HealthCare360.Integrations.WhatsApp;
 
 /// <summary>
-/// Meta WhatsApp Cloud API: approved template messages with body parameters, and documents (reports, bills) uploaded
-/// to <c>/{phone-number-id}/media</c> first and then sent by media id. Parameter values are PHI, so only the template
-/// name and parameter count are logged.
+/// Meta WhatsApp Cloud API: approved template messages with body parameters, documents (reports, bills) uploaded to
+/// <c>/{phone-number-id}/media</c> first and then sent by media id, and free-form text replies. Parameter values and
+/// texts can carry PHI, so only the template name, parameter count and text length are logged.
 /// </summary>
 internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationTrace trace) : IWhatsAppProvider
 {
@@ -78,6 +78,28 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         };
         return await SendMessageAsync(settings, secrets, payload, "document", summary, message.Reference, started, cancellationToken);
     }
+
+    /// <summary>Meta accepts it only within 24 hours of the person's last message (error 131047 otherwise).</summary>
+    public async Task<SendResult> SendTextAsync(WhatsAppTextMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        if (Validate(settings, secrets) is { } problem)
+        {
+            return await FailAsync("text", message.Reference, started, problem);
+        }
+
+        var summary = $"{{\"to\":\"{Phone.Mask(message.To)}\",\"type\":\"text\",\"length\":{message.Text.Length}}}";
+        return await SendMessageAsync(settings, secrets, TextPayload(message.To, message.Text), "text", summary, message.Reference, started, cancellationToken);
+    }
+
+    internal static object TextPayload(string to, string text) => new
+    {
+        messaging_product = "whatsapp",
+        recipient_type = "individual",
+        to = to.TrimStart('+'),
+        type = "text",
+        text = new { preview_url = false, body = text },
+    };
 
     /// <summary>Template message body. Meta rejects parameters containing newlines, tabs or long runs of spaces.</summary>
     internal static object TemplatePayload(string to, string templateName, string language, IReadOnlyList<string> parameters) => new

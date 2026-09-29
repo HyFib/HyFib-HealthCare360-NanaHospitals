@@ -143,7 +143,7 @@ public sealed class CampaignService(HospitalDbContext db, ICurrentUser currentUs
             rows.Count(r => r.LogStatus == NotificationStatus.Queued),
             rows.Count(r => r.LogStatus is NotificationStatus.Sent or NotificationStatus.Delivered),
             rows.Count(r => r.LogStatus == NotificationStatus.Failed),
-            rows.Count(r => r.Status == CampaignRecipientStatus.Skipped || r.LogStatus == NotificationStatus.Skipped),
+            rows.Count(r => r.Status == CampaignRecipientStatus.Skipped || r.LogStatus is NotificationStatus.Skipped or NotificationStatus.Suppressed),
             rows.Count(r => r.OptedOutAt is not null));
     }
 

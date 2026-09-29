@@ -100,7 +100,7 @@ with a group label, a plain-language description and default roles from `SystemR
 |---|---|
 | Document numbers (bill, accession, PO…) | `INumberSeries.NextAsync(key, facilityId, "{FAC}LAB{YY}{SEQ:6}", NumberResetPolicy.Yearly, ct)` inside `db.Database.BeginTransactionAsync` |
 | Charge a patient | `IChargePoster.PostAsync(new ChargeRequest { ..., SourceModule = "diagnostics.lab", SourceReference = item.Id.ToString() }, ct)` |
-| SMS / WhatsApp / e-mail | `INotificationService.Queue(templateKey, recipient, values, [NotificationChannel.Sms, ...])` (+ seed templates) |
+| SMS / WhatsApp / e-mail | `INotificationService.Queue(templateKey, recipient, values, [NotificationChannel.Sms, ...])` (+ seed templates). A number that replied STOP on WhatsApp gets no WhatsApp message except the essential ones in `WhatsAppOptOutPolicy.EssentialTemplates` (sign-in codes); a new template that must reach the person for security has to be added there |
 | In-app alerts to staff | `INotificationService.NotifyPermissionHoldersAsync(permission, facilityId, title, body, link, category, severity, ct)` |
 | Real-time UI refresh | `IRealtimePublisher.PublishAsync(Topics.Lab(facilityId), "lab.sample.received", new { id }, ct)` — ids only |
 | Files (PDF/images) | `IFileStore.SaveAsync/ReadAsync` (encrypted at rest) |

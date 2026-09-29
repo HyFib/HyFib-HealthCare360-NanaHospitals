@@ -20,7 +20,15 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { IntegrationsTabs } from '@/modules/admin/IntegrationsTabs';
-import { INBOX_PAGE_SIZE, integrationQueries, pageFromUrl, WHATSAPP_KEYWORDS, type InboundWhatsAppMessageDto, type WhatsAppKeyword } from '@/modules/admin/integrationsApi';
+import {
+  INBOX_PAGE_SIZE,
+  integrationQueries,
+  keywordActionDisplay,
+  pageFromUrl,
+  WHATSAPP_KEYWORDS,
+  type InboundWhatsAppMessageDto,
+  type WhatsAppKeyword,
+} from '@/modules/admin/integrationsApi';
 import { NoAccess } from '@/modules/admin/NoAccess';
 
 interface InboundSearch {
@@ -62,6 +70,14 @@ function KeywordBadge({ keyword }: { keyword: WhatsAppKeyword }) {
   return null;
 }
 
+/** What HC360 did about a STOP or START. */
+function ResultBadge({ row }: { row: InboundWhatsAppMessageDto }) {
+  const result = keywordActionDisplay(row.keyword, row.keywordAction);
+  return result ? (
+    <StatusBadge status={row.keywordAction ?? 'Waiting'} tone={result.tone} label={result.label} />
+  ) : null;
+}
+
 /** Messages patients sent to the hospital's WhatsApp number (sender masked), with STOP/START opt-outs and opt-ins. */
 function WhatsAppInboxPage() {
   const styles = useStyles();
@@ -83,7 +99,10 @@ function WhatsAppInboxPage() {
 
   return (
     <Page>
-      <PageHeader title="Integrations" subtitle="Messages patients sent to the hospital’s WhatsApp number. STOP and START replies are recorded as opt-out and opt-in." />
+      <PageHeader
+        title="Integrations"
+        subtitle="Messages patients sent to the hospital’s WhatsApp number. A STOP reply stops WhatsApp messages to that number, except sign-in codes; START resumes them."
+      />
       <IntegrationsTabs selected="inbound" />
       <Section flush>
         <div className={styles.toolbar}>
@@ -124,6 +143,7 @@ function WhatsAppInboxPage() {
               render: (row) => <span className={styles.preview}>{row.text ?? `(${humanize(row.messageType).toLowerCase()})`}</span>,
             },
             { key: 'keyword', header: 'Choice', width: 120, render: (row) => <KeywordBadge keyword={row.keyword} /> },
+            { key: 'result', header: 'Result', width: 160, render: (row) => <ResultBadge row={row} /> },
           ]}
           emptyTitle="No messages from patients"
           emptyDescription="Patients’ replies appear here once the WhatsApp webhook is set up in Meta and WhatsApp is configured."
@@ -156,6 +176,8 @@ function WhatsAppInboxPage() {
                       <span>
                         <KeywordBadge keyword={open.keyword} />
                       </span>
+                      <Caption1 className={styles.muted}>Result</Caption1>
+                      <Text>{keywordActionDisplay(open.keyword, open.keywordAction)?.detail}</Text>
                     </>
                   )}
                   <pre className={styles.block}>{open.text ?? 'This message has no text (for example a photo or a location).'}</pre>

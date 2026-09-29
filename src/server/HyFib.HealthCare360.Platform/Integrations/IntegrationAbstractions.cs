@@ -27,6 +27,12 @@ public sealed record WhatsAppTemplateMessage(string To, string TemplateName, str
 
 public sealed record WhatsAppDocumentMessage(string To, string FileName, byte[] Content, string ContentType, string? Caption = null, string? Reference = null, Guid? FacilityId = null);
 
+/// <summary>
+/// Free-form text. WhatsApp accepts it only within 24 hours of the person's last message to the hospital (the
+/// customer-service window), so it suits replies; everything else must be an approved template.
+/// </summary>
+public sealed record WhatsAppTextMessage(string To, string Text, string? Reference = null, Guid? FacilityId = null);
+
 public interface IWhatsAppSender
 {
     string Provider { get; }
@@ -34,6 +40,8 @@ public interface IWhatsAppSender
     Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, CancellationToken cancellationToken);
 
     Task<SendResult> SendDocumentAsync(WhatsAppDocumentMessage message, CancellationToken cancellationToken);
+
+    Task<SendResult> SendTextAsync(WhatsAppTextMessage message, CancellationToken cancellationToken);
 }
 
 // ---------- E-mail ----------

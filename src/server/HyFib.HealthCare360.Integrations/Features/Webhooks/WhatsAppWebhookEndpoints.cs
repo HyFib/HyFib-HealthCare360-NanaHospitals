@@ -8,7 +8,8 @@ namespace HyFib.HealthCare360.Integrations.Features.Webhooks;
 /// /api/v1/integrations/webhooks/whatsapp — Meta Cloud API webhook (INT-WA). GET answers the subscription check only
 /// when <c>hub.verify_token</c> matches the configured token; POST bodies must carry a valid
 /// <c>X-Hub-Signature-256</c> (HMAC-SHA256 of the raw body with the app secret). Delivery statuses update the
-/// notification log; patient messages are stored with opt-in/opt-out keywords.
+/// notification log; patient messages are stored, and a new STOP or START stops or resumes WhatsApp messages to the
+/// sender's number (<see cref="WhatsAppInboundStore"/>).
 /// </summary>
 internal static partial class WhatsAppWebhookEndpoints
 {

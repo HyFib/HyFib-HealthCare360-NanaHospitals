@@ -21,7 +21,7 @@ internal sealed class SimulatorSmsProvider(SimulatorInbox inbox, IntegrationTrac
     }
 }
 
-/// <summary>WhatsApp template and document messages "delivered" to the simulator inbox.</summary>
+/// <summary>WhatsApp template, document and text messages "delivered" to the simulator inbox.</summary>
 internal sealed class SimulatorWhatsAppProvider(SimulatorInbox inbox, IntegrationTrace trace) : IWhatsAppProvider
 {
     public string Key => ProviderKeys.Simulator;
@@ -43,6 +43,16 @@ internal sealed class SimulatorWhatsAppProvider(SimulatorInbox inbox, Integratio
             message.Caption ?? string.Empty, $"document {message.FileName} ({message.ContentType}, {message.Content.Length} bytes)", message.Reference, cancellationToken);
         await trace.LogAsync(IntegrationNames.WhatsApp, Key, "document", true, started, message.Reference,
             $"{{\"to\":\"{Phone.Mask(message.To)}\",\"bytes\":{message.Content.Length}}}", id);
+        return SendResult.Ok(id);
+    }
+
+    public async Task<SendResult> SendTextAsync(WhatsAppTextMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        var id = await inbox.RecordAsync(SimulatorChannel.WhatsApp, Phone.Mask(message.To), "Text message", message.Text,
+            "free-form text (allowed within 24 hours of the patient's message)", message.Reference, cancellationToken);
+        await trace.LogAsync(IntegrationNames.WhatsApp, Key, "text", true, started, message.Reference,
+            $"{{\"to\":\"{Phone.Mask(message.To)}\",\"length\":{message.Text.Length}}}", id);
         return SendResult.Ok(id);
     }
 }
