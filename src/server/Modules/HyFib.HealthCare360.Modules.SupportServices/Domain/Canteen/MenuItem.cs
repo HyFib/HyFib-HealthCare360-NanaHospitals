@@ -21,12 +21,22 @@ public sealed class MenuItem : AuditableEntity, IFacilityScoped
 {
     public const decimal StandardGstRate = 5m;
 
+    /// <summary>
+    /// SAC 996333, "services provided by canteens and other similar establishments": the code a bill carries for food and
+    /// drink made in the canteen when the item has no code of its own.
+    /// </summary>
+    public const string DefaultSac = "996333";
+
     public Guid FacilityId { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public MenuCategory Category { get; set; }
     public decimal Price { get; set; }
     public decimal GstRate { get; set; } = StandardGstRate;
+
+    /// <summary>HSN code of packaged goods (220190 for bottled water) or a SAC; null for prepared food, billed under <see cref="DefaultSac"/>.</summary>
+    public string? HsnSac { get; set; }
+
     public bool PriceIncludesGst { get; set; } = true;
     public bool IsVeg { get; set; } = true;
     public bool IsAvailable { get; set; } = true;
@@ -34,6 +44,13 @@ public sealed class MenuItem : AuditableEntity, IFacilityScoped
     public int StockOnHand { get; set; }
     public int DisplayOrder { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>HSN and SAC codes are written with 4, 6 or 8 digits on invoices and in the GSTR-1 HSN summary.</summary>
+    public static bool IsValidHsnSac(string? code) => code is { Length: 4 or 6 or 8 } && code.All(char.IsAsciiDigit);
+
+    /// <summary>This item on a bill, carrying its own HSN/SAC code or, for prepared food, the canteen SAC.</summary>
+    public BillLineInput ToBillLine(int quantity) =>
+        new(Id, Name, quantity, Price, GstRate, PriceIncludesGst, string.IsNullOrWhiteSpace(HsnSac) ? DefaultSac : HsnSac);
 
     public Result Consume(int quantity)
     {

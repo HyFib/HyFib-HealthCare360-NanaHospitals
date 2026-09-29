@@ -193,3 +193,20 @@ public sealed record RefundPaid(
     Guid? BillId,
     decimal Amount,
     DateTimeOffset PaidAt) : DomainEvent;
+
+/// <summary>
+/// Someone replied STOP (<paramref name="OptedOut"/>) or START to the hospital's WhatsApp number. Raised by Integrations
+/// once for each newly received reply that is the number's latest, so webhook redeliveries and older replies arriving
+/// late raise nothing. The platform records the number's WhatsApp opt-out, which the notification pipeline honours;
+/// Engagement updates the marketing consent of the patients registered with the number.
+/// </summary>
+/// <param name="Phone">The sender's mobile number in E.164.</param>
+/// <param name="RepliedAt">When the person sent the reply (WhatsApp's timestamp, or the time it arrived when missing).</param>
+/// <param name="ProviderMessageId">The reply's WhatsApp message id (wamid).</param>
+/// <param name="FacilityId">The facility whose WhatsApp number received it, when the webhook names one.</param>
+public sealed record WhatsAppOptOutChanged(
+    string Phone,
+    bool OptedOut,
+    DateTimeOffset RepliedAt,
+    string ProviderMessageId,
+    Guid? FacilityId) : DomainEvent;

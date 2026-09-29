@@ -1,6 +1,7 @@
 namespace HyFib.HealthCare360.Modules.SupportServices.Domain.Canteen;
 
-public sealed record BillLineInput(Guid MenuItemId, string ItemName, int Quantity, decimal UnitPrice, decimal GstRate, bool PriceIncludesGst);
+/// <param name="HsnSac">HSN/SAC code printed on the bill; not used in the arithmetic.</param>
+public sealed record BillLineInput(Guid MenuItemId, string ItemName, int Quantity, decimal UnitPrice, decimal GstRate, bool PriceIncludesGst, string HsnSac);
 
 public sealed record BillLine(
     Guid MenuItemId,
@@ -12,7 +13,8 @@ public sealed record BillLine(
     decimal TaxableAmount,
     decimal Cgst,
     decimal Sgst,
-    decimal LineTotal);
+    decimal LineTotal,
+    string HsnSac);
 
 public sealed record BillTotals(
     IReadOnlyList<BillLine> Lines,
@@ -27,7 +29,7 @@ public sealed record BillTotals(
 /// <summary>
 /// Canteen GST arithmetic (Indian tax invoice rules): tax is worked out per line — backed out of GST-inclusive prices
 /// (taxable = price × 100 ÷ (100 + rate)) or added to exclusive ones — rounded to the paisa, split equally into CGST and
-/// SGST (SGST takes the odd paisa), and the bill total is rounded to the nearest rupee with a round-off line.
+/// SGST (CGST takes the odd paisa), and the bill total is rounded to the nearest rupee with a round-off line.
 /// </summary>
 public static class CanteenBillCalculator
 {
@@ -62,6 +64,7 @@ public static class CanteenBillCalculator
         }
 
         var (cgst, sgst) = Money.SplitGst(gst);
-        return new BillLine(line.MenuItemId, line.ItemName, line.Quantity, line.UnitPrice, line.GstRate, line.PriceIncludesGst, taxable, cgst, sgst, taxable + gst);
+        return new BillLine(line.MenuItemId, line.ItemName, line.Quantity, line.UnitPrice, line.GstRate, line.PriceIncludesGst, taxable, cgst, sgst, taxable + gst,
+            line.HsnSac);
     }
 }

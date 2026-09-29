@@ -6,6 +6,9 @@ namespace HyFib.HealthCare360.Integrations.WhatsApp;
 /// </summary>
 internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, IntegrationSettingsReader settings, IntegrationTrace trace) : IWhatsAppSender
 {
+    /// <summary>The Cloud API's limit for a text message body.</summary>
+    public const int MaxTextLength = 4096;
+
     public string Provider => "configured";
 
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, CancellationToken cancellationToken)
@@ -40,6 +43,23 @@ internal sealed class WhatsAppRouter(IEnumerable<IWhatsAppProvider> providers, I
         }
 
         return await provider.SendDocumentAsync(message with { To = Phone.Normalize(message.To)! }, config!.Settings!, config.Secrets, cancellationToken);
+    }
+
+    public async Task<SendResult> SendTextAsync(WhatsAppTextMessage message, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        var (provider, config, error) = await ResolveAsync(message.To, message.FacilityId, cancellationToken);
+        if (provider is null)
+        {
+            return await FailAsync("text", message.Reference, started, error!);
+        }
+
+        if (string.IsNullOrWhiteSpace(message.Text) || message.Text.Length > MaxTextLength)
+        {
+            return await FailAsync("text", message.Reference, started, $"A WhatsApp text must have 1 to {MaxTextLength} characters.");
+        }
+
+        return await provider.SendTextAsync(message with { To = Phone.Normalize(message.To)! }, config!.Settings!, config.Secrets, cancellationToken);
     }
 
     private async Task<(IWhatsAppProvider? Provider, IntegrationConfig<WhatsAppSettings, WhatsAppSecrets>? Config, string? Error)> ResolveAsync(

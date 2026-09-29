@@ -8,7 +8,7 @@ PACS (DICOMweb), laboratory analysers (HL7 v2 / ASTM), barcode label printers an
 | Project | `src/server/HyFib.HealthCare360.Integrations` (module key `integrations`, registered by `IntegrationsModule`) |
 | Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages` (the integration log itself is the platform's `integration_logs`) |
 | Requirements | SRS §5: INT-SMS, INT-WA, INT-PG, INT-POS, INT-TALLY, INT-PACS, INT-LAB, INT-BAR, INT-ICD; SEC-10 (PHI in logs) |
-| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: 452 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, Tally XML, DICOM JSON, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket, PHI masking, labels, validators and DI wiring |
+| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: 473 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket, PHI masking, labels, validators and DI wiring |
 
 ## How it fits together
 
@@ -53,7 +53,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 | `IPacsClient` | Diagnostics radiology: PACS reconciliation and viewer links | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync` throws **`HttpRequestException`** with the reason (not configured, disabled, unreachable or HTTP error). Diagnostics reports it as `pacs.unreachable`. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). The DICOM modality worklist (`/api/v1/radiology/worklist/mwl`) belongs to Diagnostics. |
 | `IInstrumentResultSink` (implemented by Diagnostics, scoped) | Consumed by the lab analyser gateway here | `LabMessageProcessor` resolves it in a new scope per message: `ReceiveAsync` for results, `GetOrderForSampleAsync` for ASTM host queries | The gateway is off until `integrations.lab.enabled` is set and instruments are listed. Without a registered sink, results are refused (HL7 `AE`, ASTM NAK) and logged. |
 | `IIcdLookup` | Clinical online ICD search (`/api/v1/mrd/icd-codes/online`) | `IcdLookupRouter` → WHO ICD-API | Returns an empty list until configured. ICD-API failures throw `HttpRequestException`, which Clinical reports as `icd.online_failed`. |
-| `ISmsSender`, `IWhatsAppSender`, `IEmailSender` | Platform `notify.sms`, `notify.whatsapp` and `notify.email` outbox handlers | `SmsRouter`, `WhatsAppRouter`, `EmailRouter` | `SendResult.Fail("… is not configured. Set it up in Administration → Integrations.")`, the same as the platform's `UnconfiguredChannelSender`. |
+| `ISmsSender`, `IWhatsAppSender`, `IEmailSender` | Platform `notify.sms`, `notify.whatsapp` and `notify.email` outbox handlers; the WhatsApp STOP/START confirmation (`IWhatsAppSender.SendTextAsync`) | `SmsRouter`, `WhatsAppRouter`, `EmailRouter` | `SendResult.Fail("… is not configured. Set it up in Administration → Integrations.")`, the same as the platform's `UnconfiguredChannelSender`. |
 | Biometric attendance | HR (`/iclock/*` ZKTeco/eSSL ADMS push endpoints) | None, by design | HR implements the ADMS protocol itself (`AdmsEndpoints`, `BiometricIngestionService`), so there is no Platform abstraction and nothing for Integrations to register. |
 
 ## Configuration
@@ -117,6 +117,43 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 * Webhook `POST` requires `X-Hub-Signature-256`, an HMAC-SHA256 of the **raw** body with the app secret. Statuses
   update the notification log. Patient messages are stored idempotently in `whatsapp_inbound_messages`, and exact
   `STOP` or `START` style keywords are classified as opt-out or opt-in. Bodies are capped at 256 KB.
+* Free-form **text** messages (`IWhatsAppSender.SendTextAsync`, `type: "text"`, 1–4096 characters, no link preview)
+  are accepted by Meta only within 24 hours of the person's last message, so they are used only for replies. The
+  simulator records them like templates. Only the masked recipient and the text length are logged.
+
+#### STOP and START replies
+
+A STOP stops every non-essential WhatsApp message to the sender's number, whichever module queued it; START resumes
+them. SMS is a separate channel and is not affected.
+
+* **Acted on once.** `WhatsAppInboundStore` acts on a keyword only when its message is stored for the first time, in
+  the same transaction. A redelivered webhook finds the provider message id already stored and changes nothing. A
+  concurrent redelivery hits the unique `provider_message_id` index, rolls back and gets 200, because the other
+  delivery acted. Any other conflict fails the request, so that Meta delivers the webhook again.
+* **Latest reply wins.** Meta can deliver late and out of order, so for each number only its most recent reply
+  counts (WhatsApp's timestamp, else the time it arrived). A reply older than one already stored from the number, or
+  than another in the same batch, is kept for the inbox as `Superseded` and changes nothing (`WhatsAppReplies`).
+* **What a reply does.** The message raises the platform integration event `WhatsAppOptOutChanged(phone, optedOut,
+  repliedAt, providerMessageId, facilityId)`:
+  * the platform records the number's opt-out in `platform.whatsapp_opt_outs`, which the `notify.whatsapp` outbox
+    handler checks before every send (see [ARCHITECTURE.md §10](../architecture/ARCHITECTURE.md#10-integration-architecture));
+  * Engagement withdraws, or gives back, the marketing consent of the patients registered with the number (see
+    [engagement.md](engagement.md#automation-domain-event-handlers-run-inside-the-raisers-transaction)).
+* **Recorded on the message.** `keyword_action` is `OptedOut`, `OptedIn`, `Superseded` or `None` (no keyword, or a
+  sender number that could not be read). It is empty for replies stored before HC360 acted on keywords: at start-up
+  `WhatsAppReplyBacklog` (a seeder, order 500) acts on those once, by the same latest-reply rule and without a
+  confirmation. A failure there is logged and retried at the next start; it never stops HC360.
+* **Confirmation.** While WhatsApp still allows a free-form reply (23 hours after the patient's message, a margin
+  inside Meta's 24-hour window), the store queues a `whatsapp.reply_confirmation` outbox message that expires with the
+  window. `WhatsAppReplyConfirmationHandler` sends it with `SendTextAsync`, straight to the sender and not through the
+  notification pipeline, so the opt-out does not stop it. The facility is the webhook's `?facility=`, else the first
+  facility:
+  * STOP: "You won't get WhatsApp messages or offers from {hospital} any more, except sign-in codes. Reply START to
+    get them again."
+  * START: "You'll get WhatsApp messages from {hospital} again. Reply STOP to stop them."
+* **Group-wide.** The opt-out applies to the number across the hospital group, whichever facility's WhatsApp number
+  received the reply.
+* The administrator's "send a test" is not an opt-out-aware message: it goes to the number the administrator types.
 
 ### E-mail
 
@@ -282,7 +319,7 @@ ones and retries ports that could not be bound.
 | GET | `/api/v1/admin/integrations/logs` | `admin.integrations.manage` | paging + `integration, success, from, to, search` → `PagedResult<IntegrationLogDto>` |
 | GET | `/api/v1/admin/integrations/simulator/messages` | `admin.integrations.manage` | paging + `channel` → simulated SMS, WhatsApp, e-mail and Tally deliveries |
 | GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders and links, and POS sales |
-| GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → patient messages (sender masked) |
+| GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → `InboundWhatsAppMessageDto` (sender masked) with `keyword` and `keywordAction` (`OptedOut`, `OptedIn`, `Superseded`, `None`, or null for replies not acted on yet). The staff inbox shows it as the Result column |
 | POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language }` → `PrintLabelResponse { language, content, copies }` |
 | POST | `/api/v1/integrations/webhooks/sms/msg91` | anonymous, token | delivery reports (JSON or form `data`) |
 | POST | `/api/v1/integrations/webhooks/sms/twilio` | anonymous, `X-Twilio-Signature` | status callbacks (form) |
@@ -327,6 +364,8 @@ Permissions:
 * **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, and `ILabMessageProcessor` →
   `LabMessageProcessor`.
 * **Hosted service**: `LabGatewayHostedService`.
+* **Found by the module scan** (not in `AddIntegrations`): the outbox handler `WhatsAppReplyConfirmationHandler`
+  (`whatsapp.reply_confirmation`) and the seeder `WhatsAppReplyBacklog`.
 
 ## Security summary
 
@@ -355,4 +394,6 @@ Permissions:
 The tables `integrations.simulator_messages`, `integrations.simulator_transactions` and
 `integrations.whatsapp_inbound_messages` are configured in `Persistence/IntegrationsConfigurations.cs`. The EF
 migration is created centrally. They have unique `external_id` and `provider_message_id` indexes, and all three
-entities are `[NotAudited]` because the integration log already traces them.
+entities are `[NotAudited]` because the integration log already traces them. `whatsapp_inbound_messages.keyword_action`
+(text, nullable) records what a STOP or START did; rows stored before it existed stay empty until
+`WhatsAppReplyBacklog` acts on them. The number-level opt-out itself is the platform's `platform.whatsapp_opt_outs`.

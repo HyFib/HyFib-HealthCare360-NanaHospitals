@@ -49,4 +49,6 @@ internal interface IWhatsAppProvider
     Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken);
 
     Task<SendResult> SendDocumentAsync(WhatsAppDocumentMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken);
+
+    Task<SendResult> SendTextAsync(WhatsAppTextMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken);
 }

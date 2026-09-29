@@ -126,8 +126,9 @@ internal static class IntegrationAdminEndpoints
         }
 
         var rows = await messages.OrderByDescending(m => m.ReceivedAt)
-            .Select(m => new { m.Id, m.ReceivedAt, m.SentAt, m.FromPhone, m.ProfileName, m.MessageType, m.Text, m.Keyword })
+            .Select(m => new { m.Id, m.ReceivedAt, m.SentAt, m.FromPhone, m.ProfileName, m.MessageType, m.Text, m.Keyword, m.KeywordAction })
             .ToPagedResultAsync(page, ct);
-        return TypedResults.Ok(rows.Map(m => new InboundWhatsAppMessageDto(m.Id, m.ReceivedAt, m.SentAt, Phone.Mask(m.FromPhone), m.ProfileName, m.MessageType, m.Text, m.Keyword)));
+        return TypedResults.Ok(rows.Map(m => new InboundWhatsAppMessageDto(
+            m.Id, m.ReceivedAt, m.SentAt, Phone.Mask(m.FromPhone), m.ProfileName, m.MessageType, m.Text, m.Keyword, m.KeywordAction)));
     }
 }

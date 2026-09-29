@@ -46,6 +46,9 @@ internal sealed class SimulatorTransactionConfiguration : IEntityTypeConfigurati
 
 internal sealed class InboundWhatsAppMessageConfiguration : IEntityTypeConfiguration<InboundWhatsAppMessage>
 {
+    /// <summary>The unique index a concurrent webhook redelivery runs into (the name EF's conventions give it).</summary>
+    public const string ProviderMessageIdIndex = "ix_whatsapp_inbound_messages_provider_message_id";
+
     public void Configure(EntityTypeBuilder<InboundWhatsAppMessage> b)
     {
         b.ToTable("whatsapp_inbound_messages", IntegrationsSchema.Name);
@@ -58,7 +61,8 @@ internal sealed class InboundWhatsAppMessageConfiguration : IEntityTypeConfigura
         b.Property(x => x.MediaId).HasMaxLength(128);
         b.Property(x => x.ContextMessageId).HasMaxLength(128);
         b.Property(x => x.PhoneNumberId).HasMaxLength(32);
-        b.HasIndex(x => x.ProviderMessageId).IsUnique();
+        b.Ignore(x => x.RepliedAt);
+        b.HasIndex(x => x.ProviderMessageId).IsUnique().HasDatabaseName(ProviderMessageIdIndex);
         b.HasIndex(x => new { x.FromPhone, x.ReceivedAt });
         b.HasIndex(x => x.ReceivedAt);
     }

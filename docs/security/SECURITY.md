@@ -49,6 +49,13 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
 ### Authorisation and privacy
 - Permission-based access: every API endpoint requires a named permission, and screens hide what a role cannot use.
+- **Access is denied by default.** Every endpoint states who may call it. The exceptions to a named permission are:
+  - a short list open to any signed-in user, for their own account and notifications only;
+  - a short list open to anyone: sign-in, patient links, and provider and device callbacks, each checked by its own
+    token, signature or key.
+
+  An architecture test checks every endpoint and holds both lists, so a new exception is a reviewed change. A request
+  whose endpoint states nothing still requires sign-in.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review.
@@ -65,6 +72,15 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   `.WithSensitivePath()` on the endpoint).
 - Consent capture (treatment, data sharing, SMS/WhatsApp, telehealth, research) supports the **DPDP Act 2023** notice
   and consent requirements.
+- **Messaging opt-outs.**
+  - After a number replies STOP to the hospital's WhatsApp messages, it gets only sign-in codes on WhatsApp, whichever
+    module queued the message. The check runs when each message is delivered, and the notification log records it
+    as suppressed.
+  - The same reply withdraws marketing consent for the patients registered with that number. Each patient's consent
+    history records the change and where it came from.
+  - START resumes WhatsApp messages, and gives back only the marketing consent that a STOP withdrew.
+  - Each reply is acted on once, even when the webhook is delivered again, and the latest reply wins.
+  - A WhatsApp reply never changes SMS. Campaign SMS carry their own opt-out link.
 - **Live updates** (SignalR) follow the same rules as the API. Every topic a screen subscribes to is checked, and
   anything else is refused:
   - Staff need the module's permission and may follow only their own facility's topics (lab, pharmacy, bed board, OT)

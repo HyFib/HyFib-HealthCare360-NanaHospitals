@@ -7,6 +7,7 @@ import {
   isIsoDay,
   istDayEnd,
   istDayStart,
+  keywordActionDisplay,
   pageFromUrl,
   providerLabel,
   TEST_DESCRIPTIONS,
@@ -48,6 +49,22 @@ describe('dashboard display', () => {
     expect(formatDuration(850)).toBe('850 ms');
     expect(formatDuration(1234)).toBe('1.2 s');
     expect(formatDuration(null)).toBe('—');
+  });
+});
+
+describe('WhatsApp inbox', () => {
+  it('says what a STOP or START did', () => {
+    expect(keywordActionDisplay('OptOut', 'OptedOut')).toMatchObject({ label: 'Messages stopped', tone: 'danger' });
+    expect(keywordActionDisplay('OptOut', 'OptedOut')?.detail).toContain('except sign-in codes');
+    expect(keywordActionDisplay('OptIn', 'OptedIn')).toMatchObject({ label: 'Messages resumed', tone: 'success' });
+    expect(keywordActionDisplay('OptOut', 'Superseded')).toMatchObject({ label: 'No change', tone: 'subtle' });
+    expect(keywordActionDisplay('OptOut', 'None')?.label).toBe('Not applied');
+    expect(keywordActionDisplay('OptIn', null)?.label).toBe('Waiting');
+  });
+
+  it('shows nothing for ordinary messages', () => {
+    expect(keywordActionDisplay('None', 'None')).toBeNull();
+    expect(keywordActionDisplay('None', null)).toBeNull();
   });
 });
 

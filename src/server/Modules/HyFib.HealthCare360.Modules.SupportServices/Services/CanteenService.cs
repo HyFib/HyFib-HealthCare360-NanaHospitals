@@ -58,10 +58,7 @@ public sealed class CanteenService(
             return Error.Field("patientId", "Patient not found.");
         }
 
-        var totals = CanteenBillCalculator.Calculate(quantities
-            .Select(q => items[q.Key])
-            .Select(i => new BillLineInput(i.Id, i.Name, quantities[i.Id], i.Price, i.GstRate, i.PriceIncludesGst))
-            .ToList());
+        var totals = CanteenBillCalculator.Calculate(quantities.Select(q => items[q.Key].ToBillLine(q.Value)).ToList());
 
         var employeeCode = string.IsNullOrWhiteSpace(request.EmployeeCode) ? null : StaffCreditRules.NormalizeEmployeeCode(request.EmployeeCode);
         var employeeName = Clean(request.EmployeeName);
@@ -220,9 +217,14 @@ public sealed class CanteenService(
     public async Task<DailySalesSummary> DailySummaryAsync(DateOnly date, CancellationToken ct)
     {
         var sales = await db.Set<CanteenSale>().AsNoTracking().Include(s => s.Lines).Where(s => s.BusinessDate == date).ToListAsync(ct);
-        var completed = sales.Where(s => s.Status == CanteenSaleStatus.Completed).ToList();
         var menu = await db.Set<MenuItem>().AsNoTracking().ToDictionaryAsync(m => m.Id, ct);
+        return BuildDailySummary(date, sales, menu);
+    }
 
+    /// <summary>The day-end report from the day's bills; cancelled bills are only counted. The HSN/SAC summary uses the codes on the bills.</summary>
+    internal static DailySalesSummary BuildDailySummary(DateOnly date, IReadOnlyList<CanteenSale> sales, IReadOnlyDictionary<Guid, MenuItem> menu)
+    {
+        var completed = sales.Where(s => s.Status == CanteenSaleStatus.Completed).ToList();
         var items = completed.SelectMany(s => s.Lines)
             .GroupBy(l => l.MenuItemId)
             .Select(g =>
@@ -232,6 +234,15 @@ public sealed class CanteenService(
                     item is { TrackStock: true } ? item.StockOnHand : null);
             })
             .OrderByDescending(i => i.QuantitySold)
+            .ToList();
+
+        var byHsnSac = completed.SelectMany(s => s.Lines)
+            .GroupBy(l => (l.HsnSac, l.GstRate))
+            .Select(g => new HsnSacSummary(g.Key.HsnSac, g.Key.GstRate, g.Sum(l => l.Quantity), g.Sum(l => l.TaxableAmount), g.Sum(l => l.CgstAmount),
+                g.Sum(l => l.SgstAmount), g.Sum(l => l.LineTotal)))
+            .OrderBy(h => h.HsnSac is null)
+            .ThenBy(h => h.HsnSac, StringComparer.Ordinal)
+            .ThenBy(h => h.GstRate)
             .ToList();
 
         return new DailySalesSummary(
@@ -246,17 +257,19 @@ public sealed class CanteenService(
             completed.GroupBy(s => s.PaymentMode.ToString()).Select(g => new AmountByKey(g.Key, g.Count(), g.Sum(s => s.NetAmount))).OrderBy(a => a.Key, StringComparer.Ordinal).ToList(),
             completed.GroupBy(s => s.CustomerType.ToString()).Select(g => new AmountByKey(g.Key, g.Count(), g.Sum(s => s.NetAmount))).OrderBy(a => a.Key, StringComparer.Ordinal).ToList(),
             items.GroupBy(i => i.Category?.ToString() ?? "Other").Select(g => new AmountByKey(g.Key, g.Count(), g.Sum(i => i.Amount))).OrderBy(a => a.Key, StringComparer.Ordinal).ToList(),
-            items);
+            items,
+            byHsnSac);
     }
 
     internal static CanteenSaleDto ToDto(CanteenSale s) => new(
         s.Id, s.BillNumber, s.SoldAt, s.BusinessDate, s.CustomerType, s.CustomerName, s.EmployeeCode, s.EmployeeName, s.TaxableAmount, s.CgstAmount,
         s.SgstAmount, s.GrossAmount, s.RoundOff, s.NetAmount, s.PaymentMode, s.PaymentReference, s.Status, s.CashierName, s.CancelledAt, s.CancelReason,
-        s.Lines.Select(l => new CanteenSaleLineDto(l.MenuItemId, l.ItemName, l.Quantity, l.UnitPrice, l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.LineTotal)).ToList());
+        s.Lines.Select(l => new CanteenSaleLineDto(l.MenuItemId, l.ItemName, l.HsnSac, l.Quantity, l.UnitPrice, l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount,
+            l.LineTotal)).ToList());
 
     internal static MenuItemDto ToDto(MenuItem m) => new(
-        m.Id, m.Code, m.Name, m.Category, m.Price, m.GstRate, m.PriceIncludesGst, m.IsVeg, m.IsAvailable, m.TrackStock, m.StockOnHand, m.DisplayOrder,
-        m.Description, m.Version);
+        m.Id, m.Code, m.Name, m.Category, m.Price, m.GstRate, m.HsnSac, m.PriceIncludesGst, m.IsVeg, m.IsAvailable, m.TrackStock, m.StockOnHand,
+        m.DisplayOrder, m.Description, m.Version);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

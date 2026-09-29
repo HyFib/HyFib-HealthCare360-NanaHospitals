@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { canteenApi, canteenKeys, canteenQueries, MENU_CATEGORIES, menuItemBody, type MenuCategory, type MenuItemDto } from '@/modules/canteen/api';
+import { CANTEEN_SAC, canteenApi, canteenKeys, canteenQueries, MENU_CATEGORIES, menuItemBody, type MenuCategory, type MenuItemDto } from '@/modules/canteen/api';
 import { MenuItemDrawer, StockDialog } from '@/modules/canteen/MenuForms';
 
 export const Route = createFileRoute('/_app/canteen/menu')({
@@ -46,7 +46,7 @@ function CanteenMenuPage() {
       <PageHeader
         title="Canteen menu"
         icon={<FoodRegular />}
-        subtitle="Prices, GST and availability. Packaged items can track stock."
+        subtitle="Prices, GST, HSN/SAC codes and availability. Packaged items can track stock."
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
@@ -98,6 +98,13 @@ function CanteenMenuPage() {
             { key: 'category', header: 'Category', width: 120, render: (m) => m.category },
             { key: 'price', header: 'Price', width: 110, align: 'end', render: (m) => <Text weight="semibold">{formatInr(m.price)}</Text> },
             { key: 'gst', header: 'GST', width: 120, priority: 'low', render: (m) => `${m.gstRate}% ${m.priceIncludesGst ? 'incl.' : 'extra'}` },
+            {
+              key: 'hsnSac',
+              header: 'HSN/SAC',
+              width: 130,
+              priority: 'low',
+              render: (m) => (m.hsnSac ? <Text font="monospace">{m.hsnSac}</Text> : <Caption1>{CANTEEN_SAC} (default)</Caption1>),
+            },
             {
               key: 'stock',
               header: 'Stock',

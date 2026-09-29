@@ -5,7 +5,7 @@ namespace HyFib.HealthCare360.Modules.SupportServices.Tests;
 public sealed class CanteenBillCalculatorTests
 {
     private static BillLineInput Line(string name, int quantity, decimal price, decimal gstRate = 5m, bool inclusive = true) =>
-        new(Guid.NewGuid(), name, quantity, price, gstRate, inclusive);
+        new(Guid.NewGuid(), name, quantity, price, gstRate, inclusive, MenuItem.DefaultSac);
 
     [Fact]
     public void Gst_is_backed_out_of_inclusive_prices_and_split_into_cgst_and_sgst()

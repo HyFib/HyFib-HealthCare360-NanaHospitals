@@ -10,6 +10,7 @@ internal sealed class MenuItemConfiguration : IEntityTypeConfiguration<MenuItem>
         b.Property(x => x.Code).HasMaxLength(24);
         b.Property(x => x.Name).HasMaxLength(100);
         b.Property(x => x.GstRate).HasPrecision(5, 2);
+        b.Property(x => x.HsnSac).HasMaxLength(8);
         b.Property(x => x.Description).HasMaxLength(300);
         b.HasIndex(x => new { x.FacilityId, x.Code }).IsUnique();
         b.HasIndex(x => new { x.Category, x.IsAvailable });
@@ -53,6 +54,7 @@ internal sealed class CanteenSaleLineConfiguration : IEntityTypeConfiguration<Ca
         b.ToTable("canteen_sale_lines", SupportServicesSchema.Name);
         b.HasKey(x => x.Id);
         b.Property(x => x.ItemName).HasMaxLength(100);
+        b.Property(x => x.HsnSac).HasMaxLength(8);
         b.Property(x => x.GstRate).HasPrecision(5, 2);
         b.HasIndex(x => x.MenuItemId);
     }

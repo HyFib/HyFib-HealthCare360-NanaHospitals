@@ -131,6 +131,9 @@ export interface SimulatorTransactionDto {
 export const WHATSAPP_KEYWORDS = ['None', 'OptIn', 'OptOut'] as const;
 export type WhatsAppKeyword = (typeof WHATSAPP_KEYWORDS)[number];
 
+/** WhatsAppKeywordAction: what HC360 did about a STOP or START (null: received before HC360 acted on them). */
+export type WhatsAppKeywordAction = 'None' | 'OptedOut' | 'OptedIn' | 'Superseded';
+
 export interface InboundWhatsAppMessageDto {
   id: string;
   receivedAt: string;
@@ -140,6 +143,7 @@ export interface InboundWhatsAppMessageDto {
   messageType: string;
   text: string | null;
   keyword: WhatsAppKeyword;
+  keywordAction: WhatsAppKeywordAction | null;
 }
 
 export interface IntegrationLogFilters {
@@ -298,6 +302,41 @@ export function providerLabel(provider: string | null | undefined): string {
 
 export function integrationLabel(name: string): string {
   return isIntegrationName(name) ? INTEGRATION_LABELS[name] : name;
+}
+
+/** What a STOP or START did, for the WhatsApp inbox; null for ordinary messages. */
+export function keywordActionDisplay(
+  keyword: WhatsAppKeyword,
+  action: WhatsAppKeywordAction | null,
+): { label: string; tone: Tone; detail: string } | null {
+  if (keyword === 'None') {
+    return null;
+  }
+  switch (action) {
+    case 'OptedOut':
+      return {
+        label: 'Messages stopped',
+        tone: 'danger',
+        detail:
+          'WhatsApp messages to this number have stopped, except sign-in codes. Marketing consent was withdrawn for the patients registered with this number. SMS messages still go out.',
+      };
+    case 'OptedIn':
+      return {
+        label: 'Messages resumed',
+        tone: 'success',
+        detail: 'WhatsApp messages to this number have resumed. Offers resume only for patients whose consent a STOP had withdrawn.',
+      };
+    case 'Superseded':
+      return { label: 'No change', tone: 'subtle', detail: 'A later STOP or START from this number had already arrived, so this one changed nothing.' };
+    case 'None':
+      return { label: 'Not applied', tone: 'warning', detail: 'The sender’s number could not be read, so nothing was changed.' };
+    default:
+      return {
+        label: 'Waiting',
+        tone: 'warning',
+        detail: 'This reply arrived before HC360 acted on STOP and START. It is applied the next time the server starts.',
+      };
+  }
 }
 
 export const SIMULATOR_CHANNEL_LABELS: Record<SimulatorChannel, string> = { Sms: 'SMS', WhatsApp: 'WhatsApp', Email: 'E-mail', Accounting: 'Tally' };

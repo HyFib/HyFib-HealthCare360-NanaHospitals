@@ -82,6 +82,25 @@ public sealed class MetaWhatsAppProviderTests
     }
 
     [Fact]
+    public async Task Sends_a_free_form_text_reply_and_logs_only_its_length()
+    {
+        _http.Respond(HttpStatusCode.OK, """{"messages":[{"id":"wamid.TXT"}]}""");
+
+        var result = await Provider.SendTextAsync(
+            new WhatsAppTextMessage("+919876543210", "You'll get WhatsApp messages from Nana Hospitals again.", "reply-1"), Settings, Secrets, Ct);
+
+        result.ShouldBe(SendResult.Ok("wamid.TXT"));
+        var request = _http.Requests.ShouldHaveSingleItem();
+        request.Uri.ShouldBe(new Uri("https://graph.facebook.com/v21.0/106540352242922/messages"));
+        var body = request.Json();
+        body.GetProperty("to").GetString().ShouldBe("919876543210");
+        body.GetProperty("type").GetString().ShouldBe("text");
+        body.GetProperty("text").GetProperty("body").GetString().ShouldBe("You'll get WhatsApp messages from Nana Hospitals again.");
+        body.GetProperty("text").GetProperty("preview_url").GetBoolean().ShouldBeFalse();
+        _tracing.AllText.ShouldNotContain("Nana Hospitals");
+    }
+
+    [Fact]
     public async Task Refuses_unsupported_document_types_without_calling_meta()
     {
         var result = await Provider.SendDocumentAsync(

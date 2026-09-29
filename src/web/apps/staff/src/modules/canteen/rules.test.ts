@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { canSettle, isValidEmployeeCode, isValidPeriod, monthLabel, normalizeEmployeeCode, recentMonths } from './rules';
+import { canSettle, isValidEmployeeCode, isValidHsnSac, isValidPeriod, monthLabel, normalizeEmployeeCode, recentMonths } from './rules';
+
+describe('HSN/SAC codes (mirror of the server)', () => {
+  it.each([
+    ['2201', true],
+    ['220190', true],
+    ['22019090', true],
+    [' 996333 ', true],
+    ['', false],
+    ['22019', false],
+    ['2201909', false],
+    ['220190901', false],
+    ['99633A', false],
+    ['22 0190', false],
+    ['２２０１', false],
+  ])('%s is valid: %s', (code, valid) => {
+    expect(isValidHsnSac(code)).toBe(valid);
+  });
+});
 
 describe('staff credit rules (mirror of the server)', () => {
   it.each([

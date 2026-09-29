@@ -205,7 +205,11 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
               <KpiCard label="Delivered to the gateway" value={delivery.data.sent.toLocaleString('en-IN')} hint={percent(delivery.data.sent, delivery.data.recipients)} />
               <KpiCard label="Waiting" value={delivery.data.queued.toLocaleString('en-IN')} hint="Queued for the next sending window" />
               <KpiCard label="Failed" value={delivery.data.failed.toLocaleString('en-IN')} hint={percent(delivery.data.failed, delivery.data.recipients)} />
-              <KpiCard label="Skipped" value={delivery.data.skipped.toLocaleString('en-IN')} hint="No consent or no mobile number at send time" />
+              <KpiCard
+                label="Skipped"
+                value={delivery.data.skipped.toLocaleString('en-IN')}
+                hint="No consent or no mobile number at send time, or the number replied STOP on WhatsApp"
+              />
               <KpiCard label="Opted out since" value={delivery.data.optedOut.toLocaleString('en-IN')} hint="Used the link in the message" />
             </KpiGrid>
           )}

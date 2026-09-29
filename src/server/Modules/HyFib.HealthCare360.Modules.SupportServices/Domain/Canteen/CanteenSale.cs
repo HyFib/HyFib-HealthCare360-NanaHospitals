@@ -64,6 +64,7 @@ public sealed class CanteenSale : AuditableEntity, IFacilityScoped
             CanteenSaleId = Id,
             MenuItemId = l.MenuItemId,
             ItemName = l.ItemName,
+            HsnSac = l.HsnSac,
             Quantity = l.Quantity,
             UnitPrice = l.UnitPrice,
             GstRate = l.GstRate,
@@ -101,11 +102,16 @@ public sealed class CanteenSale : AuditableEntity, IFacilityScoped
     }
 }
 
+/// <summary>A bill line. Name, price, GST rate and HSN/SAC code are copied from the menu item, so later menu edits never change an issued bill.</summary>
 public sealed class CanteenSaleLine : Entity
 {
     public Guid CanteenSaleId { get; set; }
     public Guid MenuItemId { get; set; }
     public string ItemName { get; set; } = string.Empty;
+
+    /// <summary>HSN/SAC code on the bill; null only on bills made before codes were recorded.</summary>
+    public string? HsnSac { get; set; }
+
     public int Quantity { get; set; }
     public decimal UnitPrice { get; set; }
     public decimal GstRate { get; set; }

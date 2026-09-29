@@ -9,6 +9,7 @@ public sealed record MenuItemDto(
     MenuCategory Category,
     decimal Price,
     decimal GstRate,
+    string? HsnSac,
     bool PriceIncludesGst,
     bool IsVeg,
     bool IsAvailable,
@@ -18,12 +19,14 @@ public sealed record MenuItemDto(
     string? Description,
     uint Version);
 
+/// <param name="HsnSac">HSN code of packaged goods or a SAC; empty for prepared food, which is billed under SAC 996333.</param>
 public sealed record SaveMenuItemRequest(
     string Code,
     string Name,
     MenuCategory Category,
     decimal Price,
     decimal GstRate,
+    string? HsnSac,
     bool PriceIncludesGst,
     bool IsVeg,
     bool IsAvailable,
@@ -49,6 +52,7 @@ public sealed record CreateSaleRequest(
 public sealed record CanteenSaleLineDto(
     Guid MenuItemId,
     string ItemName,
+    string? HsnSac,
     int Quantity,
     decimal UnitPrice,
     decimal GstRate,
@@ -98,7 +102,12 @@ public sealed record AmountByKey(string Key, int Bills, decimal Amount);
 
 public sealed record ItemConsumption(Guid MenuItemId, string ItemName, MenuCategory? Category, int QuantitySold, decimal Amount, int? ClosingStock);
 
-/// <summary>Day-end canteen report (CAN-04): sales with GST split, collections by mode, and item-wise consumption.</summary>
+/// <summary>Completed bill lines of one HSN/SAC code and GST rate, as the GSTR-1 HSN summary needs them.</summary>
+/// <param name="HsnSac">Null for lines billed before codes were recorded.</param>
+/// <param name="Total">Taxable value plus CGST and SGST (before the bills' round-off).</param>
+public sealed record HsnSacSummary(string? HsnSac, decimal GstRate, int Quantity, decimal TaxableAmount, decimal Cgst, decimal Sgst, decimal Total);
+
+/// <summary>Day-end canteen report (CAN-04): sales with GST split, collections by mode, item-wise consumption and the HSN/SAC summary.</summary>
 public sealed record DailySalesSummary(
     DateOnly Date,
     int Bills,
@@ -111,7 +120,8 @@ public sealed record DailySalesSummary(
     IReadOnlyList<AmountByKey> ByPaymentMode,
     IReadOnlyList<AmountByKey> ByCustomerType,
     IReadOnlyList<AmountByKey> ByCategory,
-    IReadOnlyList<ItemConsumption> Items);
+    IReadOnlyList<ItemConsumption> Items,
+    IReadOnlyList<HsnSacSummary> ByHsnSac);
 
 public sealed record StaffBalanceDto(string EmployeeCode, string? EmployeeName, decimal Balance, DateOnly LastEntryDate);
 
@@ -131,6 +141,8 @@ public sealed class SaveMenuItemRequestValidator : AbstractValidator<SaveMenuIte
         RuleFor(x => x.Category).IsInEnum();
         RuleFor(x => x.Price).GreaterThan(0).LessThanOrEqualTo(10_000).PrecisionScale(8, 2, true);
         RuleFor(x => x.GstRate).Must(r => r is 0m or 5m or 12m or 18m or 28m).WithMessage("Use a GST slab: 0, 5, 12, 18 or 28 %.");
+        RuleFor(x => x.HsnSac).Must(c => MenuItem.IsValidHsnSac(c!.Trim())).When(x => !string.IsNullOrWhiteSpace(x.HsnSac))
+            .WithMessage("Enter the HSN or SAC code as 4, 6 or 8 digits, or leave it empty for food made in the canteen.");
         RuleFor(x => x.DisplayOrder).InclusiveBetween(0, 10_000);
         RuleFor(x => x.Description).SafeText(300);
     }

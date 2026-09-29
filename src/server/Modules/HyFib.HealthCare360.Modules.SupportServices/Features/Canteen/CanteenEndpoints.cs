@@ -142,6 +142,7 @@ internal static class CanteenEndpoints
         item.Category = request.Category;
         item.Price = Money.Round(request.Price);
         item.GstRate = request.GstRate;
+        item.HsnSac = string.IsNullOrWhiteSpace(request.HsnSac) ? null : request.HsnSac.Trim();
         item.PriceIncludesGst = request.PriceIncludesGst;
         item.IsVeg = request.IsVeg;
         item.IsAvailable = request.IsAvailable;

@@ -1,6 +1,11 @@
 import { previousMonth } from '../inpatient/time';
 
-/** Canteen input rules mirrored from the server (`StaffCreditRules`), for instant feedback at the counter. */
+/** Canteen input rules mirrored from the server (`StaffCreditRules`, `MenuItem`), for instant feedback at the counter. */
+
+/** HSN or SAC code as the server checks it: 4, 6 or 8 digits (spaces around it are ignored). */
+export function isValidHsnSac(code: string): boolean {
+  return /^(\d{4}|\d{6}|\d{8})$/.test(code.trim());
+}
 
 /** Employee code as the server checks it: a letter or digit first, then letters, digits, "/" or "-" (2–20 characters). */
 export function isValidEmployeeCode(code: string): boolean {

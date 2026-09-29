@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -14,7 +15,8 @@ public sealed record CommunicationPreferences(bool Marketing, bool Updates, Date
 /// </list>
 /// The records are the Patients module's consents (EHR-06), so each patient's consent history stays in one place.
 /// A withdrawal revokes every active grant and records the refusal with its source. An explicit opt-out is recorded
-/// even for a patient who never opted in, so the request itself is documented.
+/// even for a patient who never opted in, so the request itself is documented. A STOP or START on WhatsApp comes from a
+/// number, not a patient, so it records only what it changes (<see cref="WhatsAppReplyConsent"/>).
 /// </summary>
 public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUser currentUser, TimeProvider time)
 {
@@ -88,6 +90,36 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
 
         await db.SaveChangesAsync(ct);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// A STOP (<paramref name="optedOut"/>) or START sent on WhatsApp from <paramref name="phone"/>, applied to the
+    /// marketing consent of every patient registered with that number (see <see cref="WhatsAppReplyConsent"/>). Adds to
+    /// the caller's unit of work; the caller saves. Returns the number of patients whose consent changed.
+    /// </summary>
+    public async Task<int> ApplyWhatsAppReplyAsync(string phone, bool optedOut, DateTimeOffset repliedAt, CancellationToken ct)
+    {
+        var patientIds = await db.Set<Patient>().Where(WhatsAppReplyConsent.RegisteredWith(phone)).Select(p => p.Id).ToListAsync(ct);
+        if (patientIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var history = await db.Set<PatientConsent>()
+            .Where(c => patientIds.Contains(c.PatientId) && c.Type == ConsentType.MarketingCommunication)
+            .ToListAsync(ct);
+        var changed = 0;
+        foreach (var patientId in patientIds)
+        {
+            var record = WhatsAppReplyConsent.Apply(patientId, history.Where(c => c.PatientId == patientId).ToList(), optedOut, repliedAt, currentUser.UserId);
+            if (record is not null)
+            {
+                db.Add(record);
+                changed++;
+            }
+        }
+
+        return changed;
     }
 
     private Task ChangeAsync(Guid patientId, ConsentType type, bool granted, string via, CancellationToken ct)

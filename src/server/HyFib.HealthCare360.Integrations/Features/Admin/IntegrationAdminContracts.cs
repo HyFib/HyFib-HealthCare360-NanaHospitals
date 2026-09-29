@@ -69,6 +69,11 @@ public sealed record SimulatorTransactionDto(
     string? PaymentId,
     decimal RefundedAmount);
 
+/// <summary>
+/// A patient's message. <c>KeywordAction</c> says what a STOP or START did: <c>OptedOut</c> (WhatsApp messages to the
+/// number stopped), <c>OptedIn</c> (resumed), <c>Superseded</c> (a later reply from the number had already arrived) or
+/// <c>None</c>; null for messages received before HC360 acted on replies.
+/// </summary>
 public sealed record InboundWhatsAppMessageDto(
     Guid Id,
     DateTimeOffset ReceivedAt,
@@ -77,7 +82,8 @@ public sealed record InboundWhatsAppMessageDto(
     string? ProfileName,
     string MessageType,
     string? Text,
-    WhatsAppKeyword Keyword);
+    WhatsAppKeyword Keyword,
+    WhatsAppKeywordAction? KeywordAction);
 
 public sealed class TestIntegrationRequestValidator : AbstractValidator<TestIntegrationRequest>
 {
