@@ -105,9 +105,20 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   Administrators and SYSTEM.
 
 ### Backups and keys
-- Nightly backups are **encrypted** (AES-256-GCM, chunked) and optionally copied to a second disk or NAS.
-- The recovery key is shown once, the view is audited, and it must be stored **offline**.
+- Nightly backups are **encrypted** (AES-256-GCM, chunked, every chunk authenticated) and optionally copied to a second
+  disk or NAS.
+- Each backup is one archive holding the database, the stored documents (already encrypted) and an escrow copy of the
+  field encryption key. So one backup file and the recovery key restore everything on replacement hardware, including
+  identifiers such as Aadhaar and ABHA, which are unreadable without that key.
+- Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
+  this check is discarded and reported.
+- The recovery key opens every backup. It is shown on request, each view is audited, and it must be stored **offline**.
 - Signing and encryption keys are generated on the Server Node and protected with Windows Data Protection (DPAPI).
+  A restore installs the field encryption key protected for the new machine, and a different key already there is
+  kept under a new name, never deleted. The key is installed last, after the backup's database is in place. If an
+  earlier step fails, the previous database is put back and the machine keeps its own key.
+- Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
+  changed.
 
 ## 3. What the hospital must do
 

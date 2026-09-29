@@ -157,7 +157,7 @@ HyFib.HealthCare360.Modules.<Name>/
 * **Sensitive identifiers** (Aadhaar, ABHA, policy numbers): AES-256-GCM encrypted columns plus an HMAC-SHA256 blind index for exact-match search. Lists show masked values.
 * **Search:** `pg_trgm` GIN indexes on patient name/phone for fuzzy search, plus B-tree indexes on UHID and phone.
 * **Audit:** `audit.audit_events` is append-only. A database trigger blocks UPDATE/DELETE. A background sealer computes a SHA-256 hash chain in sequence order, so any tampering is detectable (`/api/v1/admin/audit/verify`).
-* **Migrations:** EF Core migrations in `HyFib.HealthCare360.Server/Persistence/Migrations`. They are applied at start-up after a pre-migration backup, when enabled.
+* **Migrations:** EF Core migrations in `HyFib.HealthCare360.Server/Persistence/Migrations`. They are applied at start-up, after a verified backup of an existing database (`Backup:BeforeMigrations`, on by default); when that backup fails, the database is not changed. A database created by a pre-release build with EnsureCreated, which has no migration history, is adopted: whatever the first migration creates that it lacks and can be added safely is added, and the first migration is recorded as applied (`MigrationBaseline`). Otherwise start-up stops with the list of differences.
 
 ---
 

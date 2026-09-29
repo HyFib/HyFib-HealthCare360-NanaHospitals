@@ -61,8 +61,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddExceptionHandler<GlobalExceptionHandler>();
 
         var dataProtection = services.AddDataProtection()
-            .SetApplicationName("HyFib.HealthCare360")
-            .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(directories.Keys, "dataprotection")));
+            .SetApplicationName(HospitalDataProtection.ApplicationName)
+            .PersistKeysToFileSystem(new DirectoryInfo(HospitalDataProtection.KeyRingDirectory(directories)));
         if (OperatingSystem.IsWindows())
         {
             dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
@@ -83,7 +83,7 @@ public static class PlatformServiceCollectionExtensions
             db.UseNpgsql(connectionString, npgsql =>
                 {
                     npgsql.MigrationsAssembly(migrationsAssembly);
-                    npgsql.MigrationsHistoryTable("__ef_migrations_history", "platform");
+                    npgsql.MigrationsHistoryTable(MigrationBaseline.HistoryTable, MigrationBaseline.HistorySchema);
                     npgsql.CommandTimeout(60);
                 })
                 .UseSnakeCaseNamingConvention()
@@ -102,7 +102,9 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<TokenService>();
         services.AddSingleton<PasswordPolicy>();
         services.AddSingleton<PasswordHashing>();
-        services.AddSingleton<IFieldProtector, FieldProtector>();
+        services.AddSingleton<FieldProtector>();
+        services.AddSingleton<IFieldProtector>(sp => sp.GetRequiredService<FieldProtector>());
+        services.AddSingleton<IFieldKeyEscrow>(sp => sp.GetRequiredService<FieldProtector>());
         services.AddSingleton<IPermissionService, PermissionService>();
         services.AddSingleton<ISessionValidator, SessionValidator>();
         services.AddScoped<AuthService>();
@@ -195,6 +197,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddScoped<SystemHealthService>();
         services.AddScoped<BackupService>();
+        services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
 
         // Fallbacks replaced by the Billing module / Integrations project when present.

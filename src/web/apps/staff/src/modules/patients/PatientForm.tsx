@@ -29,6 +29,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { enumOptions } from '@/lib/lookups';
 import { GUARDIAN_RELATIONS, guardianRelationLabel, PATIENT_CATEGORIES, patientApi, type DuplicateCandidate, type DuplicateCheckRequest } from './api';
+import { PatientPhotoField } from './PatientPhotoField';
 import { INDIAN_STATES, LANGUAGES, patientFormSchema, TITLES, type PatientFormValues } from './validation';
 
 const BLOOD_GROUPS = Object.keys(bloodGroupLabel).filter((g) => g !== 'Unknown') as BloodGroup[];
@@ -265,7 +266,12 @@ export function PatientForm(props: PatientFormProps) {
           {props.extraSections}
         </div>
 
-        <aside className={styles.aside}>{props.checkDuplicates && <DuplicatePanel control={control} onOpen={props.onOpenCandidate} />}</aside>
+        <aside className={styles.aside}>
+          <Section title="Photo">
+            <PhotoBlock control={control} />
+          </Section>
+          {props.checkDuplicates && <DuplicatePanel control={control} onOpen={props.onOpenCandidate} />}
+        </aside>
       </div>
 
       <div className={styles.footer}>
@@ -275,6 +281,20 @@ export function PatientForm(props: PatientFormProps) {
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The patient's photo (SRS FO-01). The initials shown until there is a photo follow the name as it is typed. */
+function PhotoBlock({ control }: { control: UseFormReturn<PatientFormValues>['control'] }) {
+  const [firstName, lastName] = useWatch({ control, name: ['firstName', 'lastName'] });
+  return (
+    <Controller
+      control={control}
+      name="photoFileId"
+      render={({ field, fieldState }) => (
+        <PatientPhotoField value={field.value} onChange={field.onChange} name={`${firstName} ${lastName}`} error={fieldState.error?.message} />
+      )}
+    />
   );
 }
 

@@ -126,7 +126,14 @@ Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and sho
 3. Run `.\Install-HC360Server.ps1` again, **without** `-CreateDatabase`.
 
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
-The new version takes a pre-migration backup before it updates the database schema.
+Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
+Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
+start and the database is not changed. The reason is in the log and in Windows Event Viewer.
+
+A server first installed from a pre-release build, before database changes were versioned, is brought up to date
+automatically on the first start of this version. The log lists what was added. If its database differs in a way that
+cannot be fixed safely (for example a column of another type), HC360 stops with the list of differences and changes
+nothing. Keep the previous version running and contact HyFib support.
 
 HC360 Desktop is upgraded the same way, with `Install-HC360Desktop.ps1` on each workstation (or through your software
 distribution tool).
@@ -137,16 +144,30 @@ distribution tool).
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure also raises a System health warning
   and an SMS to `alerts.oncallPhone`.
-- **Restore test every quarter** on a spare machine. To restore after a disk failure on new hardware:
+- Each backup holds the database, the stored documents and the field encryption key, all encrypted. Every backup is
+  read back and checked when it is made. The **Contents** and **Checked** columns show this.
+- **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
+
+  ```powershell
+  & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
+  ```
+
+- To restore after a disk failure on new hardware:
   1. Install PostgreSQL and HC360 as above.
-  2. Copy the old `%ProgramData%\HyFib\HealthCare360\keys` folder back if you have it; it holds the field-encryption keys.
-  3. Run:
+  2. Run:
 
      ```powershell
      .\Restore-HC360.ps1 -BackupFile '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
      ```
 
-     It asks for the recovery key and keeps the current database under a new name. Nothing is dropped.
+     It asks for the recovery key and checks the whole backup before it changes anything. It restores the database first,
+     keeping the current one under a new name (nothing is dropped). Only then does it put the documents back and install
+     the backup's encryption key. If a step fails, the previous database is put back and HC360 starts again on it.
+  3. Workstations see a new server certificate. Re-run HC360 Desktop setup (Change server…) and compare the
+     fingerprint.
+
+  Backups listed as "Database only (older backup)" were made before HC360 archive backups. To restore one of those on
+  new hardware, first copy the old `%ProgramData%\HyFib\HealthCare360\keys` folder back, if you have it.
 
 ## 9. Troubleshooting
 

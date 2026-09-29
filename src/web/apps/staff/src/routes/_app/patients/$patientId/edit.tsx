@@ -7,6 +7,7 @@ import { useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import { patientApi, patientKeys, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { PatientForm } from '@/modules/patients/PatientForm';
+import { photoChange } from '@/modules/patients/photo';
 import { fromPatientDetail, toPatientPayload, type PatientFormValues } from '@/modules/patients/validation';
 
 /** ISO instant → value for <input type="datetime-local"> in the workstation's time zone. */
@@ -61,6 +62,8 @@ function EditForm({ patient }: { patient: PatientDetail }) {
         // null keeps the stored identifier, "" removes it, a value replaces it.
         abhaNumber: removeAbha ? '' : payload.abhaNumber,
         aadhaarNumber: removeAadhaar ? '' : payload.aadhaarNumber,
+        // Editing the details never touches the photo unless it was changed here.
+        ...photoChange(patient.photoFileId, values.photoFileId),
         isDeceased,
         deceasedAt: isDeceased && deceasedAt ? new Date(deceasedAt).toISOString() : null,
         isActive,

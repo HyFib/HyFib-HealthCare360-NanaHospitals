@@ -140,7 +140,8 @@ public sealed record UpdatePatientRequest(
     DateTimeOffset? DeceasedAt,
     string? Notes,
     bool IsActive,
-    uint Version);
+    uint Version,
+    bool RemovePhoto = false);
 
 public sealed record PatientCreated(Guid Id, string Uhid);
 
@@ -255,6 +256,7 @@ public sealed class RegisterPatientRequestValidator : AbstractValidator<Register
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
         RuleFor(x => x.AbhaAddress).MaximumLength(128);
         RuleFor(x => x.GuardianName).MaximumLength(200);
+        RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
         RuleFor(x => x.Notes).SafeText(2000);
     }
 }
@@ -278,6 +280,11 @@ public sealed class UpdatePatientRequestValidator : AbstractValidator<UpdatePati
         RuleFor(x => x.Address!.PinCode).PinCode().When(x => !string.IsNullOrWhiteSpace(x.Address?.PinCode));
         RuleFor(x => x.AbhaNumber).AbhaNumber();
         RuleFor(x => x.AadhaarNumber).Must(PatientRules.ValidAadhaar).WithMessage("Enter a valid 12-digit Aadhaar number.");
+        RuleFor(x => x.PhotoFileId).NotEqual(Guid.Empty).WithMessage("Choose a valid photo.");
+
+        // No photo in the request keeps the current one; a photo is replaced by sending the new one, or removed with RemovePhoto.
+        RuleFor(x => x).Must(x => !(x.RemovePhoto && x.PhotoFileId is not null))
+            .WithName("photoFileId").WithMessage("Choose a new photo or remove the current one, not both.");
         RuleFor(x => x.Notes).SafeText(2000);
     }
 }

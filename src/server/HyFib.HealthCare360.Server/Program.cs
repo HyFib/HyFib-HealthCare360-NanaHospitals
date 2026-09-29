@@ -6,8 +6,8 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.StaticFiles;
@@ -65,16 +65,7 @@ builder.Services.AddSerilog((services, logger) =>
 });
 
 // TLS for the hospital LAN/WiFi: generated hospital CA + server certificate (or an admin-supplied PFX).
-var bootstrapProtection = DataProtectionProvider.Create(
-    new DirectoryInfo(Path.Combine(directories.Keys, "dataprotection")),
-    protection =>
-    {
-        protection.SetApplicationName("HyFib.HealthCare360");
-        if (OperatingSystem.IsWindows())
-        {
-            protection.ProtectKeysWithDpapi(protectToLocalMachine: true);
-        }
-    });
+var bootstrapProtection = HospitalDataProtection.CreateProvider(directories);
 using var bootstrapLoggers = LoggerFactory.Create(logging => logging.AddSimpleConsole());
 var certificates = new LanCertificateManager(directories, platformOptions, bootstrapProtection, bootstrapLoggers.CreateLogger<LanCertificateManager>());
 certificates.EnsureCertificates();
@@ -277,7 +268,9 @@ static async Task<bool> TrySendAppPageAsync(HttpContext context, IWebHostEnviron
     return true;
 }
 
-// PostgreSQL may still be starting when the service boots after a power cut: retry for up to ~3 minutes.
+// PostgreSQL may still be starting when the service boots after a power cut: retry for up to ~3 minutes. Only
+// connection problems are retried. An error PostgreSQL reports about the schema or the data (for example a table that
+// already exists) happens again on every attempt, so it stops start-up at once with its explanation.
 static async Task InitializeDatabaseAsync(WebApplication app)
 {
     var initializer = app.Services.GetRequiredService<DatabaseInitializer>();
@@ -289,10 +282,23 @@ static async Task InitializeDatabaseAsync(WebApplication app)
             await initializer.InitializeAsync(CancellationToken.None);
             return;
         }
-        catch (Exception ex) when (attempt < 12 && ex is NpgsqlException or TimeoutException or InvalidOperationException { InnerException: NpgsqlException })
+        catch (Exception ex) when (attempt < 12 && IsTransientDatabaseError(ex))
         {
             logger.LogWarning(ex, "Database not ready (attempt {Attempt}); retrying in 15 seconds", attempt);
             await Task.Delay(TimeSpan.FromSeconds(15));
         }
+        catch (DatabaseUpgradeException ex)
+        {
+            logger.LogCritical(ex, "HC360 cannot start: {Reason}", ex.Message);
+            throw;
+        }
     }
 }
+
+static bool IsTransientDatabaseError(Exception ex) => ex switch
+{
+    TimeoutException => true,
+    NpgsqlException npgsql => npgsql.IsTransient,
+    InvalidOperationException { InnerException: NpgsqlException inner } => inner.IsTransient,
+    _ => false,
+};

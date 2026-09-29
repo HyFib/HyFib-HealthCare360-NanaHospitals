@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -31,20 +32,7 @@ public sealed class DatabaseInitializer(
 
         if (options.Value.AutoMigrate)
         {
-            if (db.Database.GetMigrations().Any())
-            {
-                var pending = (await db.Database.GetPendingMigrationsAsync(cancellationToken)).ToList();
-                if (pending.Count > 0)
-                {
-                    logger.LogInformation("Applying {Count} database migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
-                    await db.Database.MigrateAsync(cancellationToken);
-                }
-            }
-            else
-            {
-                // Development fallback before the first migration exists.
-                await db.Database.EnsureCreatedAsync(cancellationToken);
-            }
+            await MigrateAsync(scope.ServiceProvider, db, cancellationToken);
         }
 
         await db.Database.ExecuteSqlRawAsync(PlatformSql.PostMigrationScript, cancellationToken);
@@ -54,6 +42,71 @@ public sealed class DatabaseInitializer(
             logger.LogDebug("Running seeder {Seeder}", seeder.GetType().Name);
             await seeder.SeedAsync(db, cancellationToken);
             db.ChangeTracker.Clear();
+        }
+    }
+
+    /// <summary>
+    /// Applies pending migrations (MNT-03). A database that already holds data is backed up first and verified, and it is
+    /// not changed at all when that backup fails. A database created before migrations existed is adopted
+    /// (<see cref="MigrationBaseline"/>) rather than having every table created again; that is planned before the backup,
+    /// so a database that cannot be adopted stops start-up without one. A new, empty database is simply migrated.
+    /// </summary>
+    private async Task MigrateAsync(IServiceProvider services, HospitalDbContext db, CancellationToken ct)
+    {
+        var applied = await MigrationBaseline.HistoryExistsAsync(db, ct) ? (await db.Database.GetAppliedMigrationsAsync(ct)).ToList() : [];
+        var pending = db.Database.GetMigrations().Except(applied).ToList();
+        if (pending.Count == 0)
+        {
+            return;
+        }
+
+        var createdBeforeMigrations = applied.Count == 0 && await MigrationBaseline.HasApplicationTablesAsync(db, ct);
+        var adoption = createdBeforeMigrations ? await MigrationBaseline.PrepareAsync(db, ct) : null;
+
+        var backups = services.GetRequiredService<BackupService>();
+        BackupResult? backup = null;
+        if ((applied.Count > 0 || createdBeforeMigrations) && options.Value.Backup.BeforeMigrations)
+        {
+            logger.LogInformation("Backing up the database before applying {Count} migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
+            try
+            {
+                backup = await backups.CreatePreMigrationAsync(applied, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new DatabaseUpgradeException(
+                    $"The backup before the database update failed, so the database was not changed: {ex.Message} " +
+                    "Fix the cause (pg_dump, disk space) and start HC360 again. To update without a backup, set " +
+                    "HealthCare360:Backup:BeforeMigrations to false (not recommended).",
+                    ex);
+            }
+
+            logger.LogInformation("Backup {File} taken and verified before the update", backup.FileName);
+        }
+
+        if (adoption is not null)
+        {
+            await adoption.ApplyAsync(db, logger, ct);
+            pending = (await db.Database.GetPendingMigrationsAsync(ct)).ToList();
+        }
+
+        if (pending.Count > 0)
+        {
+            logger.LogInformation("Applying {Count} database migration(s): {Migrations}", pending.Count, string.Join(", ", pending));
+            await db.Database.MigrateAsync(ct);
+        }
+
+        if (backup is not null)
+        {
+            // The database is updated and the backup file is safe on disk; not listing it must not stop HC360 starting.
+            try
+            {
+                await backups.RecordAsync(backup, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "The backup {File} taken before the update could not be added to the backup history", backup.FileName);
+            }
         }
     }
 }

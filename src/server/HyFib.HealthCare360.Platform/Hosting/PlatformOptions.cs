@@ -21,7 +21,10 @@ public sealed class PlatformOptions
 
     public string TimeZone { get; set; } = "Asia/Kolkata";
 
-    /// <summary>Apply EF Core migrations automatically at start-up (after a pre-migration backup).</summary>
+    /// <summary>
+    /// Apply EF Core migrations automatically at start-up, after a verified backup of the existing database
+    /// (<see cref="BackupOptions.BeforeMigrations"/>).
+    /// </summary>
     public bool AutoMigrate { get; set; } = true;
 
     /// <summary>Seed demonstration practitioners/patients (never enable in production).</summary>
@@ -101,10 +104,17 @@ public sealed class NetworkOptions
 
 public sealed class BackupOptions
 {
+    /// <summary>The nightly backup (<see cref="Schedule"/>).</summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>Quartz cron expression (default 01:30 every day).</summary>
     public string Schedule { get; set; } = "0 30 1 * * ?";
+
+    /// <summary>
+    /// Back up the database before start-up applies migrations to it, and do not change the database when that backup
+    /// fails. Independent of <see cref="Enabled"/>; turn it off only on development machines without pg_dump.
+    /// </summary>
+    public bool BeforeMigrations { get; set; } = true;
 
     public string? Directory { get; set; }
 
@@ -114,6 +124,9 @@ public sealed class BackupOptions
     public int RetentionDays { get; set; } = 30;
 
     public string PgDumpPath { get; set; } = "pg_dump";
+
+    /// <summary>pg_restore, used to verify each backup. By default the one next to pg_dump.</summary>
+    public string? PgRestorePath { get; set; }
 }
 
 /// <summary>Resolved on-disk locations under the data root.</summary>
