@@ -156,6 +156,8 @@ export const patientFormSchema = z
       .string()
       .trim()
       .refine((v) => !v || isValidAadhaar(v), 'Enter a valid 12-digit Aadhaar number.'),
+    /** The stored photo's file id (see PatientPhotoField); the server checks it again. */
+    photoFileId: z.string().nullable(),
     isVip: z.boolean(),
     notes: z.string().max(2000, 'Use at most 2000 characters.'),
   })
@@ -202,6 +204,7 @@ export const emptyPatientForm: PatientFormValues = {
   abhaNumber: '',
   abhaAddress: '',
   aadhaarNumber: '',
+  photoFileId: null,
   isVip: false,
   notes: '',
 };
@@ -250,7 +253,8 @@ export function toPatientPayload(values: PatientFormValues): PatientFormPayload 
     abhaNumber: orNull(values.abhaNumber),
     abhaAddress: orNull(values.abhaAddress),
     aadhaarNumber: orNull(values.aadhaarNumber),
-    photoFileId: null,
+    // For an update use photoChange(): sending the current photo is right for a new patient only.
+    photoFileId: values.photoFileId,
     isVip: values.isVip,
     notes: orNull(values.notes),
   };
@@ -291,6 +295,7 @@ export function fromPatientDetail(p: PatientDetail): PatientFormValues {
     nationality: p.nationality ?? '',
     category: p.category,
     abhaAddress: p.abhaAddress ?? '',
+    photoFileId: p.photoFileId,
     isVip: p.isVip,
     notes: p.notes ?? '',
   };

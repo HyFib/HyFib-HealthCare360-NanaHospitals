@@ -24,6 +24,8 @@ export interface PatientBannerData {
   allergyStatus?: AllergyStatus;
   alerts?: string[];
   payer?: string | null;
+  /** The patient's photo as an image source; the initials are shown without it. */
+  photoUrl?: string | null;
 }
 
 const useStyles = makeStyles({
@@ -62,7 +64,7 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
 
   return (
     <section className={styles.banner} aria-label={`Patient ${patient.fullName}, UHID ${patient.uhid}`}>
-      <Avatar name={patient.fullName} size={48} color="colorful" />
+      <Avatar name={patient.fullName} size={48} color="colorful" image={patient.photoUrl ? { src: patient.photoUrl, alt: '' } : undefined} />
       <div className={styles.identity}>
         <div className={styles.nameRow}>
           <Text className={styles.name}>{patient.fullName}</Text>

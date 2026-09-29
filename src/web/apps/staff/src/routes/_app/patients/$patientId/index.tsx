@@ -39,7 +39,7 @@ import {
   StethoscopeRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import { DataTable, EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -48,6 +48,7 @@ import { usePermission } from '@/lib/permissions';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { guardianRelationLabel, patientApi, patientKeys, patientQueries, type ConsentType, type PatientDetail } from '@/modules/patients/api';
+import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'documents';
 
@@ -113,7 +114,8 @@ function PatientProfilePage() {
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithPhoto
+        photoFileId={p.photoFileId}
         patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName, gender: p.gender, age: p.age, phone: p.phone, bloodGroup: p.bloodGroup, category: p.category, isVip: p.isVip, isDeceased: p.isDeceased }}
         actions={
           <>

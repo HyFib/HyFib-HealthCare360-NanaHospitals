@@ -1,6 +1,7 @@
 import type { Address, BloodGroup, Gender, MaritalStatus, PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { photoDataUrl } from './photo';
 
 export const PATIENT_CATEGORIES = [
   'General',
@@ -146,6 +147,11 @@ export interface UpdatePatientRequest extends PatientFormPayload {
   deceasedAt: string | null;
   isActive: boolean;
   version: number;
+  /**
+   * `photoFileId` null keeps the patient's photo (the server never clears it because a save left it out); `removePhoto`
+   * takes it away. See `photoChange`.
+   */
+  removePhoto: boolean;
 }
 
 export interface DuplicateCandidate {
@@ -322,6 +328,7 @@ export const patientKeys = {
   visits: (id: string, page: number) => ['patients', 'visits', id, page] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
+  photo: (fileId: string) => ['patients', 'photo', fileId] as const,
 };
 
 export const patientQueries = {
@@ -351,6 +358,15 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.documents(id),
       queryFn: ({ signal }) => api.get<PatientDocumentDto[]>(`/api/v1/patients/${id}/documents`, { signal }),
+    }),
+  /** A stored photo as an image source, or null when it cannot be read. A photo file never changes, so it is kept. */
+  photo: (fileId: string) =>
+    queryOptions({
+      queryKey: patientKeys.photo(fileId),
+      queryFn: () => photoDataUrl(fileId),
+      staleTime: Infinity,
+      gcTime: 30 * 60_000,
+      retry: false,
     }),
 };
 

@@ -1,10 +1,11 @@
 import { Button, Field, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Skeleton, SkeletonItem, Text, Textarea } from '@fluentui/react-components';
 import { formatDateTime, humanize } from '@hc360/core';
-import { ErrorState, Page, PatientBanner, Section, useNotify, type PatientBannerData } from '@hc360/ui';
+import { ErrorState, Page, Section, useNotify, type PatientBannerData } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { patientApi } from '@/modules/patients/api';
+import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
 import { bannerAllergyStatus } from './allergyStatus';
 import type { PatientClinicalSummary } from './api';
 import { isRestricted } from './hooks';
@@ -43,7 +44,7 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
  * (sticky) on the chart and the encounter workspace.
  */
 export function ClinicalBanner({ summary, actions }: { summary: PatientClinicalSummary; actions?: ReactNode }) {
-  return <PatientBanner patient={bannerData(summary)} actions={actions} />;
+  return <PatientBannerWithPhoto patient={bannerData(summary)} photoFileId={summary.patient.photoFileId} actions={actions} />;
 }
 
 export function BannerSkeleton() {

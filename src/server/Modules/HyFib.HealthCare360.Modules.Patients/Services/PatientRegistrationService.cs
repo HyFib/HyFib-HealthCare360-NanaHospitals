@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients.Services;
@@ -10,19 +11,19 @@ internal sealed record PatientInput(
     string? Phone, string? AlternatePhone, string? Email, Address? Address, BloodGroup? BloodGroup, MaritalStatus? MaritalStatus,
     string? GuardianName, GuardianRelation? GuardianRelation, string? EmergencyContactName, string? EmergencyContactPhone,
     string? EmergencyContactRelation, string? Occupation, string? Religion, string? Nationality, string? PreferredLanguage,
-    PatientCategory? Category, string? AbhaNumber, string? AbhaAddress, string? AadhaarNumber, Guid? PhotoFileId, bool IsVip, string? Notes)
+    PatientCategory? Category, string? AbhaNumber, string? AbhaAddress, string? AadhaarNumber, Guid? PhotoFileId, bool RemovePhoto, bool IsVip, string? Notes)
 {
     public static PatientInput From(RegisterPatientRequest r) => new(
         r.Title, r.FirstName, r.MiddleName, r.LastName, r.Gender, r.DateOfBirth, r.AgeYears, r.AgeMonths, r.Phone, r.AlternatePhone, r.Email,
         r.Address, r.BloodGroup, r.MaritalStatus, r.GuardianName, r.GuardianRelation, r.EmergencyContactName, r.EmergencyContactPhone,
         r.EmergencyContactRelation, r.Occupation, r.Religion, r.Nationality, r.PreferredLanguage, r.Category, r.AbhaNumber, r.AbhaAddress,
-        r.AadhaarNumber, r.PhotoFileId, r.IsVip, r.Notes);
+        r.AadhaarNumber, r.PhotoFileId, RemovePhoto: false, r.IsVip, r.Notes);
 
     public static PatientInput From(UpdatePatientRequest r) => new(
         r.Title, r.FirstName, r.MiddleName, r.LastName, r.Gender, r.DateOfBirth, r.AgeYears, r.AgeMonths, r.Phone, r.AlternatePhone, r.Email,
         r.Address, r.BloodGroup, r.MaritalStatus, r.GuardianName, r.GuardianRelation, r.EmergencyContactName, r.EmergencyContactPhone,
         r.EmergencyContactRelation, r.Occupation, r.Religion, r.Nationality, r.PreferredLanguage, r.Category, r.AbhaNumber, r.AbhaAddress,
-        r.AadhaarNumber, r.PhotoFileId, r.IsVip, r.Notes);
+        r.AadhaarNumber, r.PhotoFileId, r.RemovePhoto, r.IsVip, r.Notes);
 }
 
 /// <summary>
@@ -106,6 +107,12 @@ public sealed class PatientRegistrationService(
             return identifierConflict;
         }
 
+        var photoProblem = await CheckPhotoAsync(input.PhotoFileId, null, ct);
+        if (photoProblem is not null)
+        {
+            return photoProblem;
+        }
+
         if (!request.ConfirmedNotDuplicate)
         {
             var candidates = await FindDuplicatesAsync(
@@ -157,6 +164,13 @@ public sealed class PatientRegistrationService(
         if (identifierConflict is not null)
         {
             return identifierConflict;
+        }
+
+        // Only a new photo is checked; keeping the photo the patient already has needs no check.
+        var photoProblem = input.PhotoFileId == patient.PhotoFileId ? null : await CheckPhotoAsync(input.PhotoFileId, id, ct);
+        if (photoProblem is not null)
+        {
+            return photoProblem;
         }
 
         db.SetExpectedVersion(patient, request.Version);
@@ -256,6 +270,33 @@ public sealed class PatientRegistrationService(
         return null;
     }
 
+    /// <summary>
+    /// A new photo must be an image in the photo category, small enough for an avatar, and not already another patient's
+    /// photo. It is not linked to the patient as a document, because a document view is written to the audit trail and a
+    /// photo in the banner is fetched on every screen.
+    /// </summary>
+    private async Task<Error?> CheckPhotoAsync(Guid? photoFileId, Guid? patientId, CancellationToken ct)
+    {
+        if (photoFileId is not { } id)
+        {
+            return null;
+        }
+
+        var file = await db.Set<StoredFile>().AsNoTracking().FirstOrDefaultAsync(f => f.Id == id, ct);
+        if (file is null)
+        {
+            return Error.Field("photoFileId", "The photo could not be found. Take or upload it again.");
+        }
+
+        if (PatientPhoto.Problem(file) is { } problem)
+        {
+            return Error.Field("photoFileId", problem);
+        }
+
+        var usedByAnother = await PatientPhoto.UsedByOthers(db, id, patientId).AnyAsync(ct);
+        return usedByAnother ? Error.Field("photoFileId", "This photo already belongs to another patient. Take or upload a new one.") : null;
+    }
+
     private void Apply(Patient patient, PatientInput input, DateOnly today, bool isNew)
     {
         patient.SetName(input.Title, input.FirstName, input.MiddleName, input.LastName);
@@ -284,7 +325,7 @@ public sealed class PatientRegistrationService(
         patient.PreferredLanguage = Clean(input.PreferredLanguage);
         patient.Category = input.Category ?? patient.Category;
         patient.AbhaAddress = Clean(input.AbhaAddress)?.ToLowerInvariant();
-        patient.PhotoFileId = input.PhotoFileId;
+        patient.PhotoFileId = PatientPhoto.Resolve(patient.PhotoFileId, input.PhotoFileId, input.RemovePhoto);
         patient.IsVip = input.IsVip;
         patient.Notes = Clean(input.Notes);
 
