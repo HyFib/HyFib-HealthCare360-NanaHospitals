@@ -6,14 +6,17 @@
 
 .DESCRIPTION
     1. Stops the HC360 service.
-    2. Decrypts the backup with the recovery key (Administration > Backups > Recovery key). The key is passed to
-       the server CLI through an environment variable, never on a command line.
+    2. Restores the backup with the recovery key (Administration > Backups > Recovery key), using the server CLI's
+       "backup restore". The key is passed through an environment variable, never on a command line. The whole backup
+       is read and checked first; then the backup's field encryption key is installed (a different key already here
+       is kept under a new name, never deleted) and the stored documents are put back. A damaged backup, the wrong
+       key, or a backup from a newer HC360 version stops the script before the database is touched.
     3. Keeps the current database as hc360_before_restore_<timestamp> (nothing is dropped), creates a fresh one and
        runs pg_restore into it.
     4. Starts the service again.
 
-    Restoring onto new hardware also needs the old data folder's "keys" directory (field encryption keys) or the
-    encrypted identifiers in the database cannot be read. Copy it back before running this script.
+    Backups made before HC360 archive backups hold the database only. To restore one of those on new hardware, copy
+    the old data folder's "keys" directory back first, or the encrypted identifiers cannot be read.
 
 .EXAMPLE
     .\Restore-HC360.ps1 -BackupFile D:\HC360-Backups\hc360-20260925-0130.hc360bak
@@ -53,11 +56,13 @@ Write-Step 'Stopping HC360'
 Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
 
 try {
-    Write-Step 'Decrypting the backup'
+    Write-Step 'Checking the backup, then restoring the encryption key and documents'
     $env:HC360_RECOVERY_KEY = [System.Net.NetworkCredential]::new('', $RecoveryKey).Password
-    & (Join-Path $InstallDir 'HyFib.HealthCare360.Server.exe') backup decrypt --in $BackupFile --out $dump
-    if ($LASTEXITCODE -ne 0) { throw 'Decryption failed (wrong recovery key or damaged backup).' }
+    & (Join-Path $InstallDir 'HyFib.HealthCare360.Server.exe') backup restore --in $BackupFile --database-out $dump --data-dir $DataDir
+    $restoreExit = $LASTEXITCODE
     Remove-Item Env:\HC360_RECOVERY_KEY -ErrorAction SilentlyContinue
+    if ($restoreExit -eq 3) { throw 'This backup was made by a newer version of HC360. Install that version first.' }
+    if ($restoreExit -ne 0) { throw 'The backup could not be restored (wrong recovery key or damaged backup). Nothing was changed.' }
 
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
     $psql = Join-Path $pgBin 'psql.exe'

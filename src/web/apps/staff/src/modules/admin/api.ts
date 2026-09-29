@@ -215,6 +215,26 @@ export interface BackupRunDto {
   sha256: string | null;
   secondaryCopied: boolean;
   error: string | null;
+  /** 1: the database only (older backups). 2: the database, the field encryption key and, for full backups, the documents. */
+  formatVersion: number;
+  /** Documents in the backup; null when it holds the database only (older backups, and those taken before an update). */
+  documentCount: number | null;
+  /** When the finished file was read back in full and checked; null for older backups. */
+  verifiedAt: string | null;
+}
+
+/** What a backup holds, in plain words, for the backup list. */
+export function backupContents(run: Pick<BackupRunDto, 'status' | 'formatVersion' | 'documentCount'>): string {
+  if (run.status !== 'Succeeded') {
+    return '—';
+  }
+  if (run.formatVersion < 2) {
+    return 'Database only (older backup)';
+  }
+  if (run.documentCount === null) {
+    return 'Database and key (before an update)';
+  }
+  return `Database, key and ${run.documentCount.toLocaleString('en-IN')} ${run.documentCount === 1 ? 'document' : 'documents'}`;
 }
 
 export const adminQueries = {

@@ -32653,6 +32653,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
 
+                    b.Property<int?>("DocumentCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("document_count");
+
                     b.Property<string>("Error")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -32662,6 +32666,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(260)
                         .HasColumnType("character varying(260)")
                         .HasColumnName("file_name");
+
+                    b.Property<int>("FormatVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("format_version");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -32695,6 +32703,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("TriggeredBy")
                         .HasColumnType("uuid")
                         .HasColumnName("triggered_by");
+
+                    b.Property<DateTimeOffset?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("verified_at");
 
                     b.HasKey("Id")
                         .HasName("pk_backup_runs");

@@ -21,7 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { adminQueries, formatBytes } from '@/modules/admin/api';
+import { adminQueries, backupContents, formatBytes } from '@/modules/admin/api';
 
 export const Route = createFileRoute('/_app/admin/backups')({
   component: BackupsPage,
@@ -89,8 +89,9 @@ function BackupsPage() {
       <MessageBar intent="info" layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>Restoring</MessageBarTitle>
-          To restore on replacement hardware, install HealthCare360, then run <Text font="monospace">HyFib.HealthCare360.Server backup decrypt</Text> with the
-          recovery key and restore the result with <Text font="monospace">pg_restore</Text>. The deployment guide has the full steps.
+          Each backup holds the database, the encryption key for identifiers and documents, and the stored documents. To restore, also on replacement
+          hardware, run <Text font="monospace">Restore-HC360.ps1</Text> on the server with a backup file and the recovery key. The deployment guide has the
+          steps.
         </MessageBarBody>
       </MessageBar>
       <Section flush>
@@ -106,6 +107,8 @@ function BackupsPage() {
             { key: 'kind', header: 'Type', width: 120, render: (b) => humanize(b.kind) },
             { key: 'status', header: 'Status', width: 120, render: (b) => <StatusBadge status={b.status} /> },
             { key: 'size', header: 'Size', width: 100, render: (b) => formatBytes(b.sizeBytes) },
+            { key: 'contents', header: 'Contents', width: 250, render: (b) => backupContents(b) },
+            { key: 'checked', header: 'Checked', width: 170, priority: 'low', render: (b) => (b.verifiedAt ? formatDateTime(b.verifiedAt) : '—') },
             { key: 'copy', header: 'Second copy', width: 120, priority: 'low', render: (b) => (b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—') },
             {
               key: 'file',
@@ -140,8 +143,8 @@ function BackupsPage() {
         onConfirm={() => reveal.mutate()}
         onCancel={() => setConfirmKey(false)}
       >
-        Anyone with this key and a backup file can read the whole database. Showing it is recorded in the audit log. Write it down or print it and keep
-        it in a locked place away from the server.
+        Anyone with this key and a backup file can read everything in it: the database, identifiers such as Aadhaar and ABHA, and the stored documents.
+        Showing it is recorded in the audit log. Write it down or print it and keep it in a locked place away from the server.
       </ConfirmDialog>
 
       <Dialog open={recoveryKey !== null} onOpenChange={(_, d) => !d.open && setRecoveryKey(null)}>
