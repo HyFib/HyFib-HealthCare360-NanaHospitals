@@ -78,10 +78,27 @@ internal static class VisitEndpoints
                 orderby v.VisitedAt descending
                 select new
                 {
-                    v.Id, v.VisitNumber, v.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, v.Type, v.Status, v.DepartmentId,
-                    DepartmentName = d != null ? d.Name : null, v.PractitionerId, PractitionerName = pr != null ? pr.DisplayName : null,
-                    v.VisitedAt, v.CompletedAt, v.IsFollowUp, v.IsFreeFollowUp, v.PayerType, v.IsMlc,
-                    TokenLabel = t != null ? t.Label : null, TokenStatus = t != null ? (TokenStatus?)t.Status : null,
+                    v.Id,
+                    v.VisitNumber,
+                    v.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    v.Type,
+                    v.Status,
+                    v.DepartmentId,
+                    DepartmentName = d != null ? d.Name : null,
+                    v.PractitionerId,
+                    PractitionerName = pr != null ? pr.DisplayName : null,
+                    v.VisitedAt,
+                    v.CompletedAt,
+                    v.IsFollowUp,
+                    v.IsFreeFollowUp,
+                    v.PayerType,
+                    v.IsMlc,
+                    TokenLabel = t != null ? t.Label : null,
+                    TokenStatus = t != null ? (TokenStatus?)t.Status : null,
                 })
             .ToPagedResultAsync(page, ct);
 
@@ -126,9 +143,25 @@ internal static class VisitEndpoints
                 orderby v.VisitedAt descending
                 select new
                 {
-                    v.Id, v.VisitNumber, v.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, v.Type, v.Status, v.DepartmentId,
-                    DepartmentName = d != null ? d.Name : null, v.PractitionerId, PractitionerName = pr != null ? pr.DisplayName : null,
-                    v.VisitedAt, v.CompletedAt, v.IsFollowUp, v.IsFreeFollowUp, v.PayerType, v.IsMlc,
+                    v.Id,
+                    v.VisitNumber,
+                    v.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    v.Type,
+                    v.Status,
+                    v.DepartmentId,
+                    DepartmentName = d != null ? d.Name : null,
+                    v.PractitionerId,
+                    PractitionerName = pr != null ? pr.DisplayName : null,
+                    v.VisitedAt,
+                    v.CompletedAt,
+                    v.IsFollowUp,
+                    v.IsFreeFollowUp,
+                    v.PayerType,
+                    v.IsMlc,
                 })
             .ToPagedResultAsync(page, ct);
 

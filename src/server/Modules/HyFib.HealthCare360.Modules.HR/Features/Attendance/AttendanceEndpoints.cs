@@ -75,8 +75,18 @@ internal static class AttendanceEndpoints
                 where a.Date >= start && a.Date <= end && (departmentId == null || e.DepartmentId == departmentId)
                 select new
                 {
-                    a.EmployeeId, e.EmployeeCode, e.FullName, e.DepartmentId, a.PresentDays, a.PaidLeaveDays, a.UnpaidLeaveDays, a.AbsentDays,
-                    a.OffDays, a.LateMinutes, a.OvertimeMinutes, a.Flags,
+                    a.EmployeeId,
+                    e.EmployeeCode,
+                    e.FullName,
+                    e.DepartmentId,
+                    a.PresentDays,
+                    a.PaidLeaveDays,
+                    a.UnpaidLeaveDays,
+                    a.AbsentDays,
+                    a.OffDays,
+                    a.LateMinutes,
+                    a.OvertimeMinutes,
+                    a.Flags,
                 })
             .ToListAsync(ct);
         var departments = await db.Set<Department>().AsNoTracking().ToDictionaryAsync(d => d.Id, d => d.Name, ct);

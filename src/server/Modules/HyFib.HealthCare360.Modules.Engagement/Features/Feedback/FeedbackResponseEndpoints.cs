@@ -228,8 +228,19 @@ internal static class FeedbackResponseEndpoints
         var points = (await responses
                 .Select(r => new
                 {
-                    r.SubmittedAt, r.Channel, r.DepartmentId, r.DoctorRating, r.NursingRating, r.FrontDeskRating, r.BillingRating, r.CleanlinessRating,
-                    r.FoodRating, r.OverallRating, r.Nps, r.Sentiment, r.IsLowScore,
+                    r.SubmittedAt,
+                    r.Channel,
+                    r.DepartmentId,
+                    r.DoctorRating,
+                    r.NursingRating,
+                    r.FrontDeskRating,
+                    r.BillingRating,
+                    r.CleanlinessRating,
+                    r.FoodRating,
+                    r.OverallRating,
+                    r.Nps,
+                    r.Sentiment,
+                    r.IsLowScore,
                 })
                 .ToListAsync(ct))
             .Select(r => new FeedbackPoint(

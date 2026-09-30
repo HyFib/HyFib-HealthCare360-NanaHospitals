@@ -111,9 +111,25 @@ internal static class AdmissionEndpoints
                 orderby a.AdmittedAt descending
                 select new
                 {
-                    a.Id, a.AdmissionNumber, a.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, a.Status, a.Type, a.AdmittedAt, a.DischargedAt,
-                    a.WardId, WardName = w != null ? w.Name : null, a.BedId, BedLabel = b != null ? b.Label : null, a.ConsultantPractitionerId,
-                    ConsultantName = pr != null ? pr.DisplayName : null, a.PayerType, a.IsMlc,
+                    a.Id,
+                    a.AdmissionNumber,
+                    a.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    a.Status,
+                    a.Type,
+                    a.AdmittedAt,
+                    a.DischargedAt,
+                    a.WardId,
+                    WardName = w != null ? w.Name : null,
+                    a.BedId,
+                    BedLabel = b != null ? b.Label : null,
+                    a.ConsultantPractitionerId,
+                    ConsultantName = pr != null ? pr.DisplayName : null,
+                    a.PayerType,
+                    a.IsMlc,
                 })
             .ToPagedResultAsync(page, ct);
 
@@ -218,8 +234,17 @@ internal static class AdmissionEndpoints
                 orderby a.AdmittedAt descending
                 select new
                 {
-                    a.Id, a.AdmissionNumber, a.Status, a.Type, a.AdmittedAt, a.DischargedAt, a.WardId, WardName = w != null ? w.Name : null,
-                    a.ConsultantPractitionerId, ConsultantName = pr != null ? pr.DisplayName : null, a.DischargeType,
+                    a.Id,
+                    a.AdmissionNumber,
+                    a.Status,
+                    a.Type,
+                    a.AdmittedAt,
+                    a.DischargedAt,
+                    a.WardId,
+                    WardName = w != null ? w.Name : null,
+                    a.ConsultantPractitionerId,
+                    ConsultantName = pr != null ? pr.DisplayName : null,
+                    a.DischargeType,
                 })
             .Take(100)
             .ToListAsync(ct);

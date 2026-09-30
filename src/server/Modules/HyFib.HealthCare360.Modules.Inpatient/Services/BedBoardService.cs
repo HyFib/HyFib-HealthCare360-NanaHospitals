@@ -194,8 +194,20 @@ public sealed class BedBoardService(HospitalDbContext db, IPermissionService per
                 where admissionIds.Contains(a.Id)
                 select new
                 {
-                    a.Id, a.AdmissionNumber, a.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.IsVip,
-                    ConsultantName = pr != null ? pr.DisplayName : null, a.AdmittedAt, a.ExpectedDischargeDate, a.Status, a.PayerType, a.IsMlc,
+                    a.Id,
+                    a.AdmissionNumber,
+                    a.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    p.IsVip,
+                    ConsultantName = pr != null ? pr.DisplayName : null,
+                    a.AdmittedAt,
+                    a.ExpectedDischargeDate,
+                    a.Status,
+                    a.PayerType,
+                    a.IsMlc,
                 })
             .ToListAsync(ct);
 

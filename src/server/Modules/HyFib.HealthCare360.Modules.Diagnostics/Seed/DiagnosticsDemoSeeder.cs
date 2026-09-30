@@ -46,18 +46,39 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
 
         db.Add(new LabInstrument
         {
-            FacilityId = facilityId, Code = "XN550", Name = "Haematology analyser", Manufacturer = "Sysmex", Model = "XN-550",
-            Section = LabSection.Hematology, Protocol = InstrumentProtocol.Hl7, IsBidirectional = true, Location = "Haematology bench",
+            FacilityId = facilityId,
+            Code = "XN550",
+            Name = "Haematology analyser",
+            Manufacturer = "Sysmex",
+            Model = "XN-550",
+            Section = LabSection.Hematology,
+            Protocol = InstrumentProtocol.Hl7,
+            IsBidirectional = true,
+            Location = "Haematology bench",
         });
         db.Add(new LabInstrument
         {
-            FacilityId = facilityId, Code = "EM360", Name = "Clinical chemistry analyser", Manufacturer = "Transasia Erba", Model = "EM 360",
-            Section = LabSection.Biochemistry, Protocol = InstrumentProtocol.Astm, IsBidirectional = true, Location = "Biochemistry bench",
+            FacilityId = facilityId,
+            Code = "EM360",
+            Name = "Clinical chemistry analyser",
+            Manufacturer = "Transasia Erba",
+            Model = "EM 360",
+            Section = LabSection.Biochemistry,
+            Protocol = InstrumentProtocol.Astm,
+            IsBidirectional = true,
+            Location = "Biochemistry bench",
         });
         db.Add(new LabInstrument
         {
-            FacilityId = facilityId, Code = "CL900I", Name = "Immunoassay analyser", Manufacturer = "Mindray", Model = "CL-900i",
-            Section = LabSection.Immunology, Protocol = InstrumentProtocol.Hl7, IsBidirectional = false, Location = "Immunoassay bench",
+            FacilityId = facilityId,
+            Code = "CL900I",
+            Name = "Immunoassay analyser",
+            Manufacturer = "Mindray",
+            Model = "CL-900i",
+            Section = LabSection.Immunology,
+            Protocol = InstrumentProtocol.Hl7,
+            IsBidirectional = false,
+            Location = "Immunoassay bench",
         });
         await db.SaveChangesAsync(ct);
     }
@@ -102,8 +123,16 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
             {
                 lots.Add(new QcLot
                 {
-                    FacilityId = facilityId, LabTestId = testId, Material = material, Level = level, LotNumber = lotNumber, ExpiryDate = expiry,
-                    TargetMean = mean, TargetSd = sd, Unit = unit, InstrumentCode = instrument,
+                    FacilityId = facilityId,
+                    LabTestId = testId,
+                    Material = material,
+                    Level = level,
+                    LotNumber = lotNumber,
+                    ExpiryDate = expiry,
+                    TargetMean = mean,
+                    TargetSd = sd,
+                    Unit = unit,
+                    InstrumentCode = instrument,
                 });
             }
         }
@@ -148,8 +177,15 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
 
                     db.Add(new QcRun
                     {
-                        FacilityId = facilityId, QcLotId = lot.Id, LabTestId = lot.LabTestId, InstrumentCode = lot.InstrumentCode, Value = value,
-                        ZScore = zScore, RunAt = runAt, Outcome = evaluation.Outcome, Violations = [.. evaluation.Violations],
+                        FacilityId = facilityId,
+                        QcLotId = lot.Id,
+                        LabTestId = lot.LabTestId,
+                        InstrumentCode = lot.InstrumentCode,
+                        Value = value,
+                        ZScore = zScore,
+                        RunAt = runAt,
+                        Outcome = evaluation.Outcome,
+                        Violations = [.. evaluation.Violations],
                     });
                 }
             }

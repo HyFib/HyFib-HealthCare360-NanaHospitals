@@ -129,7 +129,14 @@ public sealed class DietOrderService(HospitalDbContext db, MealPlanService mealP
                 orderby o.CreatedAt descending
                 select new
                 {
-                    Order = o, t.Code, t.Name, a.AdmissionNumber, p.Uhid, p.FullName, WardName = w != null ? w.Name : null, BedLabel = b != null ? b.Label : null,
+                    Order = o,
+                    t.Code,
+                    t.Name,
+                    a.AdmissionNumber,
+                    p.Uhid,
+                    p.FullName,
+                    WardName = w != null ? w.Name : null,
+                    BedLabel = b != null ? b.Label : null,
                 })
             .Take(500)
             .ToListAsync(ct);

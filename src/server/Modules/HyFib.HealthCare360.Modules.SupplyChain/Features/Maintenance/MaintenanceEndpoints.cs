@@ -145,7 +145,9 @@ internal static class MaintenanceEndpoints
                 where t.Id == id
                 select new
                 {
-                    Ticket = t, a.AssetTag, a.Name,
+                    Ticket = t,
+                    a.AssetTag,
+                    a.Name,
                     ReportedBy = db.Set<User>().Where(u => u.Id == t.ReportedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
                 })
             .FirstOrDefaultAsync(ct);

@@ -10,7 +10,11 @@ public sealed class BloodComponentTests
 
     private static readonly TtiPanel Clear = new()
     {
-        Hiv = TtiResult.NonReactive, HbsAg = TtiResult.NonReactive, Hcv = TtiResult.NonReactive, Syphilis = TtiResult.NonReactive, Malaria = TtiResult.NonReactive,
+        Hiv = TtiResult.NonReactive,
+        HbsAg = TtiResult.NonReactive,
+        Hcv = TtiResult.NonReactive,
+        Syphilis = TtiResult.NonReactive,
+        Malaria = TtiResult.NonReactive,
     };
 
     private static BloodComponent Unit(BloodComponentType type = BloodComponentType.PRBC) =>

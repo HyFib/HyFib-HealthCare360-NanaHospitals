@@ -108,10 +108,28 @@ internal static class SurgeryEndpoints
                 from t in theatres.DefaultIfEmpty()
                 select new
                 {
-                    b.Id, b.BookingNumber, b.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, b.ProcedureName, b.Laterality, b.Priority, b.Status,
-                    b.TheatreId, TheatreCode = t != null ? t.Code : null, b.ScheduledStart, b.ScheduledEnd, b.PreferredDate, b.SurgeonId,
-                    b.AnaesthesiaType, SignIn = b.SignInCompletedAt != null, TimeOut = b.TimeOutCompletedAt != null,
-                    SignOut = b.SignOutCompletedAt != null, b.ChargeStatus,
+                    b.Id,
+                    b.BookingNumber,
+                    b.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    b.ProcedureName,
+                    b.Laterality,
+                    b.Priority,
+                    b.Status,
+                    b.TheatreId,
+                    TheatreCode = t != null ? t.Code : null,
+                    b.ScheduledStart,
+                    b.ScheduledEnd,
+                    b.PreferredDate,
+                    b.SurgeonId,
+                    b.AnaesthesiaType,
+                    SignIn = b.SignInCompletedAt != null,
+                    TimeOut = b.TimeOutCompletedAt != null,
+                    SignOut = b.SignOutCompletedAt != null,
+                    b.ChargeStatus,
                 })
             .ToPagedResultAsync(page, ct);
 
@@ -165,7 +183,13 @@ internal static class SurgeryEndpoints
         var names = await SpecialtyLookups.PractitionerNamesAsync(db, result.Items.Select(i => i.SurgeonId), ct);
         return TypedResults.Ok(result.Map(b => new
         {
-            b.Id, b.BookingNumber, b.ProcedureName, b.Laterality, b.Status, b.ScheduledStart, b.CompletedAt,
+            b.Id,
+            b.BookingNumber,
+            b.ProcedureName,
+            b.Laterality,
+            b.Status,
+            b.ScheduledStart,
+            b.CompletedAt,
             SurgeonName = b.SurgeonId is { } s ? names.GetValueOrDefault(s) : null,
         }));
     }

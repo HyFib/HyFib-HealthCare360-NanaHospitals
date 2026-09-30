@@ -78,8 +78,22 @@ internal static class LabMasterEndpoints
         var result = await tests.OrderByKey(page, TestSort, t => t.Name)
             .Select(t => new
             {
-                t.Id, t.Code, t.Name, t.ShortName, t.Section, t.SpecimenType, t.Container, t.ResultType, t.Unit, t.IsPanel, t.IsOrderable,
-                t.IsProvisional, t.IsActive, t.TatHours, t.ServiceItemId, t.Preparation,
+                t.Id,
+                t.Code,
+                t.Name,
+                t.ShortName,
+                t.Section,
+                t.SpecimenType,
+                t.Container,
+                t.ResultType,
+                t.Unit,
+                t.IsPanel,
+                t.IsOrderable,
+                t.IsProvisional,
+                t.IsActive,
+                t.TatHours,
+                t.ServiceItemId,
+                t.Preparation,
                 Price = db.Set<ServiceItem>().Where(s => s.Id == t.ServiceItemId).Select(s => (decimal?)s.BasePrice).FirstOrDefault(),
                 Components = t.Components.Count,
             })

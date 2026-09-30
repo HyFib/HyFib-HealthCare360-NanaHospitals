@@ -68,7 +68,18 @@ internal static class ScheduleEndpoints
             .Take(page.Take)
             .Select(d => new
             {
-                d.Id, d.ScheduleId, d.ReportTitle, d.Trigger, d.CreatedAt, d.Status, d.PeriodFrom, d.PeriodTo, d.Format, d.FileName, d.SizeBytes, d.RowCount,
+                d.Id,
+                d.ScheduleId,
+                d.ReportTitle,
+                d.Trigger,
+                d.CreatedAt,
+                d.Status,
+                d.PeriodFrom,
+                d.PeriodTo,
+                d.Format,
+                d.FileName,
+                d.SizeBytes,
+                d.RowCount,
                 HasFile = d.Content != null,
                 d.Error,
             })

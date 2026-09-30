@@ -40,8 +40,17 @@ internal static class PortalEndpoints
         var page = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(p => ids.Contains(p.PatientId) && p.Status != PrescriptionStatus.Draft)
             .OrderByDescending(p => p.SignedAt)
-            .Select(p => new { p.Id, p.PrescriptionNumber, p.PatientId, p.Status, p.SignedAt, p.PractitionerId, p.RefillsRemaining,
-                Medicines = p.Items.OrderBy(i => i.Sequence).Select(i => i.DrugName).ToList() })
+            .Select(p => new
+            {
+                p.Id,
+                p.PrescriptionNumber,
+                p.PatientId,
+                p.Status,
+                p.SignedAt,
+                p.PractitionerId,
+                p.RefillsRemaining,
+                Medicines = p.Items.OrderBy(i => i.Sequence).Select(i => i.DrugName).ToList()
+            })
             .ToPagedResultAsync(query.ToRequest(), ct);
         foreach (var id in page.Items.Select(p => p.PatientId).Distinct())
         {

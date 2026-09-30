@@ -7,19 +7,50 @@ internal static class SpokenNumbers
 {
     private static readonly Dictionary<string, int> Units = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["zero"] = 0, ["a"] = 1, ["an"] = 1, ["one"] = 1, ["single"] = 1, ["two"] = 2, ["three"] = 3, ["four"] = 4, ["five"] = 5,
-        ["six"] = 6, ["seven"] = 7, ["eight"] = 8, ["nine"] = 9, ["ten"] = 10, ["eleven"] = 11, ["twelve"] = 12, ["thirteen"] = 13,
-        ["fourteen"] = 14, ["fifteen"] = 15, ["sixteen"] = 16, ["seventeen"] = 17, ["eighteen"] = 18, ["nineteen"] = 19,
+        ["zero"] = 0,
+        ["a"] = 1,
+        ["an"] = 1,
+        ["one"] = 1,
+        ["single"] = 1,
+        ["two"] = 2,
+        ["three"] = 3,
+        ["four"] = 4,
+        ["five"] = 5,
+        ["six"] = 6,
+        ["seven"] = 7,
+        ["eight"] = 8,
+        ["nine"] = 9,
+        ["ten"] = 10,
+        ["eleven"] = 11,
+        ["twelve"] = 12,
+        ["thirteen"] = 13,
+        ["fourteen"] = 14,
+        ["fifteen"] = 15,
+        ["sixteen"] = 16,
+        ["seventeen"] = 17,
+        ["eighteen"] = 18,
+        ["nineteen"] = 19,
     };
 
     private static readonly Dictionary<string, int> Tens = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["twenty"] = 20, ["thirty"] = 30, ["forty"] = 40, ["fifty"] = 50, ["sixty"] = 60, ["seventy"] = 70, ["eighty"] = 80, ["ninety"] = 90,
+        ["twenty"] = 20,
+        ["thirty"] = 30,
+        ["forty"] = 40,
+        ["fifty"] = 50,
+        ["sixty"] = 60,
+        ["seventy"] = 70,
+        ["eighty"] = 80,
+        ["ninety"] = 90,
     };
 
     private static readonly Dictionary<string, int> Phrases = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["a couple of"] = 2, ["couple of"] = 2, ["a couple"] = 2, ["a few"] = 3, ["few"] = 3,
+        ["a couple of"] = 2,
+        ["couple of"] = 2,
+        ["a couple"] = 2,
+        ["a few"] = 3,
+        ["few"] = 3,
     };
 
     public static bool TryParse(string? text, out int value)

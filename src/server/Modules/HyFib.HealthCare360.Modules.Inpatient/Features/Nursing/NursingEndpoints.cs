@@ -293,7 +293,11 @@ internal static class NursingEndpoints
             MorseFallScale.Calculate(new MorseFallInput(r.HistoryOfFalling, r.SecondaryDiagnosis, r.AmbulatoryAid, r.IntravenousAccess, r.Gait, r.OverestimatesAbility)),
             new
             {
-                r.HistoryOfFalling, r.SecondaryDiagnosis, AmbulatoryAid = r.AmbulatoryAid.ToString(), r.IntravenousAccess, Gait = r.Gait.ToString(),
+                r.HistoryOfFalling,
+                r.SecondaryDiagnosis,
+                AmbulatoryAid = r.AmbulatoryAid.ToString(),
+                r.IntravenousAccess,
+                Gait = r.Gait.ToString(),
                 r.OverestimatesAbility,
             },
             r.Notes, admissions, db, user, time, ct);

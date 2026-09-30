@@ -34,8 +34,18 @@ internal sealed class PatientDirectory(HospitalDbContext db) : IPatientDirectory
             .Where(p => p.Id == id)
             .Select(p => new
             {
-                p.FullName, p.FirstName, p.MiddleName, p.LastName, p.GuardianName, p.EmergencyContactName,
-                p.Uhid, p.Phone, p.AlternatePhone, p.EmergencyContactPhone, p.Email, p.AbhaAddress,
+                p.FullName,
+                p.FirstName,
+                p.MiddleName,
+                p.LastName,
+                p.GuardianName,
+                p.EmergencyContactName,
+                p.Uhid,
+                p.Phone,
+                p.AlternatePhone,
+                p.EmergencyContactPhone,
+                p.Email,
+                p.AbhaAddress,
             })
             .FirstOrDefaultAsync(cancellationToken);
         if (patient is null)

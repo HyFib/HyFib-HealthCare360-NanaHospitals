@@ -198,8 +198,15 @@ internal static class LabOrderEndpoints
                 where o.OrderedAt >= start && o.OrderedAt < end && i.Status != LabOrderItemStatus.Cancelled && (section == null || i.Section == section)
                 select new
                 {
-                    i.LabTestId, t.Code, t.Name, i.Section, t.TatHours, o.OrderedAt,
-                    ReceivedAt = s != null ? s.ReceivedAt : null, i.VerifiedAt, i.ReleasedAt,
+                    i.LabTestId,
+                    t.Code,
+                    t.Name,
+                    i.Section,
+                    t.TatHours,
+                    o.OrderedAt,
+                    ReceivedAt = s != null ? s.ReceivedAt : null,
+                    i.VerifiedAt,
+                    i.ReleasedAt,
                 })
             .ToListAsync(ct);
 
