@@ -1,11 +1,9 @@
 using System.IO.Compression;
 using System.Security.Authentication;
-using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Networking;
-using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
 using Microsoft.AspNetCore.Http.Features;
@@ -86,26 +84,7 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     }
 });
 
-builder.Services.AddHospitalPlatform(
-    builder.Configuration,
-    builder.Environment,
-    ServerModules.All,
-    typeof(ServerModules).Assembly.GetName().Name!,
-    certificates);
-
-builder.Services.ConfigureHttpJsonOptions(json =>
-{
-    json.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
-    json.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
-});
-
-var signalR = builder.Services.AddSignalR()
-    .AddJsonProtocol(json => json.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-if (builder.Configuration.GetConnectionString("Redis") is { Length: > 0 } redis)
-{
-    // Scale-out (SCAL-02): several API nodes share real-time groups through Redis.
-    signalR.AddStackExchangeRedis(redis, redisOptions => redisOptions.Configuration.ChannelPrefix = StackExchange.Redis.RedisChannel.Literal("hc360"));
-}
+builder.AddServerApplication(certificates);
 
 builder.Services.AddResponseCompression(compression =>
 {
@@ -208,11 +187,7 @@ app.UseSerilogRequestLogging(logging =>
     ];
 });
 
-app.UseHospitalPlatform();
-app.MapHospitalPlatform();
-
-app.MapHealthChecks("/health/live", new() { Predicate = _ => false }).AllowAnonymous();
-app.MapHealthChecks("/health/ready", new() { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
+app.UseServerApplication();
 
 if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
 {
@@ -220,8 +195,6 @@ if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
     app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
 }
 
-// Unknown API routes must be a 404, never the SPA shell.
-app.Map("/api/{**rest}", () => Results.Problem(title: "Not found", statusCode: StatusCodes.Status404NotFound)).AllowAnonymous();
 // Portal pages opened from SMS links carry the patient's token in the path (/portal/feedback/{token}). The page is sent
 // without rewriting the path, so this endpoint stays current and logs and traces record its route template.
 app.MapFallback("/portal/{**path}", async context =>
@@ -248,7 +221,7 @@ app.MapFallback(async context =>
         """);
 }).AllowAnonymous();
 
-await InitializeDatabaseAsync(app);
+await app.InitializeDatabaseAsync();
 await app.RunAsync();
 return 0;
 
@@ -267,38 +240,3 @@ static async Task<bool> TrySendAppPageAsync(HttpContext context, IWebHostEnviron
     await context.Response.SendFileAsync(file);
     return true;
 }
-
-// PostgreSQL may still be starting when the service boots after a power cut: retry for up to ~3 minutes. Only
-// connection problems are retried. An error PostgreSQL reports about the schema or the data (for example a table that
-// already exists) happens again on every attempt, so it stops start-up at once with its explanation.
-static async Task InitializeDatabaseAsync(WebApplication app)
-{
-    var initializer = app.Services.GetRequiredService<DatabaseInitializer>();
-    var logger = app.Services.GetRequiredService<ILogger<DatabaseInitializer>>();
-    for (var attempt = 1; ; attempt++)
-    {
-        try
-        {
-            await initializer.InitializeAsync(CancellationToken.None);
-            return;
-        }
-        catch (Exception ex) when (attempt < 12 && IsTransientDatabaseError(ex))
-        {
-            logger.LogWarning(ex, "Database not ready (attempt {Attempt}); retrying in 15 seconds", attempt);
-            await Task.Delay(TimeSpan.FromSeconds(15));
-        }
-        catch (DatabaseUpgradeException ex)
-        {
-            logger.LogCritical(ex, "HC360 cannot start: {Reason}", ex.Message);
-            throw;
-        }
-    }
-}
-
-static bool IsTransientDatabaseError(Exception ex) => ex switch
-{
-    TimeoutException => true,
-    NpgsqlException npgsql => npgsql.IsTransient,
-    InvalidOperationException { InnerException: NpgsqlException inner } => inner.IsTransient,
-    _ => false,
-};

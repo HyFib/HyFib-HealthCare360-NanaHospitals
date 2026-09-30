@@ -29,6 +29,20 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build HyFib.HealthCare360.slnx --no-restore -c Release
 
+      # The end-to-end journeys (IntegrationTests) need PostgreSQL. Windows runners cannot run Linux containers, but they
+      # come with PostgreSQL installed (service stopped): start it and give the tests a server to create databases on.
+      - name: Start PostgreSQL for the end-to-end journeys
+        shell: pwsh
+        run: |
+          $service = Get-Service -Name 'postgresql*' | Select-Object -First 1
+          Set-Service -InputObject $service -StartupType Manual
+          Start-Service -InputObject $service
+          & (Join-Path $env:PGBIN 'pg_isready.exe') -h localhost -p 5432 -t 60
+          if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL did not start.' }
+          $user = if ($env:PGUSER) { $env:PGUSER } else { 'postgres' }
+          $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
+          "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Test
         run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release
 

@@ -88,9 +88,10 @@ src/
     packages/core/                        API client, auth, bridge, hooks, formatting
     packages/ui/                          Fluent-based design-system components
 tests/
-  HyFib.HealthCare360.UnitTests/
-  HyFib.HealthCare360.IntegrationTests/   WebApplicationFactory + Testcontainers PostgreSQL
-  HyFib.HealthCare360.ArchitectureTests/  Enforces module dependency rules
+  Modules/HyFib.HealthCare360.Modules.<Name>.Tests/   Each module's domain and service tests
+  HyFib.HealthCare360.Platform.Tests/     Platform, Integrations and Desktop have their own test projects too
+  HyFib.HealthCare360.IntegrationTests/   End-to-end journeys: the whole server in memory over PostgreSQL
+  HyFib.HealthCare360.ArchitectureTests/  Module dependency rules and endpoint authorization
 deploy/
   docker/                                 Developer PostgreSQL (and optional Orthanc PACS)
   windows/                                Server Node install, firewall, service, backup scripts
@@ -254,3 +255,8 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 
 * `dotnet build` warnings-as-errors for analyzers in CI, `dotnet test` (unit + integration + architecture), `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `dotnet list package --vulnerable`, `pnpm audit`.
 * Every module ships domain unit tests for its rules (for example billing totals, bed state machine, Westgard rules, FEFO batch selection) and integration tests for its main workflow.
+* **End-to-end journeys (SRS §9)** run in `HyFib.HealthCare360.IntegrationTests`.
+  * They host the real server composition (`ServerComposition`: every module, the middleware, authorization and endpoints) on an in-memory test server.
+  * The database is a new PostgreSQL database, built by the real migrations and seeded with the demonstration data and staff accounts.
+  * Each journey signs in as the role that does each step: front office, doctor, lab, pharmacist, billing, nurse.
+  * CI runs them on the runner's own PostgreSQL. Locally they use Docker or `HC360_TEST_DATABASE` (see the README).

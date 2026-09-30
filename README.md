@@ -94,6 +94,12 @@ Tests and checks:
 dotnet test --solution HyFib.HealthCare360.slnx
 ```
 
+The end-to-end journeys (`tests/HyFib.HealthCare360.IntegrationTests`) run the whole server against PostgreSQL, so they
+need a database. Either:
+- keep Docker running: each run starts and removes its own `hc360-it-…` container; or
+- set `HC360_TEST_DATABASE` to a connection string for a PostgreSQL server the tests may create databases on. Each run
+  creates a new database there and drops it afterwards. CI does this with the runner's own PostgreSQL.
+
 ```bash
 cd src/web && pnpm -r typecheck && pnpm -r test
 ```
