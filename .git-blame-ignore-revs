@@ -1,0 +1,8 @@
+# Commits that only reformatted code. git blame skips them: GitHub's blame view does so on its own, and a local
+# clone does after: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format the C# code with dotnet format
+7f55fb4aad66f104770f6becedb3dd1583e07e74
+
+# Format the web apps with Prettier
+09b353a67a10cc9bd9e178f78c04a02dfd4e92a7

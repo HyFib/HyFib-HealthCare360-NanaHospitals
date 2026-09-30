@@ -26,6 +26,10 @@ jobs:
         with:
           global-json-file: global.json
 
+      # Whitespace only, from .editorconfig; needs no restore. Fix locally with: dotnet format whitespace . --folder
+      - name: Check C# formatting
+        run: dotnet format whitespace . --folder --verify-no-changes
+
       # NuGet audit: a package with a known vulnerability, direct or transitive, fails restore (Directory.Build.props).
       - name: Restore and audit packages
         run: dotnet restore HyFib.HealthCare360.slnx
@@ -96,6 +100,10 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # Fix locally with: pnpm format
+      - name: Check formatting
+        run: pnpm format:check
 
       - name: Type check
         run: pnpm -r typecheck
