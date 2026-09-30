@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Desktop;
+using HyFib.HealthCare360.Desktop.Bridge;
 using HyFib.HealthCare360.Desktop.Services;
 using Makaretu.Dns;
 
@@ -48,6 +49,83 @@ public sealed class ServerAddressTests
     [InlineData("http://hc360-srv")]
     [InlineData("ftp://hc360-srv")]
     public void Rejects_insecure_or_empty_addresses(string typed) => SetupWindow.ParseAddress(typed).ShouldBeNull();
+}
+
+public sealed class BridgeSourceTests
+{
+    private static readonly Uri Server = new("https://hc360-srv:7360/");
+
+    [Theory]
+    [InlineData("https://hc360-srv:7360/")]
+    [InlineData("https://hc360-srv:7360/front-office/queue")]
+    [InlineData("https://HC360-SRV:7360/lab/worklist?status=pending")]
+    [InlineData("https://hc360-srv:7360/portal-settings")]
+    public void The_staff_app_may_use_the_bridge(string source) => BridgeHost.IsTrustedSource(source, Server).ShouldBeTrue();
+
+    [Theory]
+    [InlineData("https://hc360-srv:7360/portal")]
+    [InlineData("https://hc360-srv:7360/portal/bills/123")]
+    [InlineData("https://hc360-srv:7360/PORTAL/pay")]
+    [InlineData("https://hc360-srv:7360/docs")]
+    [InlineData("https://hc360-srv:7360/docs/v1")]
+    [InlineData("https://evil.example/")]
+    [InlineData("https://hc360-srv:8443/")]
+    [InlineData("about:srcdoc")]
+    [InlineData("not a url")]
+    public void Pages_that_run_third_party_script_or_other_origins_may_not(string source) =>
+        BridgeHost.IsTrustedSource(source, Server).ShouldBeFalse();
+}
+
+public sealed class DownloadPolicyTests
+{
+    private static readonly Uri Server = new("https://hc360-srv:7360/");
+
+    [Theory]
+    [InlineData("https://hc360-srv:7360/api/v1/files/0199?download=true", @"C:\Users\nurse\Downloads\discharge-summary.pdf")]
+    [InlineData("https://hc360-srv:7360/api/v1/analytics/reports/opd/export", @"C:\Users\nurse\Downloads\opd.xlsx")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000001", @"C:\Users\nurse\Downloads\pharmacy-register.csv")]
+    [InlineData("data:text/csv;charset=utf-8,a,b", @"C:\Users\nurse\Downloads\morbidity.csv")]
+    [InlineData("https://hc360-srv:7360/api/v1/system/ca-certificate", @"C:\Users\it\Downloads\hc360-hospital-ca.crt")]
+    public void Documents_from_the_hospital_server_are_saved(string source, string path) =>
+        DownloadPolicy.IsAllowed(source, path, Server).ShouldBeTrue();
+
+    [Theory]
+    [InlineData("https://hc360-srv:7360/api/v1/files/0199?download=true", @"C:\Users\nurse\Downloads\report.hta")]
+    [InlineData("https://hc360-srv:7360/api/v1/files/0199?download=true", @"C:\Users\nurse\Downloads\report.pdf.exe")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000001", @"C:\Users\nurse\Downloads\run.ps1")]
+    [InlineData("https://hc360-srv:7360/portal", @"C:\Users\nurse\Downloads\bill.html")]
+    [InlineData("https://evil.example/invoice.pdf", @"C:\Users\nurse\Downloads\invoice.pdf")]
+    [InlineData("blob:https://evil.example/5b1d2c9e-0000-4000-8000-000000000001", @"C:\Users\nurse\Downloads\invoice.pdf")]
+    [InlineData("http://hc360-srv:7360/api/v1/files/0199", @"C:\Users\nurse\Downloads\scan.pdf")]
+    public void Programs_scripts_and_other_sites_are_refused(string source, string path) =>
+        DownloadPolicy.IsAllowed(source, path, Server).ShouldBeFalse();
+}
+
+public sealed class FingerprintCheckTests
+{
+    private const string Presented = "AB12";
+    private const string Other = "CD34";
+
+    // The verdict is internal to the app, so the theory names it.
+    [Theory]
+    [InlineData(Presented, null, nameof(FingerprintVerdict.MatchesPolicy))]
+    [InlineData(Presented, Other, nameof(FingerprintVerdict.MatchesPolicy))]
+    [InlineData(Other, null, nameof(FingerprintVerdict.ContradictsPolicy))]
+    [InlineData(Other, Presented, nameof(FingerprintVerdict.ContradictsPolicy))]
+    public void The_fingerprint_it_pinned_decides_whatever_the_network_announced(string policy, string? announced, string expected) =>
+        SetupWindow.CheckFingerprint(Presented, policy, announced).ToString().ShouldBe(expected);
+
+    [Fact]
+    public void Without_a_policy_a_matching_announcement_is_shown_but_a_person_still_confirms() =>
+        SetupWindow.CheckFingerprint(Presented, null, Presented).ShouldBe(FingerprintVerdict.MatchesAnnouncement);
+
+    [Fact]
+    public void A_certificate_that_contradicts_the_announcement_is_refused_rather_than_left_to_a_warning() =>
+        SetupWindow.CheckFingerprint(Presented, null, Other).ShouldBe(FingerprintVerdict.ContradictsAnnouncement);
+
+    [Fact]
+    public void With_nothing_to_compare_a_person_compares_it_with_the_server() =>
+        SetupWindow.CheckFingerprint(Presented, null, null).ShouldBe(FingerprintVerdict.Unverified);
 }
 
 public sealed class ServerTrustTests

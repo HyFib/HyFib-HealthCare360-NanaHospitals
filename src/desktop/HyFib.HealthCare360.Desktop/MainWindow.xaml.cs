@@ -99,6 +99,7 @@ public partial class MainWindow : Window
         core.NavigationCompleted += OnNavigationCompleted;
         core.ProcessFailed += OnProcessFailed;
         core.PermissionRequested += OnPermissionRequested;
+        core.DownloadStarting += OnDownloadStarting;
         core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
 
         _tray = new TrayNotifier(() => Activate([]));
@@ -205,6 +206,18 @@ public partial class MainWindow : Window
         {
             Log.Information("Denied {Permission} for {Uri}", e.PermissionKind, e.Uri);
         }
+    }
+
+    /// <summary>Only files from the hospital server, and only document types HC360 produces (see <see cref="DownloadPolicy"/>).</summary>
+    private void OnDownloadStarting(object? sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        if (DownloadPolicy.IsAllowed(e.DownloadOperation.Uri, e.ResultFilePath, _server))
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        Log.Warning("Refused a download of {File} from {Uri}", Path.GetFileName(e.ResultFilePath), e.DownloadOperation.Uri);
     }
 
     private static void TryOpenExternally(Uri target)

@@ -6,6 +6,27 @@ using Serilog;
 
 namespace HyFib.HealthCare360.Desktop;
 
+/// <summary>What setup can tell about a server's CA fingerprint before anything trusts it.</summary>
+internal enum FingerprintVerdict
+{
+    /// <summary>Nothing to compare it with: a person compares it with the one shown on the server.</summary>
+    Unverified,
+
+    /// <summary>Matches the fingerprint IT pinned in the machine policy.</summary>
+    MatchesPolicy,
+
+    /// <summary>Differs from IT's pinned fingerprint. Never trusted.</summary>
+    ContradictsPolicy,
+
+    /// <summary>Matches what the server announced on the network; a person still confirms it.</summary>
+    MatchesAnnouncement,
+
+    /// <summary>
+    /// Differs from what the server announced on the network: the connection may be intercepted. Never trusted.
+    /// </summary>
+    ContradictsAnnouncement,
+}
+
 /// <summary>
 /// First-run setup (SRS DED-05): find the Server Node over mDNS (or type it), verify the hospital CA fingerprint
 /// out-of-band, then enrol this computer with a one-time code. Nothing is trusted until the fingerprint is either
@@ -131,7 +152,8 @@ public partial class SetupWindow : Window
                 _caPem = pem;
                 _fingerprint = fingerprint;
                 _info = info;
-                ShowVerification(selected?.CaFingerprint);
+                // The announcement only speaks for the server it came from, not for an address typed instead.
+                ShowVerification(selected is not null && selected.CandidateUris().Contains(candidate) ? selected.CaFingerprint : null);
                 return;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or ServerProblemException or System.Security.Cryptography.CryptographicException)
@@ -143,36 +165,49 @@ public partial class SetupWindow : Window
         ShowError("Could not connect securely to that server. Check the name or address, and that the server is switched on and on the same network.");
     }
 
-    private void ShowVerification(string? advertisedFingerprint)
+    private void ShowVerification(string? announcedFingerprint)
     {
         VerifyServer.Text = $"{_info!.ServerName} ({_serverUri!.Authority})";
         VerifyFacility.Text = $"{_info.FacilityName ?? "Hospital"} · HealthCare360 {_info.Version}";
         Fingerprint.Text = ServerTrust.Format(_fingerprint!);
 
-        var expected = _settings.PolicyCaFingerprint ?? advertisedFingerprint;
-        if (_settings.PolicyCaFingerprint is not null)
+        // Decided afresh for every server: a confirmation given for an earlier one never carries over.
+        var verdict = CheckFingerprint(_fingerprint!, _settings.PolicyCaFingerprint, announcedFingerprint);
+        FingerprintMatch.Text = verdict switch
         {
-            var matches = string.Equals(_settings.PolicyCaFingerprint, _fingerprint, StringComparison.Ordinal);
-            FingerprintMatch.Text = matches
-                ? "✔ Matches the fingerprint set by your IT department."
-                : "✖ Does NOT match the fingerprint set by your IT department. Do not continue; contact IT.";
-            FingerprintConfirmed.IsChecked = matches;
-            FingerprintConfirmed.IsEnabled = false;
-            if (!matches)
-            {
-                ShowStep(2);
-                NextButton.IsEnabled = false;
-                return;
-            }
-        }
-        else if (expected is not null)
+            FingerprintVerdict.MatchesPolicy => "✔ Matches the fingerprint set by your IT department.",
+            FingerprintVerdict.ContradictsPolicy => "✖ Does NOT match the fingerprint set by your IT department. Do not continue; contact IT.",
+            FingerprintVerdict.MatchesAnnouncement => "✔ Matches the fingerprint the server announced on the network.",
+            FingerprintVerdict.ContradictsAnnouncement =>
+                "✖ Does NOT match the fingerprint the server announced on the network, so the connection may be intercepted. Do not continue; contact IT.",
+            _ => string.Empty,
+        };
+        FingerprintConfirmed.IsChecked = verdict == FingerprintVerdict.MatchesPolicy;
+        FingerprintConfirmed.IsEnabled = verdict is FingerprintVerdict.Unverified or FingerprintVerdict.MatchesAnnouncement;
+        ShowStep(2);
+    }
+
+    /// <summary>
+    /// IT's pinned fingerprint decides when there is one; otherwise the server's own announcement on the network is
+    /// compared. A contradiction is never trusted, whatever the person at the screen confirms.
+    /// </summary>
+    internal static FingerprintVerdict CheckFingerprint(string fingerprint, string? policyFingerprint, string? announcedFingerprint)
+    {
+        if (policyFingerprint is not null)
         {
-            FingerprintMatch.Text = string.Equals(expected, _fingerprint, StringComparison.Ordinal)
-                ? "✔ Matches the fingerprint the server announced on the network."
-                : "⚠ Differs from what was announced on the network. Check carefully before continuing.";
+            return string.Equals(policyFingerprint, fingerprint, StringComparison.Ordinal)
+                ? FingerprintVerdict.MatchesPolicy
+                : FingerprintVerdict.ContradictsPolicy;
         }
 
-        ShowStep(2);
+        if (announcedFingerprint is null)
+        {
+            return FingerprintVerdict.Unverified;
+        }
+
+        return string.Equals(announcedFingerprint, fingerprint, StringComparison.Ordinal)
+            ? FingerprintVerdict.MatchesAnnouncement
+            : FingerprintVerdict.ContradictsAnnouncement;
     }
 
     private async Task EnrolAsync()
