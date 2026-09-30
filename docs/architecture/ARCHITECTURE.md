@@ -260,4 +260,5 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
   * The database is a new PostgreSQL database, built by the real migrations and seeded with the demonstration data and staff accounts.
   * Each journey signs in as the role that does each step: front office, doctor, lab, pharmacist, billing, nurse. The demonstration data has no pathologist, so the test host has the hospital administrator create that account through the admin API the first time a journey needs it.
   * `OutpatientJourneyTests`: register → appointment → consult → lab → pharmacy → bill.
+  * `InpatientJourneyTests`: admit (with insurance and a pre-authorisation) → bed and transfer → charges → discharge bill → insurance claim and settlement.
   * CI runs them on the runner's own PostgreSQL. Locally they use Docker or `HC360_TEST_DATABASE` (see the README).

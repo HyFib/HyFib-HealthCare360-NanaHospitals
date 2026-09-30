@@ -123,10 +123,24 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
+    // Sign-in allows 10 attempts a minute per address, and every test-server request has the same one: past that, wait for
+    // the next minute rather than fail the run.
     private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
     {
-        using var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, TestContext.Current.CancellationToken);
-        return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        var ct = TestContext.Current.CancellationToken;
+        var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMinutes(1);
+            response.Dispose();
+            await Task.Delay(wait + TimeSpan.FromSeconds(1), ct);
+            response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
+        }
+
+        using (response)
+        {
+            return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        }
     }
 
     private static string FullAccess(string userName, SignInResult result) =>
