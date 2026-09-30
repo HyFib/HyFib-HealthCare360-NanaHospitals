@@ -151,7 +151,7 @@ HyFib.HealthCare360.Modules.<Name>/
 ## 5. Data architecture
 
 * **One PostgreSQL database, one schema per module** (`patients`, `clinical`, `billing`, …), with a single `HospitalDbContext` composed from every module's configurations. Cross-module joins are possible for reporting, but only in the allowed dependency direction.
-* **Identifiers:** time-ordered `Guid` v7 primary keys, which index well and are safe to generate on the client or server. Human-facing numbers (UHID, bill no., accession no.) come from `platform.number_series`, which is allocated transactionally (gap-free, facility- and period-aware formats such as `NH-UH-2600123`).
+* **Identifiers:** time-ordered `Guid` v7 primary keys, which index well and are safe to generate on the client or server. An entity gets its `Id` when it is constructed, and `ModelConventions` tells EF Core the key is never generated, so a new child row added to a loaded aggregate (a claim's settlement, a shift's closing totals) is inserted rather than taken for an existing row. Human-facing numbers (UHID, bill no., accession no.) come from `platform.number_series`, which is allocated transactionally (gap-free, facility- and period-aware formats such as `NH-UH-2600123`).
 * **Base types:** `Entity` (Id) → `AuditableEntity` (created/updated by/at UTC, soft delete, `Version` mapped to PostgreSQL `xmin` for optimistic concurrency). `IFacilityScoped` entities carry `FacilityId` and get a named EF Core global query filter.
 * **Time:** all instants are `timestamptz` (UTC). Dates of birth and similar use `date`. The UI renders in the facility time zone (default `Asia/Kolkata`).
 * **Money:** `numeric(18,2)` with `MidpointRounding.AwayFromZero`. Currency is a facility setting (INR).
