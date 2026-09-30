@@ -71,7 +71,7 @@ request keeps the data summary exactly as it was given. The portal allows at mos
 | Item | Effect |
 |---|---|
 | `messages` | Withdraws marketing and optional update consent |
-| `feedback` | Removes the patient, visit, contact details and comments from their feedback, complaints and enquiries. The ratings and complaints stay in the quality records |
+| `feedback` | Removes the patient, visit, contact details and comments from their feedback, complaints and enquiries. The ratings and complaints stay in the quality records. Their feedback invitations are deleted, so a link sent earlier cannot add a new response tied to them |
 | `nominee` | Removes the nominee |
 | `portal` | Closes the portal account and ends its sessions; not offered when other patients sign in with the same number |
 

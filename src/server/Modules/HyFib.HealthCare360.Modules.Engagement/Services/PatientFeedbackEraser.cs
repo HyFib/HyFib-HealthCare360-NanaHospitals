@@ -5,16 +5,18 @@ namespace HyFib.HealthCare360.Modules.Engagement.Services;
 /// <summary>
 /// Removes a patient's identity from the feedback, complaints and enquiries they gave, when they ask for their data to
 /// be erased (DPDP Act 2023 s12(3)). The ratings and the complaints stay in the hospital's quality records (NABH), but
-/// nothing in them points to the patient any more: the patient, visit and admission links, contact details and feedback
-/// comments go. Called by the Privacy module; the caller saves.
+/// nothing in them points to the patient any more: the patient, visit, admission and invitation links, contact details
+/// and feedback comments go. The patient's feedback invitations are deleted, so a link sent earlier cannot add a new
+/// response tied to them. Called by the Privacy module; the caller saves.
 /// </summary>
 public sealed class PatientFeedbackEraser(HospitalDbContext db)
 {
     public const string ErasedName = "Erased on request";
 
-    /// <summary>How many feedback responses, complaints and enquiries point to the patient.</summary>
+    /// <summary>How many feedback responses and invitations, complaints and enquiries point to the patient.</summary>
     public async Task<int> CountAsync(Guid patientId, CancellationToken ct) =>
         await db.Set<FeedbackResponse>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).CountAsync(f => f.PatientId == patientId, ct)
+        + await db.Set<FeedbackInvitation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).CountAsync(i => i.PatientId == patientId, ct)
         + await db.Set<Complaint>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).CountAsync(c => c.PatientId == patientId, ct)
         + await db.Set<Lead>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).CountAsync(l => l.ConvertedPatientId == patientId, ct);
 
@@ -30,7 +32,13 @@ public sealed class PatientFeedbackEraser(HospitalDbContext db)
             response.AdmissionId = null;
             response.ContactPhone = null;
             response.Comment = null;
+            response.InvitationId = null;
         }
+
+        var invitations = await db.Set<FeedbackInvitation>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(i => i.PatientId == patientId)
+            .ToListAsync(ct);
+        db.RemoveRange(invitations);
 
         var feedbackIds = feedback.Select(f => f.Id).ToList();
         var complaints = await db.Set<Complaint>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
@@ -58,6 +66,6 @@ public sealed class PatientFeedbackEraser(HospitalDbContext db)
             lead.ConvertedPatientId = null;
         }
 
-        return feedback.Count + complaints.Count + leads.Count;
+        return feedback.Count + invitations.Count + complaints.Count + leads.Count;
     }
 }

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
@@ -82,17 +83,24 @@ public sealed class PrivacyTests(HospitalServer server)
         nominee.GetProperty("nominee").GetProperty("name").GetString().ShouldBe("Ravi Rao");
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
             patient.Id, DataRequestType.Erasure, RequesterRelation.Self, null, "Please erase my data.", null));
+        var feedbackLink = await InviteToFeedbackAsync(patient.Id);
 
         var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var assessment = await officer.GetAsync<ErasureAssessment>($"/api/v1/privacy/requests/{created.Id}/erasure");
         assessment.Options.Single(o => o.Item == ErasureService.Messages).Available.ShouldBeTrue();
         assessment.Options.Single(o => o.Item == ErasureService.NomineeItem).Available.ShouldBeTrue();
         assessment.Options.Single(o => o.Item == ErasureService.PortalAccount).Available.ShouldBeTrue();
+        assessment.Options.Single(o => o.Item == ErasureService.Feedback).Available.ShouldBeTrue("The patient has an unused feedback link.");
         assessment.Holds.ShouldContain(h => h.Key == "audit", "Opening the record left a trace in the audit trail, which is kept.");
 
         var outcome = await officer.PostAsync<ErasureOutcome>($"/api/v1/privacy/requests/{created.Id}/erasure",
-            new EraseDataRequest([ErasureService.Messages, ErasureService.NomineeItem, ErasureService.PortalAccount]));
-        outcome.Erased.ShouldBe([ErasureService.Messages, ErasureService.NomineeItem, ErasureService.PortalAccount]);
+            new EraseDataRequest([ErasureService.Messages, ErasureService.Feedback, ErasureService.NomineeItem, ErasureService.PortalAccount]));
+        outcome.Erased.ShouldBe([ErasureService.Messages, ErasureService.Feedback, ErasureService.NomineeItem, ErasureService.PortalAccount]);
+
+        using (var deadLink = await server.Anonymous().SendRawAsync(HttpMethod.Get, $"/api/v1/public/feedback/invitations/{feedbackLink}"))
+        {
+            deadLink.StatusCode.ShouldBe(HttpStatusCode.NotFound, "A feedback link sent before the erasure can no longer add a response tied to the patient.");
+        }
         outcome.KeepUntil.ShouldNotBeNull();
 
         using (var signedOut = await portal.SendRawAsync(HttpMethod.Get, "/api/v1/portal/privacy/requests"))
@@ -108,7 +116,7 @@ public sealed class PrivacyTests(HospitalServer server)
             new CloseDataRequestRequest(DataRequestStatus.PartlyCompleted, outcome.Summary));
         var detail = await officer.GetAsync<DataRequestDetail>($"/api/v1/privacy/requests/{created.Id}");
         detail.Status.ShouldBe(DataRequestStatus.PartlyCompleted);
-        detail.ErasedItems.ShouldBe([ErasureService.Messages, ErasureService.NomineeItem, ErasureService.PortalAccount]);
+        detail.ErasedItems.ShouldBe([ErasureService.Messages, ErasureService.Feedback, ErasureService.NomineeItem, ErasureService.PortalAccount]);
         detail.RetainedUntil.ShouldBe(outcome.KeepUntil);
     }
 
@@ -305,6 +313,27 @@ public sealed class PrivacyTests(HospitalServer server)
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: false));
         return (patient, phone);
+    }
+
+    /// <summary>A feedback link sent to the patient and not yet used; returns the link's token.</summary>
+    private async Task<string> InviteToFeedbackAsync(Guid patientId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var ct = TestContext.Current.CancellationToken;
+        var form = await db.Set<FeedbackForm>().IgnoreQueryFilters().AsNoTracking().FirstAsync(f => f.IsActive, ct);
+        var token = OpaqueToken.New();
+        db.Add(new FeedbackInvitation
+        {
+            FacilityId = form.FacilityId,
+            FormId = form.Id,
+            PatientId = patientId,
+            TokenHash = OpaqueToken.Hash(token),
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7),
+        });
+        await db.SaveChangesAsync(ct);
+        return token;
     }
 
     private static SaveBreachRequest Complete(BreachDetail detail) => new(

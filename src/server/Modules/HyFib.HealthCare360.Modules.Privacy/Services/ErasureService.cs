@@ -144,7 +144,7 @@ public sealed class ErasureService(
                 "Withdraw consent for health offers and for update messages such as reminders and report alerts. Sign-in codes are still sent when the patient uses the portal.",
                 preferences.Marketing || preferences.Updates, preferences.Marketing || preferences.Updates ? null : "Optional messages are already off."),
             new(Feedback, "Remove the patient from feedback, complaints and enquiries",
-                "The ratings and complaints stay in the hospital's quality records, without the patient's name, number, visit or comments.",
+                "The ratings and complaints stay in the hospital's quality records, without the patient's name, number, visit or comments. Feedback links already sent stop working.",
                 feedbackCount > 0, feedbackCount > 0 ? null : "There is nothing to remove."),
             new(NomineeItem, "Remove the nominee", "The nominee will no longer be able to act for the patient.",
                 hasNominee, hasNominee ? null : "No nominee is recorded."),
