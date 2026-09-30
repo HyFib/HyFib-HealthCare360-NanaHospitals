@@ -911,3 +911,284 @@ export interface CommunicationPreferencesRequest {
   marketing: boolean;
   updates: boolean;
 }
+
+// ------------------------------------------------------------------ privacy (DPDP Act 2023)
+// Sources: Modules.Privacy/Features/Portal/PortalPrivacyContracts.cs, Services/PersonalDataInventory.cs,
+// Services/BreachService.cs, Services/NomineeService.cs, Features/Settings/PrivacySettingsEndpoints.cs.
+
+export type DataRequestType = 'Access' | 'Correction' | 'Erasure' | 'Grievance';
+/** The requests a patient can make in the portal (the data summary needs no request). */
+export type PortalRequestType = Exclude<DataRequestType, 'Access'>;
+export type DataRequestStatus = 'Submitted' | 'InProgress' | 'Completed' | 'PartlyCompleted' | 'Declined' | 'Withdrawn';
+export type DataRequestChannel = 'Portal' | 'FrontDesk' | 'Email' | 'Letter' | 'Phone';
+export type RequesterRelation = 'Self' | 'ParentOrGuardian' | 'Nominee' | 'FamilyMember' | 'AuthorisedRepresentative';
+/** Who may make a request from the portal: the patient, a parent or guardian, or a family member. */
+export const PORTAL_REQUESTERS = ['Self', 'ParentOrGuardian', 'FamilyMember'] as const;
+export type PortalRequester = (typeof PORTAL_REQUESTERS)[number];
+export type CorrectionDecision = 'Pending' | 'Accepted' | 'Declined';
+export type DataRequestEventKind =
+  | 'Received'
+  | 'IdentityVerified'
+  | 'Started'
+  | 'Assigned'
+  | 'Note'
+  | 'CorrectionsDecided'
+  | 'Erased'
+  | 'Closed'
+  | 'Withdrawn';
+export type BreachDataCategory =
+  'Identity' | 'Contact' | 'Health' | 'Financial' | 'GovernmentId' | 'Credentials' | 'Children';
+/** Which retention period applies to a group of the data summary (server: `PersonalDataRetention`). */
+export type RetentionKind = 'MedicalRecords' | 'Finance' | 'MessageLog' | 'Audit' | 'WhileInUse' | 'WithRecords';
+/** What an erasure removed (server: `ErasureService` items). */
+export type ErasureItem = 'messages' | 'feedback' | 'nominee' | 'portal';
+
+/** The details a patient can ask to have corrected (server: `CorrectableFields`), in the order the form lists them. */
+export const CORRECTABLE_FIELDS = [
+  'name',
+  'dateOfBirth',
+  'gender',
+  'mobile',
+  'alternatePhone',
+  'email',
+  'address',
+  'emergencyContact',
+  'guardian',
+  'language',
+  'healthRecord',
+  'other',
+] as const;
+export type CorrectableField = (typeof CORRECTABLE_FIELDS)[number];
+
+/** The grievance officer (or Data Protection Officer); the hospital's own details fill any gap. */
+export interface PrivacyContact {
+  title: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+}
+
+/** GET /api/v1/public/privacy (anonymous). */
+export interface PublicPrivacyInfo {
+  hospital: string;
+  contact: PrivacyContact;
+  responseDays: number;
+}
+
+/** The registration details as held. ABHA and Aadhaar arrive masked, exactly as the hospital stores them. */
+export interface SummaryPerson {
+  uhid: string;
+  fullName: string;
+  gender: Gender;
+  dateOfBirth: string | null;
+  phone: string | null;
+  alternatePhone: string | null;
+  email: string | null;
+  address: string | null;
+  emergencyContact: string | null;
+  abhaNumber: string | null;
+  abhaAddress: string | null;
+  aadhaarLast4: string | null;
+  hasPhoto: boolean;
+  registeredAt: string;
+  registeredAtFacility: string | null;
+}
+
+/**
+ * How many records of a kind are held, and the dates of the first and the latest. `key` is the catalogue table
+ * ("clinical.encounters"), stable for translating the label.
+ */
+export interface SummaryItem {
+  key: string;
+  label: string;
+  count: number;
+  first: string | null;
+  last: string | null;
+}
+
+/**
+ * A group of personal data; `key` is stable (the portal translates by it). `retention` is the English sentence;
+ * `retentionKind` with the summary's `periods` says it in the patient's language.
+ */
+export interface SummaryCategory {
+  key: string;
+  title: string;
+  description: string;
+  purpose: string;
+  basis: string;
+  retention: string;
+  retentionKind: RetentionKind;
+  items: SummaryItem[];
+}
+
+/** The retention periods in force, as numbers. */
+export interface RetentionPeriods {
+  outpatientYears: number;
+  inpatientYears: number;
+  financeYears: number;
+  messageLogDays: number;
+  auditYears: number;
+}
+
+export interface SummaryConsent {
+  type: string;
+  granted: boolean;
+  capturedAt: string;
+  revokedAt: string | null;
+}
+
+export interface SummaryRecipient {
+  name: string;
+  role: string;
+  data: string;
+}
+
+export interface SummaryNominee {
+  name: string;
+  relationship: string;
+}
+
+/** GET /api/v1/portal/privacy/summary: the summary of personal data the DPDP Act (s11) entitles a patient to. */
+export interface DataSummary {
+  generatedAt: string;
+  hospital: string;
+  person: SummaryPerson;
+  categories: SummaryCategory[];
+  consents: SummaryConsent[];
+  sharedWith: SummaryRecipient[];
+  processors: SummaryRecipient[];
+  nominee: SummaryNominee | null;
+  contact: PrivacyContact;
+  periods: RetentionPeriods;
+}
+
+/**
+ * GET /api/v1/portal/privacy/status: the privacy centre at a glance. Counts and the nominee's name only, so the
+ * server does not record it as access to the patient's record.
+ */
+export interface PortalPrivacyStatus {
+  hasNominee: boolean;
+  nomineeName: string | null;
+  openRequests: number;
+  maxOpenRequests: number;
+  notices: number;
+}
+
+export interface PortalDataRequestItem {
+  id: string;
+  requestNumber: string;
+  patientId: string;
+  type: DataRequestType;
+  status: DataRequestStatus;
+  receivedAt: string;
+  dueAt: string;
+  closedAt: string | null;
+}
+
+export interface PortalCorrectionItem {
+  field: string;
+  currentValue: string | null;
+  requestedValue: string;
+  decision: CorrectionDecision;
+  note: string | null;
+}
+
+export interface PortalRequestEvent {
+  at: string;
+  kind: DataRequestEventKind;
+  text: string;
+}
+
+/**
+ * A request as the patient sees it: the public history only, never staff notes. `identityConfirmed` false on a
+ * request made for someone else means the hospital still has to confirm the requester may act for them.
+ */
+export interface PortalDataRequestDetail {
+  id: string;
+  requestNumber: string;
+  patientId: string;
+  type: DataRequestType;
+  status: DataRequestStatus;
+  requestedBy: RequesterRelation;
+  requesterName: string | null;
+  identityConfirmed: boolean;
+  details: string;
+  corrections: PortalCorrectionItem[];
+  receivedAt: string;
+  dueAt: string;
+  closedAt: string | null;
+  response: string | null;
+  /** Erasure: what was erased (`ErasureItem` keys). */
+  erasedItems: string[];
+  /** Erasure: the date ("yyyy-MM-dd") until which the rest must be kept by law. */
+  retainedUntil: string | null;
+  retainedPermanently: boolean;
+  timeline: PortalRequestEvent[];
+  canWithdraw: boolean;
+  contact: PrivacyContact;
+}
+
+export interface CorrectionInput {
+  field: CorrectableField;
+  requestedValue: string;
+}
+
+export interface PortalDataRequestCreate {
+  patientId: string;
+  type: PortalRequestType;
+  requestedBy: PortalRequester;
+  requesterName: string | null;
+  details: string | null;
+  corrections: CorrectionInput[] | null;
+}
+
+export interface PortalRequestCreated {
+  id: string;
+  requestNumber: string;
+  dueAt: string;
+}
+
+export interface NomineeDto {
+  name: string;
+  relationship: string;
+  phone: string | null;
+  email: string | null;
+  recordedVia: DataRequestChannel;
+  updatedAt: string;
+}
+
+/** GET /api/v1/portal/privacy/nominee → `{ nominee }`. */
+export interface NomineeView {
+  nominee: NomineeDto | null;
+}
+
+export interface PortalNomineeRequest {
+  patientId: string;
+  name: string;
+  relationship: string;
+  phone: string | null;
+  email: string | null;
+}
+
+/**
+ * A personal-data breach notice (DPDP Rules 2025, rule 7(1)). `patientIds` are the people it concerns among those
+ * the signed-in number may act for.
+ */
+export interface PortalBreachNotice {
+  id: string;
+  patientIds: string[];
+  reference: string;
+  title: string;
+  notifiedAt: string;
+  awareAt: string;
+  occurredFrom: string | null;
+  occurredTo: string | null;
+  description: string;
+  location: string | null;
+  dataCategories: BreachDataCategory[];
+  consequences: string | null;
+  mitigation: string | null;
+  principalSteps: string | null;
+  contact: PrivacyContact;
+}

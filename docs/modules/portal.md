@@ -65,7 +65,12 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |
 | `/unsubscribe/{token}` | no | Opt-out link in campaign messages. Opening it changes nothing; the patient confirms with one tap |
 | `/verify`, `/verify/prescription/{token}`, `/verify/{lab\|radiology\|cardiology}/{code}` | no | Check that a printed prescription or report is genuine. Shows authenticity details only, never results |
-| `/privacy` | no | Privacy notice (DPDP Act 2023) in plain language |
+| `/privacy` | no | Privacy notice (DPDP Act 2023) in plain language, with the grievance officer and the reply period from the server |
+| `/my-privacy` | yes | "Your privacy": breach notices first, then see your data, correct, erase, raise a concern, your requests, your nominee, messages you get, and whom to contact |
+| `/my-privacy/data` | yes | The summary of the data held about the person (DPDP Act s11): details, each kind of record with counts and dates, purpose, basis and how long it is kept, consents, who received it, service providers. Print or save as PDF |
+| `/my-privacy/requests`, `/my-privacy/requests/new?type=correction\|erasure\|grievance`, `/my-privacy/requests/{id}` | yes | Requests: list, a new correction, erasure or concern (for yourself, your child, or a family member), and each request with its history, the reply, and withdraw |
+| `/my-privacy/nominee` | yes | Name, replace or remove the person's nominee (DPDP Act s14) |
+| `/my-privacy/notices/{id}` | yes | A personal data breach notice in full (DPDP Rules 2025, rule 7(1)) |
 
 ### Links the server sends or prints
 
@@ -95,6 +100,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Records | `GET /api/v1/portal/health-records?patientId=`, `GET /api/v1/portal/discharge-summaries/{id}`, `POST /api/v1/portal/record-requests` |
 | Feedback | `GET /api/v1/portal/feedback/forms`, `GET /api/v1/portal/feedback?patientId=`, `POST /api/v1/portal/feedback` |
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
+| Privacy | `GET /api/v1/portal/privacy/status?patientId=`, `GET …/summary?patientId=`, `GET …/requests?patientId=`, `GET …/requests/{id}`, `POST …/requests`, `POST …/requests/{id}/withdraw`, `GET`, `PUT` and `DELETE …/nominee`, `GET …/notices?patientId=`, `GET …/notices/{id}`; public `GET /api/v1/public/privacy` (see [privacy.md](privacy.md)) |
 | Public links | `GET` and `POST /api/v1/public/feedback/invitations/{token}`, `GET` and `POST /api/v1/public/feedback/forms/{token}[?kiosk=true]`, `GET` and `POST /api/v1/public/unsubscribe/{token}` |
 | Document checks | `GET /api/v1/public/prescriptions/verify/{token}`, `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
 
@@ -159,7 +165,10 @@ Every value in a template is escaped. The QR code SVG is the only markup accepte
 * **OTP helpers**, **safe redirects**, **family resolution**, **link tokens** and **payment helpers**.
 * **Slots and date strip**, **lab ranges and flags**, **camera errors and join problems**.
 * **Document-check input parsing** and **feedback rules**.
-* **Print escaping:** bill, receipt and discharge summary.
+* **Print escaping:** bill, receipt, discharge summary and the privacy data summary.
+* **The privacy centre:** request-form checks and the body it sends, server errors mapped to fields, retention in the
+  patient's language from the server's periods, and the pages end to end in jsdom (hub, data summary, a new request,
+  a request's detail and withdrawal, the nominee, a breach notice).
 * **WebRTC codecs and quality.**
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
 * **Public pages end to end in jsdom** (router, layouts and queries against a fake server). Feedback and unsubscribe

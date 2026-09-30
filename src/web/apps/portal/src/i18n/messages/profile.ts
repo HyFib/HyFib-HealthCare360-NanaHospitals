@@ -12,7 +12,7 @@ export const profileMessages = defineMessages({
     'profile.dob': 'Date of birth',
     'profile.bloodGroup': 'Blood group',
     'profile.phone': 'Mobile number',
-    'profile.correct': 'Something wrong? Ask the front desk at your next visit to correct it.',
+    'profile.correct': 'Something wrong? Ask us to correct it here, or at the front desk on your next visit.',
     'profile.family': 'Family members',
     'profile.language': 'Language',
     'profile.more': 'More',
@@ -44,11 +44,17 @@ export const profileMessages = defineMessages({
     'privacy.family.body':
       'Everyone registered at the hospital with your mobile number appears in your portal. If someone should not be linked to your number, ask the front desk to change it.',
     'privacy.rights.title': 'Your rights',
-    'privacy.rights.1': 'See your information: it is in this portal, and you can ask for a copy of your records.',
-    'privacy.rights.2': 'Correct it: ask the front desk to correct anything that is wrong or out of date.',
+    'privacy.rights.1':
+      'See your information: it is in this portal, with a free summary of all the data we hold about you, and you can ask for a copy of your records.',
+    'privacy.rights.2':
+      'Correct it: ask us to correct anything that is wrong or out of date, in "Your privacy" in this portal or at the front desk.',
     'privacy.rights.3': 'Stop messages you agreed to: change your choices at any time. Your care does not change.',
     'privacy.rights.4':
-      "Complain: speak to the hospital's grievance officer through the front desk. If you are not satisfied, you can approach the Data Protection Board of India.",
+      'Complain: raise a concern in "Your privacy" or at the front desk, and the hospital\'s grievance officer will reply. If you are not satisfied after our reply, you can complain to the Data Protection Board of India.',
+    'privacy.rights.5':
+      'Erase it where the law allows: ask us to erase data we do not need to keep, such as messages and feedback. Medical records and bills are kept for as long as the law requires.',
+    'privacy.rights.6': 'Name a nominee: someone who can use these rights for you if you die or cannot act yourself.',
+    'privacy.myPrivacy': 'Go to Your privacy',
     'privacy.device.title': 'On this phone or computer',
     'privacy.device.body':
       'The portal keeps you signed in with one secure cookie and remembers your language choice. It uses no advertising or tracking cookies. You are signed out after {minutes} minutes without activity.',
@@ -66,7 +72,7 @@ export const profileMessages = defineMessages({
     'profile.dob': 'जन्म तिथि',
     'profile.bloodGroup': 'ब्लड ग्रुप',
     'profile.phone': 'मोबाइल नंबर',
-    'profile.correct': 'कुछ गलत है? अगली मुलाक़ात पर फ्रंट डेस्क से इसे ठीक करवाएँ।',
+    'profile.correct': 'कुछ गलत है? इसे यहाँ से, या अगली मुलाक़ात पर फ्रंट डेस्क से ठीक करवाएँ।',
     'profile.family': 'परिवार के सदस्य',
     'profile.language': 'भाषा',
     'profile.more': 'और',
@@ -99,12 +105,19 @@ export const profileMessages = defineMessages({
     'privacy.family.body':
       'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
     'privacy.rights.title': 'आपके अधिकार',
-    'privacy.rights.1': 'अपनी जानकारी देखना: यह इस पोर्टल में है, और आप अपने रिकॉर्ड की कॉपी माँग सकते हैं।',
-    'privacy.rights.2': 'इसे ठीक करवाना: जो भी गलत या पुराना हो, उसे फ्रंट डेस्क से ठीक करवाएँ।',
+    'privacy.rights.1':
+      'अपनी जानकारी देखना: यह इस पोर्टल में है, जहाँ हमारे पास मौजूद आपके पूरे डेटा का मुफ़्त सारांश भी है, और आप अपने रिकॉर्ड की कॉपी माँग सकते हैं।',
+    'privacy.rights.2':
+      'इसे ठीक करवाना: जो भी गलत या पुराना हो, उसे इस पोर्टल में "आपकी गोपनीयता" से या फ्रंट डेस्क पर ठीक करवाएँ।',
     'privacy.rights.3':
       'जिन संदेशों की सहमति दी है उन्हें बंद करना: अपनी पसंद कभी भी बदलें। आपकी देखभाल पर कोई असर नहीं पड़ता।',
     'privacy.rights.4':
-      'शिकायत करना: फ्रंट डेस्क के ज़रिए अस्पताल के शिकायत अधिकारी से बात करें। संतुष्ट न हों, तो आप भारतीय डेटा संरक्षण बोर्ड से संपर्क कर सकते हैं।',
+      'शिकायत करना: "आपकी गोपनीयता" में या फ्रंट डेस्क पर शिकायत करें, अस्पताल के शिकायत अधिकारी आपको जवाब देंगे। हमारे जवाब के बाद भी आप संतुष्ट न हों, तो आप भारतीय डेटा संरक्षण बोर्ड में शिकायत कर सकते हैं।',
+    'privacy.rights.5':
+      'जहाँ कानून अनुमति दे, वहाँ इसे मिटवाना: जो डेटा हमें रखना ज़रूरी नहीं, जैसे संदेश और फ़ीडबैक, उसे मिटाने के लिए कहें। मेडिकल रिकॉर्ड और बिल उतने समय तक रखे जाते हैं जितना कानून कहता है।',
+    'privacy.rights.6':
+      'नॉमिनी चुनना: कोई ऐसा व्यक्ति जो आपकी मृत्यु के बाद या आपके स्वयं कुछ न कर पाने पर आपकी ओर से ये अधिकार इस्तेमाल कर सके।',
+    'privacy.myPrivacy': '"आपकी गोपनीयता" पर जाएँ',
     'privacy.device.title': 'इस फ़ोन या कंप्यूटर पर',
     'privacy.device.body':
       'पोर्टल एक सुरक्षित कुकी से आपको साइन इन रखता है और आपकी भाषा की पसंद याद रखता है। इसमें विज्ञापन या ट्रैकिंग कुकी नहीं हैं। {minutes} मिनट तक कोई गतिविधि न होने पर आप साइन आउट हो जाते हैं।',

@@ -6,6 +6,7 @@ import { common } from './messages/common';
 import { doctorMessages } from './messages/doctors';
 import { feedbackMessages } from './messages/feedback';
 import { homeMessages } from './messages/home';
+import { myPrivacyMessages } from './messages/myPrivacy';
 import { prescriptionMessages } from './messages/prescriptions';
 import { profileMessages } from './messages/profile';
 import { recordMessages } from './messages/records';
@@ -29,6 +30,7 @@ export const MESSAGE_SETS = {
   records: recordMessages,
   feedback: feedbackMessages,
   profile: profileMessages,
+  myPrivacy: myPrivacyMessages,
   verify: verifyMessages,
   home: homeMessages,
 } as const;

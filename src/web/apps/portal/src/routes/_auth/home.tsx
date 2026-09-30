@@ -26,6 +26,8 @@ import { billQueries } from '@/modules/bills/api';
 import { isDue, totalDue } from '@/modules/bills/labels';
 import { greetingKey } from '@/modules/home/greeting';
 import { prescriptionQueries } from '@/modules/prescriptions/api';
+import { privacyQueries } from '@/modules/privacy/api';
+import { NoticeCards } from '@/modules/privacy/NoticeCards';
 import { kindSegment, reportQueries } from '@/modules/reports/api';
 import { REPORT_KIND } from '@/modules/reports/icons';
 import { videoQueries } from '@/modules/video/api';
@@ -142,6 +144,8 @@ function HomePage() {
         </div>
       )}
 
+      <PrivacyNotices />
+
       <section className={styles.section} aria-labelledby="home-quick">
         <h2 id="home-quick" className={styles.sectionTitle}>
           {t('home.quick')}
@@ -194,6 +198,17 @@ function Section({
       {children}
     </section>
   );
+}
+
+/**
+ * Notices the hospital sent about an incident involving this person's data. Patients without a phone or e-mail see
+ * them only in the portal, so they sit at the top of home (nothing is shown while loading or when the check fails;
+ * the "Your privacy" page says so and offers a retry).
+ */
+function PrivacyNotices() {
+  const { profile } = useActiveProfile();
+  const notices = useQuery(privacyQueries.notices(profile.id));
+  return notices.data ? <NoticeCards notices={notices.data} /> : null;
 }
 
 function NextAppointment() {
