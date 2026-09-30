@@ -210,3 +210,10 @@ public sealed record WhatsAppOptOutChanged(
     DateTimeOffset RepliedAt,
     string ProviderMessageId,
     Guid? FacilityId) : DomainEvent;
+
+/// <summary>
+/// The retention period for out-patient (<paramref name="Inpatient"/> false) or in-patient medical records changed
+/// (see <see cref="Settings.RecordRetention"/>). Raised by Privacy when an administrator changes the schedule; Clinical
+/// moves the retention date of the charts already completed by the difference, so every chart follows the schedule.
+/// </summary>
+public sealed record RecordRetentionChanged(bool Inpatient, int PreviousYears, int Years) : DomainEvent;
