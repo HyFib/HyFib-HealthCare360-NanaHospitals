@@ -158,10 +158,15 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     where they come from.
   - A real secret found in a commit must be revoked at its provider first. Removing it from the files is not enough,
     because the history keeps it.
-- **Static analysis:** every .NET security analyzer rule is an error, including those off by default: native library
-  loading, TLS and certificate validation, weak cryptography, insecure randomness and SQL built from text.
-  - An accepted exception is a `[SuppressMessage]` next to the code, with its justification. Each one is listed below.
-  - Test projects are exempt from the SQL-text and randomness rules, because test code never ships.
+- **Static analysis:**
+  - **.NET:** every security analyzer rule is an error, including those off by default: native library loading, TLS
+    and certificate validation, weak cryptography, insecure randomness and SQL built from text. An accepted exception
+    is a `[SuppressMessage]` next to the code, with its justification; each one is listed below. Test projects are
+    exempt from the SQL-text and randomness rules, because test code never ships.
+  - **Web apps:** ESLint refuses code built from strings (`eval`, `new Function`, `javascript:` links). It also refuses
+    HTML written straight into the page (`innerHTML`, `insertAdjacentHTML`, `document.write` and the like), where
+    React's escaping does not apply. A reviewed use carries an `eslint-disable` comment saying why its markup is safe.
+    The only one is the portal's in-page print, whose templates escape every value.
 
 | Rule | Where | Why it is accepted |
 |---|---|---|

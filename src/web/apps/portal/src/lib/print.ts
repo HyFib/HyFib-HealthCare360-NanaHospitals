@@ -54,6 +54,7 @@ function ensureRoot(): HTMLElement {
 /** Opens the browser's print dialog for the document (which also offers "Save as PDF"). */
 export function printPortalDocument(doc: PrintableDocument): void {
   const root = ensureRoot();
+  // eslint-disable-next-line no-unsanitized/property -- the modules' templates escape every value, and the styles are their constants
   root.innerHTML = `<style>@media print {${BASE_STYLES}${scopeStyles(doc.styles ?? '')}}</style>${doc.body}`;
   const previousTitle = document.title;
   document.title = doc.title;
