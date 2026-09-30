@@ -154,7 +154,7 @@ internal static class OrganizationEndpoints
 
         masters.MapGet("/practitioners", ListPractitioners).RequirePermission(PlatformPermissions.MastersRead);
         masters.MapGet("/practitioners/{id:guid}", async (Guid id, HospitalDbContext db, CancellationToken ct) =>
-                await PractitionerQuery(db).Where(p => p.Id == id).FirstOrDefaultAsync(ct) is { } dto
+                await PractitionerQuery(db, db.Set<Practitioner>().Where(p => p.Id == id)).FirstOrDefaultAsync(ct) is { } dto
                     ? TypedResults.Ok(dto)
                     : Error.NotFound(nameof(Practitioner), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
@@ -388,12 +388,17 @@ internal static class OrganizationEndpoints
 
     // ---------------------------------------------------------------- practitioners
 
-    private static IQueryable<PractitionerDto> PractitionerQuery(HospitalDbContext db) =>
-        from p in db.Set<Practitioner>()
+    /// <summary>
+    /// The given practitioners as <see cref="PractitionerDto"/>, in name order. Filter the entities before projecting them:
+    /// EF cannot translate a filter or a sort on a record built by its constructor.
+    /// </summary>
+    internal static IQueryable<PractitionerDto> PractitionerQuery(HospitalDbContext db, IQueryable<Practitioner> practitioners) =>
+        from p in practitioners
         join s in db.Set<Specialty>() on p.SpecialtyId equals s.Id into specialties
         from s in specialties.DefaultIfEmpty()
         join d in db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on p.DepartmentId equals d.Id into departments
         from d in departments.DefaultIfEmpty()
+        orderby p.DisplayName
         select new PractitionerDto(
             p.Id, p.Code, p.Title, p.FirstName, p.LastName, p.DisplayName, p.Gender, p.Qualification, p.RegistrationCouncil, p.RegistrationNumber,
             p.SpecialtyId, s != null ? s.Name : null, p.DepartmentId, d != null ? d.Name : null, p.Kind, p.Phone, p.Email,
@@ -404,7 +409,13 @@ internal static class OrganizationEndpoints
         [AsParameters] PageQuery query, Guid? departmentId, Guid? specialtyId, PractitionerKind? kind, bool? active, HospitalDbContext db, CancellationToken ct)
     {
         var page = query.ToRequest();
-        var q = PractitionerQuery(db);
+        var practitioners = FilterPractitioners(db.Set<Practitioner>(), departmentId, specialtyId, kind, active, page.SearchTerm);
+        return TypedResults.Ok(await PractitionerQuery(db, practitioners).ToPagedResultAsync(page, ct));
+    }
+
+    internal static IQueryable<Practitioner> FilterPractitioners(
+        IQueryable<Practitioner> q, Guid? departmentId, Guid? specialtyId, PractitionerKind? kind, bool? active, string? searchTerm)
+    {
         if (departmentId is not null)
         {
             q = q.Where(p => p.DepartmentId == departmentId);
@@ -425,13 +436,13 @@ internal static class OrganizationEndpoints
             q = q.Where(p => p.IsActive == active);
         }
 
-        if (page.SearchTerm is { } term)
+        if (searchTerm is not null)
         {
-            var like = term.ToLikePattern();
+            var like = searchTerm.ToLikePattern();
             q = q.Where(p => EF.Functions.ILike(p.DisplayName, like) || EF.Functions.ILike(p.Code, like) || (p.RegistrationNumber != null && EF.Functions.ILike(p.RegistrationNumber, like)));
         }
 
-        return TypedResults.Ok(await q.OrderBy(p => p.DisplayName).ToPagedResultAsync(page, ct));
+        return q;
     }
 
     private static async Task<IResult> SavePractitioner(Guid? id, SavePractitionerRequest request, HospitalDbContext db, CancellationToken ct)

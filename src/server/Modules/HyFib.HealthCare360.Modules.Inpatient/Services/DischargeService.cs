@@ -40,10 +40,12 @@ public sealed class DischargeService(
             admission.DischargeNotes = request.Notes.Trim();
         }
 
+        // Everything billable up to now goes on the bill before Billing prepares the final bill: the due days are staged
+        // in this unit of work, so Billing's DischargeInitiated handler, which runs inside this save, drafts the final
+        // bill with them.
+        var posted = await charges.StageDueBedDaysAsync(admission.Id, now, ct);
         await db.SaveChangesAsync(ct);
 
-        // Everything billable up to now goes on the bill before Billing prepares the final bill.
-        var posted = await charges.PostDueBedDaysAsync(admission.Id, now, ct);
         await realtime.ToFacilityAsync(admission.FacilityId, InpatientRealtime.DischargeInitiated, new { admissionId = admission.Id }, ct);
         await InpatientRealtime.AdmissionChangedAsync(realtime, admission, ct);
         return ToResult(admission, posted);

@@ -1,4 +1,3 @@
-using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
@@ -86,6 +85,13 @@ public sealed class EndpointAuthorizationTests
         // FHIR requires a public capability statement; the catch-all only answers "not found" in FHIR's format.
         "GET /fhir/r4/metadata",
         "ANY /fhir/{**rest}",
+
+        // Health checks for the service manager and monitoring: they say only whether the server and database are up.
+        "ANY /health/live",
+        "ANY /health/ready",
+
+        // An unknown API address answers "not found" instead of the staff app's page.
+        "ANY /api/{**rest}",
     ];
 
     /// <summary>Endpoints any signed-in user may call, each of which must limit itself to the caller's own data.</summary>
@@ -155,7 +161,7 @@ public sealed class EndpointAuthorizationTests
         fallback.ShouldNotBeNull().Requirements.ShouldContain(r => r is DenyAnonymousAuthorizationRequirement);
     }
 
-    /// <summary>Builds the server's endpoints as Program.cs maps them, without starting it or opening the database.</summary>
+    /// <summary>Builds the server's endpoints as Program.cs composes them, without starting it or opening the database.</summary>
     private static WebApplication BuildApp()
     {
         var dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "endpoints-" + Guid.NewGuid().ToString("N"));
@@ -174,11 +180,10 @@ public sealed class EndpointAuthorizationTests
             // As Program.cs does; the certificates themselves are only created when the server starts.
             var options = new PlatformOptions { DataDirectory = dataDirectory };
             var certificates = new LanCertificateManager(new DataDirectories(options), options, new EphemeralDataProtectionProvider(), NullLogger<LanCertificateManager>.Instance);
-            builder.Services.AddHospitalPlatform(builder.Configuration, builder.Environment, ServerModules.All, typeof(ServerModules).Assembly.GetName().Name!, certificates);
-            builder.Services.AddSignalR();
+            builder.AddServerApplication(certificates);
 
             var app = builder.Build();
-            app.MapHospitalPlatform();
+            app.UseServerApplication();
             return app;
         }
         finally

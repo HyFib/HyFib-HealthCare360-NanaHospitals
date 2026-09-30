@@ -7,7 +7,8 @@ the Tally day book. SRS **MB-01..06, OPB-01..07, IPB-01..08, INS-01..07, DFA-01.
 **INT-PG / INT-POS / INT-TALLY**, and OA-03 (appointment prepayments).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Billing` (layer 7; references Patients and Scheduling).
-Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (229 unit tests, all pure domain).
+Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (232 unit tests: pure domain, plus
+change-tracking checks on the real EF model without a database).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
 fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).

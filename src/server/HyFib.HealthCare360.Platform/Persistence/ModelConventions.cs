@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace HyFib.HealthCare360.Platform.Persistence;
 
@@ -12,6 +13,17 @@ internal static class ModelConventions
         foreach (var entityType in modelBuilder.Model.GetEntityTypes().ToList())
         {
             var clrType = entityType.ClrType;
+
+            // An entity gets its Id when it is constructed (Entity.Id = Guid.CreateVersion7()); EF never generates it. EF
+            // must be told so: it assumes an untracked entity found through a navigation with a *generated* key already set
+            // is an existing row. A new child added to a loaded aggregate (a claim's settlement, a shift's closing totals,
+            // a report's amendment) would then be UPDATEd instead of INSERTed, and the save would fail as a conflict.
+            if (!entityType.IsOwned() && typeof(Entity).IsAssignableFrom(clrType)
+                && entityType.FindPrimaryKey() is { Properties: [{ Name: nameof(Entity.Id) } id] })
+            {
+                id.ValueGenerated = ValueGenerated.Never;
+            }
+
             var versioned = typeof(IVersioned).IsAssignableFrom(clrType);
             var softDeletable = typeof(ISoftDeletable).IsAssignableFrom(clrType);
             var facilityScoped = typeof(IFacilityScoped).IsAssignableFrom(clrType);

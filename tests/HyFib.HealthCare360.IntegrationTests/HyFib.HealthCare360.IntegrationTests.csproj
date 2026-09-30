@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    End-to-end journeys (SRS §9) through the whole server, its real middleware and endpoints, against PostgreSQL.
+    The database comes from HC360_TEST_DATABASE when set (CI), otherwise from a throwaway Docker container.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\server\HyFib.HealthCare360.Server\HyFib.HealthCare360.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+</Project>
