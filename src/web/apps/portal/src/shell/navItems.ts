@@ -10,6 +10,7 @@ import {
   QrCodeRegular,
   ReceiptRegular,
   ShieldCheckmarkRegular,
+  ShieldPersonRegular,
   StethoscopeRegular,
   VideoRegular,
 } from '@fluentui/react-icons';
@@ -25,6 +26,7 @@ export type NavPath =
   | '/bills'
   | '/records'
   | '/my-feedback'
+  | '/my-privacy'
   | '/profile'
   | '/verify'
   | '/privacy';
@@ -48,6 +50,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { to: '/bills', label: 'nav.bills', icon: ReceiptRegular, primary: true },
   { to: '/records', label: 'nav.records', icon: HeartPulseRegular },
   { to: '/my-feedback', label: 'nav.feedback', icon: PersonFeedbackRegular },
+  { to: '/my-privacy', label: 'nav.myPrivacy', icon: ShieldPersonRegular },
   { to: '/profile', label: 'nav.profile', icon: PersonCircleRegular },
 ];
 

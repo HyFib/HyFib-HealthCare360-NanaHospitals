@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Numbering;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
@@ -10,7 +11,13 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// MRD chart tracking (MRD-03/04/05): charts per admission/encounter, deficiencies (manual and detected by a scan of
 /// the record), completion with retention dates, archival, and record requests with issue/return tracking.
 /// </summary>
-public sealed class MedicalRecordService(HospitalDbContext db, INumberSeries numbers, ClinicalAccess access, ICurrentUser currentUser, TimeProvider time)
+public sealed class MedicalRecordService(
+    HospitalDbContext db,
+    INumberSeries numbers,
+    ClinicalAccess access,
+    ICurrentUser currentUser,
+    ISettingsService settings,
+    TimeProvider time)
 {
     /// <summary>In-patient charts are due for completion this many days after discharge (common Indian hospital policy).</summary>
     public const int ChartCompletionDays = 7;
@@ -90,9 +97,14 @@ public sealed class MedicalRecordService(HospitalDbContext db, INumberSeries num
             : await ChangeAsync(chartId.Value, chart => chart.ResolveDeficiency(deficiencyId, currentUser.UserId, note, time.GetUtcNow()), ct);
     }
 
-    public Task<Result<MedicalRecordDto>> CompleteAsync(Guid chartId, CancellationToken ct) =>
-        ChangeAsync(chartId, chart => chart.Complete(currentUser.UserId, time.GetUtcNow(),
-            chart.DischargedAt is { } discharged ? ClinicalClock.LocalDate(discharged) : time.Today()), ct);
+    /// <summary>Completes the chart; its retention date follows the schedule in force (SRS PRV-02, set in Privacy).</summary>
+    public async Task<Result<MedicalRecordDto>> CompleteAsync(Guid chartId, CancellationToken ct)
+    {
+        var outPatientYears = await RecordRetention.YearsAsync(settings, inpatient: false, ct);
+        var inPatientYears = await RecordRetention.YearsAsync(settings, inpatient: true, ct);
+        return await ChangeAsync(chartId, chart => chart.Complete(currentUser.UserId, time.GetUtcNow(),
+            chart.DischargedAt is { } discharged ? ClinicalClock.LocalDate(discharged) : time.Today(), outPatientYears, inPatientYears), ct);
+    }
 
     public Task<Result<MedicalRecordDto>> ArchiveAsync(Guid chartId, string location, CancellationToken ct) =>
         ChangeAsync(chartId, chart => chart.Archive(location, time.GetUtcNow()), ct);

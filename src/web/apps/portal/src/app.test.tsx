@@ -1,7 +1,7 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPortalRouter } from './router';
@@ -29,6 +29,9 @@ function json(body: unknown, status = 200): Response {
 }
 
 const requests: { method: string; url: string }[] = [];
+
+/** Set by a test to make the anonymous privacy contact endpoint fail (it is rate-limited in production). */
+let privacyContactFails = false;
 
 /** The first page of a run also loads its lazily split route code. */
 const SLOW = { timeout: 8000 };
@@ -61,6 +64,22 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   if (url.includes(`/api/v1/public/unsubscribe/${TOKEN}`)) {
     return method === 'GET' ? json({ alreadyOptedOut: false }) : new Response(null, { status: 204 });
   }
+  if (url.endsWith('/api/v1/public/privacy')) {
+    if (privacyContactFails) {
+      return json({ title: 'Too many requests', status: 429 }, 429);
+    }
+    return json({
+      hospital: 'Nana Hospitals',
+      contact: {
+        title: 'Grievance Officer',
+        name: 'Anita Rao',
+        email: 'privacy@nanahospitals.example',
+        phone: '+919876543210',
+        address: 'Nana Hospitals, Pune 411001',
+      },
+      responseDays: 30,
+    });
+  }
   return json({ title: 'Not found', status: 404 }, 404);
 });
 
@@ -80,6 +99,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   requests.length = 0;
+  privacyContactFails = false;
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -155,10 +175,31 @@ describe('printed QR codes', () => {
 });
 
 describe('public pages', () => {
-  it('shows the privacy notice without sign-in', async () => {
+  it('shows the privacy notice without sign-in, with the grievance officer the hospital publishes', async () => {
     openAt('/portal/privacy');
     expect(await screen.findByRole('heading', { name: 'Privacy notice', level: 1 }, SLOW)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(await screen.findByText('Anita Rao', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('Grievance Officer')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'privacy@nanahospitals.example' })).toHaveAttribute(
+      'href',
+      'mailto:privacy@nanahospitals.example',
+    );
+    expect(screen.getByRole('link', { name: '+91 98765 43210' })).toHaveAttribute('href', 'tel:+919876543210');
+    expect(screen.getByText('We reply within 30 days.')).toBeInTheDocument();
+    expect(screen.getByText(/Data Protection Board of India/)).toBeInTheDocument();
+    // "Your privacy" needs a signed-in patient.
+    expect(screen.queryByRole('link', { name: 'Go to Your privacy' })).not.toBeInTheDocument();
+    expect(requests.some((request) => request.url.endsWith('/api/v1/public/privacy'))).toBe(true);
+  });
+
+  it('keeps the privacy notice when the grievance officer cannot be loaded', async () => {
+    privacyContactFails = true;
+    openAt('/portal/privacy');
+    expect(await screen.findByRole('heading', { name: 'Privacy notice', level: 1 }, SLOW)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your rights' })).toBeInTheDocument();
+    await waitFor(() => expect(requests.some((request) => request.url.endsWith('/api/v1/public/privacy'))).toBe(true));
+    expect(screen.queryByRole('heading', { name: 'Whom to contact' })).not.toBeInTheDocument();
   });
 
   it('sends signed-out visitors of a signed-in page to sign-in', async () => {

@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Settings;
+
 namespace HyFib.HealthCare360.Modules.Clinical.Domain;
 
 public enum MedicalRecordStatus
@@ -26,8 +28,10 @@ public enum DeficiencyType
 /// </summary>
 public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
 {
-    public const int OutPatientRetentionYears = 3;
-    public const int InPatientRetentionYears = 5;
+    /// <summary>The shortest retention the SRS allows; the schedule in force comes from <see cref="RecordRetention"/>.</summary>
+    public const int OutPatientRetentionYears = RecordRetention.MinimumOutpatientYears;
+
+    public const int InPatientRetentionYears = RecordRetention.MinimumInpatientYears;
 
     public Guid FacilityId { get; set; }
     public Guid PatientId { get; set; }
@@ -114,7 +118,12 @@ public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    public Result Complete(Guid? userId, DateTimeOffset now, DateOnly referenceDate)
+    /// <summary>
+    /// Completes the chart and dates its retention: <paramref name="referenceDate"/> (discharge, or completion for an
+    /// out-patient chart) plus the period in force for its kind.
+    /// </summary>
+    public Result Complete(Guid? userId, DateTimeOffset now, DateOnly referenceDate,
+        int outPatientYears = OutPatientRetentionYears, int inPatientYears = InPatientRetentionYears)
     {
         if (Status is MedicalRecordStatus.Complete or MedicalRecordStatus.Archived)
         {
@@ -129,7 +138,7 @@ public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
         Status = MedicalRecordStatus.Complete;
         CompletedAt = now;
         CompletedByUserId = userId;
-        RetainUntil = RetentionUntil(IsInpatient, IsMlc, referenceDate);
+        RetainUntil = RetentionUntil(IsInpatient, IsMlc, referenceDate, outPatientYears, inPatientYears);
         return Result.Success();
     }
 
@@ -147,8 +156,9 @@ public sealed class MedicalRecord : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>Retention rule (PRV-02); a null result means the record must never be destroyed.</summary>
-    public static DateOnly? RetentionUntil(bool isInpatient, bool isMlc, DateOnly referenceDate) =>
-        isMlc ? null : referenceDate.AddYears(isInpatient ? InPatientRetentionYears : OutPatientRetentionYears);
+    public static DateOnly? RetentionUntil(bool isInpatient, bool isMlc, DateOnly referenceDate,
+        int outPatientYears = OutPatientRetentionYears, int inPatientYears = InPatientRetentionYears) =>
+        isMlc ? null : referenceDate.AddYears(isInpatient ? inPatientYears : outPatientYears);
 }
 
 public sealed class ChartDeficiency : Entity

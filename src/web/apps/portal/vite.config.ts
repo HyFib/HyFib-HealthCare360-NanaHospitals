@@ -35,5 +35,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Page tests boot the whole router in jsdom and wait up to 8 s for a page (SLOW in app.test.tsx). When the staff
+    // and portal suites run side by side (pnpm -r test, as CI does) that can take longer than the 5 s default.
+    testTimeout: 20_000,
   },
 });

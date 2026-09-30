@@ -114,6 +114,9 @@ internal sealed class InsuranceClaimConfiguration : IEntityTypeConfiguration<Ins
         b.HasIndex(x => x.BillId);
         b.HasIndex(x => new { x.PayerId, x.Status });
         b.HasIndex(x => new { x.Status, x.SubmittedAt });
+
+        // A patient's claims, for their data summary: which insurers received their data (DPDP access requests).
+        b.HasIndex(x => x.PatientId);
     }
 }
 

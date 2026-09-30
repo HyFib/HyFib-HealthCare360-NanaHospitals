@@ -111,6 +111,9 @@ internal sealed class CampaignRecipientConfiguration : IEntityTypeConfiguration<
         b.HasIndex(x => new { x.CampaignId, x.PatientId }).IsUnique();
         b.HasIndex(x => x.OptOutTokenHash).IsUnique();
         b.HasIndex(x => x.NotificationLogId);
+
+        // The patient's data summary counts the campaigns sent to them (DPDP access requests).
+        b.HasIndex(x => x.PatientId);
     }
 }
 

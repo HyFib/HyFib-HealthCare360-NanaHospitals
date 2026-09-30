@@ -110,6 +110,39 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - An events connection lasts only as long as the token it opened with; a signed-out or revoked session cannot
     reconnect. (Video-consultation connections stay until the call ends.)
 
+### Personal data (DPDP Act 2023)
+The Privacy module ([privacy.md](../modules/privacy.md)) carries the hospital's duties under the Digital Personal Data
+Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 2027):
+- **Rights.**
+  - Patients see a summary of the data held about them in the portal at any time: what is held, why and on what
+    basis, how long it is kept, and who received it.
+  - They ask for corrections, erasure or a grievance to be answered, and name a nominee.
+  - The front desk records the same requests for patients without the portal.
+- **Answering requests.**
+  - The grievance officer's queue shows each reply-by date (the hospital's published period, 30 days by default and
+    never more than 90).
+  - Data is given out, changed or erased only after the requester's identity, and their authority to act for the
+    patient, has been checked.
+  - Every reply names whom to contact.
+- **Erasure stops at the law.**
+  - What can go goes at once: optional messages, the patient's name on feedback, complaints and enquiries, the
+    nominee, and the portal account.
+  - Medical records, bills and the audit trail are kept for their legal period (medico-legal records permanently).
+  - The request records until when.
+- **Breaches.**
+  - The breach register starts the Board's 72-hour clock when the hospital becomes aware of a breach.
+  - It records the intimation, any extension and the detailed report.
+  - Every person affected is told by SMS and e-mail, and in the portal: what happened, what it may mean, what the
+    hospital is doing, what they can do, and whom to contact.
+- **Retention.**
+  - A nightly clean-up deletes the outbox (the full text of each message, sign-in codes included) after 30 days.
+  - It deletes the message, integration and sign-in logs after a year (the Rules' minimum).
+  - Medical records past their 3- or 5-year period are listed for the medical records team, never deleted
+    automatically.
+  - Every period is on one screen, and none can be set below its legal minimum.
+- **Completeness.** An architecture test fails when a table that holds a patient id is missing from the personal
+  data catalogue, so the data summary cannot fall behind the database.
+
 ### Integrity and audit
 - **Tamper-evident audit log**:
   - Each entry is hash-chained to the previous one.
@@ -219,7 +252,13 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 5. Store the backup recovery key and the postgres password offline, in the hospital safe. Run a restore test every
    quarter.
 6. Review the audit log for break-the-glass and restricted-record access every month (NABH IMS).
-7. Report suspected incidents to HyFib and follow the hospital's breach-notification process under the DPDP Act.
+7. Record a suspected personal data breach in Privacy › Data breaches as soon as it is known: the Data Protection Board
+   must be told without delay, and sent the detailed report within 72 hours. Report it to HyFib as well.
+8. Name the grievance officer in Privacy › Privacy settings. Register the privacy SMS templates with DLT and set their
+   template ids, as for the other SMS templates (`privacy.request.received`, `privacy.request.closed`,
+   `privacy.breach.notice`); without them those SMS are not sent.
+9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
+   review the charts it lists as past their period.
 
 ## 4. Reporting a vulnerability
 

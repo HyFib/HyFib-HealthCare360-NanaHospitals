@@ -1,9 +1,15 @@
 import { Avatar, Button, makeStyles, Spinner, tokens } from '@fluentui/react-components';
-import { DocumentCheckmarkRegular, MegaphoneRegular, ShieldLockRegular, SignOutRegular } from '@fluentui/react-icons';
+import {
+  DocumentCheckmarkRegular,
+  MegaphoneRegular,
+  ShieldLockRegular,
+  ShieldPersonRegular,
+  SignOutRegular,
+} from '@fluentui/react-icons';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { InfoList } from '@/components/InfoList';
-import { CardLink } from '@/components/links';
+import { CardLink, TextLink } from '@/components/links';
 import { ListRow } from '@/components/ListRow';
 import { PortalPage } from '@/components/PortalPage';
 import { useT } from '@/i18n';
@@ -31,6 +37,7 @@ const useStyles = makeStyles({
   },
   personUhid: { margin: 0, color: tokens.colorNeutralForeground2 },
   hint: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
+  correct: { alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', minHeight: '44px' },
   links: { display: 'flex', flexDirection: 'column', gap: '10px' },
   signOut: { alignSelf: 'flex-start', minWidth: '200px' },
 });
@@ -74,6 +81,9 @@ function ProfilePage() {
           ]}
         />
         <p className={styles.hint}>{t('profile.correct')}</p>
+        <TextLink to="/my-privacy/requests/new" search={{ type: 'correction' }} className={styles.correct}>
+          {t('myPrivacy.hub.correct')}
+        </TextLink>
       </ReportCard>
 
       {profiles.length > 1 && (
@@ -88,6 +98,9 @@ function ProfilePage() {
 
       <ReportCard title={t('profile.more')}>
         <div className={styles.links}>
+          <CardLink to="/my-privacy">
+            <ListRow icon={<ShieldPersonRegular />} title={t('nav.myPrivacy')} subtitle={t('myPrivacy.profile.hint')} />
+          </CardLink>
           <CardLink to="/profile/preferences">
             <ListRow
               icon={<MegaphoneRegular />}

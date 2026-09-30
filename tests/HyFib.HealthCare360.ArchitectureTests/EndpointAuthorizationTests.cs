@@ -63,6 +63,10 @@ public sealed class EndpointAuthorizationTests
         "GET /api/v1/public/doctors/{id:guid}",
         "GET /api/v1/public/doctors/{id:guid}/slots",
 
+        // The privacy notice names the grievance officer and the response period for everyone (DPDP Rules 2025, rules 9
+        // and 14): published contact details only.
+        "GET /api/v1/public/privacy",
+
         // Telehealth: every hub call is checked against a signed-in patient or a guest join token.
         "ANY /hubs/telehealth",
         "ANY /hubs/telehealth/negotiate",
