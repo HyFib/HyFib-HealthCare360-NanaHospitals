@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Anthropic;
+using HyFib.HealthCare360.Platform.Http;
 
 namespace HyFib.HealthCare360.Modules.AI.Services.Claude;
 
@@ -28,8 +29,10 @@ internal sealed class AnthropicClientProvider : IAnthropicClientProvider
         {
             if (_client is null || _fingerprint != fingerprint)
             {
-                // SDK retries (429/5xx/connection errors) stay at their default; the timeout bounds each attempt.
-                _client = new AnthropicClient { ApiKey = apiKey, Timeout = timeout, MaxRetries = 2 };
+                // SDK retries (429/5xx/connection errors) stay at their default; the timeout bounds each attempt. The
+                // connection follows no redirects and needs TLS 1.2 or later (OutboundHttp), like every other provider.
+                var http = new HttpClient(OutboundHttp.CreateHandler()) { Timeout = timeout + TimeSpan.FromSeconds(30) };
+                _client = new AnthropicClient { ApiKey = apiKey, Timeout = timeout, MaxRetries = 2, HttpClient = http };
                 _fingerprint = fingerprint;
             }
 

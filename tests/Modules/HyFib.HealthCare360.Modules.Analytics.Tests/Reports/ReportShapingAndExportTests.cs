@@ -72,7 +72,7 @@ public sealed class ReportShapingAndExportTests
         var text = Encoding.UTF8.GetString(file.Content);
 
         file.FileName.ShouldBe("revenue-by-department_20260901-20260915.csv");
-        file.ContentType.ShouldBe("text/csv");
+        file.ContentType.ShouldBe("text/csv; charset=utf-8");
         file.Content.Take(3).ShouldBe(Encoding.UTF8.GetPreamble());
         text.ShouldContain("Nana Hospitals\r\n");
         text.ShouldContain("Revenue by department\r\n");

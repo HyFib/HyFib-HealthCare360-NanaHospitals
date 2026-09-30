@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.Platform.Http;
 using Microsoft.Extensions.Http.Resilience;
 
 namespace HyFib.HealthCare360.Integrations.Common;
@@ -35,6 +36,7 @@ internal static class IntegrationHttp
                 client.MaxResponseContentBufferSize = MaxResponseBytes;
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HealthCare360/1.0");
             })
+            .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
             .AddStandardResilienceHandler(options =>
             {
                 options.AttemptTimeout.Timeout = attemptTimeout;

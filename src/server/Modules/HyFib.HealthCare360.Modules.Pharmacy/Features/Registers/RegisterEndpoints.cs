@@ -132,7 +132,7 @@ internal static class RegisterEndpoints
                 r.ReferenceNumber, r.RecordedBy))
             .Prepend(Csv.Row("Date/time", "Store", "Drug", "Schedule", "Batch", "Expiry", "Movement", "In", "Out", "Balance", "Patient", "UHID",
                 "Address", "Prescriber", "Reg. no.", "Prescription", "Reference", "Recorded by"));
-        return TypedResults.File(Csv.Build(lines), "text/csv", string.Create(CultureInfo.InvariantCulture, $"controlled-drug-register-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}.csv"));
+        return TypedResults.File(Csv.Build(lines), "text/csv; charset=utf-8", string.Create(CultureInfo.InvariantCulture, $"controlled-drug-register-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}.csv"));
     }
 
     private static async Task<IResult> ScheduleH(
@@ -163,7 +163,7 @@ internal static class RegisterEndpoints
                 Csv.Time(r.IssuedAt), r.DocumentNumber, r.Source, r.PatientName, r.PrescriberName, r.PrescriptionNumber, r.ItemName, r.BatchNumber,
                 Csv.Number(r.Quantity)))
             .Prepend(Csv.Row("Date/time", "Document", "Source", "Patient", "Prescriber", "Prescription", "Drug", "Batch", "Quantity"));
-        return TypedResults.File(Csv.Build(lines), "text/csv", string.Create(CultureInfo.InvariantCulture, $"schedule-h-register-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}.csv"));
+        return TypedResults.File(Csv.Build(lines), "text/csv; charset=utf-8", string.Create(CultureInfo.InvariantCulture, $"schedule-h-register-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}.csv"));
     }
 
     private static IQueryable<ControlledRegisterRow> ControlledQuery(

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net;
 using System.Security.Authentication;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -99,6 +100,13 @@ builder.Services.AddResponseCompression(compression =>
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 
+// A year, and every name under the server's own (there are none by default, so nothing else on the LAN is affected).
+builder.Services.AddHsts(hsts =>
+{
+    hsts.MaxAge = TimeSpan.FromDays(365);
+    hsts.IncludeSubDomains = true;
+});
+
 builder.Services.AddOpenApi(openApi =>
 {
     openApi.CreateSchemaReferenceId = OpenApiSchemaIds.Create;
@@ -159,6 +167,11 @@ app.UseResponseCompression();
 
 var contentTypes = new FileExtensionContentTypeProvider();
 contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+// The web apps' text files are UTF-8 (Vite's output): saying so leaves the browser nothing to guess.
+foreach (var (extension, type) in new[] { (".html", "text/html"), (".js", "text/javascript"), (".css", "text/css"), (".json", "application/json"), (".svg", "image/svg+xml") })
+{
+    contentTypes.Mappings[extension] = type + "; charset=utf-8";
+}
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -194,6 +207,24 @@ app.UseServerApplication();
 
 if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
 {
+    if (!app.Environment.IsDevelopment())
+    {
+        // Turned on by IT outside development: the reference and its schema answer only on the server machine itself,
+        // so the API's shape is not published to the hospital network. (Kestrel faces the network directly: the
+        // address is the connection's own.)
+        app.Use((context, next) =>
+        {
+            if ((context.Request.Path.StartsWithSegments("/docs") || context.Request.Path.StartsWithSegments("/openapi"))
+                && !IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.None))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+            }
+
+            return next(context);
+        });
+    }
+
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
 }

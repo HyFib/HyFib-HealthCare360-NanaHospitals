@@ -15,7 +15,21 @@ public sealed class SecurityHeadersTests
         csp.ShouldContain("script-src 'self' https://checkout.razorpay.com https://cdn.razorpay.com;");
         csp.ShouldContain("frame-src 'self' blob: https://checkout.razorpay.com https://api.razorpay.com;");
         csp.ShouldContain("frame-ancestors 'none'");
+        csp.ShouldContain("connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com;");
         headers["Cross-Origin-Opener-Policy"].ToString().ShouldBe("same-origin-allow-popups");
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/portal/sign-in")]
+    [InlineData("/api/v1/patients")]
+    public async Task Pages_send_data_only_to_known_hosts_and_cannot_rebase_their_links(string path)
+    {
+        var csp = (await HeadersFor(path)).ContentSecurityPolicy.ToString();
+
+        csp.ShouldNotContain(" https:;");
+        csp.ShouldNotContain("wss:");
+        csp.ShouldContain("base-uri 'none'");
     }
 
     [Theory]
@@ -27,6 +41,7 @@ public sealed class SecurityHeadersTests
         var headers = await HeadersFor(path);
 
         headers.ContentSecurityPolicy.ToString().ShouldContain("script-src 'self';");
+        headers.ContentSecurityPolicy.ToString().ShouldContain("connect-src 'self';");
         headers.ContentSecurityPolicy.ToString().ShouldNotContain("razorpay");
         headers["Cross-Origin-Opener-Policy"].ToString().ShouldBe("same-origin");
     }

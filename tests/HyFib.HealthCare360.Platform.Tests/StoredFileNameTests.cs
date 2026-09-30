@@ -1,0 +1,25 @@
+using HyFib.HealthCare360.Platform.Files;
+
+namespace HyFib.HealthCare360.Platform.Tests;
+
+public sealed class StoredFileNameTests
+{
+    [Theory]
+    [InlineData("discharge-summary.pdf", "application/pdf", "discharge-summary.pdf")]
+    [InlineData("Scan.JPEG", "image/jpeg", "Scan.JPEG")]
+    [InlineData("x-ray.jpg", "image/jpeg", "x-ray.jpg")]
+    [InlineData("ecg", "application/dicom", "ecg.dcm")]
+    public void A_name_that_fits_what_the_file_is_is_kept(string uploaded, string contentType, string stored) =>
+        EncryptedFileStore.FileNameFor(uploaded, contentType).ShouldBe(stored);
+
+    [Theory]
+    [InlineData("results.hta", "application/pdf", "results.pdf")]
+    [InlineData("results.html", "application/pdf", "results.pdf")]
+    [InlineData("invoice.pdf.exe", "application/pdf", "invoice.pdf.pdf")]
+    [InlineData("photo.png", "image/jpeg", "photo.jpg")]
+    [InlineData(@"C:\fakepath\..\run.bat", "image/png", "run.png")]
+    [InlineData(".hta", "image/webp", "document.webp")]
+    [InlineData(null, "application/pdf", "document.pdf")]
+    public void A_name_that_claims_to_be_something_else_takes_the_real_type(string? uploaded, string contentType, string stored) =>
+        EncryptedFileStore.FileNameFor(uploaded, contentType).ShouldBe(stored);
+}
