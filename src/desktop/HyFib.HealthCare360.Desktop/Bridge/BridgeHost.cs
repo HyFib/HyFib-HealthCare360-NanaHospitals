@@ -54,9 +54,22 @@ internal sealed class BridgeHost(
         });
     }
 
-    private bool IsTrustedSource(string source) =>
+    private bool IsTrustedSource(string source) => IsTrustedSource(source, serverOrigin);
+
+    /// <summary>
+    /// Only the staff app's pages may use the bridge (printers, device identity, notifications). The patient portal and
+    /// the API docs come from the same origin but run third-party script (the payment checkout, the API explorer), so
+    /// their messages are refused.
+    /// </summary>
+    internal static bool IsTrustedSource(string source, Uri serverOrigin) =>
         Uri.TryCreate(source, UriKind.Absolute, out var uri)
-        && Uri.Compare(uri, serverOrigin, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
+        && Uri.Compare(uri, serverOrigin, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0
+        && !IsUnder(uri, "/portal")
+        && !IsUnder(uri, "/docs");
+
+    private static bool IsUnder(Uri uri, string path) =>
+        uri.AbsolutePath.Equals(path, StringComparison.OrdinalIgnoreCase)
+        || uri.AbsolutePath.StartsWith(path + "/", StringComparison.OrdinalIgnoreCase);
 
     private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {

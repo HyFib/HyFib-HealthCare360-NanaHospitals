@@ -122,7 +122,7 @@ public sealed class TallyService(HospitalDbContext db, ISettingsService settings
         var exporter = services.GetService<IAccountingExporter>();
         var stamp = date.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         return exporter is not null
-            ? (Encoding.UTF8.GetBytes(exporter.BuildImportFile(vouchers)), "application/xml", $"tally-daybook-{stamp}.xml")
+            ? (Encoding.UTF8.GetBytes(exporter.BuildImportFile(vouchers)), "application/xml; charset=utf-8", $"tally-daybook-{stamp}.xml")
             : (JsonSerializer.SerializeToUtf8Bytes(vouchers, Json), "application/json", $"tally-daybook-{stamp}.json");
     }
 

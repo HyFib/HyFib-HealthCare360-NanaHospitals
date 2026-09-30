@@ -274,8 +274,10 @@ public static class PlatformServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseRouting();
-        app.UseRateLimiter();
         app.UseAuthentication();
+        // After authentication, so the per-user buckets (the global limit, AI) key on the signed-in user rather than on the
+        // address; sign-in, OTP and public endpoints stay per address.
+        app.UseRateLimiter();
         app.UseAuthorization();
         app.UseMiddleware<IdempotencyMiddleware>();
         return app;
@@ -294,7 +296,9 @@ public static class PlatformServiceCollectionExtensions
         SettingsEndpoints.Map(endpoints);
         SystemEndpoints.Map(endpoints);
         BackupEndpoints.Map(endpoints);
-        endpoints.MapHub<EventsHub>("/hubs/events");
+        // A connection lasts only as long as the access token it opened with: the client reconnects with a fresh one,
+        // which a signed-out or revoked session cannot get.
+        endpoints.MapHub<EventsHub>("/hubs/events", hub => hub.CloseOnAuthenticationExpiration = true);
         endpoints.MapHospitalModules();
         return endpoints;
     }

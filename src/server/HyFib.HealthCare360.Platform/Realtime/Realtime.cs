@@ -42,8 +42,9 @@ internal sealed class SignalRRealtimePublisher(IHubContext<EventsHub> hub, TimeP
 }
 
 /// <summary>
-/// Single real-time hub (<c>/hubs/events</c>). Every connection joins its user and facility groups;
-/// screens subscribe to extra topics (queue, bed board, ward…), each checked by <see cref="RealtimeTopicAuthorizer"/>.
+/// Single real-time hub (<c>/hubs/events</c>). Every connection joins its user's group, and a staff session with full
+/// access also its facility's (<see cref="RealtimeTopicAuthorizer.FacilityToJoin"/>). Screens subscribe to extra topics
+/// (queue, bed board, ward…), each checked by <see cref="RealtimeTopicAuthorizer"/>.
 /// SignalR reconnects automatically after WiFi drops and clients refetch on reconnect.
 /// </summary>
 [Authorize]
@@ -57,7 +58,7 @@ public sealed class EventsHub(RealtimeTopicAuthorizer topics) : Hub
             await Groups.AddToGroupAsync(Context.ConnectionId, Topics.User(userId));
         }
 
-        if (Guid.TryParse(user?.FindFirst(HcClaims.Facility)?.Value, out var facilityId))
+        if (RealtimeTopicAuthorizer.FacilityToJoin(user) is { } facilityId)
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, Topics.Facility(facilityId));
         }

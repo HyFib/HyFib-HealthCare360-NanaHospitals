@@ -105,7 +105,11 @@ public sealed class AuthService(
     private static readonly TimeSpan RefreshReuseGrace = TimeSpan.FromSeconds(60);
     private static string? _dummyHash;
 
-    private static readonly Error InvalidCredentials = new("auth.invalid_credentials", "Invalid username or password.", ErrorType.Unauthorized);
+    // Also the answer for a locked account, so a response never confirms that an account exists.
+    private static readonly Error InvalidCredentials = new(
+        "auth.invalid_credentials",
+        "Invalid username or password. After repeated failures an account is locked for a while; an administrator can unlock it.",
+        ErrorType.Unauthorized);
     private static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
     private static readonly Error ChallengeExpired = new("auth.challenge_expired", "This sign-in attempt has expired. Please start again.", ErrorType.Unauthorized);
 
@@ -134,14 +138,16 @@ public sealed class AuthService(
 
         if (user.LockoutEndsAt is { } lockedUntil && lockedUntil > now)
         {
-            var minutes = Math.Max(1, (int)Math.Ceiling((lockedUntil - now).TotalMinutes));
+            // The same work and the same answer as a wrong password: neither says whether the account exists. The
+            // password is not checked against the lock, so the lock cannot be used to test guesses.
+            hashing.Verify(_dummyHash ??= hashing.Hash("hc360-timing-equaliser"), request.Password ?? string.Empty);
             await audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
             {
                 UserId = user.Id,
                 UserName = user.UserName,
                 Severity = AuditSeverity.Warning,
             }, ct);
-            return Error.Rule("auth.locked", $"Too many failed attempts. Try again in {minutes} minute(s) or ask an administrator to unlock the account.");
+            return InvalidCredentials;
         }
 
         var check = hashing.Verify(user.PasswordHash, request.Password ?? string.Empty);
@@ -365,28 +371,28 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (token.UsedAt is { } usedAt)
+        // Spent past the grace, or retired by a retry: two parties hold this session's tokens, so it ends for both.
+        if (token.RetiredAt is not null || (token.UsedAt is { } usedAt && now - usedAt > RefreshReuseGrace))
         {
-            if (now - usedAt > RefreshReuseGrace)
+            session.RevokedAt = now;
+            session.RevokedReason = "refresh_token_reuse";
+            audit.Add(new AuditEntry(AuditCategories.Security, "auth.refresh_reuse_detected", "Refresh token replayed; session revoked")
             {
-                session.RevokedAt = now;
-                session.RevokedReason = "refresh_token_reuse";
-                audit.Add(new AuditEntry(AuditCategories.Security, "auth.refresh_reuse_detected", "Refresh token replayed; session revoked")
-                {
-                    UserId = session.UserId,
-                    Severity = AuditSeverity.Critical,
-                });
-                await db.SaveChangesAsync(ct);
-                sessionValidator.Invalidate(session.Id);
-                ClearRefreshCookie(http);
-                return SessionEnded;
-            }
+                UserId = session.UserId,
+                Severity = AuditSeverity.Critical,
+            });
+            await db.SaveChangesAsync(ct);
+            sessionValidator.Invalidate(session.Id);
+            ClearRefreshCookie(http);
+            return SessionEnded;
+        }
 
-            // The previous response was probably lost on the WiFi link: retire the replacement the client never saw.
-            if (token.ReplacedById is { } replacedId)
-            {
-                await db.Set<RefreshToken>().Where(t => t.Id == replacedId).ExecuteUpdateAsync(s => s.SetProperty(t => t.ExpiresAt, now), ct);
-            }
+        // Presented again within the grace: the previous response was probably lost on the WiFi link. Retire the
+        // replacement the client never saw. If it did see it, and this is a copy being replayed, the client presents the
+        // retired token next and the session ends.
+        if (token.UsedAt is not null && token.ReplacedById is { } replacedId)
+        {
+            await db.Set<RefreshToken>().Where(t => t.Id == replacedId).ExecuteUpdateAsync(s => s.SetProperty(t => t.RetiredAt, now), ct);
         }
 
         var user = await LoadUserAsync(u => u.Id == session.UserId, ct);
@@ -399,7 +405,7 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        token.UsedAt = now;
+        token.UsedAt ??= now; // the grace runs from the first use: retries do not extend it
         var next = CreateRefreshToken(session, now);
         token.ReplacedById = next.Entity.Id;
         session.LastSeenAt = now;
@@ -414,6 +420,12 @@ public sealed class AuthService(
 
     public async Task<Result> LogoutAsync(HttpContext http, CancellationToken ct)
     {
+        // As for refresh: the custom header cannot be sent cross-site without a CORS preflight the server never grants.
+        if (!http.Request.Headers.ContainsKey(ClientHeader))
+        {
+            return Error.Forbidden("auth.client_header", $"Missing {ClientHeader} header.");
+        }
+
         var now = time.GetUtcNow();
         UserSession? session = null;
         if (http.Request.Cookies[RefreshCookieFor(ClientTypeOf(http))] is { Length: > 0 } raw)
@@ -787,7 +799,7 @@ public sealed class AuthService(
         IReadOnlyCollection<string> granted = restriction is null
             ? (await permissions.GetPermissionsAsync(user.Id, ct)).ToArray()
             : [];
-        var facilities = user.Type == UserType.Patient ? [] : await AllowedFacilitiesAsync(user, roles, ct);
+        var facilities = await AllowedFacilitiesAsync(user, roles, ct);
 
         return new AuthUser(
             user.Id,
@@ -809,6 +821,13 @@ public sealed class AuthService(
 
     private async Task<List<FacilityOption>> AllowedFacilitiesAsync(User user, IReadOnlyList<string> roles, CancellationToken ct)
     {
+        // Patients act only on their own records, never in a facility's name (a facility session would, for one, receive
+        // the facility's live events).
+        if (user.Type == UserType.Patient)
+        {
+            return [];
+        }
+
         var query = db.Set<Facility>().Where(f => f.IsActive);
         if (!roles.Contains(SystemRoles.SuperAdmin) && user.Facilities.Count > 0)
         {

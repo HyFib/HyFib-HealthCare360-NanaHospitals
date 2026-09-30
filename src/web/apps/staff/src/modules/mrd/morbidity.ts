@@ -51,7 +51,11 @@ export function chartLabel(row: Pick<MorbidityRowLike, 'key' | 'title'>, max = 4
 }
 
 function csvCell(value: string | number | null): string {
-  const text = value === null ? '' : String(value);
+  let text = value === null ? '' : String(value);
+  // Text a spreadsheet would read as a formula stays text, as in the server's exports.
+  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`;
+  }
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

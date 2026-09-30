@@ -191,6 +191,7 @@ public sealed class OutboxDispatcher(
     private static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent)
     {
         message.Attempts++;
+        error = SensitiveText.Redact(error);
         message.LastError = error.Length > 2000 ? error[..2000] : error;
         if (permanent || message.Attempts >= MaxAttempts)
         {

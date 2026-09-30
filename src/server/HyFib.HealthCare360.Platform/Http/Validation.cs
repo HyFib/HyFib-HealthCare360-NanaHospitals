@@ -15,19 +15,22 @@ public static class ValidationExtensions
     /// </summary>
     public static RouteHandlerBuilder WithValidation<TRequest>(this RouteHandlerBuilder builder)
         where TRequest : class =>
-        builder.AddEndpointFilter<ValidationFilter<TRequest>>().ProducesValidationProblem();
+        builder.AddEndpointFilter<ValidationFilter<TRequest>>()
+            .WithMetadata(new ValidatedRequest(typeof(TRequest)))
+            .ProducesValidationProblem();
 }
+
+/// <summary>Marks an endpoint whose request is validated, so the architecture tests can check its validator exists.</summary>
+public sealed record ValidatedRequest(Type RequestType);
 
 internal sealed class ValidationFilter<TRequest> : IEndpointFilter
     where TRequest : class
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        var validator = context.HttpContext.RequestServices.GetService<IValidator<TRequest>>();
-        if (validator is null)
-        {
-            return await next(context);
-        }
+        // Fail closed: an endpoint that asks for validation never runs its handler unchecked.
+        var validator = context.HttpContext.RequestServices.GetService<IValidator<TRequest>>()
+            ?? throw new InvalidOperationException($"No validator is registered for {typeof(TRequest).Name}.");
 
         var request = context.Arguments.OfType<TRequest>().FirstOrDefault();
         if (request is null)

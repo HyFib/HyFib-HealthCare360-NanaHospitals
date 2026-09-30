@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.AI.Services.Assistant;
 using HyFib.HealthCare360.Modules.AI.Services.Claude;
 using HyFib.HealthCare360.Modules.AI.Services.Clinical;
 using HyFib.HealthCare360.Modules.AI.Services.Speech;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Http.Resilience;
@@ -54,6 +55,7 @@ public sealed class AIModule : IModule
                 client.Timeout = TimeSpan.FromSeconds(200);
                 client.MaxResponseContentBufferSize = 1024 * 1024;
             })
+            .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
             .AddStandardResilienceHandler(options =>
             {
                 // Transcribing 10 MB of audio on a CPU-only on-prem server can take minutes; the upload is never retried.

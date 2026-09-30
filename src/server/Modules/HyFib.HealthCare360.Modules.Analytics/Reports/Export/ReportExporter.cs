@@ -36,7 +36,7 @@ public static class ReportExporter
 {
     public const string Confidential = "Confidential";
     public const string XlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    public const string CsvContentType = "text/csv";
+    public const string CsvContentType = "text/csv; charset=utf-8";
 
     private const int AutoFitRows = 400;
     private const double MaxColumnWidth = 60;

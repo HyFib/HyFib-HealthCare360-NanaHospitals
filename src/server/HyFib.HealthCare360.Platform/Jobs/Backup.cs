@@ -166,6 +166,7 @@ internal sealed class BackupService(
     {
         Directory.CreateDirectory(directories.Temp);
         Directory.CreateDirectory(directories.Backups);
+        RemoveLeftoverDumps();
         var fileName = $"hc360-{startedAt:yyyyMMdd-HHmmss}-{kind.ToString().ToLowerInvariant()}{FileExtension}";
         var target = Path.Combine(directories.Backups, fileName);
         var partial = target + PartialExtension;
@@ -230,6 +231,30 @@ internal sealed class BackupService(
             File.Delete(partial);
         }
     }
+
+    /// <summary>
+    /// A server stopped in the middle of a backup (a power cut, a killed process) leaves its database dump behind, and a
+    /// dump is not encrypted. Leftovers are removed before the next backup starts; a dump still being written is never
+    /// this old.
+    /// </summary>
+    private void RemoveLeftoverDumps()
+    {
+        foreach (var dump in LeftoverDumps(directories.Temp, time.GetUtcNow()))
+        {
+            try
+            {
+                dump.Delete();
+                logger.LogWarning("Removed the database dump {File} left behind by an interrupted backup", dump.Name);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "Could not remove the leftover database dump {File}", dump.Name);
+            }
+        }
+    }
+
+    internal static IEnumerable<FileInfo> LeftoverDumps(string temp, DateTimeOffset now) =>
+        new DirectoryInfo(temp).EnumerateFiles("*.dump").Where(f => f.LastWriteTimeUtc < now.UtcDateTime - TimeSpan.FromHours(12)).ToList();
 
     /// <summary>
     /// A backup needs room for the database dump twice (the archive, and the copy the check reads back), the documents and

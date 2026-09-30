@@ -118,6 +118,12 @@ public sealed class RefreshToken : Entity
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UsedAt { get; set; }
     public Guid? ReplacedById { get; set; }
+
+    /// <summary>
+    /// Set when a retry within the grace re-issued the token this one replaced: the client was not expected to have
+    /// received it, so it being presented means someone holds a copy.
+    /// </summary>
+    public DateTimeOffset? RetiredAt { get; set; }
 }
 
 public enum AuthChallengeKind

@@ -53,10 +53,12 @@ dotnet_diagnostic.CA1062.severity = none
 [src/server/HyFib.HealthCare360.Server/Persistence/Migrations/*.cs]
 generated_code = true
 
-# Test code never ships: throwaway databases are named in SQL text, and test data may use Random.
+# Test code never ships: throwaway databases are named in SQL text, test data may use Random, and tests name the TLS
+# versions they check for.
 [tests/**/*.cs]
 dotnet_diagnostic.CA2100.severity = none
 dotnet_diagnostic.CA5394.severity = none
+dotnet_diagnostic.CA5398.severity = none
 
 [*.{json,yml,yaml,md}]
 indent_size = 2

@@ -42,6 +42,12 @@ internal sealed class HubCallerUser(ClaimsPrincipal? principal) : ICurrentUser
 
     public bool IsPatient => string.Equals(principal?.FindFirst(HcClaims.UserType)?.Value, HcClaims.PatientType, StringComparison.Ordinal);
 
+    /// <summary>
+    /// A token that only allows finishing sign-in (a password change or two-step enrolment). Endpoint policies refuse it;
+    /// hub methods, which have no policy, must refuse it themselves.
+    /// </summary>
+    public bool IsRestricted => principal?.HasClaim(c => c.Type == HcClaims.Restriction) == true;
+
     public IReadOnlyCollection<string> Roles => principal?.FindAll(HcClaims.Role).Select(c => c.Value).ToArray() ?? [];
 
     public string? IpAddress => null;

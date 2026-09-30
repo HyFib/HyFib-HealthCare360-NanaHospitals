@@ -1,15 +1,24 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,6 +34,13 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// </summary>
 public sealed class HospitalServer : IAsyncLifetime
 {
+    /// <summary>
+    /// The caller's address, for a request from a test that needs a rate-limit budget of its own. The server limits
+    /// sign-in, refresh and one-time codes per address, and test-server requests otherwise have none, so every test would
+    /// share one budget with the tests that ran before it in the same minute.
+    /// </summary>
+    private const string ClientAddressHeader = "X-Test-Client-Address";
+
     /// <summary>Accounts the demonstration seed does not create, with their role (see <see cref="CreateAccountAsync"/>).</summary>
     private static readonly Dictionary<string, string> RolesCreatedOnFirstUse = new(StringComparer.Ordinal)
     {
@@ -77,6 +93,15 @@ public sealed class HospitalServer : IAsyncLifetime
         builder.AddServerApplication(certificates);
 
         _app = builder.Build();
+        _app.Use((context, next) =>
+        {
+            if (IPAddress.TryParse(context.Request.Headers[ClientAddressHeader].ToString(), out var address))
+            {
+                context.Connection.RemoteIpAddress = address;
+            }
+
+            return next(context);
+        });
         _app.UseServerApplication();
         await _app.InitializeDatabaseAsync(ct);
         await _app.StartAsync(ct);
@@ -123,9 +148,44 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
-    // Sign-in allows 10 attempts a minute per address, and every test-server request has the same one: past that, wait for
-    // the next minute rather than fail the run.
+    /// <summary>
+    /// A new sign-in of a seeded staff account, with a session of its own: the refresh cookie the server set, as
+    /// <c>name=value</c>, for tests of the refresh flow. It does not disturb the account's cached client. Like
+    /// <see cref="RefreshAsync"/>, it comes from the test's own address, so the test has a rate-limit budget of its own:
+    /// a refresh cannot wait out a 429, because the wait could outlast the refresh grace the test is about.
+    /// </summary>
+    public async Task<string> SignInForRefreshCookieAsync(string userName)
+    {
+        using var http = CreateHttpClient(ownAddress: true);
+        using var response = await PostLoginAsync(http, userName, _password);
+        await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        return RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie.");
+    }
+
+    /// <summary>A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it.</summary>
+    public async Task<HttpResponseMessage> RefreshAsync(string refreshCookie)
+    {
+        using var http = CreateHttpClient(ownAddress: true);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/refresh");
+        request.Headers.Add("Cookie", refreshCookie);
+        return await http.SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The staff refresh cookie a response set, as <c>name=value</c>; null when it set none (or cleared it).</summary>
+    public static string? RefreshCookieOf(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var cookies)
+            ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith("hc360_rt=", StringComparison.Ordinal) && c.Length > "hc360_rt=".Length)
+            : null;
+
     private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
+    {
+        using var response = await PostLoginAsync(http, userName, password);
+        return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+    }
+
+    // Sign-in allows 10 attempts a minute per address, and test-server requests share one unless a test has its own (see
+    // ClientAddressHeader): past that, wait for the next minute rather than fail the run.
+    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient http, string userName, string password)
     {
         var ct = TestContext.Current.CancellationToken;
         var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
@@ -137,10 +197,7 @@ public sealed class HospitalServer : IAsyncLifetime
             response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
         }
 
-        using (response)
-        {
-            return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
-        }
+        return response;
     }
 
     private static string FullAccess(string userName, SignInResult result) =>
@@ -176,11 +233,59 @@ public sealed class HospitalServer : IAsyncLifetime
         return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
     }
 
-    private HttpClient CreateHttpClient()
+    /// <summary>
+    /// A patient signed in to the portal with a one-time code, as a new portal account for a number seen for the first
+    /// time. The test server sends no SMS: the code is read from the delivery waiting in the outbox. The requests come from
+    /// the test's own address: one-time codes allow only 5 requests per address in 15 minutes.
+    /// </summary>
+    public async Task<ApiClient> SignInToPortalAsync(string phone)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var http = CreateHttpClient(ownAddress: true);
+        OtpChallengeResponse challenge;
+        using (var requested = await http.PostAsJsonAsync("/api/v1/auth/otp/request", new OtpRequest(phone), ApiClient.Json, ct))
+        {
+            challenge = await ApiClient.ReadAsync<OtpChallengeResponse>(requested, HttpMethod.Post, "/api/v1/auth/otp/request");
+        }
+
+        using var verified = await http.PostAsJsonAsync("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await ReadOtpAsync(phone, ct)), ApiClient.Json, ct);
+        var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
+        return new ApiClient(http);
+    }
+
+    private async Task<string> ReadOtpAsync(string phone, CancellationToken ct)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var deliveries = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
+        return deliveries.Select(m => m.Read<NotificationDelivery>())
+            .First(d => d.TemplateKey == "auth.otp" && d.To == Phone.Normalize(phone))
+            .Values["code"];
+    }
+
+    private HttpClient CreateHttpClient(bool ownAddress = false)
     {
         var http = App.GetTestClient();
         http.DefaultRequestHeaders.Add("X-HC360-Client", "web");
+        if (ownAddress)
+        {
+            http.DefaultRequestHeaders.Add(ClientAddressHeader, AddressOfCurrentTest());
+        }
+
         return http;
+    }
+
+    // A private address that stays the same for the whole of the running test, and differs from other tests'.
+    private static string AddressOfCurrentTest()
+    {
+        var test = TestContext.Current.Test?.UniqueID ?? throw new InvalidOperationException("No test is running.");
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(test));
+        return $"10.{hash[0]}.{hash[1]}.{hash[2]}";
     }
 
     /// <summary>The staff accounts: one per role the demonstration seed creates, and those created on first use.</summary>

@@ -83,7 +83,7 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
         var now = time.GetUtcNow();
         var file = new StoredFile
         {
-            FileName = SanitizeFileName(fileName),
+            FileName = FileNameFor(fileName, contentType),
             ContentType = contentType,
             SizeBytes = bytes.LongLength,
             Sha256 = Convert.ToHexString(SHA256.HashData(bytes)),
@@ -147,7 +147,34 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
         _ => null,
     };
 
-    private static string SanitizeFileName(string fileName)
+    // The extensions each accepted type may carry; the first is the one given when the uploaded name's does not fit.
+    private static readonly Dictionary<string, string[]> Extensions = new(StringComparer.Ordinal)
+    {
+        ["application/pdf"] = [".pdf"],
+        ["image/png"] = [".png"],
+        ["image/jpeg"] = [".jpg", ".jpeg"],
+        ["image/webp"] = [".webp"],
+        ["application/dicom"] = [".dcm"],
+    };
+
+    /// <summary>
+    /// The uploader's file name, cleaned, with an extension that says what the file really is: a PDF uploaded as
+    /// "results.hta" is kept as "results.pdf", so saving it later can never produce a program or a web page.
+    /// </summary>
+    internal static string FileNameFor(string? fileName, string contentType)
+    {
+        var name = SanitizeFileName(fileName);
+        var extensions = Extensions[contentType];
+        if (extensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase))
+        {
+            return name;
+        }
+
+        var stem = Path.GetFileNameWithoutExtension(name);
+        return (string.IsNullOrWhiteSpace(stem) ? "document" : stem) + extensions[0];
+    }
+
+    private static string SanitizeFileName(string? fileName)
     {
         var name = Path.GetFileName(fileName ?? "document");
         var invalid = Path.GetInvalidFileNameChars();

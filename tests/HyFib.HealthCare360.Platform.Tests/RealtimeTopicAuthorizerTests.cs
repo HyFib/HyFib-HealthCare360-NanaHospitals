@@ -48,6 +48,23 @@ public sealed class RealtimeTopicAuthorizerTests
     private static RealtimeTopicPolicy LabPolicy => new("lab", RealtimeTopicScope.Facility, ["lab.orders.read"]);
 
     [Fact]
+    public void A_staff_session_joins_its_facility_events_on_connect() =>
+        RealtimeTopicAuthorizer.FacilityToJoin(Staff(FacilityId)).ShouldBe(FacilityId);
+
+    [Fact]
+    public void A_restricted_staff_session_joins_no_facility_events() =>
+        RealtimeTopicAuthorizer.FacilityToJoin(Staff(FacilityId, restricted: true)).ShouldBeNull();
+
+    [Fact]
+    public void A_patient_joins_no_facility_events_even_with_a_facility_claim()
+    {
+        var patient = Portal(PatientId);
+        ((ClaimsIdentity)patient.Identity!).AddClaim(new Claim(HcClaims.Facility, FacilityId.ToString()));
+
+        RealtimeTopicAuthorizer.FacilityToJoin(patient).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Staff_follow_their_own_facility_topic_with_the_permission()
     {
         Grant("lab.orders.read");

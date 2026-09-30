@@ -30,6 +30,6 @@ internal static class StaffCreditEndpoints
         var export = await credit.ExportAsync(period, ct);
         return export.IsFailure
             ? export.Error!.ToProblem()
-            : TypedResults.File(export.Value.Content, "text/csv", export.Value.FileName);
+            : TypedResults.File(export.Value.Content, "text/csv; charset=utf-8", export.Value.FileName);
     }
 }

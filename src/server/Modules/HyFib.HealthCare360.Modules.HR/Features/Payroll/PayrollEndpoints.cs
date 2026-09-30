@@ -72,7 +72,7 @@ internal static class PayrollEndpoints
     private static async Task<IResult> BankFile(Guid id, PayrollService payroll, CancellationToken ct)
     {
         var result = await payroll.BankTransferFileAsync(id, ct);
-        return result.IsFailure ? result.Error!.ToProblem() : TypedResults.File(result.Value.Content, "text/csv", result.Value.FileName);
+        return result.IsFailure ? result.Error!.ToProblem() : TypedResults.File(result.Value.Content, "text/csv; charset=utf-8", result.Value.FileName);
     }
 
     private static async Task<IResult> ListInputs(Guid id, HospitalDbContext db, CancellationToken ct) =>

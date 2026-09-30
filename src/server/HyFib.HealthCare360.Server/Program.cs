@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Net;
 using System.Security.Authentication;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -41,24 +42,29 @@ platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).
 
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
 
+// Every sink writes through RedactingFormatter: phone, Aadhaar and ABHA numbers, e-mail addresses and secrets are masked
+// in the finished line, including exception text.
 builder.Services.AddSerilog((services, logger) =>
 {
     logger.ReadFrom.Configuration(builder.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithProperty("Application", "HC360.Server")
-        .WriteTo.Console(restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
+        .WriteTo.Console(
+            new RedactingFormatter("[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"),
+            restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
         .WriteTo.File(
+            new RedactingFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}"),
             Path.Combine(directories.Logs, "hc360-server-.log"),
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 60,
             fileSizeLimitBytes: 100 * 1024 * 1024,
-            rollOnFileSizeLimit: true,
-            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}");
+            rollOnFileSizeLimit: true);
 
     if (OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment())
     {
-        logger.WriteTo.EventLog("HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
+        logger.WriteTo.EventLog(
+            new RedactingFormatter("{Message:lj}{NewLine}{Exception}"), "HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
     }
 });
 
@@ -98,6 +104,13 @@ builder.Services.AddResponseCompression(compression =>
 });
 builder.Services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
 builder.Services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+
+// A year, and every name under the server's own (there are none by default, so nothing else on the LAN is affected).
+builder.Services.AddHsts(hsts =>
+{
+    hsts.MaxAge = TimeSpan.FromDays(365);
+    hsts.IncludeSubDomains = true;
+});
 
 builder.Services.AddOpenApi(openApi =>
 {
@@ -159,6 +172,11 @@ app.UseResponseCompression();
 
 var contentTypes = new FileExtensionContentTypeProvider();
 contentTypes.Mappings[".webmanifest"] = "application/manifest+json";
+// The web apps' text files are UTF-8 (Vite's output): saying so leaves the browser nothing to guess.
+foreach (var (extension, type) in new[] { (".html", "text/html"), (".js", "text/javascript"), (".css", "text/css"), (".json", "application/json"), (".svg", "image/svg+xml") })
+{
+    contentTypes.Mappings[extension] = type + "; charset=utf-8";
+}
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -194,6 +212,24 @@ app.UseServerApplication();
 
 if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
 {
+    if (!app.Environment.IsDevelopment())
+    {
+        // Turned on by IT outside development: the reference and its schema answer only on the server machine itself,
+        // so the API's shape is not published to the hospital network. (Kestrel faces the network directly: the
+        // address is the connection's own.)
+        app.Use((context, next) =>
+        {
+            if ((context.Request.Path.StartsWithSegments("/docs") || context.Request.Path.StartsWithSegments("/openapi"))
+                && !IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.None))
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return Task.CompletedTask;
+            }
+
+            return next(context);
+        });
+    }
+
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
 }
