@@ -1,8 +1,29 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, MessageBar, MessageBarBody, OverlayDrawer, Spinner, Subtitle2 } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  MessageBar,
+  MessageBarBody,
+  OverlayDrawer,
+  Spinner,
+  Subtitle2,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -55,10 +76,18 @@ const schema = z
       ctx.addIssue({ code: 'custom', path: ['installationDate'], message: 'Installation cannot be before purchase.' });
     }
     if (v.salvageValue > v.purchaseCost) {
-      ctx.addIssue({ code: 'custom', path: ['salvageValue'], message: 'Salvage value cannot exceed the purchase cost.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['salvageValue'],
+        message: 'Salvage value cannot exceed the purchase cost.',
+      });
     }
     if (v.depreciationMethod === 'WrittenDownValue' && !(v.depreciationRatePercent && v.depreciationRatePercent > 0)) {
-      ctx.addIssue({ code: 'custom', path: ['depreciationRatePercent'], message: 'Enter the yearly WDV rate, e.g. 15%.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['depreciationRatePercent'],
+        message: 'Enter the yearly WDV rate, e.g. 15%.',
+      });
     }
   });
 
@@ -94,12 +123,27 @@ function toValues(a: AssetDetail | null): AssetValues {
 }
 
 /** Asset register entry: identity, location, purchase and warranty, criticality and depreciation basis. */
-export function AssetDrawer({ asset, onClose, onCreated }: { asset: AssetDetail | null; onClose: () => void; onCreated?: (id: string) => void }) {
+export function AssetDrawer({
+  asset,
+  onClose,
+  onCreated,
+}: {
+  asset: AssetDetail | null;
+  onClose: () => void;
+  onCreated?: (id: string) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments();
-  const form = useForm<AssetValues>({ resolver: zodResolver(schema), defaultValues: toValues(asset), mode: 'onTouched' });
-  const [method, vendorName, vendorId] = useWatch({ control: form.control, name: ['depreciationMethod', 'vendorName', 'vendorId'] });
+  const form = useForm<AssetValues>({
+    resolver: zodResolver(schema),
+    defaultValues: toValues(asset),
+    mode: 'onTouched',
+  });
+  const [method, vendorName, vendorId] = useWatch({
+    control: form.control,
+    name: ['depreciationMethod', 'vendorName', 'vendorId'],
+  });
 
   const save = useMutation({
     mutationFn: (v: AssetValues) =>
@@ -156,15 +200,30 @@ export function AssetDrawer({ asset, onClose, onCreated }: { asset: AssetDetail 
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {asset ? `${asset.name} (${asset.assetTag})` : 'Add asset'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="name" label="Name" required autoFocus={!asset} maxLength={200} hint="e.g. Ventilator, ICU bed 4" />
-              <SelectField control={form.control} name="category" label="Category" options={ASSET_CATEGORIES.map((c) => ({ value: c, label: assetCategoryLabel[c] }))} />
+              <TextField
+                control={form.control}
+                name="name"
+                label="Name"
+                required
+                autoFocus={!asset}
+                maxLength={200}
+                hint="e.g. Ventilator, ICU bed 4"
+              />
+              <SelectField
+                control={form.control}
+                name="category"
+                label="Category"
+                options={ASSET_CATEGORIES.map((c) => ({ value: c, label: assetCategoryLabel[c] }))}
+              />
               <TextField control={form.control} name="make" label="Make" />
               <TextField control={form.control} name="model" label="Model" />
               <TextField control={form.control} name="serialNumber" label="Serial number" />
@@ -172,9 +231,20 @@ export function AssetDrawer({ asset, onClose, onCreated }: { asset: AssetDetail 
             </FormGrid>
             <Subtitle2 as="h3">Where it is</Subtitle2>
             <FormGrid columns={3}>
-              <SelectField control={form.control} name="departmentId" label="Department" placeholder="—" options={toOptions(departments.data)} />
+              <SelectField
+                control={form.control}
+                name="departmentId"
+                label="Department"
+                placeholder="—"
+                options={toOptions(departments.data)}
+              />
               <TextField control={form.control} name="location" label="Location" hint="Building, floor, room" />
-              <TextField control={form.control} name="custodianName" label="Custodian" hint="Who is responsible for it" />
+              <TextField
+                control={form.control}
+                name="custodianName"
+                label="Custodian"
+                hint="Who is responsible for it"
+              />
             </FormGrid>
             <Subtitle2 as="h3">Purchase and warranty</Subtitle2>
             <FormGrid columns={3}>
@@ -203,11 +273,21 @@ export function AssetDrawer({ asset, onClose, onCreated }: { asset: AssetDetail 
                 hint="Critical equipment (ventilators, defibrillators) gets breakdowns handled first"
                 options={CRITICALITIES.map((c) => ({ value: c, label: c }))}
               />
-              <SwitchField control={form.control} name="requiresCalibration" label="Needs periodic calibration" hint="Measuring equipment: NABH/NABL requirement" />
+              <SwitchField
+                control={form.control}
+                name="requiresCalibration"
+                label="Needs periodic calibration"
+                hint="Measuring equipment: NABH/NABL requirement"
+              />
             </FormGrid>
             <Subtitle2 as="h3">Depreciation</Subtitle2>
             <FormGrid columns={2}>
-              <SelectField control={form.control} name="depreciationMethod" label="Method" options={DEPRECIATION_METHODS.map((m) => ({ value: m, label: depreciationLabel[m] }))} />
+              <SelectField
+                control={form.control}
+                name="depreciationMethod"
+                label="Method"
+                options={DEPRECIATION_METHODS.map((m) => ({ value: m, label: depreciationLabel[m] }))}
+              />
               <NumberField control={form.control} name="usefulLifeYears" label="Useful life (years)" min={1} max={50} />
               <NumberField control={form.control} name="salvageValue" label="Salvage value (₹)" min={0} />
               <NumberField
@@ -216,19 +296,31 @@ export function AssetDrawer({ asset, onClose, onCreated }: { asset: AssetDetail 
                 label="Rate per year (%)"
                 min={0}
                 max={100}
-                hint={method === 'WrittenDownValue' ? 'Required for written-down value' : 'Blank = worked out from the useful life'}
+                hint={
+                  method === 'WrittenDownValue'
+                    ? 'Required for written-down value'
+                    : 'Blank = worked out from the useful life'
+                }
               />
             </FormGrid>
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={2000} />
-            {save.error && isApiError(save.error) && !save.error.isValidation && save.error.code !== 'asset.duplicate_serial' && (
-              <MessageBar intent="error">
-                <MessageBarBody>{save.error.userMessage}</MessageBarBody>
-              </MessageBar>
-            )}
+            {save.error &&
+              isApiError(save.error) &&
+              !save.error.isValidation &&
+              save.error.code !== 'asset.duplicate_serial' && (
+                <MessageBar intent="error">
+                  <MessageBarBody>{save.error.userMessage}</MessageBarBody>
+                </MessageBar>
+              )}
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {asset ? 'Save' : 'Add asset'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

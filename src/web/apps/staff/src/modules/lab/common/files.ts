@@ -23,7 +23,10 @@ export function fileProblem(file: File): string | null {
  * Uploads a document to the encrypted file store. Passing the patient links the file to the record, which the
  * diagnostics endpoints check before accepting it (a file of another patient is refused).
  */
-export function uploadFile(file: File, options: { category: string; patientId?: string | null }): Promise<StoredFileDto> {
+export function uploadFile(
+  file: File,
+  options: { category: string; patientId?: string | null },
+): Promise<StoredFileDto> {
   const data = new FormData();
   data.append('file', file);
   data.append('category', options.category);

@@ -1,7 +1,13 @@
 import { ApiError } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { AllergyRecordingStatus } from './api';
-import { bannerAllergyStatus, canRecordNoKnownAllergies, flagsSummaryNote, noKnownAllergiesRefusal, recordedByText } from './allergyStatus';
+import {
+  bannerAllergyStatus,
+  canRecordNoKnownAllergies,
+  flagsSummaryNote,
+  noKnownAllergiesRefusal,
+  recordedByText,
+} from './allergyStatus';
 
 describe('banner allergy flag', () => {
   it('maps the chart status to the banner flag', () => {
@@ -47,14 +53,18 @@ describe('"No known allergies" action', () => {
   });
 
   it('names who recorded the status and when', () => {
-    expect(recordedByText({ recordedAt: '2026-09-28T05:00:00Z', recordedByName: 'Dr. Asha Rao' }, () => '28 Sept 2026, 10:30 am')).toBe(
-      'Recorded by Dr. Asha Rao on 28 Sept 2026, 10:30 am.',
-    );
+    expect(
+      recordedByText(
+        { recordedAt: '2026-09-28T05:00:00Z', recordedByName: 'Dr. Asha Rao' },
+        () => '28 Sept 2026, 10:30 am',
+      ),
+    ).toBe('Recorded by Dr. Asha Rao on 28 Sept 2026, 10:30 am.');
     expect(recordedByText({ recordedAt: null, recordedByName: '  ' })).toBe('Recorded by a clinician.');
   });
 
   it('explains the refusal while active allergies are on the chart', () => {
-    const refusal = (data: unknown) => noKnownAllergiesRefusal(new ApiError({ status: 409, title: 'Conflict', code: 'allergy.active_exist', data }));
+    const refusal = (data: unknown) =>
+      noKnownAllergiesRefusal(new ApiError({ status: 409, title: 'Conflict', code: 'allergy.active_exist', data }));
     expect(refusal({ activeAllergies: 1 })).toBe(
       'This patient has an active allergy on the chart, so "No known allergies" was not recorded. If it was recorded by mistake or no longer applies, open it and mark it entered in error, inactive or resolved first.',
     );

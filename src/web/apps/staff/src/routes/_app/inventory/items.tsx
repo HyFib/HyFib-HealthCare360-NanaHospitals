@@ -22,14 +22,34 @@ import {
 import { AddRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useDebouncedValue } from '@hc360/core';
-import { applyServerErrors, DataTable, FilterBar, FormGrid, NumberField, Page, PageHeader, Section, SelectField, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FilterBar,
+  FormGrid,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type ItemDetail, type ItemListItem, type SaveItemRequest } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type ItemDetail,
+  type ItemListItem,
+  type SaveItemRequest,
+} from '@/modules/inventory/api';
 import { formatPercent } from '@/modules/inventory/format';
 import { GST_RATES, isStandardGstRate } from '@/modules/inventory/gst';
 import {
@@ -106,7 +126,8 @@ function ItemsPage() {
       page: search.page,
     }),
   );
-  const set = (patch: Partial<ItemsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<ItemsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -125,10 +146,18 @@ function ItemsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, generic name, code or barcode" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, generic name, code or barcode"
+                autoFocus
+              />
             </Field>
             <Field label="Type">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as ItemType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as ItemType | undefined })}
+              >
                 <option value="">All</option>
                 {ITEM_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -148,7 +177,10 @@ function ItemsPage() {
               </Select>
             </Field>
             <Field label="Schedule">
-              <Select value={search.schedule ?? ''} onChange={(_, d) => set({ schedule: (d.value || undefined) as DrugSchedule | undefined })}>
+              <Select
+                value={search.schedule ?? ''}
+                onChange={(_, d) => set({ schedule: (d.value || undefined) as DrugSchedule | undefined })}
+              >
                 <option value="">All</option>
                 {DRUG_SCHEDULES.map((s) => (
                   <option key={s} value={s}>
@@ -157,8 +189,16 @@ function ItemsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.controlled === true} onChange={(_, d) => set({ controlled: d.checked || undefined })} label="Controlled only" />
-            <Switch checked={search.inactive === true} onChange={(_, d) => set({ inactive: d.checked || undefined })} label="Show inactive" />
+            <Switch
+              checked={search.controlled === true}
+              onChange={(_, d) => set({ controlled: d.checked || undefined })}
+              label="Controlled only"
+            />
+            <Switch
+              checked={search.inactive === true}
+              onChange={(_, d) => set({ inactive: d.checked || undefined })}
+              label="Show inactive"
+            />
           </FilterBar>
         </div>
         <DataTable<ItemListItem>
@@ -177,7 +217,8 @@ function ItemsPage() {
               header: 'Item',
               render: (i) => (
                 <span>
-                  <Text weight="semibold">{i.name}</Text> <ItemFlags schedule={i.schedule} isControlled={i.isControlled} isColdChain={i.isColdChain} />
+                  <Text weight="semibold">{i.name}</Text>{' '}
+                  <ItemFlags schedule={i.schedule} isControlled={i.isControlled} isColdChain={i.isColdChain} />
                   {!i.isActive && (
                     <Badge size="small" appearance="tint" style={{ marginLeft: 6 }}>
                       Inactive
@@ -192,18 +233,38 @@ function ItemsPage() {
             { key: 'type', header: 'Type', priority: 'low', render: (i) => itemTypeLabel[i.type] },
             { key: 'category', header: 'Category', priority: 'low', render: (i) => i.categoryName ?? '—' },
             { key: 'gst', header: 'GST', width: 70, align: 'end', render: (i) => formatPercent(i.gstRate) },
-            { key: 'units', header: 'Units', priority: 'low', render: (i) => (i.purchaseUnit === i.baseUnit ? i.baseUnit : `${i.baseUnit} / ${i.purchaseUnit}`) },
-            { key: 'reorder', header: 'Reorder at', align: 'end', priority: 'low', render: (i) => (i.reorderLevel > 0 ? i.reorderLevel.toLocaleString('en-IN') : '—') },
+            {
+              key: 'units',
+              header: 'Units',
+              priority: 'low',
+              render: (i) => (i.purchaseUnit === i.baseUnit ? i.baseUnit : `${i.baseUnit} / ${i.purchaseUnit}`),
+            },
+            {
+              key: 'reorder',
+              header: 'Reorder at',
+              align: 'end',
+              priority: 'low',
+              render: (i) => (i.reorderLevel > 0 ? i.reorderLevel.toLocaleString('en-IN') : '—'),
+            },
           ]}
           emptyTitle={search.q ? 'No item matches' : 'No items yet'}
-          emptyDescription={canManage ? 'Add items with their HSN code, GST rate and drug schedule before receiving stock.' : undefined}
+          emptyDescription={
+            canManage ? 'Add items with their HSN code, GST rate and drug schedule before receiving stock.' : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={items.data?.totalCount}
           onPageChange={(p) => void navigate({ search: (prev) => ({ ...prev, page: p > 1 ? p : undefined }) })}
         />
       </Section>
-      {search.edit && <ItemDrawer key={search.edit} itemId={search.edit === 'new' ? null : search.edit} canManage={canManage} onClose={() => set({ edit: undefined })} />}
+      {search.edit && (
+        <ItemDrawer
+          key={search.edit}
+          itemId={search.edit === 'new' ? null : search.edit}
+          canManage={canManage}
+          onClose={() => set({ edit: undefined })}
+        />
+      )}
     </Page>
   );
 }
@@ -226,7 +287,10 @@ const itemSchema = z
     packSize: z.string().trim().max(60),
     baseUnit: z.string().trim().min(1, 'Enter the unit you issue in, e.g. TAB, ML, NOS.').max(16),
     purchaseUnit: z.string().trim().min(1, 'Enter the unit you buy in, e.g. STRIP, BOX.').max(16),
-    purchaseUnitFactor: z.number({ error: 'Enter how many issue units make one purchase unit.' }).positive('Must be more than 0.').max(100_000),
+    purchaseUnitFactor: z
+      .number({ error: 'Enter how many issue units make one purchase unit.' })
+      .positive('Must be more than 0.')
+      .max(100_000),
     hsnCode: z
       .string()
       .trim()
@@ -282,7 +346,15 @@ function toForm(item: ItemDetail | null): ItemValues {
   };
 }
 
-function ItemDrawer({ itemId, canManage, onClose }: { itemId: string | null; canManage: boolean; onClose: () => void }) {
+function ItemDrawer({
+  itemId,
+  canManage,
+  onClose,
+}: {
+  itemId: string | null;
+  canManage: boolean;
+  onClose: () => void;
+}) {
   const existing = useQuery({ ...inventoryQueries.item(itemId ?? ''), enabled: itemId !== null, staleTime: 0 });
   if (itemId && !existing.data) {
     return (
@@ -290,7 +362,9 @@ function ItemDrawer({ itemId, canManage, onClose }: { itemId: string | null; can
         <DrawerBody>
           {existing.error ? (
             <MessageBar intent="error">
-              <MessageBarBody>{isApiError(existing.error) ? existing.error.userMessage : 'Could not load the item.'}</MessageBarBody>
+              <MessageBarBody>
+                {isApiError(existing.error) ? existing.error.userMessage : 'Could not load the item.'}
+              </MessageBarBody>
             </MessageBar>
           ) : (
             <Spinner label="Loading…" />
@@ -302,13 +376,28 @@ function ItemDrawer({ itemId, canManage, onClose }: { itemId: string | null; can
   return <ItemEditor item={existing.data ?? null} canManage={canManage} onClose={onClose} />;
 }
 
-function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; canManage: boolean; onClose: () => void }) {
+function ItemEditor({
+  item,
+  canManage,
+  onClose,
+}: {
+  item: ItemDetail | null;
+  canManage: boolean;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const categories = useQuery(inventoryQueries.categories(true));
-  const form = useForm<ItemValues>({ resolver: zodResolver(itemSchema), defaultValues: toForm(item), mode: 'onTouched' });
-  const [schedule, isControlled, type, baseUnit, purchaseUnit] = useWatch({ control: form.control, name: ['schedule', 'isControlled', 'type', 'baseUnit', 'purchaseUnit'] });
+  const form = useForm<ItemValues>({
+    resolver: zodResolver(itemSchema),
+    defaultValues: toForm(item),
+    mode: 'onTouched',
+  });
+  const [schedule, isControlled, type, baseUnit, purchaseUnit] = useWatch({
+    control: form.control,
+    name: ['schedule', 'isControlled', 'type', 'baseUnit', 'purchaseUnit'],
+  });
   const readOnly = !canManage;
 
   const save = useMutation({
@@ -369,18 +458,50 @@ function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; can
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {item ? item.name : 'Add item'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="code" label="Item code" required autoFocus={!item} disabled={readOnly} maxLength={32} hint="Short unique code, e.g. PARA500" />
-              <TextField control={form.control} name="name" label="Name" required disabled={readOnly} maxLength={200} hint="As printed on invoices and labels" />
-              <TextField control={form.control} name="genericName" label="Generic name" disabled={readOnly} hint="Used for generic substitution" />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Item code"
+                required
+                autoFocus={!item}
+                disabled={readOnly}
+                maxLength={32}
+                hint="Short unique code, e.g. PARA500"
+              />
+              <TextField
+                control={form.control}
+                name="name"
+                label="Name"
+                required
+                disabled={readOnly}
+                maxLength={200}
+                hint="As printed on invoices and labels"
+              />
+              <TextField
+                control={form.control}
+                name="genericName"
+                label="Generic name"
+                disabled={readOnly}
+                hint="Used for generic substitution"
+              />
               <TextField control={form.control} name="brandName" label="Brand" disabled={readOnly} />
-              <SelectField control={form.control} name="type" label="Type" required disabled={readOnly} options={ITEM_TYPES.map((t) => ({ value: t, label: itemTypeLabel[t] }))} />
+              <SelectField
+                control={form.control}
+                name="type"
+                label="Type"
+                required
+                disabled={readOnly}
+                options={ITEM_TYPES.map((t) => ({ value: t, label: itemTypeLabel[t] }))}
+              />
               <SelectField
                 control={form.control}
                 name="categoryId"
@@ -389,14 +510,42 @@ function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; can
                 disabled={readOnly}
                 options={(categories.data ?? []).map((c) => ({ value: c.id, label: c.name }))}
               />
-              <TextField control={form.control} name="strength" label="Strength" disabled={readOnly} hint="e.g. 500 mg" />
-              <TextField control={form.control} name="dosageForm" label="Dosage form" disabled={readOnly} hint="e.g. Tablet, Injection" />
+              <TextField
+                control={form.control}
+                name="strength"
+                label="Strength"
+                disabled={readOnly}
+                hint="e.g. 500 mg"
+              />
+              <TextField
+                control={form.control}
+                name="dosageForm"
+                label="Dosage form"
+                disabled={readOnly}
+                hint="e.g. Tablet, Injection"
+              />
             </FormGrid>
 
             <Subtitle2 as="h3">Units</Subtitle2>
             <FormGrid columns={3}>
-              <TextField control={form.control} name="baseUnit" label="Issue unit" required disabled={readOnly} maxLength={16} hint="What is sold and counted: TAB, ML, NOS" />
-              <TextField control={form.control} name="purchaseUnit" label="Purchase unit" required disabled={readOnly} maxLength={16} hint="How vendors supply it: STRIP, BOX" />
+              <TextField
+                control={form.control}
+                name="baseUnit"
+                label="Issue unit"
+                required
+                disabled={readOnly}
+                maxLength={16}
+                hint="What is sold and counted: TAB, ML, NOS"
+              />
+              <TextField
+                control={form.control}
+                name="purchaseUnit"
+                label="Purchase unit"
+                required
+                disabled={readOnly}
+                maxLength={16}
+                hint="How vendors supply it: STRIP, BOX"
+              />
               <NumberField
                 control={form.control}
                 name="purchaseUnitFactor"
@@ -405,12 +554,25 @@ function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; can
                 disabled={readOnly}
                 min={0}
               />
-              <TextField control={form.control} name="packSize" label="Pack size" disabled={readOnly} hint="e.g. 10 x 10" />
+              <TextField
+                control={form.control}
+                name="packSize"
+                label="Pack size"
+                disabled={readOnly}
+                hint="e.g. 10 x 10"
+              />
             </FormGrid>
 
             <Subtitle2 as="h3">Tax and regulation</Subtitle2>
             <FormGrid columns={3}>
-              <TextField control={form.control} name="hsnCode" label="HSN code" disabled={readOnly} maxLength={8} hint="4, 6 or 8 digits, e.g. 300490 for medicines" />
+              <TextField
+                control={form.control}
+                name="hsnCode"
+                label="HSN code"
+                disabled={readOnly}
+                maxLength={8}
+                hint="4, 6 or 8 digits, e.g. 300490 for medicines"
+              />
               <SelectField
                 control={form.control}
                 name="gstRate"
@@ -430,7 +592,13 @@ function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; can
               />
             </FormGrid>
             <FormGrid columns={2}>
-              <SwitchField control={form.control} name="isControlled" label="Narcotic or psychotropic (NDPS)" disabled={readOnly} hint="Always recorded in the controlled-drug register" />
+              <SwitchField
+                control={form.control}
+                name="isControlled"
+                label="Narcotic or psychotropic (NDPS)"
+                disabled={readOnly}
+                hint="Always recorded in the controlled-drug register"
+              />
               <SwitchField control={form.control} name="isColdChain" label="Cold chain (2–8 °C)" disabled={readOnly} />
             </FormGrid>
             {type === 'Drug' && (
@@ -448,24 +616,73 @@ function ItemEditor({ item, canManage, onClose }: { item: ItemDetail | null; can
 
             <Subtitle2 as="h3">Stock levels</Subtitle2>
             <FormGrid columns={3}>
-              <SelectField control={form.control} name="vedClass" label="VED class" disabled={readOnly} options={VED_CLASSES.map((v) => ({ value: v, label: vedLabel[v] }))} />
-              <NumberField control={form.control} name="reorderLevel" label="Reorder level" disabled={readOnly} min={0} hint="Suggest a purchase at or below this" />
-              <NumberField control={form.control} name="reorderQuantity" label="Reorder quantity" disabled={readOnly} min={0} />
-              <NumberField control={form.control} name="minimumStock" label="Minimum stock" disabled={readOnly} min={0} />
-              <NumberField control={form.control} name="maximumStock" label="Maximum stock" disabled={readOnly} min={0} hint="0 = no maximum" />
+              <SelectField
+                control={form.control}
+                name="vedClass"
+                label="VED class"
+                disabled={readOnly}
+                options={VED_CLASSES.map((v) => ({ value: v, label: vedLabel[v] }))}
+              />
+              <NumberField
+                control={form.control}
+                name="reorderLevel"
+                label="Reorder level"
+                disabled={readOnly}
+                min={0}
+                hint="Suggest a purchase at or below this"
+              />
+              <NumberField
+                control={form.control}
+                name="reorderQuantity"
+                label="Reorder quantity"
+                disabled={readOnly}
+                min={0}
+              />
+              <NumberField
+                control={form.control}
+                name="minimumStock"
+                label="Minimum stock"
+                disabled={readOnly}
+                min={0}
+              />
+              <NumberField
+                control={form.control}
+                name="maximumStock"
+                label="Maximum stock"
+                disabled={readOnly}
+                min={0}
+                hint="0 = no maximum"
+              />
             </FormGrid>
 
             <Subtitle2 as="h3">Other</Subtitle2>
             <FormGrid columns={2}>
               <TextField control={form.control} name="manufacturer" label="Manufacturer" disabled={readOnly} />
-              <TextField control={form.control} name="barcode" label="Barcode" disabled={readOnly} maxLength={64} hint="Scan the pack to fill it" />
+              <TextField
+                control={form.control}
+                name="barcode"
+                label="Barcode"
+                disabled={readOnly}
+                maxLength={64}
+                hint="Scan the pack to fill it"
+              />
             </FormGrid>
-            <SwitchField control={form.control} name="isActive" label="Active (can be ordered, received and sold)" disabled={readOnly} />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Active (can be ordered, received and sold)"
+              disabled={readOnly}
+            />
           </div>
         </DrawerBody>
         <DrawerFooter>
           {canManage && (
-            <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={save.isPending}
+              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            >
               {item ? 'Save' : 'Add item'}
             </Button>
           )}

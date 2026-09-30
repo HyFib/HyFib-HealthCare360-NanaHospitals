@@ -1,7 +1,21 @@
 import { auth, createHubClient, hubErrorMessage, useSession, type HubClient } from '@hc360/core';
-import type { IceServerDto, TelehealthJoinResult, TelehealthMessageDto, TelehealthRole, TelehealthStatus } from '@/lib/types';
+import type {
+  IceServerDto,
+  TelehealthJoinResult,
+  TelehealthMessageDto,
+  TelehealthRole,
+  TelehealthStatus,
+} from '@/lib/types';
 import { canFallBackToAudio, classifyMediaError, type MediaProblem } from './media';
-import { computeQuality, decodeCandidate, decodeDescription, encodeCandidate, snapshotFromStats, type QualityReading, type StatsSnapshot } from './webrtc';
+import {
+  computeQuality,
+  decodeCandidate,
+  decodeDescription,
+  encodeCandidate,
+  snapshotFromStats,
+  type QualityReading,
+  type StatsSnapshot,
+} from './webrtc';
 
 /**
  * The patient's side of a 1:1 video consultation (TEL-02/03/05, PP-04): the waiting room, then a peer-to-peer WebRTC
@@ -91,7 +105,11 @@ const INITIAL_STATE: PatientCallState = {
 
 /** Modest capture settings: good enough for a consultation, light on mobile data and battery. */
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-const VIDEO: MediaTrackConstraints = { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 20, max: 24 } };
+const VIDEO: MediaTrackConstraints = {
+  width: { ideal: 640 },
+  height: { ideal: 480 },
+  frameRate: { ideal: 20, max: 24 },
+};
 const CLOSED: ReadonlySet<TelehealthStatus> = new Set(['Completed', 'Cancelled', 'Missed']);
 const QUALITY_SAMPLE_MS = 5_000;
 const QUALITY_REPORT_MS = 15_000;
@@ -136,7 +154,12 @@ export class PatientCall {
 
   start(): void {
     const generation = ++this.generation;
-    this.update({ ...INITIAL_STATE, phase: 'connecting', hub: 'connecting', audioOnly: Boolean(this.options.startAudioOnly) });
+    this.update({
+      ...INITIAL_STATE,
+      phase: 'connecting',
+      hub: 'connecting',
+      audioOnly: Boolean(this.options.startAudioOnly),
+    });
     void this.acquireMedia(generation);
     void this.connect(generation);
     clearInterval(this.qualityTimer);
@@ -346,12 +369,28 @@ export class PatientCall {
         }
         if (participant.role === 'Clinician' || participant.participantId === this.remoteId) {
           this.closePeer();
-          this.update({ doctorPresent: false, remoteStream: null, remoteAudioOnly: false, peer: 'idle', quality: null, poorStreak: 0 });
+          this.update({
+            doctorPresent: false,
+            remoteStream: null,
+            remoteAudioOnly: false,
+            peer: 'idle',
+            quality: null,
+            poorStreak: 0,
+          });
         }
       }),
-      hub.on<SignalPayload>('offer', (message) => live() && this.enqueue(() => this.handleOffer(message.from, message.data))),
-      hub.on<SignalPayload>('answer', (message) => live() && this.enqueue(() => this.handleAnswer(message.from, message.data))),
-      hub.on<SignalPayload>('iceCandidate', (message) => live() && this.enqueue(() => this.handleCandidate(message.from, message.data))),
+      hub.on<SignalPayload>(
+        'offer',
+        (message) => live() && this.enqueue(() => this.handleOffer(message.from, message.data)),
+      ),
+      hub.on<SignalPayload>(
+        'answer',
+        (message) => live() && this.enqueue(() => this.handleAnswer(message.from, message.data)),
+      ),
+      hub.on<SignalPayload>(
+        'iceCandidate',
+        (message) => live() && this.enqueue(() => this.handleCandidate(message.from, message.data)),
+      ),
       hub.on<TelehealthMessageDto>('chatMessage', (message) => {
         if (live()) {
           this.update({ messages: mergeMessages(this.state.messages, [message]) });
@@ -436,11 +475,20 @@ export class PatientCall {
     this.remoteId = remoteId;
     this.needsFreshPeer = false;
     this.previousStats = null;
-    this.update({ remoteStream: null, remoteAudioOnly: false, peer: 'connecting', quality: null, poorStreak: 0, doctorPresent: true });
+    this.update({
+      remoteStream: null,
+      remoteAudioOnly: false,
+      peer: 'connecting',
+      quality: null,
+      poorStreak: 0,
+      doctorPresent: true,
+    });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && pc === this.pc) {
-        void this.hub?.send('SendIceCandidate', this.options.sessionId, encodeCandidate(event.candidate.toJSON())).catch(noop);
+        void this.hub
+          ?.send('SendIceCandidate', this.options.sessionId, encodeCandidate(event.candidate.toJSON()))
+          .catch(noop);
       }
     };
     pc.ontrack = (event) => {
@@ -584,7 +632,10 @@ export class PatientCall {
       this.update({ mediaProblem: 'unsupported' });
       return;
     }
-    const audio: MediaTrackConstraints = { ...AUDIO, ...(this.options.audioDeviceId ? { deviceId: { exact: this.options.audioDeviceId } } : {}) };
+    const audio: MediaTrackConstraints = {
+      ...AUDIO,
+      ...(this.options.audioDeviceId ? { deviceId: { exact: this.options.audioDeviceId } } : {}),
+    };
     const video: MediaTrackConstraints = {
       ...VIDEO,
       ...(this.options.videoDeviceId ? { deviceId: { exact: this.options.videoDeviceId } } : { facingMode: 'user' }),
@@ -611,7 +662,8 @@ export class PatientCall {
     const hasVideo = Boolean(stream?.getVideoTracks().length);
     this.update({
       localStream: stream,
-      mediaProblem: stream && hasAudio ? (hasVideo || this.options.startAudioOnly ? null : problem) : (problem ?? 'unknown'),
+      mediaProblem:
+        stream && hasAudio ? (hasVideo || this.options.startAudioOnly ? null : problem) : (problem ?? 'unknown'),
       micOn: hasAudio,
       cameraOn: hasVideo && !this.state.audioOnly,
     });
@@ -683,7 +735,10 @@ function toRtcIceServers(servers: IceServerDto[]): RTCIceServer[] {
 }
 
 /** Messages in time order without duplicates (the server echoes the patient's own messages back). */
-export function mergeMessages(current: readonly TelehealthMessageDto[], incoming: readonly TelehealthMessageDto[]): TelehealthMessageDto[] {
+export function mergeMessages(
+  current: readonly TelehealthMessageDto[],
+  incoming: readonly TelehealthMessageDto[],
+): TelehealthMessageDto[] {
   const byId = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => byId.set(message.id, message));
   return [...byId.values()].sort((a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt));

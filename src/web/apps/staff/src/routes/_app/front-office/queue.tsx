@@ -43,7 +43,12 @@ interface DeskPrefs {
 
 function loadPrefs(): DeskPrefs {
   try {
-    return { departmentId: '', practitionerId: '', room: '', ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<DeskPrefs>) };
+    return {
+      departmentId: '',
+      practitionerId: '',
+      room: '',
+      ...(JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<DeskPrefs>),
+    };
   } catch {
     return { departmentId: '', practitionerId: '', room: '' };
   }
@@ -57,8 +62,21 @@ const useStyles = makeStyles({
     alignItems: 'start',
     '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
   },
-  serving: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', padding: '8px 0' },
-  token: { fontSize: '64px', lineHeight: '72px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1, letterSpacing: '2px' },
+  serving: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    textAlign: 'center',
+    padding: '8px 0',
+  },
+  token: {
+    fontSize: '64px',
+    lineHeight: '72px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+    letterSpacing: '2px',
+  },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '8px' },
   callNext: { width: '100%', minHeight: '56px', fontSize: tokens.fontSizeBase500 },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -103,7 +121,13 @@ function QueuePage() {
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['front-office', 'queue'] });
 
   const act = useMutation({
-    mutationFn: async ({ action, entry }: { action: 'call' | 'start' | 'complete' | 'skip' | 'requeue'; entry: QueueEntry }) => {
+    mutationFn: async ({
+      action,
+      entry,
+    }: {
+      action: 'call' | 'start' | 'complete' | 'skip' | 'requeue';
+      entry: QueueEntry;
+    }) => {
       switch (action) {
         case 'call':
           return queueApi.call(entry.tokenId, prefs.room || null);
@@ -139,7 +163,9 @@ function QueuePage() {
 
   const entries = useMemo(() => queue.data ?? [], [queue.data]);
   const serving = entries.filter(
-    (e) => (e.status === 'Called' || e.status === 'InService') && (!prefs.practitionerId || !e.practitionerId || e.practitionerId === prefs.practitionerId),
+    (e) =>
+      (e.status === 'Called' || e.status === 'InService') &&
+      (!prefs.practitionerId || !e.practitionerId || e.practitionerId === prefs.practitionerId),
   );
   const current = serving.find((e) => e.status === 'InService') ?? serving[0];
   const waiting = entries.filter((e) => e.status === 'Waiting');
@@ -147,11 +173,17 @@ function QueuePage() {
 
   return (
     <Page>
-      <PageHeader title="Patient queue" subtitle="Press F2 to call the next patient. The waiting-area screen updates automatically." />
+      <PageHeader
+        title="Patient queue"
+        subtitle="Press F2 to call the next patient. The waiting-area screen updates automatically."
+      />
       <Section>
         <FilterBar>
           <Field label="Department">
-            <Select value={departmentId} onChange={(_, d) => setPrefs((p) => ({ ...p, departmentId: d.value, practitionerId: '' }))}>
+            <Select
+              value={departmentId}
+              onChange={(_, d) => setPrefs((p) => ({ ...p, departmentId: d.value, practitionerId: '' }))}
+            >
               <option value="">Choose department</option>
               {toOptions(departments.data).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -161,7 +193,11 @@ function QueuePage() {
             </Select>
           </Field>
           <Field label="Doctor">
-            <Select value={prefs.practitionerId} onChange={(_, d) => setPrefs((p) => ({ ...p, practitionerId: d.value }))} disabled={!departmentId}>
+            <Select
+              value={prefs.practitionerId}
+              onChange={(_, d) => setPrefs((p) => ({ ...p, practitionerId: d.value }))}
+              disabled={!departmentId}
+            >
               <option value="">All doctors</option>
               {toOptions(practitioners.data).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -171,14 +207,21 @@ function QueuePage() {
             </Select>
           </Field>
           <Field label="Room / counter">
-            <Input value={prefs.room} onChange={(_, d) => setPrefs((p) => ({ ...p, room: d.value.slice(0, 20) }))} placeholder="e.g. Room 3" />
+            <Input
+              value={prefs.room}
+              onChange={(_, d) => setPrefs((p) => ({ ...p, room: d.value.slice(0, 20) }))}
+              placeholder="e.g. Room 3"
+            />
           </Field>
           <Switch checked={showFinished} onChange={(_, d) => setShowFinished(d.checked)} label="Show finished" />
         </FilterBar>
       </Section>
 
       {!departmentId ? (
-        <EmptyState title="Choose your department" description="The queue for the selected department and doctor will appear here." />
+        <EmptyState
+          title="Choose your department"
+          description="The queue for the selected department and doctor will appear here."
+        />
       ) : (
         <div className={styles.layout}>
           <Section title="Now serving">
@@ -199,28 +242,44 @@ function QueuePage() {
                   <div className={styles.actions}>
                     {current.status === 'Called' && (
                       <>
-                        <Button icon={<PlayRegular />} appearance="primary" onClick={() => act.mutate({ action: 'start', entry: current })}>
+                        <Button
+                          icon={<PlayRegular />}
+                          appearance="primary"
+                          onClick={() => act.mutate({ action: 'start', entry: current })}
+                        >
                           Start consultation
                         </Button>
                         <Tooltip content="Announce this token again" relationship="description">
-                          <Button icon={<MegaphoneLoudRegular />} onClick={() => act.mutate({ action: 'call', entry: current })}>
+                          <Button
+                            icon={<MegaphoneLoudRegular />}
+                            onClick={() => act.mutate({ action: 'call', entry: current })}
+                          >
                             Recall
                           </Button>
                         </Tooltip>
-                        <Button icon={<SkipForwardTabRegular />} onClick={() => act.mutate({ action: 'skip', entry: current })}>
+                        <Button
+                          icon={<SkipForwardTabRegular />}
+                          onClick={() => act.mutate({ action: 'skip', entry: current })}
+                        >
                           Not present
                         </Button>
                       </>
                     )}
                     {current.status === 'InService' && (
-                      <Button icon={<CheckmarkRegular />} appearance="primary" onClick={() => act.mutate({ action: 'complete', entry: current })}>
+                      <Button
+                        icon={<CheckmarkRegular />}
+                        appearance="primary"
+                        onClick={() => act.mutate({ action: 'complete', entry: current })}
+                      >
                         Finish
                       </Button>
                     )}
                     <Button
                       icon={<PersonRegular />}
                       appearance="subtle"
-                      onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: current.patientId } })}
+                      onClick={() =>
+                        void navigate({ to: '/patients/$patientId', params: { patientId: current.patientId } })
+                      }
                     >
                       Open patient
                     </Button>
@@ -259,9 +318,16 @@ function QueuePage() {
                   header: 'Patient',
                   render: (e) => (
                     <span>
-                      {e.patientName} <Text size={200}>({e.age ?? '—'} / {e.gender.charAt(0)})</Text>
+                      {e.patientName}{' '}
+                      <Text size={200}>
+                        ({e.age ?? '—'} / {e.gender.charAt(0)})
+                      </Text>
                       {e.priority !== 'Normal' && (
-                        <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'} style={{ marginLeft: 6 }}>
+                        <Badge
+                          size="small"
+                          color={e.priority === 'Emergency' ? 'danger' : 'warning'}
+                          style={{ marginLeft: 6 }}
+                        >
                           {e.priority}
                         </Badge>
                       )}
@@ -273,12 +339,25 @@ function QueuePage() {
                     </span>
                   ),
                 },
-                { key: 'issued', header: 'Checked in', width: 100, priority: 'low', render: (e) => formatTime(e.issuedAt) },
+                {
+                  key: 'issued',
+                  header: 'Checked in',
+                  width: 100,
+                  priority: 'low',
+                  render: (e) => formatTime(e.issuedAt),
+                },
                 {
                   key: 'wait',
                   header: 'Waiting',
                   width: 100,
-                  render: (e) => (e.status === 'Waiting' ? <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>{e.waitingMinutes} min</span> : <StatusBadge status={e.status} />),
+                  render: (e) =>
+                    e.status === 'Waiting' ? (
+                      <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>
+                        {e.waitingMinutes} min
+                      </span>
+                    ) : (
+                      <StatusBadge status={e.status} />
+                    ),
                 },
                 { key: 'complaint', header: 'Reason', priority: 'low', render: (e) => e.chiefComplaint ?? '—' },
               ]}
@@ -286,11 +365,19 @@ function QueuePage() {
                 canManage
                   ? (e) =>
                       e.status === 'Waiting' ? (
-                        <Button size="small" icon={<MegaphoneLoudRegular />} onClick={() => act.mutate({ action: 'call', entry: e })}>
+                        <Button
+                          size="small"
+                          icon={<MegaphoneLoudRegular />}
+                          onClick={() => act.mutate({ action: 'call', entry: e })}
+                        >
                           Call
                         </Button>
                       ) : e.status === 'Skipped' || e.status === 'NoShow' ? (
-                        <Button size="small" icon={<ArrowUndoRegular />} onClick={() => act.mutate({ action: 'requeue', entry: e })}>
+                        <Button
+                          size="small"
+                          icon={<ArrowUndoRegular />}
+                          onClick={() => act.mutate({ action: 'requeue', entry: e })}
+                        >
                           Put back
                         </Button>
                       ) : null

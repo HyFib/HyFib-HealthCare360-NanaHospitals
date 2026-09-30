@@ -1,4 +1,16 @@
-import { Button, Caption1, Field, Input, makeStyles, MessageBar, MessageBarBody, Select, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Select,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AddRegular, CopyRegular, DeleteRegular, SaveRegular } from '@fluentui/react-icons';
 import type { Gender } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
@@ -6,7 +18,16 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { errorMessage, indexedFieldErrors } from '../common/errors';
 import { labApi, labKeys, type LabTestDetail, type ReferenceRangeDto } from '../api';
-import { emptyRange, fromDays, parseList, rangeProblem, rangeSummary, sortRanges, toDays, type AgeUnit } from './ranges';
+import {
+  emptyRange,
+  fromDays,
+  parseList,
+  rangeProblem,
+  rangeSummary,
+  sortRanges,
+  toDays,
+  type AgeUnit,
+} from './ranges';
 
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -74,7 +95,12 @@ function parseNumber(value: string): number | null | 'invalid' {
 }
 
 function toDto(row: RangeRow, id: string | null): ReferenceRangeDto | string {
-  const numbers = [parseNumber(row.low), parseNumber(row.high), parseNumber(row.criticalLow), parseNumber(row.criticalHigh)];
+  const numbers = [
+    parseNumber(row.low),
+    parseNumber(row.high),
+    parseNumber(row.criticalLow),
+    parseNumber(row.criticalHigh),
+  ];
   if (numbers.includes('invalid')) {
     return 'Limits must be numbers.';
   }
@@ -139,7 +165,10 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
     mutationFn: () => labApi.setRanges(test.id, converted as ReferenceRangeDto[], test.version),
     onSuccess: () => {
       setDirty(false);
-      notify.success('Reference ranges saved', 'New results use them straight away; results already entered keep their flags.');
+      notify.success(
+        'Reference ranges saved',
+        'New results use them straight away; results already entered keep their flags.',
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.masters });
     },
     onError: (error) => notify.error(error, 'Could not save the reference ranges'),
@@ -173,7 +202,9 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
         </MessageBar>
       )}
 
-      {rows.length === 0 && <Text>No reference range yet. Results of this test cannot be flagged until one is added.</Text>}
+      {rows.length === 0 && (
+        <Text>No reference range yet. Results of this test cannot be flagged until one is added.</Text>
+      )}
 
       {rows.map((row, index) => {
         const dto = converted[index];
@@ -181,9 +212,17 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
         return (
           <section key={row.key} className={styles.card} aria-label={`Reference range ${index + 1}`}>
             <div className={styles.cardHead}>
-              <Text weight="semibold">{typeof dto === 'string' || !dto ? `Range ${index + 1}` : rangeSummary(dto)}</Text>
+              <Text weight="semibold">
+                {typeof dto === 'string' || !dto ? `Range ${index + 1}` : rangeSummary(dto)}
+              </Text>
               <span>
-                <Button size="small" appearance="subtle" icon={<CopyRegular />} onClick={() => add(row)} aria-label={`Copy range ${index + 1}`}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<CopyRegular />}
+                  onClick={() => add(row)}
+                  aria-label={`Copy range ${index + 1}`}
+                >
                   Copy
                 </Button>
                 <Button
@@ -200,7 +239,10 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
             </div>
             <div className={styles.grid}>
               <Field label="Sex">
-                <Select value={row.gender ?? ''} onChange={(_, data) => change(row.key, { gender: (data.value || null) as Gender | null })}>
+                <Select
+                  value={row.gender ?? ''}
+                  onChange={(_, data) => change(row.key, { gender: (data.value || null) as Gender | null })}
+                >
                   <option value="">Any</option>
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
@@ -208,8 +250,18 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
               </Field>
               <Field label="From age">
                 <div className={styles.age}>
-                  <Input value={row.fromValue} onChange={(_, data) => change(row.key, { fromValue: data.value })} inputMode="numeric" style={{ width: 70 }} aria-label="From age" />
-                  <Select value={row.fromUnit} onChange={(_, data) => change(row.key, { fromUnit: data.value as AgeUnit })} aria-label="From age unit">
+                  <Input
+                    value={row.fromValue}
+                    onChange={(_, data) => change(row.key, { fromValue: data.value })}
+                    inputMode="numeric"
+                    style={{ width: 70 }}
+                    aria-label="From age"
+                  />
+                  <Select
+                    value={row.fromUnit}
+                    onChange={(_, data) => change(row.key, { fromUnit: data.value as AgeUnit })}
+                    aria-label="From age unit"
+                  >
                     {UNITS.map((unit) => (
                       <option key={unit.value} value={unit.value}>
                         {unit.label}
@@ -220,8 +272,18 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
               </Field>
               <Field label="Below age" hint="Empty: no upper limit">
                 <div className={styles.age}>
-                  <Input value={row.toValue} onChange={(_, data) => change(row.key, { toValue: data.value })} inputMode="numeric" style={{ width: 70 }} aria-label="Below age" />
-                  <Select value={row.toUnit} onChange={(_, data) => change(row.key, { toUnit: data.value as AgeUnit })} aria-label="Below age unit">
+                  <Input
+                    value={row.toValue}
+                    onChange={(_, data) => change(row.key, { toValue: data.value })}
+                    inputMode="numeric"
+                    style={{ width: 70 }}
+                    aria-label="Below age"
+                  />
+                  <Select
+                    value={row.toUnit}
+                    onChange={(_, data) => change(row.key, { toUnit: data.value as AgeUnit })}
+                    aria-label="Below age unit"
+                  >
                     {UNITS.map((unit) => (
                       <option key={unit.value} value={unit.value}>
                         {unit.label}
@@ -233,31 +295,63 @@ export function RangesEditor({ test }: { test: LabTestDetail }) {
               {numeric && (
                 <>
                   <Field label={`Low${test.unit ? ` (${test.unit})` : ''}`}>
-                    <Input value={row.low} onChange={(_, data) => change(row.key, { low: data.value })} inputMode="decimal" />
+                    <Input
+                      value={row.low}
+                      onChange={(_, data) => change(row.key, { low: data.value })}
+                      inputMode="decimal"
+                    />
                   </Field>
                   <Field label={`High${test.unit ? ` (${test.unit})` : ''}`}>
-                    <Input value={row.high} onChange={(_, data) => change(row.key, { high: data.value })} inputMode="decimal" />
+                    <Input
+                      value={row.high}
+                      onChange={(_, data) => change(row.key, { high: data.value })}
+                      inputMode="decimal"
+                    />
                   </Field>
                   <Field label="Critical below">
-                    <Input value={row.criticalLow} onChange={(_, data) => change(row.key, { criticalLow: data.value })} inputMode="decimal" />
+                    <Input
+                      value={row.criticalLow}
+                      onChange={(_, data) => change(row.key, { criticalLow: data.value })}
+                      inputMode="decimal"
+                    />
                   </Field>
                   <Field label="Critical above">
-                    <Input value={row.criticalHigh} onChange={(_, data) => change(row.key, { criticalHigh: data.value })} inputMode="decimal" />
+                    <Input
+                      value={row.criticalHigh}
+                      onChange={(_, data) => change(row.key, { criticalHigh: data.value })}
+                      inputMode="decimal"
+                    />
                   </Field>
                 </>
               )}
               {!numeric && (
                 <>
                   <Field label="Normal answers" hint="Comma separated" className={styles.wide}>
-                    <Input value={row.normalValues} onChange={(_, data) => change(row.key, { normalValues: data.value })} placeholder="e.g. Negative, Non-reactive" />
+                    <Input
+                      value={row.normalValues}
+                      onChange={(_, data) => change(row.key, { normalValues: data.value })}
+                      placeholder="e.g. Negative, Non-reactive"
+                    />
                   </Field>
                   <Field label="Critical answers" hint="Comma separated" className={styles.wide}>
-                    <Input value={row.criticalValues} onChange={(_, data) => change(row.key, { criticalValues: data.value })} placeholder="e.g. Reactive, P. falciparum seen" />
+                    <Input
+                      value={row.criticalValues}
+                      onChange={(_, data) => change(row.key, { criticalValues: data.value })}
+                      placeholder="e.g. Reactive, P. falciparum seen"
+                    />
                   </Field>
                 </>
               )}
-              <Field label="Printed text" hint="Optional; replaces the computed range on the report" className={styles.wide}>
-                <Input value={row.text} onChange={(_, data) => change(row.key, { text: data.value.slice(0, 500) })} placeholder="e.g. Desirable: below 200" />
+              <Field
+                label="Printed text"
+                hint="Optional; replaces the computed range on the report"
+                className={styles.wide}
+              >
+                <Input
+                  value={row.text}
+                  onChange={(_, data) => change(row.key, { text: data.value.slice(0, 500) })}
+                  placeholder="e.g. Desirable: below 200"
+                />
               </Field>
             </div>
             {problem && (

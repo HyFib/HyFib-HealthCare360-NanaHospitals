@@ -8,7 +8,8 @@ export interface Measurement {
 
 /** Measurements of a cardiology study as label/value text in the patient's language (empty ones left out). */
 export function cardiologyMeasurements(report: CardiologyReportView, t: Translate): Measurement[] {
-  const n = (value: number | null | undefined, unit: MessageKey) => (value === null || value === undefined ? null : t(unit, { value }));
+  const n = (value: number | null | undefined, unit: MessageKey) =>
+    value === null || value === undefined ? null : t(unit, { value });
   const items: [MessageKey, string | number | null | undefined][] = [];
   if (report.ecg) {
     const e = report.ecg;
@@ -43,7 +44,12 @@ export function cardiologyMeasurements(report: CardiologyReportView, t: Translat
     const e = report.tmt;
     items.push(
       ['card.tmt.protocol', e.protocol],
-      ['card.tmt.duration', e.durationSeconds === null ? null : t('unit.minutes', { value: Math.round((e.durationSeconds / 60) * 10) / 10 })],
+      [
+        'card.tmt.duration',
+        e.durationSeconds === null
+          ? null
+          : t('unit.minutes', { value: Math.round((e.durationSeconds / 60) * 10) / 10 }),
+      ],
       ['card.tmt.mets', e.mets],
       ['card.tmt.maxHr', n(e.maxHeartRate, 'unit.bpm')],
       ['card.tmt.target', n(e.targetHeartRatePercent, 'unit.percent')],

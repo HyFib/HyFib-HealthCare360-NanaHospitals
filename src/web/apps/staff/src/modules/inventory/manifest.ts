@@ -19,17 +19,67 @@ const manifest: ModuleManifest = {
   icon: BoxMultipleRegular,
   order: 20,
   links: [
-    { label: 'Store overview', to: '/inventory', permission: S.stockRead, keywords: ['inventory', 'stock value', 'dashboard'] },
-    { label: 'Stock and batches', to: '/inventory/stock', permission: S.stockRead, keywords: ['on hand', 'batch', 'expiry', 'fefo', 'block'] },
-    { label: 'Stock ledger', to: '/inventory/ledger', permission: S.stockRead, keywords: ['stock card', 'movement', 'running balance'] },
-    { label: 'Indents', to: '/inventory/indents', permission: INDENT_READERS, keywords: ['requisition', 'issue', 'sub-store', 'department'] },
-    { label: 'Transfers', to: '/inventory/transfers', permission: TRANSFER_READERS, keywords: ['stock transfer', 'send', 'receive', 'in transit'] },
-    { label: 'Stock counts', to: '/inventory/counts', permission: [S.counts, S.adjustmentsApprove, S.stockRead], keywords: ['physical count', 'audit', 'count sheet'] },
-    { label: 'Adjustments', to: '/inventory/adjustments', permission: ADJUSTMENT_READERS, keywords: ['write-off', 'damage', 'breakage', 'variance'] },
-    { label: 'Inventory reports', to: '/inventory/reports', permission: REPORT_READERS, keywords: ['near expiry', 'valuation', 'reorder', 'abc', 'ved', 'fsn'] },
-    { label: 'Item master', to: '/inventory/items', permission: CATALOG_READERS, keywords: ['drug master', 'hsn', 'gst', 'schedule'] },
+    {
+      label: 'Store overview',
+      to: '/inventory',
+      permission: S.stockRead,
+      keywords: ['inventory', 'stock value', 'dashboard'],
+    },
+    {
+      label: 'Stock and batches',
+      to: '/inventory/stock',
+      permission: S.stockRead,
+      keywords: ['on hand', 'batch', 'expiry', 'fefo', 'block'],
+    },
+    {
+      label: 'Stock ledger',
+      to: '/inventory/ledger',
+      permission: S.stockRead,
+      keywords: ['stock card', 'movement', 'running balance'],
+    },
+    {
+      label: 'Indents',
+      to: '/inventory/indents',
+      permission: INDENT_READERS,
+      keywords: ['requisition', 'issue', 'sub-store', 'department'],
+    },
+    {
+      label: 'Transfers',
+      to: '/inventory/transfers',
+      permission: TRANSFER_READERS,
+      keywords: ['stock transfer', 'send', 'receive', 'in transit'],
+    },
+    {
+      label: 'Stock counts',
+      to: '/inventory/counts',
+      permission: [S.counts, S.adjustmentsApprove, S.stockRead],
+      keywords: ['physical count', 'audit', 'count sheet'],
+    },
+    {
+      label: 'Adjustments',
+      to: '/inventory/adjustments',
+      permission: ADJUSTMENT_READERS,
+      keywords: ['write-off', 'damage', 'breakage', 'variance'],
+    },
+    {
+      label: 'Inventory reports',
+      to: '/inventory/reports',
+      permission: REPORT_READERS,
+      keywords: ['near expiry', 'valuation', 'reorder', 'abc', 'ved', 'fsn'],
+    },
+    {
+      label: 'Item master',
+      to: '/inventory/items',
+      permission: CATALOG_READERS,
+      keywords: ['drug master', 'hsn', 'gst', 'schedule'],
+    },
     { label: 'Item categories', to: '/inventory/categories', permission: CATALOG_READERS, keywords: ['groups'] },
-    { label: 'Stores', to: '/inventory/stores', permission: STORE_READERS, keywords: ['central store', 'sub-store', 'location'] },
+    {
+      label: 'Stores',
+      to: '/inventory/stores',
+      permission: STORE_READERS,
+      keywords: ['central store', 'sub-store', 'location'],
+    },
   ],
   quickActions: [
     {
@@ -43,7 +93,12 @@ const manifest: ModuleManifest = {
   widgets: [
     {
       id: 'inventory-near-expiry',
-      permission: [S.stockRead, PHARMACY_PERMISSIONS.queueRead, PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.ipIssue],
+      permission: [
+        S.stockRead,
+        PHARMACY_PERMISSIONS.queueRead,
+        PHARMACY_PERMISSIONS.sales,
+        PHARMACY_PERMISSIONS.ipIssue,
+      ],
       span: 2,
       order: 45,
       component: NearExpiryStockWidget,

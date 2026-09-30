@@ -64,7 +64,11 @@ export interface ReasonDialogProps {
  */
 export function ReasonDialog(props: ReasonDialogProps) {
   return (
-    <Dialog open={props.open} onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()} modalType="alert">
+    <Dialog
+      open={props.open}
+      onOpenChange={(_, data) => !data.open && !props.busy && props.onCancel()}
+      modalType="alert"
+    >
       <DialogSurface>{props.open && <ReasonDialogBody {...props} />}</DialogSurface>
     </Dialog>
   );
@@ -163,7 +167,13 @@ export function DictateButton({ onText, label = 'Dictate' }: { onText: (text: st
   };
   return (
     <Tooltip content="Speak; the text is added at the end" relationship="description">
-      <Button size="small" appearance="subtle" icon={busy ? <Spinner size="extra-tiny" /> : <MicRegular />} onClick={dictate} disabled={busy}>
+      <Button
+        size="small"
+        appearance="subtle"
+        icon={busy ? <Spinner size="extra-tiny" /> : <MicRegular />}
+        onClick={dictate}
+        disabled={busy}
+      >
         {label}
       </Button>
     </Tooltip>

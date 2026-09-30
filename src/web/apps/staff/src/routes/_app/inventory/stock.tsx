@@ -49,16 +49,32 @@ function StockPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const stock = useQuery({ ...inventoryQueries.stock(storeId ?? '', { search: search.q, type: search.type, belowReorder: search.below, page: search.page }), enabled: Boolean(storeId) });
-  const set = (patch: Partial<StockSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const stock = useQuery({
+    ...inventoryQueries.stock(storeId ?? '', {
+      search: search.q,
+      type: search.type,
+      belowReorder: search.below,
+      page: search.page,
+    }),
+    enabled: Boolean(storeId),
+  });
+  const set = (patch: Partial<StockSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Stock and batches"
-        subtitle={store ? `${store.name}: what is on the shelf, set aside and usable. Open an item to see its batches.` : 'Choose a store'}
+        subtitle={
+          store
+            ? `${store.name}: what is on the shelf, set aside and usable. Open an item to see its batches.`
+            : 'Choose a store'
+        }
         actions={
-          <Button icon={<HistoryRegular />} onClick={() => void navigate({ to: '/inventory/ledger', search: { storeId: storeId ?? undefined } })}>
+          <Button
+            icon={<HistoryRegular />}
+            onClick={() => void navigate({ to: '/inventory/ledger', search: { storeId: storeId ?? undefined } })}
+          >
             Stock ledger
           </Button>
         }
@@ -82,7 +98,10 @@ function StockPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Item name, code or barcode" />
             </Field>
             <Field label="Type">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as ItemType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as ItemType | undefined })}
+              >
                 <option value="">All</option>
                 {ITEM_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -91,11 +110,18 @@ function StockPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.below === true} onChange={(_, d) => set({ below: d.checked || undefined })} label="Only items to reorder" />
+            <Switch
+              checked={search.below === true}
+              onChange={(_, d) => set({ below: d.checked || undefined })}
+              label="Only items to reorder"
+            />
           </FilterBar>
         </div>
         {!storeId ? (
-          <EmptyState title="Choose a store" description="Stock is kept per store. Pick the store to see its items and batches." />
+          <EmptyState
+            title="Choose a store"
+            description="Stock is kept per store. Pick the store to see its items and batches."
+          />
         ) : (
           <DataTable<StockSummaryRow>
             ariaLabel="Stock"
@@ -107,7 +133,13 @@ function StockPage() {
             onRowClick={setDrill}
             size="small"
             columns={[
-              { key: 'code', header: 'Code', width: 110, priority: 'low', render: (r) => <Text font="monospace">{r.itemCode}</Text> },
+              {
+                key: 'code',
+                header: 'Code',
+                width: 110,
+                priority: 'low',
+                render: (r) => <Text font="monospace">{r.itemCode}</Text>,
+              },
               {
                 key: 'item',
                 header: 'Item',
@@ -126,17 +158,45 @@ function StockPage() {
                 ),
               },
               { key: 'onHand', header: 'On hand', align: 'end', render: (r) => formatQty(r.onHand, r.baseUnit) },
-              { key: 'reserved', header: 'Reserved', align: 'end', priority: 'low', render: (r) => (r.reserved ? formatQty(r.reserved) : '—') },
-              { key: 'available', header: 'Usable', align: 'end', render: (r) => <Text weight="semibold">{formatQty(r.available)}</Text> },
+              {
+                key: 'reserved',
+                header: 'Reserved',
+                align: 'end',
+                priority: 'low',
+                render: (r) => (r.reserved ? formatQty(r.reserved) : '—'),
+              },
+              {
+                key: 'available',
+                header: 'Usable',
+                align: 'end',
+                render: (r) => <Text weight="semibold">{formatQty(r.available)}</Text>,
+              },
               {
                 key: 'expired',
                 header: 'Expired',
                 align: 'end',
-                render: (r) => (r.expiredQuantity > 0 ? <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{formatQty(r.expiredQuantity)}</Text> : '—'),
+                render: (r) =>
+                  r.expiredQuantity > 0 ? (
+                    <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{formatQty(r.expiredQuantity)}</Text>
+                  ) : (
+                    '—'
+                  ),
               },
               { key: 'expiry', header: 'Nearest expiry', render: (r) => <ExpiryText date={r.nearestExpiry} /> },
-              { key: 'reorder', header: 'Reorder at', align: 'end', priority: 'low', render: (r) => (r.reorderLevel > 0 ? formatQty(r.reorderLevel) : '—') },
-              { key: 'value', header: 'Value at cost', align: 'end', priority: 'low', render: (r) => formatInr(r.valueAtCost) },
+              {
+                key: 'reorder',
+                header: 'Reorder at',
+                align: 'end',
+                priority: 'low',
+                render: (r) => (r.reorderLevel > 0 ? formatQty(r.reorderLevel) : '—'),
+              },
+              {
+                key: 'value',
+                header: 'Value at cost',
+                align: 'end',
+                priority: 'low',
+                render: (r) => formatInr(r.valueAtCost),
+              },
             ]}
             emptyTitle={search.q ? 'No item matches' : 'This store holds no stock'}
             emptyDescription="Stock comes in through goods receipts, transfers and indent issues."
@@ -148,7 +208,14 @@ function StockPage() {
         )}
       </Section>
       {drill && storeId && (
-        <BatchDrawer storeId={storeId} storeName={store?.name ?? 'this store'} itemId={drill.itemId} itemName={drill.itemName} baseUnit={drill.baseUnit} onClose={() => setDrill(null)} />
+        <BatchDrawer
+          storeId={storeId}
+          storeName={store?.name ?? 'this store'}
+          itemId={drill.itemId}
+          itemName={drill.itemName}
+          baseUnit={drill.baseUnit}
+          onClose={() => setDrill(null)}
+        />
       )}
     </Page>
   );

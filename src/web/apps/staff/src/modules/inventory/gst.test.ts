@@ -59,7 +59,14 @@ describe('GST calculator mirror', () => {
     expect(tiny.gst).toBe(0.01);
     expect(tiny.cgst).toBe(0.01);
     expect(tiny.sgst).toBe(0);
-    expect(gstOnExclusive(1, 5, false)).toEqual({ taxable: 1, gst: 0.05, cgst: 0.03, sgst: 0.02, igst: 0, total: 1.05 });
+    expect(gstOnExclusive(1, 5, false)).toEqual({
+      taxable: 1,
+      gst: 0.05,
+      cgst: 0.03,
+      sgst: 0.02,
+      igst: 0,
+      total: 1.05,
+    });
   });
 
   it('rounds invoice totals to the rupee with a round-off', () => {

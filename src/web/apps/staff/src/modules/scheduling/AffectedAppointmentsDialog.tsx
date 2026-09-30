@@ -42,7 +42,13 @@ const useStyles = makeStyles({
  * Appointments a schedule change leaves without a doctor (inside new leave/blocked time, or outside an edited
  * session), as returned by the server. The desk moves or cancels each one here; nothing is changed automatically.
  */
-export function AffectedAppointmentsDialog({ affected, onClose }: { affected: AffectedAppointment[] | null; onClose: () => void }) {
+export function AffectedAppointmentsDialog({
+  affected,
+  onClose,
+}: {
+  affected: AffectedAppointment[] | null;
+  onClose: () => void;
+}) {
   const open = affected !== null && affected.length > 0;
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
@@ -70,7 +76,10 @@ function AffectedContent({ affected, onClose }: { affected: AffectedAppointment[
       if (isOpen(detail.status)) {
         setDialog({ kind, appointment: detail });
       } else {
-        notify.info('Already handled', `This appointment is now ${appointmentStatusText[detail.status].label.toLowerCase()}.`);
+        notify.info(
+          'Already handled',
+          `This appointment is now ${appointmentStatusText[detail.status].label.toLowerCase()}.`,
+        );
       }
     } catch (error) {
       notify.error(error, 'Could not open the appointment');
@@ -100,7 +109,8 @@ function AffectedContent({ affected, onClose }: { affected: AffectedAppointment[
         <DialogTitle>
           {affected.length === 1 ? '1 appointment needs a new time' : `${affected.length} appointments need a new time`}
           <Caption1 block className={styles.muted}>
-            These bookings fall outside the doctor's sessions after this change. Call the patients, then move or cancel each one; the patient gets an SMS/WhatsApp.
+            These bookings fall outside the doctor's sessions after this change. Call the patients, then move or cancel
+            each one; the patient gets an SMS/WhatsApp.
           </Caption1>
         </DialogTitle>
         <DialogContent>
@@ -145,10 +155,19 @@ function AffectedContent({ affected, onClose }: { affected: AffectedAppointment[
                                 <Spinner size="tiny" />
                               ) : (
                                 <>
-                                  <Button size="small" icon={<CalendarArrowRightRegular />} onClick={() => void start('reschedule', a.id)}>
+                                  <Button
+                                    size="small"
+                                    icon={<CalendarArrowRightRegular />}
+                                    onClick={() => void start('reschedule', a.id)}
+                                  >
                                     Reschedule
                                   </Button>
-                                  <Button size="small" appearance="subtle" icon={<DismissCircleRegular />} onClick={() => void start('cancel', a.id)}>
+                                  <Button
+                                    size="small"
+                                    appearance="subtle"
+                                    icon={<DismissCircleRegular />}
+                                    onClick={() => void start('cancel', a.id)}
+                                  >
                                     Cancel
                                   </Button>
                                 </>
@@ -176,8 +195,14 @@ function AffectedContent({ affected, onClose }: { affected: AffectedAppointment[
           </Button>
         </DialogActions>
       </DialogBody>
-      <RescheduleDialog appointment={dialog?.kind === 'reschedule' ? dialog.appointment : null} onClose={() => void finish()} />
-      <CancelAppointmentDialog appointment={dialog?.kind === 'cancel' ? dialog.appointment : null} onClose={() => void finish()} />
+      <RescheduleDialog
+        appointment={dialog?.kind === 'reschedule' ? dialog.appointment : null}
+        onClose={() => void finish()}
+      />
+      <CancelAppointmentDialog
+        appointment={dialog?.kind === 'cancel' ? dialog.appointment : null}
+        onClose={() => void finish()}
+      />
     </>
   );
 }

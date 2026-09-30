@@ -9,9 +9,23 @@ import { KpiTile, KpiTileSkeleton } from './KpiTile';
 
 const useStyles = makeStyles({
   grid: { display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' },
-  footer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginTop: '10px', flexWrap: 'wrap' },
+  footer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '8px',
+    marginTop: '10px',
+    flexWrap: 'wrap',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
-  link: { display: 'inline-flex', alignItems: 'center', gap: '2px', color: tokens.colorBrandForeground1, textDecoration: 'none', ':hover': { textDecoration: 'underline' } },
+  link: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+    color: tokens.colorBrandForeground1,
+    textDecoration: 'none',
+    ':hover': { textDecoration: 'underline' },
+  },
 });
 
 /** Home-page snapshot: this month's headline KPIs against last month's same days, one click from the full dashboard. */
@@ -27,10 +41,14 @@ export function AnalyticsSnapshotWidget() {
   return (
     <Section title="Hospital at a glance" description="This month so far, compared with the same number of days before">
       <div className={styles.grid}>
-        {kpis.data ? shown.map((kpi) => <KpiTile key={kpi.key} kpi={kpi} inputs={{ period: 'thisMonth' }} compact />) : [0, 1, 2, 3].map((i) => <KpiTileSkeleton key={i} />)}
+        {kpis.data
+          ? shown.map((kpi) => <KpiTile key={kpi.key} kpi={kpi} inputs={{ period: 'thisMonth' }} compact />)
+          : [0, 1, 2, 3].map((i) => <KpiTileSkeleton key={i} />)}
       </div>
       <div className={styles.footer}>
-        <Caption1 className={styles.muted}>{kpis.data ? `Updated ${formatRelative(kpis.data.generatedAt)}` : ' '}</Caption1>
+        <Caption1 className={styles.muted}>
+          {kpis.data ? `Updated ${formatRelative(kpis.data.generatedAt)}` : ' '}
+        </Caption1>
         <Link to="/analytics" className={styles.link}>
           Executive dashboard
           <ChevronRightRegular aria-hidden />

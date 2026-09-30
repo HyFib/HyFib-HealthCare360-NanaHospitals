@@ -35,15 +35,37 @@ export const modalityLabel: Record<PhysioModality, string> = {
   Other: 'Other',
 };
 
-export const assessmentTypeLabel: Record<PhysioAssessmentType, string> = { Initial: 'Initial assessment', Review: 'Review', Discharge: 'Discharge assessment' };
+export const assessmentTypeLabel: Record<PhysioAssessmentType, string> = {
+  Initial: 'Initial assessment',
+  Review: 'Review',
+  Discharge: 'Discharge assessment',
+};
 
-export const physioSessionStatusLabel: Record<PhysioSessionStatus, string> = { Scheduled: 'Scheduled', Attended: 'Attended', Missed: 'Missed', Cancelled: 'Cancelled' };
+export const physioSessionStatusLabel: Record<PhysioSessionStatus, string> = {
+  Scheduled: 'Scheduled',
+  Attended: 'Attended',
+  Missed: 'Missed',
+  Cancelled: 'Cancelled',
+};
 
-export const physioSessionStatusTone: Record<PhysioSessionStatus, StatusTone> = { Scheduled: 'informative', Attended: 'success', Missed: 'danger', Cancelled: 'subtle' };
+export const physioSessionStatusTone: Record<PhysioSessionStatus, StatusTone> = {
+  Scheduled: 'informative',
+  Attended: 'success',
+  Missed: 'danger',
+  Cancelled: 'subtle',
+};
 
-export const orderPriorityLabel: Record<OrderPriority, string> = { Routine: 'Routine', Urgent: 'Urgent', Stat: 'Immediate (stat)' };
+export const orderPriorityLabel: Record<OrderPriority, string> = {
+  Routine: 'Routine',
+  Urgent: 'Urgent',
+  Stat: 'Immediate (stat)',
+};
 
-export const orderPriorityTone: Record<OrderPriority, StatusTone> = { Routine: 'subtle', Urgent: 'warning', Stat: 'danger' };
+export const orderPriorityTone: Record<OrderPriority, StatusTone> = {
+  Routine: 'subtle',
+  Urgent: 'warning',
+  Stat: 'danger',
+};
 
 /** Medical Research Council muscle power scale. */
 export const MRC_GRADES: readonly { value: number; label: string }[] = [

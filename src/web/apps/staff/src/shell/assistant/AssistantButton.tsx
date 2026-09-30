@@ -43,9 +43,18 @@ export function AssistantButton() {
   return (
     <>
       <Tooltip content="Assistant: say or type a command (Ctrl+Space)" relationship="description">
-        <Button appearance="subtle" icon={<MicSparkleRegular />} aria-label="Assistant" aria-keyshortcuts="Control+Space" aria-haspopup="dialog" onClick={show} />
+        <Button
+          appearance="subtle"
+          icon={<MicSparkleRegular />}
+          aria-label="Assistant"
+          aria-keyshortcuts="Control+Space"
+          aria-haspopup="dialog"
+          onClick={show}
+        />
       </Tooltip>
-      {mounted && <AssistantPanel open={open} onClose={() => setOpen(false)} history={history} onHistoryChange={setHistory} />}
+      {mounted && (
+        <AssistantPanel open={open} onClose={() => setOpen(false)} history={history} onHistoryChange={setHistory} />
+      )}
     </>
   );
 }

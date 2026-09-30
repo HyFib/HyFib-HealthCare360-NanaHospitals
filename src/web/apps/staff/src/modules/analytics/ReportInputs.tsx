@@ -2,7 +2,14 @@ import { Combobox, Field, Input, makeStyles, Option, Select } from '@fluentui/re
 import { todayIso, useDebouncedValue, useSession } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { analyticsQueries, type LookupKind, type PeriodPreset, type ReportInputs, type ReportParameter, type ReportParameterKind } from './api';
+import {
+  analyticsQueries,
+  type LookupKind,
+  type PeriodPreset,
+  type ReportInputs,
+  type ReportParameter,
+  type ReportParameterKind,
+} from './api';
 import { CUSTOM_PERIOD, DEFAULT_PERIOD, PERIOD_PRESETS } from './labels';
 import { daysInRange, isIsoDate, resolvePeriod, setInput } from './params';
 
@@ -94,7 +101,11 @@ export function ReportParameterForm(props: ReportParameterFormProps) {
                 validationMessage={errors[parameter.key]}
                 validationState={errors[parameter.key] ? 'error' : 'none'}
               >
-                <Select value={values[parameter.key] ?? ''} disabled={props.disabled} onChange={(_, data) => onChange(setInput(values, parameter.key, data.value || null))}>
+                <Select
+                  value={values[parameter.key] ?? ''}
+                  disabled={props.disabled}
+                  onChange={(_, data) => onChange(setInput(values, parameter.key, data.value || null))}
+                >
                   {!parameter.required && parameter.defaultValue === null && <option value="">All</option>}
                   {(parameter.choices ?? []).map((choice) => (
                     <option key={choice.value} value={choice.value}>
@@ -171,13 +182,21 @@ function PeriodFields({
     }
     // Start the custom range from the dates on screen, so switching loses nothing.
     const today = todayIso();
-    const start = range?.from && range.to ? { from: range.from, to: range.to } : (resolvePeriod(current, today) ?? { from: today, to: today });
+    const start =
+      range?.from && range.to
+        ? { from: range.from, to: range.to }
+        : (resolvePeriod(current, today) ?? { from: today, to: today });
     onChange({ ...setInput(values, 'period', CUSTOM_PERIOD), from: start.from, to: start.to });
   };
 
   return (
     <>
-      <Field className={styles.field} label="Period" validationMessage={errors.period} validationState={errors.period ? 'error' : 'none'}>
+      <Field
+        className={styles.field}
+        label="Period"
+        validationMessage={errors.period}
+        validationState={errors.period ? 'error' : 'none'}
+      >
         <Select value={current} disabled={disabled} onChange={(_, data) => choose(data.value)}>
           {options.map((preset) => (
             <option key={preset.value} value={preset.value}>
@@ -256,11 +275,35 @@ function DateRangeFields({
 
   return (
     <>
-      <Field className={styles.date} label="From" validationMessage={message('from')} validationState={message('from') ? 'error' : 'none'}>
-        <Input type="date" value={from} min={EARLIEST} max={to || today} disabled={disabled} onChange={(_, data) => update(data.value, to)} />
+      <Field
+        className={styles.date}
+        label="From"
+        validationMessage={message('from')}
+        validationState={message('from') ? 'error' : 'none'}
+      >
+        <Input
+          type="date"
+          value={from}
+          min={EARLIEST}
+          max={to || today}
+          disabled={disabled}
+          onChange={(_, data) => update(data.value, to)}
+        />
       </Field>
-      <Field className={styles.date} label="To" validationMessage={message('to')} validationState={message('to') ? 'error' : 'none'}>
-        <Input type="date" value={to} min={from || EARLIEST} max={today} disabled={disabled} onChange={(_, data) => update(from, data.value)} />
+      <Field
+        className={styles.date}
+        label="To"
+        validationMessage={message('to')}
+        validationState={message('to') ? 'error' : 'none'}
+      >
+        <Input
+          type="date"
+          value={to}
+          min={from || EARLIEST}
+          max={today}
+          disabled={disabled}
+          onChange={(_, data) => update(from, data.value)}
+        />
       </Field>
     </>
   );
@@ -284,8 +327,14 @@ function NumberInput({
   const styles = useStyles();
   const [text, setText] = useState(value);
   const number = Number(text);
-  const outOfRange = text !== '' && (!Number.isInteger(number) || (parameter.min !== null && number < parameter.min) || (parameter.max !== null && number > parameter.max));
-  const localError = outOfRange ? `Enter a whole number from ${parameter.min ?? 0} to ${parameter.max ?? '∞'}.` : undefined;
+  const outOfRange =
+    text !== '' &&
+    (!Number.isInteger(number) ||
+      (parameter.min !== null && number < parameter.min) ||
+      (parameter.max !== null && number > parameter.max));
+  const localError = outOfRange
+    ? `Enter a whole number from ${parameter.min ?? 0} to ${parameter.max ?? '∞'}.`
+    : undefined;
   const commit = () => {
     if (!outOfRange && text !== value) {
       onCommit(text === '' ? null : String(number));
@@ -351,7 +400,11 @@ export function FacilityField({
 
   return (
     <Field className={styles.wide} label={label} validationMessage={error} validationState={error ? 'error' : 'none'}>
-      <Select value={selected} disabled={disabled} onChange={(_, data) => onChange(data.value === current || data.value === '' ? null : data.value)}>
+      <Select
+        value={selected}
+        disabled={disabled}
+        onChange={(_, data) => onChange(data.value === current || data.value === '' ? null : data.value)}
+      >
         {!hasCurrent && <option value={current}>{user?.facilityName ?? 'My facility'}</option>}
         {list.map((facility) => (
           <option key={facility.id} value={facility.id}>
@@ -404,10 +457,21 @@ function LookupField({
     : filter
       ? all.filter((item) => item.name.toLowerCase().includes(filter) || item.code.toLowerCase().includes(filter))
       : all;
-  const selectedName = value ? (all.find((i) => i.id === value)?.name ?? remote.data?.find((i) => i.id === value)?.name ?? knownName ?? 'Selected') : '';
+  const selectedName = value
+    ? (all.find((i) => i.id === value)?.name ??
+      remote.data?.find((i) => i.id === value)?.name ??
+      knownName ??
+      'Selected')
+    : '';
 
   return (
-    <Field className={styles.wide} label={label} required={required} validationMessage={error} validationState={error ? 'error' : 'none'}>
+    <Field
+      className={styles.wide}
+      label={label}
+      required={required}
+      validationMessage={error}
+      validationState={error ? 'error' : 'none'}
+    >
       <Combobox
         placeholder={allLabel}
         disabled={disabled}

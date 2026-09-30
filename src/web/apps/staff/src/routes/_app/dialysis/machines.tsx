@@ -29,7 +29,10 @@ function DialysisMachinesPage() {
   const [disinfecting, setDisinfecting] = useState<DialysisMachineDto | null>(null);
   const machines = useQuery({ ...dialysisQueries.machines(showInactive), enabled: canRead });
 
-  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'dialysis.board.changed', [['dialysis', 'machines'], dialysisKeys.boards]);
+  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'dialysis.board.changed', [
+    ['dialysis', 'machines'],
+    dialysisKeys.boards,
+  ]);
 
   if (!canRead) {
     return (
@@ -40,7 +43,8 @@ function DialysisMachinesPage() {
   }
 
   const rows = [...(machines.data ?? [])].sort(
-    (a, b) => SERO_STATUSES.indexOf(a.seroDedication) - SERO_STATUSES.indexOf(b.seroDedication) || a.code.localeCompare(b.code),
+    (a, b) =>
+      SERO_STATUSES.indexOf(a.seroDedication) - SERO_STATUSES.indexOf(b.seroDedication) || a.code.localeCompare(b.code),
   );
 
   return (
@@ -48,7 +52,10 @@ function DialysisMachinesPage() {
       <PageHeader
         title="Dialysis machines"
         subtitle="Each machine is dedicated to one sero category and must be disinfected after every session."
-        breadcrumbs={[{ label: 'Dialysis board', onClick: () => void navigate({ to: '/dialysis' }) }, { label: 'Machines' }]}
+        breadcrumbs={[
+          { label: 'Dialysis board', onClick: () => void navigate({ to: '/dialysis' }) },
+          { label: 'Machines' },
+        ]}
         actions={
           canManageMachines && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
@@ -57,7 +64,12 @@ function DialysisMachinesPage() {
           )
         }
       />
-      <Section flush actions={<Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show inactive" />}>
+      <Section
+        flush
+        actions={
+          <Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show inactive" />
+        }
+      >
         <DataTable
           ariaLabel="Dialysis machines"
           rows={machines.data ? rows : undefined}
@@ -82,7 +94,11 @@ function DialysisMachinesPage() {
               ),
             },
             { key: 'sero', header: 'Dedicated to', render: (m) => <SeroBadge sero={m.seroDedication} long /> },
-            { key: 'status', header: 'Status', render: (m) => (m.isActive ? <MachineStatusBadge status={m.status} /> : <Caption1>Inactive</Caption1>) },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (m) => (m.isActive ? <MachineStatusBadge status={m.status} /> : <Caption1>Inactive</Caption1>),
+            },
             {
               key: 'disinfection',
               header: 'Disinfection',
@@ -97,21 +113,38 @@ function DialysisMachinesPage() {
                 </span>
               ),
             },
-            { key: 'used', header: 'Last used', priority: 'low', render: (m) => (m.lastUsedAt ? formatRelative(m.lastUsedAt) : 'Not used yet') },
-            { key: 'model', header: 'Model', priority: 'low', render: (m) => [m.manufacturer, m.model].filter(Boolean).join(' ') },
+            {
+              key: 'used',
+              header: 'Last used',
+              priority: 'low',
+              render: (m) => (m.lastUsedAt ? formatRelative(m.lastUsedAt) : 'Not used yet'),
+            },
+            {
+              key: 'model',
+              header: 'Model',
+              priority: 'low',
+              render: (m) => [m.manufacturer, m.model].filter(Boolean).join(' '),
+            },
           ]}
           rowActions={
             canDisinfect
               ? (m) =>
                   m.status !== 'InUse' && m.isActive ? (
-                    <Button size="small" appearance={m.needsDisinfection ? 'primary' : 'subtle'} icon={<BroomRegular />} onClick={() => setDisinfecting(m)}>
+                    <Button
+                      size="small"
+                      appearance={m.needsDisinfection ? 'primary' : 'subtle'}
+                      icon={<BroomRegular />}
+                      onClick={() => setDisinfecting(m)}
+                    >
                       Record disinfection
                     </Button>
                   ) : null
               : undefined
           }
           emptyTitle="No dialysis machines"
-          emptyDescription={canManageMachines ? 'Add each machine with the sero category it is dedicated to.' : undefined}
+          emptyDescription={
+            canManageMachines ? 'Add each machine with the sero category it is dedicated to.' : undefined
+          }
         />
       </Section>
       {editing && <MachineDrawer machine={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

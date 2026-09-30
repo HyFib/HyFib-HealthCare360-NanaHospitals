@@ -2,11 +2,26 @@
 
 export const HOSPITAL_TIME_ZONE = 'Asia/Kolkata';
 
-const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const inr = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 const inrWhole = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat('en-IN');
-const dateFmt = new Intl.DateTimeFormat('en-IN', { timeZone: HOSPITAL_TIME_ZONE, day: '2-digit', month: 'short', year: 'numeric' });
-const timeFmt = new Intl.DateTimeFormat('en-IN', { timeZone: HOSPITAL_TIME_ZONE, hour: 'numeric', minute: '2-digit', hour12: true });
+const dateFmt = new Intl.DateTimeFormat('en-IN', {
+  timeZone: HOSPITAL_TIME_ZONE,
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+});
+const timeFmt = new Intl.DateTimeFormat('en-IN', {
+  timeZone: HOSPITAL_TIME_ZONE,
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
 const dateTimeFmt = new Intl.DateTimeFormat('en-IN', {
   timeZone: HOSPITAL_TIME_ZONE,
   day: '2-digit',
@@ -16,7 +31,12 @@ const dateTimeFmt = new Intl.DateTimeFormat('en-IN', {
   minute: '2-digit',
   hour12: true,
 });
-const isoDateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: HOSPITAL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+const isoDateFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: HOSPITAL_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 export function formatInr(value: number | null | undefined, options?: { whole?: boolean }): string {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -51,7 +71,9 @@ export function formatDateOnly(value: string | null | undefined): string {
   if (!y || !m || !d) {
     return value;
   }
-  return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(y, m - 1, d));
+  return new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    Date.UTC(y, m - 1, d),
+  );
 }
 
 /** Today's date in IST as "yyyy-MM-dd" (what the server expects for date filters). */
@@ -125,7 +147,10 @@ export function initials(name: string | null | undefined): string {
   if (!name) {
     return '?';
   }
-  const parts = name.replace(/^(dr|mr|mrs|ms|master|baby)\.?\s+/i, '').split(/\s+/).filter(Boolean);
+  const parts = name
+    .replace(/^(dr|mr|mrs|ms|master|baby)\.?\s+/i, '')
+    .split(/\s+/)
+    .filter(Boolean);
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? (parts.at(-1)?.[0] ?? '') : '')).toUpperCase() || '?';
 }
 

@@ -40,23 +40,43 @@ export function SystemHealthWidget() {
         <Caption1>Checking…</Caption1>
       ) : (
         <div className={styles.rows}>
-          {problems.length === 0 ? <CheckmarkCircleRegular className={styles.ok} /> : <WarningRegular className={styles.warn} />}
-          <Text weight="semibold">{problems.length === 0 ? 'All systems normal' : `${problems.length} item${problems.length > 1 ? 's' : ''} need attention`}</Text>
+          {problems.length === 0 ? (
+            <CheckmarkCircleRegular className={styles.ok} />
+          ) : (
+            <WarningRegular className={styles.warn} />
+          )}
+          <Text weight="semibold">
+            {problems.length === 0
+              ? 'All systems normal'
+              : `${problems.length} item${problems.length > 1 ? 's' : ''} need attention`}
+          </Text>
           <Caption1 className={styles.muted}>WiFi</Caption1>
           <Caption1>
-            {wifi?.isConnected ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}` : h.network.wifiSupported ? 'Disconnected' : 'Wired network'}
+            {wifi?.isConnected
+              ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`
+              : h.network.wifiSupported
+                ? 'Disconnected'
+                : 'Wired network'}
           </Caption1>
           <Caption1 className={styles.muted}>Database</Caption1>
-          <Caption1 className={h.database.reachable ? undefined : styles.bad}>{h.database.reachable ? 'Online' : 'Not reachable'}</Caption1>
+          <Caption1 className={h.database.reachable ? undefined : styles.bad}>
+            {h.database.reachable ? 'Online' : 'Not reachable'}
+          </Caption1>
           <Caption1 className={styles.muted}>Last backup</Caption1>
           <Caption1 className={!h.backup.enabled || !h.backup.lastSuccessAt ? styles.warn : undefined}>
-            {!h.backup.enabled ? 'Backups are off' : h.backup.lastSuccessAt ? formatRelative(h.backup.lastSuccessAt) : 'Never'}
+            {!h.backup.enabled
+              ? 'Backups are off'
+              : h.backup.lastSuccessAt
+                ? formatRelative(h.backup.lastSuccessAt)
+                : 'Never'}
           </Caption1>
           {h.power.available && (
             <>
               <Caption1 className={styles.muted}>Power</Caption1>
               <Caption1 className={h.power.onBattery ? styles.bad : undefined}>
-                {h.power.onBattery ? `On UPS battery${h.power.chargePercent !== null ? ` (${h.power.chargePercent}%)` : ''}` : 'Mains'}
+                {h.power.onBattery
+                  ? `On UPS battery${h.power.chargePercent !== null ? ` (${h.power.chargePercent}%)` : ''}`
+                  : 'Mains'}
               </Caption1>
             </>
           )}

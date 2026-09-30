@@ -46,15 +46,20 @@ describe('api client', () => {
   });
 
   it('does not retry a server-decided failure that names a problem code', async () => {
-    const problem = new Response(JSON.stringify({ title: 'The AI provider failed', status: 502, code: 'ai.provider_failed' }), {
-      status: 502,
-      headers: { 'content-type': 'application/problem+json' },
-    });
+    const problem = new Response(
+      JSON.stringify({ title: 'The AI provider failed', status: 502, code: 'ai.provider_failed' }),
+      {
+        status: 502,
+        headers: { 'content-type': 'application/problem+json' },
+      },
+    );
     const fetchMock = vi.fn().mockResolvedValueOnce(problem);
     vi.stubGlobal('fetch', fetchMock);
 
     const client = createApiClient(baseConfig);
-    await expect(client.post('/api/v1/ai/assistant/command', { text: 'open billing' })).rejects.toBeInstanceOf(ApiError);
+    await expect(client.post('/api/v1/ai/assistant/command', { text: 'open billing' })).rejects.toBeInstanceOf(
+      ApiError,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -71,14 +76,19 @@ describe('api client', () => {
   });
 
   it('reads the file name a download was given', () => {
-    expect(fileNameFromDisposition(`attachment; filename="stock.csv"; filename*=UTF-8''Stock%20report%20%E2%82%B9.csv`)).toBe('Stock report ₹.csv');
+    expect(
+      fileNameFromDisposition(`attachment; filename="stock.csv"; filename*=UTF-8''Stock%20report%20%E2%82%B9.csv`),
+    ).toBe('Stock report ₹.csv');
     expect(fileNameFromDisposition('attachment; filename="register-2026-09.csv"')).toBe('register-2026-09.csv');
     expect(fileNameFromDisposition('attachment; filename=plain.xlsx')).toBe('plain.xlsx');
     expect(fileNameFromDisposition(null)).toBeNull();
   });
 
   it('refreshes once on 401 and replays the request', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(401, {})).mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(401, {}))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);
     const refresh = vi.fn(async () => 'fresh');
 
@@ -90,7 +100,12 @@ describe('api client', () => {
   it('turns problem details into ApiError with field errors', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(jsonResponse(400, { title: 'Please correct the highlighted fields.', errors: { firstName: ['First name is required.'] } })),
+      vi.fn().mockResolvedValue(
+        jsonResponse(400, {
+          title: 'Please correct the highlighted fields.',
+          errors: { firstName: ['First name is required.'] },
+        }),
+      ),
     );
     const client = createApiClient(baseConfig);
 

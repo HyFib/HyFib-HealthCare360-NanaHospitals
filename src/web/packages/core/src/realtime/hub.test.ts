@@ -4,7 +4,9 @@ import { hubErrorMessage, hubLogger, hubReconnectDelay } from './hub';
 
 describe('hubErrorMessage', () => {
   it("shows the server's own message", () => {
-    const error = new Error("An unexpected error occurred invoking 'Admit' on the server. HubException: The patient has left the waiting room.");
+    const error = new Error(
+      "An unexpected error occurred invoking 'Admit' on the server. HubException: The patient has left the waiting room.",
+    );
     expect(hubErrorMessage(error)).toBe('The patient has left the waiting room.');
   });
 
@@ -30,14 +32,23 @@ describe('hubLogger', () => {
 
   it('reports real connection failures', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    hubLogger.log(LogLevel.Error, "Failed to start the connection: Error: Unexpected status code returned from negotiate '401'");
+    hubLogger.log(
+      LogLevel.Error,
+      "Failed to start the connection: Error: Unexpected status code returned from negotiate '401'",
+    );
     expect(error).toHaveBeenCalledOnce();
   });
 
   it('stays quiet when a connection is stopped before it finished connecting', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    hubLogger.log(LogLevel.Error, 'Failed to start the connection: Error: The connection was stopped during negotiation.');
-    hubLogger.log(LogLevel.Error, 'Failed to start the connection: Error: The connection was stopped before the hub handshake could complete.');
+    hubLogger.log(
+      LogLevel.Error,
+      'Failed to start the connection: Error: The connection was stopped during negotiation.',
+    );
+    hubLogger.log(
+      LogLevel.Error,
+      'Failed to start the connection: Error: The connection was stopped before the hub handshake could complete.',
+    );
     expect(error).not.toHaveBeenCalled();
   });
 

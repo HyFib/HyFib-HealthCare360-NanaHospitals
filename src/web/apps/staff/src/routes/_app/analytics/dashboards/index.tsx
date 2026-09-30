@@ -23,7 +23,15 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, BoardRegular, CopyRegular, DeleteRegular, EditRegular, MoreHorizontalRegular, OpenRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  BoardRegular,
+  CopyRegular,
+  DeleteRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+  OpenRegular,
+} from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
 import { ConfirmDialog, EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -59,12 +67,27 @@ const useStyles = makeStyles({
     minWidth: 0,
     color: tokens.colorNeutralForeground1,
     textDecoration: 'none',
-    '::after': { content: '""', position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: tokens.borderRadiusLarge },
+    '::after': {
+      content: '""',
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      borderRadius: tokens.borderRadiusLarge,
+    },
     ':focus-visible': { outline: 'none' },
     ':focus-visible::after': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
   menu: { position: 'relative', zIndex: 1 },
-  description: { color: tokens.colorNeutralForeground2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', minHeight: '2.6em' },
+  description: {
+    color: tokens.colorNeutralForeground2,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    minHeight: '2.6em',
+  },
   meta: { display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap', color: tokens.colorNeutralForeground3 },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
@@ -85,7 +108,11 @@ function DashboardsPage() {
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.dashboards });
       notify.success('Copy created', 'Change it as you like; the original stays as it was.');
-      void navigate({ to: '/analytics/dashboards/$dashboardId', params: { dashboardId: created.id }, search: { edit: true } });
+      void navigate({
+        to: '/analytics/dashboards/$dashboardId',
+        params: { dashboardId: created.id },
+        search: { edit: true },
+      });
     },
     onError: (error) => notify.error(error, 'Could not copy the dashboard'),
   });
@@ -109,16 +136,32 @@ function DashboardsPage() {
   if (dashboards.error || !dashboards.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={dashboards.error} onRetry={() => void dashboards.refetch()} title="Could not load dashboards" />
+        <ErrorState
+          error={dashboards.error}
+          onRetry={() => void dashboards.refetch()}
+          title="Could not load dashboards"
+        />
       </Page>
     );
   }
 
   const all = dashboards.data;
   const groups = [
-    { title: 'Hospital templates', description: 'Ready-made views for common reviews. Make a copy to adapt one.', items: all.filter((d) => d.isTemplate) },
-    { title: 'My dashboards', description: 'Only you can change these; share them to let colleagues view them.', items: all.filter((d) => d.isMine && !d.isTemplate) },
-    { title: 'Shared with me', description: 'Dashboards colleagues have shared.', items: all.filter((d) => !d.isMine && !d.isTemplate) },
+    {
+      title: 'Hospital templates',
+      description: 'Ready-made views for common reviews. Make a copy to adapt one.',
+      items: all.filter((d) => d.isTemplate),
+    },
+    {
+      title: 'My dashboards',
+      description: 'Only you can change these; share them to let colleagues view them.',
+      items: all.filter((d) => d.isMine && !d.isTemplate),
+    },
+    {
+      title: 'Shared with me',
+      description: 'Dashboards colleagues have shared.',
+      items: all.filter((d) => !d.isMine && !d.isTemplate),
+    },
   ].filter((group) => group.items.length > 0);
 
   return (
@@ -127,7 +170,10 @@ function DashboardsPage() {
         title="Dashboards"
         icon={<BoardRegular />}
         subtitle="Your favourite reports side by side, always showing current figures"
-        breadcrumbs={[{ label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) }, { label: 'Dashboards' }]}
+        breadcrumbs={[
+          { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
+          { label: 'Dashboards' },
+        ]}
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setCreating(true)}>
@@ -141,7 +187,11 @@ function DashboardsPage() {
         <Section>
           <EmptyState
             title="No dashboards yet"
-            description={canManage ? 'Create one and add tiles from any report you can open.' : 'Ask your MIS team to share a dashboard with you.'}
+            description={
+              canManage
+                ? 'Create one and add tiles from any report you can open.'
+                : 'Ask your MIS team to share a dashboard with you.'
+            }
             action={
               canManage ? (
                 <Button icon={<AddRegular />} onClick={() => setCreating(true)}>
@@ -162,29 +212,56 @@ function DashboardsPage() {
                       <span className={styles.icon} aria-hidden>
                         <BoardRegular />
                       </span>
-                      <Link to="/analytics/dashboards/$dashboardId" params={{ dashboardId: board.id }} className={styles.titleLink}>
+                      <Link
+                        to="/analytics/dashboards/$dashboardId"
+                        params={{ dashboardId: board.id }}
+                        className={styles.titleLink}
+                      >
                         <Subtitle2>{board.name}</Subtitle2>
                       </Link>
                       <div className={styles.menu}>
                         <Menu>
                           <MenuTrigger disableButtonEnhancement>
-                            <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${board.name}`} />
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<MoreHorizontalRegular />}
+                              aria-label={`Actions for ${board.name}`}
+                            />
                           </MenuTrigger>
                           <MenuPopover>
                             <MenuList>
-                              <MenuItem icon={<OpenRegular />} onClick={() => void navigate({ to: '/analytics/dashboards/$dashboardId', params: { dashboardId: board.id } })}>
+                              <MenuItem
+                                icon={<OpenRegular />}
+                                onClick={() =>
+                                  void navigate({
+                                    to: '/analytics/dashboards/$dashboardId',
+                                    params: { dashboardId: board.id },
+                                  })
+                                }
+                              >
                                 Open
                               </MenuItem>
                               {board.canEdit && (
                                 <MenuItem
                                   icon={<EditRegular />}
-                                  onClick={() => void navigate({ to: '/analytics/dashboards/$dashboardId', params: { dashboardId: board.id }, search: { edit: true } })}
+                                  onClick={() =>
+                                    void navigate({
+                                      to: '/analytics/dashboards/$dashboardId',
+                                      params: { dashboardId: board.id },
+                                      search: { edit: true },
+                                    })
+                                  }
                                 >
                                   Change
                                 </MenuItem>
                               )}
                               {canManage && (
-                                <MenuItem icon={<CopyRegular />} disabled={copy.isPending} onClick={() => copy.mutate(board)}>
+                                <MenuItem
+                                  icon={<CopyRegular />}
+                                  disabled={copy.isPending}
+                                  onClick={() => copy.mutate(board)}
+                                >
                                   Make a copy
                                 </MenuItem>
                               )}
@@ -216,7 +293,8 @@ function DashboardsPage() {
                         </Badge>
                       )}
                       {board.widgetCount === 1 ? '1 tile' : `${board.widgetCount} tiles`}
-                      {!board.isMine && board.ownerName ? ` · by ${board.ownerName}` : ''} · updated {formatRelative(board.updatedAt)}
+                      {!board.isMine && board.ownerName ? ` · by ${board.ownerName}` : ''} · updated{' '}
+                      {formatRelative(board.updatedAt)}
                     </Caption1>
                   </article>
                 ))}
@@ -257,11 +335,22 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
   const [shared, setShared] = useState(false);
 
   const create = useMutation({
-    mutationFn: () => analyticsApi.createDashboard({ name: name.trim(), description: description.trim() || null, isShared: shared, widgets: [], version: null }),
+    mutationFn: () =>
+      analyticsApi.createDashboard({
+        name: name.trim(),
+        description: description.trim() || null,
+        isShared: shared,
+        widgets: [],
+        version: null,
+      }),
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.dashboards });
       onClose();
-      void navigate({ to: '/analytics/dashboards/$dashboardId', params: { dashboardId: created.id }, search: { edit: true } });
+      void navigate({
+        to: '/analytics/dashboards/$dashboardId',
+        params: { dashboardId: created.id },
+        search: { edit: true },
+      });
     },
     onError: (error) => notify.error(error, 'Could not create the dashboard'),
   });
@@ -281,16 +370,37 @@ function NewDashboardDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle>New dashboard</DialogTitle>
             <DialogContent className={styles.form}>
               <Field label="Name" required>
-                <Input value={name} maxLength={100} autoFocus placeholder="For example: Morning review" onChange={(_, data) => setName(data.value)} />
+                <Input
+                  value={name}
+                  maxLength={100}
+                  autoFocus
+                  placeholder="For example: Morning review"
+                  onChange={(_, data) => setName(data.value)}
+                />
               </Field>
               <Field label="Description">
-                <Textarea value={description} maxLength={300} rows={2} placeholder="What this dashboard is for" onChange={(_, data) => setDescription(data.value)} />
+                <Textarea
+                  value={description}
+                  maxLength={300}
+                  rows={2}
+                  placeholder="What this dashboard is for"
+                  onChange={(_, data) => setDescription(data.value)}
+                />
               </Field>
-              <Switch checked={shared} onChange={(_, data) => setShared(data.checked)} label="Share with colleagues (they can view it; only you can change it)" />
+              <Switch
+                checked={shared}
+                onChange={(_, data) => setShared(data.checked)}
+                label="Share with colleagues (they can view it; only you can change it)"
+              />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose}>Cancel</Button>
-              <Button appearance="primary" type="submit" disabled={!name.trim() || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                appearance="primary"
+                type="submit"
+                disabled={!name.trim() || create.isPending}
+                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Create and add tiles
               </Button>
             </DialogActions>

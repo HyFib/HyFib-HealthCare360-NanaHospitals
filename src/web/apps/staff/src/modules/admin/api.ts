@@ -137,9 +137,22 @@ export interface SystemHealthReport {
     httpsPort: number;
     mdnsEnabled: boolean;
   };
-  database: { reachable: boolean; version: string | null; sizeBytes: number | null; connections: number | null; lastMigration: string | null; error: string | null };
+  database: {
+    reachable: boolean;
+    version: string | null;
+    sizeBytes: number | null;
+    connections: number | null;
+    lastMigration: string | null;
+    error: string | null;
+  };
   storage: { dataDirectory: string; freeBytes: number | null; totalBytes: number | null };
-  backup: { enabled: boolean; lastSuccessAt: string | null; lastFailureAt: string | null; lastError: string | null; lastSizeBytes: number | null };
+  backup: {
+    enabled: boolean;
+    lastSuccessAt: string | null;
+    lastFailureAt: string | null;
+    lastError: string | null;
+    lastSizeBytes: number | null;
+  };
   outbox: { pending: number; failedLast24Hours: number; oldestPendingAt: string | null };
   certificate: { caFingerprint: string | null; serverExpiresAt: string | null; subjectAlternativeNames: string[] };
   power: { available: boolean; onBattery: boolean | null; chargePercent: number | null; source: string | null };
@@ -241,20 +254,36 @@ export const adminQueries = {
   users: (params: { search?: string; page: number; active?: boolean; roleId?: string }) =>
     queryOptions({
       queryKey: ['admin', 'users', params],
-      queryFn: ({ signal }) => api.get<PagedResult<UserListItem>>('/api/v1/admin/users', { query: { ...params, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<UserListItem>>('/api/v1/admin/users', { query: { ...params, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   user: (id: string) =>
-    queryOptions({ queryKey: ['admin', 'user', id], queryFn: ({ signal }) => api.get<UserDetail>(`/api/v1/admin/users/${id}`, { signal }) }),
-  roles: () => queryOptions({ queryKey: ['admin', 'roles'], queryFn: ({ signal }) => api.get<RoleListItem[]>('/api/v1/admin/roles', { signal }) }),
-  role: (id: string) => queryOptions({ queryKey: ['admin', 'role', id], queryFn: ({ signal }) => api.get<RoleDetail>(`/api/v1/admin/roles/${id}`, { signal }) }),
+    queryOptions({
+      queryKey: ['admin', 'user', id],
+      queryFn: ({ signal }) => api.get<UserDetail>(`/api/v1/admin/users/${id}`, { signal }),
+    }),
+  roles: () =>
+    queryOptions({
+      queryKey: ['admin', 'roles'],
+      queryFn: ({ signal }) => api.get<RoleListItem[]>('/api/v1/admin/roles', { signal }),
+    }),
+  role: (id: string) =>
+    queryOptions({
+      queryKey: ['admin', 'role', id],
+      queryFn: ({ signal }) => api.get<RoleDetail>(`/api/v1/admin/roles/${id}`, { signal }),
+    }),
   permissions: () =>
     queryOptions({
       queryKey: ['admin', 'permissions'],
       queryFn: ({ signal }) => api.get<PermissionGroup[]>('/api/v1/admin/permissions', { signal }),
       staleTime: 30 * 60_000,
     }),
-  devices: () => queryOptions({ queryKey: ['admin', 'devices'], queryFn: ({ signal }) => api.get<DeviceDto[]>('/api/v1/admin/devices', { signal }) }),
+  devices: () =>
+    queryOptions({
+      queryKey: ['admin', 'devices'],
+      queryFn: ({ signal }) => api.get<DeviceDto[]>('/api/v1/admin/devices', { signal }),
+    }),
   health: () =>
     queryOptions({
       queryKey: ['admin', 'health'],
@@ -270,10 +299,15 @@ export const adminQueries = {
   audit: (filters: AuditFilters) =>
     queryOptions({
       queryKey: ['admin', 'audit', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<AuditEventDto>>('/api/v1/admin/audit', { query: { ...filters, pageSize: 50 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<AuditEventDto>>('/api/v1/admin/audit', { query: { ...filters, pageSize: 50 }, signal }),
       placeholderData: keepPreviousData,
     }),
-  settings: () => queryOptions({ queryKey: ['admin', 'settings'], queryFn: ({ signal }) => api.get<SettingDto[]>('/api/v1/admin/settings', { signal }) }),
+  settings: () =>
+    queryOptions({
+      queryKey: ['admin', 'settings'],
+      queryFn: ({ signal }) => api.get<SettingDto[]>('/api/v1/admin/settings', { signal }),
+    }),
   backups: () =>
     queryOptions({
       queryKey: ['admin', 'backups'],

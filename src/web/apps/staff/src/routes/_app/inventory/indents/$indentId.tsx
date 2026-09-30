@@ -17,14 +17,27 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AlertUrgentRegular, BoxArrowUpRegular, CheckmarkRegular, DismissCircleRegular, PrintRegular, StopRegular } from '@fluentui/react-icons';
+import {
+  AlertUrgentRegular,
+  BoxArrowUpRegular,
+  CheckmarkRegular,
+  DismissCircleRegular,
+  PrintRegular,
+  StopRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError } from '@hc360/core';
 import { DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type IndentDetail, type IndentIssueDto } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type IndentDetail,
+  type IndentIssueDto,
+} from '@/modules/inventory/api';
 import { dec, min, toNumber } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { LineTable } from '@/modules/inventory/LineTable';
@@ -62,9 +75,16 @@ function IndentDetailPage() {
 
   const reasonAction = useMutation({
     mutationFn: ({ kind, reason }: { kind: 'reject' | 'cancel' | 'close'; reason: string }) =>
-      kind === 'reject' ? inventoryApi.rejectIndent(indentId, reason) : kind === 'cancel' ? inventoryApi.cancelIndent(indentId, reason) : inventoryApi.closeIndent(indentId, reason),
+      kind === 'reject'
+        ? inventoryApi.rejectIndent(indentId, reason)
+        : kind === 'cancel'
+          ? inventoryApi.cancelIndent(indentId, reason)
+          : inventoryApi.closeIndent(indentId, reason),
     onSuccess: (_, { kind }) => {
-      notify.success(kind === 'reject' ? 'Indent rejected' : kind === 'cancel' ? 'Indent cancelled' : 'Indent closed', 'Any stock set aside for it was released.');
+      notify.success(
+        kind === 'reject' ? 'Indent rejected' : kind === 'cancel' ? 'Indent cancelled' : 'Indent closed',
+        'Any stock set aside for it was released.',
+      );
       setDialog(null);
       refresh();
     },
@@ -90,7 +110,10 @@ function IndentDetailPage() {
       <PageHeader
         title={`Indent ${d.number}`}
         subtitle={`${d.fromStoreName} → ${d.toStoreName ?? d.departmentName ?? '—'}`}
-        breadcrumbs={[{ label: 'Indents', onClick: () => void navigate({ to: '/inventory/indents' }) }, { label: d.number }]}
+        breadcrumbs={[
+          { label: 'Indents', onClick: () => void navigate({ to: '/inventory/indents' }) },
+          { label: d.number },
+        ]}
         actions={
           <>
             {canCancel && (
@@ -166,17 +189,41 @@ function IndentDetailPage() {
               ),
             },
             { key: 'req', header: 'Requested', align: 'end', render: (l) => formatQty(l.requestedQuantity) },
-            { key: 'appr', header: 'Approved', align: 'end', render: (l) => (l.approvedQuantity === null ? '—' : formatQty(l.approvedQuantity)) },
+            {
+              key: 'appr',
+              header: 'Approved',
+              align: 'end',
+              render: (l) => (l.approvedQuantity === null ? '—' : formatQty(l.approvedQuantity)),
+            },
             { key: 'issued', header: 'Issued', align: 'end', render: (l) => formatQty(l.issuedQuantity) },
-            { key: 'pending', header: 'Still to issue', align: 'end', render: (l) => <Text weight="semibold">{formatQty(l.pendingQuantity)}</Text> },
-            { key: 'reserved', header: 'Set aside', align: 'end', priority: 'low', render: (l) => (l.reserved ? formatQty(l.reserved) : '—') },
+            {
+              key: 'pending',
+              header: 'Still to issue',
+              align: 'end',
+              render: (l) => <Text weight="semibold">{formatQty(l.pendingQuantity)}</Text>,
+            },
+            {
+              key: 'reserved',
+              header: 'Set aside',
+              align: 'end',
+              priority: 'low',
+              render: (l) => (l.reserved ? formatQty(l.reserved) : '—'),
+            },
             {
               key: 'stock',
               header: 'Free in store',
               align: 'end',
               priority: 'low',
               render: (l) => (
-                <Text style={l.pendingQuantity > l.availableInStore + l.reserved ? { color: tokens.colorPaletteRedForeground1 } : undefined}>{formatQty(l.availableInStore)}</Text>
+                <Text
+                  style={
+                    l.pendingQuantity > l.availableInStore + l.reserved
+                      ? { color: tokens.colorPaletteRedForeground1 }
+                      : undefined
+                  }
+                >
+                  {formatQty(l.availableInStore)}
+                </Text>
               ),
             },
           ]}
@@ -195,7 +242,11 @@ function IndentDetailPage() {
               { key: 'at', header: 'Issued', render: (i) => formatDateTime(i.issuedAt) },
               { key: 'by', header: 'By', priority: 'low', render: (i) => i.issuedBy ?? '—' },
               { key: 'to', header: 'Received by', priority: 'low', render: (i) => i.receivedByName ?? '—' },
-              { key: 'items', header: 'Items', render: (i) => i.lines.map((l) => `${l.itemName} × ${formatQty(l.quantity)}`).join(', ') },
+              {
+                key: 'items',
+                header: 'Items',
+                render: (i) => i.lines.map((l) => `${l.itemName} × ${formatQty(l.quantity)}`).join(', '),
+              },
               { key: 'value', header: 'Value', align: 'end', render: (i) => formatInr(i.totalValue) },
             ]}
             rowActions={(i) => (
@@ -204,7 +255,11 @@ function IndentDetailPage() {
                 appearance="subtle"
                 icon={<PrintRegular />}
                 aria-label={`Print slip ${i.number}`}
-                onClick={() => void printIndentIssue(i, d, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+                onClick={() =>
+                  void printIndentIssue(i, d, letterhead).catch((error: unknown) =>
+                    notify.error(error, 'Printing failed'),
+                  )
+                }
               />
             )}
           />
@@ -233,7 +288,13 @@ function IndentDetailPage() {
       )}
       {(dialog === 'reject' || dialog === 'cancel' || dialog === 'close') && (
         <ReasonDialog
-          title={dialog === 'reject' ? `Reject indent ${d.number}?` : dialog === 'cancel' ? `Cancel indent ${d.number}?` : `Short-close indent ${d.number}?`}
+          title={
+            dialog === 'reject'
+              ? `Reject indent ${d.number}?`
+              : dialog === 'cancel'
+                ? `Cancel indent ${d.number}?`
+                : `Short-close indent ${d.number}?`
+          }
           confirmLabel={dialog === 'reject' ? 'Reject' : dialog === 'cancel' ? 'Cancel indent' : 'Short-close'}
           destructive
           busy={reasonAction.isPending}
@@ -256,13 +317,23 @@ function IndentDetailPage() {
 function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClose: () => void; onDone: () => void }) {
   const notify = useNotify();
   const [approved, setApproved] = useState<Record<string, string>>({});
-  const values = indent.lines.map((l) => ({ line: l, value: parseNumber(approved[l.id] ?? String(l.requestedQuantity)) }));
+  const values = indent.lines.map((l) => ({
+    line: l,
+    value: parseNumber(approved[l.id] ?? String(l.requestedQuantity)),
+  }));
   const invalid = values.some((v) => v.value === null || v.value < 0 || v.value > v.line.requestedQuantity);
   const nothing = values.every((v) => (v.value ?? 0) === 0);
   const approve = useMutation({
-    mutationFn: () => inventoryApi.approveIndent(indent.id, values.map((v) => ({ lineId: v.line.id, approvedQuantity: v.value ?? 0 }))),
+    mutationFn: () =>
+      inventoryApi.approveIndent(
+        indent.id,
+        values.map((v) => ({ lineId: v.line.id, approvedQuantity: v.value ?? 0 })),
+      ),
     onSuccess: () => {
-      notify.success(`Indent ${indent.number} approved`, 'Stock is set aside earliest-expiry first until it is issued.');
+      notify.success(
+        `Indent ${indent.number} approved`,
+        'Stock is set aside earliest-expiry first until it is issued.',
+      );
       onDone();
       onClose();
     },
@@ -273,7 +344,10 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
         <DialogBody>
           <DialogTitle>Approve indent {indent.number}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Caption1>Lower a quantity to approve less, or 0 to leave a line out. Approval sets the stock aside so no one else takes it.</Caption1>
+            <Caption1>
+              Lower a quantity to approve less, or 0 to leave a line out. Approval sets the stock aside so no one else
+              takes it.
+            </Caption1>
             <LineTable
               ariaLabel="Approve quantities"
               rows={values}
@@ -281,7 +355,12 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
               columns={[
                 { key: 'item', header: 'Item', render: (v) => <Text weight="semibold">{v.line.itemName}</Text> },
                 { key: 'req', header: 'Requested', align: 'end', render: (v) => formatQty(v.line.requestedQuantity) },
-                { key: 'free', header: 'Free in store', align: 'end', render: (v) => formatQty(v.line.availableInStore) },
+                {
+                  key: 'free',
+                  header: 'Free in store',
+                  align: 'end',
+                  render: (v) => formatQty(v.line.availableInStore),
+                },
                 {
                   key: 'approve',
                   header: 'Approve',
@@ -306,7 +385,9 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
             )}
             {approve.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(approve.error) ? approve.error.userMessage : 'Not approved.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(approve.error) ? approve.error.userMessage : 'Not approved.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -314,7 +395,12 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
             <Button onClick={onClose} disabled={approve.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={invalid || nothing || approve.isPending} icon={approve.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => approve.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={invalid || nothing || approve.isPending}
+              icon={approve.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => approve.mutate()}
+            >
               Approve
             </Button>
           </DialogActions>
@@ -324,7 +410,15 @@ function ApproveDialog({ indent, onClose, onDone }: { indent: IndentDetail; onCl
   );
 }
 
-function IssueDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClose: () => void; onDone: (slip: { id: string; number: string }) => void }) {
+function IssueDialog({
+  indent,
+  onClose,
+  onDone,
+}: {
+  indent: IndentDetail;
+  onClose: () => void;
+  onDone: (slip: { id: string; number: string }) => void;
+}) {
   const notify = useNotify();
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [receivedBy, setReceivedBy] = useState('');
@@ -347,7 +441,12 @@ function IssueDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClos
         remarks: remarks.trim() || null,
       }),
     onSuccess: (slip) => {
-      notify.success(`Issued on slip ${slip.number}`, indent.toStoreName ? `Stock moved to ${indent.toStoreName}.` : `Booked as used by ${indent.departmentName ?? 'the department'}.`);
+      notify.success(
+        `Issued on slip ${slip.number}`,
+        indent.toStoreName
+          ? `Stock moved to ${indent.toStoreName}.`
+          : `Booked as used by ${indent.departmentName ?? 'the department'}.`,
+      );
       onDone(slip);
       onClose();
     },
@@ -359,7 +458,10 @@ function IssueDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClos
         <DialogBody>
           <DialogTitle>Issue items for {indent.number}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Caption1>Stock set aside for this indent is used first, then the earliest-expiring batches. An issue slip prints for the person collecting.</Caption1>
+            <Caption1>
+              Stock set aside for this indent is used first, then the earliest-expiring batches. An issue slip prints
+              for the person collecting.
+            </Caption1>
             <LineTable
               ariaLabel="Issue quantities"
               rows={values}
@@ -372,7 +474,17 @@ function IssueDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClos
                   key: 'stock',
                   header: 'Can issue',
                   align: 'end',
-                  render: (v) => <Text style={v.issuable < v.line.pendingQuantity ? { color: tokens.colorPaletteMarigoldForeground1 } : undefined}>{formatQty(v.issuable)}</Text>,
+                  render: (v) => (
+                    <Text
+                      style={
+                        v.issuable < v.line.pendingQuantity
+                          ? { color: tokens.colorPaletteMarigoldForeground1 }
+                          : undefined
+                      }
+                    >
+                      {formatQty(v.issuable)}
+                    </Text>
+                  ),
                 },
                 {
                   key: 'issue',
@@ -392,7 +504,12 @@ function IssueDialog({ indent, onClose, onDone }: { indent: IndentDetail; onClos
             />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Collected by">
-                <Input value={receivedBy} maxLength={120} onChange={(_, d) => setReceivedBy(d.value)} placeholder="Name of the person taking the goods" />
+                <Input
+                  value={receivedBy}
+                  maxLength={120}
+                  onChange={(_, d) => setReceivedBy(d.value)}
+                  placeholder="Name of the person taking the goods"
+                />
               </Field>
               <Field label="Remarks">
                 <Input value={remarks} maxLength={500} onChange={(_, d) => setRemarks(d.value)} />

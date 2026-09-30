@@ -26,7 +26,15 @@ import { formatIndicatorValue, indicatorValue, meetsTarget } from './rules';
 
 const useStyles = makeStyles({
   row: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  preview: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  preview: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
   big: { fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -51,15 +59,35 @@ function periodFromValue(value: IndicatorValueDto): { year: number; month: numbe
 }
 
 /** Enter (or correct) one period's numerator and denominator; the value and target status are worked out live. */
-export function IndicatorValueDialog({ open, onClose, indicator, value }: { open: boolean; onClose: () => void; indicator: IndicatorDto; value?: IndicatorValueDto | null }) {
+export function IndicatorValueDialog({
+  open,
+  onClose,
+  indicator,
+  value,
+}: {
+  open: boolean;
+  onClose: () => void;
+  indicator: IndicatorDto;
+  value?: IndicatorValueDto | null;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 620 }}>{open && <Body onClose={onClose} indicator={indicator} value={value ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {open && <Body onClose={onClose} indicator={indicator} value={value ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function Body({ onClose, indicator, value }: { onClose: () => void; indicator: IndicatorDto; value: IndicatorValueDto | null }) {
+function Body({
+  onClose,
+  indicator,
+  value,
+}: {
+  onClose: () => void;
+  indicator: IndicatorDto;
+  value: IndicatorValueDto | null;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -87,8 +115,16 @@ function Body({ onClose, indicator, value }: { onClose: () => void; indicator: I
     }
     setBusy(true);
     try {
-      const saved = await qualityApi.recordValue(indicator.id, { periodStart, numerator: num, denominator: den, notes: notes.trim() || null });
-      notify.success(`${saved.periodLabel} recorded`, `${formatIndicatorValue(saved.value, indicator.unit)}${saved.meetsTarget === false ? ' · misses the target' : ''}`);
+      const saved = await qualityApi.recordValue(indicator.id, {
+        periodStart,
+        numerator: num,
+        denominator: den,
+        notes: notes.trim() || null,
+      });
+      notify.success(
+        `${saved.periodLabel} recorded`,
+        `${formatIndicatorValue(saved.value, indicator.unit)}${saved.meetsTarget === false ? ' · misses the target' : ''}`,
+      );
       void queryClient.invalidateQueries({ queryKey: qualityKeys.indicators });
       void queryClient.invalidateQueries({ queryKey: qualityKeys.dashboard });
       onClose();
@@ -151,23 +187,46 @@ function Body({ onClose, indicator, value }: { onClose: () => void; indicator: I
               </Select>
             </Field>
           </div>
-          <Field label={`Numerator: ${indicator.numeratorDefinition}`} required validationMessage={errors.numerator} validationState={errors.numerator ? 'error' : 'none'}>
+          <Field
+            label={`Numerator: ${indicator.numeratorDefinition}`}
+            required
+            validationMessage={errors.numerator}
+            validationState={errors.numerator ? 'error' : 'none'}
+          >
             <Input type="number" min={0} value={numerator} onChange={(_, d) => setNumerator(d.value)} autoFocus />
           </Field>
-          <Field label={`Denominator: ${indicator.denominatorDefinition}`} required validationMessage={errors.denominator} validationState={errors.denominator ? 'error' : 'none'}>
+          <Field
+            label={`Denominator: ${indicator.denominatorDefinition}`}
+            required
+            validationMessage={errors.denominator}
+            validationState={errors.denominator ? 'error' : 'none'}
+          >
             <Input type="number" min={0} value={denominator} onChange={(_, d) => setDenominator(d.value)} />
           </Field>
           <div className={styles.preview} role="status">
             <span className={styles.big}>{formatIndicatorValue(computed, indicator.unit)}</span>
-            {met !== null && <StatusBadge status={met ? 'Met' : 'Missed'} tone={met ? 'success' : 'danger'} label={met ? 'Meets the target' : 'Misses the target'} />}
+            {met !== null && (
+              <StatusBadge
+                status={met ? 'Met' : 'Missed'}
+                tone={met ? 'success' : 'danger'}
+                label={met ? 'Meets the target' : 'Misses the target'}
+              />
+            )}
             {indicator.target !== null && (
               <Text className={styles.muted}>
-                Target {formatIndicatorValue(indicator.target, indicator.unit)} ({indicator.direction === 'HigherIsBetter' ? 'higher is better' : 'lower is better'})
+                Target {formatIndicatorValue(indicator.target, indicator.unit)} (
+                {indicator.direction === 'HigherIsBetter' ? 'higher is better' : 'lower is better'})
               </Text>
             )}
           </div>
           <Field label="Notes">
-            <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} rows={2} maxLength={1000} placeholder="Data source or anything unusual this period" />
+            <Textarea
+              value={notes}
+              onChange={(_, d) => setNotes(d.value)}
+              rows={2}
+              maxLength={1000}
+              placeholder="Data source or anything unusual this period"
+            />
           </Field>
           {!value && <Caption1 className={styles.muted}>If this period already has a value, it is replaced.</Caption1>}
         </DialogContent>

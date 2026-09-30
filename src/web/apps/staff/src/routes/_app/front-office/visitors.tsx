@@ -14,8 +14,27 @@ import {
   Text,
 } from '@fluentui/react-components';
 import { AddRegular, DoorArrowRightRegular, PrintRegular, ProhibitedRegular } from '@fluentui/react-icons';
-import { escapeHtml, formatDateTime, normalizePhone, printDocument, printHtml, useDebouncedValue, useSession } from '@hc360/core';
-import { barcodeSvg, ConfirmDialog, DataTable, FilterBar, FormGrid, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  escapeHtml,
+  formatDateTime,
+  normalizePhone,
+  printDocument,
+  printHtml,
+  useDebouncedValue,
+  useSession,
+} from '@hc360/core';
+import {
+  barcodeSvg,
+  ConfirmDialog,
+  DataTable,
+  FilterBar,
+  FormGrid,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -50,7 +69,10 @@ async function printPass(pass: VisitorPassDto, facilityName: string) {
     .barcode svg { width: 100%; height: 12mm; margin-top: 6px; }
     .number { font-family: Consolas, monospace; }
     .valid { margin-top: 4px; font-weight: 600; }`;
-  await printHtml(printDocument(body, { title: `Pass ${pass.passNumber}`, pageSize: 'Receipt80', styles }), { pageSize: 'Receipt80', silent: true });
+  await printHtml(printDocument(body, { title: `Pass ${pass.passNumber}`, pageSize: 'Receipt80', styles }), {
+    pageSize: 'Receipt80',
+    silent: true,
+  });
 }
 
 function VisitorPassesPage() {
@@ -66,7 +88,8 @@ function VisitorPassesPage() {
   const passes = useQuery(frontOfficeQueries.visitorPasses(activeOnly, page, search || undefined));
 
   const close = useMutation({
-    mutationFn: ({ pass, action }: { pass: VisitorPassDto; action: 'checkout' | 'revoke' }) => api.post(`/api/v1/front-office/visitor-passes/${pass.id}/${action}`),
+    mutationFn: ({ pass, action }: { pass: VisitorPassDto; action: 'checkout' | 'revoke' }) =>
+      api.post(`/api/v1/front-office/visitor-passes/${pass.id}/${action}`),
     onSuccess: (_, { action }) => {
       setRevoking(null);
       notify.success(action === 'checkout' ? 'Visitor checked out' : 'Pass revoked');
@@ -75,7 +98,8 @@ function VisitorPassesPage() {
     onError: (error) => notify.error(error, 'Could not update the pass'),
   });
 
-  const print = (pass: VisitorPassDto) => void printPass(pass, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'));
+  const print = (pass: VisitorPassDto) =>
+    void printPass(pass, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'));
 
   return (
     <Page>
@@ -92,7 +116,11 @@ function VisitorPassesPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Pass number, visitor or patient" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Pass number, visitor or patient"
+              />
             </Field>
             <Switch
               checked={activeOnly}
@@ -115,20 +143,41 @@ function VisitorPassesPage() {
             { key: 'number', header: 'Pass', width: 130, render: (p) => <Text font="monospace">{p.passNumber}</Text> },
             { key: 'visitor', header: 'Visitor', render: (p) => <Text weight="semibold">{p.visitorName}</Text> },
             { key: 'kind', header: 'Kind', width: 100, render: (p) => (p.isAttendant ? 'Attendant' : 'Visitor') },
-            { key: 'patient', header: 'Patient', priority: 'low', render: (p) => (p.patientName ? `${p.patientName} (${p.patientUhid})` : '—') },
+            {
+              key: 'patient',
+              header: 'Patient',
+              priority: 'low',
+              render: (p) => (p.patientName ? `${p.patientName} (${p.patientUhid})` : '—'),
+            },
             { key: 'location', header: 'Ward / bed', priority: 'low', render: (p) => p.location ?? '—' },
             { key: 'until', header: 'Valid until', render: (p) => formatDateTime(p.validUntil) },
             { key: 'status', header: 'Status', render: (p) => <StatusBadge status={p.status} /> },
           ]}
           rowActions={(p) => (
             <span style={{ display: 'inline-flex', gap: 4 }}>
-              <Button size="small" appearance="subtle" icon={<PrintRegular />} aria-label="Print pass" onClick={() => print(p)} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<PrintRegular />}
+                aria-label="Print pass"
+                onClick={() => print(p)}
+              />
               {p.status === 'Active' && (
                 <>
-                  <Button size="small" icon={<DoorArrowRightRegular />} onClick={() => close.mutate({ pass: p, action: 'checkout' })}>
+                  <Button
+                    size="small"
+                    icon={<DoorArrowRightRegular />}
+                    onClick={() => close.mutate({ pass: p, action: 'checkout' })}
+                  >
                     Check out
                   </Button>
-                  <Button size="small" appearance="subtle" icon={<ProhibitedRegular />} aria-label="Revoke pass" onClick={() => setRevoking(p)} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<ProhibitedRegular />}
+                    aria-label="Revoke pass"
+                    onClick={() => setRevoking(p)}
+                  />
                 </>
               )}
             </span>
@@ -196,7 +245,10 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
         isAttendant,
         validHours,
       };
-      const created = await api.post<{ id: string; passNumber: string; validUntil: string }>('/api/v1/front-office/visitor-passes', body);
+      const created = await api.post<{ id: string; passNumber: string; validUntil: string }>(
+        '/api/v1/front-office/visitor-passes',
+        body,
+      );
       // The server returns the identifiers; the rest of the printable pass comes from what was entered.
       return {
         id: created.id,
@@ -232,12 +284,21 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
         <DialogBody>
           <DialogTitle>Issue visitor pass</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <PatientPicker value={patient} onChange={setPatient} label="Patient being visited" hint="Optional for general visitors" />
+            <PatientPicker
+              value={patient}
+              onChange={setPatient}
+              label="Patient being visited"
+              hint="Optional for general visitors"
+            />
             <FormGrid columns={2}>
               <Field label="Visitor name" required>
                 <Input value={visitorName} onChange={(_, d) => setVisitorName(d.value)} autoFocus />
               </Field>
-              <Field label="Phone" validationMessage={phoneInvalid ? 'Enter a valid phone number.' : undefined} validationState={phoneInvalid ? 'error' : 'none'}>
+              <Field
+                label="Phone"
+                validationMessage={phoneInvalid ? 'Enter a valid phone number.' : undefined}
+                validationState={phoneInvalid ? 'error' : 'none'}
+              >
                 <Input type="tel" value={phone} onChange={(_, d) => setPhone(d.value)} />
               </Field>
               <Field label="Relation to patient">
@@ -283,7 +344,11 @@ function IssuePassDialog({ onClose, onIssued }: { onClose: () => void; onIssued:
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose}>Cancel</Button>
-            <Button appearance="primary" disabled={!visitorName.trim() || phoneInvalid || issue.isPending} onClick={() => issue.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!visitorName.trim() || phoneInvalid || issue.isPending}
+              onClick={() => issue.mutate()}
+            >
               Issue and print
             </Button>
           </DialogActions>

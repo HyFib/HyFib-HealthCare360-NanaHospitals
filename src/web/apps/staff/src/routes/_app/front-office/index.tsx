@@ -33,7 +33,11 @@ function FrontOfficeOverview() {
         actions={
           <>
             <Can permission="patients.register">
-              <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/patients/register' })}>
+              <Button
+                appearance="primary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/patients/register' })}
+              >
                 Register patient
               </Button>
             </Can>

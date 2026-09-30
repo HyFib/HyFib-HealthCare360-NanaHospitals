@@ -40,7 +40,13 @@ describe('worklist helpers', () => {
   });
 
   it('counts the bench workload', () => {
-    expect(worklistCounts(items, 40)).toEqual({ inLab: 40, awaitingEntry: 2, awaitingVerification: 2, critical: 1, stat: 1 });
+    expect(worklistCounts(items, 40)).toEqual({
+      inLab: 40,
+      awaitingEntry: 2,
+      awaitingVerification: 2,
+      critical: 1,
+      stat: 1,
+    });
   });
 
   it('describes progress in words', () => {

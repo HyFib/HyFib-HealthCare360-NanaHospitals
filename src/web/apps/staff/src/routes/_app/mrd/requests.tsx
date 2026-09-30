@@ -18,7 +18,17 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowUndoRegular, DismissRegular, SendRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
-import { ConfirmDialog, DataTable, FilterBar, FormGrid, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  FilterBar,
+  FormGrid,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -39,7 +49,9 @@ import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPic
 
 export const Route = createFileRoute('/_app/mrd/requests')({
   validateSearch: (s: Record<string, unknown>): RequestListParams => ({
-    status: RECORD_REQUEST_STATUSES.includes(s.status as RecordRequestStatus) ? (s.status as RecordRequestStatus) : undefined,
+    status: RECORD_REQUEST_STATUSES.includes(s.status as RecordRequestStatus)
+      ? (s.status as RecordRequestStatus)
+      : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
   component: RecordRequestsPage,
@@ -104,10 +116,18 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         <PatientPicker value={patient} onChange={setPatient} required />
         <FormGrid columns={2}>
           <Field label="Requested by" required>
-            <Input value={requestedBy} onChange={(_, d) => setRequestedBy(d.value.slice(0, 200))} placeholder="Name of the person" />
+            <Input
+              value={requestedBy}
+              onChange={(_, d) => setRequestedBy(d.value.slice(0, 200))}
+              placeholder="Name of the person"
+            />
           </Field>
           <Field label="Department">
-            <Input value={department} onChange={(_, d) => setDepartment(d.value.slice(0, 128))} placeholder="e.g. Cardiology, Insurance desk" />
+            <Input
+              value={department}
+              onChange={(_, d) => setDepartment(d.value.slice(0, 128))}
+              placeholder="e.g. Cardiology, Insurance desk"
+            />
           </Field>
         </FormGrid>
         <Field label="Purpose">
@@ -120,14 +140,25 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
           </Select>
         </Field>
         <Field label="Details">
-          <Textarea value={details} onChange={(_, d) => setDetails(d.value.slice(0, 1000))} rows={2} resize="vertical" placeholder="Which admission or period, court order number…" />
+          <Textarea
+            value={details}
+            onChange={(_, d) => setDetails(d.value.slice(0, 1000))}
+            rows={2}
+            resize="vertical"
+            placeholder="Which admission or period, court order number…"
+          />
         </Field>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={create.isPending}>
           Cancel
         </Button>
-        <Button appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => create.mutate()}>
+        <Button
+          appearance="primary"
+          disabled={!valid || create.isPending}
+          icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+          onClick={() => create.mutate()}
+        >
           Record request
         </Button>
       </DialogActions>
@@ -135,15 +166,37 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function IssueDialog({ request, busy, onConfirm, onCancel }: { request: RecordRequestDto | null; busy: boolean; onConfirm: (dueBackOn: string | null) => void; onCancel: () => void }) {
+function IssueDialog({
+  request,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  request: RecordRequestDto | null;
+  busy: boolean;
+  onConfirm: (dueBackOn: string | null) => void;
+  onCancel: () => void;
+}) {
   return (
     <Dialog open={request !== null} onOpenChange={(_, d) => !d.open && !busy && onCancel()}>
-      <DialogSurface>{request && <IssueBody request={request} busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}</DialogSurface>
+      <DialogSurface>
+        {request && <IssueBody request={request} busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function IssueBody({ request, busy, onConfirm, onCancel }: { request: RecordRequestDto; busy: boolean; onConfirm: (dueBackOn: string | null) => void; onCancel: () => void }) {
+function IssueBody({
+  request,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  request: RecordRequestDto;
+  busy: boolean;
+  onConfirm: (dueBackOn: string | null) => void;
+  onCancel: () => void;
+}) {
   const today = todayIso();
   const [dueBack, setDueBack] = useState(() => addDaysIso(today, request.purpose === 'PatientCare' ? 3 : 7));
   return (
@@ -162,7 +215,12 @@ function IssueBody({ request, busy, onConfirm, onCancel }: { request: RecordRequ
         <Button onClick={onCancel} disabled={busy}>
           Cancel
         </Button>
-        <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <SendRegular />} onClick={() => onConfirm(dueBack || null)}>
+        <Button
+          appearance="primary"
+          disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+          onClick={() => onConfirm(dueBack || null)}
+        >
           Issue
         </Button>
       </DialogActions>
@@ -226,7 +284,15 @@ function RecordRequestsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => void navigate({ search: { status: (d.value || undefined) as RecordRequestStatus | undefined }, replace: true })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) =>
+                  void navigate({
+                    search: { status: (d.value || undefined) as RecordRequestStatus | undefined },
+                    replace: true,
+                  })
+                }
+              >
                 <option value="">All</option>
                 {RECORD_REQUEST_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -246,7 +312,12 @@ function RecordRequestsPage() {
           getRowId={(r) => r.id}
           size="small"
           columns={[
-            { key: 'number', header: 'Request', width: 140, render: (r) => <Text font="monospace">{r.requestNumber}</Text> },
+            {
+              key: 'number',
+              header: 'Request',
+              width: 140,
+              render: (r) => <Text font="monospace">{r.requestNumber}</Text>,
+            },
             {
               key: 'patient',
               header: 'Patient',
@@ -261,11 +332,25 @@ function RecordRequestsPage() {
                 </span>
               ),
             },
-            { key: 'by', header: 'Requested by', render: (r) => `${r.requestedByName}${r.requestingDepartment ? ` · ${r.requestingDepartment}` : ''}` },
+            {
+              key: 'by',
+              header: 'Requested by',
+              render: (r) => `${r.requestedByName}${r.requestingDepartment ? ` · ${r.requestingDepartment}` : ''}`,
+            },
             { key: 'purpose', header: 'Purpose', priority: 'low', render: (r) => purposeLabel[r.purpose] },
             { key: 'at', header: 'Requested', priority: 'low', render: (r) => formatDateTime(r.requestedAt) },
-            { key: 'due', header: 'Return by', width: 120, render: (r) => (r.dueBackOn ? formatDateOnly(r.dueBackOn) : '—') },
-            { key: 'status', header: 'Status', width: 110, render: (r) => <StatusBadge status={r.status} tone={statusTone(r.status)} /> },
+            {
+              key: 'due',
+              header: 'Return by',
+              width: 120,
+              render: (r) => (r.dueBackOn ? formatDateOnly(r.dueBackOn) : '—'),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (r) => <StatusBadge status={r.status} tone={statusTone(r.status)} />,
+            },
           ]}
           rowActions={(r) => (
             <span style={{ display: 'inline-flex', gap: 4 }}>
@@ -280,7 +365,13 @@ function RecordRequestsPage() {
                 </Button>
               )}
               {r.status === 'Requested' && (
-                <Button size="small" appearance="subtle" icon={<DismissRegular />} aria-label={`Cancel ${r.requestNumber}`} onClick={() => setCancelling(r)} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label={`Cancel ${r.requestNumber}`}
+                  onClick={() => setCancelling(r)}
+                />
               )}
             </span>
           )}
@@ -293,7 +384,12 @@ function RecordRequestsPage() {
         />
       </Section>
       <NewRequestDialog open={creating} onClose={() => setCreating(false)} />
-      <IssueDialog request={issuing} busy={issue.isPending} onConfirm={(dueBackOn) => issuing && issue.mutate({ id: issuing.id, dueBackOn })} onCancel={() => setIssuing(null)} />
+      <IssueDialog
+        request={issuing}
+        busy={issue.isPending}
+        onConfirm={(dueBackOn) => issuing && issue.mutate({ id: issuing.id, dueBackOn })}
+        onCancel={() => setIssuing(null)}
+      />
       <ConfirmDialog
         open={returning !== null}
         title="Record the file as returned?"
@@ -302,7 +398,9 @@ function RecordRequestsPage() {
         onConfirm={() => returning && giveBack.mutate(returning.id)}
         onCancel={() => setReturning(null)}
       >
-        {returning ? `${returning.patientName ?? 'The patient'}'s file (${returning.requestNumber}) is back in medical records.` : ''}
+        {returning
+          ? `${returning.patientName ?? 'The patient'}'s file (${returning.requestNumber}) is back in medical records.`
+          : ''}
       </ConfirmDialog>
       <ReasonDialog
         open={cancelling !== null}

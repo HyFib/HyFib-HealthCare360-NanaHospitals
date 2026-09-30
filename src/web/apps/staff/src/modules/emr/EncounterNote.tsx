@@ -80,8 +80,20 @@ function NoteArea({
               <DictateButton onText={(text) => field.onChange(appendText(field.value, text))} />
             </div>
           )}
-          <Field label={label} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-            <Textarea {...field} rows={rows} resize="vertical" maxLength={maxLength} disabled={disabled} placeholder={placeholder} autoFocus={autoFocus} />
+          <Field
+            label={label}
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
+            <Textarea
+              {...field}
+              rows={rows}
+              resize="vertical"
+              maxLength={maxLength}
+              disabled={disabled}
+              placeholder={placeholder}
+              autoFocus={autoFocus}
+            />
           </Field>
         </div>
       )}
@@ -92,8 +104,11 @@ function NoteArea({
 function TemplatePicker({ disabled, onPick }: { disabled: boolean; onPick: (template: TemplateListItem) => void }) {
   const templates = useQuery(emrQueries.templates());
   const [term, setTerm] = useState('');
-  const items = (templates.data ?? []).filter((t) => !term.trim() || `${t.name} ${t.code} ${t.specialtyCode ?? ''}`.toLowerCase().includes(term.trim().toLowerCase()));
-  const groups = [...new Set(items.map((t) => (t.isPersonal ? 'My templates' : t.specialtyCode ?? 'General')))];
+  const items = (templates.data ?? []).filter(
+    (t) =>
+      !term.trim() || `${t.name} ${t.code} ${t.specialtyCode ?? ''}`.toLowerCase().includes(term.trim().toLowerCase()),
+  );
+  const groups = [...new Set(items.map((t) => (t.isPersonal ? 'My templates' : (t.specialtyCode ?? 'General'))))];
   return (
     <Field label="Template" hint="Pre-fills the note; you can edit everything">
       <Combobox
@@ -114,7 +129,7 @@ function TemplatePicker({ disabled, onPick }: { disabled: boolean; onPick: (temp
         {groups.map((group) => (
           <OptionGroup key={group} label={group}>
             {items
-              .filter((t) => (t.isPersonal ? 'My templates' : t.specialtyCode ?? 'General') === group)
+              .filter((t) => (t.isPersonal ? 'My templates' : (t.specialtyCode ?? 'General')) === group)
               .map((t) => (
                 <Option key={t.id} value={t.id} text={t.name}>
                   {t.name}
@@ -149,7 +164,12 @@ export function ComplaintSection({
     form.reset(applyTemplate(form.getValues(), template, mode, today), { keepDefaultValues: true });
     onTemplateLoaded(template);
     setPending(null);
-    notify.success(`Template "${template.name}" applied`, template.defaultOrders.length + template.medications.length > 0 ? 'Its investigations and medicines can be added below.' : undefined);
+    notify.success(
+      `Template "${template.name}" applied`,
+      template.defaultOrders.length + template.medications.length > 0
+        ? 'Its investigations and medicines can be added below.'
+        : undefined,
+    );
   };
 
   const load = useMutation({
@@ -181,23 +201,46 @@ export function ComplaintSection({
               key={complaint}
               size="small"
               icon={<AddRegular />}
-              onClick={() => form.setValue('chiefComplaint', appendComplaint(form.getValues('chiefComplaint'), complaint), { shouldDirty: true })}
+              onClick={() =>
+                form.setValue('chiefComplaint', appendComplaint(form.getValues('chiefComplaint'), complaint), {
+                  shouldDirty: true,
+                })
+              }
             >
               {complaint}
             </Button>
           ))}
         </div>
       )}
-      <NoteArea control={form.control} name="chiefComplaint" label="Chief complaint" rows={2} maxLength={1000} disabled={locked} placeholder="e.g. Fever for 3 days with cough" autoFocus={!locked} />
-      <NoteArea control={form.control} name="historyOfPresentIllness" label="History of present illness" rows={5} maxLength={8000} disabled={locked} />
+      <NoteArea
+        control={form.control}
+        name="chiefComplaint"
+        label="Chief complaint"
+        rows={2}
+        maxLength={1000}
+        disabled={locked}
+        placeholder="e.g. Fever for 3 days with cough"
+        autoFocus={!locked}
+      />
+      <NoteArea
+        control={form.control}
+        name="historyOfPresentIllness"
+        label="History of present illness"
+        rows={5}
+        maxLength={8000}
+        disabled={locked}
+      />
       <Dialog open={pending !== null} onOpenChange={(_, d) => !d.open && setPending(null)}>
         <DialogSurface>
           <DialogBody>
             <DialogTitle>Apply "{pending?.template.name}"?</DialogTitle>
             <DialogContent>
               <Text>
-                You have already written {pending?.conflicts.map((c) => encounterFieldLabel[c as keyof typeof encounterFieldLabel]?.toLowerCase() ?? c).join(', ')}. Keep your text and fill only the empty
-                parts, or replace those parts with the template?
+                You have already written{' '}
+                {pending?.conflicts
+                  .map((c) => encounterFieldLabel[c as keyof typeof encounterFieldLabel]?.toLowerCase() ?? c)
+                  .join(', ')}
+                . Keep your text and fill only the empty parts, or replace those parts with the template?
               </Text>
             </DialogContent>
             <DialogActions>
@@ -219,9 +262,33 @@ export function ExaminationSection({ note }: { note: EncounterNote }) {
   const { form, locked } = note;
   return (
     <div className={styles.stack}>
-      <NoteArea control={form.control} name="examination" label="Examination" rows={4} maxLength={8000} disabled={locked} placeholder="General and systemic examination" />
-      <NoteArea control={form.control} name="assessment" label="Assessment" rows={3} maxLength={4000} disabled={locked} placeholder="Clinical impression" />
-      <NoteArea control={form.control} name="plan" label="Plan" rows={4} maxLength={8000} disabled={locked} placeholder="Investigations, treatment and counselling" />
+      <NoteArea
+        control={form.control}
+        name="examination"
+        label="Examination"
+        rows={4}
+        maxLength={8000}
+        disabled={locked}
+        placeholder="General and systemic examination"
+      />
+      <NoteArea
+        control={form.control}
+        name="assessment"
+        label="Assessment"
+        rows={3}
+        maxLength={4000}
+        disabled={locked}
+        placeholder="Clinical impression"
+      />
+      <NoteArea
+        control={form.control}
+        name="plan"
+        label="Plan"
+        rows={4}
+        maxLength={8000}
+        disabled={locked}
+        placeholder="Investigations, treatment and counselling"
+      />
     </div>
   );
 }
@@ -230,21 +297,45 @@ export function ExaminationSection({ note }: { note: EncounterNote }) {
 export function FollowUpSection({ note, today }: { note: EncounterNote; today: string }) {
   const styles = useStyles();
   const { form, locked } = note;
-  const [departmentId, followUpDate] = useWatch({ control: form.control, name: ['referralDepartmentId', 'followUpDate'] });
+  const [departmentId, followUpDate] = useWatch({
+    control: form.control,
+    name: ['referralDepartmentId', 'followUpDate'],
+  });
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
   return (
     <div className={styles.stack}>
       <div className={styles.presets}>
-        <DateField control={form.control} name="followUpDate" label="Follow-up on" min={today} max={addDaysIso(today, 730)} disabled={locked} />
+        <DateField
+          control={form.control}
+          name="followUpDate"
+          label="Follow-up on"
+          min={today}
+          max={addDaysIso(today, 730)}
+          disabled={locked}
+        />
         {!locked &&
           FOLLOW_UP_PRESETS.map((preset) => (
-            <Button key={preset.days} size="small" icon={<CalendarRegular />} onClick={() => form.setValue('followUpDate', addDaysIso(today, preset.days), { shouldDirty: true, shouldValidate: true })}>
+            <Button
+              key={preset.days}
+              size="small"
+              icon={<CalendarRegular />}
+              onClick={() =>
+                form.setValue('followUpDate', addDaysIso(today, preset.days), {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+            >
               {preset.label}
             </Button>
           ))}
         {!locked && followUpDate && (
-          <Button size="small" appearance="subtle" onClick={() => form.setValue('followUpDate', null, { shouldDirty: true })}>
+          <Button
+            size="small"
+            appearance="subtle"
+            onClick={() => form.setValue('followUpDate', null, { shouldDirty: true })}
+          >
             No follow-up
           </Button>
         )}
@@ -254,7 +345,15 @@ export function FollowUpSection({ note, today }: { note: EncounterNote; today: s
           {formatDateOnly(followUpDate)} · in {daysBetween(today, followUpDate)} days
         </Caption1>
       )}
-      <NoteArea control={form.control} name="followUpAdvice" label="Follow-up advice" rows={2} maxLength={1000} disabled={locked} placeholder="e.g. Review with CBC report; come earlier if fever persists" />
+      <NoteArea
+        control={form.control}
+        name="followUpAdvice"
+        label="Follow-up advice"
+        rows={2}
+        maxLength={1000}
+        disabled={locked}
+        placeholder="e.g. Review with CBC report; come earlier if fever persists"
+      />
       <FormGrid columns={3}>
         <SelectField
           control={form.control}
@@ -272,15 +371,39 @@ export function FollowUpSection({ note, today }: { note: EncounterNote; today: s
           options={toOptions(practitioners.data)}
           disabled={locked || !departmentId}
         />
-        <TextField control={form.control} name="referralExternal" label="Or refer outside" placeholder="Hospital or specialist" maxLength={300} disabled={locked} />
+        <TextField
+          control={form.control}
+          name="referralExternal"
+          label="Or refer outside"
+          placeholder="Hospital or specialist"
+          maxLength={300}
+          disabled={locked}
+        />
       </FormGrid>
-      <TextField control={form.control} name="referralReason" label="Reason for referral" maxLength={1000} disabled={locked} hint="Required when referring. The referred doctor is notified when you sign." />
+      <TextField
+        control={form.control}
+        name="referralReason"
+        label="Reason for referral"
+        maxLength={1000}
+        disabled={locked}
+        hint="Required when referring. The referred doctor is notified when you sign."
+      />
     </div>
   );
 }
 
 /** Asks for the amendment reason (at least 10 characters) and records the amendment. */
-export function AmendDialog({ open, busy, onConfirm, onCancel }: { open: boolean; busy: boolean; onConfirm: (reason: string) => void; onCancel: () => void }) {
+export function AmendDialog({
+  open,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  busy: boolean;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onCancel()} modalType="alert">
       <DialogSurface>{open && <AmendBody busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}</DialogSurface>
@@ -288,23 +411,49 @@ export function AmendDialog({ open, busy, onConfirm, onCancel }: { open: boolean
   );
 }
 
-function AmendBody({ busy, onConfirm, onCancel }: { busy: boolean; onConfirm: (reason: string) => void; onCancel: () => void }) {
+function AmendBody({
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  busy: boolean;
+  onConfirm: (reason: string) => void;
+  onCancel: () => void;
+}) {
   const [reason, setReason] = useState('');
   const length = reason.trim().length;
   return (
     <DialogBody>
       <DialogTitle>Record the amendment</DialogTitle>
       <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <Text>The signed note is replaced by your corrected text. The original is kept word for word in the amendment history with your name and reason.</Text>
-        <Field label="What is corrected and why" required hint={`At least ${MIN_AMENDMENT_REASON} characters (${length} so far).`}>
-          <Textarea autoFocus value={reason} onChange={(_, d) => setReason(d.value.slice(0, 500))} rows={3} resize="vertical" />
+        <Text>
+          The signed note is replaced by your corrected text. The original is kept word for word in the amendment
+          history with your name and reason.
+        </Text>
+        <Field
+          label="What is corrected and why"
+          required
+          hint={`At least ${MIN_AMENDMENT_REASON} characters (${length} so far).`}
+        >
+          <Textarea
+            autoFocus
+            value={reason}
+            onChange={(_, d) => setReason(d.value.slice(0, 500))}
+            rows={3}
+            resize="vertical"
+          />
         </Field>
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel} disabled={busy}>
           Go back
         </Button>
-        <Button appearance="primary" disabled={length < MIN_AMENDMENT_REASON || busy} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => onConfirm(reason.trim())}>
+        <Button
+          appearance="primary"
+          disabled={length < MIN_AMENDMENT_REASON || busy}
+          icon={busy ? <Spinner size="tiny" /> : undefined}
+          onClick={() => onConfirm(reason.trim())}
+        >
           Record amendment
         </Button>
       </DialogActions>

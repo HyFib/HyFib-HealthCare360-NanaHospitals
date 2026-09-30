@@ -1,4 +1,14 @@
-import { Badge, Caption1, Combobox, makeStyles, Option, OptionGroup, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Caption1,
+  Combobox,
+  makeStyles,
+  Option,
+  OptionGroup,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { useDebouncedValue } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { usePermission } from '@/lib/permissions';
@@ -44,7 +54,10 @@ export function DrugPicker({
   const canSearchMaster = usePermission('clinical.prescriptions.write');
   const debounced = useDebouncedValue(value.trim(), 250);
   const favourites = useQuery(emrQueries.favourites('Drug'));
-  const master = useQuery({ ...prescriptionQueries.drugs(debounced), enabled: canSearchMaster && debounced.length >= 2 });
+  const master = useQuery({
+    ...prescriptionQueries.drugs(debounced),
+    enabled: canSearchMaster && debounced.length >= 2,
+  });
 
   const favouriteMatches = (favourites.data ?? []).filter((f) => matches(value, f.label, f.genericName)).slice(0, 8);
   const suggestionMatches = suggestions.filter((s) => matches(value, s.drugName, s.genericName)).slice(0, 8);
@@ -102,7 +115,14 @@ export function DrugPicker({
                   )}
                 </span>
                 <Caption1 className={styles.muted}>
-                  {[f.genericName, f.dose, f.frequency ? frequencyMeaning[f.frequency].toLowerCase() : null, f.durationDays ? `${f.durationDays} days` : null].filter(Boolean).join(' · ')}
+                  {[
+                    f.genericName,
+                    f.dose,
+                    f.frequency ? frequencyMeaning[f.frequency].toLowerCase() : null,
+                    f.durationDays ? `${f.durationDays} days` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Caption1>
               </span>
             </Option>
@@ -115,7 +135,9 @@ export function DrugPicker({
             <Option key={`${s.drugName}-${index}`} value={`tpl:${index}`} text={s.drugName}>
               <span className={styles.option}>
                 <Text weight="semibold">{s.drugName}</Text>
-                <Caption1 className={styles.muted}>{[s.genericName, s.dose, s.frequency].filter(Boolean).join(' · ')}</Caption1>
+                <Caption1 className={styles.muted}>
+                  {[s.genericName, s.dose, s.frequency].filter(Boolean).join(' · ')}
+                </Caption1>
               </span>
             </Option>
           ))}
@@ -131,7 +153,12 @@ export function DrugPicker({
                   <span className={styles.row}>
                     <Text weight="semibold">{d.name}</Text>
                     {view.flags.map((flag) => (
-                      <Badge key={flag.kind} size="small" color={flag.kind === 'controlled' ? 'danger' : 'informative'} appearance="outline">
+                      <Badge
+                        key={flag.kind}
+                        size="small"
+                        color={flag.kind === 'controlled' ? 'danger' : 'informative'}
+                        appearance="outline"
+                      >
                         {flag.label}
                       </Badge>
                     ))}
@@ -139,7 +166,9 @@ export function DrugPicker({
                   <Caption1 className={styles.muted}>
                     {view.detail}
                     {view.detail && view.stock ? ' · ' : ''}
-                    {view.stock && <span className={view.outOfStock ? styles.outOfStock : undefined}>{view.stock}</span>}
+                    {view.stock && (
+                      <span className={view.outOfStock ? styles.outOfStock : undefined}>{view.stock}</span>
+                    )}
                   </Caption1>
                 </span>
               </Option>

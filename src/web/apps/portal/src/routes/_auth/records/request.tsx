@@ -25,7 +25,12 @@ const DETAILS_MAX = 1000;
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '20px' },
-  lead: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
+  lead: {
+    margin: 0,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
   person: { margin: 0, fontWeight: tokens.fontWeightSemibold },
   policy: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   submit: { alignSelf: 'flex-start', minWidth: '200px' },
@@ -42,7 +47,12 @@ const useStyles = makeStyles({
   },
   doneIcon: { fontSize: '56px', color: tokens.colorStatusSuccessForeground1 },
   doneTitle: { margin: 0, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
-  doneText: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
+  doneText: {
+    margin: 0,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
 });
 
 function requestSchema(t: Translate) {
@@ -52,7 +62,10 @@ function requestSchema(t: Translate) {
         .enum(RECORD_REQUEST_PURPOSES)
         .nullable()
         .refine((value) => value !== null, { error: t('recordRequest.purposeRequired') }),
-      details: z.string().trim().max(DETAILS_MAX, { error: t('recordRequest.detailsTooLong') }),
+      details: z
+        .string()
+        .trim()
+        .max(DETAILS_MAX, { error: t('recordRequest.detailsTooLong') }),
     })
     .superRefine((value, ctx) => {
       if (value.purpose === 'Other' && !value.details) {
@@ -80,7 +93,11 @@ function RecordRequestPage() {
     }
     setError(null);
     try {
-      const result = await recordApi.requestCopy({ patientId: profile.id, purpose: values.purpose, details: values.details.trim() || null });
+      const result = await recordApi.requestCopy({
+        patientId: profile.id,
+        purpose: values.purpose,
+        details: values.details.trim() || null,
+      });
       setCreated(result);
     } catch (err) {
       if (!applyServerErrors(err, form.setError)) {
@@ -160,7 +177,14 @@ function RecordRequestPage() {
         />
         {error && <Notice intent="error">{error}</Notice>}
         <p className={styles.policy}>{t('recordRequest.policy')}</p>
-        <Button type="submit" appearance="primary" size="large" className={styles.submit} disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+        <Button
+          type="submit"
+          appearance="primary"
+          size="large"
+          className={styles.submit}
+          disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : undefined}
+        >
           {busy ? t('common.sending') : t('recordRequest.submit')}
         </Button>
       </form>

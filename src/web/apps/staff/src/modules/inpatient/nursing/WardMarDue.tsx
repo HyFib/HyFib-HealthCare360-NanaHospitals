@@ -1,4 +1,15 @@
-import { Badge, Button, Caption1, makeStyles, mergeClasses, Select, Skeleton, SkeletonItem, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  Select,
+  Skeleton,
+  SkeletonItem,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { CheckmarkRegular, PillRegular } from '@fluentui/react-icons';
 import { formatTime } from '@hc360/core';
 import { EmptyState, ErrorState, Section } from '@hc360/ui';
@@ -43,7 +54,13 @@ interface PatientGroup {
 function groupByPatient(items: readonly WardMarItem[]): PatientGroup[] {
   const map = new Map<string, PatientGroup>();
   for (const item of items) {
-    const group = map.get(item.admissionId) ?? { admissionId: item.admissionId, patientName: item.patientName, uhid: item.uhid, bedLabel: item.bedLabel, items: [] };
+    const group = map.get(item.admissionId) ?? {
+      admissionId: item.admissionId,
+      patientName: item.patientName,
+      uhid: item.uhid,
+      bedLabel: item.bedLabel,
+      items: [],
+    };
     group.items.push(item);
     map.set(item.admissionId, group);
   }
@@ -52,7 +69,13 @@ function groupByPatient(items: readonly WardMarItem[]): PatientGroup[] {
 }
 
 /** The ward's medication round: overdue and due doses, grouped bed by bed. Two taps record a dose. */
-export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPatient: (admissionId: string) => void }) {
+export function WardMarDue({
+  wardId,
+  onOpenPatient,
+}: {
+  wardId: string;
+  onOpenPatient: (admissionId: string) => void;
+}) {
   const styles = useStyles();
   const canRecord = usePermission('nursing.mar');
   const [withinMinutes, setWithinMinutes] = useState(60);
@@ -87,9 +110,15 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
   return (
     <Section
       title="Medication round"
-      description={due.data ? `${items.length} doses to give${overdue ? `, ${overdue} overdue` : ''}` : 'Doses due on this ward'}
+      description={
+        due.data ? `${items.length} doses to give${overdue ? `, ${overdue} overdue` : ''}` : 'Doses due on this ward'
+      }
       actions={
-        <Select value={String(withinMinutes)} onChange={(_, d) => setWithinMinutes(Number(d.value))} aria-label="Show doses due within">
+        <Select
+          value={String(withinMinutes)}
+          onChange={(_, d) => setWithinMinutes(Number(d.value))}
+          aria-label="Show doses due within"
+        >
           <option value="30">Due in 30 min</option>
           <option value="60">Due in 1 hour</option>
           <option value="120">Due in 2 hours</option>
@@ -106,11 +135,20 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
           ))}
         </Skeleton>
       ) : groups.length === 0 ? (
-        <EmptyState icon={<PillRegular />} title="No doses due" description="Doses appear here as their time approaches, and stay until they are recorded." />
+        <EmptyState
+          icon={<PillRegular />}
+          title="No doses due"
+          description="Doses appear here as their time approaches, and stay until they are recorded."
+        />
       ) : (
         <div className={styles.groups}>
           {groups.map((group) => (
-            <div key={group.admissionId} className={styles.group} role="group" aria-label={`${group.patientName}, bed ${group.bedLabel ?? ''}`}>
+            <div
+              key={group.admissionId}
+              className={styles.group}
+              role="group"
+              aria-label={`${group.patientName}, bed ${group.bedLabel ?? ''}`}
+            >
               <div className={styles.groupHeader}>
                 <Text weight="semibold">{group.bedLabel ?? '—'}</Text>
                 <Button appearance="transparent" size="small" onClick={() => onOpenPatient(group.admissionId)}>
@@ -119,11 +157,19 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
                 <Caption1 className={styles.muted}>{group.uhid}</Caption1>
               </div>
               {group.items.map((item) => (
-                <div key={item.entryId} className={mergeClasses(styles.row, item.isOverdue ? styles.overdue : styles.due)}>
+                <div
+                  key={item.entryId}
+                  className={mergeClasses(styles.row, item.isOverdue ? styles.overdue : styles.due)}
+                >
                   <span>
                     <Text className={styles.time}>{formatTime(item.scheduledAt)}</Text>
                     {item.isOverdue && (
-                      <Badge size="small" appearance="tint" color="danger" style={{ display: 'block', marginTop: 2, width: 'fit-content' }}>
+                      <Badge
+                        size="small"
+                        appearance="tint"
+                        color="danger"
+                        style={{ display: 'block', marginTop: 2, width: 'fit-content' }}
+                      >
                         {formatDuration(item.minutesLate)} late
                       </Badge>
                     )}
@@ -136,7 +182,12 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
                     </Caption1>
                   </span>
                   <span className={styles.actions}>
-                    <Button className={styles.big} appearance="primary" icon={<CheckmarkRegular />} onClick={() => open(item, 'Given')}>
+                    <Button
+                      className={styles.big}
+                      appearance="primary"
+                      icon={<CheckmarkRegular />}
+                      onClick={() => open(item, 'Given')}
+                    >
                       Given
                     </Button>
                     <Button className={styles.big} onClick={() => open(item, 'Held')}>
@@ -149,7 +200,9 @@ export function WardMarDue({ wardId, onOpenPatient }: { wardId: string; onOpenPa
           ))}
         </div>
       )}
-      {recording && <RecordDoseDialog dose={recording.dose} initialOutcome={recording.outcome} onClose={() => setRecording(null)} />}
+      {recording && (
+        <RecordDoseDialog dose={recording.dose} initialOutcome={recording.outcome} onClose={() => setRecording(null)} />
+      )}
     </Section>
   );
 }

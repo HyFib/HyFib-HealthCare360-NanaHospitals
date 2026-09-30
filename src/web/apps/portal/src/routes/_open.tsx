@@ -38,7 +38,13 @@ function OpenLayout() {
       navigation={false}
       brandTarget="/sign-in"
       profileSwitcher={
-        <ButtonLink appearance="primary" size="medium" icon={<PersonRegular />} to="/sign-in" search={{ redirect: safeRedirect(href) }}>
+        <ButtonLink
+          appearance="primary"
+          size="medium"
+          icon={<PersonRegular />}
+          to="/sign-in"
+          search={{ redirect: safeRedirect(href) }}
+        >
           {t('common.signIn')}
         </ButtonLink>
       }

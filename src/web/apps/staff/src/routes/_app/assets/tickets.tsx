@@ -27,7 +27,17 @@ import {
 } from '@fluentui/react-components';
 import { AlertUrgentRegular, DismissRegular, OpenRegular, WrenchRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, formatRelative, isApiError, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -35,7 +45,14 @@ import { usePermission } from '@/lib/permissions';
 import { assetApi, assetKeys, assetQueries, type TicketDetail, type TicketListItem } from '@/modules/assets/api';
 import { BreakdownDialog } from '@/modules/assets/BreakdownDialog';
 import { TICKET_PRIORITIES, TICKET_STATUSES, type TicketPriority, type TicketStatus } from '@/modules/assets/labels';
-import { formatDowntime, isTicketOpen, primaryTicketAction, ticketActionLabel, ticketActions, type TicketAction } from '@/modules/assets/ticketFlow';
+import {
+  formatDowntime,
+  isTicketOpen,
+  primaryTicketAction,
+  ticketActionLabel,
+  ticketActions,
+  type TicketAction,
+} from '@/modules/assets/ticketFlow';
 import { parseNumber } from '@/modules/inventory/format';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { Detail, DetailGrid, DocStatus } from '@/modules/inventory/StockBits';
@@ -62,7 +79,13 @@ export const Route = createFileRoute('/_app/assets/tickets')({
   component: TicketsPage,
 });
 
-const STATUS_LABEL: Record<TicketStatus, string> = { Open: 'Open', Assigned: 'Assigned', InProgress: 'Being repaired', Resolved: 'Resolved', Closed: 'Closed' };
+const STATUS_LABEL: Record<TicketStatus, string> = {
+  Open: 'Open',
+  Assigned: 'Assigned',
+  InProgress: 'Being repaired',
+  Resolved: 'Resolved',
+  Closed: 'Closed',
+};
 
 function PriorityBadge({ priority }: { priority: TicketPriority }) {
   return priority === 'Critical' ? (
@@ -91,9 +114,16 @@ function TicketsPage() {
   }, [debounced, search.q, navigate]);
 
   const tickets = useQuery(
-    assetQueries.tickets({ status: search.status, priority: search.priority, openOnly: search.status || search.all ? undefined : true, search: search.q, page: search.page }),
+    assetQueries.tickets({
+      status: search.status,
+      priority: search.priority,
+      openOnly: search.status || search.all ? undefined : true,
+      search: search.q,
+      page: search.page,
+    }),
   );
-  const set = (patch: Partial<TicketSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<TicketSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   /** Opens or closes the ticket drawer without losing the list page. */
   const show = (id: string | undefined) => void navigate({ search: (prev) => ({ ...prev, id }) });
 
@@ -112,10 +142,17 @@ function TicketsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Ticket or asset tag" style={{ flex: '0 1 240px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Full ticket number or scan the tag" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Full ticket number or scan the tag"
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as TicketStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as TicketStatus | undefined })}
+              >
                 <option value="">{search.all ? 'All' : 'Still open'}</option>
                 {TICKET_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -125,7 +162,10 @@ function TicketsPage() {
               </Select>
             </Field>
             <Field label="Priority">
-              <Select value={search.priority ?? ''} onChange={(_, d) => set({ priority: (d.value || undefined) as TicketPriority | undefined })}>
+              <Select
+                value={search.priority ?? ''}
+                onChange={(_, d) => set({ priority: (d.value || undefined) as TicketPriority | undefined })}
+              >
                 <option value="">All</option>
                 {TICKET_PRIORITIES.map((p) => (
                   <option key={p} value={p}>
@@ -134,7 +174,12 @@ function TicketsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.all === true} onChange={(_, d) => set({ all: d.checked || undefined })} label="Include resolved and closed" disabled={Boolean(search.status)} />
+            <Switch
+              checked={search.all === true}
+              onChange={(_, d) => set({ all: d.checked || undefined })}
+              label="Include resolved and closed"
+              disabled={Boolean(search.status)}
+            />
           </FilterBar>
         </div>
         <DataTable<TicketListItem>
@@ -154,7 +199,8 @@ function TicketsPage() {
               header: 'Equipment',
               render: (t) => (
                 <span>
-                  <Text weight="semibold">{t.assetName}</Text> <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{t.assetTag}</Caption1>
+                  <Text weight="semibold">{t.assetName}</Text>{' '}
+                  <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{t.assetTag}</Caption1>
                 </span>
               ),
             },
@@ -172,7 +218,11 @@ function TicketsPage() {
             },
             { key: 'with', header: 'With', priority: 'low', render: (t) => t.assignedTo ?? 'Not assigned' },
             { key: 'down', header: 'Downtime', priority: 'low', render: (t) => formatDowntime(t.downtimeMinutes) },
-            { key: 'status', header: 'Status', render: (t) => <DocStatus status={t.status} label={STATUS_LABEL[t.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (t) => <DocStatus status={t.status} label={STATUS_LABEL[t.status]} />,
+            },
           ]}
           emptyTitle={search.all || search.status ? 'No tickets match' : 'No open breakdowns'}
           emptyDescription="Report equipment that is not working; biomedical engineering is alerted."
@@ -197,7 +247,11 @@ function TicketDrawer({ ticketId, onClose }: { ticketId: string; onClose: () => 
   const [action, setAction] = useState<TicketAction | null>(null);
   const simple = useMutation({
     mutationFn: (kind: 'start' | 'close' | 'reopen') =>
-      kind === 'start' ? assetApi.startTicket(ticketId) : kind === 'close' ? assetApi.closeTicket(ticketId) : assetApi.reopenTicket(ticketId),
+      kind === 'start'
+        ? assetApi.startTicket(ticketId)
+        : kind === 'close'
+          ? assetApi.closeTicket(ticketId)
+          : assetApi.reopenTicket(ticketId),
     onSuccess: (_, kind) => {
       setAction(null);
       notify.success(kind === 'start' ? 'Work started' : kind === 'close' ? 'Ticket closed' : 'Ticket reopened');
@@ -215,7 +269,9 @@ function TicketDrawer({ ticketId, onClose }: { ticketId: string; onClose: () => 
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {t ? `Ticket ${t.number}` : 'Ticket'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -239,11 +295,19 @@ function TicketDrawer({ ticketId, onClose }: { ticketId: string; onClose: () => 
                 {formatDateTime(t.reportedAt)}
                 {t.reportedBy ? ` by ${t.reportedBy}` : ''}
               </Detail>
-              <Detail label="Assigned to">{t.assignedTo ? `${t.assignedTo}${t.assignedAt ? ` · ${formatRelative(t.assignedAt)}` : ''}` : null}</Detail>
+              <Detail label="Assigned to">
+                {t.assignedTo ? `${t.assignedTo}${t.assignedAt ? ` · ${formatRelative(t.assignedAt)}` : ''}` : null}
+              </Detail>
               <Detail label="Work started">{t.startedAt ? formatDateTime(t.startedAt) : null}</Detail>
               <Detail label="Resolved">{t.resolvedAt ? formatDateTime(t.resolvedAt) : null}</Detail>
               <Detail label="Closed">{t.closedAt ? formatDateTime(t.closedAt) : null}</Detail>
-              <Detail label="Downtime">{t.downtimeMinutes !== null ? formatDowntime(t.downtimeMinutes) : isTicketOpen(t.status) ? `Running since ${formatRelative(t.reportedAt)}` : null}</Detail>
+              <Detail label="Downtime">
+                {t.downtimeMinutes !== null
+                  ? formatDowntime(t.downtimeMinutes)
+                  : isTicketOpen(t.status)
+                    ? `Running since ${formatRelative(t.reportedAt)}`
+                    : null}
+              </Detail>
               {t.resolution && <Detail label="Resolution">{t.resolution}</Detail>}
               {t.rootCause && <Detail label="Root cause">{t.rootCause}</Detail>}
               {t.cost > 0 && <Detail label="Repair cost">{formatInr(t.cost)}</Detail>}
@@ -254,7 +318,12 @@ function TicketDrawer({ ticketId, onClose }: { ticketId: string; onClose: () => 
       <DrawerFooter>
         {t && (
           <>
-            <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/assets/$assetId', params: { assetId: t.assetId }, search: { tab: 'tickets' } })}>
+            <Button
+              icon={<OpenRegular />}
+              onClick={() =>
+                void navigate({ to: '/assets/$assetId', params: { assetId: t.assetId }, search: { tab: 'tickets' } })
+              }
+            >
               Equipment
             </Button>
             {actions.map((a) => (
@@ -269,7 +338,13 @@ function TicketDrawer({ ticketId, onClose }: { ticketId: string; onClose: () => 
       {t && action === 'resolve' && <ResolveDialog ticket={t} onClose={() => setAction(null)} />}
       <ConfirmDialog
         open={action === 'start' || action === 'close' || action === 'reopen'}
-        title={action === 'start' ? 'Start work on this breakdown?' : action === 'close' ? 'Close this ticket?' : 'Reopen this ticket?'}
+        title={
+          action === 'start'
+            ? 'Start work on this breakdown?'
+            : action === 'close'
+              ? 'Close this ticket?'
+              : 'Reopen this ticket?'
+        }
         confirmLabel={action ? ticketActionLabel[action] : 'OK'}
         busy={simple.isPending}
         onConfirm={() => (action === 'start' || action === 'close' || action === 'reopen') && simple.mutate(action)}
@@ -291,7 +366,12 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
   const [assignedTo, setAssignedTo] = useState(ticket.assignedTo ?? '');
   const [vendor, setVendor] = useState<{ id: string; name: string } | null>(null);
   const assign = useMutation({
-    mutationFn: () => assetApi.assignTicket(ticket.id, { assignedTo: assignedTo.trim(), assignedToUserId: null, vendorId: vendor?.id ?? ticket.vendorId ?? null }),
+    mutationFn: () =>
+      assetApi.assignTicket(ticket.id, {
+        assignedTo: assignedTo.trim(),
+        assignedToUserId: null,
+        vendorId: vendor?.id ?? ticket.vendorId ?? null,
+      }),
     onSuccess: () => {
       notify.success(`Assigned to ${assignedTo.trim()}`);
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
@@ -305,9 +385,19 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
           <DialogTitle>Assign {ticket.number}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Field label="Engineer or service team" required>
-              <Input value={assignedTo} maxLength={120} onChange={(_, d) => setAssignedTo(d.value)} autoFocus placeholder="e.g. Suresh (biomedical), or the vendor's engineer" />
+              <Input
+                value={assignedTo}
+                maxLength={120}
+                onChange={(_, d) => setAssignedTo(d.value)}
+                autoFocus
+                placeholder="e.g. Suresh (biomedical), or the vendor's engineer"
+              />
             </Field>
-            <VendorPicker label="Service vendor (if outside)" value={vendor} onPick={(v) => setVendor({ id: v.id, name: v.name })} />
+            <VendorPicker
+              label="Service vendor (if outside)"
+              value={vendor}
+              onPick={(v) => setVendor({ id: v.id, name: v.name })}
+            />
             {assign.error && (
               <MessageBar intent="error">
                 <MessageBarBody>{isApiError(assign.error) ? assign.error.userMessage : 'Not assigned.'}</MessageBarBody>
@@ -318,7 +408,12 @@ function AssignDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () =
             <Button onClick={onClose} disabled={assign.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!assignedTo.trim() || assign.isPending} icon={assign.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => assign.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!assignedTo.trim() || assign.isPending}
+              icon={assign.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => assign.mutate()}
+            >
               Assign
             </Button>
           </DialogActions>
@@ -337,9 +432,18 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
   const [downtime, setDowntime] = useState('');
   const costValue = parseNumber(cost) ?? 0;
   const downtimeValue = downtime.trim() === '' ? null : parseNumber(downtime);
-  const valid = resolution.trim().length > 0 && costValue >= 0 && (downtimeValue === null || (Number.isInteger(downtimeValue) && downtimeValue >= 0));
+  const valid =
+    resolution.trim().length > 0 &&
+    costValue >= 0 &&
+    (downtimeValue === null || (Number.isInteger(downtimeValue) && downtimeValue >= 0));
   const resolve = useMutation({
-    mutationFn: () => assetApi.resolveTicket(ticket.id, { resolution: resolution.trim(), rootCause: rootCause.trim() || null, cost: costValue, downtimeMinutes: downtimeValue }),
+    mutationFn: () =>
+      assetApi.resolveTicket(ticket.id, {
+        resolution: resolution.trim(),
+        rootCause: rootCause.trim() || null,
+        cost: costValue,
+        downtimeMinutes: downtimeValue,
+      }),
     onSuccess: () => {
       notify.success('Marked resolved', 'Close the ticket once the ward confirms it works.');
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
@@ -353,16 +457,30 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
           <DialogTitle>Resolve {ticket.number}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Field label="What was done" required>
-              <Textarea value={resolution} rows={3} maxLength={2000} onChange={(_, d) => setResolution(d.value)} autoFocus />
+              <Textarea
+                value={resolution}
+                rows={3}
+                maxLength={2000}
+                onChange={(_, d) => setResolution(d.value)}
+                autoFocus
+              />
             </Field>
             <Field label="Root cause">
-              <Input value={rootCause} maxLength={500} onChange={(_, d) => setRootCause(d.value)} placeholder="e.g. Worn power cable, user error, power surge" />
+              <Input
+                value={rootCause}
+                maxLength={500}
+                onChange={(_, d) => setRootCause(d.value)}
+                placeholder="e.g. Worn power cable, user error, power surge"
+              />
             </Field>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <Field label="Repair cost (₹)">
                 <Input type="number" min={0} value={cost} onChange={(_, d) => setCost(d.value)} placeholder="0" />
               </Field>
-              <Field label="Downtime (minutes)" hint={`Blank = since it was reported (${formatRelative(ticket.reportedAt)})`}>
+              <Field
+                label="Downtime (minutes)"
+                hint={`Blank = since it was reported (${formatRelative(ticket.reportedAt)})`}
+              >
                 <Input type="number" min={0} value={downtime} onChange={(_, d) => setDowntime(d.value)} />
               </Field>
             </div>
@@ -377,7 +495,12 @@ function ResolveDialog({ ticket, onClose }: { ticket: TicketDetail; onClose: () 
             <Button onClick={onClose} disabled={resolve.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || resolve.isPending} icon={resolve.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => resolve.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || resolve.isPending}
+              icon={resolve.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => resolve.mutate()}
+            >
               Mark resolved
             </Button>
           </DialogActions>

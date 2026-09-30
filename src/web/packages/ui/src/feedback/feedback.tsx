@@ -41,13 +41,27 @@ const useStyles = makeStyles({
   emptyIcon: { fontSize: '40px', color: tokens.colorNeutralForeground4, display: 'flex' },
   loading: { display: 'flex', justifyContent: 'center', padding: '40px 16px' },
   kpi: { display: 'flex', flexDirection: 'column', gap: '4px', padding: '14px 16px', minWidth: '160px' },
-  kpiValue: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
+  kpiValue: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
   kpiLabel: { color: tokens.colorNeutralForeground3 },
   kpiHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
   kpiIcon: { color: tokens.colorBrandForeground1, fontSize: '20px', display: 'flex' },
 });
 
-export function EmptyState({ title, description, action, icon }: { title: string; description?: string; action?: ReactNode; icon?: ReactNode }) {
+export function EmptyState({
+  title,
+  description,
+  action,
+  icon,
+}: {
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  icon?: ReactNode;
+}) {
   const styles = useStyles();
   return (
     <div className={styles.empty} role="status">
@@ -89,7 +103,15 @@ export function ErrorState({ error, onRetry, title }: { error: unknown; onRetry?
 }
 
 /** Colour-coded status pill derived from common workflow words, with an explicit override. */
-export function StatusBadge({ status, tone, label }: { status: string | null | undefined; tone?: StatusTone; label?: string }) {
+export function StatusBadge({
+  status,
+  tone,
+  label,
+}: {
+  status: string | null | undefined;
+  tone?: StatusTone;
+  label?: string;
+}) {
   if (!status) {
     return null;
   }
@@ -100,10 +122,28 @@ export function StatusBadge({ status, tone, label }: { status: string | null | u
   );
 }
 
-export function KpiCard({ label, value, hint, icon, onClick }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; onClick?: () => void }) {
+export function KpiCard({
+  label,
+  value,
+  hint,
+  icon,
+  onClick,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: ReactNode;
+  icon?: ReactNode;
+  onClick?: () => void;
+}) {
   const styles = useStyles();
   return (
-    <Card className={styles.kpi} onClick={onClick} appearance="filled" focusMode={onClick ? 'no-tab' : 'off'} role={onClick ? 'button' : undefined}>
+    <Card
+      className={styles.kpi}
+      onClick={onClick}
+      appearance="filled"
+      focusMode={onClick ? 'no-tab' : 'off'}
+      role={onClick ? 'button' : undefined}
+    >
       <div className={styles.kpiHeader}>
         <Text className={styles.kpiLabel}>{label}</Text>
         {icon && <span className={styles.kpiIcon}>{icon}</span>}

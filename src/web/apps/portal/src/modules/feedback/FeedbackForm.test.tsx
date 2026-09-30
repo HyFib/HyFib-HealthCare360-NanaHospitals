@@ -10,7 +10,12 @@ const questions = { aspects: ['Overall', 'Doctor'] as const, includesNps: true, 
 function renderForm(onSubmit: (body: SubmitFeedbackRequest) => Promise<void>) {
   return render(
     <FluentProvider theme={webLightTheme}>
-      <FeedbackForm questions={{ ...questions, aspects: [...questions.aspects] }} intro="Tell us about your visit." privacyNote="Anonymous." onSubmit={onSubmit} />
+      <FeedbackForm
+        questions={{ ...questions, aspects: [...questions.aspects] }}
+        intro="Tell us about your visit."
+        privacyNote="Anonymous."
+        onSubmit={onSubmit}
+      />
     </FluentProvider>,
   );
 }

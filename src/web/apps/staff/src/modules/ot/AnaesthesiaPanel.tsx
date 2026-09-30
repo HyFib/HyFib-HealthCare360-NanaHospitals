@@ -10,7 +10,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, DeleteRegular, DocumentArrowLeftRegular, LockClosedRegular, SaveRegular, SignatureRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DeleteRegular,
+  DocumentArrowLeftRegular,
+  LockClosedRegular,
+  SaveRegular,
+  SignatureRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, formatTime, useHotkey } from '@hc360/core';
 import {
@@ -56,11 +63,26 @@ import { TrendChart } from './shared/TrendChart';
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
   rows: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  row: { display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(140px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) auto', gap: '8px', alignItems: 'start' },
-  fluidRow: { display: 'grid', gridTemplateColumns: 'minmax(170px, 1fr) minmax(160px, 2fr) minmax(110px, 1fr) auto', gap: '8px', alignItems: 'start' },
+  row: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(170px, 1fr) minmax(140px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) auto',
+    gap: '8px',
+    alignItems: 'start',
+  },
+  fluidRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(170px, 1fr) minmax(160px, 2fr) minmax(110px, 1fr) auto',
+    gap: '8px',
+    alignItems: 'start',
+  },
   footer: { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap', alignItems: 'center' },
   muted: { color: tokens.colorNeutralForeground3 },
-  vitalsForm: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px 12px', alignItems: 'end' },
+  vitalsForm: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: '8px 12px',
+    alignItems: 'end',
+  },
   wide: { gridColumn: 'span 2' },
   removeButton: { marginTop: '24px' },
 });
@@ -134,7 +156,12 @@ function toValues(record: AnaesthesiaRecordDto | null, booking: SurgeryDetail): 
     airwayNotes: record?.airwayNotes ?? '',
     anaesthesiaStartAt: toIstInput(record?.anaesthesiaStartAt) || null,
     anaesthesiaEndAt: toIstInput(record?.anaesthesiaEndAt) || null,
-    drugs: (record?.drugs ?? []).map((d) => ({ at: toIstInput(d.at), drug: d.drug, dose: d.dose, route: d.route ?? '' })),
+    drugs: (record?.drugs ?? []).map((d) => ({
+      at: toIstInput(d.at),
+      drug: d.drug,
+      dose: d.dose,
+      route: d.route ?? '',
+    })),
     fluids: (record?.fluids ?? []).map((f) => ({ at: toIstInput(f.at), fluid: f.fluid, volumeMl: f.volumeMl })),
     estimatedBloodLossMl: record?.estimatedBloodLossMl ?? null,
     urineOutputMl: record?.urineOutputMl ?? null,
@@ -178,7 +205,10 @@ export function AnaesthesiaPanel({ booking }: { booking: SurgeryDetail }) {
         <RecordForm booking={booking} record={data} />
       ) : (
         <Section title="Anaesthesia record">
-          <Text className={styles.muted}>{data ? 'Draft in progress by the anaesthetist.' : 'Not started yet.'} Only the anaesthetist writes this record.</Text>
+          <Text className={styles.muted}>
+            {data ? 'Draft in progress by the anaesthetist.' : 'Not started yet.'} Only the anaesthetist writes this
+            record.
+          </Text>
           {data && <RecordSummary record={data} />}
         </Section>
       )}
@@ -209,7 +239,12 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
         airwayNotes: orNull(values.airwayNotes),
         anaesthesiaStartAt: fromIstInput(values.anaesthesiaStartAt),
         anaesthesiaEndAt: fromIstInput(values.anaesthesiaEndAt),
-        drugs: values.drugs.map((d) => ({ at: fromIstInput(d.at) ?? '', drug: d.drug, dose: d.dose, route: orNull(d.route) })),
+        drugs: values.drugs.map((d) => ({
+          at: fromIstInput(d.at) ?? '',
+          drug: d.drug,
+          dose: d.dose,
+          route: orNull(d.route),
+        })),
         fluids: values.fluids.map((f) => ({ at: fromIstInput(f.at) ?? '', fluid: f.fluid, volumeMl: f.volumeMl ?? 0 })),
         estimatedBloodLossMl: values.estimatedBloodLossMl,
         urineOutputMl: values.urineOutputMl,
@@ -241,11 +276,17 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
   };
 
   return (
-    <Section title="Anaesthesia record" description={record ? `Draft · last saved version ${record.version}` : 'Not started yet. Press Ctrl+S to save.'}>
+    <Section
+      title="Anaesthesia record"
+      description={record ? `Draft · last saved version ${record.version}` : 'Not started yet. Press Ctrl+S to save.'}
+    >
       <form onSubmit={(event) => event.preventDefault()} noValidate className={styles.stack}>
         {draft.saved && (
           <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-            <MessageBarBody>Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+            <MessageBarBody>
+              Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this
+              computer.
+            </MessageBarBody>
             <MessageBarActions>
               <Button onClick={draft.restore}>Restore them</Button>
               <Button appearance="subtle" onClick={draft.discard}>
@@ -264,12 +305,28 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
             hint="Needed before signing."
           />
           <SwitchField control={form.control} name="asaEmergency" label="Emergency surgery (ASA 'E')" />
-          <SelectField control={form.control} name="technique" label="Technique" options={ANAESTHESIA_TYPES.map((t) => ({ value: t, label: anaesthesiaLabel[t] }))} />
-          <SelectField control={form.control} name="airway" label="Airway" options={AIRWAY_DEVICES.map((a) => ({ value: a, label: airwayLabel[a] }))} />
+          <SelectField
+            control={form.control}
+            name="technique"
+            label="Technique"
+            options={ANAESTHESIA_TYPES.map((t) => ({ value: t, label: anaesthesiaLabel[t] }))}
+          />
+          <SelectField
+            control={form.control}
+            name="airway"
+            label="Airway"
+            options={AIRWAY_DEVICES.map((a) => ({ value: a, label: airwayLabel[a] }))}
+          />
           <DateTimeField control={form.control} name="anaesthesiaStartAt" label="Anaesthesia started" />
           <DateTimeField control={form.control} name="anaesthesiaEndAt" label="Anaesthesia ended" />
           <FullRow>
-            <TextField control={form.control} name="airwayNotes" label="Airway details" maxLength={1000} placeholder="Mallampati, tube size, Cormack–Lehane grade, attempts" />
+            <TextField
+              control={form.control}
+              name="airwayNotes"
+              label="Airway details"
+              maxLength={1000}
+              placeholder="Mallampati, tube size, Cormack–Lehane grade, attempts"
+            />
           </FullRow>
         </FormGrid>
 
@@ -282,11 +339,20 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
               <TextField control={form.control} name={`drugs.${index}.drug`} label="Drug" required maxLength={100} />
               <TextField control={form.control} name={`drugs.${index}.dose`} label="Dose" required maxLength={50} />
               <TextField control={form.control} name={`drugs.${index}.route`} label="Route" maxLength={30} />
-              <Button className={styles.removeButton} appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove drug row ${index + 1}`} onClick={() => drugs.remove(index)} />
+              <Button
+                className={styles.removeButton}
+                appearance="subtle"
+                icon={<DeleteRegular />}
+                aria-label={`Remove drug row ${index + 1}`}
+                onClick={() => drugs.remove(index)}
+              />
             </div>
           ))}
           <div>
-            <Button icon={<AddRegular />} onClick={() => drugs.append({ at: nowIstInput(), drug: '', dose: '', route: 'IV' })}>
+            <Button
+              icon={<AddRegular />}
+              onClick={() => drugs.append({ at: nowIstInput(), drug: '', dose: '', route: 'IV' })}
+            >
               Add drug
             </Button>
           </div>
@@ -299,32 +365,69 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
             <div key={row.id} className={styles.fluidRow}>
               <DateTimeField control={form.control} name={`fluids.${index}.at`} label="Time" required />
               <TextField control={form.control} name={`fluids.${index}.fluid`} label="Fluid" required maxLength={100} />
-              <NumberField control={form.control} name={`fluids.${index}.volumeMl`} label="Volume (ml)" required min={1} max={10000} />
-              <Button className={styles.removeButton} appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove fluid row ${index + 1}`} onClick={() => fluids.remove(index)} />
+              <NumberField
+                control={form.control}
+                name={`fluids.${index}.volumeMl`}
+                label="Volume (ml)"
+                required
+                min={1}
+                max={10000}
+              />
+              <Button
+                className={styles.removeButton}
+                appearance="subtle"
+                icon={<DeleteRegular />}
+                aria-label={`Remove fluid row ${index + 1}`}
+                onClick={() => fluids.remove(index)}
+              />
             </div>
           ))}
           <div>
-            <Button icon={<AddRegular />} onClick={() => fluids.append({ at: nowIstInput(), fluid: '', volumeMl: null })}>
+            <Button
+              icon={<AddRegular />}
+              onClick={() => fluids.append({ at: nowIstInput(), fluid: '', volumeMl: null })}
+            >
               Add fluid
             </Button>
           </div>
         </div>
 
         <FormGrid columns={2}>
-          <NumberField control={form.control} name="estimatedBloodLossMl" label="Estimated blood loss (ml)" min={0} max={20000} />
+          <NumberField
+            control={form.control}
+            name="estimatedBloodLossMl"
+            label="Estimated blood loss (ml)"
+            min={0}
+            max={20000}
+          />
           <NumberField control={form.control} name="urineOutputMl" label="Urine output (ml)" min={0} max={20000} />
           <TextAreaField control={form.control} name="complications" label="Complications" rows={2} maxLength={2000} />
-          <TextAreaField control={form.control} name="recoveryNotes" label="Recovery and handover notes" rows={2} maxLength={2000} />
+          <TextAreaField
+            control={form.control}
+            name="recoveryNotes"
+            label="Recovery and handover notes"
+            rows={2}
+            maxLength={2000}
+          />
         </FormGrid>
 
         <ActionError error={save.error} onReload={() => void reload()} />
 
         <div className={styles.footer}>
           <Caption1 className={styles.muted}>Signing locks the record. It cannot be changed afterwards.</Caption1>
-          <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending} onClick={() => void submit(false)}>
+          <Button
+            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            disabled={save.isPending}
+            onClick={() => void submit(false)}
+          >
             Save draft
           </Button>
-          <Button appearance="primary" icon={<SignatureRegular />} disabled={save.isPending || !asaGrade} onClick={() => setConfirmSign(true)}>
+          <Button
+            appearance="primary"
+            icon={<SignatureRegular />}
+            disabled={save.isPending || !asaGrade}
+            onClick={() => setConfirmSign(true)}
+          >
             Sign and lock
           </Button>
         </div>
@@ -338,7 +441,8 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
         onConfirm={() => void submit(true)}
         onCancel={() => setConfirmSign(false)}
       >
-        The record is saved with your name and the time, and locked. Check the drugs, fluids and vitals first — nothing can be changed after signing.
+        The record is saved with your name and the time, and locked. Check the drugs, fluids and vitals first — nothing
+        can be changed after signing.
       </ConfirmDialog>
     </Section>
   );
@@ -347,15 +451,23 @@ function RecordForm({ booking, record }: { booking: SurgeryDetail; record: Anaes
 function RecordSummary({ record }: { record: AnaesthesiaRecordDto }) {
   return (
     <DetailGrid>
-      <Detail label="ASA">{record.asaGrade ? `${asaLabel[record.asaGrade]}${record.asaEmergency ? ' (E)' : ''}` : null}</Detail>
+      <Detail label="ASA">
+        {record.asaGrade ? `${asaLabel[record.asaGrade]}${record.asaEmergency ? ' (E)' : ''}` : null}
+      </Detail>
       <Detail label="Technique">{anaesthesiaLabel[record.technique]}</Detail>
       <Detail label="Airway">{airwayLabel[record.airway]}</Detail>
       <Detail label="Airway details">{record.airwayNotes}</Detail>
       <Detail label="Started">{record.anaesthesiaStartAt ? formatDateTime(record.anaesthesiaStartAt) : null}</Detail>
       <Detail label="Ended">{record.anaesthesiaEndAt ? formatDateTime(record.anaesthesiaEndAt) : null}</Detail>
-      <Detail label="Drugs">{record.drugs.map((d) => `${formatTime(d.at)} ${d.drug} ${d.dose}${d.route ? ` ${d.route}` : ''}`).join('; ')}</Detail>
-      <Detail label="Fluids">{record.fluids.map((f) => `${formatTime(f.at)} ${f.fluid} ${f.volumeMl} ml`).join('; ')}</Detail>
-      <Detail label="Blood loss">{record.estimatedBloodLossMl !== null ? `${record.estimatedBloodLossMl} ml` : null}</Detail>
+      <Detail label="Drugs">
+        {record.drugs.map((d) => `${formatTime(d.at)} ${d.drug} ${d.dose}${d.route ? ` ${d.route}` : ''}`).join('; ')}
+      </Detail>
+      <Detail label="Fluids">
+        {record.fluids.map((f) => `${formatTime(f.at)} ${f.fluid} ${f.volumeMl} ml`).join('; ')}
+      </Detail>
+      <Detail label="Blood loss">
+        {record.estimatedBloodLossMl !== null ? `${record.estimatedBloodLossMl} ml` : null}
+      </Detail>
       <Detail label="Urine output">{record.urineOutputMl !== null ? `${record.urineOutputMl} ml` : null}</Detail>
       <Detail label="Complications">{record.complications}</Detail>
       <Detail label="Recovery notes">{record.recoveryNotes}</Detail>
@@ -365,7 +477,10 @@ function RecordSummary({ record }: { record: AnaesthesiaRecordDto }) {
 
 function SignedRecord({ record }: { record: AnaesthesiaRecordDto }) {
   return (
-    <Section title="Anaesthesia record" actions={<WhoWhen prefix="Signed by" by={record.signedByName} at={record.signedAt} locked />}>
+    <Section
+      title="Anaesthesia record"
+      actions={<WhoWhen prefix="Signed by" by={record.signedByName} at={record.signedAt} locked />}
+    >
       <MessageBar intent="success" icon={<LockClosedRegular />}>
         <MessageBarBody>
           <MessageBarTitle>Signed and locked</MessageBarTitle>
@@ -435,7 +550,15 @@ const emptyVitals = (): VitalsValues => ({
   respiratoryRate: null,
 });
 
-function VitalsSection({ booking, record, canRecord }: { booking: SurgeryDetail; record: AnaesthesiaRecordDto | null; canRecord: boolean }) {
+function VitalsSection({
+  booking,
+  record,
+  canRecord,
+}: {
+  booking: SurgeryDetail;
+  record: AnaesthesiaRecordDto | null;
+  canRecord: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -466,7 +589,10 @@ function VitalsSection({ booking, record, canRecord }: { booking: SurgeryDetail;
   ];
 
   return (
-    <Section title="Intra-operative vitals" description="Chart every 5–15 minutes. Late entries are placed in time order.">
+    <Section
+      title="Intra-operative vitals"
+      description="Chart every 5–15 minutes. Late entries are placed in time order."
+    >
       {canRecord && (
         <form onSubmit={form.handleSubmit((values) => add.mutate(values))} noValidate>
           <div className={styles.vitalsForm}>
@@ -480,7 +606,12 @@ function VitalsSection({ booking, record, canRecord }: { booking: SurgeryDetail;
             <NumberField control={form.control} name="etCo2" label="EtCO₂" min={0} max={150} />
             <NumberField control={form.control} name="temperatureC" label="Temp °C" min={30} max={45} step={0.1} />
             <NumberField control={form.control} name="respiratoryRate" label="Resp. rate" min={0} max={80} />
-            <Button type="submit" appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />} disabled={add.isPending}>
+            <Button
+              type="submit"
+              appearance="primary"
+              icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+              disabled={add.isPending}
+            >
               Add reading
             </Button>
           </div>
@@ -489,7 +620,12 @@ function VitalsSection({ booking, record, canRecord }: { booking: SurgeryDetail;
       )}
       {vitals.length > 1 && (
         <div style={{ marginTop: 12 }}>
-          <TrendChart series={series} ariaLabel="Intra-operative vital signs over time" yName="bpm / mmHg / %" height={260} />
+          <TrendChart
+            series={series}
+            ariaLabel="Intra-operative vital signs over time"
+            yName="bpm / mmHg / %"
+            height={260}
+          />
         </div>
       )}
       <DataTable
@@ -500,14 +636,21 @@ function VitalsSection({ booking, record, canRecord }: { booking: SurgeryDetail;
         columns={[
           { key: 'at', header: 'Time', width: 110, render: (v) => formatTime(v.at) },
           { key: 'hr', header: 'Heart rate', align: 'end', render: (v) => v.heartRate ?? '—' },
-          { key: 'bp', header: 'BP', align: 'end', render: (v) => (v.systolic || v.diastolic ? `${v.systolic ?? '—'}/${v.diastolic ?? '—'}` : '—') },
+          {
+            key: 'bp',
+            header: 'BP',
+            align: 'end',
+            render: (v) => (v.systolic || v.diastolic ? `${v.systolic ?? '—'}/${v.diastolic ?? '—'}` : '—'),
+          },
           { key: 'spo2', header: 'SpO₂ %', align: 'end', render: (v) => v.spO2 ?? '—' },
           { key: 'etco2', header: 'EtCO₂', align: 'end', render: (v) => v.etCo2 ?? '—' },
           { key: 'temp', header: 'Temp °C', align: 'end', priority: 'low', render: (v) => v.temperatureC ?? '—' },
           { key: 'rr', header: 'Resp. rate', align: 'end', priority: 'low', render: (v) => v.respiratoryRate ?? '—' },
         ]}
         emptyTitle="No vitals charted yet"
-        emptyDescription={canRecord ? 'Add the first reading above.' : 'Readings appear here as the anaesthetist charts them.'}
+        emptyDescription={
+          canRecord ? 'Add the first reading above.' : 'Readings appear here as the anaesthetist charts them.'
+        }
       />
     </Section>
   );

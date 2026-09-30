@@ -6,7 +6,14 @@ import { ChangePasswordForm, MfaSetup } from '@/modules/account/security';
 import { BrandMark } from './BrandMark';
 
 const useStyles = makeStyles({
-  root: { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', boxSizing: 'border-box' },
+  root: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px 16px',
+    boxSizing: 'border-box',
+  },
   card: {
     width: 'min(520px, 100%)',
     display: 'flex',
@@ -43,14 +50,17 @@ export function RestrictedSession({ restriction }: { restriction: 'password' | '
           <>
             <Title2 as="h1">Choose a new password</Title2>
             <Text className={styles.muted}>
-              Welcome, {user?.displayName}. You signed in with a temporary password. Choose your own password to continue.
+              Welcome, {user?.displayName}. You signed in with a temporary password. Choose your own password to
+              continue.
             </Text>
             <ChangePasswordForm />
           </>
         ) : (
           <>
             <Title2 as="h1">Turn on two-step verification</Title2>
-            <Text className={styles.muted}>Your role can see sensitive records, so the hospital requires two-step verification.</Text>
+            <Text className={styles.muted}>
+              Your role can see sensitive records, so the hospital requires two-step verification.
+            </Text>
             <MfaSetup />
           </>
         )}

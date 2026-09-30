@@ -45,13 +45,16 @@ export const appointmentQueries = {
 
 export const appointmentApi = {
   book: (request: PortalBookAppointmentRequest) => api.post<PortalBookingResult>(base, request),
-  cancel: (appointmentId: string, reason: string | null) => api.post<void>(`${base}/${id(appointmentId)}/cancel`, { reason }),
+  cancel: (appointmentId: string, reason: string | null) =>
+    api.post<void>(`${base}/${id(appointmentId)}/cancel`, { reason }),
   reschedule: (appointmentId: string, startsAt: string, reason: string | null) =>
     api.post<PortalAppointment>(`${base}/${id(appointmentId)}/reschedule`, { startsAt, reason }),
   startPayment: (appointmentId: string) => api.post<PaymentCheckout>(`${base}/${id(appointmentId)}/payment`),
-  confirmPayment: (appointmentId: string, body: ConfirmPaymentRequest) => api.post<PortalAppointment>(`${base}/${id(appointmentId)}/payment/confirm`, body),
+  confirmPayment: (appointmentId: string, body: ConfirmPaymentRequest) =>
+    api.post<PortalAppointment>(`${base}/${id(appointmentId)}/payment/confirm`, body),
   /** Server-to-server check with the gateway, for checkouts that return no signature (the training gateway). */
   verifyPayment: (appointmentId: string) => api.post<PortalAppointment>(`${base}/${id(appointmentId)}/payment/verify`),
-  joinWaitlist: (request: PortalJoinWaitlistRequest) => api.post<PortalWaitlistEntry>('/api/v1/portal/waitlist', request),
+  joinWaitlist: (request: PortalJoinWaitlistRequest) =>
+    api.post<PortalWaitlistEntry>('/api/v1/portal/waitlist', request),
   leaveWaitlist: (entryId: string) => api.post<void>(`/api/v1/portal/waitlist/${id(entryId)}/cancel`),
 };

@@ -1,5 +1,21 @@
-import { Button, Caption1, makeStyles, mergeClasses, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
-import { CalendarCancelRegular, CheckmarkCircleRegular, CircleRegular, DesktopPulseRegular, RecordRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  CalendarCancelRegular,
+  CheckmarkCircleRegular,
+  CircleRegular,
+  DesktopPulseRegular,
+  RecordRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, useRealtimeEvent } from '@hc360/core';
 import { LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,7 +27,13 @@ import { SeroBadge, SessionStatusBadge } from '@/modules/dialysis/DialysisBadges
 import { AssignMachineDialog } from '@/modules/dialysis/DialysisDialogs';
 import { seroLabel, shiftLabel } from '@/modules/dialysis/labels';
 import { sessionStage, type SessionStage } from '@/modules/dialysis/logic';
-import { CompletePanel, PreAssessmentPanel, ReadingsPanel, SessionSummary, StartPanel } from '@/modules/dialysis/SessionPanels';
+import {
+  CompletePanel,
+  PreAssessmentPanel,
+  ReadingsPanel,
+  SessionSummary,
+  StartPanel,
+} from '@/modules/dialysis/SessionPanels';
 import { ChargeStatusPanel, NoAccess, ReasonDialog, RecordLoadError } from '@/modules/ot/shared/feedback';
 import { useFacilityId } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
@@ -112,7 +134,10 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
         icon={<DesktopPulseRegular />}
         subtitle={`${shiftLabel[s.shift]} shift · session ${s.sessionNumber} · machine ${s.machineCode ?? 'not assigned'}${s.dryWeightKg !== null ? ` · dry weight ${s.dryWeightKg} kg` : ''}`}
         breadcrumbs={[
-          { label: 'Dialysis board', onClick: () => void navigate({ to: '/dialysis', search: { date: s.scheduledDate } }) },
+          {
+            label: 'Dialysis board',
+            onClick: () => void navigate({ to: '/dialysis', search: { date: s.scheduledDate } }),
+          },
           { label: 'Sessions', onClick: () => void navigate({ to: '/dialysis/sessions' }) },
           { label: s.sessionNumber },
         ]}
@@ -142,8 +167,18 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
             const done = index < stageIndex || stage === 'completed';
             const current = index === stageIndex && stage !== 'completed';
             return (
-              <span key={x.id} className={mergeClasses(styles.stage, done && styles.stageDone, current && styles.stageCurrent)} aria-current={current ? 'step' : undefined}>
-                {done ? <CheckmarkCircleRegular aria-label="Done" /> : current ? <RecordRegular aria-label="Now" /> : <CircleRegular aria-label="Not yet" />}
+              <span
+                key={x.id}
+                className={mergeClasses(styles.stage, done && styles.stageDone, current && styles.stageCurrent)}
+                aria-current={current ? 'step' : undefined}
+              >
+                {done ? (
+                  <CheckmarkCircleRegular aria-label="Done" />
+                ) : current ? (
+                  <RecordRegular aria-label="Now" />
+                ) : (
+                  <CircleRegular aria-label="Not yet" />
+                )}
                 {x.label}
               </span>
             );
@@ -162,7 +197,10 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
 
       {s.status === 'Scheduled' && !s.machineId && (
         <MessageBar intent="info">
-          <MessageBarBody>Assign a machine of the patient’s sero category ({s.seroStatus ? seroLabel[s.seroStatus].toLowerCase() : 'not known'}).</MessageBarBody>
+          <MessageBarBody>
+            Assign a machine of the patient’s sero category (
+            {s.seroStatus ? seroLabel[s.seroStatus].toLowerCase() : 'not known'}).
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -171,7 +209,10 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
       </Section>
 
       {s.status === 'Scheduled' && (
-        <Section title="Connect and start" description="Checks the machine’s sero category, that it is free and disinfected, and the dialyzer’s owner and uses.">
+        <Section
+          title="Connect and start"
+          description="Checks the machine’s sero category, that it is free and disinfected, and the dialyzer’s owner and uses."
+        >
           <StartPanel session={s} canRecord={canRecord} />
         </Section>
       )}
@@ -183,7 +224,10 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
       )}
 
       {s.status === 'InProgress' && canRecord && (
-        <Section title="After dialysis" description="Post-dialysis weight and blood pressure, fluid removed and complications.">
+        <Section
+          title="After dialysis"
+          description="Post-dialysis weight and blood pressure, fluid removed and complications."
+        >
           <CompletePanel session={s} canRecord={canRecord} />
         </Section>
       )}
@@ -192,7 +236,13 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
         <Section title="Summary">
           <SessionSummary session={s} />
           <div style={{ marginTop: 12 }}>
-            <ChargeStatusPanel status={s.chargeStatus} error={s.chargeError} canRetry={canRecord} retrying={retry.isPending} onRetry={() => retry.mutate()} />
+            <ChargeStatusPanel
+              status={s.chargeStatus}
+              error={s.chargeError}
+              canRetry={canRecord}
+              retrying={retry.isPending}
+              onRetry={() => retry.mutate()}
+            />
           </div>
         </Section>
       )}
@@ -208,18 +258,32 @@ function SessionView({ session: s }: { session: DialysisSessionDetail }) {
 
       {assigning && (
         <AssignMachineDialog
-          session={{ id: s.id, patientId: s.patientId, patientName: s.patientName, scheduledDate: s.scheduledDate, shift: s.shift, machineId: s.machineId }}
+          session={{
+            id: s.id,
+            patientId: s.patientId,
+            patientName: s.patientName,
+            scheduledDate: s.scheduledDate,
+            shift: s.shift,
+            machineId: s.machineId,
+          }}
           onClose={() => setAssigning(false)}
         />
       )}
       <ReasonDialog
         open={cancelling}
         title="Cancel this session?"
-        description={<Text>Tick the box if the patient did not come: missed dialysis is a clinical risk and is tracked separately.</Text>}
+        description={
+          <Text>
+            Tick the box if the patient did not come: missed dialysis is a clinical risk and is tracked separately.
+          </Text>
+        }
         confirmLabel="Save"
         busy={cancel.isPending}
         error={cancel.error}
-        option={{ label: 'The patient did not come (record as missed)', hint: 'Leave unticked if the unit cancelled the session.' }}
+        option={{
+          label: 'The patient did not come (record as missed)',
+          hint: 'Leave unticked if the unit cancelled the session.',
+        }}
         presets={['Patient did not come', 'Admitted to ICU', 'Machine breakdown', 'Rescheduled at patient request']}
         onConfirm={(reason, missed) => cancel.mutate({ reason, missed })}
         onCancel={() => {

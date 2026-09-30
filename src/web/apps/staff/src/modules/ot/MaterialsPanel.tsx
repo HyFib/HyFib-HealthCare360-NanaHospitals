@@ -24,14 +24,42 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, ArrowClockwiseRegular, BoxRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateOnly, formatDateTime, formatInr, formatNumber, isApiError, todayIso, useDebouncedValue } from '@hc360/core';
-import { ChoiceField, ConfirmDialog, DataTable, DateField, FormGrid, FullRow, NumberField, Section, TextField, useNotify } from '@hc360/ui';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  formatNumber,
+  isApiError,
+  todayIso,
+  useDebouncedValue,
+} from '@hc360/core';
+import {
+  ChoiceField,
+  ConfirmDialog,
+  DataTable,
+  DateField,
+  FormGrid,
+  FullRow,
+  NumberField,
+  Section,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
-import { MATERIAL_KINDS, otApi, otKeys, otQueries, type OtStoreBatch, type OtStoreItem, type SurgeryDetail, type SurgeryMaterialDto } from './api';
+import {
+  MATERIAL_KINDS,
+  otApi,
+  otKeys,
+  otQueries,
+  type OtStoreBatch,
+  type OtStoreItem,
+  type SurgeryDetail,
+  type SurgeryMaterialDto,
+} from './api';
 import { materialKindLabel } from './labels';
 import { batchForLot, batchLabel, issuableQuantity, materialsGate, otStoreProblem, priceForBatch } from './logic';
 import { applyFormErrors, errorMessage } from './shared/errors';
@@ -60,19 +88,35 @@ const materialSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.source === 'store' && !v.supplyItemId) {
-      ctx.addIssue({ code: 'custom', path: ['supplyItemId'], message: 'Choose the item from the OT store, or record it as consignment / patient-supplied.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['supplyItemId'],
+        message: 'Choose the item from the OT store, or record it as consignment / patient-supplied.',
+      });
     }
     if (v.kind === 'Implant' && !v.lotNumber && !v.serialNumber) {
-      ctx.addIssue({ code: 'custom', path: ['lotNumber'], message: 'Enter the lot or serial number of the implant (needed for device recalls).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['lotNumber'],
+        message: 'Enter the lot or serial number of the implant (needed for device recalls).',
+      });
     }
     if (v.expiryDate && v.expiryDate < todayIso()) {
-      ctx.addIssue({ code: 'custom', path: ['expiryDate'], message: 'This item is past its expiry date and must not be used.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expiryDate'],
+        message: 'This item is past its expiry date and must not be used.',
+      });
     }
     if (v.quantity === null || v.quantity <= 0 || v.quantity > 1000) {
       ctx.addIssue({ code: 'custom', path: ['quantity'], message: 'Enter a quantity from 1 to 1000.' });
     }
     if (v.unitPrice === null || v.unitPrice < 0 || v.unitPrice > 10_000_000) {
-      ctx.addIssue({ code: 'custom', path: ['unitPrice'], message: 'Enter the price per unit in rupees (0 if not charged).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unitPrice'],
+        message: 'Enter the price per unit in rupees (0 if not charged).',
+      });
     }
   });
 
@@ -80,7 +124,9 @@ type MaterialValues = z.infer<typeof materialSchema>;
 
 /** Problems raised by the OT store while issuing or returning stock ("stock.insufficient", "stock.no_store"…). */
 function isStockError(error: unknown): boolean {
-  return isApiError(error) && Boolean(error.code && (error.code.startsWith('stock.') || error.code.startsWith('store.')));
+  return (
+    isApiError(error) && Boolean(error.code && (error.code.startsWith('stock.') || error.code.startsWith('store.')))
+  );
 }
 
 /** Stock refusals in plain words, with what to do next. */
@@ -130,7 +176,12 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
     mutationFn: (material: SurgeryMaterialDto) => otApi.removeMaterial(booking.id, material.id),
     onSuccess: (_, material) => {
       setRemoving(null);
-      notify.success('Item removed', material.supplyItemId ? 'Its charge was withdrawn and the item returned to OT store stock.' : 'Its charge was withdrawn.');
+      notify.success(
+        'Item removed',
+        material.supplyItemId
+          ? 'Its charge was withdrawn and the item returned to OT store stock.'
+          : 'Its charge was withdrawn.',
+      );
       void queryClient.invalidateQueries({ queryKey: otKeys.materials(booking.id) });
     },
   });
@@ -177,12 +228,19 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
         <div style={{ padding: '0 16px 8px' }}>
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
-              <MessageBarTitle>{failed.length} item{failed.length === 1 ? '' : 's'} could not be billed</MessageBarTitle>
-              {failed[0]?.chargeError ?? 'Billing was not available.'} The items are recorded; retry when billing is available.
+              <MessageBarTitle>
+                {failed.length} item{failed.length === 1 ? '' : 's'} could not be billed
+              </MessageBarTitle>
+              {failed[0]?.chargeError ?? 'Billing was not available.'} The items are recorded; retry when billing is
+              available.
             </MessageBarBody>
             {canRetry && (
               <MessageBarActions>
-                <Button icon={retry.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} disabled={retry.isPending} onClick={() => retry.mutate()}>
+                <Button
+                  icon={retry.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+                  disabled={retry.isPending}
+                  onClick={() => retry.mutate()}
+                >
                   Retry billing
                 </Button>
               </MessageBarActions>
@@ -216,7 +274,9 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
               <span>
                 <Text weight="semibold">{m.itemName}</Text>
                 <Caption1 block className={styles.muted}>
-                  {[m.manufacturer, m.supplyItemId ? 'From OT store' : 'Consignment / patient-supplied'].filter(Boolean).join(' · ')}
+                  {[m.manufacturer, m.supplyItemId ? 'From OT store' : 'Consignment / patient-supplied']
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Caption1>
               </span>
             ),
@@ -238,16 +298,33 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
           { key: 'expiry', header: 'Expiry', priority: 'low', render: (m) => formatDateOnly(m.expiryDate) },
           { key: 'qty', header: 'Qty', align: 'end', width: 60, render: (m) => m.quantity },
           { key: 'amount', header: 'Amount', align: 'end', render: (m) => formatInr(m.amount) },
-          { key: 'by', header: 'Recorded', priority: 'low', render: (m) => `${m.recordedByName ?? '—'} · ${formatDateTime(m.recordedAt)}` },
+          {
+            key: 'by',
+            header: 'Recorded',
+            priority: 'low',
+            render: (m) => `${m.recordedByName ?? '—'} · ${formatDateTime(m.recordedAt)}`,
+          },
           { key: 'bill', header: 'Billing', render: (m) => <ChargeBadge status={m.chargeStatus} /> },
         ]}
         rowActions={
           canRecord && gate.allowed
-            ? (m) => <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${m.itemName}`} onClick={() => setRemoving(m)} />
+            ? (m) => (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label={`Remove ${m.itemName}`}
+                  onClick={() => setRemoving(m)}
+                />
+              )
             : undefined
         }
         emptyTitle="Nothing recorded yet"
-        emptyDescription={canRecord ? 'Record implants with their lot or serial number from the pack label, and consumables as they are opened.' : undefined}
+        emptyDescription={
+          canRecord
+            ? 'Record implants with their lot or serial number from the pack label, and consumables as they are opened.'
+            : undefined
+        }
       />
       {rows.length > 0 && (
         <div className={styles.total}>
@@ -271,7 +348,8 @@ export function MaterialsPanel({ booking }: { booking: SurgeryDetail }) {
         }}
       >
         <Text block>
-          Use this only for an item recorded by mistake. The charge of {formatInr(removing?.amount)} is withdrawn from the patient&apos;s bill
+          Use this only for an item recorded by mistake. The charge of {formatInr(removing?.amount)} is withdrawn from
+          the patient&apos;s bill
           {removing?.supplyItemId ? ' and the item goes back into OT store stock' : ''}.
         </Text>
         {isStockError(remove.error) ? <StockError error={remove.error} /> : <ActionError error={remove.error} />}
@@ -300,7 +378,10 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
       unitPrice: null,
     },
   });
-  const [kind, source, quantity, unitPrice, lotNumber] = useWatch({ control: form.control, name: ['kind', 'source', 'quantity', 'unitPrice', 'lotNumber'] });
+  const [kind, source, quantity, unitPrice, lotNumber] = useWatch({
+    control: form.control,
+    name: ['kind', 'source', 'quantity', 'unitPrice', 'lotNumber'],
+  });
   const [picked, setPicked] = useState<OtStoreItem | null>(null);
   // The MRP last filled in as the price: choosing another batch updates it, unless the user typed a price of their own.
   const [filledPrice, setFilledPrice] = useState<number | null>(null);
@@ -361,7 +442,9 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
     onSuccess: (saved) => {
       notify.success(
         `${saved.itemName} recorded`,
-        saved.chargeStatus === 'Failed' ? 'Billing failed; it can be retried.' : `${formatInr(saved.amount)} added to the bill${saved.supplyItemId ? ' and issued from the OT store' : ''}.`,
+        saved.chargeStatus === 'Failed'
+          ? 'Billing failed; it can be retried.'
+          : `${formatInr(saved.amount)} added to the bill${saved.supplyItemId ? ' and issued from the OT store' : ''}.`,
       );
       void queryClient.invalidateQueries({ queryKey: otKeys.materials(booking.id) });
       onClose();
@@ -425,7 +508,11 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                     ) : storeProblem ? (
                       <MessageBar intent="warning" layout="multiline">
                         <MessageBarBody>
-                          <MessageBarTitle>{storeProblem === 'ambiguous' ? 'More than one OT store is active' : 'No OT store is set up'}</MessageBarTitle>
+                          <MessageBarTitle>
+                            {storeProblem === 'ambiguous'
+                              ? 'More than one OT store is active'
+                              : 'No OT store is set up'}
+                          </MessageBarTitle>
                           {storeProblem === 'ambiguous'
                             ? 'The server cannot tell which store to issue from. Ask the stores team to keep one active OT store. Until then, record the item as consignment / patient-supplied.'
                             : 'Ask the stores team to set one up under Inventory → Stores. Until then, record the item as consignment / patient-supplied.'}
@@ -438,7 +525,10 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                 )}
                 {storePick && storePick.batches.length > 0 && (
                   <FullRow>
-                    <Field label="Batch" hint="The batch that expires first is chosen. Pick the lot printed on the pack you are using.">
+                    <Field
+                      label="Batch"
+                      hint="The batch that expires first is chosen. Pick the lot printed on the pack you are using."
+                    >
                       <RadioGroup
                         value={chosenBatch?.batchId ?? ''}
                         onChange={(_, d) => {
@@ -449,7 +539,11 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                         }}
                       >
                         {storePick.batches.map((batch) => (
-                          <Radio key={batch.batchId} value={batch.batchId} label={batchLabel(batch, storePick.baseUnit)} />
+                          <Radio
+                            key={batch.batchId}
+                            value={batch.batchId}
+                            label={batchLabel(batch, storePick.baseUnit)}
+                          />
                         ))}
                       </RadioGroup>
                     </Field>
@@ -487,11 +581,20 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                   <NumberField control={form.control} name="quantity" label="Quantity" required min={1} max={1000} />
                   {short && (
                     <Caption1 className={styles.warn}>
-                      Only {formatNumber(issuable)} {storePick?.baseUnit} {chosenBatch ? `of lot ${chosenBatch.batchNumber} ` : ''}in the OT store. The store will refuse a larger issue.
+                      Only {formatNumber(issuable)} {storePick?.baseUnit}{' '}
+                      {chosenBatch ? `of lot ${chosenBatch.batchNumber} ` : ''}in the OT store. The store will refuse a
+                      larger issue.
                     </Caption1>
                   )}
                 </div>
-                <NumberField control={form.control} name="unitPrice" label="Price per unit (₹)" required min={0} step={0.01} />
+                <NumberField
+                  control={form.control}
+                  name="unitPrice"
+                  label="Price per unit (₹)"
+                  required
+                  min={0}
+                  step={0.01}
+                />
               </FormGrid>
               <Text>
                 Amount billed: <Text weight="semibold">{formatInr(amount)}</Text>
@@ -519,7 +622,15 @@ function AddMaterialDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
 }
 
 /** Searches the OT store: only items it can issue now, with the quantity available and the nearest expiry. */
-function StoreItemPicker({ form, picked, onPicked }: { form: UseFormReturn<MaterialValues>; picked: OtStoreItem | null; onPicked: (item: OtStoreItem | null) => void }) {
+function StoreItemPicker({
+  form,
+  picked,
+  onPicked,
+}: {
+  form: UseFormReturn<MaterialValues>;
+  picked: OtStoreItem | null;
+  onPicked: (item: OtStoreItem | null) => void;
+}) {
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
@@ -530,7 +641,9 @@ function StoreItemPicker({ form, picked, onPicked }: { form: UseFormReturn<Mater
       control={form.control}
       name="supplyItemId"
       render={({ field, fieldState }) => {
-        const problem = fieldState.error?.message ?? (items.error ? errorMessage(items.error, 'The OT store could not be searched. Try again.') : undefined);
+        const problem =
+          fieldState.error?.message ??
+          (items.error ? errorMessage(items.error, 'The OT store could not be searched. Try again.') : undefined);
         return (
           <Field
             label="Item from the OT store"
@@ -565,7 +678,9 @@ function StoreItemPicker({ form, picked, onPicked }: { form: UseFormReturn<Mater
                   <span>
                     {item.name} <span className={styles.muted}>· {item.code}</span>
                     <Caption1 block className={item.available <= 0 ? styles.warn : styles.muted}>
-                      {item.available <= 0 ? 'Out of stock in the OT store' : `${formatNumber(item.available)} ${item.baseUnit} in stock`}
+                      {item.available <= 0
+                        ? 'Out of stock in the OT store'
+                        : `${formatNumber(item.available)} ${item.baseUnit} in stock`}
                       {item.nearestExpiry ? ` · earliest expiry ${formatDateOnly(item.nearestExpiry)}` : ''}
                       {item.manufacturer ? ` · ${item.manufacturer}` : ''}
                     </Caption1>

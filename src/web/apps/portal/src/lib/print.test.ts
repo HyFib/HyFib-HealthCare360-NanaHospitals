@@ -39,7 +39,14 @@ describe('print helpers', () => {
 
 describe('print templates escape everything they print', () => {
   const context = { t, f, hospital: `Nana ${EVIL}`, uhid: 'UH-1', printedAt: '2026-09-28T06:00:00Z' };
-  const receipt = { id: 'r1', receiptNumber: 'R/1', purpose: 'BillPayment', amount: 500, modes: EVIL, receivedAt: '2026-09-27T07:00:00Z' } as const;
+  const receipt = {
+    id: 'r1',
+    receiptNumber: 'R/1',
+    purpose: 'BillPayment',
+    amount: 500,
+    modes: EVIL,
+    receivedAt: '2026-09-27T07:00:00Z',
+  } as const;
   const bill: PortalBillDetail = {
     id: 'b1',
     billNumber: 'OP/1',
@@ -57,7 +64,18 @@ describe('print templates escape everything they print', () => {
     patientAmount: 1000,
     paidAmount: 0,
     dueAmount: 1000,
-    lines: [{ description: EVIL, quantity: 1, unitPrice: 1000, discountAmount: 0, taxAmount: 0, netAmount: 1000, serviceDate: '2026-09-27T06:00:00Z', isReturn: false }],
+    lines: [
+      {
+        description: EVIL,
+        quantity: 1,
+        unitPrice: 1000,
+        discountAmount: 0,
+        taxAmount: 0,
+        netAmount: 1000,
+        serviceDate: '2026-09-27T06:00:00Z',
+        isReturn: false,
+      },
+    ],
     receipts: [receipt],
   };
 
@@ -98,7 +116,13 @@ describe('print templates escape everything they print', () => {
       amendmentCount: 0,
       version: 1,
     } satisfies DischargeSummaryDto;
-    const doc = dischargeSummaryDocument(summary, { t, f, hospital: 'Nana', printedAt: '2026-09-28T06:00:00Z', patient: { fullName: EVIL, uhid: 'UH-1' } });
+    const doc = dischargeSummaryDocument(summary, {
+      t,
+      f,
+      hospital: 'Nana',
+      printedAt: '2026-09-28T06:00:00Z',
+      patient: { fullName: EVIL, uhid: 'UH-1' },
+    });
     expect(doc.body).not.toContain('<img');
     expect(doc.body).toContain('Dengue<br/>&lt;img');
     expect(doc.fileName).toBe('discharge-summary-2026-09-25');

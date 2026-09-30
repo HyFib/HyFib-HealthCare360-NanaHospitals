@@ -92,14 +92,30 @@ export function MachineDrawer({ machine, onClose }: { machine: DialysisMachineDt
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {machine ? `Machine ${machine.code}` : 'Add dialysis machine'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
-            <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} hint="Shown on the board, for example HD-01." />
-            <TextField control={form.control} name="station" label="Station / chair" maxLength={64} placeholder="e.g. Station 3, Isolation room B" />
+            <TextField
+              control={form.control}
+              name="code"
+              label="Code"
+              required
+              autoFocus
+              maxLength={16}
+              hint="Shown on the board, for example HD-01."
+            />
+            <TextField
+              control={form.control}
+              name="station"
+              label="Station / chair"
+              maxLength={64}
+              placeholder="e.g. Station 3, Isolation room B"
+            />
             <ChoiceField
               control={form.control}
               name="seroDedication"
@@ -111,7 +127,9 @@ export function MachineDrawer({ machine, onClose }: { machine: DialysisMachineDt
             {rededicating && (
               <MessageBar intent={blockedRededication ? 'error' : 'warning'} layout="multiline">
                 <MessageBarBody>
-                  <MessageBarTitle>{blockedRededication ? 'Disinfect the machine first' : 'Changing the dedication'}</MessageBarTitle>
+                  <MessageBarTitle>
+                    {blockedRededication ? 'Disinfect the machine first' : 'Changing the dedication'}
+                  </MessageBarTitle>
                   {blockedRededication
                     ? 'The dedication can only change when the machine is idle and disinfected after its last session.'
                     : `From now on only ${seroLabel[sero].toLowerCase()} patients can be dialysed on ${machine.code}. Label the machine accordingly.`}
@@ -129,12 +147,22 @@ export function MachineDrawer({ machine, onClose }: { machine: DialysisMachineDt
               hint="'In use' is set by starting a session."
               disabled={machine?.status === 'InUse'}
             />
-            <SwitchField control={form.control} name="isActive" label="Active" hint="Inactive machines are hidden from the board and cannot be booked." />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Active"
+              hint="Inactive machines are hidden from the board and cannot be booked."
+            />
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending || blockedRededication} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending || blockedRededication}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {machine ? 'Save' : 'Add machine'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

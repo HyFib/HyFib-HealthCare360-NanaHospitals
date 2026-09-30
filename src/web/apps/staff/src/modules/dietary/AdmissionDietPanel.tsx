@@ -1,4 +1,16 @@
-import { Badge, Button, Caption1, makeStyles, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Subtitle2, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+  Subtitle2,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { CheckmarkRegular, EditRegular, FoodRegular, StopRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, StatusBadge, useNotify } from '@hc360/ui';
@@ -11,7 +23,15 @@ import { DietOrderDialog, type DietAdmission } from './DietOrderDialog';
 import { describeSlots, PREFERENCE_LABEL } from './rules';
 
 const useStyles = makeStyles({
-  current: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px 14px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2, marginBottom: '16px' },
+  current: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '12px 14px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+    marginBottom: '16px',
+  },
   head: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'space-between' },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   allergy: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
@@ -62,7 +82,13 @@ export function AdmissionDietPanel({ admission, canOrder }: { admission: DietAdm
             {canManage && (
               <div className={styles.actions}>
                 {current.needsReview && (
-                  <Button size="small" appearance="primary" icon={<CheckmarkRegular />} disabled={review.isPending} onClick={() => review.mutate(current)}>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    icon={<CheckmarkRegular />}
+                    disabled={review.isPending}
+                    onClick={() => review.mutate(current)}
+                  >
                     Mark reviewed
                   </Button>
                 )}
@@ -99,7 +125,8 @@ export function AdmissionDietPanel({ admission, canOrder }: { admission: DietAdm
           )}
           {current.instructions && <Text>Kitchen: {current.instructions}</Text>}
           <Caption1 className={styles.muted}>
-            From {formatDateOnly(current.startDate)} · ordered by {current.orderedByName ?? DIET_SOURCE_LABEL[current.source]} ({DIET_SOURCE_LABEL[current.source]})
+            From {formatDateOnly(current.startDate)} · ordered by{' '}
+            {current.orderedByName ?? DIET_SOURCE_LABEL[current.source]} ({DIET_SOURCE_LABEL[current.source]})
           </Caption1>
         </section>
       ) : orders.data && orders.data.length > 0 ? (
@@ -135,10 +162,19 @@ export function AdmissionDietPanel({ admission, canOrder }: { admission: DietAdm
           getRowId={(o) => o.id}
           size="small"
           columns={[
-            { key: 'diet', header: 'Diet', render: (o) => `${o.dietName ?? o.dietCode ?? ''} · ${PREFERENCE_LABEL[o.preference]}` },
+            {
+              key: 'diet',
+              header: 'Diet',
+              render: (o) => `${o.dietName ?? o.dietCode ?? ''} · ${PREFERENCE_LABEL[o.preference]}`,
+            },
             { key: 'from', header: 'From', width: 130, render: (o) => formatDateOnly(o.startDate) },
             { key: 'to', header: 'Until', width: 130, render: (o) => (o.endDate ? formatDateOnly(o.endDate) : '—') },
-            { key: 'by', header: 'Ordered', priority: 'low', render: (o) => `${o.orderedByName ?? ''} · ${formatDateTime(o.createdAt)}` },
+            {
+              key: 'by',
+              header: 'Ordered',
+              priority: 'low',
+              render: (o) => `${o.orderedByName ?? ''} · ${formatDateTime(o.createdAt)}`,
+            },
             {
               key: 'status',
               header: 'Status',
@@ -161,7 +197,13 @@ export function AdmissionDietPanel({ admission, canOrder }: { admission: DietAdm
       )}
       {orders.isLoading && <Caption1 className={styles.muted}>Loading diet orders…</Caption1>}
 
-      {editing && <DietOrderDialog admission={admission} current={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <DietOrderDialog
+          admission={admission}
+          current={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
       <ReasonDialog
         open={stopping !== null}
         title="Stop this diet?"

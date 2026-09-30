@@ -59,7 +59,10 @@ export function TrendChart({
                   silent: true,
                   symbol: 'none',
                   lineStyle: { type: 'dashed', color: TARGET },
-                  label: { formatter: `Target ${formatIndicatorValue(target, unit)} (${direction === 'HigherIsBetter' ? 'higher is better' : 'lower is better'})`, position: 'insideEndTop' },
+                  label: {
+                    formatter: `Target ${formatIndicatorValue(target, unit)} (${direction === 'HigherIsBetter' ? 'higher is better' : 'lower is better'})`,
+                    position: 'insideEndTop',
+                  },
                   data: [{ yAxis: target }],
                 },
         },

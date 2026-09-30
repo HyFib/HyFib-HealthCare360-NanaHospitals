@@ -10,7 +10,12 @@ import { LanguageMenu } from './LanguageMenu';
 import { BottomNav, SideNav } from './Navigation';
 
 const useStyles = makeStyles({
-  app: { minHeight: '100dvh', display: 'flex', flexDirection: 'column', backgroundColor: tokens.colorNeutralBackground2 },
+  app: {
+    minHeight: '100dvh',
+    display: 'flex',
+    flexDirection: 'column',
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   skip: {
     position: 'absolute',
     left: '8px',
@@ -121,7 +126,11 @@ export function PortalFrame({
       <ConnectionBanner />
       <div className={styles.body}>
         {navigation && wide && <SideNav />}
-        <main id="main" tabIndex={-1} className={mergeClasses(styles.main, navigation && !wide && styles.withBottomNav)}>
+        <main
+          id="main"
+          tabIndex={-1}
+          className={mergeClasses(styles.main, navigation && !wide && styles.withBottomNav)}
+        >
           <div className={styles.content}>{children}</div>
           <footer className={styles.footer}>
             <span>{t('shell.help')}</span>

@@ -32,7 +32,13 @@ export const Route = createFileRoute('/_app/cssd/')({
 
 const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' },
-  columns: { display: 'grid', gap: '16px', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)', alignItems: 'start', '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  columns: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 3fr)',
+    alignItems: 'start',
+    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   low: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
 });
 
@@ -70,7 +76,11 @@ function CssdOverviewPage() {
               </Button>
             )}
             {canProcess && (
-              <Button appearance="primary" icon={<BoxArrowUpRegular />} onClick={() => void navigate({ to: '/cssd/issue' })}>
+              <Button
+                appearance="primary"
+                icon={<BoxArrowUpRegular />}
+                onClick={() => void navigate({ to: '/cssd/issue' })}
+              >
                 Issue packs
               </Button>
             )}
@@ -80,20 +90,45 @@ function CssdOverviewPage() {
       <Section>
         <FilterBar>
           <Field label="From">
-            <Input type="date" value={from} max={to} onChange={(_, d) => d.value && void navigate({ search: (prev) => ({ ...prev, from: d.value }), replace: true })} />
+            <Input
+              type="date"
+              value={from}
+              max={to}
+              onChange={(_, d) =>
+                d.value && void navigate({ search: (prev) => ({ ...prev, from: d.value }), replace: true })
+              }
+            />
           </Field>
           <Field label="To">
-            <Input type="date" value={to} min={from} max={today} onChange={(_, d) => d.value && void navigate({ search: (prev) => ({ ...prev, to: d.value }), replace: true })} />
+            <Input
+              type="date"
+              value={to}
+              min={from}
+              max={today}
+              onChange={(_, d) =>
+                d.value && void navigate({ search: (prev) => ({ ...prev, to: d.value }), replace: true })
+              }
+            />
           </Field>
         </FilterBar>
       </Section>
 
       {summary.error && !s ? (
-        <ErrorState error={summary.error} onRetry={() => void summary.refetch()} title="Could not load the CSSD summary" />
+        <ErrorState
+          error={summary.error}
+          onRetry={() => void summary.refetch()}
+          title="Could not load the CSSD summary"
+        />
       ) : (
         <>
           <div className={styles.kpis}>
-            <KpiCard label="Loads" icon={<FireRegular />} value={value(s?.loads)} hint={s ? `${s.loadsReleased} released` : undefined} onClick={() => void navigate({ to: '/cssd/loads' })} />
+            <KpiCard
+              label="Loads"
+              icon={<FireRegular />}
+              value={value(s?.loads)}
+              hint={s ? `${s.loadsReleased} released` : undefined}
+              onClick={() => void navigate({ to: '/cssd/loads' })}
+            />
             <KpiCard
               label="Failed loads"
               icon={<ErrorCircleRegular />}
@@ -107,8 +142,18 @@ function CssdOverviewPage() {
               value={value(s?.biologicalPending)}
               onClick={() => void navigate({ to: '/cssd/loads', search: { biologicalPending: true } })}
             />
-            <KpiCard label="Packs issued" icon={<BoxArrowUpRegular />} value={value(s?.packsIssued)} onClick={() => void navigate({ to: '/cssd/issues' })} />
-            <KpiCard label="Open requests" icon={<ClipboardTaskRegular />} value={value(s?.openRequests)} onClick={() => void navigate({ to: '/cssd/requests' })} />
+            <KpiCard
+              label="Packs issued"
+              icon={<BoxArrowUpRegular />}
+              value={value(s?.packsIssued)}
+              onClick={() => void navigate({ to: '/cssd/issues' })}
+            />
+            <KpiCard
+              label="Open requests"
+              icon={<ClipboardTaskRegular />}
+              value={value(s?.openRequests)}
+              onClick={() => void navigate({ to: '/cssd/requests' })}
+            />
             <KpiCard
               label="Count differences"
               icon={<WarningRegular />}
@@ -116,7 +161,12 @@ function CssdOverviewPage() {
               hint="Soiled receipts"
               onClick={() => void navigate({ to: '/cssd/receipts', search: { discrepancies: true } })}
             />
-            <KpiCard label="Open recalls" icon={<ErrorCircleRegular />} value={value(s?.openRecalls)} onClick={() => void navigate({ to: '/cssd/recalls' })} />
+            <KpiCard
+              label="Open recalls"
+              icon={<ErrorCircleRegular />}
+              value={value(s?.openRecalls)}
+              onClick={() => void navigate({ to: '/cssd/recalls' })}
+            />
             <KpiCard
               label="Expiring in 2 days"
               icon={<ClockAlarmRegular />}
@@ -126,8 +176,22 @@ function CssdOverviewPage() {
             />
           </div>
           <div className={styles.columns}>
-            <Section title="Loads by method">{s ? s.byMethod.length ? <MethodChart summary={s} /> : <Text>No loads in this period.</Text> : <Text>Loading…</Text>}</Section>
-            <Section title="Sterile stock by set" description="Packs on the shelf that are within their sterile date" flush>
+            <Section title="Loads by method">
+              {s ? (
+                s.byMethod.length ? (
+                  <MethodChart summary={s} />
+                ) : (
+                  <Text>No loads in this period.</Text>
+                )
+              ) : (
+                <Text>Loading…</Text>
+              )}
+            </Section>
+            <Section
+              title="Sterile stock by set"
+              description="Packs on the shelf that are within their sterile date"
+              flush
+            >
               <DataTable
                 ariaLabel="Sterile stock by set"
                 rows={s?.availableBySet}
@@ -137,8 +201,20 @@ function CssdOverviewPage() {
                 size="small"
                 columns={[
                   { key: 'set', header: 'Set', render: (r) => `${r.name} (${r.code})` },
-                  { key: 'available', header: 'On shelf', width: 100, align: 'end', render: (r) => <span className={r.available === 0 ? styles.low : undefined}>{r.available}</span> },
-                  { key: 'expiring', header: 'Expiring soon', width: 130, align: 'end', render: (r) => r.expiringSoon || '—' },
+                  {
+                    key: 'available',
+                    header: 'On shelf',
+                    width: 100,
+                    align: 'end',
+                    render: (r) => <span className={r.available === 0 ? styles.low : undefined}>{r.available}</span>,
+                  },
+                  {
+                    key: 'expiring',
+                    header: 'Expiring soon',
+                    width: 130,
+                    align: 'end',
+                    render: (r) => r.expiringSoon || '—',
+                  },
                 ]}
                 emptyTitle="No sets set up"
                 emptyDescription="Add instrument sets and their count sheets first."
@@ -160,11 +236,29 @@ function MethodChart({ summary }: { summary: CssdSummary }) {
       xAxis: { type: 'category', data: summary.byMethod.map((m) => METHOD_LABEL[m.method] ?? m.method) },
       yAxis: { type: 'value', minInterval: 1 },
       series: [
-        { type: 'bar', name: 'Passed', stack: 'loads', data: summary.byMethod.map((m) => m.loads - m.failed), itemStyle: { color: '#0A7CA7' } },
-        { type: 'bar', name: 'Failed', stack: 'loads', data: summary.byMethod.map((m) => m.failed), itemStyle: { color: '#C50F1F' } },
+        {
+          type: 'bar',
+          name: 'Passed',
+          stack: 'loads',
+          data: summary.byMethod.map((m) => m.loads - m.failed),
+          itemStyle: { color: '#0A7CA7' },
+        },
+        {
+          type: 'bar',
+          name: 'Failed',
+          stack: 'loads',
+          data: summary.byMethod.map((m) => m.failed),
+          itemStyle: { color: '#C50F1F' },
+        },
       ],
     }),
     [summary],
   );
-  return <EChart option={option} height={240} ariaLabel={`Loads by method: ${summary.byMethod.map((m) => `${m.method} ${m.loads} (${m.failed} failed)`).join(', ')}`} />;
+  return (
+    <EChart
+      option={option}
+      height={240}
+      ariaLabel={`Loads by method: ${summary.byMethod.map((m) => `${m.method} ${m.loads} (${m.failed} failed)`).join(', ')}`}
+    />
+  );
 }

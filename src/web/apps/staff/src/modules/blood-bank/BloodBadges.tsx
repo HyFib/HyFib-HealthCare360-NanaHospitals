@@ -36,7 +36,15 @@ const useStyles = makeStyles({
 });
 
 /** ABO/Rh(D) group in large type; "Not grouped" (never "Unknown") until the blood bank has grouped the sample. */
-export function BloodGroupBadge({ group, size = 'large', note }: { group: BloodGroup | null | undefined; size?: 'medium' | 'large' | 'extra-large'; note?: string }) {
+export function BloodGroupBadge({
+  group,
+  size = 'large',
+  note,
+}: {
+  group: BloodGroup | null | undefined;
+  size?: 'medium' | 'large' | 'extra-large';
+  note?: string;
+}) {
   const styles = useStyles();
   const known = Boolean(group && group !== 'Unknown');
   return (
@@ -71,7 +79,11 @@ export function TtiBadge({ tti }: { tti: TtiPanel }) {
 
 export function UrgencyBadge({ urgency }: { urgency: BloodRequestUrgency }) {
   return (
-    <Badge appearance={urgency === 'Emergency' ? 'filled' : 'tint'} color={urgencyTone[urgency]} icon={urgency === 'Emergency' ? <WarningRegular /> : undefined}>
+    <Badge
+      appearance={urgency === 'Emergency' ? 'filled' : 'tint'}
+      color={urgencyTone[urgency]}
+      icon={urgency === 'Emergency' ? <WarningRegular /> : undefined}
+    >
       {urgencyLabel[urgency]}
     </Badge>
   );
@@ -107,7 +119,14 @@ export function ExpiryText({ expiresAt, now }: { expiresAt: string; now: number 
           ? `Expires in ${Math.ceil(hours / 24)} days`
           : formatDateTime(expiresAt);
   return (
-    <Text className={mergeClasses(urgency === 'expired' && styles.expired, urgency === 'today' && styles.today, urgency === 'soon' && styles.soon)} title={formatDateTime(expiresAt)}>
+    <Text
+      className={mergeClasses(
+        urgency === 'expired' && styles.expired,
+        urgency === 'today' && styles.today,
+        urgency === 'soon' && styles.soon,
+      )}
+      title={formatDateTime(expiresAt)}
+    >
       {text}
     </Text>
   );

@@ -47,7 +47,12 @@ function DialysisPatientPage() {
   if (profile.error) {
     return (
       <Page maxWidth={900}>
-        <RecordLoadError error={profile.error} onRetry={() => void profile.refetch()} patientId={patientId} what="dialysis profile" />
+        <RecordLoadError
+          error={profile.error}
+          onRetry={() => void profile.refetch()}
+          patientId={patientId}
+          what="dialysis profile"
+        />
       </Page>
     );
   }
@@ -63,11 +68,18 @@ function DialysisPatientPage() {
     return (
       <Page maxWidth={1100}>
         <SpecialtyPatientBanner patientId={patientId} fallback={{ uhid: '', fullName: 'Patient' }} />
-        <PageHeader title="Enrol in the dialysis unit" subtitle="Dry weight, weekly schedule, access and sero status." breadcrumbs={breadcrumbs} />
+        <PageHeader
+          title="Enrol in the dialysis unit"
+          subtitle="Dry weight, weekly schedule, access and sero status."
+          breadcrumbs={breadcrumbs}
+        />
         {canEdit ? (
           <ProfileForm patientId={patientId} profile={null} />
         ) : (
-          <EmptyState title="Not enrolled in the dialysis unit" description="A doctor, dialysis nurse or technician can enrol the patient." />
+          <EmptyState
+            title="Not enrolled in the dialysis unit"
+            description="A doctor, dialysis nurse or technician can enrol the patient."
+          />
         )}
       </Page>
     );
@@ -97,19 +109,33 @@ function DialysisPatientPage() {
       />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'profile' ? undefined : (d.value as Exclude<TabId, 'profile'>) }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: { tab: d.value === 'profile' ? undefined : (d.value as Exclude<TabId, 'profile'>) },
+                replace: true,
+              })
+            }
+          >
             <Tab value="profile">Profile</Tab>
             <Tab value="dialyzers">Dialyzers</Tab>
             <Tab value="sessions">Sessions</Tab>
           </TabList>
         </div>
         <div style={{ padding: 16 }}>
-          {tab === 'profile' && (canEdit ? <ProfileForm patientId={patientId} profile={p} /> : <ProfileView profile={p} />)}
+          {tab === 'profile' &&
+            (canEdit ? <ProfileForm patientId={patientId} profile={p} /> : <ProfileView profile={p} />)}
           {tab === 'dialyzers' && <DialyzersPanel patientId={patientId} profile={p} canManage={canSessions} />}
           {tab === 'sessions' && <PatientSessions patientId={patientId} />}
         </div>
       </Section>
-      {booking && <ScheduleSessionDialog onClose={() => setBooking(false)} preset={{ patient: { id: p.patientId, uhid: p.uhid, fullName: p.patientName }, shift: p.shift }} />}
+      {booking && (
+        <ScheduleSessionDialog
+          onClose={() => setBooking(false)}
+          preset={{ patient: { id: p.patientId, uhid: p.uhid, fullName: p.patientName }, shift: p.shift }}
+        />
+      )}
     </Page>
   );
 }
@@ -147,9 +173,20 @@ function PatientSessions({ patientId }: { patientId: string }) {
         { key: 'date', header: 'Date', render: (s) => formatDateOnly(s.scheduledDate) },
         { key: 'shift', header: 'Shift', render: (s) => shiftLabel[s.shift] },
         { key: 'machine', header: 'Machine', render: (s) => s.machineCode ?? '—' },
-        { key: 'time', header: 'On / off', priority: 'low', render: (s) => (s.startedAt ? `${formatTime(s.startedAt)} – ${s.endedAt ? formatTime(s.endedAt) : 'running'}` : '—') },
+        {
+          key: 'time',
+          header: 'On / off',
+          priority: 'low',
+          render: (s) =>
+            s.startedAt ? `${formatTime(s.startedAt)} – ${s.endedAt ? formatTime(s.endedAt) : 'running'}` : '—',
+        },
         { key: 'status', header: 'Status', render: (s) => <SessionStatusBadge status={s.status} /> },
-        { key: 'number', header: 'Session', priority: 'low', render: (s) => <Text font="monospace">{s.sessionNumber}</Text> },
+        {
+          key: 'number',
+          header: 'Session',
+          priority: 'low',
+          render: (s) => <Text font="monospace">{s.sessionNumber}</Text>,
+        },
       ]}
       emptyTitle="No sessions yet"
       page={page}

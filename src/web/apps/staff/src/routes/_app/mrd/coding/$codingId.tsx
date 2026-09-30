@@ -21,14 +21,34 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, CheckmarkCircleRegular, DeleteRegular, OpenRegular, SaveRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, isApiError, useHotkey, useSession } from '@hc360/core';
-import { ConfirmDialog, ErrorState, FormGrid, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  FormGrid,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { mrdApi, mrdKeys, mrdQueries, type CodingDto } from '@/modules/mrd/api';
 import { IcdCodePicker, ProcedureCodePicker } from '@/modules/mrd/CodePicker';
-import { addLine, applySuggestions, codingProblems, ordered, removeLine, setPrimary, toRequestLines, verification, type CodingLine } from '@/modules/mrd/coding';
+import {
+  addLine,
+  applySuggestions,
+  codingProblems,
+  ordered,
+  removeLine,
+  setPrimary,
+  toRequestLines,
+  verification,
+  type CodingLine,
+} from '@/modules/mrd/coding';
 
 export const Route = createFileRoute('/_app/mrd/coding/$codingId')({
   component: CodingPage,
@@ -45,7 +65,14 @@ const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
   code: { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
-  suggestion: { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  suggestion: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '6px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' },
 });
 
@@ -66,7 +93,9 @@ function CodingPage() {
 }
 
 function toLines(coding: CodingDto): CodingLine[] {
-  return coding.entries.toSorted((a, b) => a.sequence - b.sequence).map((e) => ({ kind: e.kind, code: e.code, title: e.title, isPrimary: e.isPrimary }));
+  return coding.entries
+    .toSorted((a, b) => a.sequence - b.sequence)
+    .map((e) => ({ kind: e.kind, code: e.code, title: e.title, isPrimary: e.isPrimary }));
 }
 
 /** Codes one episode (ICD-10 diagnoses, ICD-10-PCS procedures) with the doctors' diagnoses as suggestions; a second coder verifies. */
@@ -136,17 +165,33 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
       <PageHeader
         title={`Coding · ${coding.patientName ?? 'Patient'}`}
         subtitle={`${coding.uhid ?? ''} · ${coding.admissionId ? 'In-patient stay' : 'Out-patient encounter'}${coding.episodeDate ? ` · ${formatDateOnly(coding.episodeDate)}` : ''}`}
-        breadcrumbs={[{ label: 'Coding queue', onClick: () => void navigate({ to: '/mrd/coding' }) }, { label: coding.uhid ?? 'Episode' }]}
+        breadcrumbs={[
+          { label: 'Coding queue', onClick: () => void navigate({ to: '/mrd/coding' }) },
+          { label: coding.uhid ?? 'Episode' },
+        ]}
         actions={
           <div className={styles.actions}>
             <StatusBadge status={coding.status} />
             {canReadChart && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: coding.patientId } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() =>
+                  void navigate({ to: '/emr/patients/$patientId', params: { patientId: coding.patientId } })
+                }
+              >
                 Clinical chart
               </Button>
             )}
             {canReadChart && admissionId && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId/discharge/$admissionId', params: { patientId: coding.patientId, admissionId } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() =>
+                  void navigate({
+                    to: '/emr/patients/$patientId/discharge/$admissionId',
+                    params: { patientId: coding.patientId, admissionId },
+                  })
+                }
+              >
                 Discharge summary
               </Button>
             )}
@@ -156,7 +201,10 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
 
       {coding.status === 'Verified' && (
         <MessageBar intent="success">
-          <MessageBarBody>Verified {formatDateTime(coding.verifiedAt)}. Saving new codes clears the verification and sends it back for checking.</MessageBarBody>
+          <MessageBarBody>
+            Verified {formatDateTime(coding.verifiedAt)}. Saving new codes clears the verification and sends it back for
+            checking.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -165,11 +213,21 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
           <Section title="Codes" description="Exactly one principal diagnosis. Procedures are coded in ICD-10-PCS.">
             <div className={styles.stack}>
               <FormGrid columns={2}>
-                <IcdCodePicker label="Add diagnosis (ICD-10)" billableOnly hint="Only codes valid for claims are offered" onPick={(code) => change(addLine(lines, { kind: 'Diagnosis', code: code.code, title: code.title }))} />
-                <ProcedureCodePicker label="Add procedure (ICD-10-PCS)" onPick={(code) => change(addLine(lines, { kind: 'Procedure', code: code.code, title: code.title }))} />
+                <IcdCodePicker
+                  label="Add diagnosis (ICD-10)"
+                  billableOnly
+                  hint="Only codes valid for claims are offered"
+                  onPick={(code) => change(addLine(lines, { kind: 'Diagnosis', code: code.code, title: code.title }))}
+                />
+                <ProcedureCodePicker
+                  label="Add procedure (ICD-10-PCS)"
+                  onPick={(code) => change(addLine(lines, { kind: 'Procedure', code: code.code, title: code.title }))}
+                />
               </FormGrid>
               {lines.length === 0 ? (
-                <Text className={styles.muted}>No codes yet. Start from the doctors' diagnoses on the right or search above.</Text>
+                <Text className={styles.muted}>
+                  No codes yet. Start from the doctors' diagnoses on the right or search above.
+                </Text>
               ) : (
                 <Table size="small" aria-label="Codes">
                   <TableHeader>
@@ -186,7 +244,12 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
                       <TableRow key={`${line.kind}-${line.code}`}>
                         <TableCell>
                           {line.kind === 'Diagnosis' ? (
-                            <Radio checked={line.isPrimary} name="principal" aria-label={`Make ${line.code} the principal diagnosis`} onChange={() => change(setPrimary(lines, line))} />
+                            <Radio
+                              checked={line.isPrimary}
+                              name="principal"
+                              aria-label={`Make ${line.code} the principal diagnosis`}
+                              onChange={() => change(setPrimary(lines, line))}
+                            />
                           ) : null}
                         </TableCell>
                         <TableCell>
@@ -196,7 +259,12 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
                         <TableCell>{line.kind === 'Diagnosis' ? 'Diagnosis' : 'Procedure'}</TableCell>
                         <TableCell>
                           <Tooltip content="Remove" relationship="label">
-                            <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => change(removeLine(lines, line))} />
+                            <Button
+                              size="small"
+                              appearance="subtle"
+                              icon={<DeleteRegular />}
+                              onClick={() => change(removeLine(lines, line))}
+                            />
                           </Tooltip>
                         </TableCell>
                       </TableRow>
@@ -221,11 +289,20 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
                 </MessageBar>
               )}
               <div className={styles.actions}>
-                <Button appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={!dirty || problems.length > 0 || save.isPending} onClick={() => save.mutate()}>
+                <Button
+                  appearance="primary"
+                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  disabled={!dirty || problems.length > 0 || save.isPending}
+                  onClick={() => save.mutate()}
+                >
                   Save codes (Ctrl+S)
                 </Button>
                 <Tooltip content={verify.reason ?? 'Confirm the coding is correct'} relationship="description">
-                  <Button icon={<CheckmarkCircleRegular />} disabled={!verify.allowed || dirty || verifyMutation.isPending} onClick={() => setConfirmVerify(true)}>
+                  <Button
+                    icon={<CheckmarkCircleRegular />}
+                    disabled={!verify.allowed || dirty || verifyMutation.isPending}
+                    onClick={() => setConfirmVerify(true)}
+                  >
                     Verify
                   </Button>
                 </Tooltip>
@@ -249,20 +326,34 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
           {suggestions.isLoading ? (
             <LoadingState />
           ) : (suggestions.data ?? []).length === 0 ? (
-            <Text className={styles.muted}>No diagnoses were recorded for this episode. Read the discharge summary and code from it.</Text>
+            <Text className={styles.muted}>
+              No diagnoses were recorded for this episode. Read the discharge summary and code from it.
+            </Text>
           ) : (
             <div>
               {suggestions.data?.map((s, index) => (
                 <div key={`${s.code ?? s.title}-${index}`} className={styles.suggestion}>
                   <span>
-                    {s.code ? <span className={styles.code}>{s.code} </span> : <Badge appearance="outline" color="warning" size="small">No code</Badge>} <Text>{s.title}</Text>
+                    {s.code ? (
+                      <span className={styles.code}>{s.code} </span>
+                    ) : (
+                      <Badge appearance="outline" color="warning" size="small">
+                        No code
+                      </Badge>
+                    )}{' '}
+                    <Text>{s.title}</Text>
                     <Caption1 block className={styles.muted}>
                       {s.type}
                       {s.isPrimary ? ' · primary' : ''} · {s.source}
                     </Caption1>
                   </span>
                   {s.code !== null && (
-                    <Button size="small" icon={<AddRegular />} aria-label={`Add ${s.code}`} onClick={() => change(addLine(lines, { kind: 'Diagnosis', code: s.code ?? '', title: s.title }))} />
+                    <Button
+                      size="small"
+                      icon={<AddRegular />}
+                      aria-label={`Add ${s.code}`}
+                      onClick={() => change(addLine(lines, { kind: 'Diagnosis', code: s.code ?? '', title: s.title }))}
+                    />
                   )}
                 </div>
               ))}
@@ -279,7 +370,8 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
         onConfirm={() => verifyMutation.mutate()}
         onCancel={() => setConfirmVerify(false)}
       >
-        You confirm that the codes match the documentation of this episode. Verified coding is used for insurance claims and the morbidity index.
+        You confirm that the codes match the documentation of this episode. Verified coding is used for insurance claims
+        and the morbidity index.
       </ConfirmDialog>
     </Page>
   );

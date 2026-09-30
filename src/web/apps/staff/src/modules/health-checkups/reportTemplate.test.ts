@@ -27,8 +27,26 @@ const report: CheckupReport = {
     completedAt: '2026-09-27T08:30:00Z',
     cancelReason: null,
     itinerary: [
-      { id: 's2', sequence: 2, departmentId: null, departmentName: 'Radiology', description: 'Chest X-ray', status: 'Skipped', completedAt: null, notes: 'Pregnancy not ruled out' },
-      { id: 's1', sequence: 1, departmentId: null, departmentName: 'Laboratory', description: 'Blood and urine samples', status: 'Done', completedAt: null, notes: null },
+      {
+        id: 's2',
+        sequence: 2,
+        departmentId: null,
+        departmentName: 'Radiology',
+        description: 'Chest X-ray',
+        status: 'Skipped',
+        completedAt: null,
+        notes: 'Pregnancy not ruled out',
+      },
+      {
+        id: 's1',
+        sequence: 1,
+        departmentId: null,
+        departmentName: 'Laboratory',
+        description: 'Blood and urine samples',
+        status: 'Done',
+        completedAt: null,
+        notes: null,
+      },
     ],
     version: 3,
   },
@@ -72,6 +90,11 @@ describe('checkupReportHtml', () => {
   });
 
   it('marks an unfinished checkup as not final', () => {
-    expect(checkupReportHtml({ ...report, booking: { ...report.booking, status: 'InProgress', summary: null } }, 'Nana Hospitals')).toContain('In progress — not final');
+    expect(
+      checkupReportHtml(
+        { ...report, booking: { ...report.booking, status: 'InProgress', summary: null } },
+        'Nana Hospitals',
+      ),
+    ).toContain('In progress — not final');
   });
 });

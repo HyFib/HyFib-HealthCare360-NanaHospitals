@@ -34,12 +34,18 @@ describe('periodProblem', () => {
 
 describe('chart data', () => {
   it('keeps the most frequent groups', () => {
-    const rows = [row({ key: 'A', episodes: 2 }), row({ key: 'B', episodes: 9 }), row({ key: 'C', episodes: 9, patients: 3 })];
+    const rows = [
+      row({ key: 'A', episodes: 2 }),
+      row({ key: 'B', episodes: 9 }),
+      row({ key: 'C', episodes: 9, patients: 3 }),
+    ];
     expect(topRows(rows, 2).map((r) => r.key)).toEqual(['C', 'B']);
   });
 
   it('shortens long labels', () => {
-    expect(chartLabel({ key: 'E11.9', title: 'Type 2 diabetes mellitus without complications' }, 20)).toBe('E11.9 Type 2 diabet…');
+    expect(chartLabel({ key: 'E11.9', title: 'Type 2 diabetes mellitus without complications' }, 20)).toBe(
+      'E11.9 Type 2 diabet…',
+    );
     expect(chartLabel({ key: 'IV', title: 'IV' })).toBe('IV');
   });
 
@@ -57,9 +63,17 @@ describe('chart data', () => {
 
 describe('morbidityCsv', () => {
   it('writes a header and escapes commas and quotes', () => {
-    const csv = morbidityCsv([row({ key: 'J06.9', title: 'Acute upper respiratory infection, unspecified' }), row({ key: 'X', title: 'Say "hi"' })], 'ICD-10 code');
+    const csv = morbidityCsv(
+      [
+        row({ key: 'J06.9', title: 'Acute upper respiratory infection, unspecified' }),
+        row({ key: 'X', title: 'Say "hi"' }),
+      ],
+      'ICD-10 code',
+    );
     const lines = csv.split('\r\n');
-    expect(lines[0]).toBe('ICD-10 code,Title,Chapter,Episodes,Patients,Male,Female,Other or unknown,Age 0-14,Age 15-44,Age 45-64,Age 65+,Age unknown');
+    expect(lines[0]).toBe(
+      'ICD-10 code,Title,Chapter,Episodes,Patients,Male,Female,Other or unknown,Age 0-14,Age 15-44,Age 45-64,Age 65+,Age unknown',
+    );
     expect(lines[1]).toBe('J06.9,"Acute upper respiratory infection, unspecified",,1,1,1,0,0,0,1,0,0,0');
     expect(lines[2]).toContain('"Say ""hi"""');
   });

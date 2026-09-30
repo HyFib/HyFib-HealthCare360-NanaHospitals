@@ -72,7 +72,13 @@ import { ReasonDialog } from './ui';
 
 const useStyles = makeStyles({
   composer: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  pickRow: { display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) auto', gap: '8px', alignItems: 'end', '@media (max-width: 700px)': { gridTemplateColumns: '1fr' } },
+  pickRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(260px, 1fr) auto',
+    gap: '8px',
+    alignItems: 'end',
+    '@media (max-width: 700px)': { gridTemplateColumns: '1fr' },
+  },
   chips: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' },
   cart: { display: 'flex', flexDirection: 'column', gap: '6px', margin: 0, padding: 0, listStyle: 'none' },
   cartLine: {
@@ -86,10 +92,23 @@ const useStyles = makeStyles({
     '@media (max-width: 800px)': { gridTemplateColumns: '1fr auto' },
   },
   lineName: { display: 'flex', flexDirection: 'column', minWidth: 0 },
-  footer: { display: 'grid', gridTemplateColumns: 'minmax(160px, 220px) 1fr auto', gap: '8px', alignItems: 'end', '@media (max-width: 800px)': { gridTemplateColumns: '1fr' } },
+  footer: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(160px, 220px) 1fr auto',
+    gap: '8px',
+    alignItems: 'end',
+    '@media (max-width: 800px)': { gridTemplateColumns: '1fr' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   orders: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  order: { padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}`, display: 'flex', flexDirection: 'column', gap: '6px' },
+  order: {
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
   orderHeader: { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' },
   orderTitle: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   item: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' },
@@ -98,7 +117,13 @@ const useStyles = makeStyles({
 });
 
 function lineTone(status: OrderItemDto['status']): 'warning' | 'brand' | 'success' | 'danger' {
-  return status === 'Ordered' ? 'warning' : status === 'InProgress' ? 'brand' : status === 'Completed' ? 'success' : 'danger';
+  return status === 'Ordered'
+    ? 'warning'
+    : status === 'InProgress'
+      ? 'brand'
+      : status === 'Completed'
+        ? 'success'
+        : 'danger';
 }
 
 /**
@@ -192,7 +217,10 @@ export function OrderComposer({
       setClinicalNotes('');
       setPriority('Routine');
       setDuplicates(null);
-      notify.success(`Order ${order.orderNumber} placed`, `${order.items.length} ${order.items.length === 1 ? 'service' : 'services'} sent to the departments.`);
+      notify.success(
+        `Order ${order.orderNumber} placed`,
+        `${order.items.length} ${order.items.length === 1 ? 'service' : 'services'} sent to the departments.`,
+      );
       void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
     },
     onError: (error) => {
@@ -208,7 +236,12 @@ export function OrderComposer({
 
   return (
     <div className={styles.composer}>
-      <TabList size="small" selectedValue={group} onTabSelect={(_, d) => setGroup(d.value as OrderGroupId)} aria-label="Service groups">
+      <TabList
+        size="small"
+        selectedValue={group}
+        onTabSelect={(_, d) => setGroup(d.value as OrderGroupId)}
+        aria-label="Service groups"
+      >
         {ORDER_GROUPS.map((g) => (
           <Tab key={g.id} value={g.id}>
             {g.label}
@@ -218,7 +251,20 @@ export function OrderComposer({
       <div className={styles.pickRow}>
         <ServicePicker
           label="Add test or procedure"
-          categories={groupInfo.categories ?? ['Laboratory', 'Radiology', 'Cardiology', 'Procedure', 'Surgery', 'Physiotherapy', 'Dialysis', 'Dietary', 'BloodBank', 'Consultation']}
+          categories={
+            groupInfo.categories ?? [
+              'Laboratory',
+              'Radiology',
+              'Cardiology',
+              'Procedure',
+              'Surgery',
+              'Physiotherapy',
+              'Dialysis',
+              'Dietary',
+              'BloodBank',
+              'Consultation',
+            ]
+          }
           onPick={addService}
           hint="Type at least 2 letters; Enter adds the highlighted service."
         />
@@ -231,7 +277,22 @@ export function OrderComposer({
           <MenuPopover>
             <MenuList>
               {(orderSets.data ?? []).map((set) => (
-                <MenuItem key={set.id} onClick={() => setCart((current) => addManyToCart(current, set.services.map((s) => ({ id: s.serviceItemId, code: s.code, name: s.name, category: s.category }))))}>
+                <MenuItem
+                  key={set.id}
+                  onClick={() =>
+                    setCart((current) =>
+                      addManyToCart(
+                        current,
+                        set.services.map((s) => ({
+                          id: s.serviceItemId,
+                          code: s.code,
+                          name: s.name,
+                          category: s.category,
+                        })),
+                      ),
+                    )
+                  }
+                >
                   {set.name} ({set.services.length})
                 </MenuItem>
               ))}
@@ -247,18 +308,41 @@ export function OrderComposer({
               size="small"
               appearance="primary"
               icon={<AddRegular />}
-              onClick={() => setCart((current) => addManyToCart(current, templateOrders.map((s) => ({ id: s.serviceItemId, code: s.code, name: s.name, category: s.category }))))}
+              onClick={() =>
+                setCart((current) =>
+                  addManyToCart(
+                    current,
+                    templateOrders.map((s) => ({
+                      id: s.serviceItemId,
+                      code: s.code,
+                      name: s.name,
+                      category: s.category,
+                    })),
+                  ),
+                )
+              }
             >
               Template investigations ({templateOrders.length})
             </Button>
           )}
           {(favourites.data ?? []).map((favourite) => (
             <span key={favourite.id} style={{ display: 'inline-flex' }}>
-              <Button size="small" icon={<StarRegular />} disabled={!favourite.serviceItemId || addFavourite.isPending} onClick={() => favourite.serviceItemId && addFavourite.mutate(favourite.serviceItemId)}>
+              <Button
+                size="small"
+                icon={<StarRegular />}
+                disabled={!favourite.serviceItemId || addFavourite.isPending}
+                onClick={() => favourite.serviceItemId && addFavourite.mutate(favourite.serviceItemId)}
+              >
                 {favourite.label}
               </Button>
               {canManageFavourites && (
-                <Button size="small" appearance="subtle" icon={<DismissRegular />} aria-label={`Remove ${favourite.label} from favourites`} onClick={() => removeFavourite.mutate(favourite.id)} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label={`Remove ${favourite.label} from favourites`}
+                  onClick={() => removeFavourite.mutate(favourite.id)}
+                />
               )}
             </span>
           ))}
@@ -279,7 +363,13 @@ export function OrderComposer({
                     {serviceCategoryLabel[line.category]} · {line.code}
                   </Caption1>
                 </span>
-                <Input size="small" placeholder="Note for the department" value={line.notes} onChange={(_, d) => setCart((current) => setNotes(current, line.serviceItemId, d.value))} aria-label={`Note for ${line.name}`} />
+                <Input
+                  size="small"
+                  placeholder="Note for the department"
+                  value={line.notes}
+                  onChange={(_, d) => setCart((current) => setNotes(current, line.serviceItemId, d.value))}
+                  aria-label={`Note for ${line.name}`}
+                />
                 {max > 1 ? (
                   <Field size="small" label={quantityUnit(line.category)} orientation="horizontal">
                     <SpinButton
@@ -300,11 +390,21 @@ export function OrderComposer({
                 <span>
                   {canManageFavourites && !favouriteIds.has(line.serviceItemId) && (
                     <Tooltip content="Save as a favourite" relationship="label">
-                      <Button size="small" appearance="subtle" icon={<StarRegular />} onClick={() => saveFavourite.mutate(line)} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<StarRegular />}
+                        onClick={() => saveFavourite.mutate(line)}
+                      />
                     </Tooltip>
                   )}
                   <Tooltip content="Remove" relationship="label">
-                    <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => setCart((current) => removeFromCart(current, line.serviceItemId))} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      onClick={() => setCart((current) => removeFromCart(current, line.serviceItemId))}
+                    />
                   </Tooltip>
                 </span>
               </li>
@@ -317,7 +417,8 @@ export function OrderComposer({
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Already ordered and still pending</MessageBarTitle>
-            {duplicates.map((d) => `${d.serviceName} (order ${d.orderNumber}, ${formatTime(d.orderedAt)})`).join('; ')}. Order them again only if a repeat test is really needed.
+            {duplicates.map((d) => `${d.serviceName} (order ${d.orderNumber}, ${formatTime(d.orderedAt)})`).join('; ')}.
+            Order them again only if a repeat test is really needed.
           </MessageBarBody>
           <MessageBarActions>
             <Button onClick={() => place.mutate(true)} disabled={place.isPending}>
@@ -342,9 +443,20 @@ export function OrderComposer({
             </Select>
           </Field>
           <Field label="Clinical notes for the departments">
-            <Textarea value={clinicalNotes} onChange={(_, d) => setClinicalNotes(d.value.slice(0, 1000))} rows={1} resize="vertical" placeholder="e.g. ? dengue, fever 3 days" />
+            <Textarea
+              value={clinicalNotes}
+              onChange={(_, d) => setClinicalNotes(d.value.slice(0, 1000))}
+              rows={1}
+              resize="vertical"
+              placeholder="e.g. ? dengue, fever 3 days"
+            />
           </Field>
-          <Button appearance="primary" icon={place.isPending ? <Spinner size="tiny" /> : <SendRegular />} disabled={place.isPending || duplicates !== null} onClick={() => place.mutate(false)}>
+          <Button
+            appearance="primary"
+            icon={place.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+            disabled={place.isPending || duplicates !== null}
+            onClick={() => place.mutate(false)}
+          >
             Place order ({cart.length})
           </Button>
         </div>
@@ -353,10 +465,21 @@ export function OrderComposer({
   );
 }
 
-type PendingAction = { kind: 'cancel-order'; order: OrderDto } | { kind: 'cancel-item'; item: OrderItemDto } | { kind: 'complete-item'; item: OrderItemDto };
+type PendingAction =
+  | { kind: 'cancel-order'; order: OrderDto }
+  | { kind: 'cancel-item'; item: OrderItemDto }
+  | { kind: 'complete-item'; item: OrderItemDto };
 
 /** Orders with their lines' progress; ordering doctors can cancel pending lines or complete bedside procedures. */
-export function OrdersList({ patientId, encounterId, status }: { patientId: string; encounterId: string | null; status?: ClinicalOrderStatus }) {
+export function OrdersList({
+  patientId,
+  encounterId,
+  status,
+}: {
+  patientId: string;
+  encounterId: string | null;
+  status?: ClinicalOrderStatus;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -390,7 +513,16 @@ export function OrdersList({ patientId, encounterId, status }: { patientId: stri
   }
   const items = orders.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No orders" description={encounterId ? 'Tests and procedures ordered in this encounter appear here.' : 'Lab, imaging and procedure orders appear here.'} />;
+    return (
+      <EmptyState
+        title="No orders"
+        description={
+          encounterId
+            ? 'Tests and procedures ordered in this encounter appear here.'
+            : 'Lab, imaging and procedure orders appear here.'
+        }
+      />
+    );
   }
 
   return (
@@ -417,7 +549,11 @@ export function OrdersList({ patientId, encounterId, status }: { patientId: stri
                 </Caption1>
               </span>
               {canPlace && open.length > 0 && order.status === 'Active' && (
-                <Button size="small" icon={<DismissRegular />} onClick={() => setPending({ kind: 'cancel-order', order })}>
+                <Button
+                  size="small"
+                  icon={<DismissRegular />}
+                  onClick={() => setPending({ kind: 'cancel-order', order })}
+                >
                   Cancel pending
                 </Button>
               )}
@@ -433,21 +569,39 @@ export function OrdersList({ patientId, encounterId, status }: { patientId: stri
                   {item.cancelReason && <Caption1 className={styles.muted}>· {item.cancelReason}</Caption1>}
                 </span>
                 <span className={styles.orderTitle}>
-                  <StatusBadge status={item.status} tone={lineTone(item.status)} label={item.status === 'Ordered' ? 'Pending' : humanize(item.status)} />
+                  <StatusBadge
+                    status={item.status}
+                    tone={lineTone(item.status)}
+                    label={item.status === 'Ordered' ? 'Pending' : humanize(item.status)}
+                  />
                   {canPlace && (item.status === 'Ordered' || item.status === 'InProgress') && (
                     <Menu>
                       <MenuTrigger disableButtonEnhancement>
-                        <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${item.serviceName}`} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<MoreHorizontalRegular />}
+                          aria-label={`Actions for ${item.serviceName}`}
+                        />
                       </MenuTrigger>
                       <MenuPopover>
                         <MenuList>
-                          {(item.category === 'Procedure' || item.category === 'Surgery' || item.category === 'Dietary' || item.category === 'Consultation') && (
-                            <MenuItem icon={<CheckmarkRegular />} onClick={() => setPending({ kind: 'complete-item', item })}>
+                          {(item.category === 'Procedure' ||
+                            item.category === 'Surgery' ||
+                            item.category === 'Dietary' ||
+                            item.category === 'Consultation') && (
+                            <MenuItem
+                              icon={<CheckmarkRegular />}
+                              onClick={() => setPending({ kind: 'complete-item', item })}
+                            >
                               Mark as done
                             </MenuItem>
                           )}
                           {item.status === 'Ordered' && (
-                            <MenuItem icon={<DismissRegular />} onClick={() => setPending({ kind: 'cancel-item', item })}>
+                            <MenuItem
+                              icon={<DismissRegular />}
+                              onClick={() => setPending({ kind: 'cancel-item', item })}
+                            >
                               Cancel this line
                             </MenuItem>
                           )}
@@ -461,7 +615,9 @@ export function OrdersList({ patientId, encounterId, status }: { patientId: stri
           </section>
         );
       })}
-      {(orders.data?.totalCount ?? 0) > 20 && <Pagination page={page} pageSize={20} totalCount={orders.data?.totalCount ?? 0} onPageChange={setPage} />}
+      {(orders.data?.totalCount ?? 0) > 20 && (
+        <Pagination page={page} pageSize={20} totalCount={orders.data?.totalCount ?? 0} onPageChange={setPage} />
+      )}
       <ReasonDialog
         open={pending !== null}
         title={
@@ -473,7 +629,11 @@ export function OrdersList({ patientId, encounterId, status }: { patientId: stri
                 ? `Mark ${pending.item.serviceName} as done?`
                 : ''
         }
-        description={pending?.kind === 'complete-item' ? 'Record where the result or procedure note can be found (optional).' : 'The performing department and billing are told immediately.'}
+        description={
+          pending?.kind === 'complete-item'
+            ? 'Record where the result or procedure note can be found (optional).'
+            : 'The performing department and billing are told immediately.'
+        }
         label={pending?.kind === 'complete-item' ? 'Result reference' : 'Reason'}
         optional={pending?.kind === 'complete-item'}
         maxLength={pending?.kind === 'complete-item' ? 64 : 300}
@@ -496,7 +656,11 @@ export function OrdersTab({ patientId }: { patientId: string }) {
     <>
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
         {canPlace && (
-          <Button appearance={composing ? 'secondary' : 'primary'} icon={composing ? <DismissRegular /> : <AddRegular />} onClick={() => setComposing((v) => !v)}>
+          <Button
+            appearance={composing ? 'secondary' : 'primary'}
+            icon={composing ? <DismissRegular /> : <AddRegular />}
+            onClick={() => setComposing((v) => !v)}
+          >
             {composing ? 'Close composer' : 'Order tests'}
           </Button>
         )}
@@ -510,7 +674,10 @@ export function OrdersTab({ patientId }: { patientId: string }) {
         </Field>
       </div>
       {composing && (
-        <Section title="New order" description="Orders placed here are not linked to an encounter. Prefer ordering from the encounter.">
+        <Section
+          title="New order"
+          description="Orders placed here are not linked to an encounter. Prefer ordering from the encounter."
+        >
           <OrderComposer patientId={patientId} encounterId={null} />
         </Section>
       )}

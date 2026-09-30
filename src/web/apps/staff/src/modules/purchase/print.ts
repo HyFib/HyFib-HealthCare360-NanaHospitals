@@ -35,10 +35,22 @@ function taxColumns(interState: boolean): string {
 }
 
 function taxCells(interState: boolean, line: { cgstAmount: number; sgstAmount: number; igstAmount: number }): string {
-  return interState ? `<td>${escapeHtml(formatInr(line.igstAmount))}</td>` : `<td>${escapeHtml(formatInr(line.cgstAmount))}</td><td>${escapeHtml(formatInr(line.sgstAmount))}</td>`;
+  return interState
+    ? `<td>${escapeHtml(formatInr(line.igstAmount))}</td>`
+    : `<td>${escapeHtml(formatInr(line.cgstAmount))}</td><td>${escapeHtml(formatInr(line.sgstAmount))}</td>`;
 }
 
-function totalsTable(doc: { grossAmount: number; discountAmount: number; taxableAmount: number; cgstAmount: number; sgstAmount: number; igstAmount: number; roundOff: number; netAmount: number; isInterState: boolean }): string {
+function totalsTable(doc: {
+  grossAmount: number;
+  discountAmount: number;
+  taxableAmount: number;
+  cgstAmount: number;
+  sgstAmount: number;
+  igstAmount: number;
+  roundOff: number;
+  netAmount: number;
+  isInterState: boolean;
+}): string {
   return `<table class="totals">
     <tr><td>Gross</td><td class="right">${escapeHtml(formatInr(doc.grossAmount))}</td></tr>
     ${doc.discountAmount ? `<tr><td>Discount</td><td class="right">−${escapeHtml(formatInr(doc.discountAmount))}</td></tr>` : ''}
@@ -57,7 +69,10 @@ function totalsTable(doc: { grossAmount: number; discountAmount: number; taxable
 export function buildPurchaseOrderHtml(order: PurchaseOrderDetail, letterhead: PurchaseLetterhead): string {
   const rows = order.lines
     .map(
-      (l, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(formatQty(l.quantity, l.purchaseUnit))}</td><td>${l.freeQuantity ? escapeHtml(formatQty(l.freeQuantity)) : ''}</td>
+      (
+        l,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(formatQty(l.quantity, l.purchaseUnit))}</td><td>${l.freeQuantity ? escapeHtml(formatQty(l.freeQuantity)) : ''}</td>
         <td>${escapeHtml(formatInr(l.rate))}</td><td>${l.discountPercent ? escapeHtml(formatPercent(l.discountPercent)) : ''}</td><td>${escapeHtml(formatPercent(l.gstRate))}</td>
         <td>${escapeHtml(formatInr(l.taxableAmount))}</td>${taxCells(order.isInterState, l)}<td>${escapeHtml(formatInr(l.lineTotal))}</td></tr>`,
     )
@@ -83,7 +98,10 @@ export function buildPurchaseOrderHtml(order: PurchaseOrderDetail, letterhead: P
 export function buildGoodsReceiptHtml(grn: GoodsReceiptDetail, letterhead: PurchaseLetterhead): string {
   const rows = grn.lines
     .map(
-      (l, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}<br/><span class="small">Batch ${escapeHtml(l.batchNumber)} · Exp ${escapeHtml(formatExpiry(l.expiryDate))} · MRP ${escapeHtml(formatInr(l.mrp))}</span></td>
+      (
+        l,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}<br/><span class="small">Batch ${escapeHtml(l.batchNumber)} · Exp ${escapeHtml(formatExpiry(l.expiryDate))} · MRP ${escapeHtml(formatInr(l.mrp))}</span></td>
         <td>${escapeHtml(formatQty(l.quantity))}</td><td>${l.freeQuantity ? escapeHtml(formatQty(l.freeQuantity)) : ''}</td><td>${escapeHtml(formatInr(l.rate))}</td>
         <td>${escapeHtml(formatPercent(l.gstRate))}</td><td>${escapeHtml(formatInr(l.taxableAmount))}</td>${taxCells(grn.isInterState, l)}<td>${escapeHtml(formatInr(l.lineTotal))}</td></tr>`,
     )

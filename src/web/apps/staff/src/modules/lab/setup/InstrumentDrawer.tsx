@@ -1,4 +1,13 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, makeStyles, OverlayDrawer, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  makeStyles,
+  OverlayDrawer,
+  Spinner,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { applyServerErrors, ChoiceField, FormGrid, SelectField, SwitchField, TextField, useNotify } from '@hc360/ui';
@@ -31,7 +40,13 @@ type InstrumentValues = z.infer<typeof schema>;
 const useStyles = makeStyles({ form: { display: 'flex', flexDirection: 'column', gap: '12px' } });
 
 /** Analyser connected through the equipment gateway (HL7 or ASTM; bidirectional analysers query the worklist). */
-export function InstrumentDrawer({ instrument, onClose }: { instrument: LabInstrumentDto | null; onClose: () => void }) {
+export function InstrumentDrawer({
+  instrument,
+  onClose,
+}: {
+  instrument: LabInstrumentDto | null;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -82,19 +97,38 @@ export function InstrumentDrawer({ instrument, onClose }: { instrument: LabInstr
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {instrument ? instrument.name : 'Add analyser'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="code" label="Code" required disabled={Boolean(instrument)} hint="As configured in the equipment gateway" />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Code"
+                required
+                disabled={Boolean(instrument)}
+                hint="As configured in the equipment gateway"
+              />
               <TextField control={form.control} name="name" label="Name" required />
               <TextField control={form.control} name="manufacturer" label="Manufacturer" />
               <TextField control={form.control} name="model" label="Model" />
-              <SelectField control={form.control} name="section" label="Bench" options={LAB_SECTIONS.map((value) => ({ value, label: sectionLabel[value] }))} />
-              <TextField control={form.control} name="location" label="Location" placeholder="e.g. Central lab, bench 2" />
+              <SelectField
+                control={form.control}
+                name="section"
+                label="Bench"
+                options={LAB_SECTIONS.map((value) => ({ value, label: sectionLabel[value] }))}
+              />
+              <TextField
+                control={form.control}
+                name="location"
+                label="Location"
+                placeholder="e.g. Central lab, bench 2"
+              />
             </FormGrid>
             <ChoiceField
               control={form.control}
@@ -105,13 +139,27 @@ export function InstrumentDrawer({ instrument, onClose }: { instrument: LabInstr
                 { value: 'Hl7', label: 'HL7' },
               ]}
             />
-            <SwitchField control={form.control} name="isBidirectional" label="Bidirectional (the analyser asks which tests to run)" />
-            <SwitchField control={form.control} name="autoValidationEnabled" label="Normal results may be verified automatically" hint="Only for tests that also allow it, with QC accepted and delta check passed" />
+            <SwitchField
+              control={form.control}
+              name="isBidirectional"
+              label="Bidirectional (the analyser asks which tests to run)"
+            />
+            <SwitchField
+              control={form.control}
+              name="autoValidationEnabled"
+              label="Normal results may be verified automatically"
+              hint="Only for tests that also allow it, with QC accepted and delta check passed"
+            />
             <SwitchField control={form.control} name="isActive" label="In use" />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {instrument ? 'Save' : 'Add analyser'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

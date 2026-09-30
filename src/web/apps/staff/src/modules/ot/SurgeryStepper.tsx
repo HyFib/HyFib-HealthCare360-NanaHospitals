@@ -1,4 +1,15 @@
-import { Button, Caption1, makeStyles, mergeClasses, MessageBar, MessageBarBody, MessageBarTitle, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
   CheckmarkCircleRegular,
@@ -47,7 +58,10 @@ const useStyles = makeStyles({
     ':hover': { backgroundColor: tokens.colorSubtleBackgroundHover },
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
-  selected: { backgroundColor: tokens.colorBrandBackground2, ':hover': { backgroundColor: tokens.colorBrandBackground2Hover } },
+  selected: {
+    backgroundColor: tokens.colorBrandBackground2,
+    ':hover': { backgroundColor: tokens.colorBrandBackground2Hover },
+  },
   icon: { fontSize: '22px', display: 'flex' },
   done: { color: tokens.colorPaletteGreenForeground1 },
   current: { color: tokens.colorBrandForeground1 },
@@ -76,7 +90,11 @@ function StepIcon({ state }: { state: StepState }) {
   }
 }
 
-const PHASE_OF: Partial<Record<StepId, SafetyPhase>> = { 'sign-in': 'SignIn', 'time-out': 'TimeOut', 'sign-out': 'SignOut' };
+const PHASE_OF: Partial<Record<StepId, SafetyPhase>> = {
+  'sign-in': 'SignIn',
+  'time-out': 'TimeOut',
+  'sign-out': 'SignOut',
+};
 
 /**
  * The day of surgery as one guided sequence: booked → pre-op checklist → received → WHO Sign-in → Time-out →
@@ -138,7 +156,11 @@ export function SurgeryStepper({
                     {step.title}
                   </Text>
                   <Caption1 className={styles.muted} block>
-                    {step.state === 'done' && step.at ? formatTime(step.at) : step.state === 'skipped' ? 'Skipped' : step.moment}
+                    {step.state === 'done' && step.at
+                      ? formatTime(step.at)
+                      : step.state === 'skipped'
+                        ? 'Skipped'
+                        : step.moment}
                   </Caption1>
                 </span>
               </button>
@@ -166,13 +188,17 @@ function ScheduleStep({ booking, onSchedule }: { booking: SurgeryDetail; onSched
           <Detail label="Starts">{formatDateTime(booking.scheduledStart)}</Detail>
           <Detail label="Ends">{formatDateTime(booking.scheduledEnd)}</Detail>
           <Detail label="Booked time">
-            {booking.scheduledStart && booking.scheduledEnd ? formatDuration(minutesBetween(booking.scheduledStart, booking.scheduledEnd)) : null}
+            {booking.scheduledStart && booking.scheduledEnd
+              ? formatDuration(minutesBetween(booking.scheduledStart, booking.scheduledEnd))
+              : null}
           </Detail>
         </DetailGrid>
       ) : (
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>{booking.status === 'Postponed' ? 'Postponed — needs a new slot' : 'Waiting for a theatre and time'}</MessageBarTitle>
+            <MessageBarTitle>
+              {booking.status === 'Postponed' ? 'Postponed — needs a new slot' : 'Waiting for a theatre and time'}
+            </MessageBarTitle>
             {booking.status === 'Postponed' && booking.postponeReason ? `Reason: ${booking.postponeReason}. ` : ''}
             {booking.preferredDate ? `Preferred date: ${booking.preferredDate}. ` : ''}
             The WHO checklist starts once the surgery is scheduled.
@@ -181,7 +207,11 @@ function ScheduleStep({ booking, onSchedule }: { booking: SurgeryDetail; onSched
       )}
       {canManage && gate.allowed && (
         <div className={styles.actionRow}>
-          <Button appearance={hasSlot ? 'secondary' : 'primary'} icon={<CalendarArrowRightRegular />} onClick={onSchedule}>
+          <Button
+            appearance={hasSlot ? 'secondary' : 'primary'}
+            icon={<CalendarArrowRightRegular />}
+            onClick={onSchedule}
+          >
             {hasSlot ? 'Move to another slot' : 'Schedule surgery'}
           </Button>
         </div>
@@ -210,7 +240,9 @@ function ReceiveStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () =
   }
   return (
     <>
-      <Text>Confirm the identity band against the case sheet, then receive the patient into the pre-operative holding area.</Text>
+      <Text>
+        Confirm the identity band against the case sheet, then receive the patient into the pre-operative holding area.
+      </Text>
       {!gate.allowed && (
         <MessageBar intent="info">
           <MessageBarBody>{gate.reason}</MessageBarBody>
@@ -257,7 +289,10 @@ function StartStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () => 
     return (
       <Text>
         Incision at {formatDateTime(booking.startedAt)}
-        {booking.status === 'InProgress' ? ` · ${formatDuration(minutesBetween(booking.startedAt, new Date(now).toISOString()))} ago` : ''}.
+        {booking.status === 'InProgress'
+          ? ` · ${formatDuration(minutesBetween(booking.startedAt, new Date(now).toISOString()))} ago`
+          : ''}
+        .
       </Text>
     );
   }
@@ -325,14 +360,20 @@ function CompleteStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () 
     return (
       <DetailGrid>
         <Detail label="Out of theatre">{formatDateTime(booking.completedAt)}</Detail>
-        <Detail label="Time in theatre">{start ? formatDuration(minutesBetween(start, booking.completedAt)) : null}</Detail>
-        <Detail label="Surgery (incision to end)">{booking.startedAt ? formatDuration(minutesBetween(booking.startedAt, booking.completedAt)) : null}</Detail>
+        <Detail label="Time in theatre">
+          {start ? formatDuration(minutesBetween(start, booking.completedAt)) : null}
+        </Detail>
+        <Detail label="Surgery (incision to end)">
+          {booking.startedAt ? formatDuration(minutesBetween(booking.startedAt, booking.completedAt)) : null}
+        </Detail>
       </DetailGrid>
     );
   }
   return (
     <>
-      <Text>The patient leaves the theatre. Theatre time, procedure, surgeon and anaesthetist fees are posted to the bill.</Text>
+      <Text>
+        The patient leaves the theatre. Theatre time, procedure, surgeon and anaesthetist fees are posted to the bill.
+      </Text>
       {!gate.allowed && (
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
@@ -365,7 +406,8 @@ function CompleteStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () 
         onConfirm={() => complete.mutate()}
         onCancel={() => setConfirming(false)}
       >
-        The WHO Sign-out is complete. Wheels-out time is recorded as now and the OT charges are posted to the patient&apos;s bill.
+        The WHO Sign-out is complete. Wheels-out time is recorded as now and the OT charges are posted to the
+        patient&apos;s bill.
       </ConfirmDialog>
     </>
   );

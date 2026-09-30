@@ -35,7 +35,13 @@ import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { Detail, DetailGrid, ExpiryText } from '@/modules/inventory/StockBits';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
-import { pharmacyApi, pharmacyKeys, pharmacyQueries, type IpIssueDetail, type IpIssueListItem } from '@/modules/pharmacy/api';
+import {
+  pharmacyApi,
+  pharmacyKeys,
+  pharmacyQueries,
+  type IpIssueDetail,
+  type IpIssueListItem,
+} from '@/modules/pharmacy/api';
 import { useLetterhead } from '@/modules/pharmacy/counter';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { ipIssueAmount } from '@/modules/pharmacy/pricing';
@@ -88,11 +94,21 @@ function IpIssuesPage() {
   }, [debounced, search.q, navigate]);
 
   const { id, ...filters } = search;
-  const issues = useQuery(pharmacyQueries.ipIssues({ search: filters.q, patientId: filters.patientId, admissionId: filters.admissionId, page: filters.page }));
+  const issues = useQuery(
+    pharmacyQueries.ipIssues({
+      search: filters.q,
+      patientId: filters.patientId,
+      admissionId: filters.admissionId,
+      page: filters.page,
+    }),
+  );
 
   return (
     <Page>
-      <PageHeader title="IP issues and returns" subtitle="Medicines sent to the wards and charged to the in-patient account. Open an issue to take back unused medicines." />
+      <PageHeader
+        title="IP issues and returns"
+        subtitle="Medicines sent to the wards and charged to the in-patient account. Open an issue to take back unused medicines."
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
@@ -104,13 +120,17 @@ function IpIssuesPage() {
                 value={patient}
                 onChange={(p) => {
                   setPatient(p);
-                  void navigate({ search: (prev) => ({ ...prev, patientId: p?.id, admissionId: undefined, page: undefined }) });
+                  void navigate({
+                    search: (prev) => ({ ...prev, patientId: p?.id, admissionId: undefined, page: undefined }),
+                  });
                 }}
                 label="Patient"
               />
             </div>
             {search.admissionId && (
-              <Button onClick={() => void navigate({ search: (prev) => ({ ...prev, admissionId: undefined }) })}>Show all admissions</Button>
+              <Button onClick={() => void navigate({ search: (prev) => ({ ...prev, admissionId: undefined }) })}>
+                Show all admissions
+              </Button>
             )}
           </FilterBar>
         </div>
@@ -135,7 +155,12 @@ function IpIssuesPage() {
                 </span>
               ),
             },
-            { key: 'source', header: 'Against', priority: 'low', render: (i) => (i.wardIndentId ? 'Ward indent' : 'Prescription or direct') },
+            {
+              key: 'source',
+              header: 'Against',
+              priority: 'low',
+              render: (i) => (i.wardIndentId ? 'Ward indent' : 'Prescription or direct'),
+            },
             { key: 'lines', header: 'Lines', align: 'end', width: 70, render: (i) => i.lineCount },
             { key: 'amount', header: 'Charged', align: 'end', render: (i) => formatInr(i.totalAmount) },
             { key: 'by', header: 'By', priority: 'low', render: (i) => i.issuedBy ?? '—' },
@@ -148,7 +173,9 @@ function IpIssuesPage() {
           onPageChange={(p) => void navigate({ search: (prev) => ({ ...prev, page: p > 1 ? p : undefined }) })}
         />
       </Section>
-      {id && <IssueDrawer issueId={id} onClose={() => void navigate({ search: (prev) => ({ ...prev, id: undefined }) })} />}
+      {id && (
+        <IssueDrawer issueId={id} onClose={() => void navigate({ search: (prev) => ({ ...prev, id: undefined }) })} />
+      )}
     </Page>
   );
 }
@@ -166,7 +193,9 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {i ? `Issue ${i.number}` : 'Issue'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -199,7 +228,11 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
                   render: (l) => (
                     <span>
                       {formatQty(l.quantity)}
-                      {l.returnedQuantity > 0 && <Caption1 block className={styles.muted}>{formatQty(l.returnedQuantity)} returned</Caption1>}
+                      {l.returnedQuantity > 0 && (
+                        <Caption1 block className={styles.muted}>
+                          {formatQty(l.returnedQuantity)} returned
+                        </Caption1>
+                      )}
                     </span>
                   ),
                 },
@@ -223,7 +256,10 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
                       header: 'Items',
                       render: (r) =>
                         r.lines
-                          .map((l) => `${l.itemName} × ${formatQty(l.quantity)}${l.restocked ? '' : ' (not restocked)'}${l.chargeReversal === 'Cancelled' ? ', charge cancelled' : ', credited'}`)
+                          .map(
+                            (l) =>
+                              `${l.itemName} × ${formatQty(l.quantity)}${l.restocked ? '' : ' (not restocked)'}${l.chargeReversal === 'Cancelled' ? ', charge cancelled' : ', credited'}`,
+                          )
                           .join('; '),
                     },
                     { key: 'reason', header: 'Reason', priority: 'low', render: (r) => r.reason },
@@ -238,7 +274,14 @@ function IssueDrawer({ issueId, onClose }: { issueId: string; onClose: () => voi
       <DrawerFooter>
         {i && (
           <>
-            <Button icon={<PrintRegular />} onClick={() => void printIpIssueSlip(i, letterhead).catch((error: unknown) => notify.error(error, 'The slip did not print'))}>
+            <Button
+              icon={<PrintRegular />}
+              onClick={() =>
+                void printIpIssueSlip(i, letterhead).catch((error: unknown) =>
+                  notify.error(error, 'The slip did not print'),
+                )
+              }
+            >
               Print slip
             </Button>
             {canReturn && returnable.length > 0 && (
@@ -273,7 +316,15 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
     const quantity = parseNumber(entry?.quantity ?? '') ?? 0;
     const max = toNumber(dec(line.quantity) - dec(line.returnedQuantity));
     const expired = line.expiryDate !== null && line.expiryDate < today;
-    return { line, quantity, max, expired, restock: !expired && (entry?.restock ?? true), credit: quantity > 0 && quantity <= max ? ipIssueAmount(quantity, line.unitMrp) : 0, invalid: quantity < 0 || quantity > max };
+    return {
+      line,
+      quantity,
+      max,
+      expired,
+      restock: !expired && (entry?.restock ?? true),
+      credit: quantity > 0 && quantity <= max ? ipIssueAmount(quantity, line.unitMrp) : 0,
+      invalid: quantity < 0 || quantity > max,
+    };
   });
   const chosen = planned.filter((p) => p.quantity > 0 && !p.invalid);
   const credit = toNumber(sum(chosen.map((p) => dec(p.credit))));
@@ -281,15 +332,25 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
 
   const submit = useMutation({
     mutationFn: () =>
-      pharmacyApi.wardReturn(issue.id, { lines: chosen.map((p) => ({ ipIssueLineId: p.line.id, quantity: p.quantity, restock: p.restock })), reason: reason.trim() }),
+      pharmacyApi.wardReturn(issue.id, {
+        lines: chosen.map((p) => ({ ipIssueLineId: p.line.id, quantity: p.quantity, restock: p.restock })),
+        reason: reason.trim(),
+      }),
     onSuccess: (result) => {
-      notify.success(`Ward return ${result.number} recorded`, `${formatInr(result.creditAmount)} credited to the patient's IP account.`);
+      notify.success(
+        `Ward return ${result.number} recorded`,
+        `${formatInr(result.creditAmount)} credited to the patient's IP account.`,
+      );
       void queryClient.invalidateQueries({ queryKey: pharmacyKeys.ward });
       void queryClient.invalidateQueries({ queryKey: pharmacyKeys.stock });
       onClose();
     },
   });
-  const setLine = (id: string, patch: Partial<ReturnLine>) => setLines((prev) => ({ ...prev, [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch } }));
+  const setLine = (id: string, patch: Partial<ReturnLine>) =>
+    setLines((prev) => ({
+      ...prev,
+      [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch },
+    }));
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !submit.isPending && onClose()}>
@@ -298,8 +359,9 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
           <DialogTitle>Take back from the ward</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Caption1>
-              Sealed, in-date packs go back on the shelf. Opened or damaged ones are credited to the patient but not restocked. A whole line returned before billing
-              cancels its charge; otherwise a credit line is added to the IP bill.
+              Sealed, in-date packs go back on the shelf. Opened or damaged ones are credited to the patient but not
+              restocked. A whole line returned before billing cancels its charge; otherwise a credit line is added to
+              the IP bill.
             </Caption1>
             <div>
               <div className={styles.returnRow}>
@@ -316,7 +378,10 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
                       Batch {p.line.batchNumber} · up to {formatQty(p.max)}
                     </Caption1>
                   </span>
-                  <Field validationState={p.invalid ? 'error' : 'none'} validationMessage={p.invalid ? `Max ${formatQty(p.max)}` : undefined}>
+                  <Field
+                    validationState={p.invalid ? 'error' : 'none'}
+                    validationMessage={p.invalid ? `Max ${formatQty(p.max)}` : undefined}
+                  >
                     <Input
                       type="number"
                       min={0}
@@ -329,14 +394,23 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
                   {p.expired ? (
                     <Caption1>Expired: not restocked</Caption1>
                   ) : (
-                    <Checkbox label="Restock" checked={lines[p.line.id]?.restock ?? true} onChange={(_, d) => setLine(p.line.id, { restock: d.checked === true })} />
+                    <Checkbox
+                      label="Restock"
+                      checked={lines[p.line.id]?.restock ?? true}
+                      onChange={(_, d) => setLine(p.line.id, { restock: d.checked === true })}
+                    />
                   )}
                   <Text>{p.quantity > 0 && !p.invalid ? formatInr(p.credit) : '—'}</Text>
                 </div>
               ))}
             </div>
             <Field label="Reason" required>
-              <Input value={reason} maxLength={300} onChange={(_, d) => setReason(d.value)} placeholder="e.g. Patient discharged, medicine stopped" />
+              <Input
+                value={reason}
+                maxLength={300}
+                onChange={(_, d) => setReason(d.value)}
+                placeholder="e.g. Patient discharged, medicine stopped"
+              />
             </Field>
             {chosen.length > 0 && (
               <MessageBar intent="info">
@@ -345,7 +419,9 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
             )}
             {submit.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(submit.error) ? submit.error.userMessage : 'Nothing was saved.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(submit.error) ? submit.error.userMessage : 'Nothing was saved.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -353,7 +429,12 @@ function WardReturnDialog({ issue, onClose }: { issue: IpIssueDetail; onClose: (
             <Button onClick={onClose} disabled={submit.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || submit.isPending} icon={submit.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => submit.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || submit.isPending}
+              icon={submit.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => submit.mutate()}
+            >
               Record return
             </Button>
           </DialogActions>

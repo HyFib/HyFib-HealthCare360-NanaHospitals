@@ -102,7 +102,9 @@ function DevicesPage() {
                   <span>
                     <Text weight="semibold">{d.name}</Text>
                     <Caption1 block className={styles.muted}>
-                      {[d.kind === 'DisplayBoard' ? 'Queue display' : humanize(d.kind), d.machineName, d.location].filter(Boolean).join(' · ')}
+                      {[d.kind === 'DisplayBoard' ? 'Queue display' : humanize(d.kind), d.machineName, d.location]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Caption1>
                   </span>
                 </span>
@@ -121,11 +123,20 @@ function DevicesPage() {
                   '—'
                 ),
             },
-            { key: 'seen', header: 'Last seen', render: (d) => (d.lastSeenAt ? formatRelative(d.lastSeenAt) : 'Never') },
+            {
+              key: 'seen',
+              header: 'Last seen',
+              render: (d) => (d.lastSeenAt ? formatRelative(d.lastSeenAt) : 'Never'),
+            },
             { key: 'ip', header: 'Address', priority: 'low', render: (d) => d.lastIpAddress ?? '—' },
             { key: 'version', header: 'App version', priority: 'low', render: (d) => d.appVersion ?? '—' },
             { key: 'enrolled', header: 'Enrolled', priority: 'low', render: (d) => formatDateTime(d.enrolledAt) },
-            { key: 'status', header: 'Status', width: 110, render: (d) => <StatusBadge status={d.isRevoked ? 'Revoked' : 'Active'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (d) => <StatusBadge status={d.isRevoked ? 'Revoked' : 'Active'} />,
+            },
           ]}
           rowActions={(d) =>
             d.isRevoked ? null : (
@@ -165,7 +176,12 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
   const [validMinutes, setValidMinutes] = useState(30);
   const create = useMutation({
     mutationFn: () =>
-      api.post<{ code: string; expiresAt: string }>('/api/v1/admin/devices/enrollment-codes', { kind, facilityId: null, note: note || null, validMinutes }),
+      api.post<{ code: string; expiresAt: string }>('/api/v1/admin/devices/enrollment-codes', {
+        kind,
+        facilityId: null,
+        note: note || null,
+        validMinutes,
+      }),
     onError: (error) => notify.error(error, 'Could not create an enrolment code'),
   });
 
@@ -185,7 +201,9 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
                 <Text>On the new device, open HC360 Desktop and enter this one-time code:</Text>
                 <div className={styles.code}>{create.data.code}</div>
                 <MessageBar intent="info">
-                  <MessageBarBody>The code works once and expires at {formatDateTime(create.data.expiresAt)}.</MessageBarBody>
+                  <MessageBarBody>
+                    The code works once and expires at {formatDateTime(create.data.expiresAt)}.
+                  </MessageBarBody>
                 </MessageBar>
               </>
             ) : (
@@ -242,7 +260,12 @@ function EditDeviceDialog({ device, onClose }: { device: DeviceDto; onClose: () 
   const [departmentId, setDepartmentId] = useState(device.departmentId ?? '');
   const save = useMutation({
     mutationFn: () =>
-      api.put(`/api/v1/admin/devices/${device.id}`, { name: name.trim(), departmentId: departmentId || null, location: location.trim() || null, version: device.version }),
+      api.put(`/api/v1/admin/devices/${device.id}`, {
+        name: name.trim(),
+        departmentId: departmentId || null,
+        location: location.trim() || null,
+        version: device.version,
+      }),
     onSuccess: () => {
       notify.success('Device updated');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'devices'] });

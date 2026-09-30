@@ -1,4 +1,15 @@
-import { Badge, Button, Caption1, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { ArrowRepeatAllRegular, ArrowSyncRegular, DismissRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateTime, useSession } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
@@ -22,7 +33,13 @@ export const Route = createFileRoute('/_app/emr/prescriptions/$prescriptionId')(
 
 const useStyles = makeStyles({
   lines: { display: 'flex', flexDirection: 'column', gap: '10px', margin: 0, padding: 0, listStyle: 'none' },
-  line: { display: 'flex', flexDirection: 'column', gap: '2px', paddingBottom: '8px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  line: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    paddingBottom: '8px',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   row: { display: 'flex', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
@@ -90,7 +107,12 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
     return <ChartLoadError patientId={rx.patientId} error={summary.error} onRetry={() => void summary.refetch()} />;
   }
 
-  const toChart = () => void navigate({ to: '/emr/patients/$patientId', params: { patientId: rx.patientId }, search: { tab: 'prescriptions' } });
+  const toChart = () =>
+    void navigate({
+      to: '/emr/patients/$patientId',
+      params: { patientId: rx.patientId },
+      search: { tab: 'prescriptions' },
+    });
 
   return (
     <Page maxWidth={1400}>
@@ -98,12 +120,20 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
       <PageHeader
         title={`Prescription ${rx.prescriptionNumber}`}
         subtitle={`${rx.practitionerName ?? 'Doctor'} · ${rx.isInpatient ? 'In-patient' : 'Out-patient'} · ${formatDateTime(rx.signedAt ?? rx.prescribedAt)}`}
-        breadcrumbs={[{ label: 'Chart', onClick: toChart }, { label: 'Prescriptions', onClick: toChart }, { label: rx.prescriptionNumber }]}
+        breadcrumbs={[
+          { label: 'Chart', onClick: toChart },
+          { label: 'Prescriptions', onClick: toChart },
+          { label: rx.prescriptionNumber },
+        ]}
         actions={
           <div className={styles.actions}>
             <StatusBadge status={rx.status} />
             {rx.status === 'Signed' && (
-              <Button icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />} disabled={print.isPending} onClick={() => print.mutate()}>
+              <Button
+                icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+                disabled={print.isPending}
+                onClick={() => print.mutate()}
+              >
                 Print (A5)
               </Button>
             )}
@@ -175,7 +205,14 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
                   )}
                 </span>
                 <Text>
-                  {directionsText({ dose: item.dose, frequency: item.frequency, customFrequency: item.customFrequency, durationDays: item.durationDays, route: item.route, instructions: item.instructions })}
+                  {directionsText({
+                    dose: item.dose,
+                    frequency: item.frequency,
+                    customFrequency: item.customFrequency,
+                    durationDays: item.durationDays,
+                    route: item.route,
+                    instructions: item.instructions,
+                  })}
                 </Text>
                 <Caption1 className={styles.muted}>Quantity {item.quantity}</Caption1>
               </li>
@@ -203,7 +240,11 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
       <ReasonDialog
         open={cancelling}
         title={`Cancel ${rx.prescriptionNumber}?`}
-        description={rx.status === 'Signed' ? 'It is withdrawn from the pharmacy queue. Medicines already dispensed are not affected.' : 'The draft is discarded.'}
+        description={
+          rx.status === 'Signed'
+            ? 'It is withdrawn from the pharmacy queue. Medicines already dispensed are not affected.'
+            : 'The draft is discarded.'
+        }
         confirmLabel="Cancel prescription"
         destructive
         busy={cancel.isPending}

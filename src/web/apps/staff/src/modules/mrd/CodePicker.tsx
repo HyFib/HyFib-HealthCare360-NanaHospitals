@@ -1,4 +1,15 @@
-import { Badge, Caption1, Combobox, Field, makeStyles, Option, Spinner, Text, tokens, type FieldProps } from '@fluentui/react-components';
+import {
+  Badge,
+  Caption1,
+  Combobox,
+  Field,
+  makeStyles,
+  Option,
+  Spinner,
+  Text,
+  tokens,
+  type FieldProps,
+} from '@fluentui/react-components';
 import { useDebouncedValue } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
@@ -9,7 +20,11 @@ const FREE_TEXT = '__free-text__';
 const useStyles = makeStyles({
   option: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
   optionRow: { display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' },
-  code: { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
+  code: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -142,9 +157,21 @@ function PickerShell({
   onSelect,
   busy,
   children,
-}: CommonProps & { term: string; onTermChange: (term: string) => void; onSelect: (value: string) => void; busy: boolean; children: ReactNode }) {
+}: CommonProps & {
+  term: string;
+  onTermChange: (term: string) => void;
+  onSelect: (value: string) => void;
+  busy: boolean;
+  children: ReactNode;
+}) {
   return (
-    <Field label={label} hint={hint} required={required} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'}>
+    <Field
+      label={label}
+      hint={hint}
+      required={required}
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+    >
       <Combobox
         freeform
         autoFocus={autoFocus}

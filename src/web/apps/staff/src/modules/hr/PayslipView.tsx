@@ -32,7 +32,12 @@ import { monthLabel } from './shared/dates';
 
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '14px' },
-  cols: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '16px', '@media (max-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  cols: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+    gap: '16px',
+    '@media (max-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   net: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -43,7 +48,11 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorBrandBackground2,
   },
-  netAmount: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
+  netAmount: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   right: { textAlign: 'end' },
   total: { fontWeight: tokens.fontWeightSemibold },
@@ -64,7 +73,9 @@ function LinesTable({ title, lines, total }: { title: string; lines: PayslipLine
           <TableRow key={line.code}>
             <TableCell>
               {line.name}
-              {line.amount !== line.fullAmount && <Caption1 className={styles.muted}> (of {formatInr(line.fullAmount)})</Caption1>}
+              {line.amount !== line.fullAmount && (
+                <Caption1 className={styles.muted}> (of {formatInr(line.fullAmount)})</Caption1>
+              )}
             </TableCell>
             <TableCell className={styles.right}>{formatInr(line.amount)}</TableCell>
           </TableRow>
@@ -94,7 +105,8 @@ export function PayslipView({ payslip: p }: { payslip: PayslipDto }) {
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>This payslip has errors</MessageBarTitle>
-            Correct the inputs or salary structure and process the payroll again. Payroll cannot be approved until it is fixed.
+            Correct the inputs or salary structure and process the payroll again. Payroll cannot be approved until it is
+            fixed.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -141,18 +153,29 @@ export function PayslipView({ payslip: p }: { payslip: PayslipDto }) {
         <span className={styles.netAmount}>{formatInr(p.netPay)}</span>
       </div>
       <Caption1 className={styles.muted}>
-        Employer contributions (not deducted): PF {formatInr(p.employerPf)} on a PF wage of {formatInr(p.pfWage)} · ESI {formatInr(p.employerEsi)} on an ESI wage of{' '}
-        {formatInr(p.esiWage)}.
+        Employer contributions (not deducted): PF {formatInr(p.employerPf)} on a PF wage of {formatInr(p.pfWage)} · ESI{' '}
+        {formatInr(p.employerEsi)} on an ESI wage of {formatInr(p.esiWage)}.
       </Caption1>
     </div>
   );
 }
 
 /** Payslip in a dialog with printing (A4). `mine` reads the signed-in employee's own payslip. */
-export function PayslipDialog({ payslipId, mine, onClose }: { payslipId: string | null; mine?: boolean; onClose: () => void }) {
+export function PayslipDialog({
+  payslipId,
+  mine,
+  onClose,
+}: {
+  payslipId: string | null;
+  mine?: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const hrPayslip = useQuery({ ...hrQueries.payslip(payslipId ?? ''), enabled: payslipId !== null && !mine });
-  const ownPayslip = useQuery({ ...hrQueries.myPayslip(payslipId ?? ''), enabled: payslipId !== null && Boolean(mine) });
+  const ownPayslip = useQuery({
+    ...hrQueries.myPayslip(payslipId ?? ''),
+    enabled: payslipId !== null && Boolean(mine),
+  });
   const payslip = mine ? ownPayslip : hrPayslip;
   const p = payslip.data;
 
@@ -161,7 +184,8 @@ export function PayslipDialog({ payslipId, mine, onClose }: { payslipId: string 
       <DialogSurface style={{ maxWidth: 920, width: '100%' }}>
         <DialogBody>
           <DialogTitle>
-            {p ? `Salary slip · ${monthLabel(p.year, p.month)}` : 'Salary slip'} {p && <StatusBadge status={p.runStatus} />}
+            {p ? `Salary slip · ${monthLabel(p.year, p.month)}` : 'Salary slip'}{' '}
+            {p && <StatusBadge status={p.runStatus} />}
           </DialogTitle>
           <DialogContent>
             {payslip.isLoading && <LoadingState />}
@@ -174,7 +198,9 @@ export function PayslipDialog({ payslipId, mine, onClose }: { payslipId: string 
               appearance="primary"
               icon={<PrintRegular />}
               disabled={!p}
-              onClick={() => p && void printPayslip(p).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+              onClick={() =>
+                p && void printPayslip(p).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
             >
               Print
             </Button>

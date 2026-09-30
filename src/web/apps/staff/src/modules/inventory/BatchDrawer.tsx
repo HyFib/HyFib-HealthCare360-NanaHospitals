@@ -64,9 +64,13 @@ export function BatchDrawer({
   };
 
   const block = useMutation({
-    mutationFn: ({ batch, reason }: { batch: BatchStock; reason: string }) => inventoryApi.blockBatch(batch.batchId, reason),
+    mutationFn: ({ batch, reason }: { batch: BatchStock; reason: string }) =>
+      inventoryApi.blockBatch(batch.batchId, reason),
     onSuccess: (_, { batch }) => {
-      notify.success(`Batch ${batch.batchNumber} is on hold`, 'It will not be sold, dispensed or issued until released.');
+      notify.success(
+        `Batch ${batch.batchNumber} is on hold`,
+        'It will not be sold, dispensed or issued until released.',
+      );
       setBlocking(null);
       refresh();
     },
@@ -86,74 +90,102 @@ export function BatchDrawer({
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>{itemName}</DrawerHeaderTitle>
-        <Caption1>
-          Batches in {storeName}, in the order they are used (earliest expiry first)
-        </Caption1>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          {itemName}
+        </DrawerHeaderTitle>
+        <Caption1>Batches in {storeName}, in the order they are used (earliest expiry first)</Caption1>
       </DrawerHeader>
       <DrawerBody>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Switch checked={includeEmpty} onChange={(_, d) => setIncludeEmpty(d.checked)} label="Show finished batches" />
-          {!canRead && <EmptyState title="Your account cannot see batch details" description="Ask the administrator for the permission to view stock." />}
-          {canRead && <DataTable<BatchStock>
-            ariaLabel={`Batches of ${itemName}`}
-            rows={batches.data}
-            loading={batches.isLoading}
-            error={batches.error}
-            onRetry={() => void batches.refetch()}
-            getRowId={(b) => b.batchId}
-            size="small"
-            columns={[
-              { key: 'batch', header: 'Batch', render: (b) => <Text font="monospace">{b.batchNumber}</Text> },
-              { key: 'expiry', header: 'Expiry', render: (b) => <ExpiryText date={b.expiryDate} daysToExpiry={b.daysToExpiry} showDays /> },
-              { key: 'onHand', header: 'On hand', align: 'end', render: (b) => formatQty(b.onHand, unit) },
-              { key: 'reserved', header: 'Reserved', align: 'end', priority: 'low', render: (b) => (b.reserved ? formatQty(b.reserved) : '—') },
-              { key: 'available', header: 'Free', align: 'end', render: (b) => <Text weight="semibold">{formatQty(b.available)}</Text> },
-              { key: 'mrp', header: 'MRP', align: 'end', render: (b) => formatInr(b.mrp) },
-              { key: 'cost', header: 'Cost', align: 'end', priority: 'low', render: (b) => formatInr(b.unitCost) },
-              { key: 'gst', header: 'GST', align: 'end', priority: 'low', render: (b) => formatPercent(b.gstRate) },
-              {
-                key: 'state',
-                header: 'Status',
-                render: (b) =>
-                  b.isBlocked ? (
-                    <Tooltip content={b.blockReason ?? 'On hold'} relationship="description">
-                      <Badge appearance="tint" color="danger" icon={<LockClosedRegular />}>
-                        On hold
+          <Switch
+            checked={includeEmpty}
+            onChange={(_, d) => setIncludeEmpty(d.checked)}
+            label="Show finished batches"
+          />
+          {!canRead && (
+            <EmptyState
+              title="Your account cannot see batch details"
+              description="Ask the administrator for the permission to view stock."
+            />
+          )}
+          {canRead && (
+            <DataTable<BatchStock>
+              ariaLabel={`Batches of ${itemName}`}
+              rows={batches.data}
+              loading={batches.isLoading}
+              error={batches.error}
+              onRetry={() => void batches.refetch()}
+              getRowId={(b) => b.batchId}
+              size="small"
+              columns={[
+                { key: 'batch', header: 'Batch', render: (b) => <Text font="monospace">{b.batchNumber}</Text> },
+                {
+                  key: 'expiry',
+                  header: 'Expiry',
+                  render: (b) => <ExpiryText date={b.expiryDate} daysToExpiry={b.daysToExpiry} showDays />,
+                },
+                { key: 'onHand', header: 'On hand', align: 'end', render: (b) => formatQty(b.onHand, unit) },
+                {
+                  key: 'reserved',
+                  header: 'Reserved',
+                  align: 'end',
+                  priority: 'low',
+                  render: (b) => (b.reserved ? formatQty(b.reserved) : '—'),
+                },
+                {
+                  key: 'available',
+                  header: 'Free',
+                  align: 'end',
+                  render: (b) => <Text weight="semibold">{formatQty(b.available)}</Text>,
+                },
+                { key: 'mrp', header: 'MRP', align: 'end', render: (b) => formatInr(b.mrp) },
+                { key: 'cost', header: 'Cost', align: 'end', priority: 'low', render: (b) => formatInr(b.unitCost) },
+                { key: 'gst', header: 'GST', align: 'end', priority: 'low', render: (b) => formatPercent(b.gstRate) },
+                {
+                  key: 'state',
+                  header: 'Status',
+                  render: (b) =>
+                    b.isBlocked ? (
+                      <Tooltip content={b.blockReason ?? 'On hold'} relationship="description">
+                        <Badge appearance="tint" color="danger" icon={<LockClosedRegular />}>
+                          On hold
+                        </Badge>
+                      </Tooltip>
+                    ) : b.isExpired ? (
+                      <Badge appearance="tint" color="danger">
+                        Expired
                       </Badge>
-                    </Tooltip>
-                  ) : b.isExpired ? (
-                    <Badge appearance="tint" color="danger">
-                      Expired
-                    </Badge>
-                  ) : b.available > 0 ? (
-                    <Badge appearance="tint" color="success">
-                      Usable
-                    </Badge>
-                  ) : (
-                    <Badge appearance="tint">{b.onHand > 0 ? 'Reserved' : 'Finished'}</Badge>
-                  ),
-              },
-            ]}
-            rowActions={
-              canHold
-                ? (b) =>
-                    b.onHand > 0 ? (
-                      b.isBlocked ? (
-                        <Button size="small" icon={<LockOpenRegular />} onClick={() => setReleasing(b)}>
-                          Release
-                        </Button>
-                      ) : (
-                        <Button size="small" icon={<LockClosedRegular />} onClick={() => setBlocking(b)}>
-                          Put on hold
-                        </Button>
-                      )
-                    ) : null
-                : undefined
-            }
-            emptyTitle="No batches in this store"
-            emptyDescription="Stock arrives through goods receipts, transfers and indent issues."
-          />}
+                    ) : b.available > 0 ? (
+                      <Badge appearance="tint" color="success">
+                        Usable
+                      </Badge>
+                    ) : (
+                      <Badge appearance="tint">{b.onHand > 0 ? 'Reserved' : 'Finished'}</Badge>
+                    ),
+                },
+              ]}
+              rowActions={
+                canHold
+                  ? (b) =>
+                      b.onHand > 0 ? (
+                        b.isBlocked ? (
+                          <Button size="small" icon={<LockOpenRegular />} onClick={() => setReleasing(b)}>
+                            Release
+                          </Button>
+                        ) : (
+                          <Button size="small" icon={<LockClosedRegular />} onClick={() => setBlocking(b)}>
+                            Put on hold
+                          </Button>
+                        )
+                      ) : null
+                  : undefined
+              }
+              emptyTitle="No batches in this store"
+              emptyDescription="Stock arrives through goods receipts, transfers and indent issues."
+            />
+          )}
 
           {(reservations.data?.length ?? 0) > 0 && (
             <div>
@@ -167,7 +199,11 @@ export function BatchDrawer({
                 getRowId={(r) => r.id}
                 size="small"
                 columns={[
-                  { key: 'doc', header: 'Document', render: (r) => `${referenceModuleLabel(r.referenceModule)} ${r.referenceNumber ?? ''}` },
+                  {
+                    key: 'doc',
+                    header: 'Document',
+                    render: (r) => `${referenceModuleLabel(r.referenceModule)} ${r.referenceNumber ?? ''}`,
+                  },
                   { key: 'batch', header: 'Batch', render: (r) => <Text font="monospace">{r.batchNumber}</Text> },
                   { key: 'qty', header: 'Reserved', align: 'end', render: (r) => formatQty(r.quantity) },
                   { key: 'left', header: 'Still reserved', align: 'end', render: (r) => formatQty(r.outstanding) },
@@ -180,7 +216,10 @@ export function BatchDrawer({
       </DrawerBody>
       <DrawerFooter>
         {canSeeLedger && (
-          <Button icon={<HistoryRegular />} onClick={() => void navigate({ to: '/inventory/ledger', search: { storeId, itemId, itemName } })}>
+          <Button
+            icon={<HistoryRegular />}
+            onClick={() => void navigate({ to: '/inventory/ledger', search: { storeId, itemId, itemName } })}
+          >
             Stock card
           </Button>
         )}
@@ -212,7 +251,8 @@ export function BatchDrawer({
         onConfirm={() => releasing && release.mutate(releasing)}
         onCancel={() => setReleasing(null)}
       >
-        The batch can be used again straight away{releasing?.blockReason ? `. It was held for: ${releasing.blockReason}` : ''}.
+        The batch can be used again straight away
+        {releasing?.blockReason ? `. It was held for: ${releasing.blockReason}` : ''}.
       </ConfirmDialog>
     </OverlayDrawer>
   );

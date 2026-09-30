@@ -27,9 +27,25 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     overflowWrap: 'anywhere',
   },
-  subtitle: { color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300, overflowWrap: 'anywhere' },
-  meta: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, lineHeight: tokens.lineHeightBase200 },
-  trailing: { flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', textAlign: 'end' },
+  subtitle: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase300,
+    lineHeight: tokens.lineHeightBase300,
+    overflowWrap: 'anywhere',
+  },
+  meta: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
+  trailing: {
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '4px',
+    textAlign: 'end',
+  },
   chevron: { flexShrink: 0, color: tokens.colorNeutralForeground3, fontSize: '20px' },
   card: {
     display: 'flex',
@@ -93,7 +109,11 @@ export function ListRow({
 export function ToneIcon({ tone = 'brand', children, size = 44 }: { tone?: Tone; children: ReactNode; size?: number }) {
   const styles = useStyles();
   return (
-    <span className={mergeClasses(styles.icon, styles[tone])} style={{ width: size, height: size, fontSize: Math.round(size / 2) }} aria-hidden>
+    <span
+      className={mergeClasses(styles.icon, styles[tone])}
+      style={{ width: size, height: size, fontSize: Math.round(size / 2) }}
+      aria-hidden
+    >
       {children}
     </span>
   );

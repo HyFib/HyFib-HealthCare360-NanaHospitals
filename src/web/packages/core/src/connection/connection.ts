@@ -25,7 +25,11 @@ export const useConnection = create<ConnectionState>((set) => ({
   realtime: 'connecting',
   wifi: null,
   setReachable: (reachable) =>
-    set(reachable ? { serverReachable: true, lastOkAt: Date.now() } : { serverReachable: false, lastFailureAt: Date.now() }),
+    set(
+      reachable
+        ? { serverReachable: true, lastOkAt: Date.now() }
+        : { serverReachable: false, lastFailureAt: Date.now() },
+    ),
   setRealtime: (realtime) => set({ realtime }),
   setWifi: (wifi) => set({ wifi }),
   setBrowserOnline: (browserOnline) => set({ browserOnline }),
@@ -33,7 +37,9 @@ export const useConnection = create<ConnectionState>((set) => ({
 
 export type ConnectionHealth = 'good' | 'degraded' | 'offline';
 
-export function connectionHealth(state: Pick<ConnectionState, 'browserOnline' | 'serverReachable' | 'realtime' | 'wifi'>): ConnectionHealth {
+export function connectionHealth(
+  state: Pick<ConnectionState, 'browserOnline' | 'serverReachable' | 'realtime' | 'wifi'>,
+): ConnectionHealth {
   if (!state.browserOnline || !state.serverReachable) {
     return 'offline';
   }

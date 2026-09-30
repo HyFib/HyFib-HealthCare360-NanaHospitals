@@ -102,7 +102,9 @@ export interface ItemDetail {
   version: number;
 }
 
-export type SaveItemRequest = Omit<ItemDetail, 'id' | 'requiresPrescription' | 'requiresRegister' | 'version'> & { version: number | null };
+export type SaveItemRequest = Omit<ItemDetail, 'id' | 'requiresPrescription' | 'requiresRegister' | 'version'> & {
+  version: number | null;
+};
 
 /** Picker row: the item plus its sellable stock in the chosen store. */
 export interface ItemLookup {
@@ -395,7 +397,15 @@ export interface IndentIssueDto {
   receivedByName: string | null;
   remarks: string | null;
   totalValue: number;
-  lines: { itemId: string; itemName: string; batchNumber: string; expiryDate: string | null; quantity: number; unitCost: number; value: number }[];
+  lines: {
+    itemId: string;
+    itemName: string;
+    batchNumber: string;
+    expiryDate: string | null;
+    quantity: number;
+    unitCost: number;
+    value: number;
+  }[];
 }
 
 export interface CreateIndentRequest {
@@ -618,7 +628,8 @@ export const inventoryQueries = {
   items: (filters: ItemFilters) =>
     queryOptions({
       queryKey: ['inventory', 'items', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ItemListItem>>(`${BASE}/items`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ItemListItem>>(`${BASE}/items`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
       placeholderData: keepPreviousData,
     }),
   item: (id: string) =>
@@ -630,7 +641,8 @@ export const inventoryQueries = {
   lookup: (search: string, storeId?: string | null, type?: ItemType, take = 20) =>
     queryOptions({
       queryKey: ['inventory', 'items', 'lookup', search, storeId ?? null, type ?? null, take],
-      queryFn: ({ signal }) => api.get<ItemLookup[]>(`${BASE}/items/lookup`, { query: { search, storeId, type, take }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ItemLookup[]>(`${BASE}/items/lookup`, { query: { search, storeId, type, take }, signal }),
       staleTime: 15_000,
     }),
   stores: (type?: StoreType, includeInactive = false) =>
@@ -642,24 +654,31 @@ export const inventoryQueries = {
   stock: (storeId: string, filters: { search?: string; type?: ItemType; belowReorder?: boolean; page?: number }) =>
     queryOptions({
       queryKey: ['inventory', 'stock', storeId, filters],
-      queryFn: ({ signal }) => api.get<PagedResult<StockSummaryRow>>(`${BASE}/stock`, { query: { storeId, ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<StockSummaryRow>>(`${BASE}/stock`, {
+          query: { storeId, ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   batches: (storeId: string, itemId: string, includeEmpty = false) =>
     queryOptions({
       queryKey: ['inventory', 'batches', storeId, itemId, includeEmpty],
-      queryFn: ({ signal }) => api.get<BatchStock[]>(`${BASE}/stock/batches`, { query: { storeId, itemId, includeEmpty }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<BatchStock[]>(`${BASE}/stock/batches`, { query: { storeId, itemId, includeEmpty }, signal }),
       staleTime: 10_000,
     }),
   reservations: (storeId: string, itemId?: string) =>
     queryOptions({
       queryKey: ['inventory', 'batches', 'reservations', storeId, itemId ?? null],
-      queryFn: ({ signal }) => api.get<ReservationRow[]>(`${BASE}/stock/reservations`, { query: { storeId, itemId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ReservationRow[]>(`${BASE}/stock/reservations`, { query: { storeId, itemId }, signal }),
     }),
   ledger: (filters: LedgerFilters) =>
     queryOptions({
       queryKey: ['inventory', 'stock', 'ledger', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<LedgerRow>>(`${BASE}/stock/ledger`, { query: { ...filters, pageSize: 50 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<LedgerRow>>(`${BASE}/stock/ledger`, { query: { ...filters, pageSize: 50 }, signal }),
       placeholderData: keepPreviousData,
     }),
   summary: (storeId?: string | null) =>
@@ -671,7 +690,8 @@ export const inventoryQueries = {
   nearExpiry: (storeId?: string | null, days = 90) =>
     queryOptions({
       queryKey: ['inventory', 'reports', 'near-expiry', storeId ?? null, days],
-      queryFn: ({ signal }) => api.get<ExpiryReport>(`${BASE}/reports/near-expiry`, { query: { storeId, days }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ExpiryReport>(`${BASE}/reports/near-expiry`, { query: { storeId, days }, signal }),
     }),
   expired: (storeId?: string | null) =>
     queryOptions({
@@ -691,13 +711,22 @@ export const inventoryQueries = {
   analysis: (from?: string, to?: string, storeId?: string | null) =>
     queryOptions({
       queryKey: ['inventory', 'reports', 'analysis', from ?? null, to ?? null, storeId ?? null],
-      queryFn: ({ signal }) => api.get<InventoryAnalysis>(`${BASE}/reports/analysis`, { query: { from, to, storeId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<InventoryAnalysis>(`${BASE}/reports/analysis`, { query: { from, to, storeId }, signal }),
       staleTime: 5 * 60_000,
     }),
-  indents: (filters: { status?: IndentStatus; fromStoreId?: string; toStoreId?: string; openOnly?: boolean; search?: string; page?: number }) =>
+  indents: (filters: {
+    status?: IndentStatus;
+    fromStoreId?: string;
+    toStoreId?: string;
+    openOnly?: boolean;
+    search?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['inventory', 'indents', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<IndentListItem>>(`${BASE}/indents`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<IndentListItem>>(`${BASE}/indents`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -714,7 +743,11 @@ export const inventoryQueries = {
   transfers: (filters: { status?: TransferStatus; storeId?: string; search?: string; page?: number }) =>
     queryOptions({
       queryKey: ['inventory', 'transfers', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<TransferListItem>>(`${BASE}/transfers`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<TransferListItem>>(`${BASE}/transfers`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   transfer: (id: string) =>
@@ -722,10 +755,20 @@ export const inventoryQueries = {
       queryKey: ['inventory', 'transfers', 'detail', id],
       queryFn: ({ signal }) => api.get<TransferDetail>(`${BASE}/transfers/${id}`, { signal }),
     }),
-  adjustments: (filters: { status?: AdjustmentStatus; storeId?: string; reason?: AdjustmentReason; search?: string; page?: number }) =>
+  adjustments: (filters: {
+    status?: AdjustmentStatus;
+    storeId?: string;
+    reason?: AdjustmentReason;
+    search?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['inventory', 'adjustments', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<AdjustmentListItem>>(`${BASE}/adjustments`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<AdjustmentListItem>>(`${BASE}/adjustments`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   adjustment: (id: string) =>
@@ -736,7 +779,8 @@ export const inventoryQueries = {
   counts: (filters: { storeId?: string; status?: StockCountStatus; page?: number }) =>
     queryOptions({
       queryKey: ['inventory', 'counts', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<CountListItem>>(`${BASE}/counts`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CountListItem>>(`${BASE}/counts`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
       placeholderData: keepPreviousData,
     }),
   count: (id: string) =>
@@ -752,7 +796,14 @@ export interface FacilityInfo {
   code: string;
   name: string;
   legalName: string | null;
-  address: { line1?: string | null; line2?: string | null; city?: string | null; district?: string | null; state?: string | null; pinCode?: string | null };
+  address: {
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    district?: string | null;
+    state?: string | null;
+    pinCode?: string | null;
+  };
   phone: string | null;
   email: string | null;
   gstin: string | null;
@@ -774,17 +825,24 @@ export function facilityQuery(facilityId: string | null | undefined) {
 export const inventoryApi = {
   /** Creates (id null) or updates a category; returns the id. */
   saveCategory: async (id: string | null, body: SaveItemCategoryRequest): Promise<string> =>
-    id ? (await api.put<void>(`${BASE}/categories/${id}`, body), id) : (await api.post<{ id: string }>(`${BASE}/categories`, body)).id,
+    id
+      ? (await api.put<void>(`${BASE}/categories/${id}`, body), id)
+      : (await api.post<{ id: string }>(`${BASE}/categories`, body)).id,
   saveItem: async (id: string | null, body: SaveItemRequest): Promise<string> =>
-    id ? (await api.put<void>(`${BASE}/items/${id}`, body), id) : (await api.post<{ id: string }>(`${BASE}/items`, body)).id,
+    id
+      ? (await api.put<void>(`${BASE}/items/${id}`, body), id)
+      : (await api.post<{ id: string }>(`${BASE}/items`, body)).id,
   itemByCode: (code: string) => api.get<ItemDetail>(`${BASE}/items/by-code/${encodeURIComponent(code)}`),
   saveStore: async (id: string | null, body: SaveStoreRequest): Promise<string> =>
-    id ? (await api.put<void>(`${BASE}/stores/${id}`, body), id) : (await api.post<{ id: string }>(`${BASE}/stores`, body)).id,
+    id
+      ? (await api.put<void>(`${BASE}/stores/${id}`, body), id)
+      : (await api.post<{ id: string }>(`${BASE}/stores`, body)).id,
   blockBatch: (batchId: string, reason: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/block`, { reason }),
   unblockBatch: (batchId: string) => api.post<void>(`${BASE}/stock/batches/${batchId}/unblock`),
 
   createIndent: (body: CreateIndentRequest) => api.post<DocumentCreated>(`${BASE}/indents`, body),
-  approveIndent: (id: string, lines: { lineId: string; approvedQuantity: number }[] | null) => api.post<void>(`${BASE}/indents/${id}/approve`, { lines }),
+  approveIndent: (id: string, lines: { lineId: string; approvedQuantity: number }[] | null) =>
+    api.post<void>(`${BASE}/indents/${id}/approve`, { lines }),
   issueIndent: (id: string, body: IssueIndentRequest) => api.post<DocumentCreated>(`${BASE}/indents/${id}/issue`, body),
   rejectIndent: (id: string, reason: string) => api.post<void>(`${BASE}/indents/${id}/reject`, { reason }),
   closeIndent: (id: string, reason: string) => api.post<void>(`${BASE}/indents/${id}/close`, { reason }),
@@ -795,12 +853,14 @@ export const inventoryApi = {
   cancelTransfer: (id: string, reason: string) => api.post<void>(`${BASE}/transfers/${id}/cancel`, { reason }),
 
   createAdjustment: (body: CreateAdjustmentRequest) => api.post<DocumentCreated>(`${BASE}/adjustments`, body),
-  expiredWriteOff: (storeId: string) => api.post<DocumentCreated>(`${BASE}/adjustments/expired-write-off`, undefined, { query: { storeId } }),
+  expiredWriteOff: (storeId: string) =>
+    api.post<DocumentCreated>(`${BASE}/adjustments/expired-write-off`, undefined, { query: { storeId } }),
   approveAdjustment: (id: string) => api.post<void>(`${BASE}/adjustments/${id}/approve`),
   rejectAdjustment: (id: string, reason: string) => api.post<void>(`${BASE}/adjustments/${id}/reject`, { reason }),
 
   startCount: (body: StartCountRequest) => api.post<DocumentCreated>(`${BASE}/counts`, body),
-  recordCounts: (id: string, lines: { lineId: string; countedQuantity: number; remarks: string | null }[]) => api.put<void>(`${BASE}/counts/${id}/lines`, { lines }),
+  recordCounts: (id: string, lines: { lineId: string; countedQuantity: number; remarks: string | null }[]) =>
+    api.put<void>(`${BASE}/counts/${id}/lines`, { lines }),
   submitCount: (id: string) => api.post<{ adjustmentId: string | null }>(`${BASE}/counts/${id}/submit`),
   cancelCount: (id: string) => api.post<void>(`${BASE}/counts/${id}/cancel`),
 };

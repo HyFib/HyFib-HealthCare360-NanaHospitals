@@ -4,14 +4,23 @@ import { anaesthesiaLabel, lateralityLabel, specimenLabel, surgeryStatusLabel } 
 import { procedureWithSide } from './logic';
 
 const block = (label: string, value: string | null | undefined) =>
-  value ? `<div class="block"><div class="label">${escapeHtml(label)}</div><div class="text">${escapeHtml(value)}</div></div>` : '';
+  value
+    ? `<div class="block"><div class="label">${escapeHtml(label)}</div><div class="text">${escapeHtml(value)}</div></div>`
+    : '';
 
 /** Operation note and post-operative orders on A4, for the case file and the ward. */
-export async function printOperationNote(facilityName: string, booking: SurgeryDetail, note: OperationNoteDto): Promise<void> {
+export async function printOperationNote(
+  facilityName: string,
+  booking: SurgeryDetail,
+  note: OperationNoteDto,
+): Promise<void> {
   const patient = booking.patient;
   const specimens = note.specimens.length
     ? `<table class="grid"><thead><tr><th>Specimen</th><th>Sent to</th><th>Label</th></tr></thead><tbody>${note.specimens
-        .map((s) => `<tr><td>${escapeHtml(s.description)}</td><td>${escapeHtml(specimenLabel[s.sentTo])}</td><td>${escapeHtml(s.label ?? '')}</td></tr>`)
+        .map(
+          (s) =>
+            `<tr><td>${escapeHtml(s.description)}</td><td>${escapeHtml(specimenLabel[s.sentTo])}</td><td>${escapeHtml(s.label ?? '')}</td></tr>`,
+        )
         .join('')}</tbody></table>`
     : '<div class="text">None</div>';
 
@@ -56,7 +65,9 @@ export async function printOperationNote(facilityName: string, booking: SurgeryD
     .orders { border: 1px solid #333; padding: 4px 8px; margin-top: 10px; }
     .sign { margin-top: 24px; text-align: right; }`;
 
-  await printHtml(printDocument(body, { title: `Operation note ${booking.bookingNumber}`, pageSize: 'A4', styles }), { pageSize: 'A4' });
+  await printHtml(printDocument(body, { title: `Operation note ${booking.bookingNumber}`, pageSize: 'A4', styles }), {
+    pageSize: 'A4',
+  });
 }
 
 /** The day's OT list by theatre (A4), for the notice board and the theatre sister. */

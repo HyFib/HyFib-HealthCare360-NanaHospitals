@@ -37,7 +37,10 @@ export const hubLogger: ILogger = {
 };
 
 function isStoppedWhileConnecting(message: string): boolean {
-  return message.includes('stopped during negotiation') || message.includes('stopped before the hub handshake could complete');
+  return (
+    message.includes('stopped during negotiation') ||
+    message.includes('stopped before the hub handshake could complete')
+  );
 }
 
 /** Reconnect at once, then after 2, 5, 10 and 20 seconds, then every 30 seconds, for as long as the screen is open. */
@@ -47,10 +50,15 @@ export function hubReconnectDelay(previousRetryCount: number): number {
 }
 
 /** A null token (the session has ended) connects without one, and the hub refuses it: every hub call is authorised. */
-export function createHubClient(path: string, accessTokenFactory: () => string | null | Promise<string | null>): HubClient {
+export function createHubClient(
+  path: string,
+  accessTokenFactory: () => string | null | Promise<string | null>,
+): HubClient {
   const connection = new HubConnectionBuilder()
     .withUrl(path, { accessTokenFactory: async () => (await accessTokenFactory()) ?? '' })
-    .withAutomaticReconnect({ nextRetryDelayInMilliseconds: (context) => hubReconnectDelay(context.previousRetryCount) })
+    .withAutomaticReconnect({
+      nextRetryDelayInMilliseconds: (context) => hubReconnectDelay(context.previousRetryCount),
+    })
     .configureLogging(hubLogger)
     .build();
 

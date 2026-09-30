@@ -6,16 +6,35 @@ import { StatusPill } from '@/components/StatusPill';
 import { useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import type { LabReportResultLine, LabReportTest, LabReportView as LabReport } from '@/lib/types';
-import { flagInfo, parseRange, parseResultNumber, SECTION_KEY, summarizeResults, SUSCEPTIBILITY_KEY } from './labResults';
+import {
+  flagInfo,
+  parseRange,
+  parseResultNumber,
+  SECTION_KEY,
+  summarizeResults,
+  SUSCEPTIBILITY_KEY,
+} from './labResults';
 import { RangeBar, ReportCard, Signatories, VerificationCode } from './ReportParts';
 import { reportVerifyUrl } from './verifyLink';
 
 const useStyles = makeStyles({
-  summary: { display: 'flex', alignItems: 'center', gap: '10px', fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
+  summary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: tokens.fontSizeBase400,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   summaryIcon: { fontSize: '28px', flexShrink: 0 },
   good: { color: tokens.colorStatusSuccessForeground1 },
   warn: { color: tokens.colorStatusWarningForeground3 },
-  test: { display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '12px', borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
+  test: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    paddingTop: '12px',
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   testFirst: { paddingTop: 0, borderTop: 'none' },
   testName: { margin: 0, fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold },
   testMeta: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
@@ -30,15 +49,31 @@ const useStyles = makeStyles({
   },
   lineWarn: { backgroundColor: tokens.colorStatusWarningBackground1 },
   lineDanger: { backgroundColor: tokens.colorStatusDangerBackground1 },
-  lineHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', flexWrap: 'wrap' },
+  lineHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
   lineName: { fontWeight: tokens.fontWeightSemibold, overflowWrap: 'anywhere' },
   group: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   value: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, overflowWrap: 'anywhere' },
-  unit: { fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightRegular, color: tokens.colorNeutralForeground2 },
+  unit: {
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightRegular,
+    color: tokens.colorNeutralForeground2,
+  },
   detail: { color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase300, margin: 0 },
   pending: { color: tokens.colorNeutralForeground3, fontStyle: 'italic' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { textAlign: 'start', padding: '6px 8px', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  th: {
+    textAlign: 'start',
+    padding: '6px 8px',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   td: { padding: '6px 8px', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
   note: { margin: 0, whiteSpace: 'pre-line' },
   changes: { margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px' },
@@ -56,7 +91,10 @@ export function LabReportView({ report }: { report: LabReport }) {
       {summary.critical && <Notice intent="error">{t('reports.critical')}</Notice>}
       {summary.total > 0 && (
         <ReportCard>
-          <p className={mergeClasses(styles.summary, summary.outOfRange > 0 ? styles.warn : styles.good)} style={{ margin: 0 }}>
+          <p
+            className={mergeClasses(styles.summary, summary.outOfRange > 0 ? styles.warn : styles.good)}
+            style={{ margin: 0 }}
+          >
             {summary.outOfRange > 0 ? (
               <WarningRegular className={styles.summaryIcon} aria-hidden />
             ) : (
@@ -98,7 +136,11 @@ export function LabReportView({ report }: { report: LabReport }) {
           <ul className={styles.changes}>
             {report.amendments.map((amendment) => (
               <li key={amendment.revision}>
-                {t('reports.change', { revision: amendment.revision, date: f.dateTime(amendment.amendedAt), reason: amendment.reason })}
+                {t('reports.change', {
+                  revision: amendment.revision,
+                  date: f.dateTime(amendment.amendedAt),
+                  reason: amendment.reason,
+                })}
               </li>
             ))}
           </ul>
@@ -151,14 +193,31 @@ function ResultLine({ line }: { line: LabReportResultLine }) {
   const microbiology = line.organism || line.colonyCount || line.susceptibilities.length > 0;
 
   return (
-    <li className={mergeClasses(styles.line, info?.severity === 1 && styles.lineWarn, info?.severity === 2 && styles.lineDanger)}>
+    <li
+      className={mergeClasses(
+        styles.line,
+        info?.severity === 1 && styles.lineWarn,
+        info?.severity === 2 && styles.lineDanger,
+      )}
+    >
       <div className={styles.lineHead}>
         <span>
           <span className={styles.lineName}>{line.name}</span>
           {line.groupName && <span className={styles.group}> · {line.groupName}</span>}
         </span>
         {info && hasValue && (
-          <StatusPill tone={info.tone} icon={info.severity === 2 ? <ErrorCircleRegular /> : info.severity === 1 ? <WarningRegular /> : <CheckmarkCircleRegular />}>
+          <StatusPill
+            tone={info.tone}
+            icon={
+              info.severity === 2 ? (
+                <ErrorCircleRegular />
+              ) : info.severity === 1 ? (
+                <WarningRegular />
+              ) : (
+                <CheckmarkCircleRegular />
+              )
+            }
+          >
             {t(info.key)}
           </StatusPill>
         )}
@@ -179,7 +238,10 @@ function ResultLine({ line }: { line: LabReportResultLine }) {
       {numeric !== null && range && <RangeBar value={numeric} range={range} />}
       {line.previousValue !== null && line.previousResultAt && (
         <p className={styles.detail}>
-          {t('lab.previous', { value: `${f.number(line.previousValue)}${line.unit ? ` ${line.unit}` : ''}`, date: f.date(line.previousResultAt) })}
+          {t('lab.previous', {
+            value: `${f.number(line.previousValue)}${line.unit ? ` ${line.unit}` : ''}`,
+            date: f.date(line.previousResultAt),
+          })}
         </p>
       )}
       {line.remarks && <p className={styles.detail}>{line.remarks}</p>}

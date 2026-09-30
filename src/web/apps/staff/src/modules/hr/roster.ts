@@ -113,7 +113,13 @@ export function diffRoster(saved: Cells, draft: Cells): RosterDiff {
       continue;
     }
     for (const item of items) {
-      assignments.push({ employeeId, date, shiftId: item.isWeekOff ? null : item.shiftId, isWeekOff: item.isWeekOff, notes: item.notes });
+      assignments.push({
+        employeeId,
+        date,
+        shiftId: item.isWeekOff ? null : item.shiftId,
+        isWeekOff: item.isWeekOff,
+        notes: item.notes,
+      });
     }
   }
   return { assignments, clearedKeys, changedKeys };

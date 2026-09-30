@@ -1,4 +1,13 @@
-import { Button, Caption1, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import {
   ArrowUndoRegular,
   BoxArrowLeftRegular,
@@ -19,7 +28,14 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, DocStatus } from '@/modules/inventory/StockBits';
 import { useLetterhead } from '@/modules/pharmacy/counter';
-import { orderStatusLabel, purchaseApi, purchaseKeys, purchaseQueries, type PurchaseOrderDetail, type PurchaseOrderLineDto } from '@/modules/purchase/api';
+import {
+  orderStatusLabel,
+  purchaseApi,
+  purchaseKeys,
+  purchaseQueries,
+  type PurchaseOrderDetail,
+  type PurchaseOrderLineDto,
+} from '@/modules/purchase/api';
 import { GstSplitNote, PurchaseTotals } from '@/modules/purchase/GstSplitNote';
 import { explainGstSplit, type GstSplit } from '@/modules/purchase/gstPreview';
 import { useFacilityGstin } from '@/modules/purchase/hooks';
@@ -67,7 +83,10 @@ function OrderPage() {
         <PageHeader
           title={`Purchase order ${o.number}`}
           subtitle="Draft: change it freely, then send it for approval"
-          breadcrumbs={[{ label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) }, { label: o.number }]}
+          breadcrumbs={[
+            { label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) },
+            { label: o.number },
+          ]}
         />
         {o.reviewNote && (
           <MessageBar intent="warning">
@@ -77,7 +96,12 @@ function OrderPage() {
             </MessageBarBody>
           </MessageBar>
         )}
-        <OrderForm key={o.version} order={o} onSaved={() => void order.refetch()} onCancel={() => void navigate({ to: '/purchase/orders' })} />
+        <OrderForm
+          key={o.version}
+          order={o}
+          onSaved={() => void order.refetch()}
+          onCancel={() => void navigate({ to: '/purchase/orders' })}
+        />
       </Page>
     );
   }
@@ -102,16 +126,21 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
         interState: true,
         known: true,
         headline: 'IGST (inter-state supply)',
-        detail: split.interState ? split.detail : 'The vendor is registered in another state, so the full GST is charged as IGST.',
+        detail: split.interState
+          ? split.detail
+          : 'The vendor is registered in another state, so the full GST is charged as IGST.',
       }
     : {
         interState: false,
         known: true,
         headline: 'CGST + SGST (same state)',
-        detail: split.interState ? 'Saved as a supply within the state: GST is split equally into CGST and SGST.' : split.detail,
+        detail: split.interState
+          ? 'Saved as a supply within the state: GST is split equally into CGST and SGST.'
+          : split.detail,
       };
   const receivable = o.status === 'Approved' || o.status === 'Sent' || o.status === 'PartiallyReceived';
-  const cancellable = o.status === 'Draft' || o.status === 'Submitted' || o.status === 'Approved' || o.status === 'Sent';
+  const cancellable =
+    o.status === 'Draft' || o.status === 'Submitted' || o.status === 'Approved' || o.status === 'Sent';
 
   const run = useMutation({
     mutationFn: ({ kind, reason }: { kind: Action; reason?: string }) => {
@@ -152,10 +181,18 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
       <PageHeader
         title={`Purchase order ${o.number}`}
         subtitle={`${o.vendorName} → ${o.storeName}`}
-        breadcrumbs={[{ label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) }, { label: o.number }]}
+        breadcrumbs={[
+          { label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) },
+          { label: o.number },
+        ]}
         actions={
           <>
-            <Button icon={<PrintRegular />} onClick={() => void printPurchaseOrder(o, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button
+              icon={<PrintRegular />}
+              onClick={() =>
+                void printPurchaseOrder(o, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
+            >
               Print
             </Button>
             {cancellable && (canManage || canApprove) && (
@@ -179,12 +216,20 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
               </>
             )}
             {canManage && o.status === 'Approved' && (
-              <Button appearance={canReceive ? 'secondary' : 'primary'} icon={<SendRegular />} onClick={() => setAction('send')}>
+              <Button
+                appearance={canReceive ? 'secondary' : 'primary'}
+                icon={<SendRegular />}
+                onClick={() => setAction('send')}
+              >
                 Send to vendor
               </Button>
             )}
             {canReceive && receivable && (
-              <Button appearance="primary" icon={<BoxArrowLeftRegular />} onClick={() => void navigate({ to: '/purchase/grns/new', search: { orderId: o.id } })}>
+              <Button
+                appearance="primary"
+                icon={<BoxArrowLeftRegular />}
+                onClick={() => void navigate({ to: '/purchase/grns/new', search: { orderId: o.id } })}
+              >
                 Receive goods
               </Button>
             )}
@@ -213,7 +258,9 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
               <Detail label="Credit">{o.paymentTermsDays ? `${o.paymentTermsDays} days` : 'On delivery'}</Detail>
               {o.approvedAt && <Detail label="Approved">{formatDateTime(o.approvedAt)}</Detail>}
               {o.sentAt && <Detail label="Sent">{formatDateTime(o.sentAt)}</Detail>}
-              {o.closedAt && <Detail label={o.status === 'Cancelled' ? 'Cancelled' : 'Closed'}>{formatDateTime(o.closedAt)}</Detail>}
+              {o.closedAt && (
+                <Detail label={o.status === 'Cancelled' ? 'Cancelled' : 'Closed'}>{formatDateTime(o.closedAt)}</Detail>
+              )}
               {o.closeReason && <Detail label="Reason">{o.closeReason}</Detail>}
               {o.remarks && <Detail label="Remarks">{o.remarks}</Detail>}
             </DetailGrid>
@@ -240,15 +287,29 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
                   ),
                 },
                 { key: 'gst', header: 'GST', align: 'end', width: 70, render: (l) => formatPercent(l.gstRate) },
-                { key: 'taxable', header: 'Taxable', align: 'end', priority: 'low', render: (l) => formatInr(l.taxableAmount) },
+                {
+                  key: 'taxable',
+                  header: 'Taxable',
+                  align: 'end',
+                  priority: 'low',
+                  render: (l) => formatInr(l.taxableAmount),
+                },
                 {
                   key: 'tax',
                   header: o.isInterState ? 'IGST' : 'CGST + SGST',
                   align: 'end',
                   priority: 'low',
-                  render: (l) => (o.isInterState ? formatInr(l.igstAmount) : `${formatInr(l.cgstAmount)} + ${formatInr(l.sgstAmount)}`),
+                  render: (l) =>
+                    o.isInterState
+                      ? formatInr(l.igstAmount)
+                      : `${formatInr(l.cgstAmount)} + ${formatInr(l.sgstAmount)}`,
                 },
-                { key: 'total', header: 'Amount', align: 'end', render: (l) => <Text weight="semibold">{formatInr(l.lineTotal)}</Text> },
+                {
+                  key: 'total',
+                  header: 'Amount',
+                  align: 'end',
+                  render: (l) => <Text weight="semibold">{formatInr(l.lineTotal)}</Text>,
+                },
                 {
                   key: 'received',
                   header: 'Received',
@@ -256,7 +317,9 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
                   render: (l) => (
                     <span>
                       {formatQty(l.receivedQuantity)}
-                      {l.pendingQuantity > 0 && receivable && <Caption1 block>{formatQty(l.pendingQuantity)} pending</Caption1>}
+                      {l.pendingQuantity > 0 && receivable && (
+                        <Caption1 block>{formatQty(l.pendingQuantity)} pending</Caption1>
+                      )}
                     </span>
                   ),
                 },
@@ -298,7 +361,13 @@ function OrderView({ order: o }: { order: PurchaseOrderDetail }) {
       </ConfirmDialog>
       {(action === 'return' || action === 'close' || action === 'cancel') && (
         <ReasonDialog
-          title={action === 'return' ? 'Return the order for correction?' : action === 'close' ? `Short-close order ${o.number}?` : `Cancel order ${o.number}?`}
+          title={
+            action === 'return'
+              ? 'Return the order for correction?'
+              : action === 'close'
+                ? `Short-close order ${o.number}?`
+                : `Cancel order ${o.number}?`
+          }
           confirmLabel={action === 'return' ? 'Return' : action === 'close' ? 'Short-close' : 'Cancel order'}
           destructive={action !== 'return'}
           busy={run.isPending}

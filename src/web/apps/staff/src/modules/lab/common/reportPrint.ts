@@ -52,7 +52,11 @@ export async function printReport(options: PrintReportOptions): Promise<void> {
   });
 
   await printHtml(
-    printDocument(body, { title: options.documentTitle, pageSize: 'A4', styles: REPORT_STYLES + (options.extraStyles ?? '') }),
+    printDocument(body, {
+      title: options.documentTitle,
+      pageSize: 'A4',
+      styles: REPORT_STYLES + (options.extraStyles ?? ''),
+    }),
     { pageSize: 'A4' },
   );
 }

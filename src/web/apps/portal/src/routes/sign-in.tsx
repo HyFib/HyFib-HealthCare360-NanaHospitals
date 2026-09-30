@@ -88,9 +88,21 @@ const useStyles = makeStyles({
       background: 'linear-gradient(150deg, #064F6B 0%, #0A7CA7 55%, #4A9AC0 100%)',
     },
   },
-  brandTop: { display: 'inline-flex', alignItems: 'center', gap: '12px', fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
+  brandTop: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '12px',
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   brandTitle: { margin: 0, fontSize: '40px', lineHeight: '48px', fontWeight: tokens.fontWeightSemibold },
-  brandText: { margin: 0, maxWidth: '520px', color: 'rgba(255,255,255,0.9)', fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500 },
+  brandText: {
+    margin: 0,
+    maxWidth: '520px',
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+  },
   benefits: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '14px' },
   benefit: { display: 'flex', alignItems: 'center', gap: '12px', fontSize: tokens.fontSizeBase400 },
   benefitIcon: {
@@ -115,7 +127,15 @@ const useStyles = makeStyles({
     padding: '20px 16px 32px',
     '@media (min-width: 960px)': { justifyContent: 'center', padding: '40px 32px' },
   },
-  topBar: { width: '100%', maxWidth: '440px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
+  topBar: {
+    width: '100%',
+    maxWidth: '440px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '12px',
+    flexWrap: 'wrap',
+  },
   mobileBrand: {
     display: 'flex',
     alignItems: 'center',
@@ -138,7 +158,12 @@ const useStyles = makeStyles({
     '@media (min-width: 480px)': { padding: '32px' },
   },
   heading: { display: 'flex', flexDirection: 'column', gap: '6px' },
-  title: { margin: 0, fontSize: tokens.fontSizeBase600, lineHeight: tokens.lineHeightBase600, fontWeight: tokens.fontWeightSemibold },
+  title: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase600,
+    lineHeight: tokens.lineHeightBase600,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   muted: { color: tokens.colorNeutralForeground2 },
   form: { display: 'flex', flexDirection: 'column', gap: '16px' },
   code: { letterSpacing: '0.5em', fontSize: '24px', textAlign: 'center', fontVariantNumeric: 'tabular-nums' },
@@ -146,7 +171,13 @@ const useStyles = makeStyles({
   small: { color: tokens.colorNeutralForeground3, display: 'flex', alignItems: 'center', gap: '6px' },
   links: { display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-start' },
   linkRow: { display: 'inline-flex', alignItems: 'center', gap: '8px', minHeight: '32px' },
-  emergency: { width: '100%', maxWidth: '440px', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, textAlign: 'center' },
+  emergency: {
+    width: '100%',
+    maxWidth: '440px',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    textAlign: 'center',
+  },
 });
 
 type Step = 'phone' | 'code';
@@ -196,7 +227,11 @@ function SignInPage() {
       const receivedAt = Date.now();
       const count = sent + 1;
       setSent(count);
-      setChallenge({ id: result.challengeId, maskedPhone: result.maskedPhone, deadline: otpDeadline(result.expiresAt, receivedAt) });
+      setChallenge({
+        id: result.challengeId,
+        maskedPhone: result.maskedPhone,
+        deadline: otpDeadline(result.expiresAt, receivedAt),
+      });
       setResendAt(receivedAt + resendCooldownSeconds(count) * 1000);
       setCode('');
       setStep('code');
@@ -209,7 +244,13 @@ function SignInPage() {
       if (throttled) {
         setResendAt(Date.now() + THROTTLED_COOLDOWN_SECONDS * 1000);
       }
-      setError(throttled ? t('auth.throttled') : fieldError(err, 'phone') ? t('auth.phone.invalid') : describeError(err, t).message);
+      setError(
+        throttled
+          ? t('auth.throttled')
+          : fieldError(err, 'phone')
+            ? t('auth.phone.invalid')
+            : describeError(err, t).message,
+      );
     } finally {
       setBusy(null);
     }
@@ -282,7 +323,11 @@ function SignInPage() {
   };
 
   const endedNotice =
-    ended === 'idle' ? t('shell.idleSignedOut', { minutes: IDLE_SIGN_OUT_MINUTES }) : ended === 'signed-out' ? t('shell.signedOut') : null;
+    ended === 'idle'
+      ? t('shell.idleSignedOut', { minutes: IDLE_SIGN_OUT_MINUTES })
+      : ended === 'signed-out'
+        ? t('shell.signedOut')
+        : null;
 
   return (
     <div className={styles.root}>
@@ -382,7 +427,11 @@ function SignInPage() {
                     disabled={busy !== null || resendIn > 0}
                     icon={busy === 'send' ? <Spinner size="tiny" /> : undefined}
                   >
-                    {busy === 'send' ? t('common.sending') : resendIn > 0 ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) }) : t('auth.sendCode')}
+                    {busy === 'send'
+                      ? t('common.sending')
+                      : resendIn > 0
+                        ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) })
+                        : t('auth.sendCode')}
                   </Button>
                   <Caption1 className={styles.muted}>
                     {t('auth.privacyNote')} <TextLink to="/privacy">{t('auth.privacyLink')}</TextLink>
@@ -406,7 +455,11 @@ function SignInPage() {
                     required
                     validationState={error ? 'error' : 'none'}
                     validationMessage={error ?? undefined}
-                    hint={expiresIn > 0 ? t('auth.code.expiresIn', { time: formatCountdown(expiresIn * 1000) }) : t('auth.code.expiredShort')}
+                    hint={
+                      expiresIn > 0
+                        ? t('auth.code.expiresIn', { time: formatCountdown(expiresIn * 1000) })
+                        : t('auth.code.expiredShort')
+                    }
                   >
                     <Input
                       ref={codeInput}
@@ -440,7 +493,11 @@ function SignInPage() {
                     <Button appearance="subtle" onClick={changeNumber} disabled={busy !== null}>
                       {t('auth.changeNumber')}
                     </Button>
-                    <Button appearance="secondary" onClick={() => void requestCode(true)} disabled={busy !== null || resendIn > 0}>
+                    <Button
+                      appearance="secondary"
+                      onClick={() => void requestCode(true)}
+                      disabled={busy !== null || resendIn > 0}
+                    >
                       {resendIn > 0 ? t('auth.resendIn', { time: formatCountdown(resendIn * 1000) }) : t('auth.resend')}
                     </Button>
                   </div>

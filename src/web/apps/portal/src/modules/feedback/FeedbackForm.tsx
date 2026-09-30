@@ -19,11 +19,25 @@ import { useT } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { sanitizePhoneInput } from '@/lib/otp';
 import type { FeedbackAspect, SubmitFeedbackRequest } from '@/lib/types';
-import { ASPECT_KEY, checkAnswers, COMMENT_MAX, emptyAnswers, toFeedbackRequest, type FeedbackAnswers, type FeedbackQuestions } from './model';
+import {
+  ASPECT_KEY,
+  checkAnswers,
+  COMMENT_MAX,
+  emptyAnswers,
+  toFeedbackRequest,
+  type FeedbackAnswers,
+  type FeedbackQuestions,
+} from './model';
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '24px' },
-  intro: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400, color: tokens.colorNeutralForeground2, whiteSpace: 'pre-line' },
+  intro: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+    color: tokens.colorNeutralForeground2,
+    whiteSpace: 'pre-line',
+  },
   group: { border: 'none', margin: 0, padding: 0, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '12px' },
   legend: { padding: 0, marginBottom: '4px', fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400 },
   hint: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
@@ -66,8 +80,21 @@ const useStyles = makeStyles({
     ':hover': { backgroundColor: tokens.colorBrandBackgroundHover },
   },
   scaleInput: { position: 'absolute', inset: 0, margin: 0, opacity: 0, cursor: 'pointer' },
-  srOnly: { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
-  scaleEnds: { display: 'flex', justifyContent: 'space-between', gap: '12px', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
+  srOnly: {
+    position: 'absolute',
+    width: '1px',
+    height: '1px',
+    overflow: 'hidden',
+    clip: 'rect(0 0 0 0)',
+    whiteSpace: 'nowrap',
+  },
+  scaleEnds: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
   callback: { display: 'flex', flexDirection: 'column', gap: '8px' },
   submit: { width: '100%', '@media (min-width: 640px)': { width: 'auto', alignSelf: 'flex-start', minWidth: '220px' } },
   note: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
@@ -107,7 +134,10 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
     return Object.keys(errors).length ? { values: {}, errors } : { values, errors: {} };
   };
 
-  const form = useForm<FeedbackAnswers>({ resolver, defaultValues: emptyAnswers(sanitizePhoneInput(defaultPhone ?? '')) });
+  const form = useForm<FeedbackAnswers>({
+    resolver,
+    defaultValues: emptyAnswers(sanitizePhoneInput(defaultPhone ?? '')),
+  });
   const wantsCallback = useWatch({ control: form.control, name: 'wantsCallback' });
   const busy = form.formState.isSubmitting;
 
@@ -163,7 +193,9 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
               <AspectRating key={aspect} aspect={aspect} control={form.control} disabled={busy} />
             ))}
           </div>
-          {form.formState.errors.ratings?.message && <Notice intent="error">{form.formState.errors.ratings.message}</Notice>}
+          {form.formState.errors.ratings?.message && (
+            <Notice intent="error">{form.formState.errors.ratings.message}</Notice>
+          )}
         </fieldset>
       )}
 
@@ -176,7 +208,10 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
               <legend className={styles.legend}>{t('feedback.nps')}</legend>
               <div className={styles.scale}>
                 {NPS_VALUES.map((value) => (
-                  <label key={value} className={mergeClasses(styles.scaleItem, field.value === value && styles.scaleChecked)}>
+                  <label
+                    key={value}
+                    className={mergeClasses(styles.scaleItem, field.value === value && styles.scaleChecked)}
+                  >
                     <input
                       type="radio"
                       className={styles.scaleInput}
@@ -255,7 +290,12 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
             control={form.control}
             name="contactPhone"
             render={({ field, fieldState }) => (
-              <Field label={t('feedback.phone')} required validationState={fieldState.error ? 'error' : 'none'} validationMessage={fieldState.error?.message}>
+              <Field
+                label={t('feedback.phone')}
+                required
+                validationState={fieldState.error ? 'error' : 'none'}
+                validationMessage={fieldState.error?.message}
+              >
                 <Input
                   type="tel"
                   inputMode="numeric"
@@ -277,7 +317,14 @@ export function FeedbackForm({ questions, intro, privacyNote, defaultPhone, onSu
 
       {formError && <Notice intent="error">{formError}</Notice>}
       <p className={styles.note}>{privacyNote}</p>
-      <Button type="submit" appearance="primary" size="large" className={styles.submit} disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+      <Button
+        type="submit"
+        appearance="primary"
+        size="large"
+        className={styles.submit}
+        disabled={busy}
+        icon={busy ? <Spinner size="tiny" /> : undefined}
+      >
         {busy ? t('common.sending') : t('feedback.submit')}
       </Button>
     </form>
@@ -316,7 +363,13 @@ function AspectRating({
               onChange={(_, data) => field.onChange(data.value)}
             />
             {field.value ? (
-              <Button appearance="subtle" size="small" onClick={() => field.onChange(null)} disabled={disabled} aria-label={`${t('feedback.star.clear')}: ${t(ASPECT_KEY[aspect])}`}>
+              <Button
+                appearance="subtle"
+                size="small"
+                onClick={() => field.onChange(null)}
+                disabled={disabled}
+                aria-label={`${t('feedback.star.clear')}: ${t(ASPECT_KEY[aspect])}`}
+              >
                 {t('feedback.nps.clear')}
               </Button>
             ) : null}

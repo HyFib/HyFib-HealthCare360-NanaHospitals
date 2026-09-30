@@ -9,13 +9,48 @@ const manifest: ModuleManifest = {
   icon: DropRegular,
   order: 60,
   links: [
-    { label: 'Blood stock', to: '/blood-bank', permission: 'bloodbank.read', keywords: ['blood bank', 'inventory', 'expiring', 'units'] },
-    { label: 'Blood requests', to: '/blood-bank/requests', permission: 'bloodbank.read', keywords: ['cross-match', 'issue', 'transfusion', 'emergency release'] },
-    { label: 'Request blood', to: '/blood-bank/requests/new', permission: 'bloodbank.requests.create', keywords: ['transfusion', 'prbc', 'ffp', 'platelets'] },
-    { label: 'Blood units', to: '/blood-bank/units', permission: 'bloodbank.read', keywords: ['unit number', 'barcode', 'label', 'quarantine'] },
-    { label: 'Donors', to: '/blood-bank/donors', permission: 'bloodbank.donors.manage', keywords: ['donor', 'screening', 'eligibility', 'collection'] },
-    { label: 'Donations', to: '/blood-bank/donations', permission: 'bloodbank.inventory.manage', keywords: ['bag', 'components', 'separation', 'tti', 'grouping'] },
-    { label: 'Transfusion reactions', to: '/blood-bank/reactions', permission: 'bloodbank.read', keywords: ['haemovigilance', 'adverse reaction', 'hvpi'] },
+    {
+      label: 'Blood stock',
+      to: '/blood-bank',
+      permission: 'bloodbank.read',
+      keywords: ['blood bank', 'inventory', 'expiring', 'units'],
+    },
+    {
+      label: 'Blood requests',
+      to: '/blood-bank/requests',
+      permission: 'bloodbank.read',
+      keywords: ['cross-match', 'issue', 'transfusion', 'emergency release'],
+    },
+    {
+      label: 'Request blood',
+      to: '/blood-bank/requests/new',
+      permission: 'bloodbank.requests.create',
+      keywords: ['transfusion', 'prbc', 'ffp', 'platelets'],
+    },
+    {
+      label: 'Blood units',
+      to: '/blood-bank/units',
+      permission: 'bloodbank.read',
+      keywords: ['unit number', 'barcode', 'label', 'quarantine'],
+    },
+    {
+      label: 'Donors',
+      to: '/blood-bank/donors',
+      permission: 'bloodbank.donors.manage',
+      keywords: ['donor', 'screening', 'eligibility', 'collection'],
+    },
+    {
+      label: 'Donations',
+      to: '/blood-bank/donations',
+      permission: 'bloodbank.inventory.manage',
+      keywords: ['bag', 'components', 'separation', 'tti', 'grouping'],
+    },
+    {
+      label: 'Transfusion reactions',
+      to: '/blood-bank/reactions',
+      permission: 'bloodbank.read',
+      keywords: ['haemovigilance', 'adverse reaction', 'hvpi'],
+    },
   ],
   quickActions: [
     {

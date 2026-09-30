@@ -1,4 +1,11 @@
-import type { ReportChartType, ReportDrillDown, ReportInputs, ReportParameter, ScheduleFrequency, Weekday } from './api';
+import type {
+  ReportChartType,
+  ReportDrillDown,
+  ReportInputs,
+  ReportParameter,
+  ScheduleFrequency,
+  Weekday,
+} from './api';
 import { CHART_TYPES, CUSTOM_PERIOD, DEFAULT_PERIOD, LAST_DAY_OF_MONTH, PAGE_SIZES, PERIOD_PRESETS } from './labels';
 
 /**
@@ -26,7 +33,10 @@ export interface ReportSearch {
 }
 
 /** Report inputs from untrusted search params: camelCase keys, short scalar values, at most 30. */
-export function sanitizeInputs(raw: Record<string, unknown> | null | undefined, exclude: ReadonlySet<string> = REPORT_CONTROL_KEYS): ReportInputs {
+export function sanitizeInputs(
+  raw: Record<string, unknown> | null | undefined,
+  exclude: ReadonlySet<string> = REPORT_CONTROL_KEYS,
+): ReportInputs {
   const inputs: ReportInputs = {};
   let count = 0;
   for (const [key, value] of Object.entries(raw ?? {})) {
@@ -34,7 +44,13 @@ export function sanitizeInputs(raw: Record<string, unknown> | null | undefined, 
       continue;
     }
     const text =
-      typeof value === 'string' ? value.trim() : typeof value === 'number' && Number.isFinite(value) ? String(value) : typeof value === 'boolean' ? String(value) : '';
+      typeof value === 'string'
+        ? value.trim()
+        : typeof value === 'number' && Number.isFinite(value)
+          ? String(value)
+          : typeof value === 'boolean'
+            ? String(value)
+            : '';
     if (text === '' || text.length > MAX_INPUT_LENGTH) {
       continue;
     }
@@ -99,7 +115,9 @@ export function withDefaults(parameters: readonly ReportParameter[], inputs: Rep
       }
       continue;
     }
-    const value = inputs[parameter.key] ?? (parameter.kind === 'Choice' || parameter.kind === 'Number' ? (parameter.defaultValue ?? undefined) : undefined);
+    const value =
+      inputs[parameter.key] ??
+      (parameter.kind === 'Choice' || parameter.kind === 'Number' ? (parameter.defaultValue ?? undefined) : undefined);
     if (value !== undefined && value !== '') {
       result[parameter.key] = value;
     }
@@ -149,7 +167,11 @@ export function scheduleInputs(inputs: ReportInputs): ReportInputs {
 }
 
 /** A dashboard-wide period ("show every widget for last month") applied to a widget's saved inputs. */
-export function applyPeriodOverride(parameters: readonly ReportParameter[] | undefined, inputs: ReportInputs, override: string | undefined): ReportInputs {
+export function applyPeriodOverride(
+  parameters: readonly ReportParameter[] | undefined,
+  inputs: ReportInputs,
+  override: string | undefined,
+): ReportInputs {
   if (!override || !parameters?.some((p) => p.kind === 'Period')) {
     return inputs;
   }
@@ -246,7 +268,10 @@ export function previousRange(from: string, to: string): { from: string; to: str
   return { from: addDays(previousTo, -(length - 1)), to: previousTo };
 }
 
-export function periodLabel(value: string | null | undefined, presets: readonly { value: string; label: string }[] = PERIOD_PRESETS): string {
+export function periodLabel(
+  value: string | null | undefined,
+  presets: readonly { value: string; label: string }[] = PERIOD_PRESETS,
+): string {
   return presets.find((p) => p.value === value)?.label ?? 'Custom dates';
 }
 
@@ -279,7 +304,12 @@ export function ordinal(n: number): string {
 }
 
 /** "Every Monday at 07:00 IST" — the same wording as the server's schedule summary. */
-export function describeSchedule(frequency: ScheduleFrequency, time: string, dayOfWeek: Weekday | null, dayOfMonth: number | null): string {
+export function describeSchedule(
+  frequency: ScheduleFrequency,
+  time: string,
+  dayOfWeek: Weekday | null,
+  dayOfMonth: number | null,
+): string {
   const at = `at ${time} IST`;
   if (frequency === 'Daily') {
     return `Every day ${at}`;
@@ -288,7 +318,9 @@ export function describeSchedule(frequency: ScheduleFrequency, time: string, day
     return `Every ${dayOfWeek ?? 'Monday'} ${at}`;
   }
   const day = dayOfMonth ?? 1;
-  return day >= LAST_DAY_OF_MONTH ? `On the last day of every month ${at}` : `On the ${ordinal(day)} of every month ${at}`;
+  return day >= LAST_DAY_OF_MONTH
+    ? `On the last day of every month ${at}`
+    : `On the ${ordinal(day)} of every month ${at}`;
 }
 
 const EMAIL = /^[^\s@,;<>"']+@[^\s@,;<>"']+\.[^\s@,;<>"']+$/;
@@ -346,7 +378,13 @@ export function nextWidgetId(existing: readonly string[]): string {
 }
 
 /** "revenue-by-department_20260901-20260915.xlsx" — the same name the server gives the file. */
-export function exportFileName(reportId: string, from: string | null, to: string | null, today: string, extension: 'xlsx' | 'csv'): string {
+export function exportFileName(
+  reportId: string,
+  from: string | null,
+  to: string | null,
+  today: string,
+  extension: 'xlsx' | 'csv',
+): string {
   const compact = (iso: string) => iso.replaceAll('-', '');
   const stamp = from && to ? (from === to ? compact(from) : `${compact(from)}-${compact(to)}`) : compact(today);
   return `${reportId}_${stamp}.${extension}`;

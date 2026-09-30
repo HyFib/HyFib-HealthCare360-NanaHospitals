@@ -34,7 +34,11 @@ const useStyles = makeStyles({
     cursor: 'pointer',
     ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
     ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px' },
-    ':disabled': { cursor: 'not-allowed', backgroundColor: tokens.colorNeutralBackground3, color: tokens.colorNeutralForeground4 },
+    ':disabled': {
+      cursor: 'not-allowed',
+      backgroundColor: tokens.colorNeutralBackground3,
+      color: tokens.colorNeutralForeground4,
+    },
   },
   selected: {
     border: `2px solid ${tokens.colorBrandStroke1}`,

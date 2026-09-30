@@ -30,7 +30,15 @@ export interface AssistantCommandRequest {
 }
 
 /** AssistantIntents.All on the server. */
-export type AssistantIntent = 'navigate' | 'search_patient' | 'open_patient' | 'list_appointments' | 'book_follow_up' | 'create_note' | 'start_dictation' | 'unknown';
+export type AssistantIntent =
+  | 'navigate'
+  | 'search_patient'
+  | 'open_patient'
+  | 'list_appointments'
+  | 'book_follow_up'
+  | 'create_note'
+  | 'start_dictation'
+  | 'unknown';
 
 /**
  * AssistantCommandResponse. `parameters` are strings (see AssistantIntentParser's For* builders):
@@ -78,7 +86,11 @@ export function sendAssistantCommand(request: AssistantCommandRequest): Promise<
  * Server speech-to-text for browsers (multipart `audio`, optional `patientId` for the audit trail). The language is
  * left to the server's `ai.speech.language` setting. Transcribing on a CPU-only on-premises server can take a while.
  */
-export function transcribeAudio(audio: Blob, fileName: string, patientId: string | null): Promise<TranscriptionResponse> {
+export function transcribeAudio(
+  audio: Blob,
+  fileName: string,
+  patientId: string | null,
+): Promise<TranscriptionResponse> {
   const form = new FormData();
   form.append('audio', audio, fileName);
   if (patientId) {

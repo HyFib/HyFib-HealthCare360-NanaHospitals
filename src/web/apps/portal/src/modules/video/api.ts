@@ -18,7 +18,8 @@ export const videoQueries = {
   joinInfo: (patientId: string, sessionId: string) =>
     queryOptions({
       queryKey: ['portal', patientId, 'video', 'join', sessionId],
-      queryFn: ({ signal }) => api.get<TelehealthJoinInfo>(`/api/v1/portal/telehealth/sessions/${id(sessionId)}/join`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<TelehealthJoinInfo>(`/api/v1/portal/telehealth/sessions/${id(sessionId)}/join`, { signal }),
       refetchInterval: 30_000,
     }),
 };

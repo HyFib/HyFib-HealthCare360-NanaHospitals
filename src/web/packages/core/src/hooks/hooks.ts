@@ -90,7 +90,11 @@ export function useIdle(timeoutMs: number, onIdle: () => void, enabled = true): 
  * Keyboard shortcut, e.g. `useHotkey('mod+k', open)`. "mod" is Ctrl on Windows. Ignored while typing in inputs
  * unless `allowInInputs` is set.
  */
-export function useHotkey(combo: string, handler: (event: KeyboardEvent) => void, options: { allowInInputs?: boolean; enabled?: boolean } = {}): void {
+export function useHotkey(
+  combo: string,
+  handler: (event: KeyboardEvent) => void,
+  options: { allowInInputs?: boolean; enabled?: boolean } = {},
+): void {
   const onHotkey = useEffectEvent(handler);
 
   useEffect(() => {

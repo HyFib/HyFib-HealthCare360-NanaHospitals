@@ -40,8 +40,18 @@ const useStyles = makeStyles({
   },
   icon: { fontSize: '48px', color: tokens.colorBrandForeground1 },
   doneIcon: { fontSize: '48px', color: tokens.colorStatusSuccessForeground1 },
-  title: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold },
-  text: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400, color: tokens.colorNeutralForeground2 },
+  title: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  text: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+    color: tokens.colorNeutralForeground2,
+  },
 });
 
 function UnsubscribePage() {
@@ -101,7 +111,13 @@ function UnsubscribePage() {
         <MailProhibitedRegular className={styles.icon} aria-hidden />
         <p className={styles.text}>{t('unsubscribe.body')}</p>
         {error && <Notice intent="error">{error}</Notice>}
-        <Button appearance="primary" size="large" onClick={() => void confirm()} disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+        <Button
+          appearance="primary"
+          size="large"
+          onClick={() => void confirm()}
+          disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : undefined}
+        >
           {busy ? t('common.sending') : t('unsubscribe.confirm')}
         </Button>
       </div>

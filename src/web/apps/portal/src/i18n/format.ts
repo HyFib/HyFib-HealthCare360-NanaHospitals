@@ -35,9 +35,23 @@ function formatters(language: Language): Formatters {
   const zone = { timeZone: HOSPITAL_TIME_ZONE } as const;
   const created: Formatters = {
     date: new Intl.DateTimeFormat(locale, { ...zone, day: 'numeric', month: 'short', year: 'numeric' }),
-    dateLong: new Intl.DateTimeFormat(locale, { ...zone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    dateLong: new Intl.DateTimeFormat(locale, {
+      ...zone,
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }),
     time: new Intl.DateTimeFormat(locale, { ...zone, hour: 'numeric', minute: '2-digit', hour12: true }),
-    dateTime: new Intl.DateTimeFormat(locale, { ...zone, day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
+    dateTime: new Intl.DateTimeFormat(locale, {
+      ...zone,
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }),
     // Calendar dates ("yyyy-MM-dd") carry no time zone: they are formatted as UTC midnight so the day never shifts.
     weekdayShort: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', weekday: 'short' }),
     weekdayLong: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', weekday: 'long' }),
@@ -46,7 +60,12 @@ function formatters(language: Language): Formatters {
     monthYear: new Intl.DateTimeFormat(locale, { ...zone, month: 'long', year: 'numeric' }),
     calendarDate: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }),
     clock: new Intl.DateTimeFormat(locale, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit', hour12: true }),
-    inr: new Intl.NumberFormat(locale, { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    inr: new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }),
     inrWhole: new Intl.NumberFormat(locale, { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }),
     number: new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }),
   };
@@ -113,7 +132,9 @@ export function formatCalendarDate(value: string | null | undefined, language: L
 
 export function formatWeekday(value: string, language: Language, style: 'short' | 'long' = 'short'): string {
   const date = parseCalendarDate(value);
-  return date ? (style === 'short' ? formatters(language).weekdayShort : formatters(language).weekdayLong).format(date) : value;
+  return date
+    ? (style === 'short' ? formatters(language).weekdayShort : formatters(language).weekdayLong).format(date)
+    : value;
 }
 
 /** Calendar date → "26 Sept". */
@@ -148,10 +169,17 @@ export function formatInr(value: number | null | undefined, language: Language, 
 }
 
 export function formatNumber(value: number | null | undefined, language: Language): string {
-  return value === null || value === undefined || Number.isNaN(value) ? DASH : formatters(language).number.format(value);
+  return value === null || value === undefined || Number.isNaN(value)
+    ? DASH
+    : formatters(language).number.format(value);
 }
 
-const istDate = new Intl.DateTimeFormat('en-CA', { timeZone: HOSPITAL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+const istDate = new Intl.DateTimeFormat('en-CA', {
+  timeZone: HOSPITAL_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** The IST calendar date ("yyyy-MM-dd") of an instant. */
 export function istDateOf(value: string | number | Date): string {
@@ -188,6 +216,9 @@ export function formatCountdown(milliseconds: number): string {
 
 /** First name for greetings ("Dr." and similar titles are skipped). */
 export function firstName(fullName: string | null | undefined): string {
-  const parts = (fullName ?? '').replace(/^(dr|mr|mrs|ms|master|baby|smt|shri|kumari)\.?\s+/i, '').trim().split(/\s+/);
+  const parts = (fullName ?? '')
+    .replace(/^(dr|mr|mrs|ms|master|baby|smt|shri|kumari)\.?\s+/i, '')
+    .trim()
+    .split(/\s+/);
   return parts[0] ?? '';
 }

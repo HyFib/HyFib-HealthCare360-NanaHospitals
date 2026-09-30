@@ -17,14 +17,29 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, ClipboardTaskListLtrRegular, EditRegular, LockClosedRegular, MoreHorizontalRegular, ShieldErrorRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ClipboardTaskListLtrRegular,
+  EditRegular,
+  LockClosedRegular,
+  MoreHorizontalRegular,
+  ShieldErrorRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatTime, todayIso } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, KpiCard, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { LAB_PERMISSIONS, labApi, labKeys, labQueries, type QcLotDto, type QcRunDto, type QcStatusRow } from '@/modules/lab/api';
+import {
+  LAB_PERMISSIONS,
+  labApi,
+  labKeys,
+  labQueries,
+  type QcLotDto,
+  type QcRunDto,
+  type QcStatusRow,
+} from '@/modules/lab/api';
 import { QcOutcomeBadge } from '@/modules/lab/badges';
 import { searchFlag, searchId, searchInt, searchPage } from '@/modules/lab/common/search';
 import { LeveyJenningsChart } from '@/modules/lab/LeveyJenningsChart';
@@ -96,10 +111,14 @@ function QcPage() {
   const to = todayIso();
   const selectedLot = lots.data?.find((lot) => lot.id === search.lotId) ?? null;
   const chart = useQuery({ ...labQueries.leveyJennings(search.lotId ?? '', from, to), enabled: Boolean(search.lotId) });
-  const runs = useQuery({ ...labQueries.qcRuns({ lotId: search.lotId, from, to, page: search.page }), enabled: Boolean(search.lotId) });
+  const runs = useQuery({
+    ...labQueries.qcRuns({ lotId: search.lotId, from, to, page: search.page }),
+    enabled: Boolean(search.lotId),
+  });
   const summary = status.data ? summarizeQc(status.data) : null;
 
-  const select = (lotId: string) => void navigate({ search: (prev) => ({ ...prev, lotId, page: undefined }), replace: true });
+  const select = (lotId: string) =>
+    void navigate({ search: (prev) => ({ ...prev, lotId, page: undefined }), replace: true });
   const lotById = (id: string) => lots.data?.find((lot) => lot.id === id);
 
   const override = useMutation({
@@ -132,7 +151,8 @@ function QcPage() {
         <MessageBar intent="error" icon={<ShieldErrorRegular />} layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Verification locked</MessageBarTitle>
-            Today's QC was rejected for {[...new Set(lockedRows.map((row) => row.testName))].join(', ')}. Correct the problem and run QC again
+            Today's QC was rejected for {[...new Set(lockedRows.map((row) => row.testName))].join(', ')}. Correct the
+            problem and run QC again
             {canVerify ? ', or override the lock with a reason if the patient results are reliable.' : '.'}
           </MessageBarBody>
         </MessageBar>
@@ -143,8 +163,16 @@ function QcPage() {
           <KpiCard label="Control lots in use" value={summary.lots} icon={<ClipboardTaskListLtrRegular />} />
           <KpiCard label="Accepted today" value={summary.accepted} />
           <KpiCard label="Warnings (1-2s)" value={summary.warnings} />
-          <KpiCard label="Rejected today" value={summary.rejected} icon={summary.rejected > 0 ? <LockClosedRegular /> : undefined} />
-          <KpiCard label="Not run yet today" value={summary.notRun} hint={summary.notRun > 0 ? 'Run QC before reporting patients' : undefined} />
+          <KpiCard
+            label="Rejected today"
+            value={summary.rejected}
+            icon={summary.rejected > 0 ? <LockClosedRegular /> : undefined}
+          />
+          <KpiCard
+            label="Not run yet today"
+            value={summary.notRun}
+            hint={summary.notRun > 0 ? 'Run QC before reporting patients' : undefined}
+          />
         </div>
       )}
 
@@ -172,8 +200,19 @@ function QcPage() {
                 </span>
               ),
             },
-            { key: 'outcome', header: 'Latest run', width: 160, render: (row: QcStatusRow) => <QcOutcomeBadge outcome={row.latestOutcome} /> },
-            { key: 'time', header: 'At', width: 90, priority: 'low', render: (row: QcStatusRow) => (row.latestRunAt ? formatTime(row.latestRunAt) : '—') },
+            {
+              key: 'outcome',
+              header: 'Latest run',
+              width: 160,
+              render: (row: QcStatusRow) => <QcOutcomeBadge outcome={row.latestOutcome} />,
+            },
+            {
+              key: 'time',
+              header: 'At',
+              width: 90,
+              priority: 'low',
+              render: (row: QcStatusRow) => (row.latestRunAt ? formatTime(row.latestRunAt) : '—'),
+            },
             {
               key: 'lock',
               header: 'Verification',
@@ -199,7 +238,12 @@ function QcPage() {
                   return (
                     <Menu>
                       <MenuTrigger disableButtonEnhancement>
-                        <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${row.testName} level ${row.level}`} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<MoreHorizontalRegular />}
+                          aria-label={`Actions for ${row.testName} level ${row.level}`}
+                        />
                       </MenuTrigger>
                       <MenuPopover>
                         <MenuList>
@@ -222,14 +266,29 @@ function QcPage() {
               : undefined
           }
           emptyTitle="No control lots in use"
-          emptyDescription={canManage ? 'Register the control lots you run every day.' : 'Ask a QC manager to register the control lots.'}
+          emptyDescription={
+            canManage
+              ? 'Register the control lots you run every day.'
+              : 'Ask a QC manager to register the control lots.'
+          }
         />
       </Section>
 
       <div className={styles.layout}>
         <Section
           title="Control lots"
-          actions={<Switch checked={Boolean(search.inactive)} onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, inactive: data.checked ? true : undefined }), replace: true })} label="Show old lots" />}
+          actions={
+            <Switch
+              checked={Boolean(search.inactive)}
+              onChange={(_, data) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, inactive: data.checked ? true : undefined }),
+                  replace: true,
+                })
+              }
+              label="Show old lots"
+            />
+          }
           flush
         >
           <DataTable
@@ -281,7 +340,10 @@ function QcPage() {
         <div className={styles.detail}>
           {!search.lotId ? (
             <Section>
-              <EmptyState title="Choose a control lot" description="Its Levey-Jennings chart, runs and Westgard violations appear here." />
+              <EmptyState
+                title="Choose a control lot"
+                description="Its Levey-Jennings chart, runs and Westgard violations appear here."
+              />
             </Section>
           ) : (
             <>
@@ -305,7 +367,16 @@ function QcPage() {
                     <Field label="Period" orientation="horizontal">
                       <Select
                         value={String(days)}
-                        onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, days: Number(data.value) === 30 ? undefined : Number(data.value), page: undefined }), replace: true })}
+                        onChange={(_, data) =>
+                          void navigate({
+                            search: (prev) => ({
+                              ...prev,
+                              days: Number(data.value) === 30 ? undefined : Number(data.value),
+                              page: undefined,
+                            }),
+                            replace: true,
+                          })
+                        }
                       >
                         {PERIODS.map((period) => (
                           <option key={period} value={period}>
@@ -316,7 +387,12 @@ function QcPage() {
                     </Field>
                     {canManage && selectedLot && (
                       <>
-                        <Button icon={<AddRegular />} appearance="primary" onClick={() => setRunFor(selectedLot)} disabled={!selectedLot.isActive || selectedLot.isExpired}>
+                        <Button
+                          icon={<AddRegular />}
+                          appearance="primary"
+                          onClick={() => setRunFor(selectedLot)}
+                          disabled={!selectedLot.isActive || selectedLot.isExpired}
+                        >
                           Record run
                         </Button>
                         <Button icon={<EditRegular />} onClick={() => setEditing(selectedLot)}>
@@ -332,7 +408,10 @@ function QcPage() {
                 ) : !chart.data ? (
                   <Caption1 className={styles.muted}>Loading the chart…</Caption1>
                 ) : chart.data.points.length === 0 ? (
-                  <EmptyState title="No runs in this period" description="Record QC runs to build the chart, or choose a longer period." />
+                  <EmptyState
+                    title="No runs in this period"
+                    description="Record QC runs to build the chart, or choose a longer period."
+                  />
                 ) : (
                   <LeveyJenningsChart chart={chart.data} />
                 )}
@@ -376,7 +455,11 @@ function QcPage() {
                       render: (run: QcRunDto) => (
                         <span className={styles.cell}>
                           <QcOutcomeBadge outcome={run.outcome} />
-                          {run.violations.length > 0 && <Caption1>{run.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}</Caption1>}
+                          {run.violations.length > 0 && (
+                            <Caption1>
+                              {run.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}
+                            </Caption1>
+                          )}
                           {run.overridden && <Caption1 className={styles.muted}>Lock overridden</Caption1>}
                         </span>
                       ),
@@ -403,7 +486,11 @@ function QcPage() {
                   rowActions={
                     canManage
                       ? (run: QcRunDto) => (
-                          <Button size="small" appearance={run.outcome === 'Rejected' && !run.reviewedAt ? 'primary' : 'subtle'} onClick={() => setReviewing(run)}>
+                          <Button
+                            size="small"
+                            appearance={run.outcome === 'Rejected' && !run.reviewedAt ? 'primary' : 'subtle'}
+                            onClick={() => setReviewing(run)}
+                          >
                             {run.reviewedAt ? 'Edit review' : 'Review'}
                           </Button>
                         )
@@ -413,7 +500,9 @@ function QcPage() {
                   page={search.page ?? 1}
                   pageSize={25}
                   totalCount={runs.data?.totalCount}
-                  onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+                  onPageChange={(page) =>
+                    void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })
+                  }
                 />
               </Section>
             </>
@@ -421,9 +510,22 @@ function QcPage() {
         </div>
       </div>
 
-      {editing && <QcLotDrawer lot={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={(lotId) => lotId && select(lotId)} />}
+      {editing && (
+        <QcLotDrawer
+          lot={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={(lotId) => lotId && select(lotId)}
+        />
+      )}
       {runFor && <QcRunDialog key={runFor.id} lot={runFor} onClose={() => setRunFor(null)} />}
-      {reviewing && <QcReviewDialog key={reviewing.id} run={reviewing} testName={selectedLot?.testName ?? 'Control'} onClose={() => setReviewing(null)} />}
+      {reviewing && (
+        <QcReviewDialog
+          key={reviewing.id}
+          run={reviewing}
+          testName={selectedLot?.testName ?? 'Control'}
+          onClose={() => setReviewing(null)}
+        />
+      )}
       {overriding && (
         <QcOverrideDialog
           assays={[{ testName: overriding.testName, violations: [] }]}

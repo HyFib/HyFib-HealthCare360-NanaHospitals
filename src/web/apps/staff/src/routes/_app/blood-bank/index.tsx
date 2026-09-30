@@ -1,11 +1,24 @@
 import { Button, Caption1, makeStyles, mergeClasses, Text, tokens } from '@fluentui/react-components';
-import { DocumentBulletListRegular, DropRegular, HourglassHalfRegular, ShieldRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  DocumentBulletListRegular,
+  DropRegular,
+  HourglassHalfRegular,
+  ShieldRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatTime, type BloodGroup } from '@hc360/core';
 import { DataTable, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { usePermission } from '@/lib/permissions';
-import { bloodKeys, bloodQueries, COMPONENT_TYPES, KNOWN_GROUPS, type BloodComponentType, type InventoryCell } from '@/modules/blood-bank/api';
+import {
+  bloodKeys,
+  bloodQueries,
+  COMPONENT_TYPES,
+  KNOWN_GROUPS,
+  type BloodComponentType,
+  type InventoryCell,
+} from '@/modules/blood-bank/api';
 import { ExpiryText, UnitStatusBadge } from '@/modules/blood-bank/BloodBadges';
 import { componentLabel, componentShort, groupLabel } from '@/modules/blood-bank/labels';
 import { LOW_STOCK_THRESHOLD, stockLevel } from '@/modules/blood-bank/rules';
@@ -22,8 +35,20 @@ const useStyles = makeStyles({
   urgent: { color: tokens.colorPaletteRedForeground1 },
   gridWrap: { overflowX: 'auto' },
   grid: { width: '100%', borderCollapse: 'separate', borderSpacing: '4px', minWidth: '640px' },
-  th: { textAlign: 'center', padding: '6px', color: tokens.colorNeutralForeground3, fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase200 },
-  rowHead: { textAlign: 'start', padding: '6px 8px', fontWeight: tokens.fontWeightBold, fontSize: tokens.fontSizeBase400, whiteSpace: 'nowrap' },
+  th: {
+    textAlign: 'center',
+    padding: '6px',
+    color: tokens.colorNeutralForeground3,
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase200,
+  },
+  rowHead: {
+    textAlign: 'start',
+    padding: '6px 8px',
+    fontWeight: tokens.fontWeightBold,
+    fontSize: tokens.fontSizeBase400,
+    whiteSpace: 'nowrap',
+  },
   cell: {
     textAlign: 'center',
     padding: '6px 4px',
@@ -36,11 +61,24 @@ const useStyles = makeStyles({
     ':hover': { backgroundColor: tokens.colorSubtleBackgroundHover },
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
-  low: { border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`, backgroundColor: tokens.colorPaletteDarkOrangeBackground1 },
+  low: {
+    border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`,
+    backgroundColor: tokens.colorPaletteDarkOrangeBackground1,
+  },
   out: { border: `1px solid ${tokens.colorPaletteRedBorder2}`, backgroundColor: tokens.colorPaletteRedBackground1 },
-  available: { display: 'block', fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500 },
+  available: {
+    display: 'block',
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase500,
+  },
   detail: { display: 'block', fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3 },
-  expiring: { display: 'block', fontSize: tokens.fontSizeBase100, color: tokens.colorPaletteDarkOrangeForeground1, fontWeight: tokens.fontWeightSemibold },
+  expiring: {
+    display: 'block',
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorPaletteDarkOrangeForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   legend: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' },
   mono: { fontFamily: tokens.fontFamilyMonospace },
 });
@@ -77,7 +115,8 @@ function BloodStockPage() {
   }
 
   const d = inventory.data;
-  const cell = (component: BloodComponentType, group: BloodGroup): InventoryCell | undefined => d.stock.find((c) => c.component === component && c.bloodGroup === group);
+  const cell = (component: BloodComponentType, group: BloodGroup): InventoryCell | undefined =>
+    d.stock.find((c) => c.component === component && c.bloodGroup === group);
   const groups = KNOWN_GROUPS.filter((g) => !g.startsWith('Bombay') || d.stock.some((c) => c.bloodGroup === g));
   const expiringSorted = [...d.expiringSoon].sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
   const openUnits = (component: BloodComponentType, group: BloodGroup) =>
@@ -91,7 +130,11 @@ function BloodStockPage() {
         icon={<DropRegular />}
         actions={
           canRequest && (
-            <Button appearance="primary" icon={<DropRegular />} onClick={() => void navigate({ to: '/blood-bank/requests/new' })}>
+            <Button
+              appearance="primary"
+              icon={<DropRegular />}
+              onClick={() => void navigate({ to: '/blood-bank/requests/new' })}
+            >
               Request blood
             </Button>
           )
@@ -106,7 +149,12 @@ function BloodStockPage() {
           hint={d.emergencyRequests > 0 ? 'Needs action now' : 'None open'}
           onClick={() => void navigate({ to: '/blood-bank/requests' })}
         />
-        <KpiCard label="Open requests" value={d.openRequests} icon={<DocumentBulletListRegular />} onClick={() => void navigate({ to: '/blood-bank/requests' })} />
+        <KpiCard
+          label="Open requests"
+          value={d.openRequests}
+          icon={<DocumentBulletListRegular />}
+          onClick={() => void navigate({ to: '/blood-bank/requests' })}
+        />
         <KpiCard
           label="In quarantine"
           value={d.unitsInQuarantine}
@@ -114,10 +162,18 @@ function BloodStockPage() {
           hint="Awaiting grouping or TTI results"
           onClick={() => void navigate({ to: '/blood-bank/units', search: { status: 'Quarantine' } })}
         />
-        <KpiCard label="Expiring within 3 days" value={d.expiringSoon.length} icon={<HourglassHalfRegular />} hint="Use these first" />
+        <KpiCard
+          label="Expiring within 3 days"
+          value={d.expiringSoon.length}
+          icon={<HourglassHalfRegular />}
+          hint="Use these first"
+        />
       </div>
 
-      <Section title="Stock by group and component" description="Available units (big number); reserved and in quarantine below. Select a cell to see its units.">
+      <Section
+        title="Stock by group and component"
+        description="Available units (big number); reserved and in quarantine below. Select a cell to see its units."
+      >
         <div className={styles.gridWrap}>
           <table className={styles.grid}>
             <thead>
@@ -146,7 +202,11 @@ function BloodStockPage() {
                       <td key={component}>
                         <button
                           type="button"
-                          className={mergeClasses(styles.cell, level === 'low' && styles.low, level === 'out' && styles.out)}
+                          className={mergeClasses(
+                            styles.cell,
+                            level === 'low' && styles.low,
+                            level === 'out' && styles.out,
+                          )}
                           onClick={() => openUnits(component, group)}
                           aria-label={`${groupLabel(group)} ${componentLabel[component]}: ${available} available${level === 'out' ? ', none in stock' : level === 'low' ? ', low stock' : ''}, ${c?.reserved ?? 0} reserved, ${c?.quarantine ?? 0} in quarantine${c?.expiringSoon ? `, ${c.expiringSoon} expiring within 3 days` : ''}`}
                         >
@@ -167,11 +227,18 @@ function BloodStockPage() {
           </table>
         </div>
         <div className={styles.legend}>
-          <Caption1>Low stock means fewer than: {COMPONENT_TYPES.map((c) => `${componentShort[c]} ${LOW_STOCK_THRESHOLD[c]}`).join(', ')} units.</Caption1>
+          <Caption1>
+            Low stock means fewer than:{' '}
+            {COMPONENT_TYPES.map((c) => `${componentShort[c]} ${LOW_STOCK_THRESHOLD[c]}`).join(', ')} units.
+          </Caption1>
         </div>
       </Section>
 
-      <Section title={`Expiring within 3 days (${expiringSorted.length})`} description="First expiry, first out: issue or cross-match these before newer units." flush>
+      <Section
+        title={`Expiring within 3 days (${expiringSorted.length})`}
+        description="First expiry, first out: issue or cross-match these before newer units."
+        flush
+      >
         <DataTable
           ariaLabel="Units expiring soon"
           rows={expiringSorted}

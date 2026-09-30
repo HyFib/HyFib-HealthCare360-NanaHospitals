@@ -4,7 +4,15 @@
  */
 import { escapeHtml, formatDateTime, genderShort } from '@hc360/core';
 import { paragraphs } from '@/modules/lab/common/reportHtml';
-import type { AbpmFindings, CardiologyReportView, CardiologyStudyType, EcgFindings, EchoFindings, HolterFindings, TmtFindings } from './api';
+import type {
+  AbpmFindings,
+  CardiologyReportView,
+  CardiologyStudyType,
+  EcgFindings,
+  EchoFindings,
+  HolterFindings,
+  TmtFindings,
+} from './api';
 import { studyTypeLongLabel, tmtResultLabel } from './labels';
 import { formatDuration } from './measurements';
 
@@ -88,7 +96,12 @@ export function measurementRows(type: CardiologyStudyType, set: MeasurementSet):
       return h
         ? compact([
             ['Recording', unit(h.durationHours, 'hours')],
-            ['Heart rate (min / mean / max)', h.minHeartRate !== null || h.meanHeartRate !== null || h.maxHeartRate !== null ? `${h.minHeartRate ?? '—'} / ${h.meanHeartRate ?? '—'} / ${h.maxHeartRate ?? '—'} /min` : null],
+            [
+              'Heart rate (min / mean / max)',
+              h.minHeartRate !== null || h.meanHeartRate !== null || h.maxHeartRate !== null
+                ? `${h.minHeartRate ?? '—'} / ${h.meanHeartRate ?? '—'} / ${h.maxHeartRate ?? '—'} /min`
+                : null,
+            ],
             ['Ventricular ectopics', unit(h.ventricularEctopics, '')],
             ['Supraventricular ectopics', unit(h.supraventricularEctopics, '')],
             ['Pauses', unit(h.pauses, '')],
@@ -138,7 +151,14 @@ export function cardiologyPatientRows(view: CardiologyReportView): [string, stri
     ['Referred by', view.referredBy ?? 'Self'],
     ['Ordered', formatDateTime(view.orderedAt)],
     ['Recorded', view.acquiredAt ? formatDateTime(view.acquiredAt) : '—'],
-    ['Reported', view.releasedAt ? formatDateTime(view.releasedAt) : view.verifiedAt ? formatDateTime(view.verifiedAt) : 'Not signed'],
+    [
+      'Reported',
+      view.releasedAt
+        ? formatDateTime(view.releasedAt)
+        : view.verifiedAt
+          ? formatDateTime(view.verifiedAt)
+          : 'Not signed',
+    ],
   ];
 }
 

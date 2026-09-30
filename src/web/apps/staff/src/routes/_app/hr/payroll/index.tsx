@@ -85,22 +85,45 @@ function PayrollRunsPage() {
           getRowId={(r) => r.id}
           onRowClick={(r) => void navigate({ to: '/hr/payroll/runs/$runId', params: { runId: r.id } })}
           columns={[
-            { key: 'month', header: 'Month', render: (r) => <Text weight="semibold">{monthLabel(r.year, r.month)}</Text> },
+            {
+              key: 'month',
+              header: 'Month',
+              render: (r) => <Text weight="semibold">{monthLabel(r.year, r.month)}</Text>,
+            },
             {
               key: 'status',
               header: 'Status',
               render: (r) => (
                 <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
                   <StatusBadge status={r.status} />
-                  {r.payslipsWithErrors > 0 && <StatusBadge status="Failed" label={`${r.payslipsWithErrors} with errors`} />}
+                  {r.payslipsWithErrors > 0 && (
+                    <StatusBadge status="Failed" label={`${r.payslipsWithErrors} with errors`} />
+                  )}
                 </span>
               ),
             },
             { key: 'employees', header: 'Employees', align: 'end', width: 100, render: (r) => r.employeeCount },
-            { key: 'gross', header: 'Gross', align: 'end', priority: 'low', render: (r) => formatInr(r.totalGross, { whole: true }) },
-            { key: 'deductions', header: 'Deductions', align: 'end', priority: 'low', render: (r) => formatInr(r.totalDeductions, { whole: true }) },
+            {
+              key: 'gross',
+              header: 'Gross',
+              align: 'end',
+              priority: 'low',
+              render: (r) => formatInr(r.totalGross, { whole: true }),
+            },
+            {
+              key: 'deductions',
+              header: 'Deductions',
+              align: 'end',
+              priority: 'low',
+              render: (r) => formatInr(r.totalDeductions, { whole: true }),
+            },
             { key: 'net', header: 'Net pay', align: 'end', render: (r) => formatInr(r.totalNet, { whole: true }) },
-            { key: 'paid', header: 'Paid on', priority: 'low', render: (r) => (r.paidOn ? formatDateOnly(r.paidOn) : '—') },
+            {
+              key: 'paid',
+              header: 'Paid on',
+              priority: 'low',
+              render: (r) => (r.paidOn ? formatDateOnly(r.paidOn) : '—'),
+            },
           ]}
           emptyTitle={`No payroll for ${year} yet`}
           emptyDescription={canProcess ? 'Create the month’s payroll to start collecting inputs.' : undefined}
@@ -160,7 +183,11 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
             <DialogTitle>New payroll</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <Field label="Month" validationMessage={error ?? (future ? 'Payroll cannot be created for a future month.' : undefined)} validationState={error || future ? 'error' : 'none'}>
+                <Field
+                  label="Month"
+                  validationMessage={error ?? (future ? 'Payroll cannot be created for a future month.' : undefined)}
+                  validationState={error || future ? 'error' : 'none'}
+                >
                   <Select value={String(month)} onChange={(_, d) => setMonth(Number(d.value))} autoFocus>
                     {MONTH_NAMES.map((name, index) => (
                       <option key={name} value={index + 1}>
@@ -187,7 +214,12 @@ function NewRunDialog({ onClose }: { onClose: () => void }) {
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={busy || future} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={busy || future}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 Create payroll
               </Button>
             </DialogActions>

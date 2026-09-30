@@ -82,11 +82,25 @@ export function canRegularise(day: { isLocked: boolean; status: AttendanceStatus
     return false;
   }
   const flags = parseAttendanceFlags(day.flags);
-  return day.status === 'Absent' || day.status === 'HalfDay' || flags.includes('MissingPunch') || flags.includes('Late') || flags.includes('EarlyExit');
+  return (
+    day.status === 'Absent' ||
+    day.status === 'HalfDay' ||
+    flags.includes('MissingPunch') ||
+    flags.includes('Late') ||
+    flags.includes('EarlyExit')
+  );
 }
 
 /** Totals of a set of days (present, leave, absent…), as day fractions. */
-export function attendanceTotals(rows: AttendanceDayDto[]): { present: number; paidLeave: number; unpaidLeave: number; absent: number; off: number; lateDays: number; missing: number } {
+export function attendanceTotals(rows: AttendanceDayDto[]): {
+  present: number;
+  paidLeave: number;
+  unpaidLeave: number;
+  absent: number;
+  off: number;
+  lateDays: number;
+  missing: number;
+} {
   const totals = { present: 0, paidLeave: 0, unpaidLeave: 0, absent: 0, off: 0, lateDays: 0, missing: 0 };
   for (const row of rows) {
     totals.present += row.presentDays;

@@ -1,4 +1,14 @@
-import { Caption1, Field, Input, makeStyles, mergeClasses, Spinner, Text, tokens, type FieldProps } from '@fluentui/react-components';
+import {
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  Spinner,
+  Text,
+  tokens,
+  type FieldProps,
+} from '@fluentui/react-components';
 import { BarcodeScannerRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -145,7 +155,11 @@ export function SearchPicker<T>({
         return;
       }
       void queryClient
-        .fetchQuery({ queryKey: [...queryKey, typed], queryFn: ({ signal }) => fetch(typed, signal), staleTime: 15_000 })
+        .fetchQuery({
+          queryKey: [...queryKey, typed],
+          queryFn: ({ signal }) => fetch(typed, signal),
+          staleTime: 15_000,
+        })
         .then((found) => {
           const best = bestMatch?.(found, typed) ?? found[0];
           if (best) {
@@ -197,7 +211,9 @@ export function SearchPicker<T>({
         {showPopup && (
           <div id={listId} role="listbox" className={styles.popup}>
             {items.length === 0 && (
-              <div className={styles.empty}>{results.isFetching || results.isLoading ? 'Searching…' : (emptyText ?? 'Nothing matches')}</div>
+              <div className={styles.empty}>
+                {results.isFetching || results.isLoading ? 'Searching…' : (emptyText ?? 'Nothing matches')}
+              </div>
             )}
             {items.map((item, index) => (
               <div
@@ -255,9 +271,7 @@ export function ItemOption({
         <Text weight="semibold" truncate wrap={false}>
           {name}
         </Text>
-        <Caption1 className={styles.muted}>
-          {[code, genericName, strength].filter(Boolean).join(' · ')}
-        </Caption1>
+        <Caption1 className={styles.muted}>{[code, genericName, strength].filter(Boolean).join(' · ')}</Caption1>
       </div>
       <ItemFlags schedule={schedule} isControlled={isControlled} isColdChain={isColdChain} />
       {showStock && (
@@ -303,7 +317,9 @@ export function ItemPicker({
       hint={hint}
       placeholder={placeholder ?? 'Item name, generic name, code or barcode'}
       queryKey={['inventory', 'items', 'picker', storeId ?? null, type ?? null]}
-      fetch={(search, signal) => api.get<ItemLookup[]>('/api/v1/inventory/items/lookup', { query: { search, storeId, type, take: 20 }, signal })}
+      fetch={(search, signal) =>
+        api.get<ItemLookup[]>('/api/v1/inventory/items/lookup', { query: { search, storeId, type, take: 20 }, signal })
+      }
       getKey={(item) => item.id}
       bestMatch={bestItemMatch}
       autoFocus={autoFocus}

@@ -55,16 +55,34 @@ describe('ABO/Rh(D) compatibility table (mirrors BloodCompatibility)', () => {
 
 describe('compatibility display helper', () => {
   it('lists the unit groups a patient may receive', () => {
-    expect(compatibleDonorGroups('PRBC', 'APositive')).toEqual(['APositive', 'ANegative', 'OPositive', 'ONegative', 'BombayPositive', 'BombayNegative']);
+    expect(compatibleDonorGroups('PRBC', 'APositive')).toEqual([
+      'APositive',
+      'ANegative',
+      'OPositive',
+      'ONegative',
+      'BombayPositive',
+      'BombayNegative',
+    ]);
     expect(compatibleDonorGroups('PRBC', 'ONegative')).toEqual(['ONegative', 'BombayNegative']);
     expect(compatibleDonorGroups('WholeBlood', 'BPositive')).toEqual(['BPositive', 'BNegative']);
-    expect(compatibleDonorGroups('FFP', 'OPositive')).toEqual(['APositive', 'ANegative', 'BPositive', 'BNegative', 'ABPositive', 'ABNegative', 'OPositive', 'ONegative']);
+    expect(compatibleDonorGroups('FFP', 'OPositive')).toEqual([
+      'APositive',
+      'ANegative',
+      'BPositive',
+      'BNegative',
+      'ABPositive',
+      'ABNegative',
+      'OPositive',
+      'ONegative',
+    ]);
     expect(compatibleDonorGroups('PlateletConcentrate', 'ABPositive')).toEqual(['ABPositive', 'ABNegative']);
     expect(compatibleDonorGroups('PRBC', 'Unknown')).toEqual([]);
   });
 
   it('explains the rule in words, and refuses to guess for an ungrouped patient', () => {
-    expect(compatibilityText('PRBC', 'ONegative')).toMatch(/Compatible unit groups for a O− patient: O−, Bombay \(hh\)−\./);
+    expect(compatibilityText('PRBC', 'ONegative')).toMatch(
+      /Compatible unit groups for a O− patient: O−, Bombay \(hh\)−\./,
+    );
     expect(compatibilityText('FFP', 'Unknown')).toMatch(/Group the patient’s sample first/);
   });
 });
@@ -74,7 +92,11 @@ describe('cross-match validity', () => {
 
   it('is valid for 72 hours after a compatible result', () => {
     const in71h = Date.parse(performed) + 71 * 3_600_000;
-    expect(crossmatchValidity(performed, in71h)).toEqual({ valid: true, expiresAt: '2026-09-27T04:00:00.000Z', hoursLeft: 1 });
+    expect(crossmatchValidity(performed, in71h)).toEqual({
+      valid: true,
+      expiresAt: '2026-09-27T04:00:00.000Z',
+      hoursLeft: 1,
+    });
     const in73h = Date.parse(performed) + 73 * 3_600_000;
     expect(crossmatchValidity(performed, in73h).valid).toBe(false);
     expect(crossmatchValidity(performed, in71h, false).valid).toBe(false);
@@ -101,12 +123,24 @@ describe('issue gate (mirrors IssueCompatibility and BloodComponent.Issue)', () 
   it('refuses red cells without a valid cross-match', () => {
     const check = issueCheck({ ...base, hasValidCompatibleCrossmatch: false });
     expect(check.allowed).toBe(false);
-    expect(check.reasons).toContain('Red cells can only be issued against a compatible cross-match done in the last 72 hours.');
+    expect(check.reasons).toContain(
+      'Red cells can only be issued against a compatible cross-match done in the last 72 hours.',
+    );
   });
 
   it('allows only O Rh(D)-negative packed red cells under emergency release', () => {
-    const emergency = { ...base, hasValidCompatibleCrossmatch: false, emergencyReleaseAuthorised: true, patientGroup: 'Unknown' as const, unitStatus: 'Available' as const };
-    expect(issueCheck({ ...emergency, unitGroup: 'ONegative' })).toEqual({ allowed: true, emergency: true, reasons: [] });
+    const emergency = {
+      ...base,
+      hasValidCompatibleCrossmatch: false,
+      emergencyReleaseAuthorised: true,
+      patientGroup: 'Unknown' as const,
+      unitStatus: 'Available' as const,
+    };
+    expect(issueCheck({ ...emergency, unitGroup: 'ONegative' })).toEqual({
+      allowed: true,
+      emergency: true,
+      reasons: [],
+    });
     expect(issueCheck({ ...emergency, unitGroup: 'OPositive' }).reasons).toContain(
       'Uncross-matched emergency release is limited to group O Rh(D)-negative packed red cells.',
     );
@@ -114,9 +148,21 @@ describe('issue gate (mirrors IssueCompatibility and BloodComponent.Issue)', () 
   });
 
   it('allows AB plasma for an ungrouped patient only under emergency release', () => {
-    const plasma = { ...base, component: 'FFP' as const, hasValidCompatibleCrossmatch: false, patientGroup: 'Unknown' as const, unitStatus: 'Available' as const };
-    expect(issueCheck({ ...plasma, unitGroup: 'ABPositive' }).reasons).toContain('Group the patient’s sample before issuing plasma, platelets or cryoprecipitate.');
-    expect(issueCheck({ ...plasma, unitGroup: 'ABPositive', emergencyReleaseAuthorised: true })).toEqual({ allowed: true, emergency: true, reasons: [] });
+    const plasma = {
+      ...base,
+      component: 'FFP' as const,
+      hasValidCompatibleCrossmatch: false,
+      patientGroup: 'Unknown' as const,
+      unitStatus: 'Available' as const,
+    };
+    expect(issueCheck({ ...plasma, unitGroup: 'ABPositive' }).reasons).toContain(
+      'Group the patient’s sample before issuing plasma, platelets or cryoprecipitate.',
+    );
+    expect(issueCheck({ ...plasma, unitGroup: 'ABPositive', emergencyReleaseAuthorised: true })).toEqual({
+      allowed: true,
+      emergency: true,
+      reasons: [],
+    });
     expect(issueCheck({ ...plasma, unitGroup: 'APositive', patientGroup: 'OPositive' }).allowed).toBe(true);
     expect(issueCheck({ ...plasma, unitGroup: 'OPositive', patientGroup: 'APositive' }).allowed).toBe(false);
   });
@@ -124,7 +170,9 @@ describe('issue gate (mirrors IssueCompatibility and BloodComponent.Issue)', () 
   it('never issues expired, unscreened or someone else’s units', () => {
     expect(issueCheck({ ...base, unitExpired: true }).allowed).toBe(false);
     expect(issueCheck({ ...base, ttiCleared: false, unitStatus: 'Quarantine' }).allowed).toBe(false);
-    expect(issueCheck({ ...base, reservedForOtherRequest: true }).reasons).toContain('This unit is reserved for another patient’s request.');
+    expect(issueCheck({ ...base, reservedForOtherRequest: true }).reasons).toContain(
+      'This unit is reserved for another patient’s request.',
+    );
   });
 });
 
@@ -144,7 +192,9 @@ describe('cold chain on return (mirrors ColdChain.CanRestock)', () => {
   });
 
   it('discards a unit that expired while out', () => {
-    expect(returnOutcome('PlateletConcentrate', issued, after(20), true, '2026-09-26T04:10:00.000Z').restock).toBe(false);
+    expect(returnOutcome('PlateletConcentrate', issued, after(20), true, '2026-09-26T04:10:00.000Z').restock).toBe(
+      false,
+    );
   });
 });
 
@@ -163,15 +213,31 @@ describe('components, shelf life and screening', () => {
     expect(separationCheck('Triple', ['FFP', 'PlateletConcentrate'], collected, now)).toMatch(/packed red cells/);
     expect(separationCheck('Single', ['PRBC'], collected, now)).toMatch(/single bag/);
     expect(separationCheck('Triple', ['WholeBlood', 'FFP'], collected, now)).toMatch(/Whole blood cannot be stored/);
-    expect(separationCheck('Triple', ['PRBC', 'FFP'], collected, Date.parse(collected) + 9 * 3_600_000)).toMatch(/within 8 hours/);
+    expect(separationCheck('Triple', ['PRBC', 'FFP'], collected, Date.parse(collected) + 9 * 3_600_000)).toMatch(
+      /within 8 hours/,
+    );
     expect(separationCheck('Triple', ['PRBC'], collected, Date.parse(collected) + 9 * 3_600_000)).toBeNull();
   });
 
   it('clears a unit only when all five markers are non-reactive', () => {
-    const clean = { hiv: 'NonReactive', hbsAg: 'NonReactive', hcv: 'NonReactive', syphilis: 'NonReactive', malaria: 'NonReactive' } as const;
+    const clean = {
+      hiv: 'NonReactive',
+      hbsAg: 'NonReactive',
+      hcv: 'NonReactive',
+      syphilis: 'NonReactive',
+      malaria: 'NonReactive',
+    } as const;
     expect(ttiState(clean)).toEqual({ complete: true, cleared: true, reactive: [], pending: [] });
-    expect(ttiState({ ...clean, malaria: 'Pending' })).toMatchObject({ complete: false, cleared: false, pending: ['malaria'] });
-    expect(ttiState({ ...clean, hbsAg: 'Reactive' })).toMatchObject({ complete: true, cleared: false, reactive: ['hbsAg'] });
+    expect(ttiState({ ...clean, malaria: 'Pending' })).toMatchObject({
+      complete: false,
+      cleared: false,
+      pending: ['malaria'],
+    });
+    expect(ttiState({ ...clean, hbsAg: 'Reactive' })).toMatchObject({
+      complete: true,
+      cleared: false,
+      reactive: ['hbsAg'],
+    });
   });
 
   it('flags expiry and low stock', () => {

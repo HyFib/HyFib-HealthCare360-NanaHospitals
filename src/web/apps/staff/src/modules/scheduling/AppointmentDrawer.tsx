@@ -42,7 +42,11 @@ const useStyles = makeStyles({
   grid: { display: 'grid', gridTemplateColumns: 'minmax(110px, auto) 1fr', gap: '6px 12px', alignItems: 'baseline' },
   label: { color: tokens.colorNeutralForeground3 },
   when: { display: 'flex', flexDirection: 'column', gap: '2px' },
-  time: { fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700, fontWeight: tokens.fontWeightSemibold },
+  time: {
+    fontSize: tokens.fontSizeHero700,
+    lineHeight: tokens.lineHeightHero700,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   footer: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   history: { display: 'flex', flexDirection: 'column', gap: '6px' },
   mono: { fontFamily: tokens.fontFamilyMonospace },
@@ -73,9 +77,16 @@ export function AppointmentDrawer({
   const detail = useQuery({ ...schedulingQueries.appointment(appointmentId ?? ''), enabled: appointmentId !== null });
 
   return (
-    <OverlayDrawer open={appointmentId !== null} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer
+      open={appointmentId !== null}
+      position="end"
+      size="medium"
+      onOpenChange={(_, d) => !d.open && onClose()}
+    >
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {detail.data ? `Appointment ${detail.data.number}` : 'Appointment'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -88,7 +99,12 @@ export function AppointmentDrawer({
           <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />
         </DrawerBody>
       ) : (
-        <AppointmentDetailView appointment={detail.data} desk={desk} onOpenAppointment={onOpenAppointment} onClose={onClose} />
+        <AppointmentDetailView
+          appointment={detail.data}
+          desk={desk}
+          onOpenAppointment={onOpenAppointment}
+          onClose={onClose}
+        />
       )}
     </OverlayDrawer>
   );
@@ -135,7 +151,9 @@ function AppointmentDetailView({
               {formatTime(a.startsAt)} – {formatTime(a.endsAt)}
             </span>
             <Text weight="semibold">{a.practitionerName}</Text>
-            <Caption1 className={styles.label}>{[a.departmentName, a.room ? `Room ${a.room}` : null].filter(Boolean).join(' · ')}</Caption1>
+            <Caption1 className={styles.label}>
+              {[a.departmentName, a.room ? `Room ${a.room}` : null].filter(Boolean).join(' · ')}
+            </Caption1>
           </div>
 
           {a.status === 'Rescheduled' && a.rescheduledToId && (
@@ -171,7 +189,10 @@ function AppointmentDetailView({
             <Row label="Reason">{a.reason}</Row>
             {a.notes && <Row label="Notes">{a.notes}</Row>}
             <Row label="Reminders">
-              {[a.reminder24hSentAt ? `24 h reminder ${formatDateTime(a.reminder24hSentAt)}` : null, a.reminder2hSentAt ? `2 h reminder ${formatDateTime(a.reminder2hSentAt)}` : null]
+              {[
+                a.reminder24hSentAt ? `24 h reminder ${formatDateTime(a.reminder24hSentAt)}` : null,
+                a.reminder2hSentAt ? `2 h reminder ${formatDateTime(a.reminder2hSentAt)}` : null,
+              ]
                 .filter(Boolean)
                 .join(' · ') || 'Not sent yet'}
             </Row>
@@ -242,7 +263,11 @@ function AppointmentDetailView({
             icon={<PersonRegular />}
             onClick={() => {
               onClose();
-              void navigate({ to: '/patients/$patientId', params: { patientId: a.patientId }, search: a.visitId ? { tab: 'visits' } : {} });
+              void navigate({
+                to: '/patients/$patientId',
+                params: { patientId: a.patientId },
+                search: a.visitId ? { tab: 'visits' } : {},
+              });
             }}
           >
             Patient profile

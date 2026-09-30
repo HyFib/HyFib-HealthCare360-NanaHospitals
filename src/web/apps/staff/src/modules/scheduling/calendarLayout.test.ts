@@ -37,7 +37,12 @@ describe('assignLanes', () => {
 
 describe('visibleRange', () => {
   it('rounds out to whole hours', () => {
-    expect(visibleRange([{ start: 555, end: 780 }, { start: 1020, end: 1140 }])).toEqual({ start: 540, end: 1140 });
+    expect(
+      visibleRange([
+        { start: 555, end: 780 },
+        { start: 1020, end: 1140 },
+      ]),
+    ).toEqual({ start: 540, end: 1140 });
     expect(visibleRange([{ start: 545, end: 560 }])).toEqual({ start: 540, end: 600 });
   });
 
@@ -52,7 +57,13 @@ describe('visibleRange', () => {
 
 describe('utilisation', () => {
   it('sums seats and rounds the percentage', () => {
-    expect(utilisation([{ capacity: 1, booked: 1 }, { capacity: 1, booked: 0 }, { capacity: 1, booked: 0 }])).toEqual({ capacity: 3, booked: 1, percent: 33 });
+    expect(
+      utilisation([
+        { capacity: 1, booked: 1 },
+        { capacity: 1, booked: 0 },
+        { capacity: 1, booked: 0 },
+      ]),
+    ).toEqual({ capacity: 3, booked: 1, percent: 33 });
     expect(utilisation([])).toEqual({ capacity: 0, booked: 0, percent: 0 });
     expect(utilisation([{ capacity: 1, booked: 2 }]).percent).toBe(200);
   });

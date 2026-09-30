@@ -75,7 +75,11 @@ export function printPortalDocument(doc: PrintableDocument): void {
 
 /** Saves the document as a self-contained HTML file (opens in any browser, prints the same way). */
 export function downloadPortalDocument(doc: PrintableDocument): void {
-  const html = printDocument(doc.body, { title: doc.title, pageSize: 'A4', styles: `${BASE_STYLES.replaceAll(`#${ROOT_ID} `, '')}${doc.styles ?? ''}` });
+  const html = printDocument(doc.body, {
+    title: doc.title,
+    pageSize: 'A4',
+    styles: `${BASE_STYLES.replaceAll(`#${ROOT_ID} `, '')}${doc.styles ?? ''}`,
+  });
   const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
@@ -89,7 +93,10 @@ export function downloadPortalDocument(doc: PrintableDocument): void {
 
 /** Letters, digits, dash and underscore only (no path tricks, no personal data beyond what the caller chose). */
 export function safeFileName(name: string): string {
-  const cleaned = name.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+  const cleaned = name
+    .replace(/[^A-Za-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
   return cleaned.slice(0, 80) || 'document';
 }
 

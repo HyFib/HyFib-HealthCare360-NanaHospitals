@@ -53,13 +53,25 @@ const useStyles = makeStyles({
   },
 });
 
-const DETAIL_LABELS: Record<string, string> = { providerMessageId: 'Message id at the provider', orderId: 'Order id', provider: 'Provider' };
+const DETAIL_LABELS: Record<string, string> = {
+  providerMessageId: 'Message id at the provider',
+  orderId: 'Order id',
+  provider: 'Provider',
+};
 
 /**
  * "Send a test" (POST /api/v1/admin/integrations/{name}/test): says what the test will do, asks for a recipient where
  * a real message is sent, then shows the result. Every test is audited on the server.
  */
-export function TestIntegrationDialog({ name, displayName, onClose }: { name: IntegrationName; displayName: string; onClose: () => void }) {
+export function TestIntegrationDialog({
+  name,
+  displayName,
+  onClose,
+}: {
+  name: IntegrationName;
+  displayName: string;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const queryClient = useQueryClient();
   const input = testInputFor(name);
@@ -98,12 +110,34 @@ export function TestIntegrationDialog({ name, displayName, onClose }: { name: In
                 <>
                   <Text>{TEST_DESCRIPTIONS[name]}</Text>
                   {input === 'mobile' && (
-                    <TextField control={form.control} name="to" label="Mobile number" type="tel" placeholder="98765 43210" autoFocus autoComplete="off" />
+                    <TextField
+                      control={form.control}
+                      name="to"
+                      label="Mobile number"
+                      type="tel"
+                      placeholder="98765 43210"
+                      autoFocus
+                      autoComplete="off"
+                    />
                   )}
-                  {input === 'email' && <TextField control={form.control} name="to" label="E-mail address" type="email" autoFocus autoComplete="off" />}
+                  {input === 'email' && (
+                    <TextField
+                      control={form.control}
+                      name="to"
+                      label="E-mail address"
+                      type="email"
+                      autoFocus
+                      autoComplete="off"
+                    />
+                  )}
                   {name === 'sms' && (
                     <>
-                      <TextField control={form.control} name="dltTemplateId" label="DLT template id" hint="Needed on Indian routes: the approved template the message matches." />
+                      <TextField
+                        control={form.control}
+                        name="dltTemplateId"
+                        label="DLT template id"
+                        hint="Needed on Indian routes: the approved template the message matches."
+                      />
                       <TextAreaField
                         control={form.control}
                         name="message"
@@ -116,7 +150,13 @@ export function TestIntegrationDialog({ name, displayName, onClose }: { name: In
                   )}
                   {name === 'whatsapp' && (
                     <FormGrid columns={2}>
-                      <TextField control={form.control} name="templateName" label="Template" placeholder="hello_world" hint="Empty: the test template in the settings." />
+                      <TextField
+                        control={form.control}
+                        name="templateName"
+                        label="Template"
+                        placeholder="hello_world"
+                        hint="Empty: the test template in the settings."
+                      />
                       <TextField control={form.control} name="languageCode" label="Language" placeholder="en_US" />
                     </FormGrid>
                   )}
@@ -144,7 +184,12 @@ export function TestIntegrationDialog({ name, displayName, onClose }: { name: In
                   <Button onClick={onClose} disabled={test.isPending}>
                     Cancel
                   </Button>
-                  <Button type="submit" appearance="primary" disabled={test.isPending} icon={test.isPending ? <Spinner size="tiny" /> : undefined}>
+                  <Button
+                    type="submit"
+                    appearance="primary"
+                    disabled={test.isPending}
+                    icon={test.isPending ? <Spinner size="tiny" /> : undefined}
+                  >
                     {input ? 'Send test' : 'Run test'}
                   </Button>
                 </>
@@ -185,7 +230,9 @@ function TestResult({ result }: { result: IntegrationTestResult }) {
           <pre className={styles.label}>{zpl}</pre>
         </div>
       )}
-      {!result.success && <Caption1 className={styles.muted}>Check the settings and the integration log, then test again.</Caption1>}
+      {!result.success && (
+        <Caption1 className={styles.muted}>Check the settings and the integration log, then test again.</Caption1>
+      )}
     </>
   );
 }

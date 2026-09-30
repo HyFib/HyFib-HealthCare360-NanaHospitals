@@ -18,7 +18,15 @@ import {
   ToggleButton,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, CartRegular, DeleteRegular, OpenRegular, PrintRegular, ReceiptRegular, SubtractRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  CartRegular,
+  DeleteRegular,
+  OpenRegular,
+  PrintRegular,
+  ReceiptRegular,
+  SubtractRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError, useHotkey } from '@hc360/core';
 import { applyServerErrors, EmptyState, ErrorState, Page, PageHeader, Section, TextField, useNotify } from '@hc360/ui';
@@ -90,7 +98,13 @@ const useStyles = makeStyles({
     '@media (prefers-reduced-motion: reduce)': { ':active': { transform: 'none' } },
   },
   inCart: { border: `2px solid ${tokens.colorBrandStroke1}` },
-  tileName: { display: 'flex', gap: '6px', alignItems: 'flex-start', fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase300 },
+  tileName: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'flex-start',
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase300,
+  },
   tileFoot: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '4px' },
   price: { fontWeight: tokens.fontWeightSemibold, fontFamily: tokens.fontFamilyNumeric },
   count: { position: 'absolute', top: '-8px', right: '-6px' },
@@ -103,11 +117,23 @@ const useStyles = makeStyles({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    '::after': { content: '""', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: tokens.colorPaletteGreenForeground1 },
+    '::after': {
+      content: '""',
+      width: '6px',
+      height: '6px',
+      borderRadius: '50%',
+      backgroundColor: tokens.colorPaletteGreenForeground1,
+    },
   },
   nonVeg: {
     border: `1.5px solid ${tokens.colorPaletteRedForeground1}`,
-    '::after': { content: '""', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: tokens.colorPaletteRedForeground1 },
+    '::after': {
+      content: '""',
+      width: '6px',
+      height: '6px',
+      borderRadius: '50%',
+      backgroundColor: tokens.colorPaletteRedForeground1,
+    },
   },
   cart: { position: 'sticky', top: '12px' },
   cartBody: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -115,9 +141,21 @@ const useStyles = makeStyles({
   line: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto auto', gap: '4px 8px', alignItems: 'center' },
   stepper: { display: 'inline-flex', alignItems: 'center', gap: '2px' },
   qty: { minWidth: '28px', textAlign: 'center', fontWeight: tokens.fontWeightSemibold },
-  totals: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '2px 12px', padding: '8px 0', borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
+  totals: {
+    display: 'grid',
+    gridTemplateColumns: '1fr auto',
+    gap: '2px 12px',
+    padding: '8px 0',
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   right: { textAlign: 'end', fontFamily: tokens.fontFamilyNumeric },
-  net: { fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700, fontWeight: tokens.fontWeightBold, fontFamily: tokens.fontFamilyNumeric, textAlign: 'end' },
+  net: {
+    fontSize: tokens.fontSizeHero700,
+    lineHeight: tokens.lineHeightHero700,
+    fontWeight: tokens.fontWeightBold,
+    fontFamily: tokens.fontFamilyNumeric,
+    textAlign: 'end',
+  },
   segments: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '4px' },
   segment: { minWidth: 0, paddingLeft: '4px', paddingRight: '4px' },
   charge: { minHeight: '52px', fontSize: tokens.fontSizeBase500 },
@@ -140,9 +178,17 @@ const checkoutSchema = z
       ctx.addIssue({ code: 'custom', path: ['customerType'], message: 'Only staff can buy on credit.' });
     }
     if (v.paymentMode === 'StaffCredit' && !v.employeeCode) {
-      ctx.addIssue({ code: 'custom', path: ['employeeCode'], message: 'Enter the employee code from the staff ID card.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['employeeCode'],
+        message: 'Enter the employee code from the staff ID card.',
+      });
     } else if (v.employeeCode && !isValidEmployeeCode(v.employeeCode)) {
-      ctx.addIssue({ code: 'custom', path: ['employeeCode'], message: 'Use the code on the staff ID card (letters, digits, "/" or "-").' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['employeeCode'],
+        message: 'Use the code on the staff ID card (letters, digits, "/" or "-").',
+      });
     }
   });
 
@@ -153,7 +199,14 @@ interface CartLine {
   quantity: number;
 }
 
-const RESET_FIELDS = { paymentMode: 'Cash', paymentReference: '', employeeCode: '', employeeName: '', customerName: '', patient: null } as const;
+const RESET_FIELDS = {
+  paymentMode: 'Cash',
+  paymentReference: '',
+  employeeCode: '',
+  employeeName: '',
+  customerName: '',
+  patient: null,
+} as const;
 
 /**
  * Canteen POS (CAN-02): tap items, check the GST bill, choose how the customer pays, charge (F9). The receipt prints
@@ -185,12 +238,27 @@ function CanteenPosPage() {
   const byId = new Map(items.map((m) => [m.id, m]));
   const categories = MENU_CATEGORIES.filter((c) => items.some((m) => m.category === c));
   const needle = term.trim().toLowerCase();
-  const shown = items.filter((m) => (category === 'All' || m.category === category) && (!needle || m.name.toLowerCase().includes(needle) || m.code.toLowerCase().includes(needle)));
+  const shown = items.filter(
+    (m) =>
+      (category === 'All' || m.category === category) &&
+      (!needle || m.name.toLowerCase().includes(needle) || m.code.toLowerCase().includes(needle)),
+  );
   const quantityOf = (id: string) => cart.find((l) => l.menuItemId === id)?.quantity ?? 0;
 
   const priced: BillLineInput[] = cart.flatMap((l) => {
     const m = byId.get(l.menuItemId);
-    return m ? [{ menuItemId: m.id, itemName: m.name, quantity: l.quantity, unitPrice: m.price, gstRate: m.gstRate, priceIncludesGst: m.priceIncludesGst }] : [];
+    return m
+      ? [
+          {
+            menuItemId: m.id,
+            itemName: m.name,
+            quantity: l.quantity,
+            unitPrice: m.price,
+            gstRate: m.gstRate,
+            priceIncludesGst: m.priceIncludesGst,
+          },
+        ]
+      : [];
   });
   const bill = calculateBill(priced);
   const dropped = cart.length - priced.length;
@@ -211,9 +279,16 @@ function CanteenPosPage() {
       notify.warning('A bill can have at most 50 items', 'Charge this bill and start another.');
       return;
     }
-    setCart((lines) => (current ? lines.map((l) => (l.menuItemId === item.id ? { ...l, quantity: l.quantity + 1 } : l)) : [...lines, { menuItemId: item.id, quantity: 1 }]));
+    setCart((lines) =>
+      current
+        ? lines.map((l) => (l.menuItemId === item.id ? { ...l, quantity: l.quantity + 1 } : l))
+        : [...lines, { menuItemId: item.id, quantity: 1 }],
+    );
   };
-  const decrease = (id: string) => setCart((lines) => lines.flatMap((l) => (l.menuItemId !== id ? [l] : l.quantity > 1 ? [{ ...l, quantity: l.quantity - 1 }] : [])));
+  const decrease = (id: string) =>
+    setCart((lines) =>
+      lines.flatMap((l) => (l.menuItemId !== id ? [l] : l.quantity > 1 ? [{ ...l, quantity: l.quantity - 1 }] : [])),
+    );
   const remove = (id: string) => setCart((lines) => lines.filter((l) => l.menuItemId !== id));
 
   const sale = useMutation({
@@ -236,13 +311,18 @@ function CanteenPosPage() {
       form.reset({ ...form.getValues(), ...RESET_FIELDS });
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
       if (autoPrint === '1') {
-        void printCanteenReceipt(result, letterhead).catch((error: unknown) => notify.error(error, 'The receipt did not print. Use Reprint.'));
+        void printCanteenReceipt(result, letterhead).catch((error: unknown) =>
+          notify.error(error, 'The receipt did not print. Use Reprint.'),
+        );
       }
       notify.success(`Bill ${result.billNumber}: ${formatInr(result.netAmount)}`, PAYMENT_LABEL[result.paymentMode]);
       focusSearch();
     },
     onError: (error) => {
-      if (isApiError(error) && ['canteen.item_unavailable', 'canteen.out_of_stock', 'canteen.stock_changed'].includes(error.code ?? '')) {
+      if (
+        isApiError(error) &&
+        ['canteen.item_unavailable', 'canteen.out_of_stock', 'canteen.stock_changed'].includes(error.code ?? '')
+      ) {
         void queryClient.invalidateQueries({ queryKey: canteenKeys.menu(true) });
       }
       if (isApiError(error) && error.code === 'canteen.employee_inactive') {
@@ -260,15 +340,26 @@ function CanteenPosPage() {
   useHotkey('f9', () => void charge(), { allowInInputs: true, enabled: canSell });
   useHotkey('f2', focusSearch, { allowInInputs: true, enabled: canSell });
 
-  const serverError = sale.error && !(isApiError(sale.error) && (sale.error.isValidation || sale.error.code === 'canteen.employee_inactive')) ? sale.error : null;
+  const serverError =
+    sale.error &&
+    !(isApiError(sale.error) && (sale.error.isValidation || sale.error.code === 'canteen.employee_inactive'))
+      ? sale.error
+      : null;
   const tenderedNumber = Number(tendered);
-  const change = paymentMode === 'Cash' && tendered !== '' && Number.isFinite(tenderedNumber) ? changeDue(bill.netAmount, tenderedNumber) : null;
+  const change =
+    paymentMode === 'Cash' && tendered !== '' && Number.isFinite(tenderedNumber)
+      ? changeDue(bill.netAmount, tenderedNumber)
+      : null;
   const short = paymentMode === 'Cash' && tendered !== '' && tenderedNumber < bill.netAmount;
 
   if (!canSell) {
     return (
       <Page maxWidth={720}>
-        <EmptyState icon={<CartRegular />} title="Canteen billing is for canteen staff" description="Ask the canteen manager for access, or open the canteen reports." />
+        <EmptyState
+          icon={<CartRegular />}
+          title="Canteen billing is for canteen staff"
+          description="Ask the canteen manager for access, or open the canteen reports."
+        />
       </Page>
     );
   }
@@ -328,7 +419,14 @@ function CanteenPosPage() {
               ))}
             </div>
           ) : shown.length === 0 ? (
-            <EmptyState title={items.length ? 'No item matches' : 'The menu is empty'} description={items.length ? 'Clear the search or pick another category.' : 'Add items on the Menu page and mark them available.'} />
+            <EmptyState
+              title={items.length ? 'No item matches' : 'The menu is empty'}
+              description={
+                items.length
+                  ? 'Clear the search or pick another category.'
+                  : 'Add items on the Menu page and mark them available.'
+              }
+            />
           ) : (
             <div className={styles.grid}>
               {shown.map((item) => {
@@ -344,12 +442,20 @@ function CanteenPosPage() {
                     aria-label={`${item.name}, ${formatInr(item.price)}, ${item.isVeg ? 'vegetarian' : 'non-vegetarian'}${soldOut ? ', sold out' : ''}${inCart ? `, ${inCart} in the bill` : ''}`}
                   >
                     <span className={styles.tileName}>
-                      <span className={mergeClasses(styles.veg, !item.isVeg && styles.nonVeg)} title={item.isVeg ? 'Vegetarian' : 'Non-vegetarian'} aria-hidden />
+                      <span
+                        className={mergeClasses(styles.veg, !item.isVeg && styles.nonVeg)}
+                        title={item.isVeg ? 'Vegetarian' : 'Non-vegetarian'}
+                        aria-hidden
+                      />
                       {item.name}
                     </span>
                     <span className={styles.tileFoot}>
                       <span className={styles.price}>{formatInr(item.price)}</span>
-                      {item.trackStock && <Caption1 className={styles.muted}>{soldOut ? 'Sold out' : `${item.stockOnHand - inCart} left`}</Caption1>}
+                      {item.trackStock && (
+                        <Caption1 className={styles.muted}>
+                          {soldOut ? 'Sold out' : `${item.stockOnHand - inCart} left`}
+                        </Caption1>
+                      )}
                     </span>
                     {inCart > 0 && (
                       <Badge className={styles.count} appearance="filled" color="brand" aria-hidden>
@@ -364,7 +470,16 @@ function CanteenPosPage() {
         </Section>
 
         <div className={styles.cart}>
-          <Section title={`Bill${itemCount ? ` · ${itemCount} items` : ''}`} actions={cart.length > 0 ? <Button size="small" appearance="subtle" onClick={() => setCart([])}>Clear</Button> : undefined}>
+          <Section
+            title={`Bill${itemCount ? ` · ${itemCount} items` : ''}`}
+            actions={
+              cart.length > 0 ? (
+                <Button size="small" appearance="subtle" onClick={() => setCart([])}>
+                  Clear
+                </Button>
+              ) : undefined
+            }
+          >
             <form onSubmit={charge} noValidate className={styles.cartBody}>
               {priced.length === 0 ? (
                 <Caption1 className={styles.muted}>Tap items on the left to add them to the bill.</Caption1>
@@ -379,21 +494,43 @@ function CanteenPosPage() {
                         </Caption1>
                       </span>
                       <span className={styles.stepper}>
-                        <Button size="small" appearance="subtle" icon={<SubtractRegular />} aria-label={`One less ${l.itemName}`} onClick={() => decrease(l.menuItemId)} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<SubtractRegular />}
+                          aria-label={`One less ${l.itemName}`}
+                          onClick={() => decrease(l.menuItemId)}
+                        />
                         <span className={styles.qty} aria-label={`${l.quantity} ${l.itemName}`}>
                           {l.quantity}
                         </span>
-                        <Button size="small" appearance="subtle" icon={<AddRegular />} aria-label={`One more ${l.itemName}`} onClick={() => byId.get(l.menuItemId) && add(byId.get(l.menuItemId)!)} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<AddRegular />}
+                          aria-label={`One more ${l.itemName}`}
+                          onClick={() => byId.get(l.menuItemId) && add(byId.get(l.menuItemId)!)}
+                        />
                       </span>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                         <Text className={styles.right}>{formatInr(l.lineTotal)}</Text>
-                        <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${l.itemName}`} onClick={() => remove(l.menuItemId)} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          aria-label={`Remove ${l.itemName}`}
+                          onClick={() => remove(l.menuItemId)}
+                        />
                       </span>
                     </div>
                   ))}
                 </div>
               )}
-              {dropped > 0 && <Caption1 style={{ color: tokens.colorPaletteMarigoldForeground1 }}>Items no longer on the menu were left out of the bill.</Caption1>}
+              {dropped > 0 && (
+                <Caption1 style={{ color: tokens.colorPaletteMarigoldForeground1 }}>
+                  Items no longer on the menu were left out of the bill.
+                </Caption1>
+              )}
 
               <div className={styles.totals} aria-live="polite">
                 <Caption1>Taxable value</Caption1>
@@ -414,7 +551,11 @@ function CanteenPosPage() {
                 control={form.control}
                 name="customerType"
                 render={({ field, fieldState }) => (
-                  <Field label="Customer" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                  <Field
+                    label="Customer"
+                    validationMessage={fieldState.error?.message}
+                    validationState={fieldState.error ? 'error' : 'none'}
+                  >
                     <div className={styles.segments} role="radiogroup" aria-label="Customer">
                       {CUSTOMER_TYPES.map((t) => (
                         <ToggleButton
@@ -451,7 +592,9 @@ function CanteenPosPage() {
                           className={styles.segment}
                           checked={field.value === m}
                           disabled={m === 'StaffCredit' && customerType !== 'Staff'}
-                          title={m === 'StaffCredit' && customerType !== 'Staff' ? 'Only staff can buy on credit' : undefined}
+                          title={
+                            m === 'StaffCredit' && customerType !== 'Staff' ? 'Only staff can buy on credit' : undefined
+                          }
                           onClick={() => field.onChange(m)}
                         >
                           {m === 'StaffCredit' ? 'Credit' : PAYMENT_LABEL[m]}
@@ -470,13 +613,33 @@ function CanteenPosPage() {
                   required={paymentMode === 'StaffCredit'}
                   maxLength={20}
                   autoComplete="off"
-                  hint={paymentMode === 'StaffCredit' ? 'Checked with HR; the name on the bill comes from HR records.' : undefined}
+                  hint={
+                    paymentMode === 'StaffCredit'
+                      ? 'Checked with HR; the name on the bill comes from HR records.'
+                      : undefined
+                  }
                 />
               )}
-              {customerType === 'Staff' && paymentMode !== 'StaffCredit' && <TextField control={form.control} name="employeeName" label="Name" maxLength={200} autoComplete="off" />}
-              {(customerType === 'Visitor' || customerType === 'Attendant') && <TextField control={form.control} name="customerName" label="Name (optional)" maxLength={200} autoComplete="off" />}
+              {customerType === 'Staff' && paymentMode !== 'StaffCredit' && (
+                <TextField control={form.control} name="employeeName" label="Name" maxLength={200} autoComplete="off" />
+              )}
+              {(customerType === 'Visitor' || customerType === 'Attendant') && (
+                <TextField
+                  control={form.control}
+                  name="customerName"
+                  label="Name (optional)"
+                  maxLength={200}
+                  autoComplete="off"
+                />
+              )}
               {customerType === 'Patient' && (
-                <Controller control={form.control} name="patient" render={({ field }) => <PatientPicker value={field.value} onChange={field.onChange} label="Patient (optional)" />} />
+                <Controller
+                  control={form.control}
+                  name="patient"
+                  render={({ field }) => (
+                    <PatientPicker value={field.value} onChange={field.onChange} label="Patient (optional)" />
+                  )}
+                />
               )}
               {(paymentMode === 'Upi' || paymentMode === 'Card') && (
                 <TextField
@@ -491,10 +654,19 @@ function CanteenPosPage() {
               {paymentMode === 'Cash' && priced.length > 0 && (
                 <Field
                   label="Cash received"
-                  validationMessage={short ? 'Less than the bill amount' : change !== null ? `Return ${formatInr(change)}` : undefined}
+                  validationMessage={
+                    short ? 'Less than the bill amount' : change !== null ? `Return ${formatInr(change)}` : undefined
+                  }
                   validationState={short ? 'warning' : change !== null ? 'success' : 'none'}
                 >
-                  <Input type="number" inputMode="decimal" min={0} value={tendered} onChange={(_, d) => setTendered(d.value)} contentBefore={<Text>₹</Text>} />
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    value={tendered}
+                    onChange={(_, d) => setTendered(d.value)}
+                    contentBefore={<Text>₹</Text>}
+                  />
                 </Field>
               )}
 
@@ -507,7 +679,11 @@ function CanteenPosPage() {
                 </MessageBar>
               )}
 
-              <Checkbox checked={autoPrint === '1'} onChange={(_, d) => setAutoPrint(d.checked ? '1' : '0')} label="Print the receipt automatically" />
+              <Checkbox
+                checked={autoPrint === '1'}
+                onChange={(_, d) => setAutoPrint(d.checked ? '1' : '0')}
+                label="Print the receipt automatically"
+              />
               <Button
                 type="submit"
                 appearance="primary"
@@ -535,7 +711,11 @@ function CanteenPosPage() {
                   <Button
                     size="small"
                     icon={<PrintRegular />}
-                    onClick={() => void printCanteenReceipt(lastSale, letterhead, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+                    onClick={() =>
+                      void printCanteenReceipt(lastSale, letterhead, { duplicate: true }).catch((error: unknown) =>
+                        notify.error(error, 'Printing failed'),
+                      )
+                    }
                   >
                     Reprint
                   </Button>

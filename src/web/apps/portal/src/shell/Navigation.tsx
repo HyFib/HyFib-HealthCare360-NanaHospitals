@@ -112,9 +112,18 @@ const useStyles = makeStyles({
   bottomActive: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold },
   bottomActiveIcon: { backgroundColor: tokens.colorBrandBackground2 },
   label: { maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  sheet: { maxHeight: '88dvh', borderTopLeftRadius: tokens.borderRadiusXLarge, borderTopRightRadius: tokens.borderRadiusXLarge },
+  sheet: {
+    maxHeight: '88dvh',
+    borderTopLeftRadius: tokens.borderRadiusXLarge,
+    borderTopRightRadius: tokens.borderRadiusXLarge,
+  },
   sheetSection: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px 0' },
-  sheetTitle: { margin: 0, fontSize: tokens.fontSizeBase300, color: tokens.colorNeutralForeground3, fontWeight: tokens.fontWeightSemibold },
+  sheetTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase300,
+    color: tokens.colorNeutralForeground3,
+    fontWeight: tokens.fontWeightSemibold,
+  },
 });
 
 function SideNavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
@@ -123,7 +132,12 @@ function SideNavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
   const Icon = item.icon;
   return (
     <li>
-      <Link to={item.to} className={styles.sideLink} activeProps={{ className: mergeClasses(styles.sideLink, styles.sideActive) }} onClick={onNavigate}>
+      <Link
+        to={item.to}
+        className={styles.sideLink}
+        activeProps={{ className: mergeClasses(styles.sideLink, styles.sideActive) }}
+        onClick={onNavigate}
+      >
         <Icon className={styles.icon} aria-hidden />
         <span>{t(item.label)}</span>
       </Link>
@@ -150,7 +164,13 @@ export function SideNav() {
             <SideNavLink key={item.to} item={item} />
           ))}
         </ul>
-        <Button appearance="subtle" size="large" icon={<SignOutRegular />} onClick={() => void signOut()} style={{ justifyContent: 'flex-start' }}>
+        <Button
+          appearance="subtle"
+          size="large"
+          icon={<SignOutRegular />}
+          onClick={() => void signOut()}
+          style={{ justifyContent: 'flex-start' }}
+        >
           {t('common.signOut')}
         </Button>
       </div>
@@ -206,9 +226,25 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const signOut = useSignOut();
   const others = NAV_ITEMS.filter((item) => !item.primary);
   return (
-    <OverlayDrawer open={open} onOpenChange={(_, data) => !data.open && onClose()} position="bottom" size="large" className={styles.sheet}>
+    <OverlayDrawer
+      open={open}
+      onOpenChange={(_, data) => !data.open && onClose()}
+      position="bottom"
+      size="large"
+      className={styles.sheet}
+    >
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" size="large" icon={<DismissRegular />} aria-label={t('common.close')} onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={
+            <Button
+              appearance="subtle"
+              size="large"
+              icon={<DismissRegular />}
+              aria-label={t('common.close')}
+              onClick={onClose}
+            />
+          }
+        >
           {t('nav.menu')}
         </DrawerHeaderTitle>
       </DrawerHeader>

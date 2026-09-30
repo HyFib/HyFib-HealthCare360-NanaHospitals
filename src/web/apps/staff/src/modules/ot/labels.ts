@@ -35,9 +35,17 @@ export const surgeryStatusTone: Record<SurgeryStatus, StatusTone> = {
   Postponed: 'warning',
 };
 
-export const priorityLabel: Record<SurgeryPriority, string> = { Elective: 'Elective', Urgent: 'Urgent', Emergency: 'Emergency' };
+export const priorityLabel: Record<SurgeryPriority, string> = {
+  Elective: 'Elective',
+  Urgent: 'Urgent',
+  Emergency: 'Emergency',
+};
 
-export const priorityTone: Record<SurgeryPriority, StatusTone> = { Elective: 'subtle', Urgent: 'warning', Emergency: 'danger' };
+export const priorityTone: Record<SurgeryPriority, StatusTone> = {
+  Elective: 'subtle',
+  Urgent: 'warning',
+  Emergency: 'danger',
+};
 
 export const lateralityLabel: Record<Laterality, string> = {
   NotApplicable: 'No side (midline or not applicable)',
@@ -86,7 +94,11 @@ export const theatreTypeLabel: Record<TheatreType, string> = {
   Emergency: 'Emergency',
 };
 
-export const phaseLabel: Record<SafetyPhase, string> = { SignIn: 'WHO Sign-in', TimeOut: 'WHO Time-out', SignOut: 'WHO Sign-out' };
+export const phaseLabel: Record<SafetyPhase, string> = {
+  SignIn: 'WHO Sign-in',
+  TimeOut: 'WHO Time-out',
+  SignOut: 'WHO Sign-out',
+};
 
 export const phaseMoment: Record<SafetyPhase, string> = {
   SignIn: 'Before induction of anaesthesia',

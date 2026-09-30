@@ -1,4 +1,13 @@
-import { Button, Caption1, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, ProgressBar, Text } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  ProgressBar,
+  Text,
+} from '@fluentui/react-components';
 import { DismissCircleRegular } from '@fluentui/react-icons';
 import { formatDateTime, useRealtimeEvent } from '@hc360/core';
 import { LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
@@ -6,11 +15,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { bloodApi, bloodKeys, bloodQueries, type BloodIssueDto, type BloodRequestDetail } from '@/modules/blood-bank/api';
+import {
+  bloodApi,
+  bloodKeys,
+  bloodQueries,
+  type BloodIssueDto,
+  type BloodRequestDetail,
+} from '@/modules/blood-bank/api';
 import { RequestStatusBadge, UrgencyBadge } from '@/modules/blood-bank/BloodBadges';
 import { componentLabel } from '@/modules/blood-bank/labels';
 import { ReportReactionDialog } from '@/modules/blood-bank/ReactionDialogs';
-import { CompatibilityHint, CompatibleUnitsPanel, CrossMatchesTable, EmergencyReleasePanel, GroupingCard, IssuePanel, IssuesTable } from '@/modules/blood-bank/RequestPanels';
+import {
+  CompatibilityHint,
+  CompatibleUnitsPanel,
+  CrossMatchesTable,
+  EmergencyReleasePanel,
+  GroupingCard,
+  IssuePanel,
+  IssuesTable,
+} from '@/modules/blood-bank/RequestPanels';
 import { Detail, DetailGrid, NoAccess, ReasonDialog, RecordLoadError } from '@/modules/ot/shared/feedback';
 import { useFacilityId, useNow } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
@@ -122,7 +145,11 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
         <Text>
           {r.unitsIssued} of {r.unitsRequested} issued · {r.unitsReserved} reserved (cross-matched)
         </Text>
-        <ProgressBar value={r.unitsRequested ? r.unitsIssued / r.unitsRequested : 0} thickness="large" aria-label={`${r.unitsIssued} of ${r.unitsRequested} units issued`} />
+        <ProgressBar
+          value={r.unitsRequested ? r.unitsIssued / r.unitsRequested : 0}
+          thickness="large"
+          aria-label={`${r.unitsIssued} of ${r.unitsRequested} units issued`}
+        />
       </div>
 
       <EmergencyReleasePanel request={r} canIssue={canIssue} />
@@ -138,14 +165,22 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
         <DetailGrid>
           <Detail label="Indication">{r.indication}</Detail>
           <Detail label="Haemoglobin before">{r.haemoglobinGdl !== null ? `${r.haemoglobinGdl} g/dL` : null}</Detail>
-          <Detail label="Platelets before">{r.plateletCount !== null ? `${r.plateletCount.toLocaleString('en-IN')} /µL` : null}</Detail>
-          <Detail label="Encounter">{r.admissionId ? 'In-patient (charges go to the IP bill)' : r.visitId ? 'Out-patient visit' : null}</Detail>
+          <Detail label="Platelets before">
+            {r.plateletCount !== null ? `${r.plateletCount.toLocaleString('en-IN')} /µL` : null}
+          </Detail>
+          <Detail label="Encounter">
+            {r.admissionId ? 'In-patient (charges go to the IP bill)' : r.visitId ? 'Out-patient visit' : null}
+          </Detail>
           <Detail label="Origin">{r.orderItemId ? 'From a doctor’s order' : 'Requested directly'}</Detail>
         </DetailGrid>
       </Section>
 
       {canCrossmatch && open && (
-        <Section title="Compatible units" description="In date, ABO/Rh compatible, first expiry first. A compatible cross-match reserves the unit for 72 hours." flush>
+        <Section
+          title="Compatible units"
+          description="In date, ABO/Rh compatible, first expiry first. A compatible cross-match reserves the unit for 72 hours."
+          flush
+        >
           <CompatibleUnitsPanel request={r} now={now} />
         </Section>
       )}
@@ -155,20 +190,31 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
       </Section>
 
       {canIssue && open && (
-        <Section title="Issue a unit" description="Every issue is checked again by the server; the issue slip prints automatically.">
+        <Section
+          title="Issue a unit"
+          description="Every issue is checked again by the server; the issue slip prints automatically."
+        >
           <IssuePanel request={r} now={now} />
         </Section>
       )}
 
-      <Section title={`Issued units (${r.issues.length})`} description="Return unused units within 30 minutes with the cold chain kept; report any reaction at once." flush>
+      <Section
+        title={`Issued units (${r.issues.length})`}
+        description="Return unused units within 30 minutes with the cold chain kept; report any reaction at once."
+        flush
+      >
         <IssuesTable request={r} canIssue={canIssue} canReport={canReport} onReportReaction={setReporting} />
       </Section>
 
       {!canCrossmatch && !canIssue && open && (
-        <Caption1>The blood bank groups the sample, cross-matches and issues the units. This page updates as they work.</Caption1>
+        <Caption1>
+          The blood bank groups the sample, cross-matches and issues the units. This page updates as they work.
+        </Caption1>
       )}
 
-      {reporting && <ReportReactionDialog issue={reporting} patientName={r.patientName} onClose={() => setReporting(null)} />}
+      {reporting && (
+        <ReportReactionDialog issue={reporting} patientName={r.patientName} onClose={() => setReporting(null)} />
+      )}
       <ReasonDialog
         open={cancelling}
         title="Cancel this blood request?"

@@ -1,11 +1,31 @@
-import { Badge, Button, Caption1, Field, makeStyles, SearchBox, Select, Switch, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  SearchBox,
+  Select,
+  Switch,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AddRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { LAB_SECTIONS, labQueries, type LabInstrumentDto, type LabSection, type LabTestListItem, type ReferralLabDto } from '@/modules/lab/api';
+import {
+  LAB_SECTIONS,
+  labQueries,
+  type LabInstrumentDto,
+  type LabSection,
+  type LabTestListItem,
+  type ReferralLabDto,
+} from '@/modules/lab/api';
 import { TubeChip } from '@/modules/lab/badges';
 import { searchFlag, searchId, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
 import { resultTypeLabel, sectionLabel } from '@/modules/lab/labels';
@@ -61,15 +81,32 @@ function LabSetupPage() {
           </Button>
         }
       />
-      <TabList selectedValue={tab} onTabSelect={(_, data) => void navigate({ search: { tab: data.value === 'tests' ? undefined : (data.value as SetupTab) } })}>
+      <TabList
+        selectedValue={tab}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { tab: data.value === 'tests' ? undefined : (data.value as SetupTab) } })
+        }
+      >
         <Tab value="tests">Tests</Tab>
         <Tab value="analysers">Analysers</Tab>
         <Tab value="referral-labs">Reference laboratories</Tab>
       </TabList>
 
       {tab === 'tests' && <TestsTab search={search} />}
-      {tab === 'analysers' && <AnalysersTab includeInactive={Boolean(search.inactive)} creating={creating === 'analysers'} onCreated={() => setCreating(null)} />}
-      {tab === 'referral-labs' && <ReferralLabsTab includeInactive={Boolean(search.inactive)} creating={creating === 'referral-labs'} onCreated={() => setCreating(null)} />}
+      {tab === 'analysers' && (
+        <AnalysersTab
+          includeInactive={Boolean(search.inactive)}
+          creating={creating === 'analysers'}
+          onCreated={() => setCreating(null)}
+        />
+      )}
+      {tab === 'referral-labs' && (
+        <ReferralLabsTab
+          includeInactive={Boolean(search.inactive)}
+          creating={creating === 'referral-labs'}
+          onCreated={() => setCreating(null)}
+        />
+      )}
 
       {creating === 'tests' && (
         <TestDrawer
@@ -82,7 +119,13 @@ function LabSetupPage() {
           }}
         />
       )}
-      {search.testId && <TestDrawer key={search.testId} testId={search.testId} onClose={() => void navigate({ search: (prev) => ({ ...prev, testId: undefined }) })} />}
+      {search.testId && (
+        <TestDrawer
+          key={search.testId}
+          testId={search.testId}
+          onClose={() => void navigate({ search: (prev) => ({ ...prev, testId: undefined }) })}
+        />
+      )}
     </Page>
   );
 }
@@ -95,22 +138,41 @@ function TestsTab({ search }: { search: SetupSearch }) {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const tests = useQuery(labQueries.tests({ search: search.search, section: search.section, includeInactive: search.inactive, page: search.page }));
-  const set = (patch: Partial<SetupSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const tests = useQuery(
+    labQueries.tests({
+      search: search.search,
+      section: search.section,
+      includeInactive: search.inactive,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<SetupSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Section flush>
       <div style={{ padding: '0 16px 12px' }}>
         <FilterBar>
           <Field label="Search" style={{ flex: '1 1 260px' }}>
-            <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Test name or code" autoFocus />
+            <SearchBox
+              value={term}
+              onChange={(_, data) => setTerm(data.value)}
+              placeholder="Test name or code"
+              autoFocus
+            />
           </Field>
           <Field label="Bench">
-            <Select value={search.section ?? ''} onChange={(_, data) => set({ section: (data.value || undefined) as LabSection | undefined })}>
+            <Select
+              value={search.section ?? ''}
+              onChange={(_, data) => set({ section: (data.value || undefined) as LabSection | undefined })}
+            >
               <option value="">All</option>
               {LAB_SECTIONS.map((value) => (
                 <option key={value} value={value}>
@@ -119,7 +181,11 @@ function TestsTab({ search }: { search: SetupSearch }) {
               ))}
             </Select>
           </Field>
-          <Switch checked={Boolean(search.inactive)} onChange={(_, data) => set({ inactive: data.checked ? true : undefined })} label="Show tests not in use" />
+          <Switch
+            checked={Boolean(search.inactive)}
+            onChange={(_, data) => set({ inactive: data.checked ? true : undefined })}
+            label="Show tests not in use"
+          />
         </FilterBar>
       </div>
       <DataTable
@@ -152,20 +218,42 @@ function TestsTab({ search }: { search: SetupSearch }) {
                 </span>
                 <Caption1 className={styles.muted}>
                   {test.code}
-                  {test.isPanel ? ` · panel of ${test.componentCount}` : ` · ${resultTypeLabel[test.resultType]}${test.unit ? ` (${test.unit})` : ''}`}
+                  {test.isPanel
+                    ? ` · panel of ${test.componentCount}`
+                    : ` · ${resultTypeLabel[test.resultType]}${test.unit ? ` (${test.unit})` : ''}`}
                 </Caption1>
               </span>
             ),
           },
           { key: 'section', header: 'Bench', render: (test: LabTestListItem) => sectionLabel[test.section] },
-          { key: 'tube', header: 'Tube', priority: 'low', render: (test: LabTestListItem) => <TubeChip container={test.container} /> },
-          { key: 'tat', header: 'Target', width: 80, priority: 'low', render: (test: LabTestListItem) => `${test.tatHours} h` },
+          {
+            key: 'tube',
+            header: 'Tube',
+            priority: 'low',
+            render: (test: LabTestListItem) => <TubeChip container={test.container} />,
+          },
+          {
+            key: 'tat',
+            header: 'Target',
+            width: 80,
+            priority: 'low',
+            render: (test: LabTestListItem) => `${test.tatHours} h`,
+          },
           {
             key: 'price',
             header: 'Price',
             width: 100,
             align: 'end',
-            render: (test: LabTestListItem) => (test.isOrderable ? (test.price !== null ? formatInr(test.price, { whole: true }) : 'Not linked') : <Caption1 className={styles.muted}>Analyte</Caption1>),
+            render: (test: LabTestListItem) =>
+              test.isOrderable ? (
+                test.price !== null ? (
+                  formatInr(test.price, { whole: true })
+                ) : (
+                  'Not linked'
+                )
+              ) : (
+                <Caption1 className={styles.muted}>Analyte</Caption1>
+              ),
           },
         ]}
         emptyTitle={search.search ? 'No test matches' : 'No tests yet'}
@@ -184,19 +272,34 @@ function InactiveSwitch({ includeInactive }: { includeInactive: boolean }) {
   return (
     <Switch
       checked={includeInactive}
-      onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, inactive: data.checked ? true : undefined }) })}
+      onChange={(_, data) =>
+        void navigate({ search: (prev) => ({ ...prev, inactive: data.checked ? true : undefined }) })
+      }
       label="Show those not in use"
     />
   );
 }
 
-function AnalysersTab({ includeInactive, creating, onCreated }: { includeInactive: boolean; creating: boolean; onCreated: () => void }) {
+function AnalysersTab({
+  includeInactive,
+  creating,
+  onCreated,
+}: {
+  includeInactive: boolean;
+  creating: boolean;
+  onCreated: () => void;
+}) {
   const styles = useStyles();
   const instruments = useQuery(labQueries.instruments(includeInactive));
   const [editing, setEditing] = useState<LabInstrumentDto | null>(null);
 
   return (
-    <Section title="Analysers" description="Connected through the equipment gateway; results arrive on the worklist by barcode" actions={<InactiveSwitch includeInactive={includeInactive} />} flush>
+    <Section
+      title="Analysers"
+      description="Connected through the equipment gateway; results arrive on the worklist by barcode"
+      actions={<InactiveSwitch includeInactive={includeInactive} />}
+      flush
+    >
       <DataTable
         ariaLabel="Analysers"
         rows={instruments.data}
@@ -221,15 +324,35 @@ function AnalysersTab({ includeInactive, creating, onCreated }: { includeInactiv
               </span>
             ),
           },
-          { key: 'section', header: 'Bench', render: (instrument: LabInstrumentDto) => sectionLabel[instrument.section] },
+          {
+            key: 'section',
+            header: 'Bench',
+            render: (instrument: LabInstrumentDto) => sectionLabel[instrument.section],
+          },
           {
             key: 'interface',
             header: 'Interface',
             priority: 'low',
-            render: (instrument: LabInstrumentDto) => `${instrument.protocol === 'Hl7' ? 'HL7' : 'ASTM'}${instrument.isBidirectional ? ', bidirectional' : ''}`,
+            render: (instrument: LabInstrumentDto) =>
+              `${instrument.protocol === 'Hl7' ? 'HL7' : 'ASTM'}${instrument.isBidirectional ? ', bidirectional' : ''}`,
           },
-          { key: 'auto', header: 'Auto-verify', priority: 'low', render: (instrument: LabInstrumentDto) => (instrument.autoValidationEnabled ? 'On' : 'Off') },
-          { key: 'status', header: 'Status', width: 110, render: (instrument: LabInstrumentDto) => <StatusBadge status={instrument.isActive ? 'Active' : 'Inactive'} label={instrument.isActive ? 'In use' : 'Not in use'} /> },
+          {
+            key: 'auto',
+            header: 'Auto-verify',
+            priority: 'low',
+            render: (instrument: LabInstrumentDto) => (instrument.autoValidationEnabled ? 'On' : 'Off'),
+          },
+          {
+            key: 'status',
+            header: 'Status',
+            width: 110,
+            render: (instrument: LabInstrumentDto) => (
+              <StatusBadge
+                status={instrument.isActive ? 'Active' : 'Inactive'}
+                label={instrument.isActive ? 'In use' : 'Not in use'}
+              />
+            ),
+          },
         ]}
         emptyTitle="No analysers"
         emptyDescription="Add each analyser with the code configured in the equipment gateway."
@@ -248,13 +371,26 @@ function AnalysersTab({ includeInactive, creating, onCreated }: { includeInactiv
   );
 }
 
-function ReferralLabsTab({ includeInactive, creating, onCreated }: { includeInactive: boolean; creating: boolean; onCreated: () => void }) {
+function ReferralLabsTab({
+  includeInactive,
+  creating,
+  onCreated,
+}: {
+  includeInactive: boolean;
+  creating: boolean;
+  onCreated: () => void;
+}) {
   const styles = useStyles();
   const labs = useQuery(labQueries.referralLabs(includeInactive));
   const [editing, setEditing] = useState<ReferralLabDto | null>(null);
 
   return (
-    <Section title="Reference laboratories" description="Where outsourced tests are sent; the agreed turnaround sets each due date" actions={<InactiveSwitch includeInactive={includeInactive} />} flush>
+    <Section
+      title="Reference laboratories"
+      description="Where outsourced tests are sent; the agreed turnaround sets each due date"
+      actions={<InactiveSwitch includeInactive={includeInactive} />}
+      flush
+    >
       <DataTable
         ariaLabel="Reference laboratories"
         rows={labs.data}
@@ -278,9 +414,29 @@ function ReferralLabsTab({ includeInactive, creating, onCreated }: { includeInac
               </span>
             ),
           },
-          { key: 'contact', header: 'Contact', priority: 'low', render: (lab: ReferralLabDto) => [lab.contactPerson, lab.phone].filter(Boolean).join(' · ') || '—' },
-          { key: 'tat', header: 'Turnaround', width: 110, render: (lab: ReferralLabDto) => `${lab.tatDays} ${lab.tatDays === 1 ? 'day' : 'days'}` },
-          { key: 'status', header: 'Status', width: 110, render: (lab: ReferralLabDto) => <StatusBadge status={lab.isActive ? 'Active' : 'Inactive'} label={lab.isActive ? 'In use' : 'Not in use'} /> },
+          {
+            key: 'contact',
+            header: 'Contact',
+            priority: 'low',
+            render: (lab: ReferralLabDto) => [lab.contactPerson, lab.phone].filter(Boolean).join(' · ') || '—',
+          },
+          {
+            key: 'tat',
+            header: 'Turnaround',
+            width: 110,
+            render: (lab: ReferralLabDto) => `${lab.tatDays} ${lab.tatDays === 1 ? 'day' : 'days'}`,
+          },
+          {
+            key: 'status',
+            header: 'Status',
+            width: 110,
+            render: (lab: ReferralLabDto) => (
+              <StatusBadge
+                status={lab.isActive ? 'Active' : 'Inactive'}
+                label={lab.isActive ? 'In use' : 'Not in use'}
+              />
+            ),
+          },
         ]}
         emptyTitle="No reference laboratories"
         emptyDescription="Add the laboratories you send samples to."

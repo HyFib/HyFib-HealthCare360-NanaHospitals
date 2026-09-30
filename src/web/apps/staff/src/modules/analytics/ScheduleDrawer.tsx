@@ -25,8 +25,23 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { analyticsApi, analyticsKeys, type ReportCatalogue, type ReportInputs, type SaveScheduleRequest, type ScheduleDto } from './api';
-import { CATEGORY_ORDER, CUSTOM_PERIOD, FORMAT_LABELS, FREQUENCIES, FREQUENCY_LABELS, LAST_DAY_OF_MONTH, WEEKDAYS } from './labels';
+import {
+  analyticsApi,
+  analyticsKeys,
+  type ReportCatalogue,
+  type ReportInputs,
+  type SaveScheduleRequest,
+  type ScheduleDto,
+} from './api';
+import {
+  CATEGORY_ORDER,
+  CUSTOM_PERIOD,
+  FORMAT_LABELS,
+  FREQUENCIES,
+  FREQUENCY_LABELS,
+  LAST_DAY_OF_MONTH,
+  WEEKDAYS,
+} from './labels';
 import { defaultPeriodFor, describeSchedule, parseEmails, periodLabel, scheduleInputs, withDefaults } from './params';
 import { ReportParameterForm } from './ReportInputs';
 
@@ -50,7 +65,10 @@ const scheduleSchema = z
     time: z.string().regex(TIME, 'Enter the time as HH:mm (24-hour clock, IST).'),
     dayOfWeek: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).nullable(),
     dayOfMonth: z.string().nullable(),
-    recipients: z.array(z.string()).min(1, 'Add at least one e-mail address.').max(MAX_RECIPIENTS, `Send to at most ${MAX_RECIPIENTS} people.`),
+    recipients: z
+      .array(z.string())
+      .min(1, 'Add at least one e-mail address.')
+      .max(MAX_RECIPIENTS, `Send to at most ${MAX_RECIPIENTS} people.`),
     isActive: z.boolean(),
   })
   .superRefine((value, ctx) => {
@@ -63,7 +81,17 @@ const scheduleSchema = z
   });
 
 type ScheduleForm = z.infer<typeof scheduleSchema>;
-const FORM_FIELDS = new Set(['name', 'reportId', 'format', 'frequency', 'time', 'dayOfWeek', 'dayOfMonth', 'recipients', 'isActive']);
+const FORM_FIELDS = new Set([
+  'name',
+  'reportId',
+  'format',
+  'frequency',
+  'time',
+  'dayOfWeek',
+  'dayOfMonth',
+  'recipients',
+  'isActive',
+]);
 
 const DAY_OF_MONTH_OPTIONS = [
   ...Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) })),
@@ -114,9 +142,13 @@ export function ScheduleDrawer({
   const [parameters, setParameters] = useState<ReportInputs>(() => {
     const start = scheduleInputs(schedule?.parameters ?? draft?.inputs ?? {});
     // Like the server: without a chosen period, an e-mail covers the complete period that just ended.
-    return initialReport?.parameters.some((p) => p.kind === 'Period') && !start.period ? { ...start, period: defaultPeriodFor(schedule?.frequency ?? 'Daily') } : start;
+    return initialReport?.parameters.some((p) => p.kind === 'Period') && !start.period
+      ? { ...start, period: defaultPeriodFor(schedule?.frequency ?? 'Daily') }
+      : start;
   });
-  const [periodTouched, setPeriodTouched] = useState(Boolean(schedule) || Boolean(draft?.inputs.period && draft.inputs.period !== CUSTOM_PERIOD));
+  const [periodTouched, setPeriodTouched] = useState(
+    Boolean(schedule) || Boolean(draft?.inputs.period && draft.inputs.period !== CUSTOM_PERIOD),
+  );
   const [parameterErrors, setParameterErrors] = useState<Record<string, string>>({});
 
   const [reportId, frequency, time, dayOfWeek, dayOfMonth, format, recipients, name] = useWatch({
@@ -198,7 +230,12 @@ export function ScheduleDrawer({
 
   const summary = report
     ? [
-        describeSchedule(frequency, TIME.test(time) ? time : '--:--', dayOfWeek, dayOfMonth ? Number(dayOfMonth) : null),
+        describeSchedule(
+          frequency,
+          TIME.test(time) ? time : '--:--',
+          dayOfWeek,
+          dayOfMonth ? Number(dayOfMonth) : null,
+        ),
         hasPeriod ? `covers ${periodLabel(values.period, catalogue.periods).toLowerCase()}` : 'current position',
         FORMAT_LABELS[format],
         recipients.length === 1 ? '1 recipient' : `${recipients.length} recipients`,
@@ -208,7 +245,9 @@ export function ScheduleDrawer({
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
+        >
           <span className={styles.title}>
             <MailClockRegular aria-hidden />
             {schedule ? 'Change scheduled e-mail' : 'New scheduled e-mail'}
@@ -216,14 +255,32 @@ export function ScheduleDrawer({
         </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
-        <form id="schedule-form" className={styles.form} onSubmit={form.handleSubmit((value) => save.mutate(value))} noValidate>
-          <TextField control={form.control} name="name" label="Name" required autoFocus maxLength={100} placeholder="For example: Daily census for the MD" />
+        <form
+          id="schedule-form"
+          className={styles.form}
+          onSubmit={form.handleSubmit((value) => save.mutate(value))}
+          noValidate
+        >
+          <TextField
+            control={form.control}
+            name="name"
+            label="Name"
+            required
+            autoFocus
+            maxLength={100}
+            placeholder="For example: Daily census for the MD"
+          />
 
           <Controller
             control={form.control}
             name="reportId"
             render={({ field, fieldState }) => (
-              <Field label="Report" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+              <Field
+                label="Report"
+                required
+                validationMessage={fieldState.error?.message}
+                validationState={fieldState.error ? 'error' : 'none'}
+              >
                 <Select value={field.value} onChange={(_, data) => changeReport(data.value)} onBlur={field.onBlur}>
                   <option value="">Choose a report</option>
                   {CATEGORY_ORDER.map((category) => {
@@ -244,7 +301,10 @@ export function ScheduleDrawer({
           />
 
           {report && report.parameters.some((p) => p.kind !== 'Facility') && (
-            <Field label="Report inputs" hint={`E-mails always cover ${facilityName ?? 'this facility'}, with a period relative to the day they are sent.`}>
+            <Field
+              label="Report inputs"
+              hint={`E-mails always cover ${facilityName ?? 'this facility'}, with a period relative to the day they are sent.`}
+            >
               <ReportParameterForm
                 parameters={report.parameters}
                 values={values}
@@ -269,7 +329,10 @@ export function ScheduleDrawer({
               name="frequency"
               render={({ field }) => (
                 <Field label="How often" required>
-                  <Select value={field.value} onChange={(_, data) => changeFrequency(data.value as ScheduleForm['frequency'])}>
+                  <Select
+                    value={field.value}
+                    onChange={(_, data) => changeFrequency(data.value as ScheduleForm['frequency'])}
+                  >
                     {FREQUENCIES.map((f) => (
                       <option key={f} value={f}>
                         {FREQUENCY_LABELS[f]}
@@ -280,15 +343,40 @@ export function ScheduleDrawer({
               )}
             />
             {frequency === 'Weekly' && (
-              <SelectField control={form.control} name="dayOfWeek" label="On" required options={WEEKDAYS.map((d) => ({ value: d, label: d }))} />
+              <SelectField
+                control={form.control}
+                name="dayOfWeek"
+                label="On"
+                required
+                options={WEEKDAYS.map((d) => ({ value: d, label: d }))}
+              />
             )}
-            {frequency === 'Monthly' && <SelectField control={form.control} name="dayOfMonth" label="On day" required options={DAY_OF_MONTH_OPTIONS} />}
+            {frequency === 'Monthly' && (
+              <SelectField
+                control={form.control}
+                name="dayOfMonth"
+                label="On day"
+                required
+                options={DAY_OF_MONTH_OPTIONS}
+              />
+            )}
             <Controller
               control={form.control}
               name="time"
               render={({ field, fieldState }) => (
-                <Field label="At (IST)" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                  <Input type="time" step={60} value={field.value} onChange={(_, data) => field.onChange(data.value)} onBlur={field.onBlur} />
+                <Field
+                  label="At (IST)"
+                  required
+                  validationMessage={fieldState.error?.message}
+                  validationState={fieldState.error ? 'error' : 'none'}
+                >
+                  <Input
+                    type="time"
+                    step={60}
+                    value={field.value}
+                    onChange={(_, data) => field.onChange(data.value)}
+                    onBlur={field.onBlur}
+                  />
                 </Field>
               )}
             />
@@ -312,7 +400,12 @@ export function ScheduleDrawer({
             )}
           />
 
-          <SwitchField control={form.control} name="isActive" label="Send e-mails on this schedule" hint="Turn off to pause the e-mails without deleting the schedule." />
+          <SwitchField
+            control={form.control}
+            name="isActive"
+            label="Send e-mails on this schedule"
+            hint="Turn off to pause the e-mails without deleting the schedule."
+          />
 
           {summary && (
             <MessageBar intent="info" layout="multiline">
@@ -321,17 +414,26 @@ export function ScheduleDrawer({
           )}
           {schedule && !schedule.isMine && (
             <MessageBar intent="warning" layout="multiline">
-              <MessageBarBody>Saving makes you the owner of this schedule. The report then runs with your access to reports and facilities.</MessageBarBody>
+              <MessageBarBody>
+                Saving makes you the owner of this schedule. The report then runs with your access to reports and
+                facilities.
+              </MessageBarBody>
             </MessageBar>
           )}
           <Caption1 className={styles.muted}>
-            The file is attached to the e-mail (up to 10 MB) and can be downloaded again from the delivery history. Reports that list patients cannot be
-            e-mailed.
+            The file is attached to the e-mail (up to 10 MB) and can be downloaded again from the delivery history.
+            Reports that list patients cannot be e-mailed.
           </Caption1>
         </form>
       </DrawerBody>
       <DrawerFooter>
-        <Button appearance="primary" type="submit" form="schedule-form" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+        <Button
+          appearance="primary"
+          type="submit"
+          form="schedule-form"
+          disabled={save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+        >
           {schedule ? 'Save schedule' : 'Create schedule'}
         </Button>
         <Button onClick={onClose}>Cancel</Button>
@@ -341,7 +443,15 @@ export function ScheduleDrawer({
 }
 
 /** E-mail addresses as removable tags: type or paste several (comma, semicolon or space) and press Enter. */
-function RecipientsField({ value, onChange, error }: { value: string[]; onChange: (value: string[]) => void; error?: string }) {
+function RecipientsField({
+  value,
+  onChange,
+  error,
+}: {
+  value: string[];
+  onChange: (value: string[]) => void;
+  error?: string;
+}) {
   const styles = useStyles();
   const [text, setText] = useState('');
   const [problem, setProblem] = useState<string | null>(null);
@@ -367,9 +477,19 @@ function RecipientsField({ value, onChange, error }: { value: string[]; onChange
     >
       <div className={styles.recipients}>
         {value.length > 0 && (
-          <TagGroup aria-label="Recipients" onDismiss={(_, data) => onChange(value.filter((email) => email !== data.value))}>
+          <TagGroup
+            aria-label="Recipients"
+            onDismiss={(_, data) => onChange(value.filter((email) => email !== data.value))}
+          >
             {value.map((email) => (
-              <Tag key={email} value={email} dismissible dismissIcon={{ 'aria-label': `Remove ${email}` }} shape="circular" size="small">
+              <Tag
+                key={email}
+                value={email}
+                dismissible
+                dismissIcon={{ 'aria-label': `Remove ${email}` }}
+                shape="circular"
+                size="small"
+              >
                 {email}
               </Tag>
             ))}

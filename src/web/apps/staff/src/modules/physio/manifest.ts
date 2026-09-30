@@ -9,8 +9,18 @@ const manifest: ModuleManifest = {
   icon: PersonWalkingRegular,
   order: 50,
   links: [
-    { label: 'Physiotherapy worklist', to: '/physio', permission: 'physio.read', keywords: ['physio', 'sessions today', 'rehab'] },
-    { label: 'Physiotherapy referrals', to: '/physio/referrals', permission: 'physio.read', keywords: ['physio', 'assessment', 'treatment plan', 'ift', 'tens'] },
+    {
+      label: 'Physiotherapy worklist',
+      to: '/physio',
+      permission: 'physio.read',
+      keywords: ['physio', 'sessions today', 'rehab'],
+    },
+    {
+      label: 'Physiotherapy referrals',
+      to: '/physio/referrals',
+      permission: 'physio.read',
+      keywords: ['physio', 'assessment', 'treatment plan', 'ift', 'tens'],
+    },
   ],
   quickActions: [
     {
@@ -21,7 +31,9 @@ const manifest: ModuleManifest = {
       description: 'Today’s sessions to record',
     },
   ],
-  widgets: [{ id: 'physio-today', permission: 'physio.treatment.manage', span: 1, order: 50, component: PhysioTodayWidget }],
+  widgets: [
+    { id: 'physio-today', permission: 'physio.treatment.manage', span: 1, order: 50, component: PhysioTodayWidget },
+  ],
 };
 
 export default manifest;

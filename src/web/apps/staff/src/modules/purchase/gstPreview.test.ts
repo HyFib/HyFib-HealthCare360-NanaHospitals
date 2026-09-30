@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { explainGstSplit, grnLineProblem, grnUnitEconomics, isShortExpiry, previewLine, previewTotals, tracksExpiry, type GrnLineDraft } from './gstPreview';
+import {
+  explainGstSplit,
+  grnLineProblem,
+  grnUnitEconomics,
+  isShortExpiry,
+  previewLine,
+  previewTotals,
+  tracksExpiry,
+  type GrnLineDraft,
+} from './gstPreview';
 
 const MH_VENDOR = '27AAACN1234F1Z5';
 const KA_VENDOR = '29AAACN1234F1Z5';
@@ -31,7 +40,11 @@ describe('purchase GST preview', () => {
   });
 
   it('explains the split in plain words', () => {
-    expect(explainGstSplit(MH_VENDOR, MH_HOSPITAL)).toMatchObject({ interState: false, known: true, headline: 'CGST + SGST (same state)' });
+    expect(explainGstSplit(MH_VENDOR, MH_HOSPITAL)).toMatchObject({
+      interState: false,
+      known: true,
+      headline: 'CGST + SGST (same state)',
+    });
     const inter = explainGstSplit(KA_VENDOR, MH_HOSPITAL);
     expect(inter.interState).toBe(true);
     expect(inter.detail).toContain('Karnataka (29)');
@@ -62,7 +75,9 @@ describe('goods receipt line checks', () => {
   });
 
   it('mirrors the server receiving rules', () => {
-    expect(grnLineProblem({ ...base, quantity: 0, freeQuantity: 0 }, '2026-09-26')).toBe('Enter the received quantity.');
+    expect(grnLineProblem({ ...base, quantity: 0, freeQuantity: 0 }, '2026-09-26')).toBe(
+      'Enter the received quantity.',
+    );
     expect(grnLineProblem({ ...base, batchNumber: ' ' }, '2026-09-26')).toMatch(/batch number/);
     expect(grnLineProblem({ ...base, expiryDate: null }, '2026-09-26')).toBe('Enter the expiry date.');
     expect(grnLineProblem({ ...base, expiryDate: '2026-09-26' }, '2026-09-26')).toMatch(/expired/);
@@ -71,7 +86,9 @@ describe('goods receipt line checks', () => {
     expect(grnLineProblem({ ...base, manufactureDate: '2028-05-01' }, '2026-09-26')).toMatch(/manufacturing date/);
     expect(grnLineProblem({ ...base, mrp: 0 }, '2026-09-26')).toBe('Enter the MRP printed on the pack.');
     expect(grnLineProblem({ ...base, rate: 96 }, '2026-09-26')).toMatch(/above the MRP/);
-    expect(grnLineProblem({ ...base, itemType: 'Linen', batchNumber: '', expiryDate: null, mrp: 0 }, '2026-09-26')).toBeNull();
+    expect(
+      grnLineProblem({ ...base, itemType: 'Linen', batchNumber: '', expiryDate: null, mrp: 0 }, '2026-09-26'),
+    ).toBeNull();
     expect(isShortExpiry('2026-11-30', '2026-09-26')).toBe(true);
     expect(isShortExpiry('2027-11-30', '2026-09-26')).toBe(false);
     expect(tracksExpiry('Spare')).toBe(false);

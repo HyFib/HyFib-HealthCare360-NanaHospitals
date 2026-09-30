@@ -49,7 +49,14 @@ import { ReasonDialog } from '@/modules/hr/shared/ReasonDialog';
 import { UserPicker, UserName } from '@/modules/hr/shared/UserPicker';
 import { useUserName, type PickedUser } from '@/modules/hr/shared/users';
 import { crmApi, crmKeys, crmQueries, type FollowUpDetail } from './api';
-import { FOLLOW_UP_OUTCOMES, followUpOutcomeLabel, followUpStatusLabel, followUpTypeLabel, type FollowUpOutcome, type FollowUpPriority } from './labels';
+import {
+  FOLLOW_UP_OUTCOMES,
+  followUpOutcomeLabel,
+  followUpStatusLabel,
+  followUpTypeLabel,
+  type FollowUpOutcome,
+  type FollowUpPriority,
+} from './labels';
 import { Patient360Link } from './Patient360Link';
 import { MAX_UNREACHABLE_ATTEMPTS, outcomeClosesTask } from './rules';
 
@@ -65,7 +72,11 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusLarge,
     backgroundColor: tokens.colorBrandBackground2,
   },
-  phone: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, fontFamily: tokens.fontFamilyMonospace },
+  phone: {
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    fontFamily: tokens.fontFamilyMonospace,
+  },
   outcomes: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' },
   row: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -78,16 +89,25 @@ const useStyles = makeStyles({
 export function FollowUpDrawer({ followUpId, onClose }: { followUpId: string | null; onClose: () => void }) {
   const followUp = useQuery({ ...crmQueries.followUp(followUpId ?? ''), enabled: followUpId !== null });
   return (
-    <OverlayDrawer open={followUpId !== null} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer
+      open={followUpId !== null}
+      position="end"
+      size="medium"
+      onOpenChange={(_, d) => !d.open && onClose()}
+    >
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {followUp.data ? followUp.data.patientName : 'Follow-up call'}
         </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
         {followUp.isLoading && <LoadingState />}
         {followUp.error && <ErrorState error={followUp.error} onRetry={() => void followUp.refetch()} />}
-        {followUp.data && <FollowUpBody key={`${followUp.data.id}:${followUp.data.version}`} task={followUp.data} onClose={onClose} />}
+        {followUp.data && (
+          <FollowUpBody key={`${followUp.data.id}:${followUp.data.version}`} task={followUp.data} onClose={onClose} />
+        )}
       </DrawerBody>
     </OverlayDrawer>
   );
@@ -117,8 +137,15 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
     }
     setBusy('record');
     try {
-      await crmApi.recordAttempt(task.id, { outcome, notes: notes.trim() || null, nextDueDate: closes ? null : nextDate });
-      notify.success(closes ? 'Call recorded; task done' : 'Call recorded', closes ? undefined : `Next call on ${formatDateOnly(nextDate)}.`);
+      await crmApi.recordAttempt(task.id, {
+        outcome,
+        notes: notes.trim() || null,
+        nextDueDate: closes ? null : nextDate,
+      });
+      notify.success(
+        closes ? 'Call recorded; task done' : 'Call recorded',
+        closes ? undefined : `Next call on ${formatDateOnly(nextDate)}.`,
+      );
       refresh();
       if (closes) {
         onClose();
@@ -136,7 +163,12 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
       await crmApi.remindFollowUp(task.id);
       notify.success('Reminder SMS queued', 'It goes out through the SMS gateway shortly.');
     } catch (error) {
-      notify.error(error, isApiError(error) && error.code === 'followup.no_consent' ? 'The patient has not agreed to SMS updates' : 'Could not send the reminder');
+      notify.error(
+        error,
+        isApiError(error) && error.code === 'followup.no_consent'
+          ? 'The patient has not agreed to SMS updates'
+          : 'Could not send the reminder',
+      );
     } finally {
       setBusy(null);
     }
@@ -179,7 +211,9 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         </div>
       ) : (
         <MessageBar intent="warning">
-          <MessageBarBody>No mobile number on record. Update the patient's record, or cancel this follow-up.</MessageBarBody>
+          <MessageBarBody>
+            No mobile number on record. Update the patient's record, or cancel this follow-up.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -187,7 +221,9 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         <Detail label="Reason">{followUpTypeLabel[task.type]}</Detail>
         <Detail label="Due">{formatDateOnly(task.dueDate)}</Detail>
         <Detail label="Calls so far">{task.attempts}</Detail>
-        <Detail label="With">{task.assigneeUserId ? <UserName id={task.assigneeUserId} /> : 'Anyone on the team'}</Detail>
+        <Detail label="With">
+          {task.assigneeUserId ? <UserName id={task.assigneeUserId} /> : 'Anyone on the team'}
+        </Detail>
         <Detail label="Created">{humanize(task.source)}</Detail>
         {task.outcome && <Detail label="Last outcome">{followUpOutcomeLabel[task.outcome]}</Detail>}
         {task.notes && (
@@ -212,14 +248,20 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         <>
           <Divider />
           <Text weight="semibold">How did the call go?</Text>
-          <RadioGroup value={outcome} onChange={(_, d) => setOutcome(d.value as FollowUpOutcome)} className={styles.outcomes} aria-label="Call outcome">
+          <RadioGroup
+            value={outcome}
+            onChange={(_, d) => setOutcome(d.value as FollowUpOutcome)}
+            className={styles.outcomes}
+            aria-label="Call outcome"
+          >
             {FOLLOW_UP_OUTCOMES.map((o) => (
               <Radio key={o} value={o} label={followUpOutcomeLabel[o]} />
             ))}
           </RadioGroup>
           {outcome === 'NotReachable' && (
             <Caption1 className={styles.muted}>
-              After {MAX_UNREACHABLE_ATTEMPTS} unanswered calls the task closes by itself. This will be call {task.attempts + 1}.
+              After {MAX_UNREACHABLE_ATTEMPTS} unanswered calls the task closes by itself. This will be call{' '}
+              {task.attempts + 1}.
             </Caption1>
           )}
           <Field label="Notes">
@@ -231,10 +273,19 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
             </Field>
           )}
           <div className={styles.row}>
-            <Button appearance="primary" disabled={!outcome || busy !== null} icon={busy === 'record' ? <Spinner size="tiny" /> : undefined} onClick={() => void record()}>
+            <Button
+              appearance="primary"
+              disabled={!outcome || busy !== null}
+              icon={busy === 'record' ? <Spinner size="tiny" /> : undefined}
+              onClick={() => void record()}
+            >
               {closes ? 'Save and close task' : 'Save call'}
             </Button>
-            <Button icon={busy === 'remind' ? <Spinner size="tiny" /> : <SendRegular />} disabled={busy !== null} onClick={() => void remind()}>
+            <Button
+              icon={busy === 'remind' ? <Spinner size="tiny" /> : <SendRegular />}
+              disabled={busy !== null}
+              onClick={() => void remind()}
+            >
               Send SMS reminder
             </Button>
             <Menu>
@@ -279,10 +330,20 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         onCancel={() => setCancelling(false)}
       />
       {capturing && (
-        <StaffFeedbackDialog open onClose={() => setCapturing(false)} patient={{ id: task.patientId, uhid: task.uhid, fullName: task.patientName }} visitId={task.visitId} />
+        <StaffFeedbackDialog
+          open
+          onClose={() => setCapturing(false)}
+          patient={{ id: task.patientId, uhid: task.uhid, fullName: task.patientName }}
+          visitId={task.visitId}
+        />
       )}
       {sendingLink && task.visitId && (
-        <SendFeedbackLinkDialog open onClose={() => setSendingLink(false)} patient={{ id: task.patientId, uhid: task.uhid, fullName: task.patientName }} visitId={task.visitId} />
+        <SendFeedbackLinkDialog
+          open
+          onClose={() => setSendingLink(false)}
+          patient={{ id: task.patientId, uhid: task.uhid, fullName: task.patientName }}
+          visitId={task.visitId}
+        />
       )}
     </div>
   );
@@ -296,14 +357,25 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
   const currentName = useUserName(task.assigneeUserId);
   // undefined = unchanged, so the current assignee's name can load after the form opens.
   const [assignee, setAssignee] = useState<PickedUser | null | undefined>(undefined);
-  const shownAssignee = assignee !== undefined ? assignee : task.assigneeUserId ? { id: task.assigneeUserId, name: currentName ?? '…' } : null;
+  const shownAssignee =
+    assignee !== undefined
+      ? assignee
+      : task.assigneeUserId
+        ? { id: task.assigneeUserId, name: currentName ?? '…' }
+        : null;
   const [notes, setNotes] = useState(task.notes ?? '');
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true);
     try {
-      await crmApi.updateFollowUp(task.id, { dueDate, assigneeUserId: assignee === undefined ? task.assigneeUserId : (assignee?.id ?? null), priority, notes: notes.trim() || null, version: task.version });
+      await crmApi.updateFollowUp(task.id, {
+        dueDate,
+        assigneeUserId: assignee === undefined ? task.assigneeUserId : (assignee?.id ?? null),
+        priority,
+        notes: notes.trim() || null,
+        version: task.version,
+      });
       notify.success('Follow-up updated');
       void queryClient.invalidateQueries({ queryKey: crmKeys.followUps });
       onDone();
@@ -315,7 +387,16 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 12, borderRadius: 8, border: `1px solid ${tokens.colorNeutralStroke2}` }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        padding: 12,
+        borderRadius: 8,
+        border: `1px solid ${tokens.colorNeutralStroke2}`,
+      }}
+    >
       <Text weight="semibold">Reschedule or reassign</Text>
       <Field label="Due on">
         <Input type="date" value={dueDate} min={todayIso()} onChange={(_, d) => setDueDate(d.value)} />
@@ -331,7 +412,12 @@ function EditTask({ task, onDone }: { task: FollowUpDetail; onDone: () => void }
         <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} rows={2} maxLength={1000} />
       </Field>
       <div style={{ display: 'flex', gap: 8 }}>
-        <Button appearance="primary" disabled={busy || !dueDate} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => void save()}>
+        <Button
+          appearance="primary"
+          disabled={busy || !dueDate}
+          icon={busy ? <Spinner size="tiny" /> : undefined}
+          onClick={() => void save()}
+        >
           Save
         </Button>
         <Button onClick={onDone} disabled={busy}>

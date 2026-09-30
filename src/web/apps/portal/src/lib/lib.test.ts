@@ -5,8 +5,22 @@ import { formattersFor } from '@/i18n/useFormat';
 import { describeError } from './errors';
 import { forgetLinkToken, isWellFormedLinkToken, keepLinkToken, linkTokenFor, TOKEN_PLACEHOLDER } from './linkToken';
 import { isGuid } from './ids';
-import { isValidMobile, otpDeadline, resendCooldownSeconds, sanitizeCode, sanitizePhoneInput, secondsUntil, toE164 } from './otp';
-import { clearPendingPayment, isTrainingGateway, isUsablePaymentLink, peekPendingPayment, rememberPendingPayment } from './payments';
+import {
+  isValidMobile,
+  otpDeadline,
+  resendCooldownSeconds,
+  sanitizeCode,
+  sanitizePhoneInput,
+  secondsUntil,
+  toE164,
+} from './otp';
+import {
+  clearPendingPayment,
+  isTrainingGateway,
+  isUsablePaymentLink,
+  peekPendingPayment,
+  rememberPendingPayment,
+} from './payments';
 import { ageText, BLOOD_GROUP_LABEL, parseAge, personLine } from './people';
 import { otherOwner, resolveActiveProfile } from './profiles';
 import { safeRedirect } from './redirect';
@@ -59,7 +73,21 @@ describe('safeRedirect', () => {
   });
 
   it('never leaves the app or loops back to sign-in', () => {
-    for (const bad of ['https://evil.example', '//evil.example', '/\\evil.example', 'javascript:alert(1)', 'bills', '/sign-in', '/sign-in?x=1', '/portal', '/', '/a\nb', '', null, undefined]) {
+    for (const bad of [
+      'https://evil.example',
+      '//evil.example',
+      '/\\evil.example',
+      'javascript:alert(1)',
+      'bills',
+      '/sign-in',
+      '/sign-in?x=1',
+      '/portal',
+      '/',
+      '/a\nb',
+      '',
+      null,
+      undefined,
+    ]) {
       expect(safeRedirect(bad), String(bad)).toBe('/home');
     }
   });

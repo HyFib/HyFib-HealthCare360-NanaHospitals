@@ -84,7 +84,12 @@ export function ReportTable({ result, onSort, onPage, onPageSize, onDrill, compa
   return (
     <div>
       <div className={compact ? styles.compactWrapper : styles.wrapper}>
-        <Table aria-label={result.title} size={compact ? 'extra-small' : 'small'} sortable={Boolean(onSort)} {...navigation}>
+        <Table
+          aria-label={result.title}
+          size={compact ? 'extra-small' : 'small'}
+          sortable={Boolean(onSort)}
+          {...navigation}
+        >
           <TableHeader>
             <TableRow>
               {result.columns.map((column) => {
@@ -92,9 +97,14 @@ export function ReportTable({ result, onSort, onPage, onPageSize, onDrill, compa
                 return (
                   <TableHeaderCell
                     key={column.key}
-                    className={mergeClasses(styles.headerCell, isNumericType(column.type) ? styles.numeric : styles.text)}
+                    className={mergeClasses(
+                      styles.headerCell,
+                      isNumericType(column.type) ? styles.numeric : styles.text,
+                    )}
                     sortDirection={onSort && active ? (result.desc ? 'descending' : 'ascending') : undefined}
-                    onClick={onSort ? () => onSort(column.key, active ? !result.desc : isNumericType(column.type)) : undefined}
+                    onClick={
+                      onSort ? () => onSort(column.key, active ? !result.desc : isNumericType(column.type)) : undefined
+                    }
                   >
                     <span className={styles.headerLabel}>
                       {column.label}
@@ -109,7 +119,12 @@ export function ReportTable({ result, onSort, onPage, onPageSize, onDrill, compa
                   </TableHeaderCell>
                 );
               })}
-              {drill && <TableHeaderCell className={mergeClasses(styles.headerCell, styles.drillCell)} aria-label={drill.label} />}
+              {drill && (
+                <TableHeaderCell
+                  className={mergeClasses(styles.headerCell, styles.drillCell)}
+                  aria-label={drill.label}
+                />
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -130,7 +145,11 @@ export function ReportTable({ result, onSort, onPage, onPageSize, onDrill, compa
                       {formatValue(row[columnIndex], column.type)}
                     </TableCell>
                   ))}
-                  {drill && <TableCell className={styles.drillCell}>{clickable && <ChevronRightRegular aria-hidden />}</TableCell>}
+                  {drill && (
+                    <TableCell className={styles.drillCell}>
+                      {clickable && <ChevronRightRegular aria-hidden />}
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}
@@ -159,13 +178,23 @@ export function ReportTable({ result, onSort, onPage, onPageSize, onDrill, compa
 
       {!compact && onPage && result.totalRows > result.pageSize && (
         <div className={styles.footer}>
-          <Pagination page={result.page} pageSize={result.pageSize} totalCount={result.totalRows} onPageChange={onPage} />
+          <Pagination
+            page={result.page}
+            pageSize={result.pageSize}
+            totalCount={result.totalRows}
+            onPageChange={onPage}
+          />
           {onPageSize && (
             <label className={styles.pageSize}>
               <Text size={200} className={styles.muted}>
                 Rows per page
               </Text>
-              <Select size="small" value={String(result.pageSize)} onChange={(_, data) => onPageSize(Number(data.value))} aria-label="Rows per page">
+              <Select
+                size="small"
+                value={String(result.pageSize)}
+                onChange={(_, data) => onPageSize(Number(data.value))}
+                aria-label="Rows per page"
+              >
                 {PAGE_SIZES.map((size) => (
                   <option key={size} value={size}>
                     {size}

@@ -44,7 +44,12 @@ import {
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  two: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  two: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   chips: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   slots: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '2px 12px' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -60,7 +65,15 @@ export interface DietAdmission {
  * Write (or change) the diet for an admitted patient. The new order replaces the current one and today's meal plan
  * is updated at once; nil by mouth cancels the next meal immediately.
  */
-export function DietOrderDialog({ admission, current, onClose }: { admission: DietAdmission; current?: DietOrderDto | null; onClose: () => void }) {
+export function DietOrderDialog({
+  admission,
+  current,
+  onClose,
+}: {
+  admission: DietAdmission;
+  current?: DietOrderDto | null;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -91,11 +104,16 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
   const fluidNumber = fluid === '' ? null : Number(fluid);
   const calorieNumber = calories === '' ? null : Number(calories);
   const fluidOk = fluidNumber === null || (Number.isInteger(fluidNumber) && fluidNumber >= 100 && fluidNumber <= 5000);
-  const caloriesOk = calorieNumber === null || (Number.isInteger(calorieNumber) && calorieNumber >= 300 && calorieNumber <= 5000);
+  const caloriesOk =
+    calorieNumber === null || (Number.isInteger(calorieNumber) && calorieNumber >= 300 && calorieNumber <= 5000);
   const valid = Boolean(type) && fluidOk && caloriesOk && (nilByMouth || rounds.length > 0);
 
   const toggleRestriction = (value: string) =>
-    setRestrictions((current) => (current.some((r) => r.toLowerCase() === value.toLowerCase()) ? current.filter((r) => r.toLowerCase() !== value.toLowerCase()) : [...current, value]));
+    setRestrictions((current) =>
+      current.some((r) => r.toLowerCase() === value.toLowerCase())
+        ? current.filter((r) => r.toLowerCase() !== value.toLowerCase())
+        : [...current, value],
+    );
 
   const create = useMutation({
     mutationFn: () =>
@@ -113,7 +131,10 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
         orderedByPractitionerId: doctor?.id ?? null,
       }),
     onSuccess: (order) => {
-      notify.success(`${order.dietName ?? 'Diet'} ordered for ${admission.patientName}`, 'Today’s meal plan has been updated.');
+      notify.success(
+        `${order.dietName ?? 'Diet'} ordered for ${admission.patientName}`,
+        'Today’s meal plan has been updated.',
+      );
       void queryClient.invalidateQueries({ queryKey: dietaryKeys.all });
       onClose();
     },
@@ -167,13 +188,21 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
               </div>
               {nilByMouth && (
                 <MessageBar intent="warning">
-                  <MessageBarBody>Nil by mouth cancels the next meal immediately and stops meals until a new diet is ordered.</MessageBarBody>
+                  <MessageBarBody>
+                    Nil by mouth cancels the next meal immediately and stops meals until a new diet is ordered.
+                  </MessageBarBody>
                 </MessageBar>
               )}
               <Field label="Food preference">
                 <div className={styles.chips} role="radiogroup" aria-label="Food preference">
                   {FOOD_PREFERENCES.map((p) => (
-                    <ToggleButton key={p} role="radio" aria-checked={preference === p} checked={preference === p} onClick={() => setPreference(p)}>
+                    <ToggleButton
+                      key={p}
+                      role="radio"
+                      aria-checked={preference === p}
+                      checked={preference === p}
+                      onClick={() => setPreference(p)}
+                    >
                       {PREFERENCE_LABEL[p]}
                     </ToggleButton>
                   ))}
@@ -183,23 +212,61 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
                 <div className={styles.stack}>
                   <div className={styles.chips}>
                     {COMMON_RESTRICTIONS.map((r) => (
-                      <ToggleButton key={r} size="small" shape="circular" checked={restrictions.some((x) => x.toLowerCase() === r.toLowerCase())} onClick={() => toggleRestriction(r)}>
+                      <ToggleButton
+                        key={r}
+                        size="small"
+                        shape="circular"
+                        checked={restrictions.some((x) => x.toLowerCase() === r.toLowerCase())}
+                        onClick={() => toggleRestriction(r)}
+                      >
                         {r}
                       </ToggleButton>
                     ))}
                   </div>
-                  <Input value={otherRestriction} onChange={(_, d) => setOtherRestriction(d.value)} placeholder="Other restrictions, separated by commas" maxLength={200} />
+                  <Input
+                    value={otherRestriction}
+                    onChange={(_, d) => setOtherRestriction(d.value)}
+                    placeholder="Other restrictions, separated by commas"
+                    maxLength={200}
+                  />
                 </div>
               </Field>
               <Field label="Allergies (food)" hint="Shown in red on the meal list and the kitchen sheet">
-                <Input value={allergies} onChange={(_, d) => setAllergies(d.value)} maxLength={500} placeholder="e.g. Peanuts, prawns" />
+                <Input
+                  value={allergies}
+                  onChange={(_, d) => setAllergies(d.value)}
+                  maxLength={500}
+                  placeholder="e.g. Peanuts, prawns"
+                />
               </Field>
               <div className={styles.two}>
-                <Field label="Fluid limit (ml/day)" validationMessage={fluidOk ? undefined : '100 to 5000 ml'} validationState={fluidOk ? 'none' : 'error'}>
-                  <Input type="number" inputMode="numeric" min={100} max={5000} value={fluid} onChange={(_, d) => setFluid(d.value)} />
+                <Field
+                  label="Fluid limit (ml/day)"
+                  validationMessage={fluidOk ? undefined : '100 to 5000 ml'}
+                  validationState={fluidOk ? 'none' : 'error'}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={100}
+                    max={5000}
+                    value={fluid}
+                    onChange={(_, d) => setFluid(d.value)}
+                  />
                 </Field>
-                <Field label="Calories (kcal/day)" validationMessage={caloriesOk ? undefined : '300 to 5000 kcal'} validationState={caloriesOk ? 'none' : 'error'}>
-                  <Input type="number" inputMode="numeric" min={300} max={5000} value={calories} onChange={(_, d) => setCalories(d.value)} />
+                <Field
+                  label="Calories (kcal/day)"
+                  validationMessage={caloriesOk ? undefined : '300 to 5000 kcal'}
+                  validationState={caloriesOk ? 'none' : 'error'}
+                >
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={300}
+                    max={5000}
+                    value={calories}
+                    onChange={(_, d) => setCalories(d.value)}
+                  />
                 </Field>
               </div>
               {!nilByMouth && (
@@ -210,14 +277,26 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
                         key={slot}
                         label={`${MEAL_SLOT_LABEL[slot]} (${MEAL_SLOT_TIME[slot]})`}
                         checked={rounds.includes(slot)}
-                        onChange={(_, d) => setSlots(d.checked ? MEAL_SLOTS.filter((s) => s === slot || rounds.includes(s)) : rounds.filter((s) => s !== slot))}
+                        onChange={(_, d) =>
+                          setSlots(
+                            d.checked
+                              ? MEAL_SLOTS.filter((s) => s === slot || rounds.includes(s))
+                              : rounds.filter((s) => s !== slot),
+                          )
+                        }
                       />
                     ))}
                   </div>
                 </Field>
               )}
               <Field label="Instructions for the kitchen">
-                <Textarea value={instructions} onChange={(_, d) => setInstructions(d.value)} maxLength={500} rows={2} placeholder="e.g. Small frequent feeds, no spicy food" />
+                <Textarea
+                  value={instructions}
+                  onChange={(_, d) => setInstructions(d.value)}
+                  maxLength={500}
+                  rows={2}
+                  placeholder="e.g. Small frequent feeds, no spicy food"
+                />
               </Field>
               <Field label="Ordered by (doctor)" hint="Leave empty when you order it yourself">
                 <Combobox
@@ -245,7 +324,9 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
               </Field>
               {create.error && (
                 <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>{isApiError(create.error) ? create.error.userMessage : 'The diet could not be ordered.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(create.error) ? create.error.userMessage : 'The diet could not be ordered.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -253,7 +334,12 @@ export function DietOrderDialog({ admission, current, onClose }: { admission: Di
               <Button onClick={onClose} disabled={create.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : <FoodRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || create.isPending}
+                icon={create.isPending ? <Spinner size="tiny" /> : <FoodRegular />}
+              >
                 {current ? 'Change diet' : 'Order diet'}
               </Button>
             </DialogActions>

@@ -27,14 +27,33 @@ export const seroInSentence: Record<SeroStatus, string> = {
   HIV: 'HIV-positive',
 };
 
-export const seroShort: Record<SeroStatus, string> = { Negative: 'Negative', HBsAg: 'HBsAg +', HCV: 'HCV +', HIV: 'HIV +' };
+export const seroShort: Record<SeroStatus, string> = {
+  Negative: 'Negative',
+  HBsAg: 'HBsAg +',
+  HCV: 'HCV +',
+  HIV: 'HIV +',
+};
 
 /** Distinct colours per segregation group; the label is always shown too (colour is never the only signal). */
-export const seroTone: Record<SeroStatus, StatusTone> = { Negative: 'success', HBsAg: 'warning', HCV: 'severe', HIV: 'danger' };
+export const seroTone: Record<SeroStatus, StatusTone> = {
+  Negative: 'success',
+  HBsAg: 'warning',
+  HCV: 'severe',
+  HIV: 'danger',
+};
 
-export const accessLabel: Record<VascularAccessType, string> = { AVF: 'AV fistula (AVF)', AVG: 'AV graft (AVG)', Catheter: 'Dialysis catheter' };
+export const accessLabel: Record<VascularAccessType, string> = {
+  AVF: 'AV fistula (AVF)',
+  AVG: 'AV graft (AVG)',
+  Catheter: 'Dialysis catheter',
+};
 
-export const shiftLabel: Record<DialysisShift, string> = { Morning: 'Morning', Afternoon: 'Afternoon', Evening: 'Evening', Night: 'Night' };
+export const shiftLabel: Record<DialysisShift, string> = {
+  Morning: 'Morning',
+  Afternoon: 'Afternoon',
+  Evening: 'Evening',
+  Night: 'Night',
+};
 
 export const machineStatusLabel: Record<DialysisMachineStatus, string> = {
   Available: 'Available',
@@ -43,7 +62,12 @@ export const machineStatusLabel: Record<DialysisMachineStatus, string> = {
   Retired: 'Retired',
 };
 
-export const machineStatusTone: Record<DialysisMachineStatus, StatusTone> = { Available: 'success', InUse: 'brand', Maintenance: 'warning', Retired: 'subtle' };
+export const machineStatusTone: Record<DialysisMachineStatus, StatusTone> = {
+  Available: 'success',
+  InUse: 'brand',
+  Maintenance: 'warning',
+  Retired: 'subtle',
+};
 
 export const sessionStatusLabel: Record<DialysisSessionStatus, string> = {
   Scheduled: 'Scheduled',
@@ -75,7 +99,10 @@ export const complicationLabel: Record<DialysisComplication, string> = {
   Other: 'Other',
 };
 
-export const reuseLabel: Record<DialyzerReusePolicy, string> = { SingleUse: 'Single use', Reuse: 'Reuse (reprocessed for this patient)' };
+export const reuseLabel: Record<DialyzerReusePolicy, string> = {
+  SingleUse: 'Single use',
+  Reuse: 'Reuse (reprocessed for this patient)',
+};
 
 export const weekdayShort: Record<Weekday, string> = {
   Monday: 'Mon',

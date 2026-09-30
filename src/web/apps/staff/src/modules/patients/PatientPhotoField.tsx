@@ -68,7 +68,12 @@ export function PatientPhotoField({ value, onChange, name, error, disabled }: Pa
 
   return (
     <div className={styles.root} role="group" aria-label="Patient photo">
-      <Avatar size={96} color="colorful" name={name.trim() || undefined} image={photoUrl ? { src: photoUrl, alt: '' } : undefined} />
+      <Avatar
+        size={96}
+        color="colorful"
+        name={name.trim() || undefined}
+        image={photoUrl ? { src: photoUrl, alt: '' } : undefined}
+      />
       <div className={styles.actions}>
         <Button icon={<CameraRegular />} disabled={locked} onClick={() => setCameraOpen(true)}>
           Take photo
@@ -88,10 +93,24 @@ export function PatientPhotoField({ value, onChange, name, error, disabled }: Pa
           {shown}
         </Caption1>
       ) : (
-        <Caption1 className={styles.hint}>Optional. Helps staff recognise the patient. It is saved when you save the patient.</Caption1>
+        <Caption1 className={styles.hint}>
+          Optional. Helps staff recognise the patient. It is saved when you save the patient.
+        </Caption1>
       )}
-      <input ref={fileInput} type="file" accept={PHOTO_ACCEPT} hidden tabIndex={-1} aria-label="Choose a photo file" onChange={chosen} />
-      <PhotoCaptureDialog open={cameraOpen} onClose={() => setCameraOpen(false)} onCaptured={(frame) => void store(frame)} />
+      <input
+        ref={fileInput}
+        type="file"
+        accept={PHOTO_ACCEPT}
+        hidden
+        tabIndex={-1}
+        aria-label="Choose a photo file"
+        onChange={chosen}
+      />
+      <PhotoCaptureDialog
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCaptured={(frame) => void store(frame)}
+      />
     </div>
   );
 }

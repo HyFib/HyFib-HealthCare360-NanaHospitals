@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, daysBetween, expiryLabel, expiryTone, formatExpiry, formatPercent, formatQty, maskTail, parseNumber } from './format';
+import {
+  addDays,
+  daysBetween,
+  expiryLabel,
+  expiryTone,
+  formatExpiry,
+  formatPercent,
+  formatQty,
+  maskTail,
+  parseNumber,
+} from './format';
 
 describe('inventory formatting', () => {
   it('formats quantities with Indian grouping and units', () => {

@@ -16,13 +16,20 @@ import { REPORT_KIND } from '@/modules/reports/icons';
 import { useActiveProfile } from '@/shell/profileContext';
 
 export const Route = createFileRoute('/_auth/reports/')({
-  validateSearch: (search: Record<string, unknown>): { kind?: ReportKindSegment } => ({ kind: isReportKind(search.kind) ? search.kind : undefined }),
+  validateSearch: (search: Record<string, unknown>): { kind?: ReportKindSegment } => ({
+    kind: isReportKind(search.kind) ? search.kind : undefined,
+  }),
   component: ReportsPage,
 });
 
 const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  month: { margin: '12px 0 2px', fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground3 },
+  month: {
+    margin: '12px 0 2px',
+    fontSize: tokens.fontSizeBase300,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 const FILTERS: { value: 'all' | ReportKindSegment; label: MessageKey }[] = [
@@ -58,7 +65,12 @@ function ReportsPage() {
     <PortalPage title={t('reports.title')} subtitle={t('reports.subtitle')}>
       <TabList
         selectedValue={kind ?? 'all'}
-        onTabSelect={(_, data) => void navigate({ search: { kind: data.value === 'all' ? undefined : (data.value as ReportKindSegment) }, replace: true })}
+        onTabSelect={(_, data) =>
+          void navigate({
+            search: { kind: data.value === 'all' ? undefined : (data.value as ReportKindSegment) },
+            replace: true,
+          })
+        }
         aria-label={t('reports.filter.label')}
         size="large"
       >
@@ -75,7 +87,11 @@ function ReportsPage() {
         ) : reports.isError ? (
           <ErrorBlock error={reports.error} onRetry={() => void reports.refetch()} />
         ) : rows.length === 0 ? (
-          <EmptyState icon={<DocumentTextRegular />} title={t('reports.empty.title')} description={t('reports.empty.body')} />
+          <EmptyState
+            icon={<DocumentTextRegular />}
+            title={t('reports.empty.title')}
+            description={t('reports.empty.body')}
+          />
         ) : (
           groups.map((group) => (
             <section key={group.month} className={styles.list} aria-label={group.month}>
@@ -84,7 +100,11 @@ function ReportsPage() {
                 const kindInfo = REPORT_KIND[item.kind];
                 const Icon = kindInfo.icon;
                 return (
-                  <CardLink key={`${item.kind}-${item.id}`} to="/reports/$kind/$reportId" params={{ kind: kindSegment(item.kind), reportId: item.id }}>
+                  <CardLink
+                    key={`${item.kind}-${item.id}`}
+                    to="/reports/$kind/$reportId"
+                    params={{ kind: kindSegment(item.kind), reportId: item.id }}
+                  >
                     <ListRow
                       icon={<Icon />}
                       tone={kindInfo.tone}

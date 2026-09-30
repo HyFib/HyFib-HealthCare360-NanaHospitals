@@ -38,7 +38,13 @@ const manifest: ModuleManifest = {
     },
   ],
   widgets: [
-    { id: 'emr-results-to-review', permission: 'clinical.emr.write', span: 2, order: 15, component: ResultsToReviewWidget },
+    {
+      id: 'emr-results-to-review',
+      permission: 'clinical.emr.write',
+      span: 2,
+      order: 15,
+      component: ResultsToReviewWidget,
+    },
     { id: 'emr-clinical-tasks', permission: 'clinical.emr.write', span: 2, order: 16, component: ClinicalTasksWidget },
   ],
 };

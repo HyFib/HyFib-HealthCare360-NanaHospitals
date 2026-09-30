@@ -95,7 +95,11 @@ export interface SignDecision {
   confirmControlledDrugs: boolean;
 }
 
-export const emptyDecision: SignDecision = { overrideReason: '', acknowledgeWarnings: false, confirmControlledDrugs: false };
+export const emptyDecision: SignDecision = {
+  overrideReason: '',
+  acknowledgeWarnings: false,
+  confirmControlledDrugs: false,
+};
 
 /** What still stops signing, in plain words (empty = ready to sign). */
 export function signBlockers(requirements: SignRequirements, decision: SignDecision): string[] {
@@ -125,7 +129,11 @@ export interface SignPrescriptionRequest {
 }
 
 /** The sign request: the override reason is sent only when something is actually blocking (it is audited). */
-export function toSignRequest(requirements: SignRequirements, decision: SignDecision, version: number): SignPrescriptionRequest {
+export function toSignRequest(
+  requirements: SignRequirements,
+  decision: SignDecision,
+  version: number,
+): SignPrescriptionRequest {
   return {
     overrideReason: requirements.needsOverride ? decision.overrideReason.trim() : null,
     acknowledgeWarnings: requirements.needsAcknowledgement ? decision.acknowledgeWarnings : false,
@@ -135,10 +143,21 @@ export function toSignRequest(requirements: SignRequirements, decision: SignDeci
 }
 
 /** Error codes the sign/refill endpoints use when the doctor still has to act on safety alerts. */
-export const SAFETY_ERROR_CODES = ['prescription.safety_block', 'prescription.warnings_unacknowledged', 'prescription.controlled_confirmation_required'] as const;
+export const SAFETY_ERROR_CODES = [
+  'prescription.safety_block',
+  'prescription.warnings_unacknowledged',
+  'prescription.controlled_confirmation_required',
+] as const;
 
 function isSafetyAlert(value: unknown): value is SafetyAlert {
-  return typeof value === 'object' && value !== null && 'key' in value && 'kind' in value && 'message' in value && 'isBlocking' in value;
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'key' in value &&
+    'kind' in value &&
+    'message' in value &&
+    'isBlocking' in value
+  );
 }
 
 /** Alerts carried in a 422 problem (`data`), or null when the error is not a safety stop. */
@@ -146,12 +165,16 @@ export function alertsFromProblem(code: string | undefined, data: unknown): Safe
   if (!code || !(SAFETY_ERROR_CODES as readonly string[]).includes(code)) {
     return null;
   }
-  return Array.isArray(data) ? data.filter(isSafetyAlert).map((a) => ({ ...a, itemIds: Array.isArray(a.itemIds) ? a.itemIds : [] })) : [];
+  return Array.isArray(data)
+    ? data.filter(isSafetyAlert).map((a) => ({ ...a, itemIds: Array.isArray(a.itemIds) ? a.itemIds : [] }))
+    : [];
 }
 
 /** Names of the prescription lines an alert refers to (current medicines are named inside the message). */
 export function affectedDrugs(alert: SafetyAlert, items: readonly { id: string; drugName: string }[]): string[] {
-  const names = alert.itemIds.map((id) => items.find((item) => item.id === id)?.drugName).filter((name): name is string => Boolean(name));
+  const names = alert.itemIds
+    .map((id) => items.find((item) => item.id === id)?.drugName)
+    .filter((name): name is string => Boolean(name));
   return [...new Set(names)];
 }
 

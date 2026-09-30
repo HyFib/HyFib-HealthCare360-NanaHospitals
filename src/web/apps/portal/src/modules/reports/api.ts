@@ -33,14 +33,16 @@ export const reportQueries = {
   radiology: (patientId: string, studyId: string) =>
     queryOptions({
       queryKey: ['portal', patientId, 'reports', 'radiology', studyId],
-      queryFn: ({ signal }) => api.get<RadiologyReportView>(`/api/v1/portal/reports/radiology/${id(studyId)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<RadiologyReportView>(`/api/v1/portal/reports/radiology/${id(studyId)}`, { signal }),
       staleTime: 5 * 60_000,
     }),
 
   cardiology: (patientId: string, studyId: string) =>
     queryOptions({
       queryKey: ['portal', patientId, 'reports', 'cardiology', studyId],
-      queryFn: ({ signal }) => api.get<CardiologyReportView>(`/api/v1/portal/reports/cardiology/${id(studyId)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<CardiologyReportView>(`/api/v1/portal/reports/cardiology/${id(studyId)}`, { signal }),
       staleTime: 5 * 60_000,
     }),
 };

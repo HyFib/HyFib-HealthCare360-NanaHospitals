@@ -16,7 +16,15 @@ export type OrderPriority = 'Routine' | 'Urgent' | 'Stat';
 
 export type Weekday = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 
-export const WEEKDAYS: readonly Weekday[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+export const WEEKDAYS: readonly Weekday[] = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
 
 export const chargeStatusLabel: Record<ChargeStatus, string> = {
   NotDue: 'Not billed yet',

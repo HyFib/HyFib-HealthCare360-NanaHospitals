@@ -19,10 +19,16 @@ export const REFILL_STATUS: Record<RefillStatus, { key: MessageKey; tone: Tone }
  * "Twice a day, after food" in the patient's language (the server sends English and Hindi), with the written pattern
  * ("1-0-1") alongside when it adds something.
  */
-export function frequencyText(line: Pick<PortalPrescriptionLine, 'frequency' | 'frequencyEnglish' | 'frequencyHindi'>, language: Language): string {
-  const words = (language === 'hi' ? line.frequencyHindi : line.frequencyEnglish) || line.frequencyEnglish || line.frequency;
+export function frequencyText(
+  line: Pick<PortalPrescriptionLine, 'frequency' | 'frequencyEnglish' | 'frequencyHindi'>,
+  language: Language,
+): string {
+  const words =
+    (language === 'hi' ? line.frequencyHindi : line.frequencyEnglish) || line.frequencyEnglish || line.frequency;
   const pattern = line.frequency?.trim();
-  return pattern && words && !words.toLowerCase().includes(pattern.toLowerCase()) ? `${words} (${pattern})` : words || pattern || '';
+  return pattern && words && !words.toLowerCase().includes(pattern.toLowerCase())
+    ? `${words} (${pattern})`
+    : words || pattern || '';
 }
 
 /** "Paracetamol 500 mg tablet" from the parts the doctor chose. */

@@ -115,16 +115,22 @@ function RisksPage() {
     }),
   );
   const rows = cell
-    ? (risks.data?.items ?? []).filter((r) => (residual ? r.residualScore === cellScore : r.likelihood === cell.likelihood && r.impact === cell.impact))
+    ? (risks.data?.items ?? []).filter((r) =>
+        residual ? r.residualScore === cellScore : r.likelihood === cell.likelihood && r.impact === cell.impact,
+      )
     : risks.data?.items;
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<RiskSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<RiskSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -140,9 +146,19 @@ function RisksPage() {
       />
       <Section
         title="Heat map of open risks"
-        description={cell ? `Showing ${LIKELIHOOD_LABELS[cell.likelihood - 1]} × ${IMPACT_LABELS[cell.impact - 1]} below. Click the cell again to clear.` : 'Click a cell to list its risks.'}
+        description={
+          cell
+            ? `Showing ${LIKELIHOOD_LABELS[cell.likelihood - 1]} × ${IMPACT_LABELS[cell.impact - 1]} below. Click the cell again to clear.`
+            : 'Click a cell to list its risks.'
+        }
         actions={
-          <TabList size="small" selectedValue={residual ? 'residual' : 'inherent'} onTabSelect={(_, d) => set({ residual: d.value === 'residual' ? true : undefined, l: undefined, i: undefined })}>
+          <TabList
+            size="small"
+            selectedValue={residual ? 'residual' : 'inherent'}
+            onTabSelect={(_, d) =>
+              set({ residual: d.value === 'residual' ? true : undefined, l: undefined, i: undefined })
+            }
+          >
             <Tab value="inherent">Before controls</Tab>
             <Tab value="residual">After controls</Tab>
           </TabList>
@@ -152,7 +168,12 @@ function RisksPage() {
         {matrix.error && <ErrorState error={matrix.error} onRetry={() => void matrix.refetch()} />}
         {matrix.data && (
           <div style={{ maxWidth: 760 }}>
-            <RiskMatrix cells={matrix.data} residual={residual} selected={cell} onSelect={(next) => set({ l: next?.likelihood, i: next?.impact })} />
+            <RiskMatrix
+              cells={matrix.data}
+              residual={residual}
+              selected={cell}
+              onSelect={(next) => set({ l: next?.likelihood, i: next?.impact })}
+            />
           </div>
         )}
       </Section>
@@ -163,7 +184,10 @@ function RisksPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Risk number or title" />
             </Field>
             <Field label="Category">
-              <Select value={search.category ?? ''} onChange={(_, d) => set({ category: (d.value || undefined) as RiskCategory | undefined })}>
+              <Select
+                value={search.category ?? ''}
+                onChange={(_, d) => set({ category: (d.value || undefined) as RiskCategory | undefined })}
+              >
                 <option value="">All</option>
                 {RISK_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -174,7 +198,10 @@ function RisksPage() {
             </Field>
             {!cell && (
               <Field label="Rating">
-                <Select value={search.rating ?? ''} onChange={(_, d) => set({ rating: (d.value || undefined) as RiskRating | undefined })}>
+                <Select
+                  value={search.rating ?? ''}
+                  onChange={(_, d) => set({ rating: (d.value || undefined) as RiskRating | undefined })}
+                >
                   <option value="">All</option>
                   {RISK_RATINGS.map((r) => (
                     <option key={r} value={r}>
@@ -185,7 +212,10 @@ function RisksPage() {
               </Field>
             )}
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as RiskStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as RiskStatus | undefined })}
+              >
                 <option value="">All except closed</option>
                 {RISK_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -195,7 +225,10 @@ function RisksPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -204,9 +237,18 @@ function RisksPage() {
                 ))}
               </Select>
             </Field>
-            <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.reviewOverdue)} onChange={(_, d) => set({ reviewOverdue: d.checked ? true : undefined })} label="Review overdue" />
+            <Checkbox
+              style={{ alignSelf: 'flex-end' }}
+              checked={Boolean(search.reviewOverdue)}
+              onChange={(_, d) => set({ reviewOverdue: d.checked ? true : undefined })}
+              label="Review overdue"
+            />
             {cell && (
-              <Button style={{ alignSelf: 'flex-end' }} icon={<DismissRegular />} onClick={() => set({ l: undefined, i: undefined })}>
+              <Button
+                style={{ alignSelf: 'flex-end' }}
+                icon={<DismissRegular />}
+                onClick={() => set({ l: undefined, i: undefined })}
+              >
                 Clear heat-map cell
               </Button>
             )}
@@ -236,21 +278,52 @@ function RisksPage() {
                 </span>
               ),
             },
-            { key: 'score', header: 'Before controls', sortable: true, render: (r) => <RatingBadge rating={r.rating} score={r.score} /> },
+            {
+              key: 'score',
+              header: 'Before controls',
+              sortable: true,
+              render: (r) => <RatingBadge rating={r.rating} score={r.score} />,
+            },
             {
               key: 'residualScore',
               header: 'After controls',
               sortable: true,
-              render: (r) => (r.residualRating ? <RatingBadge rating={r.residualRating} score={r.residualScore} /> : <Caption1>Not assessed</Caption1>),
+              render: (r) =>
+                r.residualRating ? (
+                  <RatingBadge rating={r.residualRating} score={r.residualScore} />
+                ) : (
+                  <Caption1>Not assessed</Caption1>
+                ),
             },
-            { key: 'owner', header: 'Owner', priority: 'low', render: (r) => <UserName id={r.ownerUserId} fallback="No owner" /> },
+            {
+              key: 'owner',
+              header: 'Owner',
+              priority: 'low',
+              render: (r) => <UserName id={r.ownerUserId} fallback="No owner" />,
+            },
             {
               key: 'reviewDate',
               header: 'Next review',
               sortable: true,
-              render: (r) => (r.isReviewOverdue ? <StatusBadge status="Overdue" tone="danger" label={`Overdue · ${formatDateOnly(r.reviewDate)}`} /> : formatDateOnly(r.reviewDate)),
+              render: (r) =>
+                r.isReviewOverdue ? (
+                  <StatusBadge status="Overdue" tone="danger" label={`Overdue · ${formatDateOnly(r.reviewDate)}`} />
+                ) : (
+                  formatDateOnly(r.reviewDate)
+                ),
             },
-            { key: 'status', header: 'Status', priority: 'low', render: (r) => <StatusBadge status={r.status} label={riskStatusLabel[r.status]} tone={r.status === 'Closed' ? 'success' : r.status === 'Accepted' ? 'informative' : undefined} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              priority: 'low',
+              render: (r) => (
+                <StatusBadge
+                  status={r.status}
+                  label={riskStatusLabel[r.status]}
+                  tone={r.status === 'Closed' ? 'success' : r.status === 'Accepted' ? 'informative' : undefined}
+                />
+              ),
+            },
           ]}
           rowActions={(r) =>
             r.status === 'Closed' ? null : (
@@ -266,7 +339,11 @@ function RisksPage() {
           page={cell ? undefined : (search.page ?? 1)}
           pageSize={25}
           totalCount={cell ? undefined : risks.data?.totalCount}
-          onPageChange={cell ? undefined : (page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+          onPageChange={
+            cell
+              ? undefined
+              : (page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })
+          }
         />
       </Section>
       {editing && <RiskDrawer riskId={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}

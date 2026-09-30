@@ -32,7 +32,10 @@ function ProgramsPage() {
       <PageHeader
         title="Monitoring programmes"
         subtitle="Each programme sets the standard alert limits for new enrolments and how often patients should send readings."
-        breadcrumbs={[{ label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) }, { label: 'Programmes' }]}
+        breadcrumbs={[
+          { label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) },
+          { label: 'Programmes' },
+        ]}
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing({ program: null })}>
@@ -68,7 +71,13 @@ function ProgramsPage() {
               key: 'status',
               header: 'Status',
               width: 120,
-              render: (p) => <StatusBadge status={p.isActive ? 'Active' : 'Inactive'} tone={p.isActive ? 'success' : 'informative'} label={p.isActive ? 'Open' : 'Closed'} />,
+              render: (p) => (
+                <StatusBadge
+                  status={p.isActive ? 'Active' : 'Inactive'}
+                  tone={p.isActive ? 'success' : 'informative'}
+                  label={p.isActive ? 'Open' : 'Closed'}
+                />
+              ),
             },
           ]}
           emptyTitle="No programmes"

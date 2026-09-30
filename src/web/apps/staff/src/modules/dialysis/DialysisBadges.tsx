@@ -1,9 +1,23 @@
 import { Badge, Caption1, makeStyles, mergeClasses, Radio, RadioGroup, Text, tokens } from '@fluentui/react-components';
-import { BroomRegular, CheckmarkCircleRegular, ProhibitedRegular, ShieldRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  BroomRegular,
+  CheckmarkCircleRegular,
+  ProhibitedRegular,
+  ShieldRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
 import { StatusBadge } from '@hc360/ui';
 import type { DialysisMachineStatus, DialysisSessionStatus, SeroStatus } from './api';
-import { machineStatusLabel, machineStatusTone, seroLabel, seroShort, seroTone, sessionStatusLabel, sessionStatusTone } from './labels';
+import {
+  machineStatusLabel,
+  machineStatusTone,
+  seroLabel,
+  seroShort,
+  seroTone,
+  sessionStatusLabel,
+  sessionStatusTone,
+} from './labels';
 import type { MachineChoice } from './logic';
 
 const useStyles = makeStyles({
@@ -21,14 +35,33 @@ const useStyles = makeStyles({
   optionBlocked: { backgroundColor: tokens.colorNeutralBackground3 },
   reasons: { display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '28px' },
   blocker: { color: tokens.colorPaletteRedForeground1, display: 'inline-flex', gap: '4px', alignItems: 'center' },
-  warning: { color: tokens.colorPaletteDarkOrangeForeground1, display: 'inline-flex', gap: '4px', alignItems: 'center' },
+  warning: {
+    color: tokens.colorPaletteDarkOrangeForeground1,
+    display: 'inline-flex',
+    gap: '4px',
+    alignItems: 'center',
+  },
   label: { display: 'inline-flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
 });
 
 /** Sero category with its own colour, icon and words (colour is never the only signal). */
-export function SeroBadge({ sero, size = 'medium', long }: { sero: SeroStatus; size?: 'small' | 'medium' | 'large'; long?: boolean }) {
+export function SeroBadge({
+  sero,
+  size = 'medium',
+  long,
+}: {
+  sero: SeroStatus;
+  size?: 'small' | 'medium' | 'large';
+  long?: boolean;
+}) {
   return (
-    <Badge appearance={sero === 'Negative' ? 'tint' : 'filled'} color={seroTone[sero]} size={size} icon={<ShieldRegular />} aria-label={`Sero status: ${seroLabel[sero]}`}>
+    <Badge
+      appearance={sero === 'Negative' ? 'tint' : 'filled'}
+      color={seroTone[sero]}
+      size={size}
+      icon={<ShieldRegular />}
+      aria-label={`Sero status: ${seroLabel[sero]}`}
+    >
       {long ? seroLabel[sero] : seroShort[sero]}
     </Badge>
   );
@@ -43,7 +76,13 @@ export function MachineStatusBadge({ status }: { status: DialysisMachineStatus }
 }
 
 /** Disinfection state after the last session: must be recorded before the next patient is connected. */
-export function DisinfectionState({ needsDisinfection, lastDisinfectedAt }: { needsDisinfection: boolean; lastDisinfectedAt?: string | null }) {
+export function DisinfectionState({
+  needsDisinfection,
+  lastDisinfectedAt,
+}: {
+  needsDisinfection: boolean;
+  lastDisinfectedAt?: string | null;
+}) {
   const styles = useStyles();
   return needsDisinfection ? (
     <span className={mergeClasses(styles.disinfection, styles.dirty)}>
@@ -51,7 +90,8 @@ export function DisinfectionState({ needsDisinfection, lastDisinfectedAt }: { ne
     </span>
   ) : (
     <span className={mergeClasses(styles.disinfection, styles.clean)}>
-      <CheckmarkCircleRegular aria-hidden /> Disinfected{lastDisinfectedAt ? ` ${formatRelative(lastDisinfectedAt)}` : ''}
+      <CheckmarkCircleRegular aria-hidden /> Disinfected
+      {lastDisinfectedAt ? ` ${formatRelative(lastDisinfectedAt)}` : ''}
     </span>
   );
 }
@@ -72,7 +112,9 @@ export function MachinePicker({
   label?: string;
 }) {
   const styles = useStyles();
-  const sorted = [...choices].sort((a, b) => Number(b.check.eligible) - Number(a.check.eligible) || a.code.localeCompare(b.code));
+  const sorted = [...choices].sort(
+    (a, b) => Number(b.check.eligible) - Number(a.check.eligible) || a.code.localeCompare(b.code),
+  );
   return (
     <RadioGroup aria-label={label} value={value ?? ''} onChange={(_, d) => onChange(d.value)} className={styles.picker}>
       {sorted.map((choice) => (

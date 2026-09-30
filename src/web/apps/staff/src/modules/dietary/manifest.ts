@@ -9,13 +9,49 @@ const manifest: ModuleManifest = {
   icon: FoodRegular,
   order: 20,
   links: [
-    { label: 'Diet orders', to: '/dietary', permission: 'dietary.orders.read', keywords: ['diet', 'nil by mouth', 'NPO', 'therapeutic diet', 'dietitian'] },
-    { label: 'Meal plans', to: '/dietary/meal-plans', permission: ['dietary.meals.manage', 'dietary.orders.read'], keywords: ['ward meals', 'delivery', 'meal round'] },
-    { label: 'Kitchen production', to: '/dietary/kitchen', permission: 'dietary.meals.manage', keywords: ['kitchen', 'cooking list', 'veg non-veg count'] },
-    { label: 'Diet types', to: '/dietary/diet-types', permission: ['dietary.masters.manage', 'dietary.orders.read'], keywords: ['diet master'] },
+    {
+      label: 'Diet orders',
+      to: '/dietary',
+      permission: 'dietary.orders.read',
+      keywords: ['diet', 'nil by mouth', 'NPO', 'therapeutic diet', 'dietitian'],
+    },
+    {
+      label: 'Meal plans',
+      to: '/dietary/meal-plans',
+      permission: ['dietary.meals.manage', 'dietary.orders.read'],
+      keywords: ['ward meals', 'delivery', 'meal round'],
+    },
+    {
+      label: 'Kitchen production',
+      to: '/dietary/kitchen',
+      permission: 'dietary.meals.manage',
+      keywords: ['kitchen', 'cooking list', 'veg non-veg count'],
+    },
+    {
+      label: 'Diet types',
+      to: '/dietary/diet-types',
+      permission: ['dietary.masters.manage', 'dietary.orders.read'],
+      keywords: ['diet master'],
+    },
   ],
-  quickActions: [{ label: 'Meal round', to: '/dietary/meal-plans', permission: 'dietary.meals.manage', icon: BowlChopsticksRegular, description: 'Mark meals delivered ward by ward' }],
-  widgets: [{ id: 'dietary-meal-round', permission: ['dietary.meals.manage', 'dietary.orders.read'], span: 2, order: 61, component: MealRoundWidget }],
+  quickActions: [
+    {
+      label: 'Meal round',
+      to: '/dietary/meal-plans',
+      permission: 'dietary.meals.manage',
+      icon: BowlChopsticksRegular,
+      description: 'Mark meals delivered ward by ward',
+    },
+  ],
+  widgets: [
+    {
+      id: 'dietary-meal-round',
+      permission: ['dietary.meals.manage', 'dietary.orders.read'],
+      span: 2,
+      order: 61,
+      component: MealRoundWidget,
+    },
+  ],
 };
 
 export default manifest;

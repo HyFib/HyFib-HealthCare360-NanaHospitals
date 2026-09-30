@@ -8,7 +8,12 @@ const useStyles = makeStyles({
   word: { minWidth: '72px', color: tokens.colorNeutralForeground2 },
   nps: { display: 'grid', gridTemplateColumns: 'repeat(11, minmax(32px, 1fr))', gap: '4px', maxWidth: '520px' },
   npsButton: { minWidth: '32px', paddingLeft: 0, paddingRight: 0 },
-  npsScale: { display: 'flex', justifyContent: 'space-between', maxWidth: '520px', color: tokens.colorNeutralForeground3 },
+  npsScale: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    maxWidth: '520px',
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 /** One 1–5 star question with the word for the chosen rating and a way to clear it. */
@@ -43,7 +48,13 @@ export function AspectRating({
           {value ? ratingWord(value) : 'Not answered'}
         </Caption1>
         {value ? (
-          <Button size="small" appearance="subtle" icon={<DismissRegular />} onClick={() => onChange(null)} disabled={disabled}>
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<DismissRegular />}
+            onClick={() => onChange(null)}
+            disabled={disabled}
+          >
             Clear
           </Button>
         ) : null}
@@ -88,7 +99,11 @@ export function NpsPicker({
               className={styles.npsButton}
               appearance={selected ? 'primary' : 'outline'}
               disabled={disabled}
-              style={selected ? { backgroundColor: NPS_COLORS[npsGroup(score)], color: tokens.colorNeutralForegroundOnBrand } : undefined}
+              style={
+                selected
+                  ? { backgroundColor: NPS_COLORS[npsGroup(score)], color: tokens.colorNeutralForegroundOnBrand }
+                  : undefined
+              }
               onClick={() => onChange(selected ? null : score)}
             >
               {score}
@@ -138,7 +153,14 @@ export function FeedbackQuestions({
           {errors.ratings}
         </Caption1>
       )}
-      {includesNps && <NpsPicker value={answers.nps} onChange={(nps) => onChange({ ...answers, nps })} disabled={disabled} validationMessage={errors.nps} />}
+      {includesNps && (
+        <NpsPicker
+          value={answers.nps}
+          onChange={(nps) => onChange({ ...answers, nps })}
+          disabled={disabled}
+          validationMessage={errors.nps}
+        />
+      )}
       {allowsComment && (
         <Field
           label="Comments in the patient's own words"

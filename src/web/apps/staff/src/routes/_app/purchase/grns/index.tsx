@@ -10,7 +10,12 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { DocStatus } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { GRN_STATUSES, purchaseQueries, type GoodsReceiptListItem, type GoodsReceiptStatus } from '@/modules/purchase/api';
+import {
+  GRN_STATUSES,
+  purchaseQueries,
+  type GoodsReceiptListItem,
+  type GoodsReceiptStatus,
+} from '@/modules/purchase/api';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -35,7 +40,11 @@ export const Route = createFileRoute('/_app/purchase/grns/')({
   component: GrnsPage,
 });
 
-const STATUS_LABEL: Record<GoodsReceiptStatus, string> = { Draft: 'Draft (not in stock yet)', Posted: 'Posted', Cancelled: 'Cancelled' };
+const STATUS_LABEL: Record<GoodsReceiptStatus, string> = {
+  Draft: 'Draft (not in stock yet)',
+  Posted: 'Posted',
+  Cancelled: 'Cancelled',
+};
 
 /** Goods receipts (INV-03): vendor invoices received into a store with batch, expiry and MRP. */
 function GrnsPage() {
@@ -52,8 +61,18 @@ function GrnsPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const grns = useQuery(purchaseQueries.grns({ status: search.status, storeId: search.storeId, from: search.from, to: search.to, search: search.q, page: search.page }));
-  const set = (patch: Partial<GrnSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const grns = useQuery(
+    purchaseQueries.grns({
+      status: search.status,
+      storeId: search.storeId,
+      from: search.from,
+      to: search.to,
+      search: search.q,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<GrnSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -62,7 +81,11 @@ function GrnsPage() {
         subtitle="Each receipt records a vendor invoice. Posting adds the batches to stock."
         actions={
           canReceive && (
-            <Button appearance="primary" icon={<BoxArrowLeftRegular />} onClick={() => void navigate({ to: '/purchase/grns/new' })}>
+            <Button
+              appearance="primary"
+              icon={<BoxArrowLeftRegular />}
+              onClick={() => void navigate({ to: '/purchase/grns/new' })}
+            >
               Receive goods
             </Button>
           )
@@ -74,9 +97,17 @@ function GrnsPage() {
             <Field label="GRN or invoice number" style={{ flex: '0 1 240px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as GoodsReceiptStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as GoodsReceiptStatus | undefined })}
+              >
                 <option value="">All</option>
                 {GRN_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -86,10 +117,20 @@ function GrnsPage() {
               </Select>
             </Field>
             <Field label="Received from">
-              <Input type="date" value={search.from ?? ''} max={search.to ?? todayIso()} onChange={(_, d) => set({ from: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.from ?? ''}
+                max={search.to ?? todayIso()}
+                onChange={(_, d) => set({ from: d.value || undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={search.to ?? ''} max={todayIso()} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? ''}
+                max={todayIso()}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
           </FilterBar>
         </div>
@@ -106,13 +147,24 @@ function GrnsPage() {
             { key: 'no', header: 'GRN', render: (g) => <Text font="monospace">{g.number}</Text> },
             { key: 'received', header: 'Received', render: (g) => formatDateOnly(g.receivedOn) },
             { key: 'vendor', header: 'Vendor', render: (g) => <Text weight="semibold">{g.vendorName}</Text> },
-            { key: 'invoice', header: 'Vendor invoice', render: (g) => `${g.vendorInvoiceNumber}${g.vendorInvoiceDate ? ` · ${formatDateOnly(g.vendorInvoiceDate)}` : ''}` },
+            {
+              key: 'invoice',
+              header: 'Vendor invoice',
+              render: (g) =>
+                `${g.vendorInvoiceNumber}${g.vendorInvoiceDate ? ` · ${formatDateOnly(g.vendorInvoiceDate)}` : ''}`,
+            },
             { key: 'store', header: 'Store', priority: 'low', render: (g) => g.storeName },
             { key: 'net', header: 'Value', align: 'end', render: (g) => formatInr(g.netAmount) },
-            { key: 'status', header: 'Status', render: (g) => <DocStatus status={g.status} label={g.status === 'Draft' ? 'Draft' : undefined} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (g) => <DocStatus status={g.status} label={g.status === 'Draft' ? 'Draft' : undefined} />,
+            },
           ]}
           emptyTitle="No goods receipts match"
-          emptyDescription={canReceive ? 'Receive goods against a purchase order or directly from a vendor invoice.' : undefined}
+          emptyDescription={
+            canReceive ? 'Receive goods against a purchase order or directly from a vendor invoice.' : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={grns.data?.totalCount}

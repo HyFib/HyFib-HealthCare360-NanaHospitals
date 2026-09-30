@@ -52,11 +52,16 @@ export function ReceiveReportDialog({ target, onClose }: { target: ReceiveReport
 
   const receive = useMutation({
     mutationFn: async () => {
-      const stored = file ? await uploadFile(file, { category: 'lab-external-report', patientId: target.patientId }) : null;
+      const stored = file
+        ? await uploadFile(file, { category: 'lab-external-report', patientId: target.patientId })
+        : null;
       await labApi.receiveExternalReport(target.itemId, reference.trim() || null, stored?.id ?? null);
     },
     onSuccess: () => {
-      notify.success('External report received', 'Enter the results from the report in result entry, then verify them.');
+      notify.success(
+        'External report received',
+        'Enter the results from the report in result entry, then verify them.',
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.outsourcing });
       void queryClient.invalidateQueries({ queryKey: labKeys.orders });
       onClose();
@@ -89,11 +94,22 @@ export function ReceiveReportDialog({ target, onClose }: { target: ReceiveReport
                 </MessageBar>
               )}
               {canUpload ? (
-                <Field label="Report file (PDF or image, up to 25 MB)" validationMessage={problem ?? undefined} validationState={problem ? 'error' : 'none'}>
-                  <input type="file" accept={ACCEPTED_FILE_TYPES} onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+                <Field
+                  label="Report file (PDF or image, up to 25 MB)"
+                  validationMessage={problem ?? undefined}
+                  validationState={problem ? 'error' : 'none'}
+                >
+                  <input
+                    type="file"
+                    accept={ACCEPTED_FILE_TYPES}
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
                 </Field>
               ) : (
-                <Caption1 className={styles.muted}>You cannot attach files. Keep the paper report with the sample records, or ask an administrator for document upload access.</Caption1>
+                <Caption1 className={styles.muted}>
+                  You cannot attach files. Keep the paper report with the sample records, or ask an administrator for
+                  document upload access.
+                </Caption1>
               )}
               <Field label="Reference laboratory's report number">
                 <Input value={reference} onChange={(_, data) => setReference(data.value.slice(0, 64))} autoFocus />
@@ -103,7 +119,12 @@ export function ReceiveReportDialog({ target, onClose }: { target: ReceiveReport
               <Button onClick={onClose} disabled={receive.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={Boolean(problem) || receive.isPending} icon={receive.isPending ? <Spinner size="tiny" /> : <DocumentArrowDownRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={Boolean(problem) || receive.isPending}
+                icon={receive.isPending ? <Spinner size="tiny" /> : <DocumentArrowDownRegular />}
+              >
                 Record receipt
               </Button>
             </DialogActions>

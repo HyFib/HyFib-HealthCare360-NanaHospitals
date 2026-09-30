@@ -6,7 +6,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { CANTEEN_SAC, canteenApi, canteenKeys, canteenQueries, MENU_CATEGORIES, menuItemBody, type MenuCategory, type MenuItemDto } from '@/modules/canteen/api';
+import {
+  CANTEEN_SAC,
+  canteenApi,
+  canteenKeys,
+  canteenQueries,
+  MENU_CATEGORIES,
+  menuItemBody,
+  type MenuCategory,
+  type MenuItemDto,
+} from '@/modules/canteen/api';
 import { MenuItemDrawer, StockDialog } from '@/modules/canteen/MenuForms';
 
 export const Route = createFileRoute('/_app/canteen/menu')({
@@ -25,7 +34,8 @@ function CanteenMenuPage() {
   const [stock, setStock] = useState<MenuItemDto | null>(null);
 
   const toggle = useMutation({
-    mutationFn: (item: MenuItemDto) => canteenApi.updateMenuItem(item.id, menuItemBody(item, { isAvailable: !item.isAvailable })),
+    mutationFn: (item: MenuItemDto) =>
+      canteenApi.updateMenuItem(item.id, menuItemBody(item, { isAvailable: !item.isAvailable })),
     onSuccess: (_, item) => {
       notify.success(item.isAvailable ? `${item.name} taken off the menu` : `${item.name} is on the menu`);
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
@@ -39,7 +49,11 @@ function CanteenMenuPage() {
   });
 
   const needle = term.trim().toLowerCase();
-  const rows = (menu.data ?? []).filter((m) => (!category || m.category === category) && (!needle || m.name.toLowerCase().includes(needle) || m.code.toLowerCase().includes(needle)));
+  const rows = (menu.data ?? []).filter(
+    (m) =>
+      (!category || m.category === category) &&
+      (!needle || m.name.toLowerCase().includes(needle) || m.code.toLowerCase().includes(needle)),
+  );
 
   return (
     <Page>
@@ -89,21 +103,39 @@ function CanteenMenuPage() {
               render: (m) => (
                 <span>
                   <Text weight="semibold">{m.name}</Text> <Caption1>{m.code}</Caption1>
-                  <Badge size="small" appearance="outline" color={m.isVeg ? 'success' : 'danger'} style={{ marginLeft: 6 }}>
+                  <Badge
+                    size="small"
+                    appearance="outline"
+                    color={m.isVeg ? 'success' : 'danger'}
+                    style={{ marginLeft: 6 }}
+                  >
                     {m.isVeg ? 'Veg' : 'Non-veg'}
                   </Badge>
                 </span>
               ),
             },
             { key: 'category', header: 'Category', width: 120, render: (m) => m.category },
-            { key: 'price', header: 'Price', width: 110, align: 'end', render: (m) => <Text weight="semibold">{formatInr(m.price)}</Text> },
-            { key: 'gst', header: 'GST', width: 120, priority: 'low', render: (m) => `${m.gstRate}% ${m.priceIncludesGst ? 'incl.' : 'extra'}` },
+            {
+              key: 'price',
+              header: 'Price',
+              width: 110,
+              align: 'end',
+              render: (m) => <Text weight="semibold">{formatInr(m.price)}</Text>,
+            },
+            {
+              key: 'gst',
+              header: 'GST',
+              width: 120,
+              priority: 'low',
+              render: (m) => `${m.gstRate}% ${m.priceIncludesGst ? 'incl.' : 'extra'}`,
+            },
             {
               key: 'hsnSac',
               header: 'HSN/SAC',
               width: 130,
               priority: 'low',
-              render: (m) => (m.hsnSac ? <Text font="monospace">{m.hsnSac}</Text> : <Caption1>{CANTEEN_SAC} (default)</Caption1>),
+              render: (m) =>
+                m.hsnSac ? <Text font="monospace">{m.hsnSac}</Text> : <Caption1>{CANTEEN_SAC} (default)</Caption1>,
             },
             {
               key: 'stock',
@@ -112,7 +144,13 @@ function CanteenMenuPage() {
               align: 'end',
               render: (m) =>
                 m.trackStock ? (
-                  <Text style={m.stockOnHand <= 5 ? { color: tokens.colorPaletteRedForeground1, fontWeight: 600 } : undefined}>{m.stockOnHand}</Text>
+                  <Text
+                    style={
+                      m.stockOnHand <= 5 ? { color: tokens.colorPaletteRedForeground1, fontWeight: 600 } : undefined
+                    }
+                  >
+                    {m.stockOnHand}
+                  </Text>
                 ) : (
                   <Caption1>Not tracked</Caption1>
                 ),
@@ -123,7 +161,11 @@ function CanteenMenuPage() {
               width: 110,
               render: (m) =>
                 canManage ? (
-                  <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} role="presentation">
+                  <span
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    role="presentation"
+                  >
                     <Switch
                       checked={m.isAvailable}
                       disabled={toggle.isPending}
@@ -148,7 +190,13 @@ function CanteenMenuPage() {
                         Stock
                       </Button>
                     )}
-                    <Button size="small" appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${m.name}`} onClick={() => setEditing(m)} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<EditRegular />}
+                      aria-label={`Edit ${m.name}`}
+                      onClick={() => setEditing(m)}
+                    />
                   </span>
                 )
               : undefined

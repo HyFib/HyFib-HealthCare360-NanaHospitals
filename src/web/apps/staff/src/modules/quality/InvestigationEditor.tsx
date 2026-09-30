@@ -18,7 +18,17 @@ import {
 import { AddRegular, CheckmarkCircleRegular, DeleteRegular, LockOpenRegular, SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, ConfirmDialog, EmptyState, ErrorState, LoadingState, Section, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  ConfirmDialog,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Section,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type Control } from 'react-hook-form';
@@ -35,7 +45,9 @@ const schema = z.object({
   problemStatement: z.string().trim().min(1, 'State the problem in one or two sentences.').max(2000),
   whys: z.array(z.object({ value: z.string().max(500) })).max(10),
   factors: z
-    .array(z.object({ category: z.enum(FACTOR_CATEGORIES), description: z.string().max(500), isRootCause: z.boolean() }))
+    .array(
+      z.object({ category: z.enum(FACTOR_CATEGORIES), description: z.string().max(500), isRootCause: z.boolean() }),
+    )
     .max(50),
   findings: z.string().trim().max(4000),
   recommendations: z.string().trim().max(4000),
@@ -49,7 +61,12 @@ const useStyles = makeStyles({
   row: { display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' },
   grow: { flex: '1 1 280px' },
   bones: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '10px' },
-  bone: { padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground2 },
+  bone: {
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   head: {
     padding: '10px 12px',
     borderRadius: tokens.borderRadiusMedium,
@@ -67,7 +84,8 @@ function toValues(inv: InvestigationDto | null): Values {
     method: inv?.method ?? 'FiveWhys',
     problemStatement: inv?.problemStatement ?? '',
     whys: (inv?.whys.length ? inv.whys : ['', '', '']).map((value) => ({ value })),
-    factors: inv?.factors.map((f) => ({ category: f.category, description: f.description, isRootCause: f.isRootCause })) ?? [],
+    factors:
+      inv?.factors.map((f) => ({ category: f.category, description: f.description, isRootCause: f.isRootCause })) ?? [],
     findings: inv?.findings ?? '',
     recommendations: inv?.recommendations ?? '',
     investigators: inv?.investigators ?? [],
@@ -94,7 +112,11 @@ export function InvestigationEditor({ incidentId, canEdit }: { incidentId: strin
     return (
       <EmptyState
         title="No root-cause analysis yet"
-        description={canEdit ? 'Start the analysis to find out why it happened. Saving it moves the incident to "Investigation".' : 'The quality team has not started the analysis.'}
+        description={
+          canEdit
+            ? 'Start the analysis to find out why it happened. Saving it moves the incident to "Investigation".'
+            : 'The quality team has not started the analysis.'
+        }
         action={
           canEdit ? (
             <Button appearance="primary" onClick={() => setStarting(true)}>
@@ -110,10 +132,25 @@ export function InvestigationEditor({ incidentId, canEdit }: { incidentId: strin
   if (data?.status === 'Completed') {
     return <CompletedView investigation={data} incidentId={incidentId} canEdit={canEdit} />;
   }
-  return <EditorForm key={data ? `${data.id}:${data.version}` : 'new'} incidentId={incidentId} investigation={data} canEdit={canEdit} />;
+  return (
+    <EditorForm
+      key={data ? `${data.id}:${data.version}` : 'new'}
+      incidentId={incidentId}
+      investigation={data}
+      canEdit={canEdit}
+    />
+  );
 }
 
-function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string; investigation: InvestigationDto | null; canEdit: boolean }) {
+function EditorForm({
+  incidentId,
+  investigation,
+  canEdit,
+}: {
+  incidentId: string;
+  investigation: InvestigationDto | null;
+  canEdit: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -125,7 +162,13 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
     control: form.control,
     name: ['method', 'problemStatement', 'findings', 'whys', 'factors'],
   });
-  const gaps = investigationGaps({ method, problemStatement, findings, whys: whyValues.map((w) => w.value), factors: factorValues });
+  const gaps = investigationGaps({
+    method,
+    problemStatement,
+    findings,
+    whys: whyValues.map((w) => w.value),
+    factors: factorValues,
+  });
   const dirty = form.formState.isDirty;
 
   const save = async (values: Values): Promise<boolean> => {
@@ -135,7 +178,9 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
         method: values.method,
         problemStatement: values.problemStatement.trim(),
         whys: values.whys.map((w) => w.value.trim()).filter(Boolean),
-        factors: values.factors.filter((f) => f.description.trim()).map((f) => ({ ...f, description: f.description.trim() })),
+        factors: values.factors
+          .filter((f) => f.description.trim())
+          .map((f) => ({ ...f, description: f.description.trim() })),
         findings: values.findings.trim() || null,
         recommendations: values.recommendations.trim() || null,
         investigatorUserIds: values.investigators.map((i) => i.id),
@@ -177,7 +222,11 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
   };
 
   return (
-    <form onSubmit={form.handleSubmit((values) => void save(values))} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <form
+      onSubmit={form.handleSubmit((values) => void save(values))}
+      noValidate
+      style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+    >
       <ChoiceField
         control={form.control}
         name="method"
@@ -188,10 +237,22 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
           { value: 'Fishbone', label: rcaMethodLabel.Fishbone },
         ]}
       />
-      <TextAreaField control={form.control} name="problemStatement" label="Problem statement" required rows={2} maxLength={2000} disabled={!canEdit} placeholder="What went wrong, for whom, where and when" />
+      <TextAreaField
+        control={form.control}
+        name="problemStatement"
+        label="Problem statement"
+        required
+        rows={2}
+        maxLength={2000}
+        disabled={!canEdit}
+        placeholder="What went wrong, for whom, where and when"
+      />
 
       {method === 'FiveWhys' && (
-        <Section title="5 whys" description="Ask 'why?' until you reach a cause the hospital can fix (at least 3 times).">
+        <Section
+          title="5 whys"
+          description="Ask 'why?' until you reach a cause the hospital can fix (at least 3 times)."
+        >
           <div className={styles.list}>
             {whys.fields.map((field, index) => (
               <div key={field.id} className={styles.row}>
@@ -200,11 +261,24 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
                   name={`whys.${index}.value`}
                   render={({ field: input }) => (
                     <Field label={`Why ${index + 1}?`} className={styles.grow}>
-                      <Input value={input.value} onChange={(_, d) => input.onChange(d.value)} onBlur={input.onBlur} disabled={!canEdit} maxLength={500} />
+                      <Input
+                        value={input.value}
+                        onChange={(_, d) => input.onChange(d.value)}
+                        onBlur={input.onBlur}
+                        disabled={!canEdit}
+                        maxLength={500}
+                      />
                     </Field>
                   )}
                 />
-                {canEdit && whys.fields.length > 1 && <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove why ${index + 1}`} onClick={() => whys.remove(index)} />}
+                {canEdit && whys.fields.length > 1 && (
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove why ${index + 1}`}
+                    onClick={() => whys.remove(index)}
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -222,20 +296,50 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
       >
         <div className={styles.list}>
           {factors.fields.map((field, index) => (
-            <FactorRow key={field.id} control={form.control} index={index} canEdit={canEdit} onRemove={() => factors.remove(index)} />
+            <FactorRow
+              key={field.id}
+              control={form.control}
+              index={index}
+              canEdit={canEdit}
+              onRemove={() => factors.remove(index)}
+            />
           ))}
-          {factors.fields.length === 0 && <Caption1 className={styles.muted}>No contributing factors recorded yet.</Caption1>}
+          {factors.fields.length === 0 && (
+            <Caption1 className={styles.muted}>No contributing factors recorded yet.</Caption1>
+          )}
         </div>
         {canEdit && factors.fields.length < 50 && (
-          <Button icon={<AddRegular />} style={{ marginTop: 8 }} onClick={() => factors.append({ category: 'Process', description: '', isRootCause: false })}>
+          <Button
+            icon={<AddRegular />}
+            style={{ marginTop: 8 }}
+            onClick={() => factors.append({ category: 'Process', description: '', isRootCause: false })}
+          >
             Add factor
           </Button>
         )}
-        {method === 'Fishbone' && factorValues.some((f) => f.description.trim()) && <FishboneView problem={problemStatement} factors={factorValues} />}
+        {method === 'Fishbone' && factorValues.some((f) => f.description.trim()) && (
+          <FishboneView problem={problemStatement} factors={factorValues} />
+        )}
       </Section>
 
-      <TextAreaField control={form.control} name="findings" label="Findings" rows={3} maxLength={4000} disabled={!canEdit} placeholder="What the analysis showed" />
-      <TextAreaField control={form.control} name="recommendations" label="Recommendations" rows={3} maxLength={4000} disabled={!canEdit} placeholder="What should change; plan them as actions (CAPA)" />
+      <TextAreaField
+        control={form.control}
+        name="findings"
+        label="Findings"
+        rows={3}
+        maxLength={4000}
+        disabled={!canEdit}
+        placeholder="What the analysis showed"
+      />
+      <TextAreaField
+        control={form.control}
+        name="recommendations"
+        label="Recommendations"
+        rows={3}
+        maxLength={4000}
+        disabled={!canEdit}
+        placeholder="What should change; plan them as actions (CAPA)"
+      />
       <InvestigatorsField control={form.control} canEdit={canEdit} />
 
       {canEdit && gaps.length > 0 && (
@@ -253,10 +357,19 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
 
       {canEdit && (
         <div className={styles.actions}>
-          <Button type="submit" icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />} disabled={busy !== null || (!dirty && Boolean(investigation))}>
+          <Button
+            type="submit"
+            icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />}
+            disabled={busy !== null || (!dirty && Boolean(investigation))}
+          >
             Save analysis
           </Button>
-          <Button appearance="primary" icon={busy === 'complete' ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} disabled={busy !== null || gaps.length > 0} onClick={() => void complete()}>
+          <Button
+            appearance="primary"
+            icon={busy === 'complete' ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+            disabled={busy !== null || gaps.length > 0}
+            onClick={() => void complete()}
+          >
             Complete analysis
           </Button>
         </div>
@@ -265,7 +378,17 @@ function EditorForm({ incidentId, investigation, canEdit }: { incidentId: string
   );
 }
 
-function FactorRow({ control, index, canEdit, onRemove }: { control: Control<Values>; index: number; canEdit: boolean; onRemove: () => void }) {
+function FactorRow({
+  control,
+  index,
+  canEdit,
+  onRemove,
+}: {
+  control: Control<Values>;
+  index: number;
+  canEdit: boolean;
+  onRemove: () => void;
+}) {
   const styles = useStyles();
   return (
     <div className={styles.row}>
@@ -274,7 +397,11 @@ function FactorRow({ control, index, canEdit, onRemove }: { control: Control<Val
         name={`factors.${index}.category`}
         render={({ field }) => (
           <Field label="Category">
-            <Select value={field.value} onChange={(_, d) => field.onChange(d.value as ContributingFactorCategory)} disabled={!canEdit}>
+            <Select
+              value={field.value}
+              onChange={(_, d) => field.onChange(d.value as ContributingFactorCategory)}
+              disabled={!canEdit}
+            >
               {FACTOR_CATEGORIES.map((c) => (
                 <option key={c} value={c}>
                   {c}
@@ -289,14 +416,27 @@ function FactorRow({ control, index, canEdit, onRemove }: { control: Control<Val
         name={`factors.${index}.description`}
         render={({ field }) => (
           <Field label="What contributed" className={styles.grow}>
-            <Input value={field.value} onChange={(_, d) => field.onChange(d.value)} onBlur={field.onBlur} disabled={!canEdit} maxLength={500} />
+            <Input
+              value={field.value}
+              onChange={(_, d) => field.onChange(d.value)}
+              onBlur={field.onBlur}
+              disabled={!canEdit}
+              maxLength={500}
+            />
           </Field>
         )}
       />
       <Controller
         control={control}
         name={`factors.${index}.isRootCause`}
-        render={({ field }) => <Checkbox checked={field.value} onChange={(_, d) => field.onChange(Boolean(d.checked))} disabled={!canEdit} label="Root cause" />}
+        render={({ field }) => (
+          <Checkbox
+            checked={field.value}
+            onChange={(_, d) => field.onChange(Boolean(d.checked))}
+            disabled={!canEdit}
+            label="Root cause"
+          />
+        )}
       />
       {canEdit && <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Remove factor" onClick={onRemove} />}
     </div>
@@ -304,7 +444,13 @@ function FactorRow({ control, index, canEdit, onRemove }: { control: Control<Val
 }
 
 /** Cause-and-effect view: the problem as the head, one bone per category, root causes in red. */
-function FishboneView({ problem, factors }: { problem: string; factors: { category: ContributingFactorCategory; description: string; isRootCause: boolean }[] }) {
+function FishboneView({
+  problem,
+  factors,
+}: {
+  problem: string;
+  factors: { category: ContributingFactorCategory; description: string; isRootCause: boolean }[];
+}) {
   const styles = useStyles();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }} aria-label="Fishbone diagram">
@@ -381,7 +527,15 @@ function InvestigatorsField({ control, canEdit }: { control: Control<Values>; ca
   );
 }
 
-function CompletedView({ investigation: inv, incidentId, canEdit }: { investigation: InvestigationDto; incidentId: string; canEdit: boolean }) {
+function CompletedView({
+  investigation: inv,
+  incidentId,
+  canEdit,
+}: {
+  investigation: InvestigationDto;
+  incidentId: string;
+  canEdit: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -439,7 +593,14 @@ function CompletedView({ investigation: inv, incidentId, canEdit }: { investigat
           </Button>
         </div>
       )}
-      <ConfirmDialog open={reopening} title="Reopen the analysis?" confirmLabel="Reopen" busy={busy} onConfirm={() => void reopen()} onCancel={() => setReopening(false)}>
+      <ConfirmDialog
+        open={reopening}
+        title="Reopen the analysis?"
+        confirmLabel="Reopen"
+        busy={busy}
+        onConfirm={() => void reopen()}
+        onCancel={() => setReopening(false)}
+      >
         The analysis becomes editable again. The incident cannot leave "Investigation" until it is completed again.
       </ConfirmDialog>
     </div>

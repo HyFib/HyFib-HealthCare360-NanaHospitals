@@ -26,12 +26,36 @@ import { nursingApi, nursingKeys, nursingQueries, type HandoverDto } from '../nu
 import { addDays, dutyDate, NURSING_SHIFTS, SHIFT_LABEL, shiftAt, type NursingShift } from '../time';
 
 const useStyles = makeStyles({
-  form: { display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2 },
-  grid: { display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', '@media (max-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    padding: '12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
+  grid: {
+    display: 'grid',
+    gap: '10px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    '@media (max-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   list: { display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' },
-  card: { padding: '12px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1 },
+  card: {
+    padding: '12px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
   pending: { borderLeft: `4px solid ${tokens.colorPaletteMarigoldBorderActive}` },
-  head: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: '6px' },
+  head: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: '6px',
+  },
   sbar: { display: 'grid', gridTemplateColumns: '28px minmax(0, 1fr)', gap: '4px 8px' },
   letter: { fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
   text: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
@@ -97,7 +121,19 @@ function useAcknowledge(onDone: () => void) {
   });
 }
 
-function HandoverCard({ h, header, canAcknowledge, onAcknowledge, busy }: { h: HandoverDto; header?: string; canAcknowledge: boolean; onAcknowledge: () => void; busy: boolean }) {
+function HandoverCard({
+  h,
+  header,
+  canAcknowledge,
+  onAcknowledge,
+  busy,
+}: {
+  h: HandoverDto;
+  header?: string;
+  canAcknowledge: boolean;
+  onAcknowledge: () => void;
+  busy: boolean;
+}) {
   const styles = useStyles();
   return (
     <article className={h.acknowledgedAt ? styles.card : `${styles.card} ${styles.pending}`}>
@@ -114,7 +150,13 @@ function HandoverCard({ h, header, canAcknowledge, onAcknowledge, busy }: { h: H
             Received by {h.acknowledgedByName ?? 'nurse'} {formatRelative(h.acknowledgedAt)}
           </Badge>
         ) : canAcknowledge ? (
-          <Button size="small" appearance="primary" icon={busy ? <Spinner size="tiny" /> : <CheckmarkRegular />} disabled={busy} onClick={onAcknowledge}>
+          <Button
+            size="small"
+            appearance="primary"
+            icon={busy ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            disabled={busy}
+            onClick={onAcknowledge}
+          >
             Acknowledge
           </Button>
         ) : (
@@ -170,7 +212,10 @@ export function PatientHandovers({ admissionId, canWrite }: { admissionId: strin
           <Subtitle2 as="h3">Hand over this patient (SBAR)</Subtitle2>
           {draft.saved && (
             <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-              <MessageBarBody>An unsaved handover from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was kept on this computer.</MessageBarBody>
+              <MessageBarBody>
+                An unsaved handover from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was kept on this
+                computer.
+              </MessageBarBody>
               <MessageBarActions>
                 <Button size="small" onClick={draft.restore}>
                   Restore
@@ -182,14 +227,55 @@ export function PatientHandovers({ admissionId, canWrite }: { admissionId: strin
             </MessageBar>
           )}
           <div className={styles.grid}>
-            <TextAreaField control={form.control} name="situation" label="S — Situation" required rows={3} maxLength={2000} placeholder="Current condition and concerns" />
-            <TextAreaField control={form.control} name="background" label="B — Background" rows={3} maxLength={2000} placeholder="Diagnosis, surgery, relevant history" />
-            <TextAreaField control={form.control} name="assessment" label="A — Assessment" rows={3} maxLength={2000} placeholder="Vitals trend, risks, lines and drains" />
-            <TextAreaField control={form.control} name="recommendation" label="R — Recommendation" rows={3} maxLength={2000} placeholder="What the next shift should do or watch" />
+            <TextAreaField
+              control={form.control}
+              name="situation"
+              label="S — Situation"
+              required
+              rows={3}
+              maxLength={2000}
+              placeholder="Current condition and concerns"
+            />
+            <TextAreaField
+              control={form.control}
+              name="background"
+              label="B — Background"
+              rows={3}
+              maxLength={2000}
+              placeholder="Diagnosis, surgery, relevant history"
+            />
+            <TextAreaField
+              control={form.control}
+              name="assessment"
+              label="A — Assessment"
+              rows={3}
+              maxLength={2000}
+              placeholder="Vitals trend, risks, lines and drains"
+            />
+            <TextAreaField
+              control={form.control}
+              name="recommendation"
+              label="R — Recommendation"
+              rows={3}
+              maxLength={2000}
+              placeholder="What the next shift should do or watch"
+            />
           </div>
-          <TextAreaField control={form.control} name="pendingTasks" label="Pending tasks" rows={2} maxLength={1000} placeholder="e.g. Repeat potassium at 6 am, dressing due" />
+          <TextAreaField
+            control={form.control}
+            name="pendingTasks"
+            label="Pending tasks"
+            rows={2}
+            maxLength={1000}
+            placeholder="e.g. Repeat potassium at 6 am, dressing due"
+          />
           <div>
-            <Button type="submit" appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <PeopleSwapRegular />} disabled={add.isPending}>
+            <Button
+              type="submit"
+              appearance="primary"
+              icon={add.isPending ? <Spinner size="tiny" /> : <PeopleSwapRegular />}
+              disabled={add.isPending}
+            >
               Give handover (Ctrl+Enter)
             </Button>
           </div>
@@ -200,7 +286,11 @@ export function PatientHandovers({ admissionId, canWrite }: { admissionId: strin
       ) : handovers.isLoading ? (
         <Spinner size="small" label="Loading handovers…" />
       ) : !handovers.data || handovers.data.length === 0 ? (
-        <EmptyState icon={<PeopleSwapRegular />} title="No handovers yet" description="Handovers given at the end of each shift appear here." />
+        <EmptyState
+          icon={<PeopleSwapRegular />}
+          title="No handovers yet"
+          description="Handovers given at the end of each shift appear here."
+        />
       ) : (
         <div className={styles.list}>
           {handovers.data.map((h) => (
@@ -238,7 +328,11 @@ export function WardHandoverSheet({ wardId, canWrite }: { wardId: string; canWri
   return (
     <Section
       title="Handover sheet"
-      description={sheet.data ? `${rows.length} patients handed over${waiting ? `, ${waiting} not yet acknowledged` : ''}` : 'SBAR handovers of the ward'}
+      description={
+        sheet.data
+          ? `${rows.length} patients handed over${waiting ? `, ${waiting} not yet acknowledged` : ''}`
+          : 'SBAR handovers of the ward'
+      }
       actions={
         <div className={styles.filters}>
           <Field label="Duty date">
@@ -271,7 +365,11 @@ export function WardHandoverSheet({ wardId, canWrite }: { wardId: string; canWri
       ) : sheet.isLoading ? (
         <Spinner size="small" label="Loading the handover sheet…" />
       ) : rows.length === 0 ? (
-        <EmptyState icon={<PeopleSwapRegular />} title="No handovers for this shift" description="Nurses hand over each patient from the patient's Handover tab." />
+        <EmptyState
+          icon={<PeopleSwapRegular />}
+          title="No handovers for this shift"
+          description="Nurses hand over each patient from the patient's Handover tab."
+        />
       ) : (
         <div className={styles.list}>
           {rows.map((r) => (

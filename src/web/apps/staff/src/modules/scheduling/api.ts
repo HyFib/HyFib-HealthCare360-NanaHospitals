@@ -5,19 +5,41 @@ import type { TokenPriority } from '@/modules/patients/api';
 
 // ------------------------------------------------------------------ enums (strings, as the server sends them)
 
-export const APPOINTMENT_STATUSES = ['Booked', 'Confirmed', 'CheckedIn', 'InConsultation', 'Completed', 'Cancelled', 'NoShow', 'Rescheduled'] as const;
+export const APPOINTMENT_STATUSES = [
+  'Booked',
+  'Confirmed',
+  'CheckedIn',
+  'InConsultation',
+  'Completed',
+  'Cancelled',
+  'NoShow',
+  'Rescheduled',
+] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 
 export const APPOINTMENT_CHANNELS = ['WalkIn', 'Phone', 'Online', 'Portal', 'Kiosk', 'WhatsApp'] as const;
 export type AppointmentChannel = (typeof APPOINTMENT_CHANNELS)[number];
 
 /** Channels the staff app may book with (portal bookings are made by patients). */
-export const STAFF_CHANNELS = ['WalkIn', 'Phone', 'WhatsApp', 'Online', 'Kiosk'] as const satisfies readonly AppointmentChannel[];
+export const STAFF_CHANNELS = [
+  'WalkIn',
+  'Phone',
+  'WhatsApp',
+  'Online',
+  'Kiosk',
+] as const satisfies readonly AppointmentChannel[];
 
 export type AppointmentVisitType = 'New' | 'FollowUp';
 export type AppointmentPaymentStatus = 'Unpaid' | 'PaidOnline' | 'PayAtHospital';
 
-export const CANCELLATION_REASONS = ['PatientRequest', 'DoctorUnavailable', 'HospitalRequest', 'Duplicate', 'PaymentNotReceived', 'Other'] as const;
+export const CANCELLATION_REASONS = [
+  'PatientRequest',
+  'DoctorUnavailable',
+  'HospitalRequest',
+  'Duplicate',
+  'PaymentNotReceived',
+  'Other',
+] as const;
 export type CancellationReason = (typeof CANCELLATION_REASONS)[number];
 export type CancellationSource = 'Staff' | 'Patient' | 'System';
 
@@ -482,13 +504,15 @@ export const schedulingQueries = {
   summary: (date: string, departmentId?: string | null) =>
     queryOptions({
       queryKey: [...schedulingKeys.summary, date, departmentId ?? 'all'],
-      queryFn: ({ signal }) => api.get<AppointmentDaySummary>(`${BASE}/appointments/summary`, { query: { date, departmentId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<AppointmentDaySummary>(`${BASE}/appointments/summary`, { query: { date, departmentId }, signal }),
       refetchInterval: 120_000,
     }),
   calendar: (params: { from: string; to: string; practitionerId?: string; departmentId?: string }) =>
     queryOptions({
       queryKey: ['scheduling', 'calendar', params],
-      queryFn: ({ signal }) => api.get<CalendarAppointment[]>(`${BASE}/appointments/calendar`, { query: { ...params }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<CalendarAppointment[]>(`${BASE}/appointments/calendar`, { query: { ...params }, signal }),
       placeholderData: keepPreviousData,
     }),
   slots: (params: { from: string; to: string; practitionerId?: string | null; departmentId?: string | null }) =>
@@ -496,7 +520,13 @@ export const schedulingQueries = {
       queryKey: [...schedulingKeys.slots, params],
       queryFn: ({ signal }) =>
         api.get<PractitionerAvailability[]>(`${BASE}/slots`, {
-          query: { from: params.from, to: params.to, practitionerId: params.practitionerId, departmentId: params.departmentId, includeFull: true },
+          query: {
+            from: params.from,
+            to: params.to,
+            practitionerId: params.practitionerId,
+            departmentId: params.departmentId,
+            includeFull: true,
+          },
           signal,
         }),
       staleTime: 15_000,
@@ -510,7 +540,10 @@ export const schedulingQueries = {
     queryOptions({
       queryKey: ['scheduling', 'exceptions', params],
       queryFn: ({ signal }) =>
-        api.get<ScheduleExceptionDto[]>(`${BASE}/exceptions`, { query: { practitionerId: params.practitionerId, from: params.from, to: params.to }, signal }),
+        api.get<ScheduleExceptionDto[]>(`${BASE}/exceptions`, {
+          query: { practitionerId: params.practitionerId, from: params.from, to: params.to },
+          signal,
+        }),
       staleTime: 60_000,
     }),
   waitlist: (params: { practitionerId?: string; departmentId?: string; status?: WaitlistStatus; page?: number }) =>
@@ -526,20 +559,27 @@ export const schedulingQueries = {
 
 export const schedulingApi = {
   book: (request: BookAppointmentRequest) => api.post<AppointmentDetail>(`${BASE}/appointments`, request),
-  reschedule: (id: string, request: RescheduleAppointmentRequest) => api.post<AppointmentDetail>(`${BASE}/appointments/${id}/reschedule`, request),
-  cancel: (id: string, request: CancelAppointmentRequest) => api.post<AppointmentDetail>(`${BASE}/appointments/${id}/cancel`, request),
+  reschedule: (id: string, request: RescheduleAppointmentRequest) =>
+    api.post<AppointmentDetail>(`${BASE}/appointments/${id}/reschedule`, request),
+  cancel: (id: string, request: CancelAppointmentRequest) =>
+    api.post<AppointmentDetail>(`${BASE}/appointments/${id}/cancel`, request),
   confirm: (id: string) => api.post<AppointmentDetail>(`${BASE}/appointments/${id}/confirm`),
   noShow: (id: string) => api.post<AppointmentDetail>(`${BASE}/appointments/${id}/no-show`),
-  checkIn: (id: string, request: CheckInAppointmentRequest) => api.post<CheckInResult>(`${BASE}/appointments/${id}/check-in`, request),
+  checkIn: (id: string, request: CheckInAppointmentRequest) =>
+    api.post<CheckInResult>(`${BASE}/appointments/${id}/check-in`, request),
 
   createSchedules: (request: CreateSchedulesRequest) => api.post<SchedulesCreated>(`${BASE}/schedules`, request),
-  updateSchedule: (id: string, request: UpdateScheduleRequest) => api.put<ScheduleSaved>(`${BASE}/schedules/${id}`, request),
+  updateSchedule: (id: string, request: UpdateScheduleRequest) =>
+    api.put<ScheduleSaved>(`${BASE}/schedules/${id}`, request),
   deleteSchedule: (id: string) => api.delete<ScheduleSaved>(`${BASE}/schedules/${id}`),
   saveException: (id: string | null, request: SaveScheduleExceptionRequest) =>
-    id ? api.put<ScheduleSaved>(`${BASE}/exceptions/${id}`, request) : api.post<ScheduleSaved>(`${BASE}/exceptions`, request),
+    id
+      ? api.put<ScheduleSaved>(`${BASE}/exceptions/${id}`, request)
+      : api.post<ScheduleSaved>(`${BASE}/exceptions`, request),
   deleteException: (id: string) => api.delete<void>(`${BASE}/exceptions/${id}`),
 
   addToWaitlist: (request: AddToWaitlistRequest) => api.post<WaitlistEntryDto>(`${BASE}/waitlist`, request),
   cancelWaitlist: (id: string) => api.post<void>(`${BASE}/waitlist/${id}/cancel`),
-  bookFromWaitlist: (id: string, request: BookFromWaitlistRequest) => api.post<AppointmentDetail>(`${BASE}/waitlist/${id}/book`, request),
+  bookFromWaitlist: (id: string, request: BookFromWaitlistRequest) =>
+    api.post<AppointmentDetail>(`${BASE}/waitlist/${id}/book`, request),
 };

@@ -33,7 +33,8 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
   const [limits] = useState(() => ({ now: toIstInput(new Date()) }));
   const [usedAt, setUsedAt] = useState(limits.now);
   const record = useMutation({
-    mutationFn: () => cssdApi.recordUse(issue.id, { patientId: patient!.id, usedAt: earlier ? fromIstInput(usedAt) : null }),
+    mutationFn: () =>
+      cssdApi.recordUse(issue.id, { patientId: patient!.id, usedAt: earlier ? fromIstInput(usedAt) : null }),
     onSuccess: () => {
       notify.success(`${issue.packNumber ?? 'Pack'} recorded as used`, patient ? `On ${patient.fullName}.` : undefined);
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
@@ -62,15 +63,26 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
             </DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <PatientPicker value={patient} onChange={setPatient} label="Used on patient" required />
-              <Switch checked={earlier} onChange={(_, d) => setEarlier(d.checked)} label="Used earlier (within 7 days)" />
+              <Switch
+                checked={earlier}
+                onChange={(_, d) => setEarlier(d.checked)}
+                label="Used earlier (within 7 days)"
+              />
               {earlier && (
                 <Field label="Used at" required>
-                  <Input type="datetime-local" value={usedAt} max={limits.now} onChange={(_, d) => setUsedAt(d.value)} />
+                  <Input
+                    type="datetime-local"
+                    value={usedAt}
+                    max={limits.now}
+                    onChange={(_, d) => setUsedAt(d.value)}
+                  />
                 </Field>
               )}
               {record.error && (
                 <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>{isApiError(record.error) ? record.error.userMessage : 'The use could not be recorded.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(record.error) ? record.error.userMessage : 'The use could not be recorded.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -78,7 +90,12 @@ export function RecordUseDialog({ issue, onClose }: { issue: SetIssueDto; onClos
               <Button onClick={onClose} disabled={record.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record use
               </Button>
             </DialogActions>

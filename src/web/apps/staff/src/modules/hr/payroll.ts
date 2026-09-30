@@ -124,11 +124,20 @@ export function previewInputsCsv(csv: string): CsvPreview {
     } else if (amount > MAX_AMOUNT) {
       errors.push({ line: lineNumber, message: 'The amount is too large.' });
     } else if (!/^\d+(\.\d{1,2})?$/.test(amountText)) {
-      errors.push({ line: lineNumber, message: 'Write the amount as digits with at most two decimals, without commas.' });
+      errors.push({
+        line: lineNumber,
+        message: 'Write the amount as digits with at most two decimals, without commas.',
+      });
     } else if (description && description.length > 200) {
       errors.push({ line: lineNumber, message: 'The description is longer than 200 characters.' });
     } else {
-      lines.push({ line: lineNumber, employeeCode: employeeCode.toUpperCase(), componentCode: componentCode.toUpperCase(), amount, description });
+      lines.push({
+        line: lineNumber,
+        employeeCode: employeeCode.toUpperCase(),
+        componentCode: componentCode.toUpperCase(),
+        amount,
+        description,
+      });
     }
   });
 
@@ -151,13 +160,19 @@ export interface StructureLineValue {
  * Monthly amounts of a salary structure as the payroll engine computes them before attendance: fixed heads as entered,
  * %-of-basic heads from BASIC. Used for the live preview while HR types a revision.
  */
-export function structurePreview(lines: StructureLineValue[]): { basic: number; gross: number; deductions: number; amounts: Record<string, number> } {
+export function structurePreview(lines: StructureLineValue[]): {
+  basic: number;
+  gross: number;
+  deductions: number;
+  amounts: Record<string, number>;
+} {
   const basic = lines.find((line) => line.code === 'BASIC' && line.calculationType === 'Fixed')?.value ?? 0;
   const amounts: Record<string, number> = {};
   let gross = 0;
   let deductions = 0;
   for (const line of lines) {
-    const amount = Math.round((line.calculationType === 'PercentOfBasic' ? (basic * line.value) / 100 : line.value) * 100) / 100;
+    const amount =
+      Math.round((line.calculationType === 'PercentOfBasic' ? (basic * line.value) / 100 : line.value) * 100) / 100;
     amounts[line.code] = amount;
     if (line.kind === 'Earning') {
       gross += amount;
@@ -175,7 +190,11 @@ export interface PtBandInput {
 }
 
 /** Same checks as the server's ProfessionalTaxCalculator.Validate, so the officer sees them before saving. */
-export function validatePtBands(bands: PtBandInput[], frequency: 'Monthly' | 'HalfYearly', deductionMonths: number[]): string[] {
+export function validatePtBands(
+  bands: PtBandInput[],
+  frequency: 'Monthly' | 'HalfYearly',
+  deductionMonths: number[],
+): string[] {
   const errors: string[] = [];
   if (bands.length === 0) {
     return ['Add at least one income band.'];
@@ -200,7 +219,9 @@ export function validatePtBands(bands: PtBandInput[], frequency: 'Monthly' | 'Ha
 }
 
 /** Bands sorted by income with each upper limit filled in (one rupee below the next band; the last is open). */
-export function withUpperLimits(bands: PtBandInput[]): { incomeFrom: number; incomeTo: number | null; amount: number; februaryAmount: number | null }[] {
+export function withUpperLimits(
+  bands: PtBandInput[],
+): { incomeFrom: number; incomeTo: number | null; amount: number; februaryAmount: number | null }[] {
   const ordered = [...bands].sort((a, b) => a.incomeFrom - b.incomeFrom);
   return ordered.map((band, index) => {
     const next = ordered[index + 1];

@@ -22,7 +22,17 @@ import {
 import { AddRegular, DeleteRegular, SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, NumberField, Section, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  NumberField,
+  Section,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -34,7 +44,13 @@ import { checkupApi, checkupKeys, type PackageDto, type PackageGender, type Pack
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
-  addRow: { display: 'grid', gridTemplateColumns: 'minmax(240px, 1fr) minmax(200px, 280px) auto', gap: '8px', alignItems: 'end', '@media (max-width: 900px)': { gridTemplateColumns: '1fr' } },
+  addRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(240px, 1fr) minmax(200px, 280px) auto',
+    gap: '8px',
+    alignItems: 'end',
+    '@media (max-width: 900px)': { gridTemplateColumns: '1fr' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   footer: {
     position: 'sticky',
@@ -66,12 +82,20 @@ const headerSchema = z
     gender: z.enum(['Any', 'Male', 'Female']),
     minAgeYears: z.number().int().min(0).max(120).nullable(),
     maxAgeYears: z.number().int().min(0).max(130).nullable(),
-    price: z.number({ error: 'Enter the package price.' }).min(0, 'The price cannot be negative.').max(9_999_999).nullable(),
+    price: z
+      .number({ error: 'Enter the package price.' })
+      .min(0, 'The price cannot be negative.')
+      .max(9_999_999)
+      .nullable(),
     isActive: z.boolean(),
   })
   .superRefine((v, ctx) => {
     if (v.minAgeYears !== null && v.maxAgeYears !== null && v.maxAgeYears < v.minAgeYears) {
-      ctx.addIssue({ code: 'custom', path: ['maxAgeYears'], message: 'Maximum age must not be below the minimum age.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['maxAgeYears'],
+        message: 'Maximum age must not be below the minimum age.',
+      });
     }
     if (v.price === null) {
       ctx.addIssue({ code: 'custom', path: ['price'], message: 'Enter the package price.' });
@@ -140,7 +164,8 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
     setLinesChanged(true);
   };
 
-  const updateLine = (key: string, patch: Partial<PackageLine>) => changeLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const updateLine = (key: string, patch: Partial<PackageLine>) =>
+    changeLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
   const save = useMutation({
     mutationFn: (values: HeaderValues) =>
@@ -153,7 +178,13 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
         maxAgeYears: values.maxAgeYears,
         price: values.price ?? 0,
         isActive: values.isActive,
-        items: lines.map((l) => ({ kind: l.kind, serviceItemId: l.kind === 'Investigation' ? l.serviceItemId : null, departmentCode: l.kind === 'Consultation' ? l.departmentCode : null, gender: l.gender, minAgeYears: l.minAgeYears })),
+        items: lines.map((l) => ({
+          kind: l.kind,
+          serviceItemId: l.kind === 'Investigation' ? l.serviceItemId : null,
+          departmentCode: l.kind === 'Consultation' ? l.departmentCode : null,
+          gender: l.gender,
+          minAgeYears: l.minAgeYears,
+        })),
         version: current?.version ?? null,
       }),
     onSuccess: (saved) => {
@@ -190,14 +221,31 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
     <form onSubmit={submit} noValidate className={styles.stack}>
       {current && !current.serviceItemId && (
         <MessageBar intent="warning">
-          <MessageBarBody>This package has no billing item yet, so check-in is refused. Save it once to register it for billing.</MessageBarBody>
+          <MessageBarBody>
+            This package has no billing item yet, so check-in is refused. Save it once to register it for billing.
+          </MessageBarBody>
         </MessageBar>
       )}
       <Section title="Package">
         <FormGrid columns={3}>
-          <TextField control={form.control} name="code" label="Code" required maxLength={32} hint="e.g. HC-EXEC" autoFocus={!pkg} />
+          <TextField
+            control={form.control}
+            name="code"
+            label="Code"
+            required
+            maxLength={32}
+            hint="e.g. HC-EXEC"
+            autoFocus={!pkg}
+          />
           <TextField control={form.control} name="name" label="Name" required maxLength={200} />
-          <NumberField control={form.control} name="price" label="Price (₹, incl. GST if any)" required min={0} step={1} />
+          <NumberField
+            control={form.control}
+            name="price"
+            label="Price (₹, incl. GST if any)"
+            required
+            min={0}
+            step={1}
+          />
           <ChoiceField
             control={form.control}
             name="gender"
@@ -211,11 +259,20 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
           <NumberField control={form.control} name="minAgeYears" label="Minimum age (years)" min={0} max={120} />
           <NumberField control={form.control} name="maxAgeYears" label="Maximum age (years)" min={0} max={130} />
         </FormGrid>
-        <TextAreaField control={form.control} name="description" label="Description for patients" rows={2} maxLength={1000} />
+        <TextAreaField
+          control={form.control}
+          name="description"
+          label="Description for patients"
+          rows={2}
+          maxLength={1000}
+        />
         <SwitchField control={form.control} name="isActive" label="Offered for booking" />
       </Section>
 
-      <Section title={`Tests and consultations (${lines.length})`} description="Each line becomes a station on the check-up day. Limit a line by sex or age where it applies.">
+      <Section
+        title={`Tests and consultations (${lines.length})`}
+        description="Each line becomes a station on the check-up day. Limit a line by sex or age where it applies."
+      >
         <div className={styles.stack}>
           <div className={styles.addRow}>
             <ServicePicker
@@ -228,7 +285,17 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
                 }
                 changeLines([
                   ...lines,
-                  { key: `new-${service.id}`, kind: 'Investigation', serviceItemId: service.id, departmentCode: null, name: service.name, code: service.code, category: service.category, gender: 'Any', minAgeYears: null },
+                  {
+                    key: `new-${service.id}`,
+                    kind: 'Investigation',
+                    serviceItemId: service.id,
+                    departmentCode: null,
+                    name: service.name,
+                    code: service.code,
+                    category: service.category,
+                    gender: 'Any',
+                    minAgeYears: null,
+                  },
                 ]);
               }}
             />
@@ -248,7 +315,17 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
               onClick={() => {
                 changeLines([
                   ...lines,
-                  { key: `new-consult-${consultDept}-${lines.length}`, kind: 'Consultation', serviceItemId: null, departmentCode: consultDept, name: `Consultation: ${departmentName(consultDept)}`, code: 'CONS-NEW', category: 'Consultation', gender: 'Any', minAgeYears: null },
+                  {
+                    key: `new-consult-${consultDept}-${lines.length}`,
+                    kind: 'Consultation',
+                    serviceItemId: null,
+                    departmentCode: consultDept,
+                    name: `Consultation: ${departmentName(consultDept)}`,
+                    code: 'CONS-NEW',
+                    category: 'Consultation',
+                    gender: 'Any',
+                    minAgeYears: null,
+                  },
                 ]);
                 setConsultDept('');
               }}
@@ -257,7 +334,9 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
             </Button>
           </div>
           {lines.length === 0 ? (
-            <Text className={styles.muted}>No tests yet. Search above to add laboratory, imaging and cardiology tests.</Text>
+            <Text className={styles.muted}>
+              No tests yet. Search above to add laboratory, imaging and cardiology tests.
+            </Text>
           ) : (
             <Table size="small" aria-label="Package lines">
               <TableHeader>
@@ -273,7 +352,11 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
                 {lines.map((line) => (
                   <TableRow key={line.key}>
                     <TableCell>
-                      <Text weight="semibold">{line.kind === 'Consultation' ? `Consultation: ${departmentName(line.departmentCode)}` : line.name}</Text>
+                      <Text weight="semibold">
+                        {line.kind === 'Consultation'
+                          ? `Consultation: ${departmentName(line.departmentCode)}`
+                          : line.name}
+                      </Text>
                       <Caption1 block className={styles.muted}>
                         {line.code}
                       </Caption1>
@@ -288,7 +371,12 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
                       )}
                     </TableCell>
                     <TableCell>
-                      <Select size="small" value={line.gender} onChange={(_, d) => updateLine(line.key, { gender: d.value as PackageGender })} aria-label={`Who gets ${line.name}`}>
+                      <Select
+                        size="small"
+                        value={line.gender}
+                        onChange={(_, d) => updateLine(line.key, { gender: d.value as PackageGender })}
+                        aria-label={`Who gets ${line.name}`}
+                      >
                         <option value="Any">Everyone</option>
                         <option value="Male">Men</option>
                         <option value="Female">Women</option>
@@ -302,15 +390,25 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
                         value={line.minAgeYears}
                         placeholder="Any"
                         onChange={(_, d) => {
-                          const raw = d.value ?? (d.displayValue === '' || d.displayValue === undefined ? null : Number(d.displayValue));
-                          updateLine(line.key, { minAgeYears: raw === null || Number.isNaN(raw) ? null : Math.max(0, Math.min(120, Math.round(raw))) });
+                          const raw =
+                            d.value ??
+                            (d.displayValue === '' || d.displayValue === undefined ? null : Number(d.displayValue));
+                          updateLine(line.key, {
+                            minAgeYears:
+                              raw === null || Number.isNaN(raw) ? null : Math.max(0, Math.min(120, Math.round(raw))),
+                          });
                         }}
                         aria-label={`Minimum age for ${line.name}`}
                       />
                     </TableCell>
                     <TableCell>
                       <Tooltip content="Remove" relationship="label">
-                        <Button size="small" appearance="subtle" icon={<DeleteRegular />} onClick={() => changeLines(lines.filter((l) => l.key !== line.key))} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          onClick={() => changeLines(lines.filter((l) => l.key !== line.key))}
+                        />
                       </Tooltip>
                     </TableCell>
                   </TableRow>
@@ -324,7 +422,12 @@ export function PackageForm({ pkg, onSaved }: { pkg: PackageDto | null; onSaved:
       <div className={styles.footer}>
         {current && <Caption1 className={styles.muted}>Saved price {formatInr(current.price)}</Caption1>}
         {(form.formState.isDirty || linesChanged) && <Caption1 className={styles.muted}>Unsaved changes</Caption1>}
-        <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending}>
+        <Button
+          type="submit"
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={save.isPending}
+        >
           Save package (Ctrl+S)
         </Button>
       </div>

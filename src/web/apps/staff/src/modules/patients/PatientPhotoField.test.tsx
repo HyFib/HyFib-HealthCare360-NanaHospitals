@@ -24,7 +24,11 @@ function renderField(props: Partial<PatientPhotoFieldProps> = {}) {
       <PatientPhotoField value={null} onChange={onChange} name="Asha Rao" {...props} />
     </FluentProvider>,
   );
-  return { onChange, input: screen.getByLabelText('Choose a photo file') as HTMLInputElement, container: view.container };
+  return {
+    onChange,
+    input: screen.getByLabelText('Choose a photo file') as HTMLInputElement,
+    container: view.container,
+  };
 }
 
 describe('PatientPhotoField', () => {

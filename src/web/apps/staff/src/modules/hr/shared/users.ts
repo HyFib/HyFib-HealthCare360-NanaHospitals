@@ -24,7 +24,10 @@ export interface DirectoryUser {
 }
 
 export function searchUsers(search: string, signal?: AbortSignal): Promise<PagedResult<DirectoryUser>> {
-  return api.get<PagedResult<DirectoryUser>>('/api/v1/admin/users', { query: { search: search || undefined, active: true, pageSize: 20 }, signal });
+  return api.get<PagedResult<DirectoryUser>>('/api/v1/admin/users', {
+    query: { search: search || undefined, active: true, pageSize: 20 },
+    signal,
+  });
 }
 
 /** Display name for a user id: "You" for the signed-in user, the directory name when readable, else a neutral label. */

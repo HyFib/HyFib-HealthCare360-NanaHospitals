@@ -1,4 +1,14 @@
-import { Badge, Caption1, makeStyles, mergeClasses, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Badge,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { DatabaseRegular } from '@fluentui/react-icons';
 import { formatDateTime } from '@hc360/core';
 import { useMemo } from 'react';
@@ -38,10 +48,26 @@ const useStyles = makeStyles({
 });
 
 /** A report chart drawn with the shared ECharts wrapper. */
-export function ReportChart({ chart, title, height = 320, compact }: { chart: ReportChartData; title: string; height?: number; compact?: boolean }) {
+export function ReportChart({
+  chart,
+  title,
+  height = 320,
+  compact,
+}: {
+  chart: ReportChartData;
+  title: string;
+  height?: number;
+  compact?: boolean;
+}) {
   const option = useMemo(() => reportChartOption(chart, { compact }), [chart, compact]);
   const series = chart.series.map((s) => s.label).join(', ');
-  return <EChart option={option} height={height} ariaLabel={`${title}: ${series} by ${chart.categoryLabel.toLowerCase()}. The same figures are in the table.`} />;
+  return (
+    <EChart
+      option={option}
+      height={height}
+      ariaLabel={`${title}: ${series} by ${chart.categoryLabel.toLowerCase()}. The same figures are in the table.`}
+    />
+  );
 }
 
 /** Headline figures ("Net revenue", "Occupancy") as number tiles. */
@@ -68,9 +94,24 @@ export function SummaryFigures({ figures, compact }: { figures: ReportFigure[]; 
 }
 
 /** Chart / table switch with icons; keyboard friendly (arrow keys move between views). */
-export function ViewSwitcher({ views, value, onChange, size = 'small' }: { views: ReportChartType[]; value: ReportChartType; onChange: (view: ReportChartType) => void; size?: 'small' | 'medium' }) {
+export function ViewSwitcher({
+  views,
+  value,
+  onChange,
+  size = 'small',
+}: {
+  views: ReportChartType[];
+  value: ReportChartType;
+  onChange: (view: ReportChartType) => void;
+  size?: 'small' | 'medium';
+}) {
   return (
-    <TabList size={size} selectedValue={value} onTabSelect={(_, data) => onChange(data.value as ReportChartType)} aria-label="Show as">
+    <TabList
+      size={size}
+      selectedValue={value}
+      onTabSelect={(_, data) => onChange(data.value as ReportChartType)}
+      aria-label="Show as"
+    >
       {views.map((view) => {
         const Icon = VIEW_ICONS[view];
         return (

@@ -18,7 +18,14 @@ import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { crmQueries } from '@/modules/crm/api';
 import { FollowUpCreateDialog } from '@/modules/crm/FollowUpCreateDialog';
-import { CAMPAIGN_VIEWERS, CRM_PERMISSIONS as C, CRM_USERS, followUpTypeLabel, leadSourceLabel, leadStatusLabel } from '@/modules/crm/labels';
+import {
+  CAMPAIGN_VIEWERS,
+  CRM_PERMISSIONS as C,
+  CRM_USERS,
+  followUpTypeLabel,
+  leadSourceLabel,
+  leadStatusLabel,
+} from '@/modules/crm/labels';
 import { LeadDrawer } from '@/modules/crm/LeadDrawer';
 import { presetRange } from '@/modules/feedback/rules';
 import { Columns, KpiGrid } from '@/modules/hr/shared/layout';
@@ -57,7 +64,10 @@ function CrmOverview() {
   const myCalls = useQuery({ ...crmQueries.followUps({ mine: true, dueTo: today }), enabled: canFollowUps });
   const scheduled = useQuery({ ...crmQueries.campaigns({ status: 'Scheduled' }), enabled: canCampaigns });
   const sending = useQuery({ ...crmQueries.campaigns({ status: 'Sending' }), enabled: canCampaigns });
-  const referrers = useQuery({ ...crmQueries.referringDoctors({ from: month.from, to: month.to }), enabled: canReferrals });
+  const referrers = useQuery({
+    ...crmQueries.referringDoctors({ from: month.from, to: month.to }),
+    enabled: canReferrals,
+  });
   const topReferrers = (referrers.data?.items ?? []).filter((d) => d.referrals > 0).slice(0, 5);
 
   return (
@@ -132,7 +142,10 @@ function CrmOverview() {
         {canCampaigns && (
           <KpiCard
             label="Campaigns going out"
-            value={count((scheduled.data?.totalCount ?? 0) + (sending.data?.totalCount ?? 0), scheduled.isLoading || sending.isLoading)}
+            value={count(
+              (scheduled.data?.totalCount ?? 0) + (sending.data?.totalCount ?? 0),
+              scheduled.isLoading || sending.isLoading,
+            )}
             hint={`${count(sending.data?.totalCount, sending.isLoading)} sending now`}
             icon={<MegaphoneRegular />}
             onClick={() => void navigate({ to: '/crm/campaigns' })}
@@ -146,7 +159,11 @@ function CrmOverview() {
             title="Leads to call back"
             description="Enquiries whose next call time has come"
             actions={
-              <Button size="small" appearance="subtle" onClick={() => void navigate({ to: '/crm/leads', search: { view: 'list', dueOnly: true } })}>
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() => void navigate({ to: '/crm/leads', search: { view: 'list', dueOnly: true } })}
+              >
                 See all
               </Button>
             }
@@ -173,7 +190,11 @@ function CrmOverview() {
                   ),
                 },
                 { key: 'status', header: 'Stage', render: (l) => leadStatusLabel[l.status] },
-                { key: 'due', header: 'Call by', render: (l) => (l.nextFollowUpAt ? formatDateTime(l.nextFollowUpAt) : '—') },
+                {
+                  key: 'due',
+                  header: 'Call by',
+                  render: (l) => (l.nextFollowUpAt ? formatDateTime(l.nextFollowUpAt) : '—'),
+                },
               ]}
               emptyTitle="No call-backs due"
               emptyDescription="Leads with a next call time appear here when it comes."
@@ -215,7 +236,11 @@ function CrmOverview() {
                 {
                   key: 'due',
                   header: 'Due',
-                  render: (f) => <Text style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}>{f.isOverdue ? 'Overdue' : 'Today'}</Text>,
+                  render: (f) => (
+                    <Text style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}>
+                      {f.isOverdue ? 'Overdue' : 'Today'}
+                    </Text>
+                  ),
                 },
               ]}
               emptyTitle="No calls due"
@@ -227,7 +252,12 @@ function CrmOverview() {
           <Section
             title="Top referring doctors this month"
             actions={
-              <Button size="small" appearance="subtle" icon={<StethoscopeRegular />} onClick={() => void navigate({ to: '/crm/referrals' })}>
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<StethoscopeRegular />}
+                onClick={() => void navigate({ to: '/crm/referrals' })}
+              >
                 All doctors
               </Button>
             }
@@ -253,7 +283,12 @@ function CrmOverview() {
                     </span>
                   ),
                 },
-                { key: 'referrals', header: 'Referrals', align: 'end', render: (d) => d.referrals.toLocaleString('en-IN') },
+                {
+                  key: 'referrals',
+                  header: 'Referrals',
+                  align: 'end',
+                  render: (d) => d.referrals.toLocaleString('en-IN'),
+                },
               ]}
               emptyTitle="No referrals yet this month"
               emptyDescription="Visits whose 'Referred by' matches a registered doctor are counted here."

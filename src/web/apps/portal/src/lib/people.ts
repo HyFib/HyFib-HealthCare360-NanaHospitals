@@ -56,5 +56,7 @@ export function ageText(age: string | null | undefined, t: Translate): string | 
 
 /** "34 yrs · Male" — how a family member is described next to their name. */
 export function personLine(person: { age: string | null; gender: Gender }, t: Translate): string {
-  return [ageText(person.age, t), person.gender === 'Unknown' ? null : t(GENDER_KEY[person.gender])].filter(Boolean).join(' · ');
+  return [ageText(person.age, t), person.gender === 'Unknown' ? null : t(GENDER_KEY[person.gender])]
+    .filter(Boolean)
+    .join(' · ');
 }

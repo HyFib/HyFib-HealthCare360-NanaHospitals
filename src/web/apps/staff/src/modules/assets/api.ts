@@ -337,7 +337,8 @@ export const assetQueries = {
   list: (filters: AssetFilters) =>
     queryOptions({
       queryKey: ['assets', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<AssetListItem>>(BASE, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<AssetListItem>>(BASE, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
       placeholderData: keepPreviousData,
     }),
   search: (search: string) =>
@@ -388,10 +389,18 @@ export const assetQueries = {
       queryKey: ['assets', 'pm-visits', assetId],
       queryFn: ({ signal }) => api.get<PmVisitDto[]>(`${BASE}/${assetId}/pm-visits`, { signal }),
     }),
-  tickets: (filters: { status?: TicketStatus; priority?: TicketPriority; assetId?: string; openOnly?: boolean; search?: string; page?: number }) =>
+  tickets: (filters: {
+    status?: TicketStatus;
+    priority?: TicketPriority;
+    assetId?: string;
+    openOnly?: boolean;
+    search?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['assets', 'tickets', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<TicketListItem>>(`${BASE}/tickets`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<TicketListItem>>(`${BASE}/tickets`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -420,10 +429,14 @@ export const assetApi = {
       await api.post<unknown>(`${BASE}/${assetId}/contracts`, body);
     }
   },
-  requestCondemnation: (assetId: string, reason: string) => api.post<unknown>(`${BASE}/${assetId}/condemnation`, { reason }),
-  approveCondemnation: (id: string, remarks: string | null) => api.post<void>(`${BASE}/condemnations/${id}/approve`, { remarks }),
-  rejectCondemnation: (id: string, remarks: string | null) => api.post<void>(`${BASE}/condemnations/${id}/reject`, { remarks }),
-  dispose: (assetId: string, body: { disposedOn: string; disposalValue: number; method: string }) => api.post<void>(`${BASE}/${assetId}/dispose`, body),
+  requestCondemnation: (assetId: string, reason: string) =>
+    api.post<unknown>(`${BASE}/${assetId}/condemnation`, { reason }),
+  approveCondemnation: (id: string, remarks: string | null) =>
+    api.post<void>(`${BASE}/condemnations/${id}/approve`, { remarks }),
+  rejectCondemnation: (id: string, remarks: string | null) =>
+    api.post<void>(`${BASE}/condemnations/${id}/reject`, { remarks }),
+  dispose: (assetId: string, body: { disposedOn: string; disposalValue: number; method: string }) =>
+    api.post<void>(`${BASE}/${assetId}/dispose`, body),
   savePlan: async (assetId: string, planId: string | null, body: SavePmPlanRequest): Promise<void> => {
     if (planId) {
       await api.put<void>(`${BASE}/${assetId}/pm-plans/${planId}`, body);
@@ -431,12 +444,15 @@ export const assetApi = {
       await api.post<unknown>(`${BASE}/${assetId}/pm-plans`, body);
     }
   },
-  recordVisit: (planId: string, body: RecordPmVisitRequest) => api.post<unknown>(`${BASE}/pm-plans/${planId}/visits`, body),
+  recordVisit: (planId: string, body: RecordPmVisitRequest) =>
+    api.post<unknown>(`${BASE}/pm-plans/${planId}/visits`, body),
   reportBreakdown: (body: ReportBreakdownRequest) => api.post<DocumentCreated>(`${BASE}/tickets`, body),
-  assignTicket: (id: string, body: { assignedTo: string; assignedToUserId: string | null; vendorId: string | null }) => api.post<void>(`${BASE}/tickets/${id}/assign`, body),
+  assignTicket: (id: string, body: { assignedTo: string; assignedToUserId: string | null; vendorId: string | null }) =>
+    api.post<void>(`${BASE}/tickets/${id}/assign`, body),
   startTicket: (id: string) => api.post<void>(`${BASE}/tickets/${id}/start`),
   resolveTicket: (id: string, body: ResolveTicketRequest) => api.post<void>(`${BASE}/tickets/${id}/resolve`, body),
   closeTicket: (id: string) => api.post<void>(`${BASE}/tickets/${id}/close`),
   reopenTicket: (id: string) => api.post<void>(`${BASE}/tickets/${id}/reopen`),
-  recordCalibration: (assetId: string, body: RecordCalibrationRequest) => api.post<unknown>(`${BASE}/${assetId}/calibrations`, body),
+  recordCalibration: (assetId: string, body: RecordCalibrationRequest) =>
+    api.post<unknown>(`${BASE}/${assetId}/calibrations`, body),
 };

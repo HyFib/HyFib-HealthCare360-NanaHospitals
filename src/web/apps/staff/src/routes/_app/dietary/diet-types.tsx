@@ -34,7 +34,16 @@ function DietTypesPage() {
           )
         }
       />
-      <Section flush actions={<Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show diets not in use" />}>
+      <Section
+        flush
+        actions={
+          <Switch
+            checked={showInactive}
+            onChange={(_, d) => setShowInactive(d.checked)}
+            label="Show diets not in use"
+          />
+        }
+      >
         <DataTable
           ariaLabel="Diet types"
           rows={types.data}
@@ -56,10 +65,39 @@ function DietTypesPage() {
             },
             { key: 'category', header: 'Category', render: (t) => DIET_CATEGORY_LABEL[t.category] },
             { key: 'rounds', header: 'Usual rounds', priority: 'low', render: (t) => describeSlots(t.defaultMeals) },
-            { key: 'charge', header: 'Charge', width: 120, priority: 'low', render: (t) => t.chargeServiceCode ?? 'Not charged' },
-            { key: 'status', header: 'Status', width: 110, render: (t) => <StatusBadge status={t.isActive ? 'Active' : 'Inactive'} label={t.isActive ? 'In use' : 'Not in use'} tone={t.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'charge',
+              header: 'Charge',
+              width: 120,
+              priority: 'low',
+              render: (t) => t.chargeServiceCode ?? 'Not charged',
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (t) => (
+                <StatusBadge
+                  status={t.isActive ? 'Active' : 'Inactive'}
+                  label={t.isActive ? 'In use' : 'Not in use'}
+                  tone={t.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
-          rowActions={canManage ? (t) => <Button size="small" appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)} /> : undefined}
+          rowActions={
+            canManage
+              ? (t) => (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<EditRegular />}
+                    aria-label={`Edit ${t.name}`}
+                    onClick={() => setEditing(t)}
+                  />
+                )
+              : undefined
+          }
           emptyTitle="No diets set up"
         />
       </Section>

@@ -35,7 +35,15 @@ export function GstSplitNote({ split }: { split: GstSplit }) {
 }
 
 /** Totals block for purchase documents (preview or server figures), showing CGST/SGST or IGST as the split says. */
-export function PurchaseTotals({ totals, interState, preview }: { totals: DocumentTotals; interState: boolean; preview?: boolean }) {
+export function PurchaseTotals({
+  totals,
+  interState,
+  preview,
+}: {
+  totals: DocumentTotals;
+  interState: boolean;
+  preview?: boolean;
+}) {
   const styles = useStyles();
   const showIgst = interState || totals.igst !== 0;
   const showCgst = !interState || totals.cgst !== 0 || totals.sgst !== 0;

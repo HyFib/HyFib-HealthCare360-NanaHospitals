@@ -18,10 +18,30 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, CopyRegular, EditRegular, FingerprintRegular, KeyResetRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  CopyRegular,
+  EditRegular,
+  FingerprintRegular,
+  KeyResetRegular,
+  MoreHorizontalRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, isApiError } from '@hc360/core';
-import { applyServerErrors, ConfirmDialog, DataTable, FormGrid, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ConfirmDialog,
+  DataTable,
+  FormGrid,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -111,7 +131,11 @@ function DevicesPage() {
                 </span>
               ),
             },
-            { key: 'serial', header: 'Serial number', render: (d) => <Text className={styles.mono}>{d.serialNumber}</Text> },
+            {
+              key: 'serial',
+              header: 'Serial number',
+              render: (d) => <Text className={styles.mono}>{d.serialNumber}</Text>,
+            },
             { key: 'model', header: 'Model', priority: 'low', render: (d) => d.model ?? '—' },
             {
               key: 'online',
@@ -122,16 +146,30 @@ function DevicesPage() {
                 ) : d.isOnline ? (
                   <StatusBadge status="Online" tone="success" label="Online" />
                 ) : (
-                  <StatusBadge status="Offline" tone="danger" label={d.lastPushAt || d.lastHandshakeAt ? 'Not heard from' : 'Never connected'} />
+                  <StatusBadge
+                    status="Offline"
+                    tone="danger"
+                    label={d.lastPushAt || d.lastHandshakeAt ? 'Not heard from' : 'Never connected'}
+                  />
                 ),
             },
-            { key: 'last', header: 'Last contact', priority: 'low', render: (d) => formatRelative(d.lastPushAt ?? d.lastHandshakeAt) },
+            {
+              key: 'last',
+              header: 'Last contact',
+              priority: 'low',
+              render: (d) => formatRelative(d.lastPushAt ?? d.lastHandshakeAt),
+            },
             { key: 'ip', header: 'Allowed address', priority: 'low', render: (d) => d.allowedIpAddress ?? 'Any' },
           ]}
           rowActions={(d) => (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${d.name}`} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<MoreHorizontalRegular />}
+                  aria-label={`Actions for ${d.name}`}
+                />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
@@ -159,7 +197,9 @@ function DevicesPage() {
           <Detail label="JSON punch upload (middleware)" mono>
             POST {origin}/api/v1/hr/attendance/device-punches
           </Detail>
-          <Detail label="Headers for JSON upload">X-Device-Serial and X-Device-Key (the key shown once when registering)</Detail>
+          <Detail label="Headers for JSON upload">
+            X-Device-Serial and X-Device-Key (the key shown once when registering)
+          </Detail>
           <Detail label="Online">Heard from in the last 10 minutes</Detail>
         </DetailGrid>
       </Section>
@@ -184,8 +224,8 @@ function DevicesPage() {
         onConfirm={() => rotating && rotate.mutate(rotating.id)}
         onCancel={() => setRotating(null)}
       >
-        The current key of {rotating?.name} stops working immediately. Enter the new key on the terminal or middleware straight away, or its punches will be refused.
-        The change is recorded in the audit trail.
+        The current key of {rotating?.name} stops working immediately. Enter the new key on the terminal or middleware
+        straight away, or its punches will be refused. The change is recorded in the audit trail.
       </ConfirmDialog>
 
       <Dialog open={issued !== null} onOpenChange={(_, d) => !d.open && setIssued(null)} modalType="alert">
@@ -196,7 +236,8 @@ function DevicesPage() {
               <div className={styles.key}>{issued?.apiKey}</div>
               <MessageBar intent="warning" layout="multiline">
                 <MessageBarBody>
-                  This key is shown only once and is stored only as a fingerprint (hash). Copy it into the terminal or middleware now. If it is lost, issue a new key.
+                  This key is shown only once and is stored only as a fingerprint (hash). Copy it into the terminal or
+                  middleware now. If it is lost, issue a new key.
                 </MessageBarBody>
               </MessageBar>
             </DialogContent>
@@ -244,7 +285,15 @@ const schema = z.object({
 
 type Values = z.infer<typeof schema>;
 
-function DeviceDrawer({ device, onClose, onIssued }: { device: BiometricDeviceDto | null; onClose: () => void; onIssued: (key: DeviceKeyIssued) => void }) {
+function DeviceDrawer({
+  device,
+  onClose,
+  onIssued,
+}: {
+  device: BiometricDeviceDto | null;
+  onClose: () => void;
+  onIssued: (key: DeviceKeyIssued) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments();
@@ -313,15 +362,30 @@ function DeviceDrawer({ device, onClose, onIssued }: { device: BiometricDeviceDt
         required
         disabled={Boolean(device)}
         autoFocus={!device}
-        hint={device ? 'A registered serial number cannot change; register a replacement terminal instead.' : 'Printed on the terminal and shown in its system menu.'}
+        hint={
+          device
+            ? 'A registered serial number cannot change; register a replacement terminal instead.'
+            : 'Printed on the terminal and shown in its system menu.'
+        }
       />
       <TextField control={form.control} name="name" label="Name" required autoFocus={Boolean(device)} />
       <FormGrid columns={2} minColumnWidth={180}>
         <TextField control={form.control} name="location" label="Where it is" />
         <TextField control={form.control} name="model" label="Model" />
       </FormGrid>
-      <SelectField control={form.control} name="departmentId" label="Department" placeholder="Hospital-wide" options={toOptions(departments.data)} />
-      <TextField control={form.control} name="allowedIpAddress" label="Only accept from this IP address" hint="Optional: pins the terminal to its fixed LAN address." />
+      <SelectField
+        control={form.control}
+        name="departmentId"
+        label="Department"
+        placeholder="Hospital-wide"
+        options={toOptions(departments.data)}
+      />
+      <TextField
+        control={form.control}
+        name="allowedIpAddress"
+        label="Only accept from this IP address"
+        hint="Optional: pins the terminal to its fixed LAN address."
+      />
       <SwitchField control={form.control} name="isActive" label="Accept punches from this terminal" />
     </EditorDrawer>
   );

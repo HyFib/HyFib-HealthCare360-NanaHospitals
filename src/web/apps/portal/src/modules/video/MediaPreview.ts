@@ -45,7 +45,10 @@ const HEARD_LEVEL = 0.08;
 type AudioContextConstructor = typeof AudioContext;
 
 function audioContextClass(): AudioContextConstructor | null {
-  const w = window as unknown as { AudioContext?: AudioContextConstructor; webkitAudioContext?: AudioContextConstructor };
+  const w = window as unknown as {
+    AudioContext?: AudioContextConstructor;
+    webkitAudioContext?: AudioContextConstructor;
+  };
   return w.AudioContext ?? w.webkitAudioContext ?? null;
 }
 
@@ -75,8 +78,13 @@ export class MediaPreview {
     }
     this.update({ status: 'requesting', problem: null, stream: null, level: 0 });
 
-    const audio: MediaTrackConstraints = { ...AUDIO, ...(devices.audioDeviceId ? { deviceId: { exact: devices.audioDeviceId } } : {}) };
-    const video: MediaTrackConstraints = devices.videoDeviceId ? { ...VIDEO, facingMode: undefined, deviceId: { exact: devices.videoDeviceId } } : VIDEO;
+    const audio: MediaTrackConstraints = {
+      ...AUDIO,
+      ...(devices.audioDeviceId ? { deviceId: { exact: devices.audioDeviceId } } : {}),
+    };
+    const video: MediaTrackConstraints = devices.videoDeviceId
+      ? { ...VIDEO, facingMode: undefined, deviceId: { exact: devices.videoDeviceId } }
+      : VIDEO;
     let stream: MediaStream | null = null;
     let problem: MediaProblem | null = null;
     try {

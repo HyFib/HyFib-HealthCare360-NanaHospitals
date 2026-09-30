@@ -19,7 +19,11 @@ export function IntegrationsTabs({ selected }: { selected: IntegrationsTab }) {
     }
   };
   return (
-    <TabList selectedValue={selected} onTabSelect={(_, data) => void open(data.value as IntegrationsTab)} aria-label="Integration screens">
+    <TabList
+      selectedValue={selected}
+      onTabSelect={(_, data) => void open(data.value as IntegrationsTab)}
+      aria-label="Integration screens"
+    >
       <Tab value="status">Status</Tab>
       <Tab value="logs">Integration log</Tab>
       <Tab value="simulator">Simulator (training)</Tab>

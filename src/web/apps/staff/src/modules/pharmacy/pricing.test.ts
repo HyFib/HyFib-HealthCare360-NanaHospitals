@@ -4,11 +4,25 @@ import { ipIssueAmount, priceSaleLine, refundFor, saleTotals } from './pricing';
 // Worked with the server's SalePricing / GstCalculator rules (C# decimal, half away from zero).
 describe('pharmacy bill preview', () => {
   it('prices a line at MRP with GST carved out and split CGST/SGST', () => {
-    expect(priceSaleLine(12.5, 10, 12, 0)).toEqual({ gross: 125, discount: 0, taxable: 111.61, cgst: 6.7, sgst: 6.69, net: 125 });
+    expect(priceSaleLine(12.5, 10, 12, 0)).toEqual({
+      gross: 125,
+      discount: 0,
+      taxable: 111.61,
+      cgst: 6.7,
+      sgst: 6.69,
+      net: 125,
+    });
   });
 
   it('takes the discount off the MRP value first', () => {
-    expect(priceSaleLine(33.33, 3, 5, 10)).toEqual({ gross: 99.99, discount: 10, taxable: 85.7, cgst: 2.15, sgst: 2.14, net: 89.99 });
+    expect(priceSaleLine(33.33, 3, 5, 10)).toEqual({
+      gross: 99.99,
+      discount: 10,
+      taxable: 85.7,
+      cgst: 2.15,
+      sgst: 2.14,
+      net: 89.99,
+    });
   });
 
   it('keeps the payable exact when the GST rate is not known', () => {
@@ -24,7 +38,11 @@ describe('pharmacy bill preview', () => {
 
   it('totals a bill with the round-off to the rupee', () => {
     // Two batches of the same medicine with different MRPs are two invoice lines.
-    const totals = saleTotals([priceSaleLine(2.35, 10, 12, 5), priceSaleLine(2.6, 5, 12, 5), priceSaleLine(145, 1, 5, 5)]);
+    const totals = saleTotals([
+      priceSaleLine(2.35, 10, 12, 5),
+      priceSaleLine(2.6, 5, 12, 5),
+      priceSaleLine(145, 1, 5, 5),
+    ]);
     expect(totals.gross).toBe(181.5);
     expect(totals.discount).toBe(9.08);
     expect(totals.taxable).toBe(162.15);

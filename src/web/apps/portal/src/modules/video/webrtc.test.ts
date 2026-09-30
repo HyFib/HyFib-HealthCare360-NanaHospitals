@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { classifyQuality, computeQuality, decodeCandidate, decodeDescription, encodeCandidate, snapshotFromStats, type StatsSnapshot } from './webrtc';
+import {
+  classifyQuality,
+  computeQuality,
+  decodeCandidate,
+  decodeDescription,
+  encodeCandidate,
+  snapshotFromStats,
+  type StatsSnapshot,
+} from './webrtc';
 
 describe('signalling payloads', () => {
-  const init = { candidate: 'candidate:1 1 udp 2122260223 192.168.1.20 54400 typ host', sdpMid: '0', sdpMLineIndex: 0, usernameFragment: 'abcd' };
+  const init = {
+    candidate: 'candidate:1 1 udp 2122260223 192.168.1.20 54400 typ host',
+    sdpMid: '0',
+    sdpMLineIndex: 0,
+    usernameFragment: 'abcd',
+  };
 
   it('round-trips an ICE candidate as JSON', () => {
     expect(decodeCandidate(encodeCandidate(init))).toEqual(init);
@@ -34,8 +47,23 @@ describe('connection quality', () => {
   const report = (at: number, bytes: number, received: number, lost: number, rtt = 0.08) => [
     { type: 'transport', id: 't', selectedCandidatePairId: 'cp1' },
     { type: 'candidate-pair', id: 'cp0', state: 'failed', currentRoundTripTime: 2 },
-    { type: 'candidate-pair', id: 'cp1', state: 'succeeded', nominated: true, currentRoundTripTime: rtt, availableOutgoingBitrate: 1_500_000, timestamp: at },
-    { type: 'inbound-rtp', kind: 'audio', bytesReceived: bytes / 10, packetsReceived: (received * 3) / 10, packetsLost: (lost * 3) / 10, timestamp: at },
+    {
+      type: 'candidate-pair',
+      id: 'cp1',
+      state: 'succeeded',
+      nominated: true,
+      currentRoundTripTime: rtt,
+      availableOutgoingBitrate: 1_500_000,
+      timestamp: at,
+    },
+    {
+      type: 'inbound-rtp',
+      kind: 'audio',
+      bytesReceived: bytes / 10,
+      packetsReceived: (received * 3) / 10,
+      packetsLost: (lost * 3) / 10,
+      timestamp: at,
+    },
     {
       type: 'inbound-rtp',
       kind: 'video',
@@ -49,7 +77,15 @@ describe('connection quality', () => {
 
   it('reads the selected candidate pair and sums incoming streams', () => {
     const snapshot = snapshotFromStats(report(10_000, 100_000, 1_000, 10));
-    expect(snapshot).toEqual({ at: 10_000, rttMs: 80, availableOutgoingKbps: 1500, bytesReceived: 100_000, packetsReceived: 1_000, packetsLost: 10, videoFps: 24 });
+    expect(snapshot).toEqual({
+      at: 10_000,
+      rttMs: 80,
+      availableOutgoingKbps: 1500,
+      bytesReceived: 100_000,
+      packetsReceived: 1_000,
+      packetsLost: 10,
+      videoFps: 24,
+    });
   });
 
   it('measures loss and bitrate over the interval', () => {
@@ -61,7 +97,12 @@ describe('connection quality', () => {
 
   it('has no loss or bitrate on the first sample', () => {
     const only: StatsSnapshot = snapshotFromStats(report(10_000, 100_000, 1_000, 10));
-    expect(computeQuality(null, only, true)).toEqual({ level: 'good', rttMs: 80, lossPercent: null, bitrateKbps: null });
+    expect(computeQuality(null, only, true)).toEqual({
+      level: 'good',
+      rttMs: 80,
+      lossPercent: null,
+      bitrateKbps: null,
+    });
   });
 
   it('grades delay, loss and bitrate', () => {

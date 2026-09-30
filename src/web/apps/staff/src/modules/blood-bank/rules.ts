@@ -1,5 +1,12 @@
 import type { BloodGroup } from '@hc360/core';
-import { KNOWN_GROUPS, type BloodBagType, type BloodComponentType, type BloodUnitStatus, type KnownBloodGroup, type TtiPanel } from './api';
+import {
+  KNOWN_GROUPS,
+  type BloodBagType,
+  type BloodComponentType,
+  type BloodUnitStatus,
+  type KnownBloodGroup,
+  type TtiPanel,
+} from './api';
 import { groupLabel } from './labels';
 
 /**
@@ -37,7 +44,13 @@ export function isKnownGroup(group: BloodGroup | null | undefined): group is Kno
 }
 
 export function isRhDPositive(group: BloodGroup): boolean {
-  return group === 'APositive' || group === 'BPositive' || group === 'ABPositive' || group === 'OPositive' || group === 'BombayPositive';
+  return (
+    group === 'APositive' ||
+    group === 'BPositive' ||
+    group === 'ABPositive' ||
+    group === 'OPositive' ||
+    group === 'BombayPositive'
+  );
 }
 
 export function containsRedCells(component: BloodComponentType): boolean {
@@ -142,7 +155,11 @@ export interface CrossmatchValidity {
 export function crossmatchValidity(performedAt: string, now: number, compatible = true): CrossmatchValidity {
   const expires = Date.parse(performedAt) + CROSSMATCH_VALIDITY_HOURS * 3_600_000;
   const hoursLeft = Math.max(0, Math.floor((expires - now) / 3_600_000));
-  return { valid: compatible && now - Date.parse(performedAt) <= CROSSMATCH_VALIDITY_HOURS * 3_600_000, expiresAt: new Date(expires).toISOString(), hoursLeft };
+  return {
+    valid: compatible && now - Date.parse(performedAt) <= CROSSMATCH_VALIDITY_HOURS * 3_600_000,
+    expiresAt: new Date(expires).toISOString(),
+    hoursLeft,
+  };
 }
 
 // ---------------------------------------------------------------- issue gate
@@ -205,7 +222,9 @@ export function issueCheck(input: IssueCheckInput): IssueCheck {
     }
   } else if (isKnownGroup(input.patientGroup)) {
     if (!plasmaCompatible(input.unitGroup, input.patientGroup)) {
-      reasons.push(`${groupLabel(input.unitGroup)} plasma is incompatible with a ${groupLabel(input.patientGroup)} patient.`);
+      reasons.push(
+        `${groupLabel(input.unitGroup)} plasma is incompatible with a ${groupLabel(input.patientGroup)} patient.`,
+      );
     }
   } else if (input.emergencyReleaseAuthorised && aboOf(input.unitGroup) === 'AB') {
     emergency = true;
@@ -226,7 +245,13 @@ export interface ReturnOutcome {
 }
 
 /** Mirrors `ColdChain.CanRestock` (plus expiry): what will happen to a unit sent back from the ward. */
-export function returnOutcome(component: BloodComponentType, issuedAt: string, returnedAt: number, temperatureMaintained: boolean, expiresAt?: string): ReturnOutcome {
+export function returnOutcome(
+  component: BloodComponentType,
+  issuedAt: string,
+  returnedAt: number,
+  temperatureMaintained: boolean,
+  expiresAt?: string,
+): ReturnOutcome {
   if (component === 'FFP' || component === 'Cryoprecipitate') {
     return { restock: false, reason: 'Thawed plasma products cannot be refrozen; the unit will be discarded.' };
   }
@@ -235,17 +260,30 @@ export function returnOutcome(component: BloodComponentType, issuedAt: string, r
   }
   const minutes = (returnedAt - Date.parse(issuedAt)) / 60_000;
   if (minutes < 0 || minutes > RETURN_WINDOW_MINUTES) {
-    return { restock: false, reason: `Returned more than ${RETURN_WINDOW_MINUTES} minutes after issue; the unit will be discarded.` };
+    return {
+      restock: false,
+      reason: `Returned more than ${RETURN_WINDOW_MINUTES} minutes after issue; the unit will be discarded.`,
+    };
   }
   if (expiresAt && returnedAt >= Date.parse(expiresAt)) {
     return { restock: false, reason: 'The unit expired while it was out; it will be discarded.' };
   }
-  return { restock: true, reason: 'Returned within 30 minutes with the cold chain kept: the unit goes back to stock and its charge is withdrawn.' };
+  return {
+    restock: true,
+    reason:
+      'Returned within 30 minutes with the cold chain kept: the unit goes back to stock and its charge is withdrawn.',
+  };
 }
 
 // ---------------------------------------------------------------- shelf life and separation
 
-export const SHELF_LIFE_DAYS: Record<BloodComponentType, number> = { WholeBlood: 35, PRBC: 35, FFP: 365, PlateletConcentrate: 5, Cryoprecipitate: 365 };
+export const SHELF_LIFE_DAYS: Record<BloodComponentType, number> = {
+  WholeBlood: 35,
+  PRBC: 35,
+  FFP: 365,
+  PlateletConcentrate: 5,
+  Cryoprecipitate: 365,
+};
 
 export const SEPARATION_WINDOW_HOURS = 8;
 
@@ -283,12 +321,19 @@ export function separationMinutesLeft(collectedAt: string, now: number): number 
 }
 
 /** Same checks, in the same order, as `ComponentShelfLife.ValidateSeparation`. */
-export function separationCheck(bag: BloodBagType, components: readonly BloodComponentType[], collectedAt: string, now: number): string | null {
+export function separationCheck(
+  bag: BloodBagType,
+  components: readonly BloodComponentType[],
+  collectedAt: string,
+  now: number,
+): string | null {
   if (components.length === 0 || new Set(components).size !== components.length) {
     return 'Choose each component once.';
   }
   if (components.includes('WholeBlood')) {
-    return components.length === 1 ? null : 'Whole blood cannot be stored while also separating components from the same bag.';
+    return components.length === 1
+      ? null
+      : 'Whole blood cannot be stored while also separating components from the same bag.';
   }
   if (bag === 'Single') {
     return 'A single bag has no satellite bags; keep it as whole blood.';
@@ -335,7 +380,13 @@ export function expiryUrgency(expiresAt: string, now: number): ExpiryUrgency {
 }
 
 /** Minimum available units per group before a component shows as low (hospital policy default). */
-export const LOW_STOCK_THRESHOLD: Record<BloodComponentType, number> = { WholeBlood: 1, PRBC: 4, FFP: 4, PlateletConcentrate: 2, Cryoprecipitate: 2 };
+export const LOW_STOCK_THRESHOLD: Record<BloodComponentType, number> = {
+  WholeBlood: 1,
+  PRBC: 4,
+  FFP: 4,
+  PlateletConcentrate: 2,
+  Cryoprecipitate: 2,
+};
 
 export type StockLevel = 'out' | 'low' | 'ok';
 

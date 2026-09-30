@@ -17,11 +17,15 @@ describe('assistantErrorMessage', () => {
   it('explains the rate limit, permissions and the network', () => {
     expect(assistantErrorMessage(problem(429))).toContain('Wait a minute');
     expect(assistantErrorMessage(problem(403))).toContain('permission');
-    expect(assistantErrorMessage(new ApiError({ status: 0, code: 'network', title: 'Cannot reach' }))).toContain('WiFi');
+    expect(assistantErrorMessage(new ApiError({ status: 0, code: 'network', title: 'Cannot reach' }))).toContain(
+      'WiFi',
+    );
   });
 
   it('passes through staff-facing validation messages', () => {
-    expect(assistantErrorMessage(problem(400, undefined, { text: ['Say or type a command.'] }))).toBe('Say or type a command.');
+    expect(assistantErrorMessage(problem(400, undefined, { text: ['Say or type a command.'] }))).toBe(
+      'Say or type a command.',
+    );
   });
 
   it('never shows raw details', () => {

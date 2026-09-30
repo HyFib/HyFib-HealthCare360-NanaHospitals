@@ -1,4 +1,15 @@
-import { Badge, Button, Caption1, Field, Input, SearchBox, Select, Switch, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  SearchBox,
+  Select,
+  Switch,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { PeopleRegular, PersonAddRegular } from '@fluentui/react-icons';
 import { formatDateTime, humanize, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
@@ -73,8 +84,11 @@ function AdmissionsPage() {
     page: search.page,
   };
   const admissions = useQuery(inpatientQueries.admissions(filters));
-  const set = (patch: Partial<AdmissionsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
-  const filtered = Boolean(search.q || search.status || search.wardId || search.consultantId || search.from || search.to);
+  const set = (patch: Partial<AdmissionsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const filtered = Boolean(
+    search.q || search.status || search.wardId || search.consultantId || search.from || search.to,
+  );
 
   return (
     <Page>
@@ -84,7 +98,11 @@ function AdmissionsPage() {
         subtitle={inHospitalOnly ? 'Patients in hospital now, newest first' : 'All admissions, newest first'}
         actions={
           permissions.admit && (
-            <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/inpatient/admit' })}>
+            <Button
+              appearance="primary"
+              icon={<PersonAddRegular />}
+              onClick={() => void navigate({ to: '/inpatient/admit' })}
+            >
               Admit patient
             </Button>
           )
@@ -94,7 +112,13 @@ function AdmissionsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="UHID, IP number, name or mobile" autoFocus aria-label="Search admissions" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="UHID, IP number, name or mobile"
+                autoFocus
+                aria-label="Search admissions"
+              />
             </Field>
             <Field label="Ward">
               <Select value={search.wardId ?? ''} onChange={(_, d) => set({ wardId: d.value || undefined })}>
@@ -107,7 +131,10 @@ function AdmissionsPage() {
               </Select>
             </Field>
             <Field label="Consultant">
-              <Select value={search.consultantId ?? ''} onChange={(_, d) => set({ consultantId: d.value || undefined })}>
+              <Select
+                value={search.consultantId ?? ''}
+                onChange={(_, d) => set({ consultantId: d.value || undefined })}
+              >
                 <option value="">All doctors</option>
                 {toOptions(doctors.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -117,7 +144,10 @@ function AdmissionsPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as AdmissionStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as AdmissionStatus | undefined })}
+              >
                 <option value="">Any</option>
                 {ADMISSION_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -130,7 +160,12 @@ function AdmissionsPage() {
               <Input type="date" value={search.from ?? ''} onChange={(_, d) => set({ from: d.value || undefined })} />
             </Field>
             <Field label="to">
-              <Input type="date" value={search.to ?? ''} min={search.from} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? ''}
+                min={search.from}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Switch
               checked={!inHospitalOnly}
@@ -149,7 +184,12 @@ function AdmissionsPage() {
           getRowId={(a) => a.id}
           onRowClick={(a) => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: a.id } })}
           columns={[
-            { key: 'number', header: 'IP number', width: 150, render: (a) => <Text font="monospace">{a.admissionNumber}</Text> },
+            {
+              key: 'number',
+              header: 'IP number',
+              width: 150,
+              render: (a) => <Text font="monospace">{a.admissionNumber}</Text>,
+            },
             {
               key: 'patient',
               header: 'Patient',
@@ -173,15 +213,36 @@ function AdmissionsPage() {
               render: (a) => (a.wardName ? `${a.wardName}${a.bedLabel ? ` · ${a.bedLabel}` : ''}` : '—'),
             },
             { key: 'doctor', header: 'Consultant', priority: 'low', render: (a) => a.consultantName ?? '—' },
-            { key: 'admitted', header: 'Admitted', width: 170, priority: 'low', render: (a) => formatDateTime(a.admittedAt) },
+            {
+              key: 'admitted',
+              header: 'Admitted',
+              width: 170,
+              priority: 'low',
+              render: (a) => formatDateTime(a.admittedAt),
+            },
             {
               key: 'los',
               header: 'Day',
               width: 70,
               align: 'end',
-              render: (a) => <Text style={a.lengthOfStayDays > 10 ? { color: tokens.colorPaletteMarigoldForeground1, fontWeight: 600 } : undefined}>{a.lengthOfStayDays}</Text>,
+              render: (a) => (
+                <Text
+                  style={
+                    a.lengthOfStayDays > 10
+                      ? { color: tokens.colorPaletteMarigoldForeground1, fontWeight: 600 }
+                      : undefined
+                  }
+                >
+                  {a.lengthOfStayDays}
+                </Text>
+              ),
             },
-            { key: 'payer', header: 'Payment', priority: 'low', render: (a) => PAYER_LABEL[a.payerType] ?? humanize(a.payerType) },
+            {
+              key: 'payer',
+              header: 'Payment',
+              priority: 'low',
+              render: (a) => PAYER_LABEL[a.payerType] ?? humanize(a.payerType),
+            },
             {
               key: 'status',
               header: 'Status',
@@ -190,13 +251,31 @@ function AdmissionsPage() {
                 <StatusBadge
                   status={a.status}
                   label={ADMISSION_STATUS_LABEL[a.status]}
-                  tone={a.status === 'Admitted' ? 'brand' : a.status === 'DischargeInitiated' ? 'warning' : a.status === 'Discharged' ? 'success' : a.status === 'Cancelled' ? 'informative' : 'danger'}
+                  tone={
+                    a.status === 'Admitted'
+                      ? 'brand'
+                      : a.status === 'DischargeInitiated'
+                        ? 'warning'
+                        : a.status === 'Discharged'
+                          ? 'success'
+                          : a.status === 'Cancelled'
+                            ? 'informative'
+                            : 'danger'
+                  }
                 />
               ),
             },
           ]}
-          emptyTitle={filtered ? 'No admissions match' : inHospitalOnly ? 'No patients in hospital' : 'No admissions yet'}
-          emptyDescription={filtered ? 'Check the UHID or IP number, or clear the filters.' : permissions.admit ? 'Admit a patient to see them here.' : undefined}
+          emptyTitle={
+            filtered ? 'No admissions match' : inHospitalOnly ? 'No patients in hospital' : 'No admissions yet'
+          }
+          emptyDescription={
+            filtered
+              ? 'Check the UHID or IP number, or clear the filters.'
+              : permissions.admit
+                ? 'Admit a patient to see them here.'
+                : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={admissions.data?.totalCount}

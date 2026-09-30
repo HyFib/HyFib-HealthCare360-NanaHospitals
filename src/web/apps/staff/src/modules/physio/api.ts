@@ -225,7 +225,13 @@ export const physioQueries = {
       queryKey: physioKeys.referrals(filters),
       queryFn: ({ signal }) =>
         api.get<PagedResult<PhysioReferralListItem>>('/api/v1/physio/referrals', {
-          query: { status: filters.status, openOnly: filters.closed ? false : undefined, search: filters.search, page: filters.page, pageSize: 25 },
+          query: {
+            status: filters.status,
+            openOnly: filters.closed ? false : undefined,
+            search: filters.search,
+            page: filters.page,
+            pageSize: 25,
+          },
           signal,
         }),
       placeholderData: keepPreviousData,
@@ -238,22 +244,30 @@ export const physioQueries = {
   worklist: (date: string, status?: PhysioSessionStatus) =>
     queryOptions({
       queryKey: physioKeys.worklist(date, status),
-      queryFn: ({ signal }) => api.get<PhysioWorklistItem[]>('/api/v1/physio/sessions', { query: { date, status }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PhysioWorklistItem[]>('/api/v1/physio/sessions', { query: { date, status }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
 };
 
 export const physioApi = {
-  createReferral: (request: CreatePhysioReferralRequest) => api.post<{ id: string }>('/api/v1/physio/referrals', request),
+  createReferral: (request: CreatePhysioReferralRequest) =>
+    api.post<{ id: string }>('/api/v1/physio/referrals', request),
   cancelReferral: (id: string, reason: string) => api.post<void>(`/api/v1/physio/referrals/${id}/cancel`, { reason }),
-  completeReferral: (id: string, summary: string) => api.post<void>(`/api/v1/physio/referrals/${id}/complete`, { reason: summary }),
-  recordAssessment: (id: string, request: RecordPhysioAssessmentRequest) => api.post<{ id: string }>(`/api/v1/physio/referrals/${id}/assessments`, request),
-  savePlan: (id: string, request: SaveTreatmentPlanRequest) => api.put<{ id: string }>(`/api/v1/physio/referrals/${id}/plan`, request),
+  completeReferral: (id: string, summary: string) =>
+    api.post<void>(`/api/v1/physio/referrals/${id}/complete`, { reason: summary }),
+  recordAssessment: (id: string, request: RecordPhysioAssessmentRequest) =>
+    api.post<{ id: string }>(`/api/v1/physio/referrals/${id}/assessments`, request),
+  savePlan: (id: string, request: SaveTreatmentPlanRequest) =>
+    api.put<{ id: string }>(`/api/v1/physio/referrals/${id}/plan`, request),
   scheduleSessions: (id: string, firstSessionAt: string, count: number, intervalDays: number | null) =>
     api.post<string[]>(`/api/v1/physio/referrals/${id}/sessions`, { firstSessionAt, count, intervalDays }),
-  reschedule: (sessionId: string, scheduledAt: string) => api.put<void>(`/api/v1/physio/sessions/${sessionId}`, { scheduledAt }),
-  attend: (sessionId: string, request: AttendPhysioSessionRequest) => api.post<void>(`/api/v1/physio/sessions/${sessionId}/attend`, request),
-  close: (sessionId: string, reason: string, missed: boolean) => api.post<void>(`/api/v1/physio/sessions/${sessionId}/close`, { reason, missed }),
+  reschedule: (sessionId: string, scheduledAt: string) =>
+    api.put<void>(`/api/v1/physio/sessions/${sessionId}`, { scheduledAt }),
+  attend: (sessionId: string, request: AttendPhysioSessionRequest) =>
+    api.post<void>(`/api/v1/physio/sessions/${sessionId}/attend`, request),
+  close: (sessionId: string, reason: string, missed: boolean) =>
+    api.post<void>(`/api/v1/physio/sessions/${sessionId}/close`, { reason, missed }),
   retryCharges: (sessionId: string) => api.post<ChargeOutcome>(`/api/v1/physio/sessions/${sessionId}/charges/retry`),
 };

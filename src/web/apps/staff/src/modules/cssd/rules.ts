@@ -44,17 +44,31 @@ export function minimumSteamMinutes(temperatureC: number): number | null {
   return null;
 }
 
-function range(name: string, temperatureC: number, exposureMinutes: number, minC: number, maxC: number, minMinutes: number): ParameterCheck {
+function range(
+  name: string,
+  temperatureC: number,
+  exposureMinutes: number,
+  minC: number,
+  maxC: number,
+  minMinutes: number,
+): ParameterCheck {
   if (temperatureC < minC || temperatureC > maxC) {
     return { ok: false, message: `${name} cycles run at ${minC}–${maxC} °C (recorded ${temperatureC} °C).` };
   }
   return exposureMinutes < minMinutes
-    ? { ok: false, message: `${name} cycles need at least ${minMinutes} minutes of exposure (recorded ${exposureMinutes}).` }
+    ? {
+        ok: false,
+        message: `${name} cycles need at least ${minMinutes} minutes of exposure (recorded ${exposureMinutes}).`,
+      }
     : { ok: true, message: null };
 }
 
 /** Whether a cycle printout is within the validated range for its method (same bounds and wording as the server). */
-export function checkParameters(method: SterilizationMethod, temperatureC: number, exposureMinutes: number): ParameterCheck {
+export function checkParameters(
+  method: SterilizationMethod,
+  temperatureC: number,
+  exposureMinutes: number,
+): ParameterCheck {
   switch (method) {
     case 'Steam': {
       if (temperatureC > STEAM_MAX_C) {
@@ -65,7 +79,10 @@ export function checkParameters(method: SterilizationMethod, temperatureC: numbe
         return { ok: false, message: `Steam at ${temperatureC} °C is below the 121 °C sterilizing temperature.` };
       }
       return exposureMinutes < minimum
-        ? { ok: false, message: `Steam at ${temperatureC} °C needs at least ${minimum} minutes (recorded ${exposureMinutes}).` }
+        ? {
+            ok: false,
+            message: `Steam at ${temperatureC} °C needs at least ${minimum} minutes (recorded ${exposureMinutes}).`,
+          }
         : { ok: true, message: null };
     }
     case 'EthyleneOxide':
@@ -131,7 +148,10 @@ function describe(item: ItemCountResult): string {
  * Compares a returned tray with its count sheet. Items not counted count as not received (a tray never passes by
  * omission); counted items not on the sheet are extras. Names match case-insensitively.
  */
-export function compareCounts(countSheet: readonly CountSheetLine[], counted: readonly CountedItem[]): CountCheckResult {
+export function compareCounts(
+  countSheet: readonly CountSheetLine[],
+  counted: readonly CountedItem[],
+): CountCheckResult {
   const countedByName = new Map<string, { name: string; received: number; damaged: number }>();
   for (const c of counted) {
     const key = norm(c.itemName);
@@ -151,7 +171,15 @@ export function compareCounts(countSheet: readonly CountSheetLine[], counted: re
   const toResult = (itemName: string, expected: number, received: number, damaged: number): ItemCountResult => {
     const missing = Math.max(0, expected - received);
     const extra = Math.max(0, received - expected);
-    return { itemName, expected, received, damaged, missing, extra, hasDiscrepancy: missing > 0 || extra > 0 || damaged > 0 };
+    return {
+      itemName,
+      expected,
+      received,
+      damaged,
+      missing,
+      extra,
+      hasDiscrepancy: missing > 0 || extra > 0 || damaged > 0,
+    };
   };
 
   const items = [
@@ -159,7 +187,9 @@ export function compareCounts(countSheet: readonly CountSheetLine[], counted: re
       const c = countedByName.get(key);
       return toResult(line.name, line.quantity, c?.received ?? 0, c?.damaged ?? 0);
     }),
-    ...[...countedByName.entries()].filter(([key]) => !sheet.has(key)).map(([, c]) => toResult(c.name, 0, c.received, c.damaged)),
+    ...[...countedByName.entries()]
+      .filter(([key]) => !sheet.has(key))
+      .map(([, c]) => toResult(c.name, 0, c.received, c.damaged)),
   ];
   const sum = (pick: (i: ItemCountResult) => number) => items.reduce((total, i) => total + pick(i), 0);
   const result = {

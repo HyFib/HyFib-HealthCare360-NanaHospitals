@@ -1,5 +1,27 @@
-import { Badge, Button, Caption1, Field, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Select, Switch, Text, tokens } from '@fluentui/react-components';
-import { AddRegular, KeyResetRegular, LinkRegular, MoreHorizontalRegular, PlugDisconnectedRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  SearchBox,
+  Select,
+  Switch,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  AddRegular,
+  KeyResetRegular,
+  LinkRegular,
+  MoreHorizontalRegular,
+  PlugDisconnectedRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatRelative, useDebouncedValue } from '@hc360/core';
 import { ConfirmDialog, DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,14 +70,22 @@ function DevicesPage() {
   const [assigning, setAssigning] = useState<RpmDeviceDto | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
 
-  const devices = useQuery(rpmQueries.devices({ activeOnly: search.show === 'all' ? false : undefined, unassigned: search.unassigned }));
+  const devices = useQuery(
+    rpmQueries.devices({ activeOnly: search.show === 'all' ? false : undefined, unassigned: search.unassigned }),
+  );
   // Names for assigned devices (the device list carries only ids).
   const enrollments = useQuery({ ...rpmQueries.enrollments({ pageSize: 200 }), refetchInterval: false });
-  const byEnrollment = useMemo(() => new Map((enrollments.data?.items ?? []).map((e) => [e.id, e])), [enrollments.data]);
+  const byEnrollment = useMemo(
+    () => new Map((enrollments.data?.items ?? []).map((e) => [e.id, e])),
+    [enrollments.data],
+  );
   const rows = useMemo(
     () =>
       (devices.data ?? []).filter(
-        (d) => !filter || d.serialNumber.toLowerCase().includes(filter) || (d.enrollmentId && byEnrollment.get(d.enrollmentId)?.patientName.toLowerCase().includes(filter)),
+        (d) =>
+          !filter ||
+          d.serialNumber.toLowerCase().includes(filter) ||
+          (d.enrollmentId && byEnrollment.get(d.enrollmentId)?.patientName.toLowerCase().includes(filter)),
       ),
     [devices.data, filter, byEnrollment],
   );
@@ -74,20 +104,27 @@ function DevicesPage() {
       if (key) {
         setIssued(key);
       } else {
-        notify.success(action === 'deactivate' ? 'Device retired' : 'Done', action === 'deactivate' ? 'Its key no longer works.' : undefined);
+        notify.success(
+          action === 'deactivate' ? 'Device retired' : 'Done',
+          action === 'deactivate' ? 'Its key no longer works.' : undefined,
+        );
       }
     },
     onError: (error) => notify.error(error, 'The action failed'),
   });
 
-  const set = (patch: Partial<DevicesSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<DevicesSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
       <PageHeader
         title="Monitoring devices"
         subtitle="Blood pressure monitors, glucometers, oximeters and other devices that send readings from home."
-        breadcrumbs={[{ label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) }, { label: 'Devices' }]}
+        breadcrumbs={[
+          { label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) },
+          { label: 'Devices' },
+        ]}
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setRegistering(true)}>
@@ -103,12 +140,19 @@ function DevicesPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Serial number or patient" />
             </Field>
             <Field label="Show">
-              <Select value={search.show ?? 'active'} onChange={(_, d) => set({ show: d.value === 'all' ? 'all' : undefined })}>
+              <Select
+                value={search.show ?? 'active'}
+                onChange={(_, d) => set({ show: d.value === 'all' ? 'all' : undefined })}
+              >
                 <option value="active">Devices in use</option>
                 <option value="all">Including retired</option>
               </Select>
             </Field>
-            <Switch checked={Boolean(search.unassigned)} onChange={(_, d) => set({ unassigned: d.checked || undefined })} label="Only devices not given to a patient" />
+            <Switch
+              checked={Boolean(search.unassigned)}
+              onChange={(_, d) => set({ unassigned: d.checked || undefined })}
+              label="Only devices not given to a patient"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -127,7 +171,9 @@ function DevicesPage() {
                   <Text weight="semibold" className={styles.mono}>
                     {d.serialNumber}
                   </Text>
-                  <Caption1 className={styles.muted}>{[deviceTypeLabel[d.type], d.manufacturer, d.model].filter(Boolean).join(' · ')}</Caption1>
+                  <Caption1 className={styles.muted}>
+                    {[deviceTypeLabel[d.type], d.manufacturer, d.model].filter(Boolean).join(' · ')}
+                  </Caption1>
                 </span>
               ),
             },
@@ -144,7 +190,9 @@ function DevicesPage() {
                     appearance="transparent"
                     size="small"
                     style={{ padding: 0, minWidth: 0 }}
-                    onClick={() => void navigate({ to: '/rpm/enrollments/$enrollmentId', params: { enrollmentId: d.enrollmentId! } })}
+                    onClick={() =>
+                      void navigate({ to: '/rpm/enrollments/$enrollmentId', params: { enrollmentId: d.enrollmentId! } })
+                    }
                   >
                     {enrollment ? `${enrollment.patientName} (${enrollment.uhid})` : 'Open monitored patient'}
                   </Button>
@@ -166,12 +214,24 @@ function DevicesPage() {
                 </span>
               ),
             },
-            { key: 'key', header: 'Key issued', priority: 'low', width: 130, render: (d) => (d.apiKeyIssuedAt ? formatDate(d.apiKeyIssuedAt) : '—') },
+            {
+              key: 'key',
+              header: 'Key issued',
+              priority: 'low',
+              width: 130,
+              render: (d) => (d.apiKeyIssuedAt ? formatDate(d.apiKeyIssuedAt) : '—'),
+            },
             {
               key: 'status',
               header: 'Status',
               width: 100,
-              render: (d) => <StatusBadge status={d.isActive ? 'Active' : 'Retired'} tone={d.isActive ? 'success' : 'informative'} label={d.isActive ? 'In use' : 'Retired'} />,
+              render: (d) => (
+                <StatusBadge
+                  status={d.isActive ? 'Active' : 'Retired'}
+                  tone={d.isActive ? 'success' : 'informative'}
+                  label={d.isActive ? 'In use' : 'Retired'}
+                />
+              ),
             },
           ]}
           rowActions={
@@ -184,14 +244,25 @@ function DevicesPage() {
                       </Button>
                       <Menu>
                         <MenuTrigger disableButtonEnhancement>
-                          <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More actions for ${d.serialNumber}`} />
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<MoreHorizontalRegular />}
+                            aria-label={`More actions for ${d.serialNumber}`}
+                          />
                         </MenuTrigger>
                         <MenuPopover>
                           <MenuList>
-                            <MenuItem icon={<KeyResetRegular />} onClick={() => setPending({ device: d, action: 'rotate' })}>
+                            <MenuItem
+                              icon={<KeyResetRegular />}
+                              onClick={() => setPending({ device: d, action: 'rotate' })}
+                            >
                               Issue a new key
                             </MenuItem>
-                            <MenuItem icon={<PlugDisconnectedRegular />} onClick={() => setPending({ device: d, action: 'deactivate' })}>
+                            <MenuItem
+                              icon={<PlugDisconnectedRegular />}
+                              onClick={() => setPending({ device: d, action: 'deactivate' })}
+                            >
                               Retire device
                             </MenuItem>
                           </MenuList>

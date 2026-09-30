@@ -97,7 +97,13 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
     const restricted = isApiError(session.error) && session.error.code === 'patient.restricted';
     return (
       <Page maxWidth={900}>
-        <PageHeader title="Video consultation" breadcrumbs={[{ label: 'Video consultations', onClick: () => void navigate({ to: '/telehealth' }) }, { label: 'Consultation' }]} />
+        <PageHeader
+          title="Video consultation"
+          breadcrumbs={[
+            { label: 'Video consultations', onClick: () => void navigate({ to: '/telehealth' }) },
+            { label: 'Consultation' },
+          ]}
+        />
         <ErrorState
           error={session.error}
           title={restricted ? 'This patient record is restricted' : undefined}
@@ -115,20 +121,45 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
       <PageHeader
         title="Video consultation"
         subtitle={`${formatDateTime(s.scheduledStartAt)} · ${s.practitionerName}`}
-        breadcrumbs={[{ label: 'Video consultations', onClick: () => void navigate({ to: '/telehealth' }) }, { label: 'Consultation' }]}
+        breadcrumbs={[
+          { label: 'Video consultations', onClick: () => void navigate({ to: '/telehealth' }) },
+          { label: 'Consultation' },
+        ]}
       />
       <PatientBanner
-        patient={{ id: s.patientId, uhid: s.uhid, fullName: s.patientName, gender: s.gender, age: s.age, phone: s.phoneMasked }}
+        patient={{
+          id: s.patientId,
+          uhid: s.uhid,
+          fullName: s.patientName,
+          gender: s.gender,
+          age: s.age,
+          phone: s.phoneMasked,
+        }}
         actions={
           <div className={styles.bannerActions}>
-            <Button icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: s.patientId } })}>
+            <Button
+              icon={<PersonRegular />}
+              onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: s.patientId } })}
+            >
               Patient profile
             </Button>
-            <Button as="a" href={emrLinks.chart(s.patientId)} target="_blank" rel="noopener noreferrer" icon={<DocumentTextRegular />}>
+            <Button
+              as="a"
+              href={emrLinks.chart(s.patientId)}
+              target="_blank"
+              rel="noopener noreferrer"
+              icon={<DocumentTextRegular />}
+            >
               Open chart
             </Button>
             {s.visitId && (
-              <Button as="a" href={emrLinks.consultation(s.patientId)} target="_blank" rel="noopener noreferrer" icon={<PillRegular />}>
+              <Button
+                as="a"
+                href={emrLinks.consultation(s.patientId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                icon={<PillRegular />}
+              >
                 Notes and prescription
               </Button>
             )}
@@ -186,7 +217,8 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
       setStartProblem(null);
       queryClient.setQueryData(telehealthKeys.session(session.id), detail);
     },
-    onError: (error) => setStartProblem(isApiError(error) ? error.userMessage : 'The visit for this consultation could not be created.'),
+    onError: (error) =>
+      setStartProblem(isApiError(error) ? error.userMessage : 'The visit for this consultation could not be created.'),
   });
 
   const admit = useMutation({
@@ -217,13 +249,21 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
           onRetryJoin={() => call.retry()}
           onReconnectVideo={() => call.reconnectVideo()}
         />
-        <CallControls state={state} call={call} canEnd={status === 'InProgress'} onEnd={() => setEnding(true)} onLeave={() => void navigate({ to: '/telehealth' })} />
+        <CallControls
+          state={state}
+          call={call}
+          canEnd={status === 'InProgress'}
+          onEnd={() => setEnding(true)}
+          onLeave={() => void navigate({ to: '/telehealth' })}
+        />
 
         <div className={styles.notices} aria-live="polite">
           {mediaProblem && (
             <MessageBar intent={state.media.status === 'ready' ? 'warning' : 'error'} layout="multiline">
               <MessageBarBody>
-                <MessageBarTitle>{state.media.status === 'ready' ? 'Audio only' : 'Camera and microphone'}</MessageBarTitle>
+                <MessageBarTitle>
+                  {state.media.status === 'ready' ? 'Audio only' : 'Camera and microphone'}
+                </MessageBarTitle>
                 {mediaProblem}
               </MessageBarBody>
               {state.media.status !== 'requesting' && (
@@ -237,7 +277,9 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
           )}
           {suggestAudioOnly && (
             <MessageBar intent="warning">
-              <MessageBarBody>The connection is weak. Switching to audio only usually keeps the call going.</MessageBarBody>
+              <MessageBarBody>
+                The connection is weak. Switching to audio only usually keeps the call going.
+              </MessageBarBody>
               <MessageBarActions>
                 <Button size="small" onClick={() => call.setAudioOnly(true)}>
                   Switch to audio only
@@ -280,7 +322,8 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
       <Section>
         <TabList selectedValue={tab} onTabSelect={(_, d) => setTab(d.value as typeof tab)} size="small">
           <Tab value="waiting">
-            Waiting room {state.waiting.length > 0 && <CounterBadge count={state.waiting.length} size="small" color="danger" />}
+            Waiting room{' '}
+            {state.waiting.length > 0 && <CounterBadge count={state.waiting.length} size="small" color="danger" />}
           </Tab>
           <Tab value="chat">Chat {unread > 0 && <CounterBadge count={unread} size="small" />}</Tab>
           <Tab value="details">Details</Tab>
@@ -298,7 +341,13 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
               onResend={() => actions.resendLink(session.id)}
             />
           )}
-          {tab === 'chat' && <ChatPanel messages={state.messages} disabled={state.phase !== 'joined'} onSend={(text) => call.sendChat(text)} />}
+          {tab === 'chat' && (
+            <ChatPanel
+              messages={state.messages}
+              disabled={state.phase !== 'joined'}
+              onSend={(text) => call.sendChat(text)}
+            />
+          )}
           {tab === 'details' && (
             <SessionDetails
               session={session}
@@ -328,13 +377,17 @@ function Console({ session, config }: { session: TelehealthSessionDetail; config
       <RecordingConsentDialog open={consentOpen} sessionId={session.id} onClose={() => setConsentOpen(false)} />
       {actions.dialogs}
 
-      <Dialog open={blocker.status === 'blocked'} onOpenChange={(_, d) => !d.open && blocker.reset?.()} modalType="alert">
+      <Dialog
+        open={blocker.status === 'blocked'}
+        onOpenChange={(_, d) => !d.open && blocker.reset?.()}
+        modalType="alert"
+      >
         <DialogSurface>
           <DialogBody>
             <DialogTitle>Leave the video call?</DialogTitle>
             <DialogContent>
-              You are in a call with {state.remote?.name ?? session.patientName}. Leaving disconnects you, and the patient waits for you to come back. To finish, choose End
-              consultation instead.
+              You are in a call with {state.remote?.name ?? session.patientName}. Leaving disconnects you, and the
+              patient waits for you to come back. To finish, choose End consultation instead.
             </DialogContent>
             <DialogActions>
               <Button onClick={() => blocker.reset?.()}>Stay in the call</Button>
@@ -360,7 +413,9 @@ function SessionRecord({ session, canConsult }: { session: TelehealthSessionDeta
     <>
       {open && !canConsult && (
         <MessageBar intent="info">
-          <MessageBarBody>Only doctors run video consultations. You can send the patient a new link or cancel the consultation here.</MessageBarBody>
+          <MessageBarBody>
+            Only doctors run video consultations. You can send the patient a new link or cancel the consultation here.
+          </MessageBarBody>
         </MessageBar>
       )}
       <div className={styles.summary}>
@@ -374,7 +429,17 @@ function SessionRecord({ session, canConsult }: { session: TelehealthSessionDeta
           />
           {actions.canManage && open && session.status !== 'InProgress' && (
             <div style={{ marginTop: 12 }}>
-              <Button onClick={() => actions.cancel({ id: session.id, patientName: session.patientName, scheduledStartAt: session.scheduledStartAt })}>Cancel consultation</Button>
+              <Button
+                onClick={() =>
+                  actions.cancel({
+                    id: session.id,
+                    patientName: session.patientName,
+                    scheduledStartAt: session.scheduledStartAt,
+                  })
+                }
+              >
+                Cancel consultation
+              </Button>
             </div>
           )}
         </Section>

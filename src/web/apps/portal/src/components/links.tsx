@@ -36,7 +36,11 @@ const useStyles = makeStyles({
     textDecorationLine: 'none',
     alignSelf: 'flex-start',
     ':hover': { textDecorationLine: 'underline' },
-    ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px', borderRadius: tokens.borderRadiusMedium },
+    ':focus-visible': {
+      outline: `3px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: '2px',
+      borderRadius: tokens.borderRadiusMedium,
+    },
   },
   text: {
     color: tokens.colorBrandForegroundLink,
@@ -44,7 +48,11 @@ const useStyles = makeStyles({
     textDecorationLine: 'underline',
     textUnderlineOffset: '3px',
     ':hover': { color: tokens.colorBrandForegroundLinkHover },
-    ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px', borderRadius: tokens.borderRadiusSmall },
+    ':focus-visible': {
+      outline: `3px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: '2px',
+      borderRadius: tokens.borderRadiusSmall,
+    },
   },
 });
 
@@ -55,7 +63,10 @@ const CardAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function CardAncho
   return <a ref={ref} {...props} className={mergeClasses(styles.card, className)} />;
 });
 
-const BackAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function BackAnchor({ className, children, ...props }, ref) {
+const BackAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function BackAnchor(
+  { className, children, ...props },
+  ref,
+) {
   const styles = useStyles();
   return (
     <a ref={ref} {...props} className={mergeClasses(styles.back, className)}>
@@ -70,10 +81,16 @@ const TextAnchor = forwardRef<HTMLAnchorElement, AnchorProps>(function TextAncho
   return <a ref={ref} {...props} className={mergeClasses(styles.text, className)} />;
 });
 
-type ButtonAnchorProps = AnchorProps & Pick<ButtonProps, 'appearance' | 'icon' | 'iconPosition'> & { size?: ButtonProps['size'] };
+type ButtonAnchorProps = AnchorProps &
+  Pick<ButtonProps, 'appearance' | 'icon' | 'iconPosition'> & { size?: ButtonProps['size'] };
 
-const ButtonAnchor = forwardRef<HTMLAnchorElement, ButtonAnchorProps>(function ButtonAnchor({ appearance, icon, iconPosition, size = 'large', ...props }, ref) {
-  return <Button as="a" ref={ref} appearance={appearance} icon={icon} iconPosition={iconPosition} size={size} {...props} />;
+const ButtonAnchor = forwardRef<HTMLAnchorElement, ButtonAnchorProps>(function ButtonAnchor(
+  { appearance, icon, iconPosition, size = 'large', ...props },
+  ref,
+) {
+  return (
+    <Button as="a" ref={ref} appearance={appearance} icon={icon} iconPosition={iconPosition} size={size} {...props} />
+  );
 });
 
 const CreatedCardLink = createLink(CardAnchor);

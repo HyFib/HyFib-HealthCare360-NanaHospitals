@@ -1,5 +1,23 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, ProgressBar, SearchBox, Select, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { CalendarAddRegular, ChevronLeftRegular, ChevronRightRegular, PersonAvailableRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  ProgressBar,
+  SearchBox,
+  Select,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
+import {
+  CalendarAddRegular,
+  ChevronLeftRegular,
+  ChevronRightRegular,
+  PersonAvailableRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatTime, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -9,7 +27,15 @@ import { usePermission } from '@/lib/permissions';
 import { addDaysIso } from '@/modules/emr/encounterForm';
 import { checkupQueries, type BookingDto, type BookingListParams } from '@/modules/health-checkups/api';
 import { CheckInCheckupDialog } from '@/modules/health-checkups/CheckInCheckupDialog';
-import { BOOKING_STATUSES, bookingStatusLabel, canCheckIn, countByStatus, nextStop, progress, type BookingStatus } from '@/modules/health-checkups/itinerary';
+import {
+  BOOKING_STATUSES,
+  bookingStatusLabel,
+  canCheckIn,
+  countByStatus,
+  nextStop,
+  progress,
+  type BookingStatus,
+} from '@/modules/health-checkups/itinerary';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -61,13 +87,18 @@ function CheckupDayPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
-  const set = (patch: Partial<BookingListParams>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<BookingListParams>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
   const setDate = (value: string) => set({ date: value === today ? undefined : value });
-  const open = (b: BookingDto) => void navigate({ to: '/health-checkups/bookings/$bookingId', params: { bookingId: b.id } });
+  const open = (b: BookingDto) =>
+    void navigate({ to: '/health-checkups/bookings/$bookingId', params: { bookingId: b.id } });
 
   return (
     <Page>
@@ -76,7 +107,11 @@ function CheckupDayPage() {
         subtitle={date === today ? "Today's bookings, live" : formatDateOnly(date)}
         actions={
           canManage && (
-            <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/health-checkups/book' })}>
+            <Button
+              appearance="primary"
+              icon={<CalendarAddRegular />}
+              onClick={() => void navigate({ to: '/health-checkups/book' })}
+            >
               Book check-up
             </Button>
           )
@@ -93,11 +128,21 @@ function CheckupDayPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <div className={styles.dateNav}>
-              <Button appearance="subtle" icon={<ChevronLeftRegular />} aria-label="Previous day" onClick={() => setDate(addDaysIso(date, -1))} />
+              <Button
+                appearance="subtle"
+                icon={<ChevronLeftRegular />}
+                aria-label="Previous day"
+                onClick={() => setDate(addDaysIso(date, -1))}
+              />
               <Field label="Date">
                 <Input type="date" value={date} onChange={(_, d) => d.value && setDate(d.value)} />
               </Field>
-              <Button appearance="subtle" icon={<ChevronRightRegular />} aria-label="Next day" onClick={() => setDate(addDaysIso(date, 1))} />
+              <Button
+                appearance="subtle"
+                icon={<ChevronRightRegular />}
+                aria-label="Next day"
+                onClick={() => setDate(addDaysIso(date, 1))}
+              />
               {date !== today && (
                 <Button appearance="subtle" onClick={() => setDate(today)}>
                   Today
@@ -105,10 +150,17 @@ function CheckupDayPage() {
               )}
             </div>
             <Field label="Search" style={{ flex: '1 1 220px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, UHID or booking number" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, UHID or booking number"
+              />
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as BookingStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as BookingStatus | undefined })}
+              >
                 <option value="">All</option>
                 {BOOKING_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -135,7 +187,11 @@ function CheckupDayPage() {
               render: (b) => (
                 <span>
                   <Text weight="semibold">{b.patientName ?? '—'}</Text> <Text size={200}>· {b.uhid ?? ''}</Text>
-                  {b.corporateName && <Caption1 block className={styles.muted}>{b.corporateName}</Caption1>}
+                  {b.corporateName && (
+                    <Caption1 block className={styles.muted}>
+                      {b.corporateName}
+                    </Caption1>
+                  )}
                 </span>
               ),
             },
@@ -168,16 +224,40 @@ function CheckupDayPage() {
                 return stop ? `${stop.departmentName}: ${stop.description}` : "Doctor's review";
               },
             },
-            { key: 'in', header: 'Checked in', width: 100, priority: 'low', render: (b) => (b.checkedInAt ? formatTime(b.checkedInAt) : '—') },
-            { key: 'number', header: 'Booking', width: 140, priority: 'low', render: (b) => <Text font="monospace">{b.bookingNumber}</Text> },
-            { key: 'status', header: 'Status', width: 120, render: (b) => <StatusBadge status={b.status} tone={statusTone(b.status)} label={bookingStatusLabel[b.status]} /> },
+            {
+              key: 'in',
+              header: 'Checked in',
+              width: 100,
+              priority: 'low',
+              render: (b) => (b.checkedInAt ? formatTime(b.checkedInAt) : '—'),
+            },
+            {
+              key: 'number',
+              header: 'Booking',
+              width: 140,
+              priority: 'low',
+              render: (b) => <Text font="monospace">{b.bookingNumber}</Text>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 120,
+              render: (b) => (
+                <StatusBadge status={b.status} tone={statusTone(b.status)} label={bookingStatusLabel[b.status]} />
+              ),
+            },
           ]}
           rowActions={
             canManage
               ? (b) =>
                   canCheckIn(b.status) && date === today ? (
                     <Tooltip content="Check in and add the package fee to the bill" relationship="description">
-                      <Button size="small" appearance="primary" icon={<PersonAvailableRegular />} onClick={() => setCheckingIn(b)}>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        icon={<PersonAvailableRegular />}
+                        onClick={() => setCheckingIn(b)}
+                      >
                         Check in
                       </Button>
                     </Tooltip>
@@ -185,7 +265,9 @@ function CheckupDayPage() {
               : undefined
           }
           emptyTitle={date === today ? 'No check-ups today' : 'No check-ups on this day'}
-          emptyDescription={canManage ? 'Use Book check-up to book one, or Corporate batches for a company drive.' : undefined}
+          emptyDescription={
+            canManage ? 'Use Book check-up to book one, or Corporate batches for a company drive.' : undefined
+          }
           page={filters.page ?? 1}
           pageSize={50}
           totalCount={bookings.data?.totalCount}

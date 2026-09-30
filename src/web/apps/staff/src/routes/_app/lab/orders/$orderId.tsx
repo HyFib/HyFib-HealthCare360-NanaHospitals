@@ -35,8 +35,23 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { LAB_PERMISSIONS, labApi, labKeys, labQueries, type LabOrderDetail, type LabOrderItemDto, type LabSampleDto } from '@/modules/lab/api';
-import { ItemStatusBadge, PatientClassBadge, PriorityBadge, ReportStatusBadge, SampleStatusBadge, TubeChip } from '@/modules/lab/badges';
+import {
+  LAB_PERMISSIONS,
+  labApi,
+  labKeys,
+  labQueries,
+  type LabOrderDetail,
+  type LabOrderItemDto,
+  type LabSampleDto,
+} from '@/modules/lab/api';
+import {
+  ItemStatusBadge,
+  PatientClassBadge,
+  PriorityBadge,
+  ReportStatusBadge,
+  SampleStatusBadge,
+  TubeChip,
+} from '@/modules/lab/badges';
 import { CollectDialog, type CollectTarget } from '@/modules/lab/CollectDialog';
 import { bannerFor } from '@/modules/lab/common/banner';
 import { ReasonDialog } from '@/modules/lab/common/ReasonDialog';
@@ -108,14 +123,32 @@ function LabOrderPage() {
   if (order.error || !order.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={order.error} onRetry={() => void order.refetch()} title={isApiError(order.error) && order.error.status === 404 ? 'Order not found' : undefined} />
+        <ErrorState
+          error={order.error}
+          onRetry={() => void order.refetch()}
+          title={isApiError(order.error) && order.error.status === 404 ? 'Order not found' : undefined}
+        />
       </Page>
     );
   }
-  return <OrderView order={order.data} openCollect={Boolean(search.collect)} onCollectShown={() => void navigate({ search: {}, replace: true })} />;
+  return (
+    <OrderView
+      order={order.data}
+      openCollect={Boolean(search.collect)}
+      onCollectShown={() => void navigate({ search: {}, replace: true })}
+    />
+  );
 }
 
-function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDetail; openCollect: boolean; onCollectShown: () => void }) {
+function OrderView({
+  order,
+  openCollect,
+  onCollectShown,
+}: {
+  order: LabOrderDetail;
+  openCollect: boolean;
+  onCollectShown: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -135,7 +168,8 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
   const [rejecting, setRejecting] = useState<RejectTarget | null>(null);
   const [printing, setPrinting] = useState<string | null>(null);
   const failedCharges = order.items.filter((item) => item.chargeError && item.status !== 'Cancelled');
-  const labName = (id: string | null) => (id ? (referralLabs.data?.find((lab) => lab.id === id)?.name ?? 'Reference lab') : null);
+  const labName = (id: string | null) =>
+    id ? (referralLabs.data?.find((lab) => lab.id === id)?.name ?? 'Reference lab') : null;
   const sampleById = new Map(order.samples.map((sample) => [sample.id, sample]));
 
   const refresh = () => {
@@ -147,7 +181,9 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
     mutationFn: () => labApi.retryCharges(order.id),
     onSuccess: (outcome) => {
       if (outcome.failures.length === 0) {
-        notify.success(outcome.posted === 1 ? 'Charge posted to the bill' : `${outcome.posted} charges posted to the bill`);
+        notify.success(
+          outcome.posted === 1 ? 'Charge posted to the bill' : `${outcome.posted} charges posted to the bill`,
+        );
       } else {
         notify.warning('Some charges still failed', outcome.failures.join(' · '));
       }
@@ -169,7 +205,10 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
   const recollect = useMutation({
     mutationFn: (sample: LabSampleDto) => labApi.recollect(sample.id),
     onSuccess: (result) => {
-      notify.success('New sample requested', result.recollectionBarcode ? `New tube ${result.recollectionBarcode} is on the collection list.` : undefined);
+      notify.success(
+        'New sample requested',
+        result.recollectionBarcode ? `New tube ${result.recollectionBarcode} is on the collection list.` : undefined,
+      );
       refresh();
     },
     onError: (error) => notify.error(error, 'Could not request a new sample'),
@@ -201,12 +240,19 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
               </Button>
             )}
             {order.reportId && (
-              <Button icon={<DocumentTextRegular />} onClick={() => void navigate({ to: '/lab/reports/$reportId', params: { reportId: order.reportId! } })}>
+              <Button
+                icon={<DocumentTextRegular />}
+                onClick={() => void navigate({ to: '/lab/reports/$reportId', params: { reportId: order.reportId! } })}
+              >
                 Report
               </Button>
             )}
             {canLabels && collectedCount > 0 && (
-              <Button icon={printing === 'all' ? <Spinner size="tiny" /> : <PrintRegular />} disabled={printing !== null} onClick={() => void printLabels()}>
+              <Button
+                icon={printing === 'all' ? <Spinner size="tiny" /> : <PrintRegular />}
+                disabled={printing !== null}
+                onClick={() => void printLabels()}
+              >
                 Reprint labels
               </Button>
             )}
@@ -217,20 +263,29 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
       <PageHeader
         title={`Lab order ${order.accessionNumber}`}
         subtitle={`${sourceLabel[order.source]} · ordered ${formatDateTime(order.orderedAt)}`}
-        breadcrumbs={[{ label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) }, { label: order.accessionNumber }]}
+        breadcrumbs={[
+          { label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) },
+          { label: order.accessionNumber },
+        ]}
       />
 
       {failedCharges.length > 0 && (
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>
-              {failedCharges.length === 1 ? 'A charge was not posted to the bill' : `${failedCharges.length} charges were not posted to the bill`}
+              {failedCharges.length === 1
+                ? 'A charge was not posted to the bill'
+                : `${failedCharges.length} charges were not posted to the bill`}
             </MessageBarTitle>
             {failedCharges.map((item) => `${item.testName}: ${item.chargeError}`).join(' · ')}
           </MessageBarBody>
           {canCreate && (
             <MessageBarActions>
-              <Button icon={retryCharges.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />} disabled={retryCharges.isPending} onClick={() => retryCharges.mutate()}>
+              <Button
+                icon={retryCharges.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                disabled={retryCharges.isPending}
+                onClick={() => retryCharges.mutate()}
+              >
                 Retry charges
               </Button>
             </MessageBarActions>
@@ -241,7 +296,11 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
       <Section>
         <div className={styles.facts}>
           <Fact label="Status">
-            {order.reportStatus ? <ReportStatusBadge status={order.reportStatus} /> : <Badge appearance="tint">{order.status}</Badge>}
+            {order.reportStatus ? (
+              <ReportStatusBadge status={order.reportStatus} />
+            ) : (
+              <Badge appearance="tint">{order.status}</Badge>
+            )}
           </Fact>
           <Fact label="Priority">
             <PriorityBadge priority={order.priority} showRoutine />
@@ -250,7 +309,9 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
             <PatientClassBadge patientClass={order.patientClass} />
           </Fact>
           <Fact label="Ordered by">{order.orderingDoctor ?? order.referringDoctorName}</Fact>
-          {order.referringDoctorName && order.orderingDoctor && <Fact label="Referred by">{order.referringDoctorName}</Fact>}
+          {order.referringDoctorName && order.orderingDoctor && (
+            <Fact label="Referred by">{order.referringDoctorName}</Fact>
+          )}
           {order.sourceOrderNumber && <Fact label="Clinical order">{order.sourceOrderNumber}</Fact>}
           {order.completedAt && <Fact label="Completed">{formatDateTime(order.completedAt)}</Fact>}
           {order.clinicalNotes && <Fact label="Clinical notes">{order.clinicalNotes}</Fact>}
@@ -280,7 +341,12 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', width: 170, render: (item: LabOrderItemDto) => <ItemStatusBadge status={item.status} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 170,
+              render: (item: LabOrderItemDto) => <ItemStatusBadge status={item.status} />,
+            },
             {
               key: 'sample',
               header: 'Sample',
@@ -319,7 +385,11 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                   <span className={styles.cell}>
                     <Caption1>{labName(item.referralLabId)}</Caption1>
                     <Caption1 className={styles.muted}>
-                      {item.externalReportReceivedAt ? `Report received ${formatDateTime(item.externalReportReceivedAt)}` : item.sentOutAt ? `Sent ${formatDateTime(item.sentOutAt)}` : 'Not sent yet'}
+                      {item.externalReportReceivedAt
+                        ? `Report received ${formatDateTime(item.externalReportReceivedAt)}`
+                        : item.sentOutAt
+                          ? `Sent ${formatDateTime(item.sentOutAt)}`
+                          : 'Not sent yet'}
                     </Caption1>
                   </span>
                 ) : (
@@ -331,7 +401,11 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
             const sample = item.sampleId ? sampleById.get(item.sampleId) : undefined;
             const actions = [
               canEnter && sample && ['Received', 'InProcess', 'Completed'].includes(sample.status) && (
-                <MenuItem key="results" icon={<BeakerEditRegular />} onClick={() => void navigate({ to: '/lab/worklist', search: { sampleId: sample.id } })}>
+                <MenuItem
+                  key="results"
+                  icon={<BeakerEditRegular />}
+                  onClick={() => void navigate({ to: '/lab/worklist', search: { sampleId: sample.id } })}
+                >
                   Results
                 </MenuItem>
               ),
@@ -339,7 +413,15 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                 <MenuItem
                   key="send"
                   icon={<VehicleTruckProfileRegular />}
-                  onClick={() => setSendOut({ itemId: item.id, testName: item.testName, patientName: order.patientName, barcode: sample?.barcode, referralLabId: item.referralLabId })}
+                  onClick={() =>
+                    setSendOut({
+                      itemId: item.id,
+                      testName: item.testName,
+                      patientName: order.patientName,
+                      barcode: sample?.barcode,
+                      referralLabId: item.referralLabId,
+                    })
+                  }
                 >
                   Send to a reference lab
                 </MenuItem>
@@ -349,7 +431,13 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                   key="receive"
                   icon={<DocumentArrowDownRegular />}
                   onClick={() =>
-                    setReceiveReport({ itemId: item.id, testName: item.testName, patientId: order.patientId, patientName: order.patientName, referralLabName: labName(item.referralLabId) })
+                    setReceiveReport({
+                      itemId: item.id,
+                      testName: item.testName,
+                      patientId: order.patientId,
+                      patientName: order.patientName,
+                      referralLabName: labName(item.referralLabId),
+                    })
                   }
                 >
                   Receive external report
@@ -364,7 +452,12 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
             return actions.length > 0 ? (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${item.testName}`} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<MoreHorizontalRegular />}
+                    aria-label={`Actions for ${item.testName}`}
+                  />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>{actions}</MenuList>
@@ -389,7 +482,8 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
               render: (sample: LabSampleDto) => (
                 <span className={styles.cell}>
                   <span>
-                    <TubeChip container={sample.container} detail={specimenLabel[sample.specimenType]} /> <Text className={styles.mono}>{sample.barcode}</Text>
+                    <TubeChip container={sample.container} detail={specimenLabel[sample.specimenType]} />{' '}
+                    <Text className={styles.mono}>{sample.barcode}</Text>
                   </span>
                   <Caption1 className={styles.muted}>
                     {sectionLabel[sample.section]} · {sample.tests.join(', ')}
@@ -416,7 +510,9 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                 sample.collectedAt ? (
                   <span className={styles.cell}>
                     <Caption1>{formatDateTime(sample.collectedAt)}</Caption1>
-                    <Caption1 className={styles.muted}>{[sample.collectedBy, sample.collectionSite].filter(Boolean).join(' · ')}</Caption1>
+                    <Caption1 className={styles.muted}>
+                      {[sample.collectedBy, sample.collectionSite].filter(Boolean).join(' · ')}
+                    </Caption1>
                   </span>
                 ) : (
                   '—'
@@ -430,9 +526,12 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                 sample.rejectedAt ? (
                   <span className={styles.cell}>
                     <Caption1 className={styles.error}>
-                      Rejected: {sample.rejectionReason ? rejectionReasonLabel[sample.rejectionReason] : 'reason not given'}
+                      Rejected:{' '}
+                      {sample.rejectionReason ? rejectionReasonLabel[sample.rejectionReason] : 'reason not given'}
                     </Caption1>
-                    <Caption1 className={styles.muted}>{sample.rejectionRemarks ?? formatDateTime(sample.rejectedAt)}</Caption1>
+                    <Caption1 className={styles.muted}>
+                      {sample.rejectionRemarks ?? formatDateTime(sample.rejectedAt)}
+                    </Caption1>
                   </span>
                 ) : sample.receivedAt ? (
                   <span className={styles.cell}>
@@ -447,7 +546,12 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
           rowActions={(sample: LabSampleDto) => {
             const actions = [
               canLabels && sample.status !== 'Cancelled' && (
-                <MenuItem key="label" icon={<PrintRegular />} disabled={printing !== null} onClick={() => void printLabels(sample.id)}>
+                <MenuItem
+                  key="label"
+                  icon={<PrintRegular />}
+                  disabled={printing !== null}
+                  onClick={() => void printLabels(sample.id)}
+                >
                   Reprint label
                 </MenuItem>
               ),
@@ -455,13 +559,25 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
                 <MenuItem
                   key="reject"
                   icon={<BeakerDismissRegular />}
-                  onClick={() => setRejecting({ sampleId: sample.id, barcode: sample.barcode, patientName: order.patientName, tests: sample.tests })}
+                  onClick={() =>
+                    setRejecting({
+                      sampleId: sample.id,
+                      barcode: sample.barcode,
+                      patientName: order.patientName,
+                      tests: sample.tests,
+                    })
+                  }
                 >
                   Reject sample
                 </MenuItem>
               ),
               canReceive && sample.status === 'Rejected' && !sample.recollectedAsSampleId && (
-                <MenuItem key="recollect" icon={<DropRegular />} disabled={recollect.isPending} onClick={() => recollect.mutate(sample)}>
+                <MenuItem
+                  key="recollect"
+                  icon={<DropRegular />}
+                  disabled={recollect.isPending}
+                  onClick={() => recollect.mutate(sample)}
+                >
                   Request a new sample
                 </MenuItem>
               ),
@@ -469,7 +585,12 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
             return actions.length > 0 ? (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for tube ${sample.barcode}`} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<MoreHorizontalRegular />}
+                    aria-label={`Actions for tube ${sample.barcode}`}
+                  />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>{actions}</MenuList>
@@ -497,8 +618,18 @@ function OrderView({ order, openCollect, onCollectShown }: { order: LabOrderDeta
           key={cancelling.id}
           open
           title={`Cancel ${cancelling.testName}?`}
-          description={<Text>The test is removed from the order and its charge is reversed on the bill. This cannot be undone; order the test again if needed.</Text>}
-          suggestions={['Patient declined', 'Ordered twice', 'Doctor cancelled the test', 'Sample could not be collected']}
+          description={
+            <Text>
+              The test is removed from the order and its charge is reversed on the bill. This cannot be undone; order
+              the test again if needed.
+            </Text>
+          }
+          suggestions={[
+            'Patient declined',
+            'Ordered twice',
+            'Doctor cancelled the test',
+            'Sample could not be collected',
+          ]}
           confirmLabel="Cancel test"
           destructive
           busy={cancelItem.isPending}

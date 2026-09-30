@@ -17,7 +17,18 @@ import {
 } from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { applyServerErrors, ErrorState, FormGrid, FullRow, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ErrorState,
+  FormGrid,
+  FullRow,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -80,14 +91,26 @@ const schema = z
   })
   .superRefine((values, ctx) => {
     if (values.resultType === 'Options' && parseList(values.options).length === 0) {
-      ctx.addIssue({ code: 'custom', path: ['options'], message: 'List the allowed answers, e.g. Negative, Positive.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['options'],
+        message: 'List the allowed answers, e.g. Negative, Positive.',
+      });
     }
     if (values.isOrderable && !values.serviceItemId) {
-      ctx.addIssue({ code: 'custom', path: ['serviceItemId'], message: 'Link an orderable test to its billable service.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['serviceItemId'],
+        message: 'Link an orderable test to its billable service.',
+      });
     }
     const bad = parseList(values.channels).filter((channel) => channel.length > 64 || !CHANNEL.test(channel));
     if (bad.length > 0) {
-      ctx.addIssue({ code: 'custom', path: ['channels'], message: `Use CHANNEL or ANALYSER:CHANNEL (check ${bad.join(', ')}).` });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['channels'],
+        message: `Use CHANNEL or ANALYSER:CHANNEL (check ${bad.join(', ')}).`,
+      });
     }
   });
 
@@ -170,30 +193,59 @@ type TabId = 'details' | 'ranges' | 'components';
  * Test master editor (SRS LIS-01): what the test is, how it is collected and billed, how results are entered and
  * validated, its reference ranges (single analytes) or its analytes (panels).
  */
-export function TestDrawer({ testId, onClose, onCreated }: { testId: string | null; onClose: () => void; onCreated?: (id: string) => void }) {
+export function TestDrawer({
+  testId,
+  onClose,
+  onCreated,
+}: {
+  testId: string | null;
+  onClose: () => void;
+  onCreated?: (id: string) => void;
+}) {
   const detail = useQuery({ ...labQueries.test(testId ?? ''), enabled: testId !== null, staleTime: 0 });
 
   if (testId && !detail.data) {
     return (
       <OverlayDrawer open position="end" size="large" onOpenChange={(_, data) => !data.open && onClose()}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>Lab test</DrawerHeaderTitle>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
+            Lab test
+          </DrawerHeaderTitle>
         </DrawerHeader>
-        <DrawerBody>{detail.error ? <ErrorState error={detail.error} onRetry={() => void detail.refetch()} /> : <Spinner label="Loading the test…" />}</DrawerBody>
+        <DrawerBody>
+          {detail.error ? (
+            <ErrorState error={detail.error} onRetry={() => void detail.refetch()} />
+          ) : (
+            <Spinner label="Loading the test…" />
+          )}
+        </DrawerBody>
       </OverlayDrawer>
     );
   }
   return <TestEditor test={detail.data ?? null} onClose={onClose} onCreated={onCreated} />;
 }
 
-function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; onClose: () => void; onCreated?: (id: string) => void }) {
+function TestEditor({
+  test,
+  onClose,
+  onCreated,
+}: {
+  test: LabTestDetail | null;
+  onClose: () => void;
+  onCreated?: (id: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabId>('details');
   const referralLabs = useQuery(labQueries.referralLabs());
   const form = useForm<TestValues>({ resolver: zodResolver(schema), defaultValues: defaults(test) });
-  const [resultType, isPanel, isOrderable] = useWatch({ control: form.control, name: ['resultType', 'isPanel', 'isOrderable'] });
+  const [resultType, isPanel, isOrderable] = useWatch({
+    control: form.control,
+    name: ['resultType', 'isPanel', 'isOrderable'],
+  });
 
   const save = useMutation({
     mutationFn: (values: TestValues) => labApi.saveTest(test?.id ?? null, toRequest(values, test?.version ?? null)),
@@ -217,7 +269,9 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, data) => !data.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {test ? `${test.name} (${test.code})` : 'New lab test'}
           </DrawerHeaderTitle>
           {test && (
@@ -234,22 +288,46 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
               <MessageBar intent="warning" layout="multiline">
                 <MessageBarBody>
                   <MessageBarTitle>Provisional test</MessageBarTitle>
-                  Created automatically from a doctor's order for a service without a lab test. Complete the set-up so results can be flagged and reported.
+                  Created automatically from a doctor's order for a service without a lab test. Complete the set-up so
+                  results can be flagged and reported.
                 </MessageBarBody>
               </MessageBar>
             )}
             <section className={styles.group}>
               <Subtitle2>The test</Subtitle2>
               <FormGrid columns={3}>
-                <TextField control={form.control} name="code" label="Code" required maxLength={32} hint="On labels, bills and analyser messages" />
+                <TextField
+                  control={form.control}
+                  name="code"
+                  label="Code"
+                  required
+                  maxLength={32}
+                  hint="On labels, bills and analyser messages"
+                />
                 <TextField control={form.control} name="name" label="Name" required maxLength={200} />
-                <TextField control={form.control} name="shortName" label="Short name" maxLength={32} hint="Used on tube labels" />
-                <SelectField control={form.control} name="section" label="Bench" options={LAB_SECTIONS.map((value) => ({ value, label: sectionLabel[value] }))} />
+                <TextField
+                  control={form.control}
+                  name="shortName"
+                  label="Short name"
+                  maxLength={32}
+                  hint="Used on tube labels"
+                />
+                <SelectField
+                  control={form.control}
+                  name="section"
+                  label="Bench"
+                  options={LAB_SECTIONS.map((value) => ({ value, label: sectionLabel[value] }))}
+                />
                 <TextField control={form.control} name="method" label="Method" maxLength={200} />
                 <TextField control={form.control} name="loinc" label="LOINC code" maxLength={10} />
               </FormGrid>
               <FormGrid columns={3}>
-                <SwitchField control={form.control} name="isPanel" label="Panel of several analytes" disabled={Boolean(test)} />
+                <SwitchField
+                  control={form.control}
+                  name="isPanel"
+                  label="Panel of several analytes"
+                  disabled={Boolean(test)}
+                />
                 <SwitchField control={form.control} name="isOrderable" label="Can be ordered" />
                 <SwitchField control={form.control} name="isActive" label="In use" />
               </FormGrid>
@@ -258,14 +336,28 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
             <section className={styles.group}>
               <Subtitle2>Collection and billing</Subtitle2>
               <FormGrid columns={3}>
-                <SelectField control={form.control} name="specimenType" label="Specimen" options={SPECIMEN_TYPES.map((value) => ({ value, label: specimenLabel[value] }))} />
+                <SelectField
+                  control={form.control}
+                  name="specimenType"
+                  label="Specimen"
+                  options={SPECIMEN_TYPES.map((value) => ({ value, label: specimenLabel[value] }))}
+                />
                 <SelectField
                   control={form.control}
                   name="container"
                   label="Container"
-                  options={CONTAINER_TYPES.map((value) => ({ value, label: `${containerInfo[value].label} (${containerInfo[value].capName})` }))}
+                  options={CONTAINER_TYPES.map((value) => ({
+                    value,
+                    label: `${containerInfo[value].label} (${containerInfo[value].capName})`,
+                  }))}
                 />
-                <NumberField control={form.control} name="tatHours" label="Target turnaround (hours)" min={0} max={1440} />
+                <NumberField
+                  control={form.control}
+                  name="tatHours"
+                  label="Target turnaround (hours)"
+                  min={0}
+                  max={1440}
+                />
                 <FullRow>
                   <Controller
                     control={form.control}
@@ -282,9 +374,19 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
                   />
                 </FullRow>
                 <FullRow>
-                  <TextField control={form.control} name="preparation" label="Patient preparation" maxLength={500} placeholder="e.g. Fasting 8 to 12 hours; water allowed" />
+                  <TextField
+                    control={form.control}
+                    name="preparation"
+                    label="Patient preparation"
+                    maxLength={500}
+                    placeholder="e.g. Fasting 8 to 12 hours; water allowed"
+                  />
                 </FullRow>
-                <SwitchField control={form.control} name="drawSeparately" label="Always its own tube (timed samples, e.g. post-meal sugar)" />
+                <SwitchField
+                  control={form.control}
+                  name="drawSeparately"
+                  label="Always its own tube (timed samples, e.g. post-meal sugar)"
+                />
                 <SelectField
                   control={form.control}
                   name="defaultReferralLabId"
@@ -300,26 +402,70 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
               <section className={styles.group}>
                 <Subtitle2>Results</Subtitle2>
                 <FormGrid columns={3}>
-                  <SelectField control={form.control} name="resultType" label="Result type" options={RESULT_TYPES.map((value) => ({ value, label: resultTypeLabel[value] }))} />
+                  <SelectField
+                    control={form.control}
+                    name="resultType"
+                    label="Result type"
+                    options={RESULT_TYPES.map((value) => ({ value, label: resultTypeLabel[value] }))}
+                  />
                   {resultType === 'Numeric' && (
                     <>
-                      <TextField control={form.control} name="unit" label="Unit" maxLength={32} placeholder="e.g. mg/dL" />
+                      <TextField
+                        control={form.control}
+                        name="unit"
+                        label="Unit"
+                        maxLength={32}
+                        placeholder="e.g. mg/dL"
+                      />
                       <NumberField control={form.control} name="decimals" label="Decimals printed" min={0} max={4} />
                     </>
                   )}
                   {resultType === 'Options' && (
                     <FullRow>
-                      <TextAreaField control={form.control} name="options" label="Allowed answers" required rows={2} hint="Comma separated, e.g. Negative, Positive" />
+                      <TextAreaField
+                        control={form.control}
+                        name="options"
+                        label="Allowed answers"
+                        required
+                        rows={2}
+                        hint="Comma separated, e.g. Negative, Positive"
+                      />
                     </FullRow>
                   )}
                   <FullRow>
-                    <TextField control={form.control} name="channels" label="Analyser channels" hint="Comma separated: HGB, or XN550:HGB for one analyser" />
+                    <TextField
+                      control={form.control}
+                      name="channels"
+                      label="Analyser channels"
+                      hint="Comma separated: HGB, or XN550:HGB for one analyser"
+                    />
                   </FullRow>
-                  <TextField control={form.control} name="qcGroup" label="QC group" hint="Tests sharing QC, e.g. GLU for fasting and post-meal sugar" />
-                  <NumberField control={form.control} name="deltaThresholdPercent" label="Delta check (%)" min={0} hint="Empty: the hospital default" />
-                  <SwitchField control={form.control} name="allowAutoValidation" label="Normal analyser results may be verified automatically" />
+                  <TextField
+                    control={form.control}
+                    name="qcGroup"
+                    label="QC group"
+                    hint="Tests sharing QC, e.g. GLU for fasting and post-meal sugar"
+                  />
+                  <NumberField
+                    control={form.control}
+                    name="deltaThresholdPercent"
+                    label="Delta check (%)"
+                    min={0}
+                    hint="Empty: the hospital default"
+                  />
+                  <SwitchField
+                    control={form.control}
+                    name="allowAutoValidation"
+                    label="Normal analyser results may be verified automatically"
+                  />
                   <FullRow>
-                    <TextAreaField control={form.control} name="interpretation" label="Interpretation printed on the report" rows={3} maxLength={2000} />
+                    <TextAreaField
+                      control={form.control}
+                      name="interpretation"
+                      label="Interpretation printed on the report"
+                      rows={3}
+                      maxLength={2000}
+                    />
                   </FullRow>
                 </FormGrid>
               </section>
@@ -330,7 +476,12 @@ function TestEditor({ test, onClose, onCreated }: { test: LabTestDetail | null; 
         </DrawerBody>
         {tab === 'details' && (
           <DrawerFooter>
-            <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={save.isPending}
+              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            >
               {test ? 'Save' : 'Create test'}
             </Button>
             <Button onClick={onClose}>Close</Button>

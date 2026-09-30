@@ -1,5 +1,14 @@
 import { formatDateOnly, formatInr, formatNumber, isApiError } from '@hc360/core';
-import type { ChecklistItemDto, OtCalendarBooking, OtStoreBatch, OtStoreItem, SafetyPhase, SchedulingConflict, SurgeryDetail, SurgeryStatus } from './api';
+import type {
+  ChecklistItemDto,
+  OtCalendarBooking,
+  OtStoreBatch,
+  OtStoreItem,
+  SafetyPhase,
+  SchedulingConflict,
+  SurgeryDetail,
+  SurgeryStatus,
+} from './api';
 import { phaseLabel, sideShort } from './labels';
 import { minutesIntoIstDay } from './shared/datetime';
 
@@ -55,7 +64,11 @@ export function phaseGate(detail: GateInput, phase: SafetyPhase): PhaseGate {
   }
   if (phase === 'SignOut') {
     if (detail.status !== 'InProgress') {
-      return { allowed: false, locked: false, reason: 'The Sign-out is done at the end of surgery, after it has started.' };
+      return {
+        allowed: false,
+        locked: false,
+        reason: 'The Sign-out is done at the end of surgery, after it has started.',
+      };
     }
   } else if (!DAY_OF_SURGERY.includes(detail.status)) {
     const reason =
@@ -112,7 +125,9 @@ export function startGate(detail: GateInput): Gate {
   }
   const missing = (['SignIn', 'TimeOut'] as SafetyPhase[]).filter((phase) => !isPhaseComplete(detail, phase));
   if (missing.length > 0) {
-    return refuse(`Surgery cannot start until the ${missing.map((p) => phaseLabel[p]).join(' and ')} ${missing.length > 1 ? 'are' : 'is'} complete.`);
+    return refuse(
+      `Surgery cannot start until the ${missing.map((p) => phaseLabel[p]).join(' and ')} ${missing.length > 1 ? 'are' : 'is'} complete.`,
+    );
   }
   return ALLOWED;
 }
@@ -144,7 +159,9 @@ export function planGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
 }
 
 export function postponeGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
-  return (['Requested', 'Scheduled', 'InPreOp'] as SurgeryStatus[]).includes(detail.status) ? ALLOWED : refuse('Only surgeries that have not started can be postponed.');
+  return (['Requested', 'Scheduled', 'InPreOp'] as SurgeryStatus[]).includes(detail.status)
+    ? ALLOWED
+    : refuse('Only surgeries that have not started can be postponed.');
 }
 
 export function cancelGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
@@ -156,15 +173,21 @@ export function cancelGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
 export function materialsGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
   return (['InPreOp', 'InProgress', 'Completed'] as SurgeryStatus[]).includes(detail.status)
     ? ALLOWED
-    : refuse('Implants and consumables are recorded from pre-op (after the patient is received) until the surgery is completed.');
+    : refuse(
+        'Implants and consumables are recorded from pre-op (after the patient is received) until the surgery is completed.',
+      );
 }
 
 export function operationNoteGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
-  return detail.status === 'InProgress' || detail.status === 'Completed' ? ALLOWED : refuse('The operation note is written once surgery has started.');
+  return detail.status === 'InProgress' || detail.status === 'Completed'
+    ? ALLOWED
+    : refuse('The operation note is written once surgery has started.');
 }
 
 export function anaesthesiaGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
-  return detail.status === 'Requested' || detail.status === 'Cancelled' ? refuse('The anaesthesia record is kept for scheduled surgeries.') : ALLOWED;
+  return detail.status === 'Requested' || detail.status === 'Cancelled'
+    ? refuse('The anaesthesia record is kept for scheduled surgeries.')
+    : ALLOWED;
 }
 
 // ---------------------------------------------------------------- implants and consumables from the OT store
@@ -211,7 +234,16 @@ export function batchLabel(batch: OtStoreBatch, baseUnit: string): string {
 export type StepId = 'schedule' | 'pre-op' | 'receive' | 'sign-in' | 'time-out' | 'start' | 'sign-out' | 'complete';
 export type StepState = 'done' | 'current' | 'upcoming' | 'skipped' | 'stopped';
 
-export const STEP_IDS: readonly StepId[] = ['schedule', 'pre-op', 'receive', 'sign-in', 'time-out', 'start', 'sign-out', 'complete'];
+export const STEP_IDS: readonly StepId[] = [
+  'schedule',
+  'pre-op',
+  'receive',
+  'sign-in',
+  'time-out',
+  'start',
+  'sign-out',
+  'complete',
+];
 
 export interface SurgeryStep {
   id: StepId;
@@ -228,22 +260,80 @@ export function lastRecordedAt(items: ChecklistItemDto[]): string | null {
 
 type StepInput = Pick<
   SurgeryDetail,
-  'status' | 'scheduledStart' | 'preOpComplete' | 'preOpChecklist' | 'safetyChecklist' | 'receivedInPreOpAt' | 'startedAt' | 'completedAt'
+  | 'status'
+  | 'scheduledStart'
+  | 'preOpComplete'
+  | 'preOpChecklist'
+  | 'safetyChecklist'
+  | 'receivedInPreOpAt'
+  | 'startedAt'
+  | 'completedAt'
 >;
 
 /** The day of surgery in order. "Received in pre-op" is optional: it shows as skipped when later steps happened. */
 export function surgerySteps(detail: StepInput): SurgeryStep[] {
   const phase = (p: SafetyPhase) => detail.safetyChecklist.find((x) => x.phase === p);
-  const slotHeld = detail.scheduledStart !== null && !(['Requested', 'Postponed', 'Cancelled'] as SurgeryStatus[]).includes(detail.status);
+  const slotHeld =
+    detail.scheduledStart !== null &&
+    !(['Requested', 'Postponed', 'Cancelled'] as SurgeryStatus[]).includes(detail.status);
   const raw: { id: StepId; title: string; moment: string; done: boolean; at: string | null; optional?: boolean }[] = [
-    { id: 'schedule', title: 'Theatre and time booked', moment: 'OT coordinator', done: slotHeld, at: detail.scheduledStart },
-    { id: 'pre-op', title: 'Pre-operative checklist', moment: 'Ward or pre-op nurse', done: detail.preOpComplete, at: lastRecordedAt(detail.preOpChecklist) },
-    { id: 'receive', title: 'Received in pre-op', moment: 'Pre-op holding area', done: detail.receivedInPreOpAt !== null, at: detail.receivedInPreOpAt, optional: true },
-    { id: 'sign-in', title: phaseLabel.SignIn, moment: 'Before induction of anaesthesia', done: phase('SignIn')?.isComplete ?? false, at: phase('SignIn')?.completedAt ?? null },
-    { id: 'time-out', title: phaseLabel.TimeOut, moment: 'Before skin incision', done: phase('TimeOut')?.isComplete ?? false, at: phase('TimeOut')?.completedAt ?? null },
-    { id: 'start', title: 'Surgery started', moment: 'Knife to skin', done: detail.startedAt !== null, at: detail.startedAt },
-    { id: 'sign-out', title: phaseLabel.SignOut, moment: 'Before the patient leaves the theatre', done: phase('SignOut')?.isComplete ?? false, at: phase('SignOut')?.completedAt ?? null },
-    { id: 'complete', title: 'Patient out of theatre', moment: 'Surgery complete', done: detail.completedAt !== null, at: detail.completedAt },
+    {
+      id: 'schedule',
+      title: 'Theatre and time booked',
+      moment: 'OT coordinator',
+      done: slotHeld,
+      at: detail.scheduledStart,
+    },
+    {
+      id: 'pre-op',
+      title: 'Pre-operative checklist',
+      moment: 'Ward or pre-op nurse',
+      done: detail.preOpComplete,
+      at: lastRecordedAt(detail.preOpChecklist),
+    },
+    {
+      id: 'receive',
+      title: 'Received in pre-op',
+      moment: 'Pre-op holding area',
+      done: detail.receivedInPreOpAt !== null,
+      at: detail.receivedInPreOpAt,
+      optional: true,
+    },
+    {
+      id: 'sign-in',
+      title: phaseLabel.SignIn,
+      moment: 'Before induction of anaesthesia',
+      done: phase('SignIn')?.isComplete ?? false,
+      at: phase('SignIn')?.completedAt ?? null,
+    },
+    {
+      id: 'time-out',
+      title: phaseLabel.TimeOut,
+      moment: 'Before skin incision',
+      done: phase('TimeOut')?.isComplete ?? false,
+      at: phase('TimeOut')?.completedAt ?? null,
+    },
+    {
+      id: 'start',
+      title: 'Surgery started',
+      moment: 'Knife to skin',
+      done: detail.startedAt !== null,
+      at: detail.startedAt,
+    },
+    {
+      id: 'sign-out',
+      title: phaseLabel.SignOut,
+      moment: 'Before the patient leaves the theatre',
+      done: phase('SignOut')?.isComplete ?? false,
+      at: phase('SignOut')?.completedAt ?? null,
+    },
+    {
+      id: 'complete',
+      title: 'Patient out of theatre',
+      moment: 'Surgery complete',
+      done: detail.completedAt !== null,
+      at: detail.completedAt,
+    },
   ];
 
   let currentFound = false;
@@ -290,9 +380,17 @@ export function overlaps(aStart: string, aEnd: string, bStart: string, bEnd: str
 }
 
 /** Bookings on the board that would clash with a proposed slot (a hint only; the server decides under a lock). */
-export function localClashes(slot: { start: string; end: string; bookingId?: string | null }, bookings: readonly OtCalendarBooking[]): OtCalendarBooking[] {
+export function localClashes(
+  slot: { start: string; end: string; bookingId?: string | null },
+  bookings: readonly OtCalendarBooking[],
+): OtCalendarBooking[] {
   return bookings.filter(
-    (b) => b.id !== slot.bookingId && BLOCKING_STATUSES.includes(b.status) && b.start !== null && b.end !== null && overlaps(slot.start, slot.end, b.start, b.end),
+    (b) =>
+      b.id !== slot.bookingId &&
+      BLOCKING_STATUSES.includes(b.status) &&
+      b.start !== null &&
+      b.end !== null &&
+      overlaps(slot.start, slot.end, b.start, b.end),
   );
 }
 
@@ -348,7 +446,11 @@ export interface PlacedBlock<T> {
 }
 
 /** Positions one theatre's cases on the day board; overlapping cases share the column side by side. */
-export function placeBlocks<T extends { start: string | null; end: string | null }>(items: readonly T[], date: string, window: TimeWindow): PlacedBlock<T>[] {
+export function placeBlocks<T extends { start: string | null; end: string | null }>(
+  items: readonly T[],
+  date: string,
+  window: TimeWindow,
+): PlacedBlock<T>[] {
   const blocks = items
     .filter((item): item is T & { start: string; end: string } => item.start !== null && item.end !== null)
     .map((item) => {
@@ -430,7 +532,8 @@ export function utilisationTotals(
     };
   }[],
 ): UtilisationTotals {
-  const sum = (pick: (m: (typeof rows)[number]['metrics']) => number) => rows.reduce((total, row) => total + pick(row.metrics), 0);
+  const sum = (pick: (m: (typeof rows)[number]['metrics']) => number) =>
+    rows.reduce((total, row) => total + pick(row.metrics), 0);
   const actual = sum((m) => m.actualMinutes);
   const available = sum((m) => m.availableMinutes);
   return {

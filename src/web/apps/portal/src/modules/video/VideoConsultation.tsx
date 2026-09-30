@@ -24,7 +24,9 @@ export function VideoConsultation({
   const [attempt, setAttempt] = useState<{ number: number; choice: DeviceChoice } | null>(null);
 
   if (!attempt) {
-    return <DeviceCheck onJoin={(choice) => setAttempt((previous) => ({ number: (previous?.number ?? 0) + 1, choice }))} />;
+    return (
+      <DeviceCheck onJoin={(choice) => setAttempt((previous) => ({ number: (previous?.number ?? 0) + 1, choice }))} />
+    );
   }
   return (
     <CallScreen

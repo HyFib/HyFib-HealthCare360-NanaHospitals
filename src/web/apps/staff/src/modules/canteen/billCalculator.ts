@@ -77,7 +77,13 @@ export function calculateLine(line: BillLineInput): BillLine {
   }
   const cgst = divRound(gst, 2);
   const sgst = gst - cgst;
-  return { ...line, taxableAmount: toRupees(taxable), cgst: toRupees(cgst), sgst: toRupees(sgst), lineTotal: toRupees(taxable + gst) };
+  return {
+    ...line,
+    taxableAmount: toRupees(taxable),
+    cgst: toRupees(cgst),
+    sgst: toRupees(sgst),
+    lineTotal: toRupees(taxable + gst),
+  };
 }
 
 export function calculateBill(lines: readonly BillLineInput[]): BillTotals {

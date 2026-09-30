@@ -17,10 +17,17 @@ type TeamStatus = ApprovalStatus | 'all';
 
 export const Route = createFileRoute('/_app/hr/me/team')({
   validateSearch: (s: Record<string, unknown>): { status?: TeamStatus } => ({
-    status: s.status === 'all' || s.status === 'Approved' || s.status === 'Rejected' || s.status === 'Cancelled' ? (s.status as TeamStatus) : undefined,
+    status:
+      s.status === 'all' || s.status === 'Approved' || s.status === 'Rejected' || s.status === 'Cancelled'
+        ? (s.status as TeamStatus)
+        : undefined,
   }),
   component: () => (
-    <SelfServicePage title="My team" subtitle="Leave and attendance corrections from the people who report to you" icon={<PeopleTeamRegular />}>
+    <SelfServicePage
+      title="My team"
+      subtitle="Leave and attendance corrections from the people who report to you"
+      icon={<PeopleTeamRegular />}
+    >
       {(profile) => <Team profile={profile} />}
     </SelfServicePage>
   ),
@@ -38,7 +45,11 @@ function Team({ profile }: { profile: MyProfileDto }) {
   if (profile.reportees === 0) {
     return (
       <Section>
-        <EmptyState icon={<PeopleTeamRegular />} title="Nobody reports to you" description="If that is wrong, ask HR to set you as the reporting manager on your team members' records." />
+        <EmptyState
+          icon={<PeopleTeamRegular />}
+          title="Nobody reports to you"
+          description="If that is wrong, ask HR to set you as the reporting manager on your team members' records."
+        />
       </Section>
     );
   }
@@ -49,7 +60,12 @@ function Team({ profile }: { profile: MyProfileDto }) {
     <Stack gap={16}>
       <Toolbar spaced={false}>
         <Field label="Show">
-          <Select value={status} onChange={(_, d) => void navigate({ search: { status: d.value === 'Pending' ? undefined : (d.value as TeamStatus) } })}>
+          <Select
+            value={status}
+            onChange={(_, d) =>
+              void navigate({ search: { status: d.value === 'Pending' ? undefined : (d.value as TeamStatus) } })
+            }
+          >
             <option value="Pending">Waiting for my decision</option>
             <option value="Approved">Approved</option>
             <option value="Rejected">Rejected</option>
@@ -122,7 +138,13 @@ function Team({ profile }: { profile: MyProfileDto }) {
             {
               key: 'times',
               header: 'Times',
-              render: (r) => [r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '', r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : ''].filter(Boolean).join(' · ') || '—',
+              render: (r) =>
+                [
+                  r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '',
+                  r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—',
             },
             { key: 'reason', header: 'Reason', priority: 'low', render: (r) => r.reason },
             { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },

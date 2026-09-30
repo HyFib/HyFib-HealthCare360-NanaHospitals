@@ -37,7 +37,10 @@ export function EmployeePicker({
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 250);
   const results = useQuery({
-    ...hrQueries.employees({ search: search || undefined, includeSeparated: includeSeparated || undefined, departmentId, sort: 'name' }, 15),
+    ...hrQueries.employees(
+      { search: search || undefined, includeSeparated: includeSeparated || undefined, departmentId, sort: 'name' },
+      15,
+    ),
     enabled: search.length >= 2,
   });
   const items = search.length >= 2 ? (results.data?.items ?? []) : [];

@@ -34,12 +34,24 @@ export interface SaleTotals {
 }
 
 /** SalePricing.PriceLine: one batch of one item at its MRP. */
-export function priceSaleLine(unitMrp: number, quantity: number, gstRate: number | null, discountPercent: number): SaleLinePrice {
+export function priceSaleLine(
+  unitMrp: number,
+  quantity: number,
+  gstRate: number | null,
+  discountPercent: number,
+): SaleLinePrice {
   const priced = priceInclusive(quantity, unitMrp, discountPercent, gstRate ?? 0);
   if (gstRate === null) {
     return { gross: priced.gross, discount: priced.discount, taxable: null, cgst: null, sgst: null, net: priced.net };
   }
-  return { gross: priced.gross, discount: priced.discount, taxable: priced.tax.taxable, cgst: priced.tax.cgst, sgst: priced.tax.sgst, net: priced.net };
+  return {
+    gross: priced.gross,
+    discount: priced.discount,
+    taxable: priced.tax.taxable,
+    cgst: priced.tax.cgst,
+    sgst: priced.tax.sgst,
+    net: priced.net,
+  };
 }
 
 /** SalePricing.Total: sums the lines and rounds the bill to the rupee. */
@@ -69,7 +81,13 @@ export function ipIssueAmount(quantity: number, unitMrp: number): number {
  * SalePricing.RefundFor: refund for returning part of an invoice line. The last return of a line refunds exactly
  * what is left, so repeated partial returns never drift by a paisa from what the patient paid.
  */
-export function refundFor(lineNet: number, lineQuantity: number, alreadyReturnedQuantity: number, alreadyRefunded: number, returnQuantity: number): number {
+export function refundFor(
+  lineNet: number,
+  lineQuantity: number,
+  alreadyReturnedQuantity: number,
+  alreadyRefunded: number,
+  returnQuantity: number,
+): number {
   const quantity: Dec = dec(lineQuantity);
   const returning: Dec = dec(returnQuantity);
   if (quantity <= 0n || returning <= 0n) {

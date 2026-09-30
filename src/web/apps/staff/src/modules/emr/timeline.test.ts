@@ -1,8 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { groupByDay, istDay, parseChartTab, parseTypes, prettyTitle, serializeTypes, timelineTarget, toggleType, type TimelineEntry } from './timeline';
+import {
+  groupByDay,
+  istDay,
+  parseChartTab,
+  parseTypes,
+  prettyTitle,
+  serializeTypes,
+  timelineTarget,
+  toggleType,
+  type TimelineEntry,
+} from './timeline';
 
 function entry(partial: Partial<TimelineEntry>): TimelineEntry {
-  return { type: 'Note', id: 'x', occurredAt: '2026-09-20T05:00:00Z', title: 'Note', summary: null, status: null, encounterId: null, isCritical: false, ...partial };
+  return {
+    type: 'Note',
+    id: 'x',
+    occurredAt: '2026-09-20T05:00:00Z',
+    title: 'Note',
+    summary: null,
+    status: null,
+    encounterId: null,
+    isCritical: false,
+    ...partial,
+  };
 }
 
 describe('type filter', () => {
@@ -48,7 +68,10 @@ describe('groupByDay', () => {
 describe('navigation', () => {
   it('opens encounters and entries that belong to one', () => {
     expect(timelineTarget(entry({ type: 'Encounter', id: 'e1' }))).toEqual({ kind: 'encounter', encounterId: 'e1' });
-    expect(timelineTarget(entry({ type: 'Prescription', encounterId: 'e2' }))).toEqual({ kind: 'encounter', encounterId: 'e2' });
+    expect(timelineTarget(entry({ type: 'Prescription', encounterId: 'e2' }))).toEqual({
+      kind: 'encounter',
+      encounterId: 'e2',
+    });
   });
 
   it('falls back to the chart tab', () => {

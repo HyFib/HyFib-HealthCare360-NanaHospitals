@@ -20,10 +20,32 @@ const manifest: ModuleManifest = {
       label: 'MIS reports',
       to: '/analytics/reports',
       permission: ANY_ANALYTICS,
-      keywords: ['mis', 'census', 'report', 'excel', 'export', 'turnaround', 'tat', 'no-show', 'ageing', 'near expiry', 'discharge'],
+      keywords: [
+        'mis',
+        'census',
+        'report',
+        'excel',
+        'export',
+        'turnaround',
+        'tat',
+        'no-show',
+        'ageing',
+        'near expiry',
+        'discharge',
+      ],
     },
-    { label: 'Dashboards', to: '/analytics/dashboards', permission: ANY_ANALYTICS, keywords: ['bi', 'charts', 'saved views', 'widgets'] },
-    { label: 'Scheduled e-mails', to: '/analytics/schedules', permission: A.schedulesManage, keywords: ['email', 'daily report', 'weekly report', 'subscription'] },
+    {
+      label: 'Dashboards',
+      to: '/analytics/dashboards',
+      permission: ANY_ANALYTICS,
+      keywords: ['bi', 'charts', 'saved views', 'widgets'],
+    },
+    {
+      label: 'Scheduled e-mails',
+      to: '/analytics/schedules',
+      permission: A.schedulesManage,
+      keywords: ['email', 'daily report', 'weekly report', 'subscription'],
+    },
   ],
   quickActions: [
     {
@@ -34,7 +56,9 @@ const manifest: ModuleManifest = {
       description: 'Census, occupancy, revenue, TAT… with Excel export',
     },
   ],
-  widgets: [{ id: 'analytics-snapshot', permission: ANY_ANALYTICS, span: 2, order: 90, component: AnalyticsSnapshotWidget }],
+  widgets: [
+    { id: 'analytics-snapshot', permission: ANY_ANALYTICS, span: 2, order: 90, component: AnalyticsSnapshotWidget },
+  ],
 };
 
 export default manifest;

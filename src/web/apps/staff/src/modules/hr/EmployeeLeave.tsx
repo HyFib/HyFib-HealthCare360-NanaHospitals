@@ -15,7 +15,17 @@ import {
 import { AddRegular, ArrowDownloadRegular, CalendarCancelRegular, EditRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, todayIso } from '@hc360/core';
-import { applyServerErrors, DataTable, FormGrid, NumberField, Section, SelectField, StatusBadge, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FormGrid,
+  NumberField,
+  Section,
+  SelectField,
+  StatusBadge,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -34,7 +44,17 @@ import { downloadStoredFile } from './shared/files';
 import { Stack, Toolbar } from './shared/layout';
 
 /** Leave balances table (opening, credited, adjusted, availed, waiting, available). */
-export function BalancesTable({ balances, loading, error, onRetry }: { balances: LeaveBalanceDto[] | undefined; loading: boolean; error: unknown; onRetry: () => void }) {
+export function BalancesTable({
+  balances,
+  loading,
+  error,
+  onRetry,
+}: {
+  balances: LeaveBalanceDto[] | undefined;
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+}) {
   return (
     <DataTable
       ariaLabel="Leave balances"
@@ -50,7 +70,12 @@ export function BalancesTable({ balances, loading, error, onRetry }: { balances:
         { key: 'adjusted', header: 'Adjusted', align: 'end', priority: 'low', render: (b) => formatDays(b.adjusted) },
         { key: 'availed', header: 'Taken', align: 'end', render: (b) => formatDays(b.availed) },
         { key: 'pending', header: 'Waiting', align: 'end', render: (b) => formatDays(b.pending) },
-        { key: 'available', header: 'Available', align: 'end', render: (b) => <Text weight="semibold">{formatDays(b.available)}</Text> },
+        {
+          key: 'available',
+          header: 'Available',
+          align: 'end',
+          render: (b) => <Text weight="semibold">{formatDays(b.available)}</Text>,
+        },
       ]}
       emptyTitle="No balances yet"
       emptyDescription="Balances appear once HR credits the year's leave."
@@ -113,7 +138,12 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
 
       {canSeeBalances && (
         <Section title={`Balances ${year}`} flush>
-          <BalancesTable balances={balances.data} loading={balances.isLoading} error={balances.error} onRetry={() => void balances.refetch()} />
+          <BalancesTable
+            balances={balances.data}
+            loading={balances.isLoading}
+            error={balances.error}
+            onRetry={() => void balances.refetch()}
+          />
         </Section>
       )}
 
@@ -142,7 +172,11 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
                       size="small"
                       appearance="subtle"
                       icon={<ArrowDownloadRegular />}
-                      onClick={() => void downloadStoredFile(r.attachmentFileId!).catch((error: unknown) => notify.error(error, 'Could not open the document'))}
+                      onClick={() =>
+                        void downloadStoredFile(r.attachmentFileId!).catch((error: unknown) =>
+                          notify.error(error, 'Could not open the document'),
+                        )
+                      }
                     />
                   </Tooltip>
                 )}
@@ -157,7 +191,12 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
                 )}
                 {canCancelLeave(r, today, true) && r.status === 'Approved' && (
                   <Tooltip content="Cancel this leave" relationship="label">
-                    <Button size="small" appearance="subtle" icon={<CalendarCancelRegular />} onClick={() => setCancelling(r)} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<CalendarCancelRegular />}
+                      onClick={() => setCancelling(r)}
+                    />
                   </Tooltip>
                 )}
               </span>
@@ -173,7 +212,11 @@ export function EmployeeLeave({ employee, readOnly }: { employee: PickedEmployee
       <ReasonDialog
         open={cancelling !== null}
         title="Cancel this leave?"
-        description={cancelling ? `${leavePeriodText(cancelling)}. The days go back to the balance and past days are recomputed.` : undefined}
+        description={
+          cancelling
+            ? `${leavePeriodText(cancelling)}. The days go back to the balance and past days are recomputed.`
+            : undefined
+        }
         label="Reason (shown to the employee)"
         confirmLabel="Cancel leave"
         destructive
@@ -198,10 +241,22 @@ const adjustSchema = z.object({
 type AdjustValues = z.infer<typeof adjustSchema>;
 
 /** Comp-off credits and corrections (±, half days allowed). The reason is written to the audit trail. */
-export function AdjustBalanceDialog({ open, onClose, employee, year }: { open: boolean; onClose: () => void; employee: PickedEmployee; year: number }) {
+export function AdjustBalanceDialog({
+  open,
+  onClose,
+  employee,
+  year,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee: PickedEmployee;
+  year: number;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{open && <AdjustBody onClose={onClose} employee={employee} year={year} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {open && <AdjustBody onClose={onClose} employee={employee} year={year} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -211,12 +266,21 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
   const queryClient = useQueryClient();
   const types = useQuery(hrQueries.leaveTypes());
   const [busy, setBusy] = useState(false);
-  const form = useForm<AdjustValues>({ resolver: zodResolver(adjustSchema), defaultValues: { leaveTypeId: '', days: 1, reason: '' } });
+  const form = useForm<AdjustValues>({
+    resolver: zodResolver(adjustSchema),
+    defaultValues: { leaveTypeId: '', days: 1, reason: '' },
+  });
 
   const onValid = async (values: AdjustValues) => {
     setBusy(true);
     try {
-      await hrApi.adjustLeave({ employeeId: employee.id, leaveTypeId: values.leaveTypeId, year, days: values.days, reason: values.reason.trim() });
+      await hrApi.adjustLeave({
+        employeeId: employee.id,
+        leaveTypeId: values.leaveTypeId,
+        year,
+        days: values.days,
+        reason: values.reason.trim(),
+      });
       notify.success('Balance adjusted', `${values.days > 0 ? '+' : ''}${values.days} day(s) for ${employee.name}`);
       void queryClient.invalidateQueries({ queryKey: hrKeys.leave });
       void queryClient.invalidateQueries({ queryKey: hrKeys.me });
@@ -247,11 +311,29 @@ function AdjustBody({ onClose, employee, year }: { onClose: () => void; employee
               label="Leave type"
               required
               placeholder="Choose"
-              options={(types.data ?? []).filter((t) => t.tracksBalance).map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
+              options={(types.data ?? [])
+                .filter((t) => t.tracksBalance)
+                .map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
             />
-            <NumberField control={form.control} name="days" label="Days (+ add, − remove)" required step={0.5} min={-366} max={366} />
+            <NumberField
+              control={form.control}
+              name="days"
+              label="Days (+ add, − remove)"
+              required
+              step={0.5}
+              min={-366}
+              max={366}
+            />
           </FormGrid>
-          <TextAreaField control={form.control} name="reason" label="Reason" required rows={2} maxLength={300} placeholder="For example: comp-off for working on 15 Aug" />
+          <TextAreaField
+            control={form.control}
+            name="reason"
+            label="Reason"
+            required
+            rows={2}
+            maxLength={300}
+            placeholder="For example: comp-off for working on 15 Aug"
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={busy}>

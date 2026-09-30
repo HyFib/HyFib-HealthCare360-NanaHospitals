@@ -27,7 +27,16 @@ import {
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, FormGrid, NumberField, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  DateField,
+  FormGrid,
+  NumberField,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -43,7 +52,11 @@ import { TestLookup } from './TestLookup';
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  preview: { padding: '8px 12px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  preview: {
+    padding: '8px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
   warn: { color: tokens.colorPaletteMarigoldForeground1, fontWeight: tokens.fontWeightSemibold },
   bad: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
   good: { color: tokens.colorPaletteGreenForeground1, fontWeight: tokens.fontWeightSemibold },
@@ -56,8 +69,14 @@ const useStyles = makeStyles({
 
 const lotSchema = z
   .object({
-    test: z.object({ id: z.string(), code: z.string(), name: z.string(), unit: z.string().nullable().optional() }).nullable(),
-    material: z.string().trim().min(1, 'Enter the control material, e.g. Bio-Rad Lyphochek Assayed Chemistry.').max(200),
+    test: z
+      .object({ id: z.string(), code: z.string(), name: z.string(), unit: z.string().nullable().optional() })
+      .nullable(),
+    material: z
+      .string()
+      .trim()
+      .min(1, 'Enter the control material, e.g. Bio-Rad Lyphochek Assayed Chemistry.')
+      .max(200),
     level: z.enum(['1', '2', '3']),
     lotNumber: z.string().trim().min(1, 'Enter the lot number.').max(64),
     expiryDate: z.string().nullable(),
@@ -75,7 +94,11 @@ const lotSchema = z
       ctx.addIssue({ code: 'custom', path: ['expiryDate'], message: 'Enter the expiry date.' });
     }
     if (values.targetMean === null || Number.isNaN(values.targetMean)) {
-      ctx.addIssue({ code: 'custom', path: ['targetMean'], message: 'Enter the target mean from the lot insert or your own data.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetMean'],
+        message: 'Enter the target mean from the lot insert or your own data.',
+      });
     }
     if (values.targetSd === null || Number.isNaN(values.targetSd) || values.targetSd <= 0) {
       ctx.addIssue({ code: 'custom', path: ['targetSd'], message: 'Enter an SD greater than zero.' });
@@ -85,7 +108,15 @@ const lotSchema = z
 type LotValues = z.infer<typeof lotSchema>;
 
 /** Register or edit a QC control lot (targets are frozen by the server once runs exist). */
-export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; onClose: () => void; onSaved?: (lotId: string) => void }) {
+export function QcLotDrawer({
+  lot,
+  onClose,
+  onSaved,
+}: {
+  lot: QcLotDto | null;
+  onClose: () => void;
+  onSaved?: (lotId: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -138,7 +169,9 @@ export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; o
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {lot ? `Control lot ${lot.lotNumber}` : 'Register a control lot'}
           </DrawerHeaderTitle>
         </DrawerHeader>
@@ -146,7 +179,9 @@ export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; o
           <div className={styles.form}>
             {lot && (
               <MessageBar intent="info">
-                <MessageBarBody>Once runs are recorded, the target mean and SD cannot change. Register a new lot for new targets.</MessageBarBody>
+                <MessageBarBody>
+                  Once runs are recorded, the target mean and SD cannot change. Register a new lot for new targets.
+                </MessageBarBody>
               </MessageBar>
             )}
             <Controller
@@ -182,7 +217,13 @@ export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; o
                 ]}
               />
               <TextField control={form.control} name="lotNumber" label="Lot number" required />
-              <DateField control={form.control} name="expiryDate" label="Expiry date" required min={lot ? undefined : todayIso()} />
+              <DateField
+                control={form.control}
+                name="expiryDate"
+                label="Expiry date"
+                required
+                min={lot ? undefined : todayIso()}
+              />
               <Controller
                 control={form.control}
                 name="instrumentCode"
@@ -207,7 +248,12 @@ export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; o
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {lot ? 'Save' : 'Register lot'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>
@@ -219,7 +265,10 @@ export function QcLotDrawer({ lot, onClose, onSaved }: { lot: QcLotDto | null; o
 
 // ------------------------------------------------------------------------------------------------ QC run
 
-export type RunLot = Pick<QcLotDto, 'id' | 'testName' | 'level' | 'lotNumber' | 'unit' | 'targetMean' | 'targetSd' | 'material'>;
+export type RunLot = Pick<
+  QcLotDto,
+  'id' | 'testName' | 'level' | 'lotNumber' | 'unit' | 'targetMean' | 'targetSd' | 'material'
+>;
 
 const ZONE_TEXT = {
   within1: { text: 'Within 1 SD', tone: 'good' },
@@ -243,7 +292,11 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
   const numeric = value.trim() === '' ? null : Number(value.replace(/,/g, ''));
   const valid = numeric !== null && Number.isFinite(numeric);
   const runIso = fromZonedInput(runAt);
-  const timeProblem = !runIso ? 'Enter the run time.' : isInFuture(runIso, new Date()) ? 'The run time cannot be in the future.' : null;
+  const timeProblem = !runIso
+    ? 'Enter the run time.'
+    : isInFuture(runIso, new Date())
+      ? 'The run time cannot be in the future.'
+      : null;
   const z = valid ? zScore(numeric, lot.targetMean, lot.targetSd) : null;
   const zone = z !== null ? ZONE_TEXT[sdZone(z)] : null;
 
@@ -322,7 +375,8 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
               <DialogTitle>
                 Record QC run
                 <Caption1 block className={styles.muted}>
-                  {lot.testName} · level {lot.level} · lot {lot.lotNumber} · target {lot.targetMean} ± {lot.targetSd} {lot.unit ?? ''}
+                  {lot.testName} · level {lot.level} · lot {lot.lotNumber} · target {lot.targetMean} ± {lot.targetSd}{' '}
+                  {lot.unit ?? ''}
                 </Caption1>
               </DialogTitle>
               <DialogContent className={styles.content}>
@@ -331,7 +385,12 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
                     <MessageBarBody>{errorMessage(record.error, 'The QC run could not be recorded.')}</MessageBarBody>
                   </MessageBar>
                 )}
-                <Field label="Control value" required validationMessage={value && !valid ? 'Enter a number.' : undefined} validationState={value && !valid ? 'error' : 'none'}>
+                <Field
+                  label="Control value"
+                  required
+                  validationMessage={value && !valid ? 'Enter a number.' : undefined}
+                  validationState={value && !valid ? 'error' : 'none'}
+                >
                   <Input
                     value={value}
                     onChange={(_, data) => setValue(data.value)}
@@ -349,9 +408,19 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
                     </Caption1>
                   </div>
                 )}
-                <Field label="Run time (hospital time)" required validationMessage={timeProblem ?? undefined} validationState={timeProblem ? 'error' : 'none'}>
+                <Field
+                  label="Run time (hospital time)"
+                  required
+                  validationMessage={timeProblem ?? undefined}
+                  validationState={timeProblem ? 'error' : 'none'}
+                >
                   <div className={styles.timeRow}>
-                    <Input type="datetime-local" value={runAt} onChange={(_, data) => setRunAt(data.value)} style={{ flex: 1 }} />
+                    <Input
+                      type="datetime-local"
+                      value={runAt}
+                      onChange={(_, data) => setRunAt(data.value)}
+                      style={{ flex: 1 }}
+                    />
                     <Button onClick={() => setRunAt(toZonedInput(new Date()))}>Now</Button>
                   </div>
                 </Field>
@@ -360,7 +429,12 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
                 <Button onClick={onClose} disabled={record.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" appearance="primary" disabled={!valid || Boolean(timeProblem) || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!valid || Boolean(timeProblem) || record.isPending}
+                  icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                >
                   Record run
                 </Button>
               </DialogActions>
@@ -408,7 +482,8 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
             <DialogTitle>
               Review QC run
               <Caption1 block className={styles.muted}>
-                {testName} · level {run.level} · lot {run.lotNumber} · {run.value} ({formatZ(run.zScore)}) · {qcOutcomeLabel[run.outcome]}
+                {testName} · level {run.level} · lot {run.lotNumber} · {run.value} ({formatZ(run.zScore)}) ·{' '}
+                {qcOutcomeLabel[run.outcome]}
               </Caption1>
             </DialogTitle>
             <DialogContent className={styles.content}>
@@ -418,26 +493,45 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
                 </MessageBar>
               )}
               {run.violations.length > 0 && (
-                <Caption1>
-                  Rules: {run.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}
-                </Caption1>
+                <Caption1>Rules: {run.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}</Caption1>
               )}
               <Field
                 label="Corrective action"
                 required={needsAction}
-                hint={needsAction ? 'Required for a rejected run, e.g. recalibrated, new reagent pack, control repeated within limits.' : 'Optional'}
+                hint={
+                  needsAction
+                    ? 'Required for a rejected run, e.g. recalibrated, new reagent pack, control repeated within limits.'
+                    : 'Optional'
+                }
               >
-                <Textarea value={action} onChange={(_, data) => setAction(data.value.slice(0, 1000))} rows={3} resize="vertical" autoFocus={needsAction} />
+                <Textarea
+                  value={action}
+                  onChange={(_, data) => setAction(data.value.slice(0, 1000))}
+                  rows={3}
+                  resize="vertical"
+                  autoFocus={needsAction}
+                />
               </Field>
               <Field label="Review note">
-                <Textarea value={note} onChange={(_, data) => setNote(data.value.slice(0, 1000))} rows={2} resize="vertical" autoFocus={!needsAction} />
+                <Textarea
+                  value={note}
+                  onChange={(_, data) => setNote(data.value.slice(0, 1000))}
+                  rows={2}
+                  resize="vertical"
+                  autoFocus={!needsAction}
+                />
               </Field>
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={review.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || review.isPending} icon={review.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || review.isPending}
+                icon={review.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Save review
               </Button>
             </DialogActions>

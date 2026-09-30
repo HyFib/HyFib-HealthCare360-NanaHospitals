@@ -67,7 +67,9 @@ describe('axisRange', () => {
 
   it('stays within what is physically possible', () => {
     expect(axisRange([91, 97], spo2, { min: 50, max: 100 })).toEqual({ min: 88, max: 99 });
-    expect(axisRange([98, 100], { min: 94, max: null, criticalMin: 90, criticalMax: null }, { min: 50, max: 100 }).max).toBe(100);
+    expect(
+      axisRange([98, 100], { min: 94, max: null, criticalMin: 90, criticalMax: null }, { min: 50, max: 100 }).max,
+    ).toBe(100);
   });
 
   it('copes with no data and flat data', () => {
@@ -88,7 +90,10 @@ describe('validateLimits (same rules as the server)', () => {
   it('rejects empty, inverted and overlapping limits', () => {
     expect(validateLimits({ min: null, max: null, criticalMin: null, criticalMax: null })?.field).toBe('min');
     expect(validateLimits({ ...systolic, min: 150 })?.field).toBe('max');
-    expect(validateLimits({ ...systolic, criticalMax: 130 })).toEqual({ field: 'criticalMax', message: 'Critical limits must lie outside the normal range.' });
+    expect(validateLimits({ ...systolic, criticalMax: 130 })).toEqual({
+      field: 'criticalMax',
+      message: 'Critical limits must lie outside the normal range.',
+    });
     expect(validateLimits({ ...systolic, criticalMin: 95 })?.field).toBe('criticalMin');
   });
 });

@@ -1,4 +1,13 @@
-import { Caption1, makeStyles, MessageBar, MessageBarBody, Subtitle1, Subtitle2, Text, tokens } from '@fluentui/react-components';
+import {
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Subtitle1,
+  Subtitle2,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { formatDateTime } from '@hc360/core';
 import { QRCodeSVG } from 'qrcode.react';
 import { Fragment } from 'react';
@@ -34,14 +43,25 @@ const useStyles = makeStyles({
   pair: { display: 'flex', gap: '8px' },
   label: { color: tokens.colorNeutralForeground3, minWidth: '90px' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '4px' },
-  th: { textAlign: 'start', fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground3, padding: '4px 6px', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  th: {
+    textAlign: 'start',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground3,
+    padding: '4px 6px',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   td: { padding: '4px 6px', borderBottom: `1px solid ${tokens.colorNeutralStroke3}`, verticalAlign: 'top' },
   group: { padding: '6px 6px 2px', fontWeight: tokens.fontWeightSemibold },
   abnormal: { fontWeight: tokens.fontWeightBold },
   critical: { fontWeight: tokens.fontWeightBold, color: tokens.colorPaletteRedForeground1 },
   test: { marginTop: '8px' },
   signs: { display: 'flex', gap: '32px', flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: '12px' },
-  sign: { textAlign: 'center', minWidth: '180px', borderTop: `1px solid ${tokens.colorNeutralStroke1}`, paddingTop: '4px' },
+  sign: {
+    textAlign: 'center',
+    minWidth: '180px',
+    borderTop: `1px solid ${tokens.colorNeutralStroke1}`,
+    paddingTop: '4px',
+  },
   qr: { display: 'flex', gap: '12px', alignItems: 'center' },
 });
 
@@ -58,11 +78,24 @@ function ResultValue({ line }: { line: LabReportResultLine }) {
         {line.autoValidated ? '*' : ''}
       </Text>
       {line.status !== 'Verified' && <Caption1 className={styles.muted}> (not verified)</Caption1>}
-      {line.organism && <Caption1 block>Organism: {line.organism}{line.colonyCount ? ` · ${line.colonyCount}` : ''}</Caption1>}
-      {line.susceptibilities.length > 0 && (
-        <Caption1 block>{line.susceptibilities.map((s) => `${s.antibiotic} ${s.interpretation.charAt(0)}${s.mic ? ` (MIC ${s.mic})` : ''}`).join(' · ')}</Caption1>
+      {line.organism && (
+        <Caption1 block>
+          Organism: {line.organism}
+          {line.colonyCount ? ` · ${line.colonyCount}` : ''}
+        </Caption1>
       )}
-      {line.remarks && <Caption1 block className={styles.muted}>{line.remarks}</Caption1>}
+      {line.susceptibilities.length > 0 && (
+        <Caption1 block>
+          {line.susceptibilities
+            .map((s) => `${s.antibiotic} ${s.interpretation.charAt(0)}${s.mic ? ` (MIC ${s.mic})` : ''}`)
+            .join(' · ')}
+        </Caption1>
+      )}
+      {line.remarks && (
+        <Caption1 block className={styles.muted}>
+          {line.remarks}
+        </Caption1>
+      )}
     </span>
   );
 }
@@ -77,8 +110,16 @@ export function LabReportPreview({ view }: { view: LabReportView }) {
     <article className={styles.paper} aria-label={`Lab report ${view.reportNumber}`}>
       <header className={styles.letterhead}>
         <Subtitle1 className={styles.facility}>{view.letterhead.facilityName}</Subtitle1>
-        {view.letterhead.address && <Caption1 block className={styles.muted}>{view.letterhead.address}</Caption1>}
-        {view.letterhead.nabhNumber && <Caption1 block className={styles.muted}>NABH accreditation {view.letterhead.nabhNumber}</Caption1>}
+        {view.letterhead.address && (
+          <Caption1 block className={styles.muted}>
+            {view.letterhead.address}
+          </Caption1>
+        )}
+        {view.letterhead.nabhNumber && (
+          <Caption1 block className={styles.muted}>
+            NABH accreditation {view.letterhead.nabhNumber}
+          </Caption1>
+        )}
       </header>
 
       {view.status !== 'Released' && view.status !== 'Amended' && (
@@ -112,7 +153,13 @@ export function LabReportPreview({ view }: { view: LabReportView }) {
                 {specimenLabel[test.specimenType]}
                 {test.method ? ` · ${test.method}` : ''}
                 {test.referralLabName ? ` · tested at ${test.referralLabName}` : ''}
-                {test.status === 'Released' ? (test.releasedAt ? ` · released ${formatDateTime(test.releasedAt)}` : '') : test.status === 'Verified' ? ' · verified, not released' : ' · in progress'}
+                {test.status === 'Released'
+                  ? test.releasedAt
+                    ? ` · released ${formatDateTime(test.releasedAt)}`
+                    : ''
+                  : test.status === 'Verified'
+                    ? ' · verified, not released'
+                    : ' · in progress'}
               </Caption1>
               <table className={styles.table}>
                 <thead>

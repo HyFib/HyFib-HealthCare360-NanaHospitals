@@ -32,7 +32,14 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { DocStatus } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { purchaseApi, purchaseKeys, purchaseQueries, REQUISITION_STATUSES, type RequisitionListItem, type RequisitionStatus } from '@/modules/purchase/api';
+import {
+  purchaseApi,
+  purchaseKeys,
+  purchaseQueries,
+  REQUISITION_STATUSES,
+  type RequisitionListItem,
+  type RequisitionStatus,
+} from '@/modules/purchase/api';
 
 interface RequisitionSearch {
   status?: RequisitionStatus;
@@ -80,8 +87,16 @@ function RequisitionsPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const requisitions = useQuery(purchaseQueries.requisitions({ status: search.status, storeId: search.storeId, search: search.q, page: search.page }));
-  const set = (patch: Partial<RequisitionSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const requisitions = useQuery(
+    purchaseQueries.requisitions({
+      status: search.status,
+      storeId: search.storeId,
+      search: search.q,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<RequisitionSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const reorderStoreId = reorderStore ?? search.storeId ?? working.storeId;
 
   const fromReorder = useMutation({
@@ -122,9 +137,17 @@ function RequisitionsPage() {
             <Field label="Number" style={{ flex: '0 1 200px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as RequisitionStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as RequisitionStatus | undefined })}
+              >
                 <option value="">All</option>
                 {REQUISITION_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -142,7 +165,9 @@ function RequisitionsPage() {
           error={requisitions.error}
           onRetry={() => void requisitions.refetch()}
           getRowId={(r) => r.id}
-          onRowClick={(r) => void navigate({ to: '/purchase/requisitions/$requisitionId', params: { requisitionId: r.id } })}
+          onRowClick={(r) =>
+            void navigate({ to: '/purchase/requisitions/$requisitionId', params: { requisitionId: r.id } })
+          }
           size="small"
           columns={[
             { key: 'no', header: 'Requisition', render: (r) => <Text font="monospace">{r.number}</Text> },
@@ -160,7 +185,11 @@ function RequisitionsPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', render: (r) => <DocStatus status={r.status} label={STATUS_LABEL[r.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (r) => <DocStatus status={r.status} label={STATUS_LABEL[r.status]} />,
+            },
           ]}
           emptyTitle="No requisitions"
           emptyDescription={canManage ? 'Raise one, or create it straight from the reorder list.' : undefined}
@@ -174,7 +203,9 @@ function RequisitionsPage() {
         <NewRequisitionDialog
           defaultStoreId={search.storeId ?? working.storeId}
           onClose={() => set({ create: undefined })}
-          onCreated={(id) => void navigate({ to: '/purchase/requisitions/$requisitionId', params: { requisitionId: id } })}
+          onCreated={(id) =>
+            void navigate({ to: '/purchase/requisitions/$requisitionId', params: { requisitionId: id } })
+          }
         />
       )}
       <ConfirmDialog
@@ -186,7 +217,10 @@ function RequisitionsPage() {
         onCancel={() => setConfirmReorder(false)}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span>Every item at or below its reorder level (after what is already on order) goes on one requisition, in purchase units.</span>
+          <span>
+            Every item at or below its reorder level (after what is already on order) goes on one requisition, in
+            purchase units.
+          </span>
           <StorePicker stores={working.stores} value={reorderStoreId} onChange={setReorderStore} label="For store" />
         </div>
       </ConfirmDialog>
@@ -200,7 +234,15 @@ interface RequisitionLine {
   remarks: string;
 }
 
-function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultStoreId: string | null; onClose: () => void; onCreated: (id: string) => void }) {
+function NewRequisitionDialog({
+  defaultStoreId,
+  onClose,
+  onCreated,
+}: {
+  defaultStoreId: string | null;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const working = useWorkingStore('purchase');
@@ -216,7 +258,11 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
         storeId: storeId!,
         requiredBy: requiredBy || null,
         remarks: remarks.trim() || null,
-        lines: lines.map((l) => ({ itemId: l.item.id, quantity: parseNumber(l.quantity) ?? 0, remarks: l.remarks.trim() || null })),
+        lines: lines.map((l) => ({
+          itemId: l.item.id,
+          quantity: parseNumber(l.quantity) ?? 0,
+          remarks: l.remarks.trim() || null,
+        })),
       }),
     onSuccess: (result) => {
       notify.success(`Requisition ${result.number} sent for approval`);
@@ -224,7 +270,8 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
       onCreated(result.id);
     },
   });
-  const update = (id: string, patch: Partial<RequisitionLine>) => setLines(lines.map((l) => (l.item.id === id ? { ...l, ...patch } : l)));
+  const update = (id: string, patch: Partial<RequisitionLine>) =>
+    setLines(lines.map((l) => (l.item.id === id ? { ...l, ...patch } : l)));
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 880, width: '96vw' }}>
@@ -240,7 +287,11 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
             <ItemPicker
               storeId={storeId}
               label="Add item"
-              onPick={(item) => (lines.some((l) => l.item.id === item.id) ? notify.info(`${item.name} is already listed`) : setLines([...lines, { item, quantity: '', remarks: '' }]))}
+              onPick={(item) =>
+                lines.some((l) => l.item.id === item.id)
+                  ? notify.info(`${item.name} is already listed`)
+                  : setLines([...lines, { item, quantity: '', remarks: '' }])
+              }
             />
             <LineTable
               ariaLabel="Requisition lines"
@@ -255,8 +306,12 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
                     <span>
                       <Text weight="semibold">{l.item.name}</Text>
                       <Caption1 block>
-                        {l.item.available !== null ? `${formatQty(l.item.available, l.item.baseUnit)} in stock` : l.item.code}
-                        {l.item.purchaseUnitFactor !== 1 ? ` · 1 ${l.item.purchaseUnit} = ${formatQty(l.item.purchaseUnitFactor, l.item.baseUnit)}` : ''}
+                        {l.item.available !== null
+                          ? `${formatQty(l.item.available, l.item.baseUnit)} in stock`
+                          : l.item.code}
+                        {l.item.purchaseUnitFactor !== 1
+                          ? ` · 1 ${l.item.purchaseUnit} = ${formatQty(l.item.purchaseUnitFactor, l.item.baseUnit)}`
+                          : ''}
                       </Caption1>
                     </span>
                   ),
@@ -276,12 +331,31 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
                     />
                   ),
                 },
-                { key: 'remarks', header: 'Note', priority: 'low', render: (l) => <Input value={l.remarks} maxLength={300} aria-label={`Note for ${l.item.name}`} onChange={(_, d) => update(l.item.id, { remarks: d.value })} /> },
+                {
+                  key: 'remarks',
+                  header: 'Note',
+                  priority: 'low',
+                  render: (l) => (
+                    <Input
+                      value={l.remarks}
+                      maxLength={300}
+                      aria-label={`Note for ${l.item.name}`}
+                      onChange={(_, d) => update(l.item.id, { remarks: d.value })}
+                    />
+                  ),
+                },
                 {
                   key: 'remove',
                   header: '',
                   width: 44,
-                  render: (l) => <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${l.item.name}`} onClick={() => setLines(lines.filter((x) => x.item.id !== l.item.id))} />,
+                  render: (l) => (
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label={`Remove ${l.item.name}`}
+                      onClick={() => setLines(lines.filter((x) => x.item.id !== l.item.id))}
+                    />
+                  ),
                 },
               ]}
             />
@@ -298,7 +372,12 @@ function NewRequisitionDialog({ defaultStoreId, onClose, onCreated }: { defaultS
             <Button onClick={onClose} disabled={create.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => create.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || create.isPending}
+              icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => create.mutate()}
+            >
               Send for approval
             </Button>
           </DialogActions>

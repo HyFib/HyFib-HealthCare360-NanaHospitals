@@ -20,7 +20,20 @@ const row = (partial: Partial<ScorecardRow>): ScorecardRow => ({
 describe('scorecard print', () => {
   it('groups by category, counts results and escapes values', () => {
     const html = scorecardHtml(
-      [row({}), row({ code: 'FALL', name: 'Falls <per 1000>', category: 'Patient safety', unit: 'PerThousand', target: 1, direction: 'LowerIsBetter', value: 1.4, meetsTarget: false }), row({ code: 'X', value: null, meetsTarget: null })],
+      [
+        row({}),
+        row({
+          code: 'FALL',
+          name: 'Falls <per 1000>',
+          category: 'Patient safety',
+          unit: 'PerThousand',
+          target: 1,
+          direction: 'LowerIsBetter',
+          value: 1.4,
+          meetsTarget: false,
+        }),
+        row({ code: 'X', value: null, meetsTarget: null }),
+      ],
       'Nana & Sons Hospital',
       'August 2026',
       '2026-09-01T04:30:00Z',

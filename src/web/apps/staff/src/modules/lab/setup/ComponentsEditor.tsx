@@ -1,4 +1,14 @@
-import { Button, Caption1, Input, makeStyles, MessageBar, MessageBarBody, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Input,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { ArrowDownRegular, ArrowUpRegular, DeleteRegular, SaveRegular } from '@fluentui/react-icons';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -39,12 +49,19 @@ export function ComponentsEditor({ test }: { test: LabTestDetail }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<ComponentRow[]>(() =>
-    [...test.components].sort((a, b) => a.displayOrder - b.displayOrder).map((c) => ({ testId: c.testId, code: c.code, name: c.name, groupName: c.groupName ?? '' })),
+    [...test.components]
+      .sort((a, b) => a.displayOrder - b.displayOrder)
+      .map((c) => ({ testId: c.testId, code: c.code, name: c.name, groupName: c.groupName ?? '' })),
   );
   const [dirty, setDirty] = useState(false);
 
   const save = useMutation({
-    mutationFn: () => labApi.setComponents(test.id, rows.map((row) => ({ testId: row.testId, groupName: row.groupName.trim() || null })), test.version),
+    mutationFn: () =>
+      labApi.setComponents(
+        test.id,
+        rows.map((row) => ({ testId: row.testId, groupName: row.groupName.trim() || null })),
+        test.version,
+      ),
     onSuccess: () => {
       setDirty(false);
       notify.success('Panel saved', 'New orders of this panel get these analytes.');
@@ -78,7 +95,18 @@ export function ComponentsEditor({ test }: { test: LabTestDetail }) {
         label="Add an analyte"
         value={null}
         filter={(candidate) => candidate.id !== test.id && !rows.some((row) => row.testId === candidate.id)}
-        onChange={(candidate) => candidate && update([...rows, { testId: candidate.id, code: candidate.code, name: candidate.name, groupName: rows.at(-1)?.groupName ?? '' }])}
+        onChange={(candidate) =>
+          candidate &&
+          update([
+            ...rows,
+            {
+              testId: candidate.id,
+              code: candidate.code,
+              name: candidate.name,
+              groupName: rows.at(-1)?.groupName ?? '',
+            },
+          ])
+        }
       />
       {rows.length === 0 ? (
         <Text>This panel has no analytes yet. Add the tests it reports, in print order.</Text>
@@ -95,10 +123,19 @@ export function ComponentsEditor({ test }: { test: LabTestDetail }) {
                 value={row.groupName}
                 placeholder="Group heading (optional)"
                 aria-label={`Group heading for ${row.name}`}
-                onChange={(_, data) => update(rows.map((r) => (r.testId === row.testId ? { ...r, groupName: data.value.slice(0, 100) } : r)))}
+                onChange={(_, data) =>
+                  update(rows.map((r) => (r.testId === row.testId ? { ...r, groupName: data.value.slice(0, 100) } : r)))
+                }
               />
               <span>
-                <Button size="small" appearance="subtle" icon={<ArrowUpRegular />} aria-label={`Move ${row.name} up`} disabled={index === 0} onClick={() => move(index, -1)} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<ArrowUpRegular />}
+                  aria-label={`Move ${row.name} up`}
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                />
                 <Button
                   size="small"
                   appearance="subtle"
@@ -107,7 +144,13 @@ export function ComponentsEditor({ test }: { test: LabTestDetail }) {
                   disabled={index === rows.length - 1}
                   onClick={() => move(index, 1)}
                 />
-                <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${row.name}`} onClick={() => update(rows.filter((r) => r.testId !== row.testId))} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label={`Remove ${row.name}`}
+                  onClick={() => update(rows.filter((r) => r.testId !== row.testId))}
+                />
               </span>
             </li>
           ))}

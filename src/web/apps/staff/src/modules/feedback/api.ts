@@ -157,7 +157,13 @@ export interface FeedbackAnalytics {
   byChannel: CountByLabel[];
   /** One row per calendar month in the period ("yyyy-MM"), oldest first. */
   trend: { month: string; responses: number; nps: number | null; averageRating: number | null; lowScores: number }[];
-  departments: { departmentId: string | null; department: string; responses: number; averageRating: number | null; nps: number | null }[];
+  departments: {
+    departmentId: string | null;
+    department: string;
+    responses: number;
+    averageRating: number | null;
+    nps: number | null;
+  }[];
   complaints: {
     raised: number;
     open: number;
@@ -277,7 +283,10 @@ export const feedbackQueries = {
     queryOptions({
       queryKey: ['feedback', 'responses', 'list', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<FeedbackResponseListItem>>('/api/v1/feedback/responses', { query: { ...filters, pageSize: 25 }, signal }),
+        api.get<PagedResult<FeedbackResponseListItem>>('/api/v1/feedback/responses', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   response: (id: string) =>
@@ -291,7 +300,8 @@ export const feedbackQueries = {
   analytics: (filters: AnalyticsFilters) =>
     queryOptions({
       queryKey: ['feedback', 'analytics', filters],
-      queryFn: ({ signal }) => api.get<FeedbackAnalytics>('/api/v1/feedback/analytics', { query: { ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<FeedbackAnalytics>('/api/v1/feedback/analytics', { query: { ...filters }, signal }),
       placeholderData: keepPreviousData,
       staleTime: 60_000,
     }),
@@ -299,7 +309,10 @@ export const feedbackQueries = {
     queryOptions({
       queryKey: ['feedback', 'complaints', 'list', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ComplaintListItem>>('/api/v1/feedback/complaints', { query: { ...filters, pageSize: 25 }, signal }),
+        api.get<PagedResult<ComplaintListItem>>('/api/v1/feedback/complaints', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 120_000,
     }),
@@ -325,7 +338,8 @@ export const feedbackApi = {
     api.post<{ invitationId: string }>('/api/v1/feedback/invitations', { patientId, visitId, formId }),
 
   createComplaint: (request: CreateComplaintRequest) => api.post<string>('/api/v1/feedback/complaints', request),
-  updateComplaint: (id: string, request: UpdateComplaintRequest) => api.put<void>(`/api/v1/feedback/complaints/${id}`, request),
+  updateComplaint: (id: string, request: UpdateComplaintRequest) =>
+    api.put<void>(`/api/v1/feedback/complaints/${id}`, request),
   changeComplaintStatus: (id: string, status: ComplaintStatus, note: string | null) =>
     api.post<void>(`/api/v1/feedback/complaints/${id}/status`, { status, note }),
 };

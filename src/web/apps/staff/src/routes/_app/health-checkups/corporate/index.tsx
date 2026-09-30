@@ -26,7 +26,15 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DismissRegular, PeopleTeamRegular } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, formatInr, isApiError, normalizePhone, todayIso, useDebouncedValue } from '@hc360/core';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  isApiError,
+  normalizePhone,
+  todayIso,
+  useDebouncedValue,
+} from '@hc360/core';
 import { DataTable, FilterBar, FormGrid, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -42,14 +50,39 @@ export const Route = createFileRoute('/_app/health-checkups/corporate/')({
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  people: { display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '260px', overflowY: 'auto', margin: 0, padding: 0, listStyle: 'none' },
-  person: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '4px 8px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground2 },
+  people: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    maxHeight: '260px',
+    overflowY: 'auto',
+    margin: 0,
+    padding: 0,
+    listStyle: 'none',
+  },
+  person: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '4px 8px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
 const MAX_EMPLOYEES = 500;
 
-function NewBatchDrawer({ open, onClose, onBooked }: { open: boolean; onClose: () => void; onBooked: (result: CorporateBatchResult, people: PickedPatient[]) => void }) {
+function NewBatchDrawer({
+  open,
+  onClose,
+  onBooked,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onBooked: (result: CorporateBatchResult, people: PickedPatient[]) => void;
+}) {
   return (
     <OverlayDrawer open={open} position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       {open && <NewBatchForm onClose={onClose} onBooked={onBooked} />}
@@ -57,7 +90,13 @@ function NewBatchDrawer({ open, onClose, onBooked }: { open: boolean; onClose: (
   );
 }
 
-function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (result: CorporateBatchResult, people: PickedPatient[]) => void }) {
+function NewBatchForm({
+  onClose,
+  onBooked,
+}: {
+  onClose: () => void;
+  onBooked: (result: CorporateBatchResult, people: PickedPatient[]) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -75,7 +114,13 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
   const phoneValid = !contactPhone.trim() || normalizePhone(contactPhone) !== null;
   const dateValid = date >= today && date <= addDaysIso(today, 365);
   const selected = packages.data?.find((p) => p.id === packageId);
-  const valid = corporateName.trim().length > 0 && Boolean(packageId) && dateValid && phoneValid && people.length > 0 && people.length <= MAX_EMPLOYEES;
+  const valid =
+    corporateName.trim().length > 0 &&
+    Boolean(packageId) &&
+    dateValid &&
+    phoneValid &&
+    people.length > 0 &&
+    people.length <= MAX_EMPLOYEES;
 
   const book = useMutation({
     mutationFn: () =>
@@ -106,7 +151,11 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
   return (
     <>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>New corporate batch</DrawerHeaderTitle>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          New corporate batch
+        </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.form}>
@@ -120,7 +169,11 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
             <Field label="Contact person">
               <Input value={contactPerson} onChange={(_, d) => setContactPerson(d.value.slice(0, 200))} />
             </Field>
-            <Field label="Contact phone" validationState={phoneValid ? 'none' : 'error'} validationMessage={phoneValid ? undefined : 'Enter a valid phone number.'}>
+            <Field
+              label="Contact phone"
+              validationState={phoneValid ? 'none' : 'error'}
+              validationMessage={phoneValid ? undefined : 'Enter a valid phone number.'}
+            >
               <Input type="tel" value={contactPhone} onChange={(_, d) => setContactPhone(d.value)} />
             </Field>
             <Field label="Package" required>
@@ -133,8 +186,19 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
                 ))}
               </Select>
             </Field>
-            <Field label="Check-up date" required validationState={dateValid ? 'none' : 'error'} validationMessage={dateValid ? undefined : 'Choose a date from today up to one year ahead.'}>
-              <Input type="date" value={date} min={today} max={addDaysIso(today, 365)} onChange={(_, d) => setDate(d.value)} />
+            <Field
+              label="Check-up date"
+              required
+              validationState={dateValid ? 'none' : 'error'}
+              validationMessage={dateValid ? undefined : 'Choose a date from today up to one year ahead.'}
+            >
+              <Input
+                type="date"
+                value={date}
+                min={today}
+                max={addDaysIso(today, 365)}
+                onChange={(_, d) => setDate(d.value)}
+              />
             </Field>
           </FormGrid>
           <PatientPicker
@@ -154,7 +218,13 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
                   <Text>
                     {p.fullName} <Caption1 className={styles.muted}>· {p.uhid}</Caption1>
                   </Text>
-                  <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${p.fullName}`} onClick={() => setPeople((current) => current.filter((x) => x.id !== p.id))} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove ${p.fullName}`}
+                    onClick={() => setPeople((current) => current.filter((x) => x.id !== p.id))}
+                  />
                 </li>
               ))}
             </ul>
@@ -164,7 +234,8 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
           </Field>
           {selected && people.length > 0 && (
             <Caption1 className={styles.muted}>
-              Package value for {people.length} {people.length === 1 ? 'employee' : 'employees'}: {formatInr(selected.price * people.length, { whole: true })} (each is billed at check-in)
+              Package value for {people.length} {people.length === 1 ? 'employee' : 'employees'}:{' '}
+              {formatInr(selected.price * people.length, { whole: true })} (each is billed at check-in)
             </Caption1>
           )}
           {error && (
@@ -175,7 +246,12 @@ function NewBatchForm({ onClose, onBooked }: { onClose: () => void; onBooked: (r
         </div>
       </DrawerBody>
       <DrawerFooter>
-        <Button appearance="primary" icon={book.isPending ? <Spinner size="tiny" /> : <PeopleTeamRegular />} disabled={!valid || book.isPending} onClick={() => book.mutate()}>
+        <Button
+          appearance="primary"
+          icon={book.isPending ? <Spinner size="tiny" /> : <PeopleTeamRegular />}
+          disabled={!valid || book.isPending}
+          onClick={() => book.mutate()}
+        >
           Book {people.length} {people.length === 1 ? 'employee' : 'employees'}
         </Button>
         <Button onClick={onClose}>Cancel</Button>
@@ -249,8 +325,20 @@ function CorporateBatchesPage() {
             { key: 'date', header: 'Date', width: 120, render: (b) => formatDateOnly(b.scheduledDate) },
             { key: 'package', header: 'Package', render: (b) => packageName(b.packageId) },
             { key: 'booked', header: 'Booked', width: 90, align: 'end', render: (b) => b.bookedCount },
-            { key: 'skipped', header: 'Not booked', width: 100, align: 'end', priority: 'low', render: (b) => b.skippedCount },
-            { key: 'contact', header: 'Contact', priority: 'low', render: (b) => [b.contactPerson, b.contactPhone].filter(Boolean).join(' · ') || '—' },
+            {
+              key: 'skipped',
+              header: 'Not booked',
+              width: 100,
+              align: 'end',
+              priority: 'low',
+              render: (b) => b.skippedCount,
+            },
+            {
+              key: 'contact',
+              header: 'Contact',
+              priority: 'low',
+              render: (b) => [b.contactPerson, b.contactPhone].filter(Boolean).join(' · ') || '—',
+            },
             { key: 'created', header: 'Created', priority: 'low', render: (b) => formatDateTime(b.createdAt) },
           ]}
           emptyTitle="No corporate batches"

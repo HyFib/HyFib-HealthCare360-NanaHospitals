@@ -1,4 +1,15 @@
-import { Badge, Caption1, Combobox, Field, makeStyles, Option, Spinner, Text, tokens, type FieldProps } from '@fluentui/react-components';
+import {
+  Badge,
+  Caption1,
+  Combobox,
+  Field,
+  makeStyles,
+  Option,
+  Spinner,
+  Text,
+  tokens,
+  type FieldProps,
+} from '@fluentui/react-components';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -40,7 +51,8 @@ export function ServicePicker({
   const debounced = useDebouncedValue(term.trim(), 250);
   const single = categories && categories.length === 1 ? categories[0]! : null;
   const results = useQuery({ ...orderQueries.services(single, debounced), enabled: debounced.length >= 2 });
-  const items = debounced.length >= 2 ? (results.data ?? []).filter((s) => !categories || categories.includes(s.category)) : [];
+  const items =
+    debounced.length >= 2 ? (results.data ?? []).filter((s) => !categories || categories.includes(s.category)) : [];
 
   return (
     <Field label={label} hint={hint}>

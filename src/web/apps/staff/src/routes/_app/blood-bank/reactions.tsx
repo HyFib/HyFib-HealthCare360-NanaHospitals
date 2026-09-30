@@ -6,7 +6,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { bloodApi, bloodKeys, bloodQueries, REACTION_STATUSES, type ReactionStatus, type TransfusionReactionDto } from '@/modules/blood-bank/api';
+import {
+  bloodApi,
+  bloodKeys,
+  bloodQueries,
+  REACTION_STATUSES,
+  type ReactionStatus,
+  type TransfusionReactionDto,
+} from '@/modules/blood-bank/api';
 import { ReactionStatusBadge, SeverityBadge } from '@/modules/blood-bank/BloodBadges';
 import { reactionStatusLabel, reactionTypeLabel, symptomLabel } from '@/modules/blood-bank/labels';
 import { CloseReactionDialog } from '@/modules/blood-bank/ReactionDialogs';
@@ -63,13 +70,21 @@ function ReactionsPage() {
       <PageHeader
         title="Transfusion reactions"
         subtitle="Reported from the wards; investigated and classified by the blood bank (Haemovigilance Programme of India)."
-        breadcrumbs={[{ label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) }, { label: 'Reactions' }]}
+        breadcrumbs={[
+          { label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) },
+          { label: 'Reactions' },
+        ]}
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => void navigate({ search: { status: (d.value || undefined) as ReactionStatus | undefined } })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) =>
+                  void navigate({ search: { status: (d.value || undefined) as ReactionStatus | undefined } })
+                }
+              >
                 <option value="">All</option>
                 {REACTION_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -89,7 +104,11 @@ function ReactionsPage() {
           getRowId={(r) => r.id}
           onRowClick={(r) => void navigate({ to: '/blood-bank/requests/$id', params: { id: r.requestId } })}
           columns={[
-            { key: 'when', header: 'Reported', render: (r) => `${formatDateTime(r.reportedAt)}${r.reportedByName ? ` · ${r.reportedByName}` : ''}` },
+            {
+              key: 'when',
+              header: 'Reported',
+              render: (r) => `${formatDateTime(r.reportedAt)}${r.reportedByName ? ` · ${r.reportedByName}` : ''}`,
+            },
             {
               key: 'patient',
               header: 'Patient · unit',
@@ -103,7 +122,12 @@ function ReactionsPage() {
               ),
             },
             { key: 'severity', header: 'Severity', render: (r) => <SeverityBadge severity={r.severity} /> },
-            { key: 'symptoms', header: 'Signs', priority: 'low', render: (r) => r.symptoms.map((s) => symptomLabel[s]).join(', ') },
+            {
+              key: 'symptoms',
+              header: 'Signs',
+              priority: 'low',
+              render: (r) => r.symptoms.map((s) => symptomLabel[s]).join(', '),
+            },
             { key: 'type', header: 'Classification', priority: 'low', render: (r) => reactionTypeLabel[r.type] },
             { key: 'status', header: 'Status', render: (r) => <ReactionStatusBadge status={r.status} /> },
           ]}
@@ -111,7 +135,12 @@ function ReactionsPage() {
             canInvestigate
               ? (r) =>
                   r.status === 'Reported' ? (
-                    <Button size="small" icon={<SearchRegular />} disabled={investigate.isPending} onClick={() => investigate.mutate(r.id)}>
+                    <Button
+                      size="small"
+                      icon={<SearchRegular />}
+                      disabled={investigate.isPending}
+                      onClick={() => investigate.mutate(r.id)}
+                    >
                       Start investigation
                     </Button>
                   ) : r.status === 'UnderInvestigation' ? (

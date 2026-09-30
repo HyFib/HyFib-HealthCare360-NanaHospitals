@@ -6,7 +6,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { feedbackQueries, type FeedbackFormDto } from '@/modules/feedback/api';
-import { aspectLabel, FEEDBACK_PERMISSIONS as F, FORM_TYPES, FORM_VIEWERS, formTypeLabel, type FeedbackFormType } from '@/modules/feedback/labels';
+import {
+  aspectLabel,
+  FEEDBACK_PERMISSIONS as F,
+  FORM_TYPES,
+  FORM_VIEWERS,
+  formTypeLabel,
+  type FeedbackFormType,
+} from '@/modules/feedback/labels';
 import { FilterPad } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 
@@ -30,7 +37,9 @@ export const Route = createFileRoute('/_app/feedback/forms/')({
 function questionSummary(form: FeedbackFormDto): string {
   const parts: string[] = [];
   if (form.aspects.length > 0) {
-    parts.push(form.aspects.length <= 3 ? form.aspects.map((a) => aspectLabel[a]).join(', ') : `${form.aspects.length} ratings`);
+    parts.push(
+      form.aspects.length <= 3 ? form.aspects.map((a) => aspectLabel[a]).join(', ') : `${form.aspects.length} ratings`,
+    );
   }
   if (form.includesNps) parts.push('NPS');
   if (form.allowsComment) parts.push('comment');
@@ -56,7 +65,11 @@ function FormsPage() {
         breadcrumbs={[{ label: 'Feedback analytics', onClick: () => void navigate({ to: '/feedback' }) }]}
         actions={
           canManage && (
-            <Button appearance="primary" icon={<AddRegular />} onClick={() => void navigate({ to: '/feedback/forms/new' })}>
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ to: '/feedback/forms/new' })}
+            >
               New form
             </Button>
           )
@@ -66,7 +79,10 @@ function FormsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Used for">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as FeedbackFormType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as FeedbackFormType | undefined })}
+              >
                 <option value="">All</option>
                 {FORM_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -75,7 +91,12 @@ function FormsPage() {
                 ))}
               </Select>
             </Field>
-            <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.all)} onChange={(_, d) => set({ all: d.checked ? true : undefined })} label="Show inactive forms" />
+            <Checkbox
+              style={{ alignSelf: 'flex-end' }}
+              checked={Boolean(search.all)}
+              onChange={(_, d) => set({ all: d.checked ? true : undefined })}
+              label="Show inactive forms"
+            />
           </FilterBar>
         </FilterPad>
         <DataTable
@@ -101,7 +122,12 @@ function FormsPage() {
               ),
             },
             { key: 'type', header: 'Used for', render: (f) => formTypeLabel[f.type] },
-            { key: 'department', header: 'Department', priority: 'low', render: (f) => (f.departmentId ? (departmentName.get(f.departmentId) ?? '—') : 'Whole hospital') },
+            {
+              key: 'department',
+              header: 'Department',
+              priority: 'low',
+              render: (f) => (f.departmentId ? (departmentName.get(f.departmentId) ?? '—') : 'Whole hospital'),
+            },
             {
               key: 'status',
               header: 'Status',
@@ -118,10 +144,18 @@ function FormsPage() {
             },
           ]}
           emptyTitle="No feedback forms yet"
-          emptyDescription={canManage ? 'Create a form, then print its QR code for posters and kiosks.' : 'A feedback manager can create the forms.'}
+          emptyDescription={
+            canManage
+              ? 'Create a form, then print its QR code for posters and kiosks.'
+              : 'A feedback manager can create the forms.'
+          }
           emptyAction={
             canManage ? (
-              <Button appearance="primary" icon={<AddRegular />} onClick={() => void navigate({ to: '/feedback/forms/new' })}>
+              <Button
+                appearance="primary"
+                icon={<AddRegular />}
+                onClick={() => void navigate({ to: '/feedback/forms/new' })}
+              >
                 New form
               </Button>
             ) : undefined

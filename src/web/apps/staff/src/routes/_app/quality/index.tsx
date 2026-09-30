@@ -61,11 +61,19 @@ function StaffLanding() {
         <EmptyState
           icon={<ShieldErrorRegular />}
           title="Help us keep patients and staff safe"
-          description={canReport ? 'Report anything that went wrong or nearly went wrong. You can stay anonymous.' : 'You do not have access to the quality screens.'}
+          description={
+            canReport
+              ? 'Report anything that went wrong or nearly went wrong. You can stay anonymous.'
+              : 'You do not have access to the quality screens.'
+          }
           action={
             canReport ? (
               <div className={styles.landing}>
-                <Button appearance="primary" icon={<ShieldErrorRegular />} onClick={() => void navigate({ to: '/quality/report' })}>
+                <Button
+                  appearance="primary"
+                  icon={<ShieldErrorRegular />}
+                  onClick={() => void navigate({ to: '/quality/report' })}
+                >
                   Report an incident
                 </Button>
                 <Button icon={<ClipboardTaskRegular />} onClick={() => void navigate({ to: '/quality/my-reports' })}>
@@ -113,13 +121,22 @@ function DashboardPage() {
         actions={
           <>
             <Field label="Period" orientation="horizontal">
-              <Select value={period} onChange={(_, d) => void navigate({ search: { period: d.value === '12m' ? undefined : (d.value as Period) } })}>
+              <Select
+                value={period}
+                onChange={(_, d) =>
+                  void navigate({ search: { period: d.value === '12m' ? undefined : (d.value as Period) } })
+                }
+              >
                 <option value="3m">Last 3 months</option>
                 <option value="12m">Last 12 months</option>
                 <option value="fy">This financial year</option>
               </Select>
             </Field>
-            <Button appearance="primary" icon={<ShieldErrorRegular />} onClick={() => void navigate({ to: '/quality/report' })}>
+            <Button
+              appearance="primary"
+              icon={<ShieldErrorRegular />}
+              onClick={() => void navigate({ to: '/quality/report' })}
+            >
               Report an incident
             </Button>
           </>
@@ -128,13 +145,22 @@ function DashboardPage() {
       {dashboard.isLoading && <LoadingState label="Gathering the quality figures…" />}
       {dashboard.error && <ErrorState error={dashboard.error} onRetry={() => void dashboard.refetch()} />}
       {dashboard.data && (
-        <DashboardBody d={dashboard.data} can={{ incidents: canIncidents, capa: canCapa, risks: canRisks, indicators: canIndicators }} />
+        <DashboardBody
+          d={dashboard.data}
+          can={{ incidents: canIncidents, capa: canCapa, risks: canRisks, indicators: canIndicators }}
+        />
       )}
     </Page>
   );
 }
 
-function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: boolean; capa: boolean; risks: boolean; indicators: boolean } }) {
+function DashboardBody({
+  d,
+  can,
+}: {
+  d: QualityDashboard;
+  can: { incidents: boolean; capa: boolean; risks: boolean; indicators: boolean };
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
 
@@ -162,7 +188,13 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'value', minInterval: 1 },
       yAxis: { type: 'category', data: order.map((s) => severityLabel[s]), inverse: true },
-      series: [{ type: 'bar', name: 'Incidents', data: counts.map((value, index) => ({ value, itemStyle: { color: colors[index] } })) }],
+      series: [
+        {
+          type: 'bar',
+          name: 'Incidents',
+          data: counts.map((value, index) => ({ value, itemStyle: { color: colors[index] } })),
+        },
+      ],
     };
   }, [d.bySeverity]);
 
@@ -172,7 +204,11 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
       grid: { left: 180, right: 24, top: 8, bottom: 24 },
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'value', minInterval: 1 },
-      yAxis: { type: 'category', data: sorted.map((t) => incidentTypeLabel[t.key as IncidentType] ?? t.key), inverse: true },
+      yAxis: {
+        type: 'category',
+        data: sorted.map((t) => incidentTypeLabel[t.key as IncidentType] ?? t.key),
+        inverse: true,
+      },
       series: [{ type: 'bar', name: 'Incidents', data: sorted.map((t) => t.count), itemStyle: { color: '#0A7CA7' } }],
     };
   }, [d.byType]);
@@ -180,15 +216,31 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
   return (
     <Stack gap={16}>
       <KpiGrid>
-        <KpiCard label="Incidents reported" value={d.totalIncidents} icon={<ShieldErrorRegular />} onClick={can.incidents ? () => void navigate({ to: '/quality/incidents', search: { view: 'all' } }) : undefined} />
+        <KpiCard
+          label="Incidents reported"
+          value={d.totalIncidents}
+          icon={<ShieldErrorRegular />}
+          onClick={
+            can.incidents ? () => void navigate({ to: '/quality/incidents', search: { view: 'all' } }) : undefined
+          }
+        />
         <KpiCard
           label="Sentinel events"
           value={d.sentinelEvents}
           icon={<AlertUrgentRegular />}
           hint="Root-cause analysis required"
-          onClick={can.incidents ? () => void navigate({ to: '/quality/incidents', search: { sentinelOnly: true, view: 'all' } }) : undefined}
+          onClick={
+            can.incidents
+              ? () => void navigate({ to: '/quality/incidents', search: { sentinelOnly: true, view: 'all' } })
+              : undefined
+          }
         />
-        <KpiCard label="Open incidents" value={d.openIncidents} icon={<ClipboardTaskRegular />} onClick={can.incidents ? () => void navigate({ to: '/quality/incidents' }) : undefined} />
+        <KpiCard
+          label="Open incidents"
+          value={d.openIncidents}
+          icon={<ClipboardTaskRegular />}
+          onClick={can.incidents ? () => void navigate({ to: '/quality/incidents' }) : undefined}
+        />
         <KpiCard
           label="Actions overdue"
           value={d.capas.overdue}
@@ -196,12 +248,28 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
           hint={`${d.capas.open + d.capas.inProgress} open · ${d.capas.awaitingVerification} awaiting check`}
           onClick={can.capa ? () => void navigate({ to: '/quality/capas', search: { overdueOnly: true } }) : undefined}
         />
-        <KpiCard label="Risks due for review" value={d.risksDueForReview} icon={<GridRegular />} onClick={can.risks ? () => void navigate({ to: '/quality/risks', search: { reviewOverdue: true } }) : undefined} />
-        <KpiCard label="Indicators off target" value={d.indicatorsOffTarget.length} icon={<DataTrendingRegular />} onClick={can.indicators ? () => void navigate({ to: '/quality/indicators/scorecard' }) : undefined} />
+        <KpiCard
+          label="Risks due for review"
+          value={d.risksDueForReview}
+          icon={<GridRegular />}
+          onClick={
+            can.risks ? () => void navigate({ to: '/quality/risks', search: { reviewOverdue: true } }) : undefined
+          }
+        />
+        <KpiCard
+          label="Indicators off target"
+          value={d.indicatorsOffTarget.length}
+          icon={<DataTrendingRegular />}
+          onClick={can.indicators ? () => void navigate({ to: '/quality/indicators/scorecard' }) : undefined}
+        />
       </KpiGrid>
 
       <Section title="Incidents by month" description="All reports, with sentinel events in red">
-        {d.byMonth.every((m) => m.total === 0) ? <Caption1 className={styles.muted}>No incidents in this period.</Caption1> : <EChart option={monthOption} height={260} ariaLabel="Incidents per month with sentinel events" />}
+        {d.byMonth.every((m) => m.total === 0) ? (
+          <Caption1 className={styles.muted}>No incidents in this period.</Caption1>
+        ) : (
+          <EChart option={monthOption} height={260} ariaLabel="Incidents per month with sentinel events" />
+        )}
       </Section>
 
       <Columns>
@@ -209,7 +277,11 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
           <EChart option={severityOption} height={220} ariaLabel="Incidents by seriousness" />
         </Section>
         <Section title="By kind" description="The eight most frequent">
-          {d.byType.length === 0 ? <Caption1 className={styles.muted}>No incidents in this period.</Caption1> : <EChart option={typeOption} height={220} ariaLabel="Incidents by kind" />}
+          {d.byType.length === 0 ? (
+            <Caption1 className={styles.muted}>No incidents in this period.</Caption1>
+          ) : (
+            <EChart option={typeOption} height={220} ariaLabel="Incidents by kind" />
+          )}
         </Section>
       </Columns>
 
@@ -219,10 +291,19 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
             ariaLabel="Open incidents by stage"
             rows={d.openByStatus}
             getRowId={(r) => r.key}
-            onRowClick={can.incidents ? (r) => void navigate({ to: '/quality/incidents', search: { status: r.key as IncidentStatus } }) : undefined}
+            onRowClick={
+              can.incidents
+                ? (r) => void navigate({ to: '/quality/incidents', search: { status: r.key as IncidentStatus } })
+                : undefined
+            }
             columns={[
               { key: 'stage', header: 'Stage', render: (r) => incidentStatusLabel[r.key as IncidentStatus] ?? r.key },
-              { key: 'count', header: 'Incidents', align: 'end', render: (r) => <Text weight="semibold">{r.count}</Text> },
+              {
+                key: 'count',
+                header: 'Incidents',
+                align: 'end',
+                render: (r) => <Text weight="semibold">{r.count}</Text>,
+              },
             ]}
             emptyTitle="No open incidents"
             size="small"
@@ -247,7 +328,12 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
                   </span>
                 ),
               },
-              { key: 'late', header: 'Overdue by', width: 110, render: (c) => `${c.daysOverdue} day${c.daysOverdue === 1 ? '' : 's'}` },
+              {
+                key: 'late',
+                header: 'Overdue by',
+                width: 110,
+                render: (c) => `${c.daysOverdue} day${c.daysOverdue === 1 ? '' : 's'}`,
+              },
             ]}
             emptyTitle="Nothing overdue"
             size="small"
@@ -275,7 +361,11 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
                   </span>
                 ),
               },
-              { key: 'score', header: 'Score', render: (r) => <RatingBadge rating={r.rating} score={r.residualScore ?? r.score} /> },
+              {
+                key: 'score',
+                header: 'Score',
+                render: (r) => <RatingBadge rating={r.rating} score={r.residualScore ?? r.score} />,
+              },
             ]}
             emptyTitle="No open risks"
             size="small"
@@ -286,7 +376,11 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
             ariaLabel="Indicators off target"
             rows={d.indicatorsOffTarget}
             getRowId={(i) => i.id}
-            onRowClick={can.indicators ? (i) => void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: i.id } }) : undefined}
+            onRowClick={
+              can.indicators
+                ? (i) => void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: i.id } })
+                : undefined
+            }
             columns={[
               {
                 key: 'name',
@@ -303,7 +397,8 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
               {
                 key: 'value',
                 header: 'Value / target',
-                render: (i) => `${i.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / ${i.target === null ? '—' : i.target.toLocaleString('en-IN')} (${i.direction === 'HigherIsBetter' ? 'higher' : 'lower'} is better)`,
+                render: (i) =>
+                  `${i.value.toLocaleString('en-IN', { maximumFractionDigits: 2 })} / ${i.target === null ? '—' : i.target.toLocaleString('en-IN')} (${i.direction === 'HigherIsBetter' ? 'higher' : 'lower'} is better)`,
               },
             ]}
             emptyTitle="Every indicator met its target"
@@ -314,4 +409,3 @@ function DashboardBody({ d, can }: { d: QualityDashboard; can: { incidents: bool
     </Stack>
   );
 }
-

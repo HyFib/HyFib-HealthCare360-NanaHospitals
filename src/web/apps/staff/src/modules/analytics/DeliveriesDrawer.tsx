@@ -55,7 +55,9 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
+        >
           <span className={styles.title}>
             <HistoryRegular aria-hidden />
             Delivery history
@@ -71,7 +73,14 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
         ) : deliveries.error && !deliveries.data ? (
           <ErrorState error={deliveries.error} onRetry={() => void deliveries.refetch()} />
         ) : !deliveries.data || deliveries.data.items.length === 0 ? (
-          <EmptyState title="Nothing sent yet" description={schedule.nextRunAt ? `The first e-mail goes out ${formatDateTime(schedule.nextRunAt)}.` : 'Turn the schedule on to start sending.'} />
+          <EmptyState
+            title="Nothing sent yet"
+            description={
+              schedule.nextRunAt
+                ? `The first e-mail goes out ${formatDateTime(schedule.nextRunAt)}.`
+                : 'Turn the schedule on to start sending.'
+            }
+          />
         ) : (
           <>
             <Accordion collapsible multiple className={styles.list}>
@@ -81,12 +90,25 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                     <span className={styles.header}>
                       <span className={styles.headLine}>
                         <Text weight="semibold">{formatDateTime(delivery.createdAt)}</Text>
-                        <StatusBadge status={delivery.status === 'Ready' ? (delivery.pending > 0 ? 'Pending' : 'Delivered') : delivery.status} label={statusText(delivery)} />
+                        <StatusBadge
+                          status={
+                            delivery.status === 'Ready'
+                              ? delivery.pending > 0
+                                ? 'Pending'
+                                : 'Delivered'
+                              : delivery.status
+                          }
+                          label={statusText(delivery)}
+                        />
                       </span>
                       <Caption1 className={styles.muted}>
                         {DELIVERY_TRIGGER_LABELS[delivery.trigger]}
-                        {delivery.periodFrom && delivery.periodTo ? ` · ${describeRange(delivery.periodFrom, delivery.periodTo)}` : ''}
-                        {delivery.status === 'Ready' ? ` · ${formatCount(delivery.rowCount, 'row')} · ${formatBytes(delivery.sizeBytes)}` : ''}
+                        {delivery.periodFrom && delivery.periodTo
+                          ? ` · ${describeRange(delivery.periodFrom, delivery.periodTo)}`
+                          : ''}
+                        {delivery.status === 'Ready'
+                          ? ` · ${formatCount(delivery.rowCount, 'row')} · ${formatBytes(delivery.sizeBytes)}`
+                          : ''}
                       </Caption1>
                     </span>
                   </AccordionHeader>
@@ -105,18 +127,31 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                                   </Caption1>
                                 )}
                               </span>
-                              <StatusBadge status={recipient.status === 'Cancelled' ? 'Failed' : recipient.status} label={recipientText(recipient.status, recipient.attempts, recipient.sentAt)} />
+                              <StatusBadge
+                                status={recipient.status === 'Cancelled' ? 'Failed' : recipient.status}
+                                label={recipientText(recipient.status, recipient.attempts, recipient.sentAt)}
+                              />
                             </div>
                           ))}
                         </div>
                       )}
                       <div>
                         <Button
-                          icon={download.isPending && download.variables?.id === delivery.id ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+                          icon={
+                            download.isPending && download.variables?.id === delivery.id ? (
+                              <Spinner size="tiny" />
+                            ) : (
+                              <ArrowDownloadRegular />
+                            )
+                          }
                           disabled={!delivery.fileAvailable || download.isPending}
                           onClick={() => download.mutate(delivery)}
                         >
-                          {delivery.fileAvailable ? (delivery.format === 'Csv' ? 'Download CSV file' : 'Download Excel file') : 'File no longer kept'}
+                          {delivery.fileAvailable
+                            ? delivery.format === 'Csv'
+                              ? 'Download CSV file'
+                              : 'Download Excel file'
+                            : 'File no longer kept'}
                         </Button>
                       </div>
                     </div>
@@ -125,7 +160,12 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
               ))}
             </Accordion>
             {deliveries.data.totalCount > PAGE_SIZE && (
-              <Pagination page={page} pageSize={PAGE_SIZE} totalCount={deliveries.data.totalCount} onPageChange={setPage} />
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                totalCount={deliveries.data.totalCount}
+                onPageChange={setPage}
+              />
             )}
           </>
         )}
@@ -142,7 +182,11 @@ function statusText(delivery: DeliveryDto): string {
   return delivery.pending > 0 ? `Sending (${delivery.sent} of ${total})` : `Sent to ${delivery.sent} of ${total}`;
 }
 
-function recipientText(status: DeliveryDto['recipients'][number]['status'], attempts: number, sentAt: string | null): string {
+function recipientText(
+  status: DeliveryDto['recipients'][number]['status'],
+  attempts: number,
+  sentAt: string | null,
+): string {
   if (status === 'Sent') {
     return sentAt ? `Sent ${formatDateTime(sentAt)}` : 'Sent';
   }

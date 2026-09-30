@@ -60,14 +60,28 @@ import {
 } from './api';
 import { FlagChip, SampleStatusBadge } from './badges';
 import { CultureDialog, type CultureValue } from './CultureDialog';
-import { flagDisplay, formatDelta, interpretLine, isCriticalFlag, isReadyForBulkVerify, reviewHints, type LineInterpretation } from './flags';
+import {
+  flagDisplay,
+  formatDelta,
+  interpretLine,
+  isCriticalFlag,
+  isReadyForBulkVerify,
+  reviewHints,
+  type LineInterpretation,
+} from './flags';
 import { QcOverrideDialog } from './QcOverrideDialog';
 import { RejectSampleDialog } from './RejectSampleDialog';
 import { isSampleBarcode, KeystrokeTimer, normalizeScan } from './scan';
 
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 },
-  info: { display: 'flex', gap: '8px 16px', flexWrap: 'wrap', alignItems: 'center', color: tokens.colorNeutralForeground2 },
+  info: {
+    display: 'flex',
+    gap: '8px 16px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    color: tokens.colorNeutralForeground2,
+  },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   tableWrap: { overflowX: 'auto' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: tokens.fontSizeBase300 },
@@ -87,15 +101,28 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorBrandForeground1,
   },
-  subgroup: { textAlign: 'start', padding: '6px 8px 2px 36px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorNeutralForeground2 },
+  subgroup: {
+    textAlign: 'start',
+    padding: '6px 8px 2px 36px',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorNeutralForeground2,
+  },
   td: { padding: '6px 8px', borderBottom: `1px solid ${tokens.colorNeutralStroke3}`, verticalAlign: 'top' },
-  critical: { boxShadow: `inset 3px 0 0 ${tokens.colorPaletteRedBorder2}`, backgroundColor: tokens.colorPaletteRedBackground1 },
+  critical: {
+    boxShadow: `inset 3px 0 0 ${tokens.colorPaletteRedBorder2}`,
+    backgroundColor: tokens.colorPaletteRedBackground1,
+  },
   abnormal: { boxShadow: `inset 3px 0 0 ${tokens.colorPaletteMarigoldBorder2}` },
   testName: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '150px' },
   hints: { color: tokens.colorPaletteMarigoldForeground1, fontSize: tokens.fontSizeBase200 },
   ready: { color: tokens.colorPaletteGreenForeground1, fontSize: tokens.fontSizeBase200 },
   valueCell: { minWidth: '140px', maxWidth: '220px' },
-  invalid: { color: tokens.colorPaletteRedForeground1, fontSize: tokens.fontSizeBase200, display: 'block', marginTop: '2px' },
+  invalid: {
+    color: tokens.colorPaletteRedForeground1,
+    fontSize: tokens.fontSizeBase200,
+    display: 'block',
+    marginTop: '2px',
+  },
   valueText: { fontWeight: tokens.fontWeightSemibold },
   critText: { fontWeight: tokens.fontWeightBold, color: tokens.colorPaletteRedForeground1 },
   muted: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
@@ -181,13 +208,17 @@ function isDirty(line: ResultSheetLine, edit: SheetEdit | undefined): boolean {
     (edit.remarks !== undefined && !same(edit.remarks, line.remarks)) ||
     (edit.organism !== undefined && !same(edit.organism, line.organism)) ||
     (edit.colonyCount !== undefined && !same(edit.colonyCount, line.colonyCount)) ||
-    (edit.susceptibilities !== undefined && JSON.stringify(edit.susceptibilities) !== JSON.stringify(line.susceptibilities))
+    (edit.susceptibilities !== undefined &&
+      JSON.stringify(edit.susceptibilities) !== JSON.stringify(line.susceptibilities))
   );
 }
 
 function findingOf(line: Pick<ResultSheetLine, 'resultId' | 'testName' | 'value' | 'unit' | 'flag'>): CriticalFinding {
   const flag = flagDisplay(line.flag);
-  return { id: line.resultId, label: `${line.testName}: ${line.value ?? ''}${line.unit ? ` ${line.unit}` : ''}${flag?.code ? ` (${flag.label.toLowerCase()})` : ''}` };
+  return {
+    id: line.resultId,
+    label: `${line.testName}: ${line.value ?? ''}${line.unit ? ` ${line.unit}` : ''}${flag?.code ? ` (${flag.label.toLowerCase()})` : ''}`,
+  };
 }
 
 interface CallState {
@@ -228,7 +259,13 @@ function groupLines(lines: readonly ResultSheetLine[]): Group[] {
  * Result entry and verification for one sample (SRS LIS-02/04/05/06). Loads the sheet, then hands over to the editor,
  * which is keyed by sample so switching tubes always starts clean.
  */
-export function ResultSheetPanel({ sampleId, onScanBarcode }: { sampleId: string; onScanBarcode?: (barcode: string) => void }) {
+export function ResultSheetPanel({
+  sampleId,
+  onScanBarcode,
+}: {
+  sampleId: string;
+  onScanBarcode?: (barcode: string) => void;
+}) {
   const sheet = useQuery(labQueries.sheet(sampleId));
   if (sheet.isLoading) {
     return (
@@ -317,14 +354,24 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   const editable = (line: ResultSheetLine) => canEnter && inLab && line.status !== 'Verified';
   const dirtyLines = lines.filter((line) => isDirty(line, edits[line.resultId]));
   const editableIds = lines.filter(editable).map((line) => line.resultId);
-  const selectable = (line: ResultSheetLine) => canVerify && line.status === 'Entered' && !isDirty(line, edits[line.resultId]);
+  const selectable = (line: ResultSheetLine) =>
+    canVerify && line.status === 'Entered' && !isDirty(line, edits[line.resultId]);
   const selectedLines = lines.filter((line) => selected.includes(line.resultId) && selectable(line));
-  const readyLines = lines.filter((line) => selectable(line) && isReadyForBulkVerify(line, interpretation.get(line.resultId)!));
+  const readyLines = lines.filter(
+    (line) => selectable(line) && isReadyForBulkVerify(line, interpretation.get(line.resultId)!),
+  );
   const uncalled = lines.filter((line) => line.isCritical && !line.hasCriticalCall && line.status !== 'Pending');
   const hasInvalid = dirtyLines.some((line) => interpretation.get(line.resultId)?.invalid);
 
   const setEdit = (line: ResultSheetLine, patch: Partial<SheetEdit>) => {
-    setEdits((current) => ({ ...current, [line.resultId]: { value: current[line.resultId]?.value ?? line.value ?? '', ...current[line.resultId], ...patch } }));
+    setEdits((current) => ({
+      ...current,
+      [line.resultId]: {
+        value: current[line.resultId]?.value ?? line.value ?? '',
+        ...current[line.resultId],
+        ...patch,
+      },
+    }));
     if (lineErrors[line.resultId]) {
       setLineErrors((current) => {
         const next = { ...current };
@@ -346,7 +393,9 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     mutationFn: (entries: ResultEntry[]) => labApi.enterResults(entries),
     onSuccess: (updated, entries) => {
       const byId = new Map(updated.map((line) => [line.resultId, line]));
-      queryClient.setQueryData(sheetKey, (old) => (old ? { ...old, lines: old.lines.map((line) => byId.get(line.resultId) ?? line) } : old));
+      queryClient.setQueryData(sheetKey, (old) =>
+        old ? { ...old, lines: old.lines.map((line) => byId.get(line.resultId) ?? line) } : old,
+      );
       const savedIds = new Set(entries.map((entry) => entry.resultId));
       setEdits((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !savedIds.has(id))));
       setLineErrors({});
@@ -370,7 +419,10 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           }
         });
         setLineErrors(next);
-        notify.warning('Some results were not saved', 'Correct the highlighted values and save again. Nothing was saved.');
+        notify.warning(
+          'Some results were not saved',
+          'Correct the highlighted values and save again. Nothing was saved.',
+        );
       } else {
         notify.error(error, 'Could not save the results');
       }
@@ -433,7 +485,10 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
         setQcState(null);
         setCallState({
           mode: 'verify',
-          findings: results.map((r) => ({ id: r.id, label: `${r.testName}: ${r.value}${r.flag ? ` (${flagDisplay(r.flag)?.label.toLowerCase() ?? r.flag})` : ''}` })),
+          findings: results.map((r) => ({
+            id: r.id,
+            label: `${r.testName}: ${r.value}${r.flag ? ` (${flagDisplay(r.flag)?.label.toLowerCase() ?? r.flag})` : ''}`,
+          })),
           request,
         });
         return;
@@ -448,7 +503,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     if (chosen.length === 0) {
       return;
     }
-    const request: VerifyResultsRequest = { resultIds: chosen.map((line) => line.resultId), qcOverrideReason: null, criticalCall: null, release };
+    const request: VerifyResultsRequest = {
+      resultIds: chosen.map((line) => line.resultId),
+      qcOverrideReason: null,
+      criticalCall: null,
+      release,
+    };
     const needCall = chosen.filter((line) => line.isCritical && !line.hasCriticalCall);
     if (needCall.length > 0) {
       setCallState({ mode: 'verify', findings: needCall.map(findingOf), request });
@@ -475,7 +535,8 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   });
 
   const reopen = useMutation({
-    mutationFn: ({ line, reason }: { line: ResultSheetLine; reason: string }) => labApi.reopenResult(line.resultId, reason),
+    mutationFn: ({ line, reason }: { line: ResultSheetLine; reason: string }) =>
+      labApi.reopenResult(line.resultId, reason),
     onSuccess: (_, { line }) => {
       setReopenLine(null);
       notify.success(`${line.testName} reopened`, 'Correct the value, save and verify it again.');
@@ -503,7 +564,13 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
 
   const onValueKeyDown = (line: ResultSheetLine, event: KeyboardEvent<HTMLElement>) => {
     const isSelect = event.currentTarget instanceof HTMLSelectElement;
-    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.currentTarget instanceof HTMLInputElement) {
+    if (
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      event.currentTarget instanceof HTMLInputElement
+    ) {
       const state = (scanState.current ??= { timer: new KeystrokeTimer(35), before: '' });
       if (state.timer.record(event.timeStamp)) {
         state.before = event.currentTarget.value;
@@ -571,7 +638,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     let control;
     if (line.resultType === 'Options' && line.options.length > 0) {
       control = (
-        <Select ref={register(line.resultId)} value={value} onChange={(_, data) => setEdit(line, { value: data.value })} {...common}>
+        <Select
+          ref={register(line.resultId)}
+          value={value}
+          onChange={(_, data) => setEdit(line, { value: data.value })}
+          {...common}
+        >
           <option value="">—</option>
           {line.options.map((option) => (
             <option key={option} value={option}>
@@ -583,7 +655,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     } else if (line.resultType === 'Culture') {
       const organism = edit?.organism ?? line.organism;
       control = (
-        <Button ref={register(line.resultId)} onClick={() => setCultureFor(line.resultId)} icon={<BeakerDismissRegular />} {...common}>
+        <Button
+          ref={register(line.resultId)}
+          onClick={() => setCultureFor(line.resultId)}
+          icon={<BeakerDismissRegular />}
+          {...common}
+        >
           {value ? `${value}${organism ? `: ${organism}` : ''}` : 'Enter culture result'}
         </Button>
       );
@@ -619,7 +696,8 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     }
     return (
       <span>
-        <Text className={critical ? styles.critText : styles.valueText}>{line.value}</Text> {line.unit && <Caption1>{line.unit}</Caption1>}
+        <Text className={critical ? styles.critText : styles.valueText}>{line.value}</Text>{' '}
+        {line.unit && <Caption1>{line.unit}</Caption1>}
         {line.resultType === 'Culture' && line.organism && <Caption1 block>{line.organism}</Caption1>}
         {line.resultType === 'Culture' && (line.susceptibilities.length > 0 || line.organism) && (
           <Button size="small" appearance="transparent" onClick={() => setCultureFor(line.resultId)}>
@@ -633,7 +711,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   const statusCell = (line: ResultSheetLine) => {
     if (line.status === 'Verified') {
       return (
-        <Tooltip content={line.verifiedAt ? `Verified ${formatDate(line.verifiedAt)} ${formatTime(line.verifiedAt)}` : 'Verified'} relationship="description">
+        <Tooltip
+          content={
+            line.verifiedAt ? `Verified ${formatDate(line.verifiedAt)} ${formatTime(line.verifiedAt)}` : 'Verified'
+          }
+          relationship="description"
+        >
           <Badge appearance="tint" color="success" icon={<CheckmarkRegular />} shape="rounded">
             {line.autoValidated ? 'Auto-verified' : 'Verified'}
           </Badge>
@@ -658,12 +741,18 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     if (line.previousValue === null) {
       return <Caption1 className={styles.muted}>—</Caption1>;
     }
-    const typed = interp.dirty ? Number.parseFloat((edits[line.resultId]?.value ?? '').replace(/,/g, '')) : Number.parseFloat((line.value ?? '').replace(/,/g, ''));
+    const typed = interp.dirty
+      ? Number.parseFloat((edits[line.resultId]?.value ?? '').replace(/,/g, ''))
+      : Number.parseFloat((line.value ?? '').replace(/,/g, ''));
     const delta = formatDelta(Number.isFinite(typed) ? typed : null, line.previousValue, interp.deltaPercent);
     return (
       <span>
         <Text>{line.previousValue.toLocaleString('en-IN')}</Text>
-        {line.previousResultAt && <Caption1 block className={styles.muted}>{formatDate(line.previousResultAt)}</Caption1>}
+        {line.previousResultAt && (
+          <Caption1 block className={styles.muted}>
+            {formatDate(line.previousResultAt)}
+          </Caption1>
+        )}
         {delta && (
           <span className={mergeClasses(styles.delta, interp.deltaExceeded && styles.deltaBad)}>
             {interp.deltaExceeded && <WarningRegular aria-hidden />}
@@ -678,7 +767,13 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   return (
     <div className={styles.root}>
       <PatientBanner
-        patient={{ id: sheet.patientId, uhid: sheet.uhid, fullName: sheet.patientName, gender: patient.gender, age: patient.age }}
+        patient={{
+          id: sheet.patientId,
+          uhid: sheet.uhid,
+          fullName: sheet.patientName,
+          gender: patient.gender,
+          age: patient.age,
+        }}
         actions={
           <Menu>
             <MenuTrigger disableButtonEnhancement>
@@ -686,14 +781,20 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<DocumentBulletListRegular />} onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: sheet.labOrderId } })}>
+                <MenuItem
+                  icon={<DocumentBulletListRegular />}
+                  onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: sheet.labOrderId } })}
+                >
                   Open the order
                 </MenuItem>
-                {canReject && sheet.sampleStatus !== 'Rejected' && sheet.sampleStatus !== 'Completed' && sheet.sampleStatus !== 'Cancelled' && (
-                  <MenuItem icon={<BeakerDismissRegular />} onClick={() => setRejecting(true)}>
-                    Reject this sample
-                  </MenuItem>
-                )}
+                {canReject &&
+                  sheet.sampleStatus !== 'Rejected' &&
+                  sheet.sampleStatus !== 'Completed' &&
+                  sheet.sampleStatus !== 'Cancelled' && (
+                    <MenuItem icon={<BeakerDismissRegular />} onClick={() => setRejecting(true)}>
+                      Reject this sample
+                    </MenuItem>
+                  )}
               </MenuList>
             </MenuPopover>
           </Menu>
@@ -772,7 +873,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
             {uncalled.map((line) => findingOf(line).label).join(' · ')}
           </MessageBarBody>
           <MessageBarActions>
-            <Button appearance="primary" size="small" icon={<CallRegular />} onClick={() => setCallState({ mode: 'entry', findings: uncalled.map(findingOf) })}>
+            <Button
+              appearance="primary"
+              size="small"
+              icon={<CallRegular />}
+              onClick={() => setCallState({ mode: 'entry', findings: uncalled.map(findingOf) })}
+            >
               Log the call
             </Button>
           </MessageBarActions>
@@ -807,16 +913,26 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                     const ready = selectable(line) && isReadyForBulkVerify(line, interp);
                     const critical = isCriticalFlag(interp.flag);
                     const abnormal = !critical && interp.flag !== null && interp.flag !== 'Normal';
-                    const showRemarks = remarksOpen.includes(line.resultId) || Boolean(line.remarks) || edits[line.resultId]?.remarks !== undefined;
+                    const showRemarks =
+                      remarksOpen.includes(line.resultId) ||
+                      Boolean(line.remarks) ||
+                      edits[line.resultId]?.remarks !== undefined;
                     return (
-                      <tr key={line.resultId} className={critical ? styles.critical : abnormal ? styles.abnormal : undefined}>
+                      <tr
+                        key={line.resultId}
+                        className={critical ? styles.critical : abnormal ? styles.abnormal : undefined}
+                      >
                         {canVerify && (
                           <td className={styles.td}>
                             {selectable(line) && (
                               <Checkbox
                                 checked={selected.includes(line.resultId)}
                                 onChange={(_, data) =>
-                                  setSelected((current) => (data.checked ? [...current, line.resultId] : current.filter((id) => id !== line.resultId)))
+                                  setSelected((current) =>
+                                    data.checked
+                                      ? [...current, line.resultId]
+                                      : current.filter((id) => id !== line.resultId),
+                                  )
                                 }
                                 aria-label={`Select ${line.testName} for verification`}
                               />
@@ -827,8 +943,18 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                           <div className={styles.testName}>
                             <Text weight="semibold">{line.testName}</Text>
                             {line.method && <Caption1 className={styles.muted}>{line.method}</Caption1>}
-                            {canVerify && line.status === 'Entered' && (hints.length > 0 ? <span className={styles.hints}>{hints.join(' · ')}</span> : ready ? <span className={styles.ready}>Ready to verify</span> : null)}
-                            {!canVerify && interp.deltaExceeded && <span className={styles.hints}>Large change from the previous result: check the sample</span>}
+                            {canVerify &&
+                              line.status === 'Entered' &&
+                              (hints.length > 0 ? (
+                                <span className={styles.hints}>{hints.join(' · ')}</span>
+                              ) : ready ? (
+                                <span className={styles.ready}>Ready to verify</span>
+                              ) : null)}
+                            {!canVerify && interp.deltaExceeded && (
+                              <span className={styles.hints}>
+                                Large change from the previous result: check the sample
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td className={mergeClasses(styles.td, styles.valueCell)}>
@@ -868,15 +994,25 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                         <td className={styles.td}>
                           <Menu>
                             <MenuTrigger disableButtonEnhancement>
-                              <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More for ${line.testName}`} />
+                              <Button
+                                size="small"
+                                appearance="subtle"
+                                icon={<MoreHorizontalRegular />}
+                                aria-label={`More for ${line.testName}`}
+                              />
                             </MenuTrigger>
                             <MenuPopover>
                               <MenuList>
                                 {editable(line) && !showRemarks && (
-                                  <MenuItem onClick={() => setRemarksOpen((current) => [...current, line.resultId])}>Add remarks</MenuItem>
+                                  <MenuItem onClick={() => setRemarksOpen((current) => [...current, line.resultId])}>
+                                    Add remarks
+                                  </MenuItem>
                                 )}
                                 {canCall && line.isCritical && (
-                                  <MenuItem icon={<CallRegular />} onClick={() => setCallState({ mode: 'entry', findings: [findingOf(line)] })}>
+                                  <MenuItem
+                                    icon={<CallRegular />}
+                                    onClick={() => setCallState({ mode: 'entry', findings: [findingOf(line)] })}
+                                  >
                                     {line.hasCriticalCall ? 'Log another call' : 'Log critical call'}
                                   </MenuItem>
                                 )}
@@ -886,13 +1022,18 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                   </MenuItem>
                                 )}
                                 {canVerify && selectable(line) && (
-                                  <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => startVerify([line.resultId])}>
+                                  <MenuItem
+                                    icon={<CheckmarkCircleRegular />}
+                                    onClick={() => startVerify([line.resultId])}
+                                  >
                                     Verify this result
                                   </MenuItem>
                                 )}
-                                {!editable(line) && !(canCall && line.isCritical) && !(canVerify && (line.status === 'Verified' || selectable(line))) && (
-                                  <MenuItem disabled>No actions</MenuItem>
-                                )}
+                                {!editable(line) &&
+                                  !(canCall && line.isCritical) &&
+                                  !(canVerify && (line.status === 'Verified' || selectable(line))) && (
+                                    <MenuItem disabled>No actions</MenuItem>
+                                  )}
                               </MenuList>
                             </MenuPopover>
                           </Menu>
@@ -918,7 +1059,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           <div className={styles.footerActions}>
             {canVerify && (
               <div className={styles.selectionBar}>
-                <Button size="small" appearance="subtle" disabled={readyLines.length === 0} onClick={() => setSelected(readyLines.map((line) => line.resultId))}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  disabled={readyLines.length === 0}
+                  onClick={() => setSelected(readyLines.map((line) => line.resultId))}
+                >
                   Select normal results ({readyLines.length})
                 </Button>
                 <Button
@@ -929,7 +1075,11 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                 >
                   Select all entered
                 </Button>
-                <Switch checked={release} onChange={(_, data) => setRelease(data.checked)} label="Release after verifying" />
+                <Switch
+                  checked={release}
+                  onChange={(_, data) => setRelease(data.checked)}
+                  label="Release after verifying"
+                />
               </div>
             )}
             {canEnter && inLab && (
@@ -981,8 +1131,18 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           open
           findings={callState.findings}
           busy={verify.isPending || recordCalls.isPending}
-          title={callState.mode === 'verify' ? 'Document the critical call before verifying' : 'Inform the doctor about the critical result'}
-          submitLabel={callState.mode === 'verify' ? (release ? 'Save call, verify and release' : 'Save call and verify') : 'Save the call'}
+          title={
+            callState.mode === 'verify'
+              ? 'Document the critical call before verifying'
+              : 'Inform the doctor about the critical result'
+          }
+          submitLabel={
+            callState.mode === 'verify'
+              ? release
+                ? 'Save call, verify and release'
+                : 'Save call and verify'
+              : 'Save the call'
+          }
           cancelLabel={callState.mode === 'entry' ? 'Later' : 'Cancel'}
           intro={
             callState.mode === 'entry'
@@ -1017,12 +1177,17 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           title={`Reopen ${reopenLine.testName}?`}
           description={
             <Text>
-              The verified value {reopenLine.value} {reopenLine.unit ?? ''} goes back for correction. Released results cannot be reopened: amend the report
-              instead.
+              The verified value {reopenLine.value} {reopenLine.unit ?? ''} goes back for correction. Released results
+              cannot be reopened: amend the report instead.
             </Text>
           }
           minLength={5}
-          suggestions={['Repeat test ordered', 'Transcription error', 'Wrong sample suspected', 'Clinically inconsistent']}
+          suggestions={[
+            'Repeat test ordered',
+            'Transcription error',
+            'Wrong sample suspected',
+            'Clinically inconsistent',
+          ]}
           confirmLabel="Reopen result"
           busy={reopen.isPending}
           onCancel={() => setReopenLine(null)}
@@ -1032,7 +1197,12 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
 
       {rejecting && (
         <RejectSampleDialog
-          target={{ sampleId: sheet.sampleId, barcode: sheet.barcode, patientName: sheet.patientName, tests: orderedTests }}
+          target={{
+            sampleId: sheet.sampleId,
+            barcode: sheet.barcode,
+            patientName: sheet.patientName,
+            tests: orderedTests,
+          }}
           onClose={() => setRejecting(false)}
           onDone={() => void queryClient.invalidateQueries({ queryKey: sheetKey })}
         />

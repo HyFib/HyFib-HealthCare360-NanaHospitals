@@ -24,13 +24,31 @@ export function MedicalRecordsWidget() {
   return (
     <div className={styles.kpis}>
       {canCode && (
-        <KpiCard label="Waiting for coding" value={count(coding.data)} icon={<ClipboardTaskListLtrRegular />} hint="Discharged episodes" onClick={() => void navigate({ to: '/mrd/coding' })} />
+        <KpiCard
+          label="Waiting for coding"
+          value={count(coding.data)}
+          icon={<ClipboardTaskListLtrRegular />}
+          hint="Discharged episodes"
+          onClick={() => void navigate({ to: '/mrd/coding' })}
+        />
       )}
       {canRecords && (
-        <KpiCard label="Overdue charts" value={count(overdue.data)} icon={<DocumentErrorRegular />} hint="Past their completion date" onClick={() => void navigate({ to: '/mrd/records', search: { overdue: true } })} />
+        <KpiCard
+          label="Overdue charts"
+          value={count(overdue.data)}
+          icon={<DocumentErrorRegular />}
+          hint="Past their completion date"
+          onClick={() => void navigate({ to: '/mrd/records', search: { overdue: true } })}
+        />
       )}
       {canRecords && (
-        <KpiCard label="Files not returned" value={count(requests.data)} icon={<FolderOpenRegular />} hint="Issued files past due" onClick={() => void navigate({ to: '/mrd/requests', search: { status: 'Overdue' } })} />
+        <KpiCard
+          label="Files not returned"
+          value={count(requests.data)}
+          icon={<FolderOpenRegular />}
+          hint="Issued files past due"
+          onClick={() => void navigate({ to: '/mrd/requests', search: { status: 'Overdue' } })}
+        />
       )}
     </div>
   );

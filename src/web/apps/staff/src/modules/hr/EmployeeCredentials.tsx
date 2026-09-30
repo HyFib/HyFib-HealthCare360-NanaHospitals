@@ -1,5 +1,11 @@
 import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger } from '@fluentui/react-components';
-import { AddRegular, ArrowDownloadRegular, DeleteRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowDownloadRegular,
+  DeleteRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly } from '@hc360/core';
 import { ConfirmDialog, DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +18,15 @@ import { downloadStoredFile } from './shared/files';
 import { Toolbar } from './shared/layout';
 
 /** Licences and certifications of one employee (NABH HRM: valid registration for every clinician). */
-export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { employeeId: string; employeeName: string; readOnly?: boolean }) {
+export function EmployeeCredentials({
+  employeeId,
+  employeeName,
+  readOnly,
+}: {
+  employeeId: string;
+  employeeName: string;
+  readOnly?: boolean;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canManage = usePermission(HR_PERMISSIONS.credentialsManage) && !readOnly;
@@ -30,7 +44,8 @@ export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { em
     onError: (error) => notify.error(error, 'Could not remove the credential'),
   });
 
-  const download = (fileId: string) => void downloadStoredFile(fileId).catch((error: unknown) => notify.error(error, 'Could not open the certificate'));
+  const download = (fileId: string) =>
+    void downloadStoredFile(fileId).catch((error: unknown) => notify.error(error, 'Could not open the certificate'));
 
   return (
     <>
@@ -54,7 +69,11 @@ export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { em
           { key: 'number', header: 'Number', render: (c) => c.number },
           { key: 'issuer', header: 'Issued by', priority: 'low', render: (c) => c.issuingAuthority ?? '—' },
           { key: 'issued', header: 'Issued', priority: 'low', render: (c) => formatDateOnly(c.issuedOn) },
-          { key: 'expires', header: 'Valid until', render: (c) => (c.expiresOn ? formatDateOnly(c.expiresOn) : 'Lifetime') },
+          {
+            key: 'expires',
+            header: 'Valid until',
+            render: (c) => (c.expiresOn ? formatDateOnly(c.expiresOn) : 'Lifetime'),
+          },
           {
             key: 'stage',
             header: 'Status',
@@ -67,7 +86,12 @@ export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { em
         rowActions={(c) => (
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${c.name}`} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<MoreHorizontalRegular />}
+                aria-label={`Actions for ${c.name}`}
+              />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -91,7 +115,11 @@ export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { em
           </Menu>
         )}
         emptyTitle="No credentials recorded"
-        emptyDescription={canManage ? 'Add the council registration and BLS/ACLS certificates so HR is reminded before they expire.' : undefined}
+        emptyDescription={
+          canManage
+            ? 'Add the council registration and BLS/ACLS certificates so HR is reminded before they expire.'
+            : undefined
+        }
         size="small"
       />
       <CredentialDialog
@@ -110,7 +138,9 @@ export function EmployeeCredentials({ employeeId, employeeName, readOnly }: { em
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
-        {deleting ? `${credentialTypeLabel[deleting.type]} ${deleting.number} will no longer be tracked for expiry.` : null}
+        {deleting
+          ? `${credentialTypeLabel[deleting.type]} ${deleting.number} will no longer be tracked for expiry.`
+          : null}
       </ConfirmDialog>
     </>
   );

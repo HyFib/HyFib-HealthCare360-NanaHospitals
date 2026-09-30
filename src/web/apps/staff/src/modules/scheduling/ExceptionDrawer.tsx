@@ -16,13 +16,30 @@ import {
 import { DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, ConfirmDialog, DateField, FormGrid, NumberField, SelectField, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  ConfirmDialog,
+  DateField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
-import { EXCEPTION_TYPES, schedulingApi, type ConsultationMode, type ScheduleExceptionDto, type ScheduleSaved } from './api';
+import {
+  EXCEPTION_TYPES,
+  schedulingApi,
+  type ConsultationMode,
+  type ScheduleExceptionDto,
+  type ScheduleSaved,
+} from './api';
 import { daysBetween, timeToMinutes, toInputTime, toServerTime, type IsoDate } from './dates';
 import { exceptionTypeText, modeLabel } from './labels';
 import { sessionProblem, slotsPerSession, SLOT_LENGTHS } from './scheduleRules';
@@ -81,7 +98,12 @@ const schema = z
       if (!v.departmentId) {
         issue('departmentId', 'Choose the department of the extra session.');
       }
-      const problem = sessionProblem({ startTime: v.startTime, endTime: v.endTime, slotMinutes: Number(v.slotMinutes), capacityPerSlot: v.capacityPerSlot ?? 0 });
+      const problem = sessionProblem({
+        startTime: v.startTime,
+        endTime: v.endTime,
+        slotMinutes: Number(v.slotMinutes),
+        capacityPerSlot: v.capacityPerSlot ?? 0,
+      });
       if (problem && problem.field !== 'startTime' && problem.field !== 'endTime') {
         issue(problem.field, problem.message);
       }
@@ -206,8 +228,12 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
-          {exception ? `${exceptionTypeText[exception.type].label} · ${exception.practitionerName}` : 'Leave, blocked time or extra session'}
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          {exception
+            ? `${exceptionTypeText[exception.type].label} · ${exception.practitionerName}`
+            : 'Leave, blocked time or extra session'}
         </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
@@ -245,25 +271,72 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
             <DateField control={form.control} name="fromDate" label="From" required />
             <DateField control={form.control} name="toDate" label="To" required />
           </FormGrid>
-          {!extra && <SwitchField control={form.control} name="allDay" label="Whole day" hint={type === 'Leave' ? 'Turn off for half-day leave' : undefined} />}
+          {!extra && (
+            <SwitchField
+              control={form.control}
+              name="allDay"
+              label="Whole day"
+              hint={type === 'Leave' ? 'Turn off for half-day leave' : undefined}
+            />
+          )}
           {(!allDay || extra) && (
             <FormGrid columns={2} minColumnWidth={150}>
               <TextField control={form.control} name="startTime" label="From time" type="time" required />
               <TextField control={form.control} name="endTime" label="To time" type="time" required />
             </FormGrid>
           )}
-          <TextField control={form.control} name="reason" label="Reason" required maxLength={300} placeholder={type === 'Leave' ? 'e.g. Conference in Mumbai' : type === 'Block' ? 'e.g. Surgery list' : 'e.g. Health camp'} />
+          <TextField
+            control={form.control}
+            name="reason"
+            label="Reason"
+            required
+            maxLength={300}
+            placeholder={
+              type === 'Leave'
+                ? 'e.g. Conference in Mumbai'
+                : type === 'Block'
+                  ? 'e.g. Surgery list'
+                  : 'e.g. Health camp'
+            }
+          />
           {extra ? (
             <>
-              <SelectField control={form.control} name="departmentId" label="Department" required placeholder="Choose department" options={toOptions(departments.data)} />
+              <SelectField
+                control={form.control}
+                name="departmentId"
+                label="Department"
+                required
+                placeholder="Choose department"
+                options={toOptions(departments.data)}
+              />
               <FormGrid columns={2} minColumnWidth={150}>
-                <SelectField control={form.control} name="slotMinutes" label="Slot length" required options={SLOT_LENGTHS.map((m) => ({ value: String(m), label: `${m} minutes` }))} />
-                <NumberField control={form.control} name="capacityPerSlot" label="Patients per slot" required min={1} max={20} />
+                <SelectField
+                  control={form.control}
+                  name="slotMinutes"
+                  label="Slot length"
+                  required
+                  options={SLOT_LENGTHS.map((m) => ({ value: String(m), label: `${m} minutes` }))}
+                />
+                <NumberField
+                  control={form.control}
+                  name="capacityPerSlot"
+                  label="Patients per slot"
+                  required
+                  min={1}
+                  max={20}
+                />
                 <TextField control={form.control} name="room" label="Room" maxLength={32} />
               </FormGrid>
-              <ChoiceField control={form.control} name="mode" label="Consultation" options={MODES.map((m) => ({ value: m, label: modeLabel[m] }))} />
+              <ChoiceField
+                control={form.control}
+                name="mode"
+                label="Consultation"
+                options={MODES.map((m) => ({ value: m, label: modeLabel[m] }))}
+              />
               <Caption1 className={styles.muted}>
-                {perSession > 0 ? `${perSession} slots on each date, at this branch.` : 'Choose the times and slot length.'}
+                {perSession > 0
+                  ? `${perSession} slots on each date, at this branch.`
+                  : 'Choose the times and slot length.'}
               </Caption1>
             </>
           ) : (
@@ -271,19 +344,30 @@ function ExceptionForm({ exception, defaults, today, onClose, onSaved }: Excepti
               control={form.control}
               name="allFacilities"
               label="Applies at every branch"
-              hint={type === 'Leave' ? 'Leave usually applies everywhere: the doctor is away from all branches.' : 'Turn off to block time at this branch only.'}
+              hint={
+                type === 'Leave'
+                  ? 'Leave usually applies everywhere: the doctor is away from all branches.'
+                  : 'Turn off to block time at this branch only.'
+              }
             />
           )}
           {!extra && (
             <MessageBar intent="info">
-              <MessageBarBody>Appointments already booked in this time are listed after saving so they can be moved.</MessageBarBody>
+              <MessageBarBody>
+                Appointments already booked in this time are listed after saving so they can be moved.
+              </MessageBarBody>
             </MessageBar>
           )}
         </div>
       </DrawerBody>
       <DrawerFooter>
         <div className={styles.footer}>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {exception ? 'Save' : 'Add'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

@@ -12,7 +12,13 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, PlugDisconnectedRegular, Wifi1Regular, Wifi3Regular, WifiWarningRegular } from '@fluentui/react-icons';
+import {
+  ArrowClockwiseRegular,
+  PlugDisconnectedRegular,
+  Wifi1Regular,
+  Wifi3Regular,
+  WifiWarningRegular,
+} from '@fluentui/react-icons';
 import { connectionHealth, formatRelative, useConnection } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
@@ -54,7 +60,13 @@ export function ConnectionIndicator() {
           <Caption1 className={styles.label}>Server</Caption1>
           <Caption1>{state.serverReachable ? 'Reachable' : 'Not reachable'}</Caption1>
           <Caption1 className={styles.label}>Live updates</Caption1>
-          <Caption1>{state.realtime === 'connected' ? 'On' : state.realtime === 'disconnected' ? 'Off (retrying)' : 'Connecting…'}</Caption1>
+          <Caption1>
+            {state.realtime === 'connected'
+              ? 'On'
+              : state.realtime === 'disconnected'
+                ? 'Off (retrying)'
+                : 'Connecting…'}
+          </Caption1>
           {state.wifi && (
             <>
               <Caption1 className={styles.label}>WiFi</Caption1>
@@ -103,11 +115,21 @@ export function OfflineBanner() {
   return (
     <MessageBar intent="warning" layout="multiline" className={styles.banner} icon={<PlugDisconnectedRegular />}>
       <MessageBarBody>
-        <MessageBarTitle>{state.browserOnline ? 'Cannot reach the HealthCare360 server' : 'This computer is offline'}</MessageBarTitle>
+        <MessageBarTitle>
+          {state.browserOnline ? 'Cannot reach the HealthCare360 server' : 'This computer is offline'}
+        </MessageBarTitle>
         Check the WiFi connection. Your unsaved work stays on this screen and nothing will be duplicated when you retry.
       </MessageBarBody>
       <MessageBarActions>
-        <Button icon={<ArrowClockwiseRegular />} onClick={() => void fetch('/health/live', { cache: 'no-store' }).then((r) => state.setReachable(r.ok), () => state.setReachable(false))}>
+        <Button
+          icon={<ArrowClockwiseRegular />}
+          onClick={() =>
+            void fetch('/health/live', { cache: 'no-store' }).then(
+              (r) => state.setReachable(r.ok),
+              () => state.setReachable(false),
+            )
+          }
+        >
           Check again
         </Button>
       </MessageBarActions>

@@ -69,7 +69,11 @@ function CardiologyStudyPage() {
   if (study.error || !study.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={study.error} onRetry={() => void study.refetch()} title={isApiError(study.error) && study.error.status === 404 ? 'Study not found' : undefined} />
+        <ErrorState
+          error={study.error}
+          onRetry={() => void study.refetch()}
+          title={isApiError(study.error) && study.error.status === 404 ? 'Study not found' : undefined}
+        />
       </Page>
     );
   }
@@ -105,7 +109,11 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
         actions={
           <>
             {next && (
-              <Button appearance="primary" icon={next === 'attach' ? <AttachRegular /> : undefined} onClick={() => actions.run(next, ref)}>
+              <Button
+                appearance="primary"
+                icon={next === 'attach' ? <AttachRegular /> : undefined}
+                onClick={() => actions.run(next, ref)}
+              >
                 {cardiologyActionLabel[next]}
               </Button>
             )}
@@ -131,7 +139,10 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
       <PageHeader
         title={study.studyName}
         subtitle={`${study.accessionNumber} · ${studyTypeLongLabel[study.studyType]}`}
-        breadcrumbs={[{ label: 'Cardiology studies', onClick: () => void navigate({ to: '/cardiology' }) }, { label: study.accessionNumber }]}
+        breadcrumbs={[
+          { label: 'Cardiology studies', onClick: () => void navigate({ to: '/cardiology' }) },
+          { label: study.accessionNumber },
+        ]}
       />
 
       {study.status === 'Cancelled' && (
@@ -167,10 +178,17 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
           </Fact>
           <Fact label="Ordered">{`${formatDateTime(study.orderedAt)}${study.orderingDoctor ? ` by ${study.orderingDoctor}` : ''}`}</Fact>
           <Fact label="Clinical notes">{study.clinicalNotes}</Fact>
-          <Fact label="Appointment">{study.scheduledAt ? `${formatDateTime(study.scheduledAt)}${study.room ? ` · ${study.room}` : ''}` : null}</Fact>
+          <Fact label="Appointment">
+            {study.scheduledAt ? `${formatDateTime(study.scheduledAt)}${study.room ? ` · ${study.room}` : ''}` : null}
+          </Fact>
           <Fact label="Recorded">
             {study.startedAt || study.acquiredAt
-              ? [study.startedAt ? `started ${formatDateTime(study.startedAt)}` : null, study.acquiredAt ? `completed ${formatDateTime(study.acquiredAt)}` : null].filter(Boolean).join(' · ')
+              ? [
+                  study.startedAt ? `started ${formatDateTime(study.startedAt)}` : null,
+                  study.acquiredAt ? `completed ${formatDateTime(study.acquiredAt)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
               : null}
           </Fact>
           <Fact label="Technician">{study.technician}</Fact>
@@ -181,7 +199,11 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
 
       <Section
         title="Device output"
-        description={study.files.length ? 'Tracings and images from the machine' : 'Nothing attached yet. The report is written from the attached tracing.'}
+        description={
+          study.files.length
+            ? 'Tracings and images from the machine'
+            : 'Nothing attached yet. The report is written from the attached tracing.'
+        }
         actions={
           canManage &&
           !['Verified', 'Released', 'Cancelled'].includes(study.status) && (

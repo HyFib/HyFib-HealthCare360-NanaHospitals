@@ -44,7 +44,9 @@ describe('tube label', () => {
 
   it('fits the test list and counts the rest', () => {
     expect(labelTests(['CBC', 'ESR'])).toBe('CBC, ESR');
-    expect(labelTests(['Complete blood count', 'Erythrocyte sedimentation rate', 'Peripheral smear'], 30)).toBe('Complete blood count +2');
+    expect(labelTests(['Complete blood count', 'Erythrocyte sedimentation rate', 'Peripheral smear'], 30)).toBe(
+      'Complete blood count +2',
+    );
     expect(labelTests(['A very long single test name that never fits'], 20)).toBe('A very long single …');
     expect(labelTests([])).toBe('');
   });

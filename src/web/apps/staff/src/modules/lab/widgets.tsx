@@ -1,4 +1,13 @@
-import { Badge, Button, Caption1, makeStyles, mergeClasses, ProgressBar, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  ProgressBar,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AlertUrgentRegular, CheckmarkCircleRegular } from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
 import { ErrorState, Section } from '@hc360/ui';
@@ -27,7 +36,12 @@ const useStyles = makeStyles({
   },
   muted: { color: tokens.colorNeutralForeground3 },
   clear: { display: 'flex', gap: '8px', alignItems: 'center', color: tokens.colorPaletteGreenForeground1 },
-  stats: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '12px', marginBottom: '12px' },
+  stats: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: '12px',
+    marginBottom: '12px',
+  },
   stat: { display: 'flex', flexDirection: 'column', gap: '2px' },
   value: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   bars: { display: 'flex', flexDirection: 'column', gap: '8px' },
@@ -86,12 +100,15 @@ export function CriticalResultsWidget() {
                   {tube.tests.join(', ')} · {sectionLabel[tube.section]}
                 </Caption1>
                 <span>
-                  <PriorityBadge priority={tube.priority} /> <Caption1 className={styles.muted}>{tube.receivedAt ? formatRelative(tube.receivedAt) : ''}</Caption1>
+                  <PriorityBadge priority={tube.priority} />{' '}
+                  <Caption1 className={styles.muted}>{tube.receivedAt ? formatRelative(tube.receivedAt) : ''}</Caption1>
                 </span>
               </Link>
             </li>
           ))}
-          {tubes.length > 6 && <Caption1 className={styles.muted}>and {tubes.length - 6} more on the worklist</Caption1>}
+          {tubes.length > 6 && (
+            <Caption1 className={styles.muted}>and {tubes.length - 6} more on the worklist</Caption1>
+          )}
         </ul>
       )}
     </Section>
@@ -135,7 +152,9 @@ export function LabTatWidget() {
             </div>
             <div className={styles.stat}>
               <Caption1 className={styles.muted}>On time</Caption1>
-              <span className={mergeClasses(styles.value, styles[complianceTone(within)])}>{within === null ? '—' : `${within}%`}</span>
+              <span className={mergeClasses(styles.value, styles[complianceTone(within)])}>
+                {within === null ? '—' : `${within}%`}
+              </span>
             </div>
             <div className={styles.stat}>
               <Caption1 className={styles.muted}>Released tests</Caption1>
@@ -162,7 +181,13 @@ export function LabTatWidget() {
                   <div style={{ gridColumn: '1 / -1' }}>
                     <ProgressBar
                       value={bench.percent === null ? 0 : bench.percent / 100}
-                      color={complianceTone(bench.percent) === 'good' ? 'success' : complianceTone(bench.percent) === 'warning' ? 'warning' : 'error'}
+                      color={
+                        complianceTone(bench.percent) === 'good'
+                          ? 'success'
+                          : complianceTone(bench.percent) === 'warning'
+                            ? 'warning'
+                            : 'error'
+                      }
                       thickness="large"
                       aria-label={`${sectionLabel[bench.section]}: ${bench.percent ?? 0}% released within target`}
                     />

@@ -71,10 +71,27 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     '@media (min-width: 900px)': { padding: '24px' },
   },
-  waitingLayout: { display: 'grid', gap: '16px', '@media (min-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'center' } },
-  waitingPreview: { width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: tokens.borderRadiusXLarge, backgroundColor: '#1b1b1b' },
+  waitingLayout: {
+    display: 'grid',
+    gap: '16px',
+    '@media (min-width: 760px)': { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', alignItems: 'center' },
+  },
+  waitingPreview: {
+    width: '100%',
+    aspectRatio: '4 / 3',
+    objectFit: 'cover',
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: '#1b1b1b',
+  },
   waitingText: { display: 'flex', flexDirection: 'column', gap: '10px' },
-  waitingTitle: { margin: 0, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, display: 'flex', alignItems: 'center', gap: '8px' },
+  waitingTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
   pulse: {
     width: '12px',
     height: '12px',
@@ -97,8 +114,22 @@ const useStyles = makeStyles({
     backgroundColor: '#0b0b0b',
     overflow: 'hidden',
   },
-  stage: { position: 'relative', width: '100%', height: '100%', color: '#fff', display: 'flex', flexDirection: 'column' },
-  remote: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#0b0b0b' },
+  stage: {
+    position: 'relative',
+    width: '100%',
+    height: '100%',
+    color: '#fff',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  remote: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    backgroundColor: '#0b0b0b',
+  },
   overlay: {
     position: 'absolute',
     inset: 0,
@@ -122,7 +153,13 @@ const useStyles = makeStyles({
     padding: 'calc(12px + env(safe-area-inset-top)) 16px 12px',
     background: 'linear-gradient(180deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0) 100%)',
   },
-  doctor: { fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  doctor: {
+    fontSize: tokens.fontSizeBase400,
+    fontWeight: tokens.fontWeightSemibold,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   quality: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -153,7 +190,15 @@ const useStyles = makeStyles({
     '@media (min-width: 900px)': { aspectRatio: '4 / 3', maxWidth: '240px' },
   },
   selfVideo: { width: '100%', height: '100%', objectFit: 'cover' },
-  selfOff: { width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ddd', fontSize: '28px' },
+  selfOff: {
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#ddd',
+    fontSize: '28px',
+  },
   banner: {
     position: 'relative',
     zIndex: 2,
@@ -194,12 +239,22 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: '3px solid #fff', outlineOffset: '2px' },
   },
   off: { backgroundColor: '#f3f3f3', color: '#111', ':hover': { backgroundColor: '#e0e0e0', color: '#111' } },
-  end: { backgroundColor: '#c4314b', ':hover': { backgroundColor: '#a4262c', color: '#fff' }, ':hover:active': { backgroundColor: '#8e1e25', color: '#fff' } },
+  end: {
+    backgroundColor: '#c4314b',
+    ':hover': { backgroundColor: '#a4262c', color: '#fff' },
+    ':hover:active': { backgroundColor: '#8e1e25', color: '#fff' },
+  },
   chatButton: { position: 'relative' },
   badge: { position: 'absolute', top: '-2px', right: '-2px' },
   tapToHear: { position: 'absolute', zIndex: 3, left: '50%', top: '50%', transform: 'translate(-50%, -50%)' },
   chatList: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
-  bubble: { maxWidth: '85%', padding: '8px 12px', borderRadius: tokens.borderRadiusXLarge, backgroundColor: tokens.colorNeutralBackground3, alignSelf: 'flex-start' },
+  bubble: {
+    maxWidth: '85%',
+    padding: '8px 12px',
+    borderRadius: tokens.borderRadiusXLarge,
+    backgroundColor: tokens.colorNeutralBackground3,
+    alignSelf: 'flex-start',
+  },
   mine: { alignSelf: 'flex-end', backgroundColor: tokens.colorBrandBackground2 },
   bubbleMeta: { fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 },
   bubbleText: { margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
@@ -230,7 +285,15 @@ export interface CallScreenProps {
 }
 
 /** The call from joining to the end. Mount it once per join (it owns the camera, microphone and connection). */
-export function CallScreen({ sessionId, hubPath, identity, iceServers, choice, onRejoin, endActions }: CallScreenProps) {
+export function CallScreen({
+  sessionId,
+  hubPath,
+  identity,
+  iceServers,
+  choice,
+  onRejoin,
+  endActions,
+}: CallScreenProps) {
   const [call] = useState(
     () =>
       new PatientCall({
@@ -324,7 +387,13 @@ function WaitingRoom({ state, call }: { state: PatientCallState; call: PatientCa
     <div className={styles.card}>
       <div className={styles.waitingLayout}>
         {state.localStream?.getVideoTracks().length ? (
-          <VideoView stream={state.localStream} muted mirrored className={styles.waitingPreview} label={t('video.check.preview')} />
+          <VideoView
+            stream={state.localStream}
+            muted
+            mirrored
+            className={styles.waitingPreview}
+            label={t('video.check.preview')}
+          />
         ) : (
           <Avatar name={doctor} size={96} color="colorful" aria-hidden style={{ justifySelf: 'center' }} />
         )}
@@ -336,14 +405,18 @@ function WaitingRoom({ state, call }: { state: PatientCallState; call: PatientCa
           <p className={styles.muted} role="status">
             {t('video.waiting.body', { doctor })}
           </p>
-          {state.scheduledStartAt && <p className={styles.muted}>{t('video.waiting.scheduled', { time: f.time(state.scheduledStartAt) })}</p>}
+          {state.scheduledStartAt && (
+            <p className={styles.muted}>{t('video.waiting.scheduled', { time: f.time(state.scheduledStartAt) })}</p>
+          )}
           {waited > 0 && (
             <p className={styles.muted}>
               <HourglassHalfRegular aria-hidden /> {t('video.waiting.since', { time: formatCountdown(waited) })}
             </p>
           )}
           {state.hub === 'reconnecting' && <Notice intent="warning">{t('video.call.signalLost')}</Notice>}
-          {state.mediaProblem && state.localStream && <Notice intent="warning">{t('video.check.cameraProblem')}</Notice>}
+          {state.mediaProblem && state.localStream && (
+            <Notice intent="warning">{t('video.check.cameraProblem')}</Notice>
+          )}
           <p className={styles.muted}>
             <InfoRegular aria-hidden /> {t('video.chat.notAdmitted')}
           </p>
@@ -372,7 +445,11 @@ function WaitingRoom({ state, call }: { state: PatientCallState; call: PatientCa
 }
 
 const QUALITY_ICON = { good: Wifi3Regular, fair: Wifi2Regular, poor: Wifi1Regular } as const;
-const QUALITY_TEXT: Record<'good' | 'fair' | 'poor', MessageKey> = { good: 'video.quality.good', fair: 'video.quality.fair', poor: 'video.quality.poor' };
+const QUALITY_TEXT: Record<'good' | 'fair' | 'poor', MessageKey> = {
+  good: 'video.quality.good',
+  fair: 'video.quality.fair',
+  poor: 'video.quality.poor',
+};
 
 function InCall({ state, call }: { state: PatientCallState; call: PatientCall }) {
   const styles = useStyles();
@@ -382,7 +459,10 @@ function InCall({ state, call }: { state: PatientCallState; call: PatientCall })
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
   const [playToken, setPlayToken] = useState(0);
-  const [mobile] = useState(() => typeof navigator !== 'undefined' && detectPlatform(navigator.userAgent, navigator.maxTouchPoints) !== 'desktop');
+  const [mobile] = useState(
+    () =>
+      typeof navigator !== 'undefined' && detectPlatform(navigator.userAgent, navigator.maxTouchPoints) !== 'desktop',
+  );
   const doctor = state.doctorName ?? t('common.doctor');
   const fromDoctor = state.messages.filter((message) => message.senderRole === 'Clinician');
   const unread = chatOpen ? 0 : Math.max(0, fromDoctor.length - seen);
@@ -428,7 +508,12 @@ function InCall({ state, call }: { state: PatientCallState; call: PatientCall })
               </p>
               {(state.peer === 'connecting' || state.peer === 'reconnecting') && <Spinner appearance="inverted" />}
               {state.peer === 'failed' && (
-                <Button appearance="primary" size="large" icon={<ArrowClockwiseRegular />} onClick={() => void call.reconnectVideo()}>
+                <Button
+                  appearance="primary"
+                  size="large"
+                  icon={<ArrowClockwiseRegular />}
+                  onClick={() => void call.reconnectVideo()}
+                >
                   {t('video.call.reconnect')}
                 </Button>
               )}
@@ -532,7 +617,11 @@ function InCall({ state, call }: { state: PatientCallState; call: PatientCall })
               />
             )}
             {hasLocalVideo && mobile && !state.audioOnly && (
-              <ControlButton label={t('video.call.switchCamera')} icon={<CameraSwitchRegular />} onClick={() => void call.switchCamera()} />
+              <ControlButton
+                label={t('video.call.switchCamera')}
+                icon={<CameraSwitchRegular />}
+                onClick={() => void call.switchCamera()}
+              />
             )}
             <span className={styles.chatButton}>
               <ControlButton
@@ -545,7 +634,12 @@ function InCall({ state, call }: { state: PatientCallState; call: PatientCall })
               />
               {unread > 0 && <CounterBadge className={styles.badge} count={unread} color="danger" aria-hidden />}
             </span>
-            <ControlButton label={t('video.call.end')} icon={<CallEndRegular />} danger onClick={() => setConfirmLeave(true)} />
+            <ControlButton
+              label={t('video.call.end')}
+              icon={<CallEndRegular />}
+              danger
+              onClick={() => setConfirmLeave(true)}
+            />
           </div>
         </div>
 
@@ -656,7 +750,12 @@ function ChatSheet({
             void send();
           }}
         >
-          <Field label={t('video.chat.label')} style={{ flex: 1 }} validationState={failed ? 'error' : 'none'} validationMessage={failed ? t('video.chat.failed') : undefined}>
+          <Field
+            label={t('video.chat.label')}
+            style={{ flex: 1 }}
+            validationState={failed ? 'error' : 'none'}
+            validationMessage={failed ? t('video.chat.failed') : undefined}
+          >
             <Textarea
               value={text}
               onChange={(_, data) => setText(data.value)}
@@ -672,7 +771,13 @@ function ChatSheet({
               }}
             />
           </Field>
-          <Button type="submit" appearance="primary" size="large" icon={sending ? <Spinner size="tiny" /> : <SendRegular />} disabled={sending || !text.trim()}>
+          <Button
+            type="submit"
+            appearance="primary"
+            size="large"
+            icon={sending ? <Spinner size="tiny" /> : <SendRegular />}
+            disabled={sending || !text.trim()}
+          >
             {t('video.chat.send')}
           </Button>
         </form>
@@ -704,7 +809,13 @@ function Ended({ state, onRejoin, actions }: { state: PatientCallState; onRejoin
   const t = useT();
   const reason = state.endReason;
   const message: MessageKey =
-    reason === 'left' ? 'video.ended.left' : reason === 'Cancelled' ? 'video.ended.cancelled' : reason === 'Missed' ? 'video.ended.missed' : 'video.ended.body';
+    reason === 'left'
+      ? 'video.ended.left'
+      : reason === 'Cancelled'
+        ? 'video.ended.cancelled'
+        : reason === 'Missed'
+          ? 'video.ended.missed'
+          : 'video.ended.body';
   return (
     <div className={styles.card}>
       {reason === 'Completed' && <CheckmarkCircleRegular className={styles.endedIcon} aria-hidden />}

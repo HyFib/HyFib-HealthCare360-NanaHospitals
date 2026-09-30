@@ -21,7 +21,10 @@ export function useLiveOrders(patientId: string) {
   const queryClient = useQueryClient();
   const facilityId = useSession((s) => s.user?.facilityId);
   useRealtimeEvent<{ patientId?: string }>(facilityId ? `facility:${facilityId}` : null, null, (payload, envelope) => {
-    if ((envelope.name === 'clinical.order.placed' || envelope.name === 'clinical.order.changed') && (!payload?.patientId || payload.patientId === patientId)) {
+    if (
+      (envelope.name === 'clinical.order.placed' || envelope.name === 'clinical.order.changed') &&
+      (!payload?.patientId || payload.patientId === patientId)
+    ) {
       void queryClient.invalidateQueries({ queryKey: [...emrKeys.patient(patientId), 'orders'] });
     }
   });

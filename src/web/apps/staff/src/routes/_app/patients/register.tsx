@@ -42,11 +42,28 @@ export const Route = createFileRoute('/_app/patients/register')({
 });
 
 const useStyles = makeStyles({
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', padding: '8px 0' },
-  uhid: { fontFamily: tokens.fontFamilyMonospace, fontSize: '32px', lineHeight: '40px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    textAlign: 'center',
+    padding: '8px 0',
+  },
+  uhid: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: '32px',
+    lineHeight: '40px',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   candidates: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
-  candidate: { padding: '8px 12px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
+  candidate: {
+    padding: '8px 12px',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
 });
 
 interface Registered {
@@ -58,7 +75,10 @@ interface Registered {
 }
 
 function fullNameOf(values: PatientFormValues): string {
-  return [values.title, values.firstName, values.middleName, values.lastName].map((v) => v.trim()).filter(Boolean).join(' ');
+  return [values.title, values.firstName, values.middleName, values.lastName]
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .join(' ');
 }
 
 function ageSexOf(values: PatientFormValues): string {
@@ -67,7 +87,9 @@ function ageSexOf(values: PatientFormValues): string {
     return `${values.ageYears ?? 0}Y${values.ageMonths ? ` ${values.ageMonths}M` : ''} / ${sex}`;
   }
   const dob = new Date(values.dateOfBirth);
-  const years = Number.isNaN(dob.getTime()) ? null : Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
+  const years = Number.isNaN(dob.getTime())
+    ? null
+    : Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
   return `${years ?? '—'}Y / ${sex}`;
 }
 
@@ -80,12 +102,19 @@ function RegisterPatientPage() {
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const [form, setForm] = useState<UseFormReturn<PatientFormValues> | null>(null);
   const draft = useFormDraft(form, 'patient-register');
-  const [duplicates, setDuplicates] = useState<{ values: PatientFormValues; candidates: DuplicateCandidate[] } | null>(null);
+  const [duplicates, setDuplicates] = useState<{ values: PatientFormValues; candidates: DuplicateCandidate[] } | null>(
+    null,
+  );
   const [registered, setRegistered] = useState<Registered | null>(null);
   const [checkIn, setCheckIn] = useState(false);
 
   const [firstName, ...rest] = (search.name ?? '').trim().split(/\s+/);
-  const [defaults] = useState<PatientFormValues>(() => ({ ...emptyPatientForm, firstName: firstName ?? '', lastName: rest.join(' '), phone: search.phone ?? '' }));
+  const [defaults] = useState<PatientFormValues>(() => ({
+    ...emptyPatientForm,
+    firstName: firstName ?? '',
+    lastName: rest.join(' '),
+    phone: search.phone ?? '',
+  }));
 
   const register = useMutation({
     mutationFn: ({ values, confirmed }: { values: PatientFormValues; confirmed: boolean }) =>
@@ -93,7 +122,13 @@ function RegisterPatientPage() {
     onSuccess: (result, { values }) => {
       draft.clear();
       setDuplicates(null);
-      setRegistered({ id: result.id, uhid: result.uhid, fullName: fullNameOf(values), ageSex: ageSexOf(values), phone: values.phone || null });
+      setRegistered({
+        id: result.id,
+        uhid: result.uhid,
+        fullName: fullNameOf(values),
+        ageSex: ageSexOf(values),
+        phone: values.phone || null,
+      });
       void queryClient.invalidateQueries({ queryKey: patientKeys.all });
     },
     onError: (error, { values }) => {
@@ -114,9 +149,13 @@ function RegisterPatientPage() {
 
   const printCard = () => {
     if (registered) {
-      void printUhidCard({ facilityName, uhid: registered.uhid, fullName: registered.fullName, ageSex: registered.ageSex, phone: registered.phone }).catch(
-        (error: unknown) => notify.error(error, 'Printing failed'),
-      );
+      void printUhidCard({
+        facilityName,
+        uhid: registered.uhid,
+        fullName: registered.fullName,
+        ageSex: registered.ageSex,
+        phone: registered.phone,
+      }).catch((error: unknown) => notify.error(error, 'Printing failed'));
     }
   };
 
@@ -130,7 +169,10 @@ function RegisterPatientPage() {
 
       {draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>An unsaved registration from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            An unsaved registration from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore it</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -160,7 +202,9 @@ function RegisterPatientPage() {
           <DialogBody>
             <DialogTitle>This patient may already be registered</DialogTitle>
             <DialogContent>
-              <Text>Registering the same person twice splits their medical history. Please check these records first.</Text>
+              <Text>
+                Registering the same person twice splits their medical history. Please check these records first.
+              </Text>
               <div className={styles.candidates}>
                 {duplicates?.candidates.map((c) => (
                   <div key={c.id} className={styles.candidate}>
@@ -169,7 +213,11 @@ function RegisterPatientPage() {
                       {c.uhid} · {c.age ?? '—'} / {c.gender.charAt(0)}
                       {c.phoneMasked ? ` · ${c.phoneMasked}` : ''} · {c.reason}
                     </Caption1>
-                    <Button size="small" appearance="subtle" onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: c.id } })}
+                    >
                       Open this record
                     </Button>
                   </div>
@@ -208,7 +256,13 @@ function RegisterPatientPage() {
               <Button icon={<PrintRegular />} onClick={printCard}>
                 Print UHID card
               </Button>
-              <Button onClick={() => registered && void navigate({ to: '/patients/$patientId', params: { patientId: registered.id } })}>Open profile</Button>
+              <Button
+                onClick={() =>
+                  registered && void navigate({ to: '/patients/$patientId', params: { patientId: registered.id } })
+                }
+              >
+                Open profile
+              </Button>
               <Button onClick={startAnother}>Register another</Button>
               <Button appearance="primary" onClick={() => setCheckIn(true)} autoFocus>
                 Check in now
@@ -219,7 +273,11 @@ function RegisterPatientPage() {
       </Dialog>
 
       {registered && (
-        <CheckInDialog patient={{ id: registered.id, uhid: registered.uhid, fullName: registered.fullName }} open={checkIn} onClose={startAnother} />
+        <CheckInDialog
+          patient={{ id: registered.id, uhid: registered.uhid, fullName: registered.fullName }}
+          open={checkIn}
+          onClose={startAnother}
+        />
       )}
     </Page>
   );

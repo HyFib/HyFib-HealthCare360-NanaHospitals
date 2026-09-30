@@ -1,7 +1,29 @@
-import { Button, Caption1, Field, Input, makeStyles, mergeClasses, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { BroomRegular, CalendarAddRegular, ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { todayIso, useHotkey } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, FilterBar, KpiCard, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -16,7 +38,12 @@ import {
   type DialysisSessionListItem,
   type DialysisShift,
 } from '@/modules/dialysis/api';
-import { DisinfectionState, MachineStatusBadge, SeroBadge, SessionStatusBadge } from '@/modules/dialysis/DialysisBadges';
+import {
+  DisinfectionState,
+  MachineStatusBadge,
+  SeroBadge,
+  SessionStatusBadge,
+} from '@/modules/dialysis/DialysisBadges';
 import { AssignMachineDialog, DisinfectionDialog, ScheduleSessionDialog } from '@/modules/dialysis/DialysisDialogs';
 import { seroLabel, shiftLabel } from '@/modules/dialysis/labels';
 import { addDays, dayLabel, isDateOnly } from '@/modules/ot/shared/datetime';
@@ -86,11 +113,17 @@ function DialysisBoardPage() {
   const today = todayIso();
   const date = search.date ?? today;
   const board = useQuery({ ...dialysisQueries.board(date, search.shift), enabled: canRead });
-  const [booking, setBooking] = useState<{ patient?: { id: string; uhid: string; fullName: string }; shift?: DialysisShift } | null>(null);
+  const [booking, setBooking] = useState<{
+    patient?: { id: string; uhid: string; fullName: string };
+    shift?: DialysisShift;
+  } | null>(null);
   const [assigning, setAssigning] = useState<DialysisSessionListItem | null>(null);
   const [disinfecting, setDisinfecting] = useState<{ id: string; code: string } | null>(null);
 
-  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'dialysis.board.changed', [dialysisKeys.boards, dialysisKeys.sessionLists]);
+  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'dialysis.board.changed', [
+    dialysisKeys.boards,
+    dialysisKeys.sessionLists,
+  ]);
 
   const set = (patch: Partial<BoardSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }) });
   const go = (days: number) => {
@@ -112,7 +145,8 @@ function DialysisBoardPage() {
   const sessions = [...(data?.machines.flatMap((m) => m.sessions) ?? []), ...(data?.unassigned ?? [])];
   const count = (status: string) => sessions.filter((s) => s.status === status).length;
   const dirty = data?.machines.filter((m) => m.needsDisinfection).length ?? 0;
-  const openSession = (s: DialysisSessionListItem) => void navigate({ to: '/dialysis/sessions/$id', params: { id: s.id } });
+  const openSession = (s: DialysisSessionListItem) =>
+    void navigate({ to: '/dialysis/sessions/$id', params: { id: s.id } });
 
   return (
     <Page>
@@ -143,10 +177,18 @@ function DialysisBoardPage() {
               </Tooltip>
             </div>
             <Field label="Date">
-              <Input type="date" value={date} onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })} />
+              <Input
+                type="date"
+                value={date}
+                onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })}
+              />
             </Field>
             <Field label="Shift">
-              <TabList size="small" selectedValue={search.shift ?? 'all'} onTabSelect={(_, d) => set({ shift: d.value === 'all' ? undefined : (d.value as DialysisShift) })}>
+              <TabList
+                size="small"
+                selectedValue={search.shift ?? 'all'}
+                onTabSelect={(_, d) => set({ shift: d.value === 'all' ? undefined : (d.value as DialysisShift) })}
+              >
                 <Tab value="all">All shifts</Tab>
                 {DIALYSIS_SHIFTS.map((s) => (
                   <Tab key={s} value={s}>
@@ -174,7 +216,10 @@ function DialysisBoardPage() {
           </div>
 
           {data.machines.length === 0 ? (
-            <EmptyState title="No active dialysis machines" description="Add machines under Dialysis → Machines, each dedicated to one sero category." />
+            <EmptyState
+              title="No active dialysis machines"
+              description="Add machines under Dialysis → Machines, each dedicated to one sero category."
+            />
           ) : (
             SERO_STATUSES.filter((sero) => data.machines.some((m) => m.seroDedication === sero)).map((sero) => (
               <Section
@@ -191,14 +236,24 @@ function DialysisBoardPage() {
                   {data.machines
                     .filter((m) => m.seroDedication === sero)
                     .map((machine) => (
-                      <MachineTile key={machine.id} machine={machine} canManage={canManage} onOpen={openSession} onDisinfect={() => setDisinfecting({ id: machine.id, code: machine.code })} />
+                      <MachineTile
+                        key={machine.id}
+                        machine={machine}
+                        canManage={canManage}
+                        onOpen={openSession}
+                        onDisinfect={() => setDisinfecting({ id: machine.id, code: machine.code })}
+                      />
                     ))}
                 </div>
               </Section>
             ))
           )}
 
-          <Section title={`Waiting for a machine (${data.unassigned.length})`} description="Booked sessions without a machine. Assign one of the patient’s sero category." flush>
+          <Section
+            title={`Waiting for a machine (${data.unassigned.length})`}
+            description="Booked sessions without a machine. Assign one of the patient’s sero category."
+            flush
+          >
             <DataTable
               ariaLabel="Sessions without a machine"
               rows={data.unassigned}
@@ -225,12 +280,18 @@ function DialysisBoardPage() {
             />
           </Section>
 
-          <Section title={`Due today, not booked (${data.dueNotScheduled.length})`} description="Enrolled patients whose weekly schedule includes this day." flush>
+          <Section
+            title={`Due today, not booked (${data.dueNotScheduled.length})`}
+            description="Enrolled patients whose weekly schedule includes this day."
+            flush
+          >
             <DataTable<DialysisDuePatient>
               ariaLabel="Patients due but not booked"
               rows={data.dueNotScheduled}
               getRowId={(p) => `${p.patientId}-${p.shift}`}
-              onRowClick={(p) => void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: p.patientId } })}
+              onRowClick={(p) =>
+                void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: p.patientId } })
+              }
               size="small"
               columns={[
                 { key: 'patient', header: 'Patient', render: (p) => <Text weight="semibold">{p.patientName}</Text> },
@@ -254,7 +315,16 @@ function DialysisBoardPage() {
               rowActions={
                 canManage
                   ? (p) => (
-                      <Button size="small" icon={<CalendarAddRegular />} onClick={() => setBooking({ patient: { id: p.patientId, uhid: p.uhid, fullName: p.patientName }, shift: p.shift })}>
+                      <Button
+                        size="small"
+                        icon={<CalendarAddRegular />}
+                        onClick={() =>
+                          setBooking({
+                            patient: { id: p.patientId, uhid: p.uhid, fullName: p.patientName },
+                            shift: p.shift,
+                          })
+                        }
+                      >
                         Book
                       </Button>
                     )
@@ -266,7 +336,12 @@ function DialysisBoardPage() {
         </>
       ) : null}
 
-      {booking && <ScheduleSessionDialog onClose={() => setBooking(null)} preset={{ patient: booking.patient, shift: booking.shift, date: date < today ? today : date }} />}
+      {booking && (
+        <ScheduleSessionDialog
+          onClose={() => setBooking(null)}
+          preset={{ patient: booking.patient, shift: booking.shift, date: date < today ? today : date }}
+        />
+      )}
       {assigning && <AssignMachineDialog session={assigning} onClose={() => setAssigning(null)} />}
       {disinfecting && <DisinfectionDialog machine={disinfecting} onClose={() => setDisinfecting(null)} />}
     </Page>
@@ -286,9 +361,14 @@ function MachineTile({
 }) {
   const styles = useStyles();
   const off = machine.status === 'Maintenance' || machine.status === 'Retired';
-  const sessions = [...machine.sessions].sort((a, b) => DIALYSIS_SHIFTS.indexOf(a.shift) - DIALYSIS_SHIFTS.indexOf(b.shift));
+  const sessions = [...machine.sessions].sort(
+    (a, b) => DIALYSIS_SHIFTS.indexOf(a.shift) - DIALYSIS_SHIFTS.indexOf(b.shift),
+  );
   return (
-    <div className={mergeClasses(styles.tile, machine.needsDisinfection && styles.tileDirty, off && styles.tileOff)} aria-label={`Machine ${machine.code}`}>
+    <div
+      className={mergeClasses(styles.tile, machine.needsDisinfection && styles.tileDirty, off && styles.tileOff)}
+      aria-label={`Machine ${machine.code}`}
+    >
       <div className={styles.tileHead}>
         <div>
           <span className={styles.code}>{machine.code}</span>
@@ -307,7 +387,13 @@ function MachineTile({
           <Caption1 className={styles.muted}>{off ? 'Out of service' : 'Free all day'}</Caption1>
         ) : (
           sessions.map((s) => (
-            <button key={s.id} type="button" className={styles.session} onClick={() => onOpen(s)} aria-label={`${shiftLabel[s.shift]}: ${s.patientName}`}>
+            <button
+              key={s.id}
+              type="button"
+              className={styles.session}
+              onClick={() => onOpen(s)}
+              aria-label={`${shiftLabel[s.shift]}: ${s.patientName}`}
+            >
               <Caption1 className={styles.muted}>{shiftLabel[s.shift]}</Caption1>
               <Text className={styles.truncate} weight="semibold">
                 {s.patientName}

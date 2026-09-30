@@ -102,7 +102,12 @@ export function DataTable<T>(props: DataTableProps<T>) {
   return (
     <div>
       <div className={styles.wrapper}>
-        <Table aria-label={props.ariaLabel} size={props.size ?? 'medium'} sortable={Boolean(props.onSortChange)} {...navigation}>
+        <Table
+          aria-label={props.ariaLabel}
+          size={props.size ?? 'medium'}
+          sortable={Boolean(props.onSortChange)}
+          {...navigation}
+        >
           <TableHeader>
             <TableRow>
               {columns.map((column) => {
@@ -166,17 +171,36 @@ export function DataTable<T>(props: DataTableProps<T>) {
       </div>
 
       {!showSkeleton && rows && rows.length === 0 && (
-        <EmptyState title={props.emptyTitle ?? 'Nothing here yet'} description={props.emptyDescription} action={props.emptyAction} />
+        <EmptyState
+          title={props.emptyTitle ?? 'Nothing here yet'}
+          description={props.emptyDescription}
+          action={props.emptyAction}
+        />
       )}
 
       {props.onPageChange && props.totalCount !== undefined && props.totalCount > 0 && (
-        <Pagination page={props.page ?? 1} pageSize={props.pageSize ?? 25} totalCount={props.totalCount} onPageChange={props.onPageChange} />
+        <Pagination
+          page={props.page ?? 1}
+          pageSize={props.pageSize ?? 25}
+          totalCount={props.totalCount}
+          onPageChange={props.onPageChange}
+        />
       )}
     </div>
   );
 }
 
-export function Pagination({ page, pageSize, totalCount, onPageChange }: { page: number; pageSize: number; totalCount: number; onPageChange: (page: number) => void }) {
+export function Pagination({
+  page,
+  pageSize,
+  totalCount,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  onPageChange: (page: number) => void;
+}) {
   const styles = useStyles();
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const from = (page - 1) * pageSize + 1;
@@ -187,11 +211,23 @@ export function Pagination({ page, pageSize, totalCount, onPageChange }: { page:
         Showing {from.toLocaleString('en-IN')}–{to.toLocaleString('en-IN')} of {totalCount.toLocaleString('en-IN')}
       </Text>
       <div>
-        <Button appearance="subtle" icon={<ChevronLeftRegular />} disabled={page <= 1} onClick={() => onPageChange(page - 1)} aria-label="Previous page" />
+        <Button
+          appearance="subtle"
+          icon={<ChevronLeftRegular />}
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+          aria-label="Previous page"
+        />
         <Text size={200} style={{ margin: '0 8px' }}>
           Page {page} of {totalPages}
         </Text>
-        <Button appearance="subtle" icon={<ChevronRightRegular />} disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} aria-label="Next page" />
+        <Button
+          appearance="subtle"
+          icon={<ChevronRightRegular />}
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+          aria-label="Next page"
+        />
       </div>
     </div>
   );

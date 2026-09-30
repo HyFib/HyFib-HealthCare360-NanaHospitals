@@ -13,11 +13,33 @@ const C = CRM_PERMISSIONS;
 
 export const CAMPAIGN_VIEWERS = [C.campaignsManage, C.campaignsSend] as const;
 /** Anyone who uses the CRM workspace (the /crm overview). */
-export const CRM_USERS = [C.leadsManage, C.followUpsManage, C.campaignsManage, C.campaignsSend, C.referralsManage, C.patient360Read] as const;
+export const CRM_USERS = [
+  C.leadsManage,
+  C.followUpsManage,
+  C.campaignsManage,
+  C.campaignsSend,
+  C.referralsManage,
+  C.patient360Read,
+] as const;
 /** May record a marketing opt-out for a patient. */
-export const OPT_OUT_RECORDERS = [C.campaignsManage, C.followUpsManage, C.leadsManage, C.patient360Read, 'patients.consents'] as const;
+export const OPT_OUT_RECORDERS = [
+  C.campaignsManage,
+  C.followUpsManage,
+  C.leadsManage,
+  C.patient360Read,
+  'patients.consents',
+] as const;
 
-export const LEAD_SOURCES = ['Website', 'WalkIn', 'Phone', 'HealthCamp', 'Referral', 'SocialMedia', 'Campaign', 'Corporate'] as const;
+export const LEAD_SOURCES = [
+  'Website',
+  'WalkIn',
+  'Phone',
+  'HealthCamp',
+  'Referral',
+  'SocialMedia',
+  'Campaign',
+  'Corporate',
+] as const;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 export const leadSourceLabel: Record<LeadSource, string> = {
   Website: 'Website',
@@ -51,7 +73,15 @@ export const leadActivityLabel: Record<LeadActivityType, string> = {
   Note: 'Note',
 };
 
-export const FOLLOW_UP_TYPES = ['PostConsultation', 'PostDischarge', 'Vaccination', 'ChronicReview', 'HealthCheckupDue', 'PaymentDue', 'Feedback'] as const;
+export const FOLLOW_UP_TYPES = [
+  'PostConsultation',
+  'PostDischarge',
+  'Vaccination',
+  'ChronicReview',
+  'HealthCheckupDue',
+  'PaymentDue',
+  'Feedback',
+] as const;
 export type FollowUpType = (typeof FOLLOW_UP_TYPES)[number];
 export const followUpTypeLabel: Record<FollowUpType, string> = {
   PostConsultation: 'After consultation',
@@ -75,7 +105,16 @@ export const followUpStatusLabel: Record<FollowUpStatus, string> = {
 export const FOLLOW_UP_PRIORITIES = ['Normal', 'High'] as const;
 export type FollowUpPriority = (typeof FOLLOW_UP_PRIORITIES)[number];
 
-export const FOLLOW_UP_OUTCOMES = ['Reached', 'AppointmentBooked', 'NotInterested', 'WrongNumber', 'Deceased', 'NotReachable', 'CallBackLater', 'Other'] as const;
+export const FOLLOW_UP_OUTCOMES = [
+  'Reached',
+  'AppointmentBooked',
+  'NotInterested',
+  'WrongNumber',
+  'Deceased',
+  'NotReachable',
+  'CallBackLater',
+  'Other',
+] as const;
 export type FollowUpOutcome = (typeof FOLLOW_UP_OUTCOMES)[number];
 export const followUpOutcomeLabel: Record<FollowUpOutcome, string> = {
   Reached: 'Spoke to the patient',

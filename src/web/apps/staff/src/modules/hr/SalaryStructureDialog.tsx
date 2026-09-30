@@ -22,7 +22,17 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, LoadingState, NumberField, SelectField, SwitchField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  FormGrid,
+  LoadingState,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -32,7 +42,9 @@ import { structurePreview } from './payroll';
 import { addMonths, currentMonth, monthStart } from './shared/dates';
 
 const schema = z.object({
-  effectiveFrom: z.string({ error: 'Enter the date the salary applies from.' }).min(1, 'Enter the date the salary applies from.'),
+  effectiveFrom: z
+    .string({ error: 'Enter the date the salary applies from.' })
+    .min(1, 'Enter the date the salary applies from.'),
   annualCtc: z.number().min(0).max(1_000_000_000).nullable(),
   monthlyTds: z.number({ error: 'Enter the monthly TDS (0 if none).' }).min(0).max(10_000_000),
   pfApplicable: z.boolean(),
@@ -45,7 +57,14 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 const useStyles = makeStyles({
-  summary: { display: 'flex', gap: '24px', flexWrap: 'wrap', padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  summary: {
+    display: 'flex',
+    gap: '24px',
+    flexWrap: 'wrap',
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
   input: { maxWidth: '140px' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -73,14 +92,26 @@ export function SalaryStructureDialog({
   );
 }
 
-function Body({ onClose, employeeId, employeeName, current }: { onClose: () => void; employeeId: string; employeeName: string; current: SalaryStructureDto | null }) {
+function Body({
+  onClose,
+  employeeId,
+  employeeName,
+  current,
+}: {
+  onClose: () => void;
+  employeeId: string;
+  employeeName: string;
+  current: SalaryStructureDto | null;
+}) {
   const components = useQuery(hrQueries.components());
   const taxes = useQuery(hrQueries.professionalTax());
   if (!components.data) {
     return (
       <DialogBody>
         <DialogTitle>Revise salary</DialogTitle>
-        <DialogContent>{components.error ? <Text>Could not load the pay heads.</Text> : <LoadingState />}</DialogContent>
+        <DialogContent>
+          {components.error ? <Text>Could not load the pay heads.</Text> : <LoadingState />}
+        </DialogContent>
         <DialogActions>
           <Button onClick={onClose}>Close</Button>
         </DialogActions>
@@ -88,7 +119,16 @@ function Body({ onClose, employeeId, employeeName, current }: { onClose: () => v
     );
   }
   const heads = components.data.filter((c) => c.isActive && !c.isStatutory);
-  return <StructureForm onClose={onClose} employeeId={employeeId} employeeName={employeeName} current={current} heads={heads} states={taxes.data ?? []} />;
+  return (
+    <StructureForm
+      onClose={onClose}
+      employeeId={employeeId}
+      employeeName={employeeName}
+      current={current}
+      heads={heads}
+      states={taxes.data ?? []}
+    />
+  );
 }
 
 function StructureForm({
@@ -138,7 +178,12 @@ function StructureForm({
   const preview = useMemo(
     () =>
       structurePreview(
-        heads.map((head) => ({ code: head.code, kind: head.kind, calculationType: head.calculationType, value: Number(values[head.id] ?? 0) || 0 })),
+        heads.map((head) => ({
+          code: head.code,
+          kind: head.kind,
+          calculationType: head.calculationType,
+          value: Number(values[head.id] ?? 0) || 0,
+        })),
       ),
     [heads, values],
   );
@@ -229,18 +274,46 @@ function StructureForm({
         </DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <FormGrid columns={3} minColumnWidth={200}>
-            <DateField control={form.control} name="effectiveFrom" label="Applies from" required hint="The previous structure ends the day before." />
-            <NumberField control={form.control} name="annualCtc" label="Annual CTC (₹)" min={0} step={1000} hint="For reference on the offer; payroll uses the heads below." />
-            <NumberField control={form.control} name="monthlyTds" label="Monthly TDS (₹)" required min={0} step={100} hint="Projected income tax per month." />
+            <DateField
+              control={form.control}
+              name="effectiveFrom"
+              label="Applies from"
+              required
+              hint="The previous structure ends the day before."
+            />
+            <NumberField
+              control={form.control}
+              name="annualCtc"
+              label="Annual CTC (₹)"
+              min={0}
+              step={1000}
+              hint="For reference on the offer; payroll uses the heads below."
+            />
+            <NumberField
+              control={form.control}
+              name="monthlyTds"
+              label="Monthly TDS (₹)"
+              required
+              min={0}
+              step={100}
+              hint="Projected income tax per month."
+            />
             <SwitchField control={form.control} name="pfApplicable" label="Provident fund (PF)" />
-            <SwitchField control={form.control} name="pfOnActualBasic" label="PF on actual basic (above ₹15,000 ceiling)" />
+            <SwitchField
+              control={form.control}
+              name="pfOnActualBasic"
+              label="PF on actual basic (above ₹15,000 ceiling)"
+            />
             <SwitchField control={form.control} name="esiApplicable" label="ESI (when gross is ₹21,000 or less)" />
             <SelectField
               control={form.control}
               name="professionalTaxState"
               label="Professional tax state"
               placeholder="Not applicable"
-              options={states.map((state) => ({ value: state.stateCode, label: `${state.stateName} (${state.stateCode})` }))}
+              options={states.map((state) => ({
+                value: state.stateCode,
+                label: `${state.stateName} (${state.stateCode})`,
+              }))}
             />
           </FormGrid>
           {table(earnings, 'Earnings')}
@@ -256,9 +329,18 @@ function StructureForm({
             </Text>
             <Text>Basic: {formatInr(preview.basic)}</Text>
             {preview.deductions > 0 && <Text>Fixed deductions: {formatInr(preview.deductions)}</Text>}
-            <Caption1 className={styles.muted}>PF, ESI, professional tax and TDS are worked out by payroll every month.</Caption1>
+            <Caption1 className={styles.muted}>
+              PF, ESI, professional tax and TDS are worked out by payroll every month.
+            </Caption1>
           </div>
-          <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} placeholder="For example: annual increment 2026" />
+          <TextAreaField
+            control={form.control}
+            name="notes"
+            label="Notes"
+            rows={2}
+            maxLength={500}
+            placeholder="For example: annual increment 2026"
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={busy}>

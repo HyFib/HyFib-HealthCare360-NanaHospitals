@@ -60,9 +60,15 @@ function LabResults({ reportId }: { reportId: string }) {
     return <LoadingState label="Loading results…" />;
   }
   if (!report.data) {
-    return <Caption1 className={styles.muted}>The report could not be loaded here. Open it from the lab reports screen.</Caption1>;
+    return (
+      <Caption1 className={styles.muted}>
+        The report could not be loaded here. Open it from the lab reports screen.
+      </Caption1>
+    );
   }
-  const rows = report.data.sections.flatMap((section) => section.tests.flatMap((test) => test.results.map((result) => ({ test: test.name, result }))));
+  const rows = report.data.sections.flatMap((section) =>
+    section.tests.flatMap((test) => test.results.map((result) => ({ test: test.name, result }))),
+  );
   return (
     <Table size="small" aria-label="Results">
       <TableHeader>
@@ -115,7 +121,8 @@ function StudyReportNote({ kind, study }: { kind: 'Radiology' | 'Cardiology'; st
   }
   return (
     <Caption1 className={styles.muted}>
-      Open the full report to read the findings{kind === 'Radiology' ? ' and view the images' : ' and the device recordings'}.
+      Open the full report to read the findings
+      {kind === 'Radiology' ? ' and view the images' : ' and the device recordings'}.
     </Caption1>
   );
 }
@@ -124,7 +131,9 @@ function StudyReportNote({ kind, study }: { kind: 'Radiology' | 'Cardiology'; st
 export function ResultReviewDialog({ result, onClose }: { result: WorklistResult | null; onClose: () => void }) {
   return (
     <Dialog open={result !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 760 }}>{result && <ReviewBody key={result.id} result={result} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 760 }}>
+        {result && <ReviewBody key={result.id} result={result} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -140,8 +149,14 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
   const canAcknowledge = usePermission('clinical.emr.write');
   const [note, setNote] = useState('');
   // Radiology and cardiology screens open by study: resolve the report id as soon as the result is shown.
-  const radiologyStudy = useQuery({ ...radiologyQueries.reportStudy(result.reportId), enabled: result.kind === 'Radiology' && canReadRadiology });
-  const cardiologyStudy = useQuery({ ...cardiologyQueries.reportStudy(result.reportId), enabled: result.kind === 'Cardiology' && canReadCardiology });
+  const radiologyStudy = useQuery({
+    ...radiologyQueries.reportStudy(result.reportId),
+    enabled: result.kind === 'Radiology' && canReadRadiology,
+  });
+  const cardiologyStudy = useQuery({
+    ...cardiologyQueries.reportStudy(result.reportId),
+    enabled: result.kind === 'Cardiology' && canReadCardiology,
+  });
   const study =
     result.kind === 'Radiology' && canReadRadiology
       ? { kind: 'Radiology' as const, query: radiologyStudy }
@@ -192,7 +207,9 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         ) : study ? (
           <StudyReportNote kind={study.kind} study={study.query} />
         ) : (
-          <Caption1 className={styles.muted}>Open the patient's chart or the {result.kind.toLowerCase()} module to read the full report.</Caption1>
+          <Caption1 className={styles.muted}>
+            Open the patient's chart or the {result.kind.toLowerCase()} module to read the full report.
+          </Caption1>
         )}
         {canAcknowledge && (
           <Field label="Note (optional)" hint="For example: patient informed, treatment changed">
@@ -201,7 +218,10 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         )}
       </DialogContent>
       <DialogActions fluid>
-        <Button icon={<PersonRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: result.patientId } })}>
+        <Button
+          icon={<PersonRegular />}
+          onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: result.patientId } })}
+        >
           Open chart
         </Button>
         {result.kind === 'Laboratory' && canReadLab && (
@@ -216,7 +236,12 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         )}
         <Button onClick={onClose}>Close</Button>
         {canAcknowledge && (
-          <Button appearance="primary" icon={acknowledge.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />} disabled={acknowledge.isPending} onClick={() => acknowledge.mutate()}>
+          <Button
+            appearance="primary"
+            icon={acknowledge.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            disabled={acknowledge.isPending}
+            onClick={() => acknowledge.mutate()}
+          >
             Acknowledge
           </Button>
         )}

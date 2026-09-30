@@ -112,7 +112,11 @@ function WhatsAppInboxPage() {
                 value={search.keyword ?? ''}
                 onChange={(_, data) =>
                   void navigate({
-                    search: { keyword: WHATSAPP_KEYWORDS.includes(data.value as WhatsAppKeyword) ? (data.value as WhatsAppKeyword) : undefined },
+                    search: {
+                      keyword: WHATSAPP_KEYWORDS.includes(data.value as WhatsAppKeyword)
+                        ? (data.value as WhatsAppKeyword)
+                        : undefined,
+                    },
                   })
                 }
               >
@@ -140,7 +144,9 @@ function WhatsAppInboxPage() {
             {
               key: 'text',
               header: 'Message',
-              render: (row) => <span className={styles.preview}>{row.text ?? `(${humanize(row.messageType).toLowerCase()})`}</span>,
+              render: (row) => (
+                <span className={styles.preview}>{row.text ?? `(${humanize(row.messageType).toLowerCase()})`}</span>
+              ),
             },
             { key: 'keyword', header: 'Choice', width: 120, render: (row) => <KeywordBadge keyword={row.keyword} /> },
             { key: 'result', header: 'Result', width: 160, render: (row) => <ResultBadge row={row} /> },
@@ -180,7 +186,9 @@ function WhatsAppInboxPage() {
                       <Text>{keywordActionDisplay(open.keyword, open.keywordAction)?.detail}</Text>
                     </>
                   )}
-                  <pre className={styles.block}>{open.text ?? 'This message has no text (for example a photo or a location).'}</pre>
+                  <pre className={styles.block}>
+                    {open.text ?? 'This message has no text (for example a photo or a location).'}
+                  </pre>
                 </>
               )}
             </DialogContent>

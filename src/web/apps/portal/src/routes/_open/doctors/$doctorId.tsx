@@ -10,7 +10,13 @@ import {
   Select,
   tokens,
 } from '@fluentui/react-components';
-import { BuildingRegular, CalendarClockRegular, InfoRegular, LocalLanguageRegular, VideoRegular } from '@fluentui/react-icons';
+import {
+  BuildingRegular,
+  CalendarClockRegular,
+  InfoRegular,
+  LocalLanguageRegular,
+  VideoRegular,
+} from '@fluentui/react-icons';
 import { isApiError, useSession } from '@hc360/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router';
@@ -75,11 +81,23 @@ const useStyles = makeStyles({
   line: { color: tokens.colorNeutralForeground2, overflowWrap: 'anywhere' },
   meta: { display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorNeutralForeground2 },
   fees: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' },
-  fee: { display: 'flex', flexDirection: 'column', padding: '10px 12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground3 },
+  fee: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
   feeLabel: { color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase200 },
   feeValue: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   sectionTitle: { margin: 0, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
-  rules: { display: 'flex', gap: '8px', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, alignItems: 'flex-start' },
+  rules: {
+    display: 'flex',
+    gap: '8px',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    alignItems: 'flex-start',
+  },
   empty: { color: tokens.colorNeutralForeground2, margin: 0 },
   bar: {
     position: 'sticky',
@@ -122,7 +140,11 @@ function DoctorPage() {
 
   if (!isGuid(doctorId) || (doctor.isError && isApiError(doctor.error) && doctor.error.status === 404)) {
     return (
-      <PortalPage title={t('doctors.title')} back={<BackLink to="/doctors">{t('doctors.title')}</BackLink>} width="narrow">
+      <PortalPage
+        title={t('doctors.title')}
+        back={<BackLink to="/doctors">{t('doctors.title')}</BackLink>}
+        width="narrow"
+      >
         <Notice intent="warning">{t('doctors.profile.notFound')}</Notice>
       </PortalPage>
     );
@@ -165,13 +187,19 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
 
   const video = moving ? moving.isTelehealth : search.mode === 'video' && doctor.offersTelehealth;
   const branches = doctor.facilities;
-  const branchId = moving ? moving.facilityId : video ? undefined : (branches.find((b) => b.id === search.branch)?.id ?? branches[0]?.id);
+  const branchId = moving
+    ? moving.facilityId
+    : video
+      ? undefined
+      : (branches.find((b) => b.id === search.branch)?.id ?? branches[0]?.id);
   const branchName = branches.find((b) => b.id === branchId)?.name ?? null;
 
   const today = istDateOf(now);
   const windowDays = filters.data?.windowDays ?? 30;
   const lastDay = addDays(today, windowDays);
-  const [stripStart, setStripStart] = useState(() => (search.slot ? stripStartFor(istDateOf(search.slot), today) : today));
+  const [stripStart, setStripStart] = useState(() =>
+    search.slot ? stripStartFor(istDateOf(search.slot), today) : today,
+  );
   const start = daysBetween(today, stripStart) < 0 ? today : stripStart;
   const days = stripDays(start, lastDay);
   const from = days[0] ?? today;
@@ -228,19 +256,27 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
     } else if (signedIn) {
       setNoRecords(true);
     } else {
-      const back = router.buildLocation({ to: '/doctors/$doctorId', params: { doctorId: doctor.id }, search: { ...search, slot } }).href;
+      const back = router.buildLocation({
+        to: '/doctors/$doctorId',
+        params: { doctorId: doctor.id },
+        search: { ...search, slot },
+      }).href;
       void navigate({ to: '/sign-in', search: { redirect: safeRedirect(back) } });
     }
   };
 
-  const specialty = [doctor.specialtyName, doctor.departmentName].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  const specialty = [doctor.specialtyName, doctor.departmentName]
+    .filter((part, index, all) => part && all.indexOf(part) === index)
+    .join(' · ');
   const title = moving ? t('booking.reschedule.title') : doctor.name;
 
   return (
     <PortalPage
       title={title}
       documentTitle={title}
-      subtitle={moving ? t('booking.reschedule.current', { when: f.dateTime(moving.startsAt) }) : specialty || undefined}
+      subtitle={
+        moving ? t('booking.reschedule.current', { when: f.dateTime(moving.startsAt) }) : specialty || undefined
+      }
       back={
         moving ? (
           <BackLink to="/appointments/$appointmentId" params={{ appointmentId: moving.id }}>
@@ -251,7 +287,9 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
         )
       }
     >
-      {search.reschedule && reschedule.isError && <ErrorBlock error={reschedule.error} onRetry={() => void reschedule.refetch()} />}
+      {search.reschedule && reschedule.isError && (
+        <ErrorBlock error={reschedule.error} onRetry={() => void reschedule.refetch()} />
+      )}
       {moving && !moving.canReschedule && <Notice intent="warning">{t('booking.reschedule.notAllowed')}</Notice>}
 
       <section className={styles.card} aria-label={doctor.name}>
@@ -282,7 +320,9 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
               <span className={styles.feeValue}>{f.inr(doctor.feeNew, { whole: true })}</span>
             </div>
             <div className={styles.fee}>
-              <span className={styles.feeLabel}>{t('doctors.profile.feeFollowUp', { days: doctorProfile.followUpValidityDays })}</span>
+              <span className={styles.feeLabel}>
+                {t('doctors.profile.feeFollowUp', { days: doctorProfile.followUpValidityDays })}
+              </span>
               <span className={styles.feeValue}>{f.inr(doctor.feeFollowUp, { whole: true })}</span>
             </div>
           </div>
@@ -300,7 +340,10 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
             twoUp
             onChange={(value) => {
               setPickedSlot(null);
-              void navigate({ search: (prev) => ({ ...prev, mode: value === 'video' ? 'video' : undefined }), replace: true });
+              void navigate({
+                search: (prev) => ({ ...prev, mode: value === 'video' ? 'video' : undefined }),
+                replace: true,
+              });
             }}
             options={[
               { value: 'clinic', title: t('booking.mode.inPerson'), icon: <BuildingRegular /> },
@@ -368,7 +411,11 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
         ) : daySlots.length === 0 ? (
           <p className={styles.empty}>{t('booking.time.none')}</p>
         ) : (
-          <SlotPicker slots={daySlots} selected={selectedSlot?.startsAt ?? null} onSelect={(slot) => setPickedSlot(slot.startsAt)} />
+          <SlotPicker
+            slots={daySlots}
+            selected={selectedSlot?.startsAt ?? null}
+            onSelect={(slot) => setPickedSlot(slot.startsAt)}
+          />
         )}
 
         {filters.data && (
@@ -378,7 +425,12 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
           </p>
         )}
         {!moving && (
-          <Button className={styles.waitlist} appearance="secondary" icon={<CalendarClockRegular />} onClick={() => requireProfile(() => setWaitlistOpen(true))}>
+          <Button
+            className={styles.waitlist}
+            appearance="secondary"
+            icon={<CalendarClockRegular />}
+            onClick={() => requireProfile(() => setWaitlistOpen(true))}
+          >
             {t('waitlist.join')}
           </Button>
         )}
@@ -406,21 +458,40 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
       )}
 
       {selectedSlot && (
-        <div className={styles.bar} role="region" aria-label={t('booking.selected', { when: describeWhen(selectedSlot.startsAt, f, t, now) })}>
-          <span className={styles.barText}>{t('booking.selected', { when: describeWhen(selectedSlot.startsAt, f, t, now) })}</span>
+        <div
+          className={styles.bar}
+          role="region"
+          aria-label={t('booking.selected', { when: describeWhen(selectedSlot.startsAt, f, t, now) })}
+        >
+          <span className={styles.barText}>
+            {t('booking.selected', { when: describeWhen(selectedSlot.startsAt, f, t, now) })}
+          </span>
           {moving ? (
-            <Button appearance="primary" size="large" disabled={!moving.canReschedule} onClick={() => setConfirmMove(true)}>
+            <Button
+              appearance="primary"
+              size="large"
+              disabled={!moving.canReschedule}
+              onClick={() => setConfirmMove(true)}
+            >
               {t('booking.reschedule.confirm')}
             </Button>
           ) : (
-            <Button appearance="primary" size="large" onClick={() => requireProfile(() => setBookingOpen(true), selectedSlot.startsAt)}>
+            <Button
+              appearance="primary"
+              size="large"
+              onClick={() => requireProfile(() => setBookingOpen(true), selectedSlot.startsAt)}
+            >
               {active || signedIn ? t('common.continue') : t('booking.signInToBook')}
             </Button>
           )}
         </div>
       )}
 
-      {noRecords && <Notice intent="warning" title={t('shell.noProfiles.title')}>{t('shell.noProfiles.body')}</Notice>}
+      {noRecords && (
+        <Notice intent="warning" title={t('shell.noProfiles.title')}>
+          {t('shell.noProfiles.body')}
+        </Notice>
+      )}
       {!moving && active && (
         <BookingSheet
           open={bookingOpen}
@@ -432,7 +503,9 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
           onSlotsChanged={refreshSlots}
         />
       )}
-      {!moving && active && <WaitlistSheet open={waitlistOpen} onClose={() => setWaitlistOpen(false)} doctor={doctor} video={video} />}
+      {!moving && active && (
+        <WaitlistSheet open={waitlistOpen} onClose={() => setWaitlistOpen(false)} doctor={doctor} video={video} />
+      )}
       {moving && selectedSlot && (
         <ConfirmDialog
           open={confirmMove}
@@ -442,7 +515,10 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
           onConfirm={() => void moveAppointment()}
           onDismiss={() => setConfirmMove(false)}
         >
-          {t('booking.reschedule.confirmBody', { from: f.dateTime(moving.startsAt), to: f.dateTime(selectedSlot.startsAt) })}
+          {t('booking.reschedule.confirmBody', {
+            from: f.dateTime(moving.startsAt),
+            to: f.dateTime(selectedSlot.startsAt),
+          })}
         </ConfirmDialog>
       )}
     </PortalPage>

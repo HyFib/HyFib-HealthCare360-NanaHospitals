@@ -34,14 +34,31 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { useWorkingStore } from '@/modules/inventory/stores';
 import { useItemMaster } from '@/modules/pharmacy/counter';
-import { orderStatusLabel, purchaseApi, purchaseKeys, purchaseQueries, type PurchaseOrderDetail, type VendorListItem } from '@/modules/purchase/api';
-import { explainGstSplit, grnLineProblem, grnUnitEconomics, isShortExpiry, previewLine, previewTotals, tracksExpiry } from '@/modules/purchase/gstPreview';
+import {
+  orderStatusLabel,
+  purchaseApi,
+  purchaseKeys,
+  purchaseQueries,
+  type PurchaseOrderDetail,
+  type VendorListItem,
+} from '@/modules/purchase/api';
+import {
+  explainGstSplit,
+  grnLineProblem,
+  grnUnitEconomics,
+  isShortExpiry,
+  previewLine,
+  previewTotals,
+  tracksExpiry,
+} from '@/modules/purchase/gstPreview';
 import { GstSplitNote, PurchaseTotals } from '@/modules/purchase/GstSplitNote';
 import { useFacilityGstin } from '@/modules/purchase/hooks';
 import { VendorPicker } from '@/modules/purchase/VendorPicker';
 
 export const Route = createFileRoute('/_app/purchase/grns/new')({
-  validateSearch: (s: Record<string, unknown>): { orderId?: string } => ({ orderId: typeof s.orderId === 'string' && s.orderId ? s.orderId : undefined }),
+  validateSearch: (s: Record<string, unknown>): { orderId?: string } => ({
+    orderId: typeof s.orderId === 'string' && s.orderId ? s.orderId : undefined,
+  }),
   component: ReceiveGoodsPage,
 });
 
@@ -72,7 +89,10 @@ function ReceiveGoodsPage() {
   if (!canReceive) {
     return (
       <Page maxWidth={800}>
-        <EmptyState title="You cannot receive goods" description="Ask the store in charge or an administrator for access." />
+        <EmptyState
+          title="You cannot receive goods"
+          description="Ask the store in charge or an administrator for access."
+        />
       </Page>
     );
   }
@@ -162,7 +182,15 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
   const facilityGstin = useFacilityGstin();
   const today = todayIso();
   const [vendor, setVendor] = useState<PickedVendor | null>(
-    order ? { id: order.vendorId, name: order.vendorName, gstin: order.vendorGstin, licenceExpired: false, hasLicence: true } : null,
+    order
+      ? {
+          id: order.vendorId,
+          name: order.vendorName,
+          gstin: order.vendorGstin,
+          licenceExpired: false,
+          hasLicence: true,
+        }
+      : null,
   );
   const [storeId, setStoreId] = useState<string | null>(order?.storeId ?? null);
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -174,12 +202,19 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
   const [confirmPost, setConfirmPost] = useState(false);
   const effectiveStore = storeId ?? working.storeId;
   const master = useItemMaster(lines.map((l) => l.itemId));
-  const openOrders = useQuery({ ...purchaseQueries.orders({ vendorId: vendor?.id, storeId: effectiveStore ?? undefined }), enabled: Boolean(vendor && effectiveStore) && !order });
-  const receivableOrders = (openOrders.data?.items ?? []).filter((o) => o.status === 'Approved' || o.status === 'Sent' || o.status === 'PartiallyReceived');
+  const openOrders = useQuery({
+    ...purchaseQueries.orders({ vendorId: vendor?.id, storeId: effectiveStore ?? undefined }),
+    enabled: Boolean(vendor && effectiveStore) && !order,
+  });
+  const receivableOrders = (openOrders.data?.items ?? []).filter(
+    (o) => o.status === 'Approved' || o.status === 'Sent' || o.status === 'PartiallyReceived',
+  );
   const split = explainGstSplit(vendor?.gstin, facilityGstin ?? null);
 
   const draftValue: GrnDraft = { invoiceNumber, invoiceDate, receivedOn, remarks, lines };
-  const draft = useDraft<GrnDraft>(`grn-new:${order?.id ?? 'direct'}`, draftValue, { enabled: lines.some((l) => l.batchNumber || l.mrp) || invoiceNumber !== '' });
+  const draft = useDraft<GrnDraft>(`grn-new:${order?.id ?? 'direct'}`, draftValue, {
+    enabled: lines.some((l) => l.batchNumber || l.mrp) || invoiceNumber !== '',
+  });
   const [savedDraft, setSavedDraft] = useState(() => draft.restore());
 
   const typeOf = (line: GrnLine): ItemType => line.itemType ?? master.items.get(line.itemId)?.type ?? 'General';
@@ -212,9 +247,24 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
           acceptShortExpiry: line.acceptShortExpiry,
         },
         receivedOn || today,
-      ) ?? (line.pending !== null && quantity > line.pending ? `Only ${formatQty(line.pending)} is pending on the order.` : null);
+      ) ??
+      (line.pending !== null && quantity > line.pending
+        ? `Only ${formatQty(line.pending)} is pending on the order.`
+        : null);
     const economics = grnUnitEconomics(quantity, free, factorOf(line), priced.tax.taxable, mrp);
-    return { line, quantity, free, rate, mrp, discount, type, priced, problem, economics, shortExpiry: isShortExpiry(line.expiryDate || null, receivedOn || today) };
+    return {
+      line,
+      quantity,
+      free,
+      rate,
+      mrp,
+      discount,
+      type,
+      priced,
+      problem,
+      economics,
+      shortExpiry: isShortExpiry(line.expiryDate || null, receivedOn || today),
+    };
   });
   const totals = previewTotals(
     planned.map((p) => ({ quantity: p.quantity, rate: p.rate, discountPercent: p.discount, gstRate: gstOf(p.line) })),
@@ -233,7 +283,8 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
     ...planned.filter((p) => p.problem).map((p) => `${p.line.itemName}: ${p.problem}`),
   ];
 
-  const update = (key: string, patch: Partial<GrnLine>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const update = (key: string, patch: Partial<GrnLine>) =>
+    setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const addItem = (item: ItemLookup) =>
     setLines([
       ...lines,
@@ -292,7 +343,9 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
       void queryClient.invalidateQueries({ queryKey: ['inventory'] });
       notify.success(
         result.status === 'Posted' ? `GRN ${result.number} posted` : `GRN ${result.number} saved as draft`,
-        result.status === 'Posted' ? `${formatInr(result.netAmount)} of goods added to stock.` : 'Post it after checking the goods to add them to stock.',
+        result.status === 'Posted'
+          ? `${formatInr(result.netAmount)} of goods added to stock.`
+          : 'Post it after checking the goods to add them to stock.',
       );
       void navigate({ to: '/purchase/grns/$grnId', params: { grnId: result.id }, replace: true });
     },
@@ -304,12 +357,22 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
     <Page>
       <PageHeader
         title="Receive goods"
-        subtitle={order ? `Against purchase order ${order.number} (${orderStatusLabel[order.status]})` : 'Enter the vendor invoice line by line: batch, expiry, MRP and free goods'}
-        breadcrumbs={[{ label: 'Goods receipts', onClick: () => void navigate({ to: '/purchase/grns' }) }, { label: 'Receive' }]}
+        subtitle={
+          order
+            ? `Against purchase order ${order.number} (${orderStatusLabel[order.status]})`
+            : 'Enter the vendor invoice line by line: batch, expiry, MRP and free goods'
+        }
+        breadcrumbs={[
+          { label: 'Goods receipts', onClick: () => void navigate({ to: '/purchase/grns' }) },
+          { label: 'Receive' },
+        ]}
       />
       {savedDraft && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>An unfinished receipt from {formatRelative(new Date(savedDraft.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            An unfinished receipt from {formatRelative(new Date(savedDraft.savedAt).toISOString())} was found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button
               onClick={() => {
@@ -349,7 +412,14 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   required
                   autoFocus
                   onPick={(v: VendorListItem) =>
-                    setVendor({ id: v.id, name: v.name, code: v.code, gstin: v.gstin, licenceExpired: v.drugLicenseExpired, hasLicence: Boolean(v.drugLicenseNumber) })
+                    setVendor({
+                      id: v.id,
+                      name: v.name,
+                      code: v.code,
+                      gstin: v.gstin,
+                      licenceExpired: v.drugLicenseExpired,
+                      hasLicence: Boolean(v.drugLicenseNumber),
+                    })
                   }
                 />
               )}
@@ -358,9 +428,24 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   <Text weight="semibold">{order.storeName}</Text>
                 </Field>
               ) : (
-                <StorePicker stores={working.stores} value={effectiveStore} onChange={setStoreId} label="Receive into" required loading={working.loading} />
+                <StorePicker
+                  stores={working.stores}
+                  value={effectiveStore}
+                  onChange={setStoreId}
+                  label="Receive into"
+                  required
+                  loading={working.loading}
+                />
               )}
-              <Field label="Invoice number" required validationMessage={isApiError(serverError) && serverError.code === 'grn.duplicate_invoice' ? serverError.userMessage : undefined}>
+              <Field
+                label="Invoice number"
+                required
+                validationMessage={
+                  isApiError(serverError) && serverError.code === 'grn.duplicate_invoice'
+                    ? serverError.userMessage
+                    : undefined
+                }
+              >
                 <Input value={invoiceNumber} maxLength={40} onChange={(_, d) => setInvoiceNumber(d.value)} />
               </Field>
               <Field label="Invoice date">
@@ -370,7 +455,12 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                 <Input type="date" max={today} value={receivedOn} onChange={(_, d) => setReceivedOn(d.value)} />
               </Field>
               <Field label="Invoice total (as printed)" hint="To check the entry against the paper invoice">
-                <Input type="number" contentBefore="₹" value={invoiceTotal} onChange={(_, d) => setInvoiceTotal(d.value)} />
+                <Input
+                  type="number"
+                  contentBefore="₹"
+                  value={invoiceTotal}
+                  onChange={(_, d) => setInvoiceTotal(d.value)}
+                />
               </Field>
             </div>
             {!order && vendor && receivableOrders.length > 0 && (
@@ -378,12 +468,16 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                 <Field label="Against a purchase order" hint="Choosing an order fills in its pending items">
                   <Select
                     value=""
-                    onChange={(_, d) => d.value && void navigate({ to: '/purchase/grns/new', search: { orderId: d.value }, replace: true })}
+                    onChange={(_, d) =>
+                      d.value &&
+                      void navigate({ to: '/purchase/grns/new', search: { orderId: d.value }, replace: true })
+                    }
                   >
                     <option value="">Direct purchase (no order)</option>
                     {receivableOrders.map((o) => (
                       <option key={o.id} value={o.id}>
-                        {o.number} · {formatDateOnly(o.orderDate)} · {formatInr(o.netAmount)} · {orderStatusLabel[o.status]}
+                        {o.number} · {formatDateOnly(o.orderDate)} · {formatInr(o.netAmount)} ·{' '}
+                        {orderStatusLabel[o.status]}
                       </option>
                     ))}
                   </Select>
@@ -394,14 +488,18 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
               <MessageBar intent="error" style={{ marginTop: 12 }}>
                 <MessageBarBody>
                   <MessageBarTitle>Medicines cannot be received from this vendor</MessageBarTitle>
-                  {vendor.licenceExpired ? 'Their drug licence has expired.' : 'No drug licence is on record.'} Update the vendor first, or remove the medicines from this
-                  receipt.
+                  {vendor.licenceExpired ? 'Their drug licence has expired.' : 'No drug licence is on record.'} Update
+                  the vendor first, or remove the medicines from this receipt.
                 </MessageBarBody>
               </MessageBar>
             )}
           </Section>
 
-          <Section title="Items received" description="Quantities, free goods and rates per purchase unit. MRP as printed on one purchase unit (GST included)." flush>
+          <Section
+            title="Items received"
+            description="Quantities, free goods and rates per purchase unit. MRP as printed on one purchase unit (GST included)."
+            flush
+          >
             {!order && (
               <div style={{ padding: '0 16px 12px' }}>
                 <ItemPicker storeId={effectiveStore} onPick={addItem} label="Add item" showStock={false} />
@@ -411,8 +509,19 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
               ariaLabel="Items received"
               rows={planned}
               getRowId={(p) => p.line.key}
-              isFlagged={(p) => p.problem !== null && (p.line.batchNumber !== '' || p.line.mrp !== '' || p.line.expiryDate !== '')}
-              empty={<EmptyState title="No items yet" description={order ? 'Everything on this order has been received.' : 'Search above to add each line of the invoice.'} />}
+              isFlagged={(p) =>
+                p.problem !== null && (p.line.batchNumber !== '' || p.line.mrp !== '' || p.line.expiryDate !== '')
+              }
+              empty={
+                <EmptyState
+                  title="No items yet"
+                  description={
+                    order
+                      ? 'Everything on this order has been received.'
+                      : 'Search above to add each line of the invoice.'
+                  }
+                />
+              }
               columns={[
                 {
                   key: 'item',
@@ -422,7 +531,9 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                       <Text weight="semibold">{p.line.itemName}</Text>
                       <Caption1 block className={styles.muted}>
                         {p.line.purchaseUnit ?? master.items.get(p.line.itemId)?.purchaseUnit ?? ''}
-                        {factorOf(p.line) !== 1 ? ` of ${formatQty(factorOf(p.line), master.items.get(p.line.itemId)?.baseUnit)}` : ''}
+                        {factorOf(p.line) !== 1
+                          ? ` of ${formatQty(factorOf(p.line), master.items.get(p.line.itemId)?.baseUnit)}`
+                          : ''}
                         {p.line.pending !== null ? ` · ${formatQty(p.line.pending)} pending on the order` : ''}
                       </Caption1>
                       {p.problem && (p.line.batchNumber !== '' || p.line.mrp !== '' || p.line.expiryDate !== '') && (
@@ -447,7 +558,13 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                         onChange={(_, d) => update(p.line.key, { batchNumber: d.value.toUpperCase() })}
                       />
                       <Tooltip content="Expiry date" relationship="label">
-                        <Input className={styles.medium} type="date" aria-label={`Expiry of ${p.line.itemName}`} value={p.line.expiryDate} onChange={(_, d) => update(p.line.key, { expiryDate: d.value })} />
+                        <Input
+                          className={styles.medium}
+                          type="date"
+                          aria-label={`Expiry of ${p.line.itemName}`}
+                          value={p.line.expiryDate}
+                          onChange={(_, d) => update(p.line.key, { expiryDate: d.value })}
+                        />
                       </Tooltip>
                       <Tooltip content="Manufacturing date (optional)" relationship="label">
                         <Input
@@ -474,7 +591,14 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   header: 'Qty + free',
                   render: (p) => (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <Input className={styles.small} type="number" min={0} aria-label={`Quantity of ${p.line.itemName}`} value={p.line.quantity} onChange={(_, d) => update(p.line.key, { quantity: d.value })} />
+                      <Input
+                        className={styles.small}
+                        type="number"
+                        min={0}
+                        aria-label={`Quantity of ${p.line.itemName}`}
+                        value={p.line.quantity}
+                        onChange={(_, d) => update(p.line.key, { quantity: d.value })}
+                      />
                       <Input
                         className={styles.small}
                         type="number"
@@ -492,8 +616,25 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   header: 'Rate, MRP, disc.',
                   render: (p) => (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <Input className={styles.medium} type="number" min={0} contentBefore="₹" placeholder="Rate" aria-label={`Rate of ${p.line.itemName}`} value={p.line.rate} onChange={(_, d) => update(p.line.key, { rate: d.value })} />
-                      <Input className={styles.medium} type="number" min={0} contentBefore="MRP" aria-label={`MRP of ${p.line.itemName}`} value={p.line.mrp} onChange={(_, d) => update(p.line.key, { mrp: d.value })} />
+                      <Input
+                        className={styles.medium}
+                        type="number"
+                        min={0}
+                        contentBefore="₹"
+                        placeholder="Rate"
+                        aria-label={`Rate of ${p.line.itemName}`}
+                        value={p.line.rate}
+                        onChange={(_, d) => update(p.line.key, { rate: d.value })}
+                      />
+                      <Input
+                        className={styles.medium}
+                        type="number"
+                        min={0}
+                        contentBefore="MRP"
+                        aria-label={`MRP of ${p.line.itemName}`}
+                        value={p.line.mrp}
+                        onChange={(_, d) => update(p.line.key, { mrp: d.value })}
+                      />
                       <Input
                         className={styles.medium}
                         type="number"
@@ -514,8 +655,14 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   render: (p) => {
                     const itemRate = master.items.get(p.line.itemId)?.gstRate;
                     return (
-                      <Select aria-label={`GST rate of ${p.line.itemName}`} value={p.line.gstRate} onChange={(_, d) => update(p.line.key, { gstRate: d.value })}>
-                        <option value="">{itemRate === undefined ? 'Item rate' : `Item (${formatPercent(itemRate)})`}</option>
+                      <Select
+                        aria-label={`GST rate of ${p.line.itemName}`}
+                        value={p.line.gstRate}
+                        onChange={(_, d) => update(p.line.key, { gstRate: d.value })}
+                      >
+                        <option value="">
+                          {itemRate === undefined ? 'Item rate' : `Item (${formatPercent(itemRate)})`}
+                        </option>
                         {GST_RATES.map((r) => (
                           <option key={r} value={String(r)}>
                             {formatPercent(r)}
@@ -536,7 +683,9 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                         Taxable {formatInr(p.priced.tax.taxable)}
                       </Caption1>
                       <Caption1 block className={styles.muted}>
-                        {split.interState ? `IGST ${formatInr(p.priced.tax.igst)}` : `CGST ${formatInr(p.priced.tax.cgst)} · SGST ${formatInr(p.priced.tax.sgst)}`}
+                        {split.interState
+                          ? `IGST ${formatInr(p.priced.tax.igst)}`
+                          : `CGST ${formatInr(p.priced.tax.cgst)} · SGST ${formatInr(p.priced.tax.sgst)}`}
                       </Caption1>
                       {p.economics.baseQuantity > 0 && (
                         <Caption1 block className={styles.muted}>
@@ -550,14 +699,28 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
                   key: 'remove',
                   header: '',
                   width: 44,
-                  render: (p) => <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${p.line.itemName}`} onClick={() => setLines(lines.filter((l) => l.key !== p.line.key))} />,
+                  render: (p) => (
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label={`Remove ${p.line.itemName}`}
+                      onClick={() => setLines(lines.filter((l) => l.key !== p.line.key))}
+                    />
+                  ),
                 },
               ]}
             />
           </Section>
 
           <Section title="Remarks">
-            <Textarea value={remarks} rows={2} maxLength={1000} onChange={(_, d) => setRemarks(d.value)} style={{ width: '100%' }} aria-label="Remarks" />
+            <Textarea
+              value={remarks}
+              rows={2}
+              maxLength={1000}
+              onChange={(_, d) => setRemarks(d.value)}
+              style={{ width: '100%' }}
+              aria-label="Remarks"
+            />
           </Section>
         </div>
 
@@ -568,7 +731,8 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
             {difference !== null && Math.abs(difference) >= 1 && (
               <MessageBar intent="warning" style={{ marginTop: 8 }}>
                 <MessageBarBody>
-                  Differs from the printed total by {formatInr(Math.abs(difference))}. Check the rates, discounts, free goods and GST.
+                  Differs from the printed total by {formatInr(Math.abs(difference))}. Check the rates, discounts, free
+                  goods and GST.
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -598,10 +762,16 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
               >
                 Receive into stock
               </Button>
-              <Button icon={<SaveRegular />} disabled={blockers.length > 0 || create.isPending} onClick={() => create.mutate(false)}>
+              <Button
+                icon={<SaveRegular />}
+                disabled={blockers.length > 0 || create.isPending}
+                onClick={() => create.mutate(false)}
+              >
                 Save as draft
               </Button>
-              <Caption1 className={styles.muted}>A draft keeps the entry for checking; stock changes only when it is posted.</Caption1>
+              <Caption1 className={styles.muted}>
+                A draft keeps the entry for checking; stock changes only when it is posted.
+              </Caption1>
             </div>
           </Section>
         </aside>
@@ -614,8 +784,9 @@ function ReceiveForm({ order }: { order: PurchaseOrderDetail | null }) {
         onConfirm={() => create.mutate(true)}
         onCancel={() => setConfirmPost(false)}
       >
-        {lines.length} line{lines.length === 1 ? '' : 's'} worth {formatInr(totals.net)} are added to {order?.storeName ?? working.stores.find((s) => s.id === effectiveStore)?.name ?? 'the store'} with
-        their batch, expiry and MRP. A posted receipt cannot be edited; mistakes are corrected with a stock adjustment.
+        {lines.length} line{lines.length === 1 ? '' : 's'} worth {formatInr(totals.net)} are added to{' '}
+        {order?.storeName ?? working.stores.find((s) => s.id === effectiveStore)?.name ?? 'the store'} with their batch,
+        expiry and MRP. A posted receipt cannot be edited; mistakes are corrected with a stock adjustment.
       </ConfirmDialog>
     </Page>
   );

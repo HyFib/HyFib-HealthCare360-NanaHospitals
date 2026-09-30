@@ -19,14 +19,29 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, CheckmarkRegular, EditRegular, FoodRegular, MoreHorizontalRegular, StopRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  CheckmarkRegular,
+  EditRegular,
+  FoodRegular,
+  MoreHorizontalRegular,
+  StopRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { DIET_SOURCE_LABEL, dietaryApi, dietaryKeys, dietaryQueries, type DietOrderDto, type DietOrderStatus } from '@/modules/dietary/api';
+import {
+  DIET_SOURCE_LABEL,
+  dietaryApi,
+  dietaryKeys,
+  dietaryQueries,
+  type DietOrderDto,
+  type DietOrderStatus,
+} from '@/modules/dietary/api';
 import { DietOrderDialog, type DietAdmission } from '@/modules/dietary/DietOrderDialog';
 import { describeSlots, PREFERENCE_SHORT } from '@/modules/dietary/rules';
 import { AdmissionPicker, type PickedAdmission } from '@/modules/inpatient/AdmissionPicker';
@@ -61,12 +76,15 @@ function DietOrdersPage() {
   const canManage = usePermission('dietary.orders.manage');
   const canPickAdmission = usePermission('inpatient.admissions.read');
   const wards = useQuery({ ...inpatientQueries.wards(), enabled: canPickAdmission });
-  const orders = useQuery(dietaryQueries.orders({ status: search.status, wardId: search.wardId, needsReview: search.review }));
+  const orders = useQuery(
+    dietaryQueries.orders({ status: search.status, wardId: search.wardId, needsReview: search.review }),
+  );
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<PickedAdmission | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
   const [stopping, setStopping] = useState<DietOrderDto | null>(null);
-  const set = (patch: Partial<DietSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<DietSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: dietaryKeys.all });
   const review = useMutation({
@@ -98,7 +116,11 @@ function DietOrdersPage() {
       <PageHeader
         title="Diet orders"
         icon={<FoodRegular />}
-        subtitle={search.review ? 'Orders created from clinical orders that need a dietitian’s review' : 'Diets of admitted patients, ward by ward'}
+        subtitle={
+          search.review
+            ? 'Orders created from clinical orders that need a dietitian’s review'
+            : 'Diets of admitted patients, ward by ward'
+        }
         actions={
           canManage &&
           canPickAdmission && (
@@ -124,7 +146,10 @@ function DietOrdersPage() {
               </Field>
             )}
             <Field label="Status">
-              <Select value={search.status ?? 'Active'} onChange={(_, d) => set({ status: d.value === 'Active' ? undefined : (d.value as DietOrderStatus) })}>
+              <Select
+                value={search.status ?? 'Active'}
+                onChange={(_, d) => set({ status: d.value === 'Active' ? undefined : (d.value as DietOrderStatus) })}
+              >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -132,7 +157,11 @@ function DietOrdersPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(search.review)} onChange={(_, d) => set({ review: d.checked || undefined })} label={`Needs review${!search.review && reviewCount ? ` (${reviewCount})` : ''}`} />
+            <Switch
+              checked={Boolean(search.review)}
+              onChange={(_, d) => set({ review: d.checked || undefined })}
+              label={`Needs review${!search.review && reviewCount ? ` (${reviewCount})` : ''}`}
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -142,7 +171,16 @@ function DietOrdersPage() {
           error={orders.error}
           onRetry={() => void orders.refetch()}
           getRowId={(o) => o.id}
-          onRowClick={canPickAdmission ? (o) => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: o.admissionId }, search: { tab: 'diet' } }) : undefined}
+          onRowClick={
+            canPickAdmission
+              ? (o) =>
+                  void navigate({
+                    to: '/inpatient/admissions/$admissionId',
+                    params: { admissionId: o.admissionId },
+                    search: { tab: 'diet' },
+                  })
+              : undefined
+          }
           columns={[
             {
               key: 'patient',
@@ -188,7 +226,12 @@ function DietOrdersPage() {
               ),
             },
             { key: 'from', header: 'Since', width: 120, priority: 'low', render: (o) => formatDateOnly(o.startDate) },
-            { key: 'by', header: 'Ordered by', priority: 'low', render: (o) => `${o.orderedByName ?? '—'} (${DIET_SOURCE_LABEL[o.source]})` },
+            {
+              key: 'by',
+              header: 'Ordered by',
+              priority: 'low',
+              render: (o) => `${o.orderedByName ?? '—'} (${DIET_SOURCE_LABEL[o.source]})`,
+            },
           ]}
           rowActions={
             canManage
@@ -196,7 +239,12 @@ function DietOrdersPage() {
                   o.status === 'Active' ? (
                     <Menu>
                       <MenuTrigger disableButtonEnhancement>
-                        <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${o.patientName ?? 'patient'}`} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<MoreHorizontalRegular />}
+                          aria-label={`Actions for ${o.patientName ?? 'patient'}`}
+                        />
                       </MenuTrigger>
                       <MenuPopover>
                         <MenuList>
@@ -205,7 +253,10 @@ function DietOrdersPage() {
                               Mark reviewed
                             </MenuItem>
                           )}
-                          <MenuItem icon={<EditRegular />} onClick={() => setEditing({ admission: admissionOf(o), current: o })}>
+                          <MenuItem
+                            icon={<EditRegular />}
+                            onClick={() => setEditing({ admission: admissionOf(o), current: o })}
+                          >
                             Change diet
                           </MenuItem>
                           <MenuItem icon={<StopRegular />} onClick={() => setStopping(o)}>
@@ -237,9 +288,17 @@ function DietOrdersPage() {
                 disabled={!picked}
                 onClick={() => {
                   if (picked) {
-                    const current = (orders.data ?? []).find((o) => o.admissionId === picked.admissionId && o.status === 'Active') ?? null;
+                    const current =
+                      (orders.data ?? []).find((o) => o.admissionId === picked.admissionId && o.status === 'Active') ??
+                      null;
                     setEditing({
-                      admission: { admissionId: picked.admissionId, patientName: picked.patientName, place: [picked.wardName, picked.bedLabel ? `bed ${picked.bedLabel}` : null].filter(Boolean).join(', ') },
+                      admission: {
+                        admissionId: picked.admissionId,
+                        patientName: picked.patientName,
+                        place: [picked.wardName, picked.bedLabel ? `bed ${picked.bedLabel}` : null]
+                          .filter(Boolean)
+                          .join(', '),
+                      },
                       current,
                     });
                     setPicking(false);
@@ -254,7 +313,9 @@ function DietOrdersPage() {
         </DialogSurface>
       </Dialog>
 
-      {editing && <DietOrderDialog admission={editing.admission} current={editing.current} onClose={() => setEditing(null)} />}
+      {editing && (
+        <DietOrderDialog admission={editing.admission} current={editing.current} onClose={() => setEditing(null)} />
+      )}
       <ReasonDialog
         open={stopping !== null}
         title={stopping ? `Stop the diet of ${stopping.patientName ?? 'the patient'}?` : 'Stop diet?'}

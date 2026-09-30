@@ -1,8 +1,30 @@
-import { Button, Caption1, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, OverlayDrawer, Spinner, Switch, Text } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  OverlayDrawer,
+  Spinner,
+  Switch,
+  Text,
+} from '@fluentui/react-components';
 import { AddRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, DataTable, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -40,7 +62,12 @@ function StoresPage() {
           )
         }
       />
-      <Section flush actions={<Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show inactive" />}>
+      <Section
+        flush
+        actions={
+          <Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show inactive" />
+        }
+      >
         <DataTable<StoreDto>
           ariaLabel="Stores"
           rows={stores.data}
@@ -65,12 +92,26 @@ function StoresPage() {
             { key: 'type', header: 'Type', render: (s) => storeTypeLabel[s.type] },
             { key: 'dept', header: 'Department', priority: 'low', render: (s) => s.departmentName ?? '—' },
             { key: 'incharge', header: 'In charge', priority: 'low', render: (s) => s.inChargeName ?? '—' },
-            { key: 'status', header: 'Status', width: 110, render: (s) => <StatusBadge status={s.isActive ? 'Active' : 'Inactive'} tone={s.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (s) => (
+                <StatusBadge
+                  status={s.isActive ? 'Active' : 'Inactive'}
+                  tone={s.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           rowActions={
             canSeeStock
               ? (s) => (
-                  <Button size="small" appearance="subtle" onClick={() => void navigate({ to: '/inventory/stock', search: { storeId: s.id } })}>
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => void navigate({ to: '/inventory/stock', search: { storeId: s.id } })}
+                  >
                     Stock
                   </Button>
                 )
@@ -147,23 +188,54 @@ function StoreDrawer({ store, onClose }: { store: StoreDto | null; onClose: () =
     <OverlayDrawer open position="end" size="small" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {store ? store.name : 'Add store'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} />
-            <TextField control={form.control} name="name" label="Name" required maxLength={100} hint="e.g. ICU sub-store" />
-            <SelectField control={form.control} name="type" label="Type" options={STORE_TYPES.map((t) => ({ value: t, label: storeTypeLabel[t] }))} hint="Pharmacy stores can sell and dispense." />
-            <SelectField control={form.control} name="departmentId" label="Department" placeholder="—" options={toOptions(departments.data)} />
+            <TextField
+              control={form.control}
+              name="name"
+              label="Name"
+              required
+              maxLength={100}
+              hint="e.g. ICU sub-store"
+            />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Type"
+              options={STORE_TYPES.map((t) => ({ value: t, label: storeTypeLabel[t] }))}
+              hint="Pharmacy stores can sell and dispense."
+            />
+            <SelectField
+              control={form.control}
+              name="departmentId"
+              label="Department"
+              placeholder="—"
+              options={toOptions(departments.data)}
+            />
             <TextField control={form.control} name="location" label="Location" hint="Building, floor or room" />
-            <SwitchField control={form.control} name="isActive" label="Active" hint="A store that still holds stock cannot be deactivated." />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Active"
+              hint="A store that still holds stock cannot be deactivated."
+            />
             {store?.inChargeName && <Caption1>In charge: {store.inChargeName}</Caption1>}
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Save
           </Button>
           <Button onClick={onClose}>Cancel</Button>

@@ -20,7 +20,9 @@ import { PREFERRED_SESSION } from '@/modules/appointments/labels';
 import { useActiveProfile } from '@/shell/profileContext';
 
 export const Route = createFileRoute('/_auth/appointments/')({
-  validateSearch: (search: Record<string, unknown>): { tab?: 'past' } => ({ tab: search.tab === 'past' ? 'past' : undefined }),
+  validateSearch: (search: Record<string, unknown>): { tab?: 'past' } => ({
+    tab: search.tab === 'past' ? 'past' : undefined,
+  }),
   component: AppointmentsPage,
 });
 
@@ -55,14 +57,21 @@ function AppointmentsPage() {
       title={t('appointments.title')}
       subtitle={t('appointments.subtitle')}
       actions={
-        <Button appearance="primary" size="large" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/doctors' })}>
+        <Button
+          appearance="primary"
+          size="large"
+          icon={<CalendarAddRegular />}
+          onClick={() => void navigate({ to: '/doctors' })}
+        >
           {t('appointments.book')}
         </Button>
       }
     >
       <TabList
         selectedValue={scope}
-        onTabSelect={(_, data) => void navigate({ search: { tab: data.value === 'past' ? 'past' : undefined }, replace: true })}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { tab: data.value === 'past' ? 'past' : undefined }, replace: true })
+        }
         aria-label={t('appointments.tabs')}
         size="large"
       >
@@ -150,15 +159,24 @@ function Waitlist() {
                 session: t(PREFERRED_SESSION[entry.preferredSession]),
               })}
               chevron={false}
-              trailing={entry.isTelehealth ? <StatusPill tone="brand">{t('appointment.mode.video')}</StatusPill> : undefined}
+              trailing={
+                entry.isTelehealth ? <StatusPill tone="brand">{t('appointment.mode.video')}</StatusPill> : undefined
+              }
             />
           </div>
           {entry.status === 'Offered' && entry.offeredSlotStartsAt && (
-            <StatusPill tone="success">{t('appointments.waitlist.offered', { when: f.dateTime(entry.offeredSlotStartsAt) })}</StatusPill>
+            <StatusPill tone="success">
+              {t('appointments.waitlist.offered', { when: f.dateTime(entry.offeredSlotStartsAt) })}
+            </StatusPill>
           )}
           <div className={styles.waitActions}>
             {entry.status === 'Offered' && (
-              <ButtonLink appearance="primary" to="/doctors/$doctorId" params={{ doctorId: entry.practitionerId }} search={entry.isTelehealth ? { mode: 'video' } : {}}>
+              <ButtonLink
+                appearance="primary"
+                to="/doctors/$doctorId"
+                params={{ doctorId: entry.practitionerId }}
+                search={entry.isTelehealth ? { mode: 'video' } : {}}
+              >
                 {t('appointments.waitlist.book')}
               </ButtonLink>
             )}

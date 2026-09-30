@@ -40,14 +40,25 @@ const useStyles = makeStyles({
   },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
   packages: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  packageOption: { padding: '8px 10px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}` },
+  packageOption: {
+    padding: '8px 10px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   items: { margin: '4px 0 0', paddingLeft: '18px' },
 });
 
 function audience(p: PackageDto): string {
   const who = p.gender === 'Male' ? 'Men' : p.gender === 'Female' ? 'Women' : 'Everyone';
-  const age = p.minAgeYears !== null && p.maxAgeYears !== null ? `${p.minAgeYears}–${p.maxAgeYears} years` : p.minAgeYears !== null ? `${p.minAgeYears}+ years` : p.maxAgeYears !== null ? `up to ${p.maxAgeYears} years` : '';
+  const age =
+    p.minAgeYears !== null && p.maxAgeYears !== null
+      ? `${p.minAgeYears}–${p.maxAgeYears} years`
+      : p.minAgeYears !== null
+        ? `${p.minAgeYears}+ years`
+        : p.maxAgeYears !== null
+          ? `up to ${p.maxAgeYears} years`
+          : '';
   return [who, age].filter(Boolean).join(', ');
 }
 
@@ -65,19 +76,33 @@ function BookCheckupPage() {
   const [checkInNow, setCheckInNow] = useState(false);
   const [problem, setProblem] = useState<Wording | null>(null);
   const packages = useQuery(checkupQueries.packages());
-  const eligibility = useQuery({ ...checkupQueries.eligibility(packageId, patient?.id ?? ''), enabled: Boolean(packageId && patient) });
+  const eligibility = useQuery({
+    ...checkupQueries.eligibility(packageId, patient?.id ?? ''),
+    enabled: Boolean(packageId && patient),
+  });
   const selected = packages.data?.find((p) => p.id === packageId);
   const latest = addDaysIso(today, 180);
   const dateValid = date >= today && date <= latest;
 
   const book = useMutation({
     mutationFn: async () => {
-      const booking = await checkupApi.book({ patientId: patient?.id ?? '', packageId, scheduledDate: date, visitId: null, notes: notes.trim() || null });
+      const booking = await checkupApi.book({
+        patientId: patient?.id ?? '',
+        packageId,
+        scheduledDate: date,
+        visitId: null,
+        notes: notes.trim() || null,
+      });
       if (checkInNow && date === today) {
         try {
           return { booking: await checkupApi.checkIn(booking.id, null), checkInProblem: null };
         } catch (error) {
-          return { booking, checkInProblem: isApiError(error) ? checkupProblem(error, 'check-in') : { title: 'Booked, but not checked in', message: 'Check the patient in from the day view.' } };
+          return {
+            booking,
+            checkInProblem: isApiError(error)
+              ? checkupProblem(error, 'check-in')
+              : { title: 'Booked, but not checked in', message: 'Check the patient in from the day view.' },
+          };
         }
       }
       return { booking, checkInProblem: null };
@@ -85,9 +110,17 @@ function BookCheckupPage() {
     onSuccess: ({ booking, checkInProblem }) => {
       void queryClient.invalidateQueries({ queryKey: checkupKeys.all });
       if (checkInProblem) {
-        notify.warning(`Booked ${booking.bookingNumber}, not checked in`, `${checkInProblem.title}. ${checkInProblem.message}`);
+        notify.warning(
+          `Booked ${booking.bookingNumber}, not checked in`,
+          `${checkInProblem.title}. ${checkInProblem.message}`,
+        );
       } else {
-        notify.success(`Booked ${booking.bookingNumber}`, booking.status === 'CheckedIn' ? 'Checked in; the package fee is on the bill.' : `For ${date === today ? 'today' : date}.`);
+        notify.success(
+          `Booked ${booking.bookingNumber}`,
+          booking.status === 'CheckedIn'
+            ? 'Checked in; the package fee is on the bill.'
+            : `For ${date === today ? 'today' : date}.`,
+        );
       }
       void navigate({ to: '/health-checkups/bookings/$bookingId', params: { bookingId: booking.id } });
     },
@@ -107,21 +140,37 @@ function BookCheckupPage() {
     <Page maxWidth={1200}>
       <PageHeader
         title="Book health check-up"
-        breadcrumbs={[{ label: 'Health check-ups', onClick: () => void navigate({ to: '/health-checkups' }) }, { label: 'Book' }]}
+        breadcrumbs={[
+          { label: 'Health check-ups', onClick: () => void navigate({ to: '/health-checkups' }) },
+          { label: 'Book' },
+        ]}
         subtitle="The day's stations and the tests are planned from the package; tests are covered by the package price."
       />
       <div className={styles.layout}>
         <div className={styles.stack}>
           <Section title="Patient">
-            <PatientPicker value={patient} onChange={setPatient} required hint="Register new patients first under Patients › Register patient." />
+            <PatientPicker
+              value={patient}
+              onChange={setPatient}
+              required
+              hint="Register new patients first under Patients › Register patient."
+            />
           </Section>
           <Section title="Package">
             {packages.isLoading ? (
               <LoadingState />
             ) : (packages.data ?? []).length === 0 ? (
-              <EmptyState title="No packages offered" description="Create packages under Health check-ups › Packages." />
+              <EmptyState
+                title="No packages offered"
+                description="Create packages under Health check-ups › Packages."
+              />
             ) : (
-              <RadioGroup value={packageId} onChange={(_, d) => setPackageId(d.value)} aria-label="Package" className={styles.packages}>
+              <RadioGroup
+                value={packageId}
+                onChange={(_, d) => setPackageId(d.value)}
+                aria-label="Package"
+                className={styles.packages}
+              >
                 {(packages.data ?? []).map((p) => (
                   <div key={p.id} className={styles.packageOption}>
                     <Radio
@@ -143,12 +192,29 @@ function BookCheckupPage() {
           </Section>
           <Section title="Date and notes">
             <div className={styles.stack}>
-              <Field label="Check-up date" required validationState={dateValid ? 'none' : 'error'} validationMessage={dateValid ? undefined : 'Choose a date from today up to six months ahead.'}>
+              <Field
+                label="Check-up date"
+                required
+                validationState={dateValid ? 'none' : 'error'}
+                validationMessage={dateValid ? undefined : 'Choose a date from today up to six months ahead.'}
+              >
                 <Input type="date" value={date} min={today} max={latest} onChange={(_, d) => setDate(d.value)} />
               </Field>
-              {date === today && <Switch checked={checkInNow} onChange={(_, d) => setCheckInNow(d.checked)} label="The patient is here now: check in after booking (adds the package fee to the bill)" />}
+              {date === today && (
+                <Switch
+                  checked={checkInNow}
+                  onChange={(_, d) => setCheckInNow(d.checked)}
+                  label="The patient is here now: check in after booking (adds the package fee to the bill)"
+                />
+              )}
               <Field label="Notes">
-                <Textarea value={notes} onChange={(_, d) => setNotes(d.value.slice(0, 1000))} rows={2} resize="vertical" placeholder="e.g. fasting since 10 pm, wheelchair needed" />
+                <Textarea
+                  value={notes}
+                  onChange={(_, d) => setNotes(d.value.slice(0, 1000))}
+                  rows={2}
+                  resize="vertical"
+                  placeholder="e.g. fasting since 10 pm, wheelchair needed"
+                />
               </Field>
             </div>
           </Section>
@@ -189,7 +255,10 @@ function BookCheckupPage() {
                 )}
                 {!selected.serviceItemId && (
                   <MessageBar intent="warning">
-                    <MessageBarBody>This package has no billing item yet, so check-in will be refused until an administrator saves the package.</MessageBarBody>
+                    <MessageBarBody>
+                      This package has no billing item yet, so check-in will be refused until an administrator saves the
+                      package.
+                    </MessageBarBody>
                   </MessageBar>
                 )}
               </>

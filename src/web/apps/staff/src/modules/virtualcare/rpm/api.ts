@@ -2,10 +2,26 @@ import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-export const READING_TYPES = ['SystolicBp', 'DiastolicBp', 'HeartRate', 'SpO2', 'Glucose', 'Weight', 'Temperature', 'EcgRhythm'] as const;
+export const READING_TYPES = [
+  'SystolicBp',
+  'DiastolicBp',
+  'HeartRate',
+  'SpO2',
+  'Glucose',
+  'Weight',
+  'Temperature',
+  'EcgRhythm',
+] as const;
 export type RpmReadingType = (typeof READING_TYPES)[number];
 
-export const DEVICE_TYPES = ['BpMonitor', 'Glucometer', 'PulseOximeter', 'WeightScale', 'Thermometer', 'EcgPatch'] as const;
+export const DEVICE_TYPES = [
+  'BpMonitor',
+  'Glucometer',
+  'PulseOximeter',
+  'WeightScale',
+  'Thermometer',
+  'EcgPatch',
+] as const;
 export type RpmDeviceType = (typeof DEVICE_TYPES)[number];
 
 export const PROGRAM_KINDS = ['Hypertension', 'Diabetes', 'Cardiac', 'PostDischarge', 'Custom'] as const;
@@ -310,7 +326,10 @@ export const rpmQueries = {
     queryOptions({
       queryKey: ['rpm', 'enrollments', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<RpmEnrollmentListItem>>(`${BASE}/enrollments`, { query: { ...filters, pageSize: filters.pageSize ?? 25 }, signal }),
+        api.get<PagedResult<RpmEnrollmentListItem>>(`${BASE}/enrollments`, {
+          query: { ...filters, pageSize: filters.pageSize ?? 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: POLL_MS,
     }),
@@ -322,21 +341,29 @@ export const rpmQueries = {
   readings: (id: string, params: { type?: RpmReadingType; from?: string; to?: string; page?: number }) =>
     queryOptions({
       queryKey: ['rpm', 'readings', id, params],
-      queryFn: ({ signal }) => api.get<PagedResult<RpmReadingDto>>(`${BASE}/enrollments/${id}/readings`, { query: { ...params, pageSize: 20 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RpmReadingDto>>(`${BASE}/enrollments/${id}/readings`, {
+          query: { ...params, pageSize: 20 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   trends: (id: string, params: { from: string; to: string; types?: RpmReadingType[] }) =>
     queryOptions({
       queryKey: ['rpm', 'trends', id, params],
       queryFn: ({ signal }) =>
-        api.get<RpmTrend[]>(`${BASE}/enrollments/${id}/trends`, { query: { from: params.from, to: params.to, types: params.types?.join(',') }, signal }),
+        api.get<RpmTrend[]>(`${BASE}/enrollments/${id}/trends`, {
+          query: { from: params.from, to: params.to, types: params.types?.join(',') },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: POLL_MS,
     }),
   adherence: (id: string, days = 30) =>
     queryOptions({
       queryKey: ['rpm', 'adherence', id, days],
-      queryFn: ({ signal }) => api.get<RpmAdherenceDto>(`${BASE}/enrollments/${id}/adherence`, { query: { days }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<RpmAdherenceDto>(`${BASE}/enrollments/${id}/adherence`, { query: { days }, signal }),
     }),
   devices: (params: { enrollmentId?: string; activeOnly?: boolean; unassigned?: boolean }) =>
     queryOptions({
@@ -346,7 +373,11 @@ export const rpmQueries = {
   alerts: (filters: AlertFilters) =>
     queryOptions({
       queryKey: [...rpmKeys.alerts, filters],
-      queryFn: ({ signal }) => api.get<PagedResult<RpmAlertDto>>(`${BASE}/alerts`, { query: { ...filters, pageSize: filters.pageSize ?? 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RpmAlertDto>>(`${BASE}/alerts`, {
+          query: { ...filters, pageSize: filters.pageSize ?? 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: POLL_MS,
     }),
@@ -358,13 +389,17 @@ export const rpmApi = {
   saveProgram: (id: string | null, request: SaveRpmProgramRequest) =>
     id ? api.put<void>(`${BASE}/programs/${id}`, request) : api.post<{ id: string }>(`${BASE}/programs`, request),
   enroll: (request: EnrollPatientRequest) => api.post<{ id: string }>(`${BASE}/enrollments`, request),
-  updateEnrollment: (id: string, request: UpdateEnrollmentRequest) => api.put<void>(`${BASE}/enrollments/${id}`, request),
+  updateEnrollment: (id: string, request: UpdateEnrollmentRequest) =>
+    api.put<void>(`${BASE}/enrollments/${id}`, request),
   deleteEnrollment: (id: string) => api.delete<void>(`${BASE}/enrollments/${id}`),
-  setThresholds: (id: string, thresholds: ThresholdInput[], version: number) => api.put<void>(`${BASE}/enrollments/${id}/thresholds`, { thresholds, version }),
-  recordReadings: (id: string, readings: ManualReading[]) => api.post<IngestResult>(`${BASE}/enrollments/${id}/readings`, { readings }),
+  setThresholds: (id: string, thresholds: ThresholdInput[], version: number) =>
+    api.put<void>(`${BASE}/enrollments/${id}/thresholds`, { thresholds, version }),
+  recordReadings: (id: string, readings: ManualReading[]) =>
+    api.post<IngestResult>(`${BASE}/enrollments/${id}/readings`, { readings }),
   registerDevice: (request: RegisterDeviceRequest) => api.post<DeviceKeyIssued>(`${BASE}/devices`, request),
   rotateKey: (id: string) => api.post<DeviceKeyIssued>(`${BASE}/devices/${id}/rotate-key`),
-  assignDevice: (id: string, enrollmentId: string | null) => api.post<void>(`${BASE}/devices/${id}/assign`, { enrollmentId }),
+  assignDevice: (id: string, enrollmentId: string | null) =>
+    api.post<void>(`${BASE}/devices/${id}/assign`, { enrollmentId }),
   deactivateDevice: (id: string) => api.post<void>(`${BASE}/devices/${id}/deactivate`),
   acknowledgeAlert: (id: string, notes: string | null) => api.post<void>(`${BASE}/alerts/${id}/acknowledge`, { notes }),
   resolveAlert: (id: string, notes: string | null) => api.post<void>(`${BASE}/alerts/${id}/resolve`, { notes }),

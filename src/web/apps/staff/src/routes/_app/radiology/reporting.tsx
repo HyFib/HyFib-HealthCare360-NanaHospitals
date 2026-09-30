@@ -16,7 +16,10 @@ interface ReportingSearch {
 }
 
 export const Route = createFileRoute('/_app/radiology/reporting')({
-  validateSearch: (s: Record<string, unknown>): ReportingSearch => ({ modality: searchOneOf(s.modality, MODALITIES), page: searchPage(s.page) }),
+  validateSearch: (s: Record<string, unknown>): ReportingSearch => ({
+    modality: searchOneOf(s.modality, MODALITIES),
+    page: searchPage(s.page),
+  }),
   component: ReportingWorklistPage,
 });
 
@@ -43,9 +46,18 @@ function ReportingWorklistPage() {
     <Page>
       <PageHeader
         title="Reporting worklist"
-        subtitle={worklist.data ? `${worklist.data.totalCount} ${worklist.data.totalCount === 1 ? 'study' : 'studies'} waiting. Urgent AI findings and STAT studies first.` : 'Studies waiting for a report'}
+        subtitle={
+          worklist.data
+            ? `${worklist.data.totalCount} ${worklist.data.totalCount === 1 ? 'study' : 'studies'} waiting. Urgent AI findings and STAT studies first.`
+            : 'Studies waiting for a report'
+        }
       />
-      <TabList selectedValue={search.modality ?? 'all'} onTabSelect={(_, data) => void navigate({ search: { modality: data.value === 'all' ? undefined : (data.value as Modality) } })}>
+      <TabList
+        selectedValue={search.modality ?? 'all'}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { modality: data.value === 'all' ? undefined : (data.value as Modality) } })
+        }
+      >
         <Tab value="all">All</Tab>
         {MODALITIES.map((modality) => (
           <Tab key={modality} value={modality}>
@@ -92,13 +104,22 @@ function ReportingWorklistPage() {
                 </span>
               ),
             },
-            { key: 'ordered', header: 'Ordered', priority: 'low', render: (study: ImagingStudyListItem) => formatDateTime(study.orderedAt) },
+            {
+              key: 'ordered',
+              header: 'Ordered',
+              priority: 'low',
+              render: (study: ImagingStudyListItem) => formatDateTime(study.orderedAt),
+            },
             {
               key: 'report',
               header: 'Report',
               width: 170,
               render: (study: ImagingStudyListItem) =>
-                study.reportStatus ? <DiagnosticReportBadge status={study.reportStatus} /> : <Caption1 className={styles.muted}>Not started</Caption1>,
+                study.reportStatus ? (
+                  <DiagnosticReportBadge status={study.reportStatus} />
+                ) : (
+                  <Caption1 className={styles.muted}>Not started</Caption1>
+                ),
             },
           ]}
           emptyTitle="Nothing to report"

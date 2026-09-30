@@ -70,7 +70,12 @@ const useStyles = makeStyles({
   },
   section: { display: 'flex', flexDirection: 'column', gap: '10px', minWidth: 0 },
   sectionHead: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '12px' },
-  sectionTitle: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold },
+  sectionTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   none: { margin: 0, color: tokens.colorNeutralForeground2 },
   banner: {
     display: 'flex',
@@ -83,7 +88,10 @@ const useStyles = makeStyles({
   },
   bannerTitle: { margin: 0, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   bannerText: { margin: 0 },
-  due: { border: `1px solid ${tokens.colorStatusWarningBorder1}`, backgroundColor: tokens.colorStatusWarningBackground1 },
+  due: {
+    border: `1px solid ${tokens.colorStatusWarningBorder1}`,
+    backgroundColor: tokens.colorStatusWarningBackground1,
+  },
   dueAmount: { margin: 0, fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold },
 });
 
@@ -122,7 +130,12 @@ function HomePage() {
           <h2 className={styles.bannerTitle}>{t('home.video.ready')}</h2>
           <p className={styles.bannerText}>{t('home.video.readyBody', { doctor: ready.practitionerName })}</p>
           <div>
-            <ButtonLink to="/video/$sessionId" params={{ sessionId: ready.id }} appearance="primary" icon={<VideoRegular />}>
+            <ButtonLink
+              to="/video/$sessionId"
+              params={{ sessionId: ready.id }}
+              appearance="primary"
+              icon={<VideoRegular />}
+            >
               {t('home.video.join')}
             </ButtonLink>
           </div>
@@ -158,7 +171,17 @@ function HomePage() {
   );
 }
 
-function Section({ id, title, action, children }: { id: string; title: string; action?: ReactNode; children: ReactNode }) {
+function Section({
+  id,
+  title,
+  action,
+  children,
+}: {
+  id: string;
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   const styles = useStyles();
   return (
     <section className={styles.section} aria-labelledby={id}>
@@ -178,11 +201,21 @@ function NextAppointment() {
   const t = useT();
   const { profile } = useActiveProfile();
   const upcoming = useQuery(appointmentQueries.list(profile.id, 'upcoming'));
-  const open = (upcoming.data ?? []).filter((row) => isOpenAppointment(row.status)).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const open = (upcoming.data ?? [])
+    .filter((row) => isOpenAppointment(row.status))
+    .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
   const next = open[0];
 
   return (
-    <Section id="home-next" title={t('home.next')} action={open.length > 1 ? <TextLink to="/appointments">{t('home.next.more', { count: open.length - 1 })}</TextLink> : undefined}>
+    <Section
+      id="home-next"
+      title={t('home.next')}
+      action={
+        open.length > 1 ? (
+          <TextLink to="/appointments">{t('home.next.more', { count: open.length - 1 })}</TextLink>
+        ) : undefined
+      }
+    >
       {upcoming.isPending ? (
         <LoadingCards count={1} />
       ) : upcoming.isError ? (
@@ -241,7 +274,11 @@ function RecentReports() {
   const recent = (reports.data ?? []).slice(0, 3);
 
   return (
-    <Section id="home-reports" title={t('home.reports')} action={recent.length ? <TextLink to="/reports">{t('common.viewAll')}</TextLink> : undefined}>
+    <Section
+      id="home-reports"
+      title={t('home.reports')}
+      action={recent.length ? <TextLink to="/reports">{t('common.viewAll')}</TextLink> : undefined}
+    >
       {reports.isPending ? (
         <LoadingCards count={2} />
       ) : reports.isError ? (
@@ -253,8 +290,17 @@ function RecentReports() {
           const kind = REPORT_KIND[item.kind];
           const Icon = kind.icon;
           return (
-            <CardLink key={`${item.kind}-${item.id}`} to="/reports/$kind/$reportId" params={{ kind: kindSegment(item.kind), reportId: item.id }}>
-              <ListRow icon={<Icon />} tone={kind.tone} title={item.title || t(kind.label)} subtitle={t('reports.released', { date: f.date(item.releasedAt) })} />
+            <CardLink
+              key={`${item.kind}-${item.id}`}
+              to="/reports/$kind/$reportId"
+              params={{ kind: kindSegment(item.kind), reportId: item.id }}
+            >
+              <ListRow
+                icon={<Icon />}
+                tone={kind.tone}
+                title={item.title || t(kind.label)}
+                subtitle={t('reports.released', { date: f.date(item.releasedAt) })}
+              />
             </CardLink>
           );
         })
@@ -272,7 +318,11 @@ function RecentPrescriptions() {
   const recent = (list.data?.pages[0]?.items ?? []).filter((rx) => rx.status === 'Signed').slice(0, 2);
 
   return (
-    <Section id="home-rx" title={t('home.rx')} action={recent.length ? <TextLink to="/prescriptions">{t('common.viewAll')}</TextLink> : undefined}>
+    <Section
+      id="home-rx"
+      title={t('home.rx')}
+      action={recent.length ? <TextLink to="/prescriptions">{t('common.viewAll')}</TextLink> : undefined}
+    >
       {list.isPending ? (
         <LoadingCards count={1} />
       ) : list.isError ? (
@@ -284,8 +334,13 @@ function RecentPrescriptions() {
           <CardLink key={rx.id} to="/prescriptions/$prescriptionId" params={{ prescriptionId: rx.id }}>
             <ListRow
               icon={<PillRegular />}
-              title={rx.medicines.slice(0, 2).join(', ') + (rx.medicines.length > 2 ? ` +${rx.medicines.length - 2}` : '') || t('rx.number', { number: rx.prescriptionNumber })}
-              subtitle={[rx.doctor ? t('rx.by', { doctor: rx.doctor }) : null, f.date(rx.signedAt)].filter(Boolean).join(' · ')}
+              title={
+                rx.medicines.slice(0, 2).join(', ') + (rx.medicines.length > 2 ? ` +${rx.medicines.length - 2}` : '') ||
+                t('rx.number', { number: rx.prescriptionNumber })
+              }
+              subtitle={[rx.doctor ? t('rx.by', { doctor: rx.doctor }) : null, f.date(rx.signedAt)]
+                .filter(Boolean)
+                .join(' · ')}
             />
           </CardLink>
         ))

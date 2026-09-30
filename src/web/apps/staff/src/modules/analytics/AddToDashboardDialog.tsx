@@ -20,7 +20,16 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { analyticsApi, analyticsKeys, analyticsQueries, type ReportCatalogueItem, type ReportChartType, type ReportResult, type SaveDashboardWidget, type WidgetWidth } from './api';
+import {
+  analyticsApi,
+  analyticsKeys,
+  analyticsQueries,
+  type ReportCatalogueItem,
+  type ReportChartType,
+  type ReportResult,
+  type SaveDashboardWidget,
+  type WidgetWidth,
+} from './api';
 import { availableViews, defaultView } from './charts';
 import { CUSTOM_PERIOD, WIDGET_WIDTHS } from './labels';
 import { nextWidgetId } from './params';
@@ -33,7 +42,17 @@ const useStyles = makeStyles({
 const NEW = '__new';
 
 /** Puts the report, with the inputs on screen, on one of the user's dashboards (or on a new one). */
-export function AddToDashboardDialog({ report, result, view, onClose }: { report: ReportCatalogueItem; result: ReportResult; view: ReportChartType; onClose: () => void }) {
+export function AddToDashboardDialog({
+  report,
+  result,
+  view,
+  onClose,
+}: {
+  report: ReportCatalogueItem;
+  result: ReportResult;
+  view: ReportChartType;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -51,12 +70,32 @@ export function AddToDashboardDialog({ report, result, view, onClose }: { report
 
   const save = useMutation({
     mutationFn: async () => {
-      const widget: SaveDashboardWidget = { id: null, reportId: report.id, title: title.trim() || null, view: chosenView, width, parameters: result.parameters };
+      const widget: SaveDashboardWidget = {
+        id: null,
+        reportId: report.id,
+        title: title.trim() || null,
+        view: chosenView,
+        width,
+        parameters: result.parameters,
+      };
       if (selected === NEW) {
-        return analyticsApi.createDashboard({ name: name.trim(), description: null, isShared: false, widgets: [{ ...widget, id: 'w1' }], version: null });
+        return analyticsApi.createDashboard({
+          name: name.trim(),
+          description: null,
+          isShared: false,
+          widgets: [{ ...widget, id: 'w1' }],
+          version: null,
+        });
       }
       const current = await queryClient.fetchQuery({ ...analyticsQueries.dashboard(selected), staleTime: 0 });
-      const widgets: SaveDashboardWidget[] = current.widgets.map((w) => ({ id: w.id, reportId: w.reportId, title: w.title, view: w.view, width: w.width, parameters: w.parameters }));
+      const widgets: SaveDashboardWidget[] = current.widgets.map((w) => ({
+        id: w.id,
+        reportId: w.reportId,
+        title: w.title,
+        view: w.view,
+        width: w.width,
+        parameters: w.parameters,
+      }));
       widgets.push({ ...widget, id: nextWidgetId(widgets.map((w) => w.id ?? '')) });
       return analyticsApi.updateDashboard(selected, {
         name: current.name,
@@ -107,7 +146,13 @@ export function AddToDashboardDialog({ report, result, view, onClose }: { report
               )}
               {selected === NEW && (
                 <Field label="Name of the new dashboard" required>
-                  <Input value={name} maxLength={100} autoFocus onChange={(_, data) => setName(data.value)} placeholder="For example: Morning review" />
+                  <Input
+                    value={name}
+                    maxLength={100}
+                    autoFocus
+                    onChange={(_, data) => setName(data.value)}
+                    placeholder="For example: Morning review"
+                  />
                 </Field>
               )}
               <Field label="Tile title">
@@ -117,7 +162,11 @@ export function AddToDashboardDialog({ report, result, view, onClose }: { report
                 <ViewSwitcher views={views} value={chosenView} onChange={setView} />
               </Field>
               <Field label="Width">
-                <RadioGroup layout="horizontal" value={String(width)} onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}>
+                <RadioGroup
+                  layout="horizontal"
+                  value={String(width)}
+                  onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}
+                >
                   {WIDGET_WIDTHS.map((option) => (
                     <Radio key={option.value} value={String(option.value)} label={option.label} />
                   ))}
@@ -125,13 +174,21 @@ export function AddToDashboardDialog({ report, result, view, onClose }: { report
               </Field>
               {customDates && (
                 <MessageBar intent="info">
-                  <MessageBarBody>The tile keeps these fixed dates. To keep it current, choose a period such as “This month” before adding it.</MessageBarBody>
+                  <MessageBarBody>
+                    The tile keeps these fixed dates. To keep it current, choose a period such as “This month” before
+                    adding it.
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose}>Cancel</Button>
-              <Button appearance="primary" type="submit" disabled={!canSave || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                appearance="primary"
+                type="submit"
+                disabled={!canSave || save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Add tile
               </Button>
             </DialogActions>

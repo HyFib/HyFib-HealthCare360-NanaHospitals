@@ -1,5 +1,11 @@
 import { Button, Caption1, makeStyles, ProgressBar, Text, tokens } from '@fluentui/react-components';
-import { CalendarCheckmarkRegular, CalendarClockRegular, CalendarLtrRegular, PersonArrowRightRegular, PersonProhibitedRegular } from '@fluentui/react-icons';
+import {
+  CalendarCheckmarkRegular,
+  CalendarClockRegular,
+  CalendarLtrRegular,
+  PersonArrowRightRegular,
+  PersonProhibitedRegular,
+} from '@fluentui/react-icons';
 import { useRealtimeEvent, useSession } from '@hc360/core';
 import { ErrorState, KpiCard, Section } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -44,13 +50,20 @@ export function AppointmentsTodayWidget() {
   const summary = useTodaySummary();
 
   if (summary.error) {
-    return <ErrorState error={summary.error} onRetry={() => void summary.refetch()} title="Appointments could not be loaded" />;
+    return (
+      <ErrorState
+        error={summary.error}
+        onRetry={() => void summary.refetch()}
+        title="Appointments could not be loaded"
+      />
+    );
   }
 
   const s = summary.data;
   const value = (n: number | undefined) => (s ? (n ?? 0).toLocaleString('en-IN') : '…');
   const mine = s?.practitioners.find((p) => p.practitionerId === practitionerId);
-  const open = (status?: 'Booked' | 'Confirmed' | 'CheckedIn' | 'Completed' | 'NoShow') => void navigate({ to: '/scheduling', search: { status } });
+  const open = (status?: 'Booked' | 'Confirmed' | 'CheckedIn' | 'Completed' | 'NoShow') =>
+    void navigate({ to: '/scheduling', search: { status } });
 
   return (
     <div>
@@ -58,9 +71,14 @@ export function AppointmentsTodayWidget() {
         <div className={styles.mine} role="status">
           <Text weight="semibold">Your OPD today</Text>
           <Text>
-            {mine.booked} booked of {mine.capacity} · {mine.checkedIn} checked in · {mine.completed} seen · {mine.freeSlots} free slots
+            {mine.booked} booked of {mine.capacity} · {mine.checkedIn} checked in · {mine.completed} seen ·{' '}
+            {mine.freeSlots} free slots
           </Text>
-          <Button size="small" appearance="transparent" onClick={() => void navigate({ to: '/scheduling', search: { practitionerId: mine.practitionerId } })}>
+          <Button
+            size="small"
+            appearance="transparent"
+            onClick={() => void navigate({ to: '/scheduling', search: { practitionerId: mine.practitionerId } })}
+          >
             Open my list
           </Button>
         </div>
@@ -73,7 +91,13 @@ export function AppointmentsTodayWidget() {
           hint={s ? `${s.telehealth} video · ${s.online} booked online` : undefined}
           onClick={() => open()}
         />
-        <KpiCard label="Yet to arrive" value={value(s ? s.booked + s.confirmed : undefined)} icon={<CalendarClockRegular />} hint="Booked or confirmed" onClick={() => open('Booked')} />
+        <KpiCard
+          label="Yet to arrive"
+          value={value(s ? s.booked + s.confirmed : undefined)}
+          icon={<CalendarClockRegular />}
+          hint="Booked or confirmed"
+          onClick={() => open('Booked')}
+        />
         <KpiCard
           label="Checked in"
           value={value(s ? s.checkedIn + s.inConsultation : undefined)}
@@ -81,7 +105,12 @@ export function AppointmentsTodayWidget() {
           hint={s ? `${s.inConsultation} with the doctor` : undefined}
           onClick={() => open('CheckedIn')}
         />
-        <KpiCard label="Completed" value={value(s?.completed)} icon={<CalendarCheckmarkRegular />} onClick={() => open('Completed')} />
+        <KpiCard
+          label="Completed"
+          value={value(s?.completed)}
+          icon={<CalendarCheckmarkRegular />}
+          onClick={() => open('Completed')}
+        />
         <KpiCard
           label="No-shows"
           value={value(s?.noShow)}
@@ -99,7 +128,9 @@ export function DoctorLoadWidget() {
   const styles = useStyles();
   const navigate = useNavigate();
   const summary = useTodaySummary();
-  const doctors = [...(summary.data?.practitioners ?? [])].filter((p) => p.capacity > 0 || p.booked > 0).sort((a, b) => b.booked - a.booked);
+  const doctors = [...(summary.data?.practitioners ?? [])]
+    .filter((p) => p.capacity > 0 || p.booked > 0)
+    .sort((a, b) => b.booked - a.booked);
 
   return (
     <Section title="Doctors' OPD today" description="Booked patients against available seats">

@@ -66,7 +66,10 @@ export function npsAngle(score: number): number {
 /** Point on the gauge arc for an angle (degrees), centre (cx, cy) and radius r; y grows downwards (SVG). */
 export function arcPoint(cx: number, cy: number, r: number, angleDegrees: number): { x: number; y: number } {
   const radians = (angleDegrees * Math.PI) / 180;
-  return { x: Math.round((cx + r * Math.cos(radians)) * 100) / 100, y: Math.round((cy - r * Math.sin(radians)) * 100) / 100 };
+  return {
+    x: Math.round((cx + r * Math.cos(radians)) * 100) / 100,
+    y: Math.round((cy - r * Math.sin(radians)) * 100) / 100,
+  };
 }
 
 // ------------------------------------------------------------------ ratings
@@ -86,7 +89,10 @@ export function ratingKey(aspect: FeedbackAspect): keyof RatingsInput {
 }
 
 /** Ratings for the aspects on the form only (unanswered ones left out); null when nothing was rated. */
-export function toRatingsInput(aspects: readonly FeedbackAspect[], values: Partial<Record<FeedbackAspect, number | null>>): RatingsInput | null {
+export function toRatingsInput(
+  aspects: readonly FeedbackAspect[],
+  values: Partial<Record<FeedbackAspect, number | null>>,
+): RatingsInput | null {
   const ratings: RatingsInput = {};
   let any = false;
   for (const aspect of aspects) {
@@ -101,16 +107,25 @@ export function toRatingsInput(aspects: readonly FeedbackAspect[], values: Parti
 
 /** A rating of 2 or less on any aspect, or an NPS of 6 or less, is a low score and raises a complaint (FB-03). */
 export function isLowScore(ratings: (number | null | undefined)[], nps: number | null | undefined): boolean {
-  return ratings.some((r) => r !== null && r !== undefined && r <= 2) || (nps !== null && nps !== undefined && nps <= 6);
+  return (
+    ratings.some((r) => r !== null && r !== undefined && r <= 2) || (nps !== null && nps !== undefined && nps <= 6)
+  );
 }
 
 /** Priority the server gives the complaint a low score raises: High for a 1-star rating or NPS 3 or less. */
-export function lowScorePriority(ratings: (number | null | undefined)[], nps: number | null | undefined): ComplaintPriority {
-  return ratings.some((r) => r !== null && r !== undefined && r <= 1) || (nps !== null && nps !== undefined && nps <= 3) ? 'High' : 'Normal';
+export function lowScorePriority(
+  ratings: (number | null | undefined)[],
+  nps: number | null | undefined,
+): ComplaintPriority {
+  return ratings.some((r) => r !== null && r !== undefined && r <= 1) || (nps !== null && nps !== undefined && nps <= 3)
+    ? 'High'
+    : 'Normal';
 }
 
 export function ratingText(value: number | null | undefined): string {
-  return value === null || value === undefined ? '—' : `${value.toLocaleString('en-IN', { maximumFractionDigits: 1 })} / 5`;
+  return value === null || value === undefined
+    ? '—'
+    : `${value.toLocaleString('en-IN', { maximumFractionDigits: 1 })} / 5`;
 }
 
 export function sentimentTone(sentiment: Sentiment): Tone {
@@ -161,7 +176,8 @@ export function complaintMoveLabel(from: ComplaintStatus, to: ComplaintStatus): 
 export function deadlineText(dueAtIso: string, nowMs: number): { text: string; overdue: boolean } {
   const minutes = Math.round((Date.parse(dueAtIso) - nowMs) / 60_000);
   const abs = Math.abs(minutes);
-  const span = abs < 60 ? `${abs} min` : abs < 48 * 60 ? `${Math.round(abs / 60)} h` : `${Math.round(abs / (24 * 60))} days`;
+  const span =
+    abs < 60 ? `${abs} min` : abs < 48 * 60 ? `${Math.round(abs / 60)} h` : `${Math.round(abs / (24 * 60))} days`;
   return minutes < 0 ? { text: `Overdue by ${span}`, overdue: true } : { text: `${span} left`, overdue: false };
 }
 
@@ -205,7 +221,12 @@ export function presetRange(preset: Exclude<PeriodPreset, 'custom'>, today: stri
 }
 
 /** The period a screen shows: a preset, or the chosen dates (swapped when entered backwards). Defaults to the last 12 months. */
-export function resolvePeriod(preset: PeriodPreset | undefined, from: string | undefined, to: string | undefined, today: string): { from: string; to: string } {
+export function resolvePeriod(
+  preset: PeriodPreset | undefined,
+  from: string | undefined,
+  to: string | undefined,
+  today: string,
+): { from: string; to: string } {
   if (preset !== 'custom') {
     return presetRange(preset ?? 'last12Months', today);
   }

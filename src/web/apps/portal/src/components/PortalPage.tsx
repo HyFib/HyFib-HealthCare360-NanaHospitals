@@ -25,10 +25,19 @@ const useStyles = makeStyles({
     fontWeight: tokens.fontWeightSemibold,
     color: tokens.colorNeutralForeground1,
     overflowWrap: 'anywhere',
-    ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '4px', borderRadius: tokens.borderRadiusMedium },
+    ':focus-visible': {
+      outline: `3px solid ${tokens.colorStrokeFocus2}`,
+      outlineOffset: '4px',
+      borderRadius: tokens.borderRadiusMedium,
+    },
     '@media (min-width: 900px)': { fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700 },
   },
-  subtitle: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
+  subtitle: {
+    margin: 0,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
   actions: { display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' },
 });
 

@@ -10,7 +10,15 @@ import { hrApi, hrKeys, hrQueries } from '@/modules/hr/api';
 import { formatDays, needsAttention } from '@/modules/hr/attendance';
 import { HR_PERMISSIONS as P } from '@/modules/hr/labels';
 import { ATTENDANCE_NAV } from '@/modules/hr/nav';
-import { currentMonth, formatMinutes, monthEnd, monthLabel, monthStart, MONTH_NAMES, yearOptions } from '@/modules/hr/shared/dates';
+import {
+  currentMonth,
+  formatMinutes,
+  monthEnd,
+  monthLabel,
+  monthStart,
+  MONTH_NAMES,
+  yearOptions,
+} from '@/modules/hr/shared/dates';
 import { saveCsv } from '@/modules/hr/shared/files';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { SubNav } from '@/modules/hr/shared/SubNav';
@@ -52,7 +60,10 @@ function SummaryPage() {
   const from = monthStart(year, month);
   const to = monthEnd(year, month) > today ? today : monthEnd(year, month);
 
-  const rows = useMemo(() => (summary.data ?? []).filter((row) => !search.attention || needsAttention(row)), [summary.data, search.attention]);
+  const rows = useMemo(
+    () => (summary.data ?? []).filter((row) => !search.attention || needsAttention(row)),
+    [summary.data, search.attention],
+  );
   const attentionCount = (summary.data ?? []).filter(needsAttention).length;
 
   const compute = useMutation({
@@ -69,7 +80,21 @@ function SummaryPage() {
   const exportCsv = () =>
     saveCsv(
       [
-        ['Employee code', 'Employee', 'Department', 'Days recorded', 'Present', 'Paid leave', 'Unpaid leave', 'Absent', 'Off days', 'Late days', 'Late minutes', 'Overtime minutes', 'Missed punches'],
+        [
+          'Employee code',
+          'Employee',
+          'Department',
+          'Days recorded',
+          'Present',
+          'Paid leave',
+          'Unpaid leave',
+          'Absent',
+          'Off days',
+          'Late days',
+          'Late minutes',
+          'Overtime minutes',
+          'Missed punches',
+        ],
         ...rows.map((r) => [
           r.employeeCode,
           r.employeeName,
@@ -134,7 +159,10 @@ function SummaryPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -158,7 +186,13 @@ function SummaryPage() {
           error={summary.error}
           onRetry={() => void summary.refetch()}
           getRowId={(r) => r.employeeId}
-          onRowClick={(r) => void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: r.employeeId }, search: { tab: 'attendance' } })}
+          onRowClick={(r) =>
+            void navigate({
+              to: '/hr/employees/$employeeId',
+              params: { employeeId: r.employeeId },
+              search: { tab: 'attendance' },
+            })
+          }
           columns={[
             {
               key: 'employee',
@@ -173,16 +207,36 @@ function SummaryPage() {
             { key: 'days', header: 'Days', align: 'end', width: 70, priority: 'low', render: (r) => r.recordedDays },
             { key: 'present', header: 'Present', align: 'end', width: 80, render: (r) => formatDays(r.presentDays) },
             { key: 'leave', header: 'Paid leave', align: 'end', width: 90, render: (r) => formatDays(r.paidLeaveDays) },
-            { key: 'unpaid', header: 'Unpaid leave', align: 'end', width: 100, priority: 'low', render: (r) => formatDays(r.unpaidLeaveDays) },
+            {
+              key: 'unpaid',
+              header: 'Unpaid leave',
+              align: 'end',
+              width: 100,
+              priority: 'low',
+              render: (r) => formatDays(r.unpaidLeaveDays),
+            },
             {
               key: 'absent',
               header: 'Absent',
               align: 'end',
               width: 80,
-              render: (r) => (r.absentDays > 0 ? <Text weight="semibold">{formatDays(r.absentDays)}</Text> : formatDays(r.absentDays)),
+              render: (r) =>
+                r.absentDays > 0 ? <Text weight="semibold">{formatDays(r.absentDays)}</Text> : formatDays(r.absentDays),
             },
-            { key: 'off', header: 'Off', align: 'end', width: 60, priority: 'low', render: (r) => formatDays(r.offDays) },
-            { key: 'late', header: 'Late', priority: 'low', render: (r) => (r.lateDays ? `${r.lateDays} day(s), ${formatMinutes(r.lateMinutes)}` : '—') },
+            {
+              key: 'off',
+              header: 'Off',
+              align: 'end',
+              width: 60,
+              priority: 'low',
+              render: (r) => formatDays(r.offDays),
+            },
+            {
+              key: 'late',
+              header: 'Late',
+              priority: 'low',
+              render: (r) => (r.lateDays ? `${r.lateDays} day(s), ${formatMinutes(r.lateMinutes)}` : '—'),
+            },
             { key: 'ot', header: 'Overtime', priority: 'low', render: (r) => formatMinutes(r.overtimeMinutes) },
             {
               key: 'missing',

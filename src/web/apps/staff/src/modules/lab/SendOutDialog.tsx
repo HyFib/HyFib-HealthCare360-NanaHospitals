@@ -84,8 +84,14 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
               <Field
                 label="Reference laboratory"
                 required
-                hint={chosen ? `Agreed turnaround: ${chosen.tatDays} ${chosen.tatDays === 1 ? 'day' : 'days'}` : undefined}
-                validationMessage={labs.data && labs.data.length === 0 ? 'No reference laboratory is set up. Add one in Lab setup.' : undefined}
+                hint={
+                  chosen ? `Agreed turnaround: ${chosen.tatDays} ${chosen.tatDays === 1 ? 'day' : 'days'}` : undefined
+                }
+                validationMessage={
+                  labs.data && labs.data.length === 0
+                    ? 'No reference laboratory is set up. Add one in Lab setup.'
+                    : undefined
+                }
               >
                 <Select value={labId} onChange={(_, data) => setLabId(data.value)} autoFocus>
                   <option value="">{labs.isLoading ? 'Loading…' : 'Choose laboratory'}</option>
@@ -105,7 +111,12 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
               <Button onClick={onClose} disabled={send.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!labId || send.isPending} icon={send.isPending ? <Spinner size="tiny" /> : <VehicleTruckProfileRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!labId || send.isPending}
+                icon={send.isPending ? <Spinner size="tiny" /> : <VehicleTruckProfileRegular />}
+              >
                 Mark as sent
               </Button>
             </DialogActions>

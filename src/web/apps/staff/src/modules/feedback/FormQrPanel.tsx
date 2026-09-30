@@ -1,4 +1,14 @@
-import { Button, Caption1, Field, Input, MessageBar, MessageBarBody, Tooltip, makeStyles, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  MessageBar,
+  MessageBarBody,
+  Tooltip,
+  makeStyles,
+  tokens,
+} from '@fluentui/react-components';
 import { ArrowSyncRegular, CopyRegular, PrintRegular, TabletRegular } from '@fluentui/react-icons';
 import { useSession } from '@hc360/core';
 import { ConfirmDialog, useNotify } from '@hc360/ui';
@@ -30,7 +40,15 @@ function kioskUrl(url: string): string {
  * QR code of a feedback form for posters and kiosks. Answers through it are anonymous. Rotating the code retires every
  * poster already printed (for example after misuse), so it asks first.
  */
-export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackFormDto; canManage: boolean; onRotated?: (form: FeedbackFormDto) => void }) {
+export function FormQrPanel({
+  form,
+  canManage,
+  onRotated,
+}: {
+  form: FeedbackFormDto;
+  canManage: boolean;
+  onRotated?: (form: FeedbackFormDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -54,7 +72,13 @@ export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackForm
     }
     setPrinting(true);
     try {
-      await printQrPoster({ facilityName, formTitle: form.title, introText: form.introText, url: kiosk ? kioskUrl(form.qrUrl) : form.qrUrl, kiosk });
+      await printQrPoster({
+        facilityName,
+        formTitle: form.title,
+        introText: form.introText,
+        url: kiosk ? kioskUrl(form.qrUrl) : form.qrUrl,
+        kiosk,
+      });
     } catch (error) {
       notify.error(error, 'Could not print the poster');
     } finally {
@@ -81,8 +105,8 @@ export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackForm
     return (
       <MessageBar intent="warning">
         <MessageBarBody>
-          The QR code needs the hospital's public portal address. Ask an administrator to set <strong>portal.baseUrl</strong> (an https address) in
-          the facility settings.
+          The QR code needs the hospital's public portal address. Ask an administrator to set{' '}
+          <strong>portal.baseUrl</strong> (an https address) in the facility settings.
         </MessageBarBody>
       </MessageBar>
     );
@@ -92,11 +116,20 @@ export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackForm
     <div className={styles.root}>
       {!form.isActive && (
         <MessageBar intent="warning">
-          <MessageBarBody>This form is inactive. Its QR code shows “link not valid” until the form is made active again.</MessageBarBody>
+          <MessageBarBody>
+            This form is inactive. Its QR code shows “link not valid” until the form is made active again.
+          </MessageBarBody>
         </MessageBar>
       )}
       <div className={styles.qr}>
-        <QRCodeSVG value={form.qrUrl} size={176} level="M" marginSize={0} aria-label={`QR code for ${form.title}`} role="img" />
+        <QRCodeSVG
+          value={form.qrUrl}
+          size={176}
+          level="M"
+          marginSize={0}
+          aria-label={`QR code for ${form.title}`}
+          role="img"
+        />
       </div>
       <Caption1>Answers through this code are anonymous. Low scores still raise a complaint for follow-up.</Caption1>
       <Field label="Poster link">
@@ -107,7 +140,10 @@ export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackForm
           </Tooltip>
         </div>
       </Field>
-      <Field label="Kiosk link" hint="Open this on the feedback tablet at the exit; answers are counted as kiosk feedback.">
+      <Field
+        label="Kiosk link"
+        hint="Open this on the feedback tablet at the exit; answers are counted as kiosk feedback."
+      >
         <div className={styles.row}>
           <Input value={kioskUrl(form.qrUrl)} readOnly style={{ flex: 1 }} aria-label="Kiosk link" />
           <Tooltip content="Copy kiosk link" relationship="label">
@@ -137,8 +173,8 @@ export function FormQrPanel({ form, canManage, onRotated }: { form: FeedbackForm
         onConfirm={() => void rotate()}
         onCancel={() => setConfirming(false)}
       >
-        Every poster and kiosk link already in use stops working at once. Use this when a poster has been misused, then print and put up the new
-        posters.
+        Every poster and kiosk link already in use stops working at once. Use this when a poster has been misused, then
+        print and put up the new posters.
       </ConfirmDialog>
     </div>
   );

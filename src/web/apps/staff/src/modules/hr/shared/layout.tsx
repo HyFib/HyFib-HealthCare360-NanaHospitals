@@ -54,7 +54,17 @@ export function Stack({ children, gap, style }: { children: ReactNode; gap?: num
 }
 
 /** A row of buttons/filters; `spaced` adds the gap above a table. */
-export function Toolbar({ children, className, spaced = true, style }: { children: ReactNode; className?: string; spaced?: boolean; style?: CSSProperties }) {
+export function Toolbar({
+  children,
+  className,
+  spaced = true,
+  style,
+}: {
+  children: ReactNode;
+  className?: string;
+  spaced?: boolean;
+  style?: CSSProperties;
+}) {
   const styles = useStyles();
   return (
     <div className={mergeClasses(styles.toolbar, className)} style={spaced ? { marginBottom: 12, ...style } : style}>
@@ -82,7 +92,15 @@ export function Muted({ children, block }: { children: ReactNode; block?: boolea
  * Salary figure that stays hidden until the viewer chooses to show amounts (screens are often visible to patients and
  * colleagues on the ward).
  */
-export function Amount({ value, hidden, whole }: { value: number | null | undefined; hidden: boolean; whole?: boolean }) {
+export function Amount({
+  value,
+  hidden,
+  whole,
+}: {
+  value: number | null | undefined;
+  hidden: boolean;
+  whole?: boolean;
+}) {
   const styles = useStyles();
   if (hidden) {
     return (
@@ -95,10 +113,22 @@ export function Amount({ value, hidden, whole }: { value: number | null | undefi
 }
 
 /** "Show amounts / Hide amounts" switch that goes with {@link Amount}. */
-export function RevealButton({ revealed, onChange, label = 'amounts' }: { revealed: boolean; onChange: (revealed: boolean) => void; label?: string }) {
+export function RevealButton({
+  revealed,
+  onChange,
+  label = 'amounts',
+}: {
+  revealed: boolean;
+  onChange: (revealed: boolean) => void;
+  label?: string;
+}) {
   return (
     <Tooltip content={revealed ? `Hide ${label} again` : `Show ${label} on this screen`} relationship="description">
-      <Button appearance="subtle" icon={revealed ? <EyeOffRegular /> : <EyeRegular />} onClick={() => onChange(!revealed)}>
+      <Button
+        appearance="subtle"
+        icon={revealed ? <EyeOffRegular /> : <EyeRegular />}
+        onClick={() => onChange(!revealed)}
+      >
         {revealed ? `Hide ${label}` : `Show ${label}`}
       </Button>
     </Tooltip>

@@ -110,17 +110,29 @@ export function NotificationsButton() {
           aria-label={count > 0 ? `Notifications, ${count} unread` : 'Notifications'}
           onClick={() => setOpen(true)}
         />
-        {count > 0 && <CounterBadge className={styles.badge} count={count} size="small" color="danger" overflowCount={99} />}
+        {count > 0 && (
+          <CounterBadge className={styles.badge} count={count} size="small" color="danger" overflowCount={99} />
+        )}
       </span>
       <OverlayDrawer open={open} onOpenChange={(_, data) => setOpen(data.open)} position="end" size="small">
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
               <>
-                <Button appearance="subtle" icon={<CheckmarkRegular />} onClick={() => markAll.mutate()} disabled={count === 0}>
+                <Button
+                  appearance="subtle"
+                  icon={<CheckmarkRegular />}
+                  onClick={() => markAll.mutate()}
+                  disabled={count === 0}
+                >
                   Mark all read
                 </Button>
-                <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={() => setOpen(false)} />
+                <Button
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label="Close"
+                  onClick={() => setOpen(false)}
+                />
               </>
             }
           >
@@ -130,13 +142,19 @@ export function NotificationsButton() {
         <DrawerBody>
           {list.isLoading && <LoadingState />}
           {list.error && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
-          {list.data && list.data.items.length === 0 && <EmptyState title="You're all caught up" description="New alerts and updates will appear here." />}
+          {list.data && list.data.items.length === 0 && (
+            <EmptyState title="You're all caught up" description="New alerts and updates will appear here." />
+          )}
           <div className={styles.list}>
             {list.data?.items.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={mergeClasses(styles.item, !item.readAt && styles.unread, item.severity === 'Critical' && styles.critical)}
+                className={mergeClasses(
+                  styles.item,
+                  !item.readAt && styles.unread,
+                  item.severity === 'Critical' && styles.critical,
+                )}
                 onClick={() => openItem(item)}
               >
                 <Text weight={item.readAt ? 'regular' : 'semibold'}>{item.title}</Text>

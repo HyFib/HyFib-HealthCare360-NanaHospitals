@@ -10,11 +10,36 @@ const manifest: ModuleManifest = {
   icon: WrenchScrewdriverRegular,
   order: 40,
   links: [
-    { label: 'Equipment overview', to: '/assets', permission: ASSET_READERS, keywords: ['biomedical', 'dashboard', 'downtime'] },
-    { label: 'Asset register', to: '/assets/register', permission: ASSET_READERS, keywords: ['equipment', 'asset tag', 'amc', 'cmc', 'warranty'] },
-    { label: 'Breakdown tickets', to: '/assets/tickets', permission: ASSET_READERS, keywords: ['repair', 'complaint', 'not working'] },
-    { label: 'Maintenance and calibration', to: '/assets/maintenance', permission: ASSET_READERS, keywords: ['pm', 'preventive', 'calibration', 'nabh'] },
-    { label: 'Condemnation', to: '/assets/condemnations', permission: ASSET_READERS, keywords: ['write off', 'dispose', 'scrap', 'e-waste'] },
+    {
+      label: 'Equipment overview',
+      to: '/assets',
+      permission: ASSET_READERS,
+      keywords: ['biomedical', 'dashboard', 'downtime'],
+    },
+    {
+      label: 'Asset register',
+      to: '/assets/register',
+      permission: ASSET_READERS,
+      keywords: ['equipment', 'asset tag', 'amc', 'cmc', 'warranty'],
+    },
+    {
+      label: 'Breakdown tickets',
+      to: '/assets/tickets',
+      permission: ASSET_READERS,
+      keywords: ['repair', 'complaint', 'not working'],
+    },
+    {
+      label: 'Maintenance and calibration',
+      to: '/assets/maintenance',
+      permission: ASSET_READERS,
+      keywords: ['pm', 'preventive', 'calibration', 'nabh'],
+    },
+    {
+      label: 'Condemnation',
+      to: '/assets/condemnations',
+      permission: ASSET_READERS,
+      keywords: ['write off', 'dispose', 'scrap', 'e-waste'],
+    },
   ],
   quickActions: [
     {
@@ -25,7 +50,15 @@ const manifest: ModuleManifest = {
       description: 'Tell biomedical engineering',
     },
   ],
-  widgets: [{ id: 'assets-attention', permission: [S.assetsMaintenance, S.assetsManage], span: 2, order: 60, component: EquipmentAttentionWidget }],
+  widgets: [
+    {
+      id: 'assets-attention',
+      permission: [S.assetsMaintenance, S.assetsManage],
+      span: 2,
+      order: 60,
+      component: EquipmentAttentionWidget,
+    },
+  ],
 };
 
 export default manifest;

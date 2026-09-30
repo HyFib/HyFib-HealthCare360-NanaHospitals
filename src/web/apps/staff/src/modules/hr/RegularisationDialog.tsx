@@ -64,7 +64,15 @@ export function RegularisationDialog({
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
       <DialogSurface style={{ maxWidth: 620 }}>
-        {open && <Body onClose={onClose} employee={employee} pickEmployee={pickEmployee} defaultDate={defaultDate} submit={submit} />}
+        {open && (
+          <Body
+            onClose={onClose}
+            employee={employee}
+            pickEmployee={pickEmployee}
+            defaultDate={defaultDate}
+            submit={submit}
+          />
+        )}
       </DialogSurface>
     </Dialog>
   );
@@ -90,7 +98,13 @@ function Body({
   const [busy, setBusy] = useState(false);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { date: defaultDate ?? addDays(today, -1), kind: 'MissedPunch', requestedIn: '', requestedOut: '', reason: '' },
+    defaultValues: {
+      date: defaultDate ?? addDays(today, -1),
+      kind: 'MissedPunch',
+      requestedIn: '',
+      requestedOut: '',
+      reason: '',
+    },
   });
   const kind = useWatch({ control: form.control, name: 'kind' });
 
@@ -144,7 +158,15 @@ function Body({
             />
           )}
           <FormGrid columns={2} minColumnWidth={200}>
-            <DateField control={form.control} name="date" label="Day" required min={addDays(today, -MAX_AGE_DAYS)} max={today} hint={`Within the last ${MAX_AGE_DAYS} days`} />
+            <DateField
+              control={form.control}
+              name="date"
+              label="Day"
+              required
+              min={addDays(today, -MAX_AGE_DAYS)}
+              max={today}
+              hint={`Within the last ${MAX_AGE_DAYS} days`}
+            />
             <ChoiceField
               control={form.control}
               name="kind"
@@ -156,8 +178,16 @@ function Body({
             />
           </FormGrid>
           <FormGrid columns={2} minColumnWidth={200}>
-            <TimeInput control={form.control} name="requestedIn" label={kind === 'OnDuty' ? 'Duty started (optional)' : 'Actual in-time'} />
-            <TimeInput control={form.control} name="requestedOut" label={kind === 'OnDuty' ? 'Duty ended (optional)' : 'Actual out-time'} />
+            <TimeInput
+              control={form.control}
+              name="requestedIn"
+              label={kind === 'OnDuty' ? 'Duty started (optional)' : 'Actual in-time'}
+            />
+            <TimeInput
+              control={form.control}
+              name="requestedOut"
+              label={kind === 'OnDuty' ? 'Duty ended (optional)' : 'Actual out-time'}
+            />
           </FormGrid>
           <TextAreaField
             control={form.control}
@@ -166,7 +196,11 @@ function Body({
             required
             rows={3}
             maxLength={500}
-            placeholder={kind === 'OnDuty' ? 'For example: health camp at Tambaram' : 'For example: terminal at the main gate was not working'}
+            placeholder={
+              kind === 'OnDuty'
+                ? 'For example: health camp at Tambaram'
+                : 'For example: terminal at the main gate was not working'
+            }
           />
         </DialogContent>
         <DialogActions>
@@ -182,14 +216,32 @@ function Body({
   );
 }
 
-function TimeInput({ control, name, label }: { control: Control<Values>; name: 'requestedIn' | 'requestedOut'; label: string }) {
+function TimeInput({
+  control,
+  name,
+  label,
+}: {
+  control: Control<Values>;
+  name: 'requestedIn' | 'requestedOut';
+  label: string;
+}) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-          <Input type="time" value={field.value} onChange={(_, data) => field.onChange(data.value)} onBlur={field.onBlur} ref={field.ref} />
+        <Field
+          label={label}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
+          <Input
+            type="time"
+            value={field.value}
+            onChange={(_, data) => field.onChange(data.value)}
+            onBlur={field.onBlur}
+            ref={field.ref}
+          />
         </Field>
       )}
     />

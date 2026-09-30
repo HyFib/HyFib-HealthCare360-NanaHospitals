@@ -17,7 +17,9 @@ export function dayPartOf(localTime: string): DayPart {
 /** Free slots of a day grouped by part of the day, in time order (empty parts are left out). */
 export function groupByDayPart(slots: readonly PublicSlot[]): { part: DayPart; slots: PublicSlot[] }[] {
   const sorted = [...slots].filter((slot) => slot.seatsLeft > 0).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-  return DAY_PARTS.map((part) => ({ part, slots: sorted.filter((slot) => dayPartOf(slot.localTime) === part) })).filter((group) => group.slots.length > 0);
+  return DAY_PARTS.map((part) => ({ part, slots: sorted.filter((slot) => dayPartOf(slot.localTime) === part) })).filter(
+    (group) => group.slots.length > 0,
+  );
 }
 
 /** The calendar days shown in the strip, starting at `start`, never past the booking window's last day. */
@@ -51,7 +53,11 @@ export function firstFreeDay(days: readonly string[], counts: Map<string, number
 }
 
 /** Keeps the chosen day if it is still in the strip and free; otherwise the first free day in view. */
-export function chooseDay(selected: string | null, days: readonly string[], counts: Map<string, number>): string | null {
+export function chooseDay(
+  selected: string | null,
+  days: readonly string[],
+  counts: Map<string, number>,
+): string | null {
   if (selected && days.includes(selected) && (counts.get(selected) ?? 0) > 0) {
     return selected;
   }

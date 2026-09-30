@@ -1,4 +1,18 @@
-import { Badge, Button, Caption1, Field, makeStyles, SearchBox, Select, Switch, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  SearchBox,
+  Select,
+  Switch,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { ArrowForwardRegular, ArrowRepeatAllRegular, CartRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { formatTime, humanize, useDebouncedValue, useHotkey } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
@@ -63,12 +77,19 @@ function QueuePage() {
 
   const inpatient = search.ip === true;
   const page = search.page ?? 1;
-  const queue = useQuery(pharmacyQueries.queue({ inpatient, status: search.status, includeClosed: search.closed, search: search.q, page }));
+  const queue = useQuery(
+    pharmacyQueries.queue({ inpatient, status: search.status, includeClosed: search.closed, search: search.q, page }),
+  );
   const dashboard = useQuery(pharmacyQueries.dashboard(null));
   const rows = queue.data?.items;
   const next = rows?.find((e) => e.status === 'Pending' || e.status === 'PartiallyDispensed');
 
-  const open = (entry: QueueListItem) => void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: entry.id }, search: { ip: entry.isInpatient || undefined } });
+  const open = (entry: QueueListItem) =>
+    void navigate({
+      to: '/pharmacy/queue/$entryId',
+      params: { entryId: entry.id },
+      search: { ip: entry.isInpatient || undefined },
+    });
   const openNext = () => {
     if (next) {
       open(next);
@@ -78,7 +99,8 @@ function QueuePage() {
   };
   useHotkey('f2', openNext, { allowInInputs: true });
 
-  const set = (patch: Partial<QueueSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<QueueSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -92,7 +114,13 @@ function QueuePage() {
                 Counter sale
               </Button>
             )}
-            <Button appearance="primary" icon={<ArrowForwardRegular />} onClick={openNext} disabled={!next} aria-keyshortcuts="F2">
+            <Button
+              appearance="primary"
+              icon={<ArrowForwardRegular />}
+              onClick={openNext}
+              disabled={!next}
+              aria-keyshortcuts="F2"
+            >
               Open next (F2)
             </Button>
           </>
@@ -100,7 +128,10 @@ function QueuePage() {
       />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={inpatient ? 'ip' : 'op'} onTabSelect={(_, d) => set({ ip: d.value === 'ip' ? true : undefined })}>
+          <TabList
+            selectedValue={inpatient ? 'ip' : 'op'}
+            onTabSelect={(_, d) => set({ ip: d.value === 'ip' ? true : undefined })}
+          >
             <Tab value="op">Out-patients{dashboard.data ? ` (${dashboard.data.pendingOutpatient})` : ''}</Tab>
             <Tab value="ip">In-patients{dashboard.data ? ` (${dashboard.data.pendingInpatient})` : ''}</Tab>
           </TabList>
@@ -108,10 +139,18 @@ function QueuePage() {
         <div style={{ padding: '8px 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 280px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, UHID, mobile or prescription number" aria-label="Search the queue" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, UHID, mobile or prescription number"
+                aria-label="Search the queue"
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as QueueEntryStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as QueueEntryStatus | undefined })}
+              >
                 <option value="">Still to dispense</option>
                 {QUEUE_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -120,7 +159,12 @@ function QueuePage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.closed === true} onChange={(_, d) => set({ closed: d.checked || undefined })} label="Include finished" disabled={Boolean(search.status)} />
+            <Switch
+              checked={search.closed === true}
+              onChange={(_, d) => set({ closed: d.checked || undefined })}
+              label="Include finished"
+              disabled={Boolean(search.status)}
+            />
           </FilterBar>
         </div>
         <DataTable<QueueListItem>
@@ -169,7 +213,15 @@ function QueuePage() {
               ),
             },
             { key: 'doctor', header: 'Prescriber', priority: 'low', render: (e) => e.prescriberName ?? '—' },
-            { key: 'items', header: 'Items', width: 90, render: (e) => (e.openLines > 0 && e.openLines !== e.lineCount ? `${e.openLines} of ${e.lineCount} left` : `${e.lineCount}`) },
+            {
+              key: 'items',
+              header: 'Items',
+              width: 90,
+              render: (e) =>
+                e.openLines > 0 && e.openLines !== e.lineCount
+                  ? `${e.openLines} of ${e.lineCount} left`
+                  : `${e.lineCount}`,
+            },
             {
               key: 'flags',
               header: 'Notes',
@@ -177,7 +229,10 @@ function QueuePage() {
               render: (e) => (
                 <span className={styles.flags}>
                   {e.hasControlledDrugs && (
-                    <Tooltip content="Contains Schedule H1/X or narcotic medicines: confirm and record in the register" relationship="description">
+                    <Tooltip
+                      content="Contains Schedule H1/X or narcotic medicines: confirm and record in the register"
+                      relationship="description"
+                    >
                       <Badge size="small" color="danger" icon={<ShieldKeyholeRegular />}>
                         Controlled
                       </Badge>
@@ -195,12 +250,26 @@ function QueuePage() {
               key: 'status',
               header: 'Status',
               width: 150,
-              render: (e) => <StatusBadge status={e.status} tone={workflowTone(e.status)} label={e.status === 'Pending' ? 'Waiting' : humanize(e.status)} />,
+              render: (e) => (
+                <StatusBadge
+                  status={e.status}
+                  tone={workflowTone(e.status)}
+                  label={e.status === 'Pending' ? 'Waiting' : humanize(e.status)}
+                />
+              ),
             },
           ]}
-          emptyTitle={search.q ? 'No prescription matches' : inpatient ? 'No in-patient prescriptions waiting' : 'No one is waiting'}
+          emptyTitle={
+            search.q
+              ? 'No prescription matches'
+              : inpatient
+                ? 'No in-patient prescriptions waiting'
+                : 'No one is waiting'
+          }
           emptyDescription={
-            search.q ? 'Check the spelling, or search by UHID or prescription number.' : 'E-prescriptions appear here the moment a doctor signs them.'
+            search.q
+              ? 'Check the spelling, or search by UHID or prescription number.'
+              : 'E-prescriptions appear here the moment a doctor signs them.'
           }
           page={page}
           pageSize={50}

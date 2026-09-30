@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { canSettle, isValidEmployeeCode, isValidHsnSac, isValidPeriod, monthLabel, normalizeEmployeeCode, recentMonths } from './rules';
+import {
+  canSettle,
+  isValidEmployeeCode,
+  isValidHsnSac,
+  isValidPeriod,
+  monthLabel,
+  normalizeEmployeeCode,
+  recentMonths,
+} from './rules';
 
 describe('HSN/SAC codes (mirror of the server)', () => {
   it.each([

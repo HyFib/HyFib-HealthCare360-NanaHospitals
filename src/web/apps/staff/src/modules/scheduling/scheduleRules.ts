@@ -47,8 +47,15 @@ export function sessionProblem(input: {
   if (Number.isNaN(end)) {
     return { field: 'endTime', message: 'Enter the end time.' };
   }
-  if (!Number.isInteger(input.slotMinutes) || input.slotMinutes < MIN_SLOT_MINUTES || input.slotMinutes > MAX_SLOT_MINUTES) {
-    return { field: 'slotMinutes', message: `Slot length must be between ${MIN_SLOT_MINUTES} and ${MAX_SLOT_MINUTES} minutes.` };
+  if (
+    !Number.isInteger(input.slotMinutes) ||
+    input.slotMinutes < MIN_SLOT_MINUTES ||
+    input.slotMinutes > MAX_SLOT_MINUTES
+  ) {
+    return {
+      field: 'slotMinutes',
+      message: `Slot length must be between ${MIN_SLOT_MINUTES} and ${MAX_SLOT_MINUTES} minutes.`,
+    };
   }
   if (end <= start) {
     return { field: 'endTime', message: 'The session must end after it starts.' };
@@ -56,7 +63,11 @@ export function sessionProblem(input: {
   if (end - start < input.slotMinutes) {
     return { field: 'endTime', message: 'The session is shorter than one slot.' };
   }
-  if (!Number.isInteger(input.capacityPerSlot) || input.capacityPerSlot < 1 || input.capacityPerSlot > MAX_CAPACITY_PER_SLOT) {
+  if (
+    !Number.isInteger(input.capacityPerSlot) ||
+    input.capacityPerSlot < 1 ||
+    input.capacityPerSlot > MAX_CAPACITY_PER_SLOT
+  ) {
     return { field: 'capacityPerSlot', message: `Patients per slot must be between 1 and ${MAX_CAPACITY_PER_SLOT}.` };
   }
   if (input.effectiveFrom && input.effectiveTo && input.effectiveTo < input.effectiveFrom) {
@@ -81,7 +92,13 @@ export interface SessionShape {
  * such a change (409 `schedule.overlap`), so the editor warns before saving. Mirrors `DoctorSchedule.Overlaps`.
  */
 export function sessionsOverlap(a: SessionShape, b: SessionShape): boolean {
-  if ((a.id && a.id === b.id) || !a.isActive || !b.isActive || a.practitionerId !== b.practitionerId || a.weekday !== b.weekday) {
+  if (
+    (a.id && a.id === b.id) ||
+    !a.isActive ||
+    !b.isActive ||
+    a.practitionerId !== b.practitionerId ||
+    a.weekday !== b.weekday
+  ) {
     return false;
   }
   const aStart = timeToMinutes(a.startTime);
@@ -121,5 +138,9 @@ export function findOverlaps(
 
 /** Sessions ordered Monday to Sunday, then by start time. */
 export function sortSessions<T extends { weekday: Weekday; startTime: string }>(sessions: readonly T[]): T[] {
-  return [...sessions].sort((a, b) => WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
+  return [...sessions].sort(
+    (a, b) =>
+      WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday) ||
+      timeToMinutes(a.startTime) - timeToMinutes(b.startTime),
+  );
 }

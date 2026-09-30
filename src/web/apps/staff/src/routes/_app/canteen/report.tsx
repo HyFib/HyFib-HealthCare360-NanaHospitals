@@ -7,14 +7,22 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { usePermission } from '@/lib/permissions';
-import { canteenQueries, CUSTOMER_LABEL, PAYMENT_LABEL, type AmountByKey, type DailySalesSummary } from '@/modules/canteen/api';
+import {
+  canteenQueries,
+  CUSTOMER_LABEL,
+  PAYMENT_LABEL,
+  type AmountByKey,
+  type DailySalesSummary,
+} from '@/modules/canteen/api';
 import { printDailyReport } from '@/modules/canteen/print';
 import { useLetterhead } from '@/modules/pharmacy/counter';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const Route = createFileRoute('/_app/canteen/report')({
-  validateSearch: (s: Record<string, unknown>): { date?: string } => ({ date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined }),
+  validateSearch: (s: Record<string, unknown>): { date?: string } => ({
+    date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined,
+  }),
   component: CanteenReportPage,
 });
 
@@ -46,11 +54,22 @@ function CanteenReportPage() {
         actions={
           <>
             {canSeeBills && (
-              <Button icon={<ReceiptRegular />} onClick={() => void navigate({ to: '/canteen/sales', search: date === today ? {} : { date } })}>
+              <Button
+                icon={<ReceiptRegular />}
+                onClick={() => void navigate({ to: '/canteen/sales', search: date === today ? {} : { date } })}
+              >
                 Bills of the day
               </Button>
             )}
-            <Button appearance="primary" icon={<PrintRegular />} disabled={!r} onClick={() => r && void printDailyReport(r, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button
+              appearance="primary"
+              icon={<PrintRegular />}
+              disabled={!r}
+              onClick={() =>
+                r &&
+                void printDailyReport(r, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
+            >
               Print report
             </Button>
           </>
@@ -59,7 +78,14 @@ function CanteenReportPage() {
       <Section>
         <FilterBar>
           <Field label="Date">
-            <Input type="date" value={date} max={today} onChange={(_, d) => d.value && void navigate({ search: { date: d.value === today ? undefined : d.value }, replace: true })} />
+            <Input
+              type="date"
+              value={date}
+              max={today}
+              onChange={(_, d) =>
+                d.value && void navigate({ search: { date: d.value === today ? undefined : d.value }, replace: true })
+              }
+            />
           </Field>
         </FilterBar>
       </Section>
@@ -68,7 +94,11 @@ function CanteenReportPage() {
       ) : (
         <>
           <div className={styles.kpis}>
-            <KpiCard label="Net sales" value={r ? formatInr(r.netSales) : '…'} hint={r ? `${r.bills} bills` : undefined} />
+            <KpiCard
+              label="Net sales"
+              value={r ? formatInr(r.netSales) : '…'}
+              hint={r ? `${r.bills} bills` : undefined}
+            />
             <KpiCard label="Taxable value" value={r ? formatInr(r.taxableAmount) : '…'} />
             <KpiCard label="CGST" value={r ? formatInr(r.cgst) : '…'} />
             <KpiCard label="SGST" value={r ? formatInr(r.sgst) : '…'} />
@@ -102,7 +132,15 @@ function CanteenReportPage() {
   );
 }
 
-function BreakdownChart({ rows, labels, name }: { rows: AmountByKey[]; labels?: Readonly<Record<string, string>>; name: string }) {
+function BreakdownChart({
+  rows,
+  labels,
+  name,
+}: {
+  rows: AmountByKey[];
+  labels?: Readonly<Record<string, string>>;
+  name: string;
+}) {
   const label = (key: string) => labels?.[key] ?? key;
   const option = useMemo<ChartOption>(
     () => ({
@@ -123,22 +161,42 @@ function BreakdownChart({ rows, labels, name }: { rows: AmountByKey[]; labels?: 
   if (rows.length === 0) {
     return <Text>No sales.</Text>;
   }
-  return <EChart option={option} height={240} ariaLabel={`Sales by ${name}: ${rows.map((row) => `${label(row.key)} ${formatInr(row.amount)}`).join(', ')}`} />;
+  return (
+    <EChart
+      option={option}
+      height={240}
+      ariaLabel={`Sales by ${name}: ${rows.map((row) => `${label(row.key)} ${formatInr(row.amount)}`).join(', ')}`}
+    />
+  );
 }
 
 function HsnSacTable({ report }: { report: DailySalesSummary }) {
   return (
-    <Section title="HSN/SAC summary" description="Completed bills by HSN/SAC code and GST rate, for the GSTR-1 HSN summary" flush>
+    <Section
+      title="HSN/SAC summary"
+      description="Completed bills by HSN/SAC code and GST rate, for the GSTR-1 HSN summary"
+      flush
+    >
       <DataTable
         ariaLabel="HSN/SAC summary"
         rows={report.byHsnSac}
         getRowId={(h) => `${h.hsnSac ?? 'none'}-${h.gstRate}`}
         size="small"
         columns={[
-          { key: 'code', header: 'HSN/SAC', render: (h) => (h.hsnSac ? <Text font="monospace">{h.hsnSac}</Text> : 'Not recorded') },
+          {
+            key: 'code',
+            header: 'HSN/SAC',
+            render: (h) => (h.hsnSac ? <Text font="monospace">{h.hsnSac}</Text> : 'Not recorded'),
+          },
           { key: 'rate', header: 'GST', width: 80, align: 'end', render: (h) => `${h.gstRate}%` },
           { key: 'qty', header: 'Qty', width: 80, align: 'end', priority: 'low', render: (h) => h.quantity },
-          { key: 'taxable', header: 'Taxable value', width: 130, align: 'end', render: (h) => formatInr(h.taxableAmount) },
+          {
+            key: 'taxable',
+            header: 'Taxable value',
+            width: 130,
+            align: 'end',
+            render: (h) => formatInr(h.taxableAmount),
+          },
           { key: 'cgst', header: 'CGST', width: 110, align: 'end', render: (h) => formatInr(h.cgst) },
           { key: 'sgst', header: 'SGST', width: 110, align: 'end', render: (h) => formatInr(h.sgst) },
           { key: 'total', header: 'Total', width: 120, align: 'end', render: (h) => formatInr(h.total) },
@@ -167,7 +225,12 @@ function ItemsTable({ report, lowStockClass }: { report: DailySalesSummary; lowS
             header: 'Closing stock',
             width: 120,
             align: 'end',
-            render: (i) => (i.closingStock === null ? '—' : <span className={i.closingStock <= 5 ? lowStockClass : undefined}>{i.closingStock}</span>),
+            render: (i) =>
+              i.closingStock === null ? (
+                '—'
+              ) : (
+                <span className={i.closingStock <= 5 ? lowStockClass : undefined}>{i.closingStock}</span>
+              ),
           },
         ]}
         emptyTitle="No items sold"

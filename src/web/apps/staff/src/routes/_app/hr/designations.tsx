@@ -2,7 +2,20 @@ import { Button, Text } from '@fluentui/react-components';
 import { AddRegular, BriefcaseRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, DataTable, FormGrid, NumberField, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FormGrid,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -55,13 +68,25 @@ function DesignationsPage() {
             { key: 'name', header: 'Designation', render: (d) => <Text weight="semibold">{d.name}</Text> },
             { key: 'category', header: 'Staff category', render: (d) => d.category },
             { key: 'grade', header: 'Grade', width: 90, align: 'end', render: (d) => d.grade },
-            { key: 'active', header: 'Status', width: 110, render: (d) => <StatusBadge status={d.isActive ? 'Active' : 'Inactive'} tone={d.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'active',
+              header: 'Status',
+              width: 110,
+              render: (d) => (
+                <StatusBadge
+                  status={d.isActive ? 'Active' : 'Inactive'}
+                  tone={d.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No designations yet"
           size="small"
         />
       </Section>
-      {editing && <DesignationDrawer designation={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <DesignationDrawer designation={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      )}
     </Page>
   );
 }
@@ -95,7 +120,12 @@ function DesignationDrawer({ designation, onClose }: { designation: DesignationD
     },
   });
   const save = useMutation({
-    mutationFn: (v: Values) => hrApi.saveDesignation(designation?.id ?? null, { ...v, code: v.code.toUpperCase(), version: designation?.version ?? null }),
+    mutationFn: (v: Values) =>
+      hrApi.saveDesignation(designation?.id ?? null, {
+        ...v,
+        code: v.code.toUpperCase(),
+        version: designation?.version ?? null,
+      }),
     onSuccess: () => {
       notify.success('Designation saved');
       void queryClient.invalidateQueries({ queryKey: hrKeys.masters });
@@ -111,13 +141,25 @@ function DesignationDrawer({ designation, onClose }: { designation: DesignationD
   });
 
   return (
-    <EditorDrawer open title={designation ? designation.name : 'Add designation'} onClose={onClose} onSubmit={form.handleSubmit((v) => save.mutate(v))} busy={save.isPending}>
+    <EditorDrawer
+      open
+      title={designation ? designation.name : 'Add designation'}
+      onClose={onClose}
+      onSubmit={form.handleSubmit((v) => save.mutate(v))}
+      busy={save.isPending}
+    >
       <FormGrid columns={2} minColumnWidth={160}>
         <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={24} />
         <NumberField control={form.control} name="grade" label="Grade" required min={0} max={99} />
       </FormGrid>
       <TextField control={form.control} name="name" label="Designation" required maxLength={100} />
-      <SelectField control={form.control} name="category" label="Staff category" required options={STAFF_CATEGORIES.map((c) => ({ value: c, label: c }))} />
+      <SelectField
+        control={form.control}
+        name="category"
+        label="Staff category"
+        required
+        options={STAFF_CATEGORIES.map((c) => ({ value: c, label: c }))}
+      />
       <SwitchField control={form.control} name="isActive" label="In use" />
     </EditorDrawer>
   );

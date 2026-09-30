@@ -8,8 +8,18 @@ const manifest: ModuleManifest = {
   icon: PeopleRegular,
   order: 10,
   links: [
-    { label: 'Find patient', to: '/patients', permission: 'patients.read', keywords: ['search', 'uhid', 'mobile', 'mrn'] },
-    { label: 'Register patient', to: '/patients/register', permission: 'patients.register', keywords: ['new', 'registration', 'uhid'] },
+    {
+      label: 'Find patient',
+      to: '/patients',
+      permission: 'patients.read',
+      keywords: ['search', 'uhid', 'mobile', 'mrn'],
+    },
+    {
+      label: 'Register patient',
+      to: '/patients/register',
+      permission: 'patients.register',
+      keywords: ['new', 'registration', 'uhid'],
+    },
   ],
   quickActions: [
     {

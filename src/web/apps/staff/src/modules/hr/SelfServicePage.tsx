@@ -53,7 +53,9 @@ function Frame({
   children: (profile: MyProfileDto) => ReactNode;
 }) {
   const profile = useQuery({ ...hrQueries.myProfile(), retry: false });
-  const notLinked = isApiError(profile.error) && (profile.error.code === 'hr.self.not_linked' || profile.error.code === 'hr.self.no_user');
+  const notLinked =
+    isApiError(profile.error) &&
+    (profile.error.code === 'hr.self.not_linked' || profile.error.code === 'hr.self.no_user');
   const items = profile.data && profile.data.reportees > 0 ? [...SELF_NAV, TEAM_NAV_ITEM] : SELF_NAV;
 
   return (

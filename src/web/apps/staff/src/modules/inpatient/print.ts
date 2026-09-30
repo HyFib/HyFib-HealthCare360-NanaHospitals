@@ -1,4 +1,12 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatPhone, humanize, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatPhone,
+  humanize,
+  printDocument,
+  printHtml,
+} from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
 import { ADMISSION_SOURCE_LABEL, ADMISSION_TYPE_LABEL, PAYER_LABEL, type AdmissionDetail } from './api';
 
@@ -12,7 +20,11 @@ function row(label: string, value: string | null | undefined): string {
  */
 export async function printAdmissionSlip(admission: AdmissionDetail, facilityName: string): Promise<void> {
   const barcode = await barcodeSvg(admission.uhid, 'code128', { height: 9 });
-  const attendant = [admission.attendantName, admission.attendantRelation ? `(${admission.attendantRelation})` : null, admission.attendantPhone ? formatPhone(admission.attendantPhone) : null]
+  const attendant = [
+    admission.attendantName,
+    admission.attendantRelation ? `(${admission.attendantRelation})` : null,
+    admission.attendantPhone ? formatPhone(admission.attendantPhone) : null,
+  ]
     .filter(Boolean)
     .join(' ');
   const body = `
@@ -60,14 +72,21 @@ export async function printAdmissionSlip(admission: AdmissionDetail, facilityNam
     .small { font-size: 8.5pt; color: #333; }
     .signs { display: flex; justify-content: space-between; margin-top: 28px; font-size: 9pt; }
     .signs span { border-top: 1px solid #555; padding-top: 3px; min-width: 40%; text-align: center; }`;
-  await printHtml(printDocument(body, { title: `Admission ${admission.admissionNumber}`, pageSize: 'A5', styles }), { pageSize: 'A5' });
+  await printHtml(printDocument(body, { title: `Admission ${admission.admissionNumber}`, pageSize: 'A5', styles }), {
+    pageSize: 'A5',
+  });
 }
 
 /**
  * Patient wristband on a 50 × 25 mm label: name, age/sex, admission number and a Code 128 of the UHID, which bedside
  * scanners read before medicines, samples and blood. Printed silently on the label printer inside HC360 Desktop.
  */
-export async function printWristband(admission: Pick<AdmissionDetail, 'uhid' | 'patientName' | 'age' | 'gender' | 'admissionNumber' | 'wardName' | 'bedLabel'>): Promise<void> {
+export async function printWristband(
+  admission: Pick<
+    AdmissionDetail,
+    'uhid' | 'patientName' | 'age' | 'gender' | 'admissionNumber' | 'wardName' | 'bedLabel'
+  >,
+): Promise<void> {
   const barcode = await barcodeSvg(admission.uhid, 'code128', { height: 7, scale: 2 });
   const place = [admission.wardName, admission.bedLabel].filter(Boolean).join(' ');
   const body = `
@@ -84,5 +103,8 @@ export async function printWristband(admission: Pick<AdmissionDetail, 'uhid' | '
     .meta { font-size: 6pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .code svg { width: 100%; height: 9mm; display: block; }
     .uhid { font-family: Consolas, monospace; font-size: 7pt; letter-spacing: 1px; text-align: center; }`;
-  await printHtml(printDocument(body, { title: `Wristband ${admission.uhid}`, pageSize: 'Label50x25', styles }), { pageSize: 'Label50x25', silent: true });
+  await printHtml(printDocument(body, { title: `Wristband ${admission.uhid}`, pageSize: 'Label50x25', styles }), {
+    pageSize: 'Label50x25',
+    silent: true,
+  });
 }

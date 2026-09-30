@@ -8,9 +8,18 @@ import { useFacilityId, useLiveInvalidation } from '@/modules/ot/shared/hooks';
 import { dialysisKeys, dialysisQueries } from './api';
 
 const useStyles = makeStyles({
-  counts: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '8px', marginBottom: '8px' },
+  counts: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))',
+    gap: '8px',
+    marginBottom: '8px',
+  },
   count: { display: 'flex', flexDirection: 'column' },
-  number: { fontSize: tokens.fontSizeBase600, lineHeight: tokens.lineHeightBase600, fontWeight: tokens.fontWeightSemibold },
+  number: {
+    fontSize: tokens.fontSizeBase600,
+    lineHeight: tokens.lineHeightBase600,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   alert: { display: 'flex', gap: '6px', alignItems: 'center', color: tokens.colorPaletteDarkOrangeForeground1 },
 });
@@ -61,7 +70,8 @@ export function DialysisTodayWidget() {
           </div>
           {dirty > 0 && (
             <Text className={styles.alert}>
-              <BroomRegular aria-hidden /> {dirty} machine{dirty === 1 ? '' : 's'} need{dirty === 1 ? 's' : ''} disinfection
+              <BroomRegular aria-hidden /> {dirty} machine{dirty === 1 ? '' : 's'} need{dirty === 1 ? 's' : ''}{' '}
+              disinfection
             </Text>
           )}
           {due > 0 && (
@@ -69,7 +79,9 @@ export function DialysisTodayWidget() {
               <PersonClockRegular aria-hidden /> {due} patient{due === 1 ? ' is' : 's are'} due today but not booked
             </Text>
           )}
-          {dirty === 0 && due === 0 && <Caption1 className={styles.muted}>All machines are disinfected and every due patient is booked.</Caption1>}
+          {dirty === 0 && due === 0 && (
+            <Caption1 className={styles.muted}>All machines are disinfected and every due patient is booked.</Caption1>
+          )}
         </>
       )}
     </Section>

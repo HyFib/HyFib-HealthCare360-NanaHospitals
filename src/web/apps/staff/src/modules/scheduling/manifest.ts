@@ -12,10 +12,30 @@ const manifest: ModuleManifest = {
   icon: CalendarLtrRegular,
   order: 15,
   links: [
-    { label: "Today's appointments", to: '/scheduling', permission: READ, keywords: ['appointment', 'booking', 'check in', 'no-show', 'opd'] },
-    { label: 'Book appointment', to: '/scheduling/book', permission: BOOK, keywords: ['new appointment', 'slot', 'doctor appointment', 'online booking'] },
-    { label: 'Calendar', to: '/scheduling/calendar', permission: READ, keywords: ['day view', 'week view', 'utilisation'] },
-    { label: 'Waitlist', to: '/scheduling/waitlist', permission: READ, keywords: ['waiting list', 'cancellation', 'free slot'] },
+    {
+      label: "Today's appointments",
+      to: '/scheduling',
+      permission: READ,
+      keywords: ['appointment', 'booking', 'check in', 'no-show', 'opd'],
+    },
+    {
+      label: 'Book appointment',
+      to: '/scheduling/book',
+      permission: BOOK,
+      keywords: ['new appointment', 'slot', 'doctor appointment', 'online booking'],
+    },
+    {
+      label: 'Calendar',
+      to: '/scheduling/calendar',
+      permission: READ,
+      keywords: ['day view', 'week view', 'utilisation'],
+    },
+    {
+      label: 'Waitlist',
+      to: '/scheduling/waitlist',
+      permission: READ,
+      keywords: ['waiting list', 'cancellation', 'free slot'],
+    },
     {
       label: 'Doctor schedules',
       to: '/scheduling/schedules',
@@ -24,7 +44,13 @@ const manifest: ModuleManifest = {
     },
   ],
   quickActions: [
-    { label: 'Book appointment', to: '/scheduling/book', permission: BOOK, icon: CalendarAddRegular, description: 'Find a free slot with a doctor' },
+    {
+      label: 'Book appointment',
+      to: '/scheduling/book',
+      permission: BOOK,
+      icon: CalendarAddRegular,
+      description: 'Find a free slot with a doctor',
+    },
   ],
   widgets: [
     { id: 'scheduling-today', permission: READ, span: 4, order: 12, component: AppointmentsTodayWidget },

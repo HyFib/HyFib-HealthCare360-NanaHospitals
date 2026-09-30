@@ -27,7 +27,10 @@ export function EnrollmentPicker({
 }) {
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
-  const results = useQuery({ ...rpmQueries.enrollments({ search: search || undefined, pageSize: 10 }), refetchInterval: false });
+  const results = useQuery({
+    ...rpmQueries.enrollments({ search: search || undefined, pageSize: 10 }),
+    refetchInterval: false,
+  });
   const items = results.data?.items ?? [];
   const text = (e: PickedEnrollment) => `${e.patientName} (${e.uhid}) · ${e.programName}`;
 
@@ -45,7 +48,11 @@ export function EnrollmentPicker({
         }}
         onOptionSelect={(_, data) => {
           const picked = items.find((e) => e.id === data.optionValue);
-          onChange(picked ? { id: picked.id, patientName: picked.patientName, uhid: picked.uhid, programName: picked.programName } : null);
+          onChange(
+            picked
+              ? { id: picked.id, patientName: picked.patientName, uhid: picked.uhid, programName: picked.programName }
+              : null,
+          );
           setTerm('');
         }}
         expandIcon={results.isFetching ? <Spinner size="extra-tiny" /> : undefined}

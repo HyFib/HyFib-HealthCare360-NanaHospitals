@@ -20,7 +20,14 @@ const everyone = { admit: true, manage: true, housekeeping: true };
 
 describe('bed state legend', () => {
   it('describes every state with a label, an icon and a distinct colour', () => {
-    expect(BED_LEGEND.map((s) => s.status)).toEqual(['Vacant', 'Occupied', 'Reserved', 'Cleaning', 'Blocked', 'Maintenance']);
+    expect(BED_LEGEND.map((s) => s.status)).toEqual([
+      'Vacant',
+      'Occupied',
+      'Reserved',
+      'Cleaning',
+      'Blocked',
+      'Maintenance',
+    ]);
     for (const status of BED_STATUSES) {
       const info = BED_STATE[status];
       expect(info.label).toBeTruthy();
@@ -56,7 +63,13 @@ describe('bed transitions (mirror of the server state machine)', () => {
   });
 
   it('offers admit, reserve, cleaning, block and maintenance on a vacant bed', () => {
-    expect(bedActions('Vacant', everyone)).toEqual(['admit', 'reserve', 'sendForCleaning', 'block', 'startMaintenance']);
+    expect(bedActions('Vacant', everyone)).toEqual([
+      'admit',
+      'reserve',
+      'sendForCleaning',
+      'block',
+      'startMaintenance',
+    ]);
   });
 
   it('never offers a status change on an occupied bed (discharge or transfer releases it)', () => {
@@ -88,11 +101,19 @@ describe('bed transitions (mirror of the server state machine)', () => {
 
 describe('bed alerts', () => {
   it('orders alerts most serious first', () => {
-    expect(sortAlerts(['DischargeInitiated', 'Mlc', 'HighFallRisk'])).toEqual(['HighFallRisk', 'Mlc', 'DischargeInitiated']);
+    expect(sortAlerts(['DischargeInitiated', 'Mlc', 'HighFallRisk'])).toEqual([
+      'HighFallRisk',
+      'Mlc',
+      'DischargeInitiated',
+    ]);
   });
 
   it('keeps unknown alerts readable', () => {
-    expect(bedAlertInfo('NewServerAlert')).toEqual({ label: 'NewServerAlert', description: 'NewServerAlert', severity: 'informative' });
+    expect(bedAlertInfo('NewServerAlert')).toEqual({
+      label: 'NewServerAlert',
+      description: 'NewServerAlert',
+      severity: 'informative',
+    });
   });
 });
 
@@ -125,7 +146,11 @@ describe('occupancy', () => {
 });
 
 describe('bed search', () => {
-  const bed = { label: 'GWM-04', roomNumber: '12', occupant: { patientName: 'Ramesh Kumar', uhid: 'NH26000123', admissionNumber: 'NHIP26000045' } };
+  const bed = {
+    label: 'GWM-04',
+    roomNumber: '12',
+    occupant: { patientName: 'Ramesh Kumar', uhid: 'NH26000123', admissionNumber: 'NHIP26000045' },
+  };
 
   it.each(['gwm-04', 'ramesh', 'nh26000123', 'IP26000045', '12', ''])('matches "%s"', (term) => {
     expect(matchesBedSearch(bed, term)).toBe(true);

@@ -46,15 +46,20 @@ describe('report helpers', () => {
       findings: 'Lungs are clear.',
       impression: 'Normal study.',
     });
-    expect(applyTemplate({ technique: '', findings: 'Cardiomegaly.', impression: '' }, { ...template, technique: null }).findings).toBe(
-      'Cardiomegaly.\n\nLungs are clear.',
-    );
+    expect(
+      applyTemplate({ technique: '', findings: 'Cardiomegaly.', impression: '' }, { ...template, technique: null })
+        .findings,
+    ).toBe('Cardiomegaly.\n\nLungs are clear.');
   });
 
   it('adds an AI finding once', () => {
     expect(appendFinding('', 'Right lower lobe opacity.')).toBe('Right lower lobe opacity.');
-    expect(appendFinding('Heart normal.', 'Right lower lobe opacity.')).toBe('Heart normal.\n\nRight lower lobe opacity.');
-    expect(appendFinding('Heart normal.\n\nRight lower lobe opacity.', 'Right lower lobe opacity.')).toBe('Heart normal.\n\nRight lower lobe opacity.');
+    expect(appendFinding('Heart normal.', 'Right lower lobe opacity.')).toBe(
+      'Heart normal.\n\nRight lower lobe opacity.',
+    );
+    expect(appendFinding('Heart normal.\n\nRight lower lobe opacity.', 'Right lower lobe opacity.')).toBe(
+      'Heart normal.\n\nRight lower lobe opacity.',
+    );
   });
 
   it('formats AI confidence', () => {

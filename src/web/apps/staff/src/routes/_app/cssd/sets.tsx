@@ -34,7 +34,12 @@ function InstrumentSetsPage() {
           )
         }
       />
-      <Section flush actions={<Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show sets not in use" />}>
+      <Section
+        flush
+        actions={
+          <Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show sets not in use" />
+        }
+      >
         <DataTable
           ariaLabel="Instrument sets"
           rows={sets.data}
@@ -56,11 +61,41 @@ function InstrumentSetsPage() {
             },
             { key: 'method', header: 'Method', render: (s) => METHOD_LABEL[s.method] },
             { key: 'count', header: 'Instruments', width: 110, align: 'end', render: (s) => s.instrumentCount },
-            { key: 'shelf', header: 'Sterile for', width: 110, align: 'end', priority: 'low', render: (s) => `${s.shelfLifeDays} days` },
+            {
+              key: 'shelf',
+              header: 'Sterile for',
+              width: 110,
+              align: 'end',
+              priority: 'low',
+              render: (s) => `${s.shelfLifeDays} days`,
+            },
             { key: 'stock', header: 'On shelf', width: 100, align: 'end', render: (s) => s.packsAvailable },
-            { key: 'status', header: 'Status', width: 100, render: (s) => <StatusBadge status={s.isActive ? 'Active' : 'Inactive'} label={s.isActive ? 'In use' : 'Not in use'} tone={s.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 100,
+              render: (s) => (
+                <StatusBadge
+                  status={s.isActive ? 'Active' : 'Inactive'}
+                  label={s.isActive ? 'In use' : 'Not in use'}
+                  tone={s.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
-          rowActions={canManage ? (s) => <Button size="small" appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${s.name}`} onClick={() => setEditing(s)} /> : undefined}
+          rowActions={
+            canManage
+              ? (s) => (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<EditRegular />}
+                    aria-label={`Edit ${s.name}`}
+                    onClick={() => setEditing(s)}
+                  />
+                )
+              : undefined
+          }
           emptyTitle="No instrument sets"
           emptyDescription={canManage ? 'Add each tray with its count sheet so returns can be checked.' : undefined}
         />

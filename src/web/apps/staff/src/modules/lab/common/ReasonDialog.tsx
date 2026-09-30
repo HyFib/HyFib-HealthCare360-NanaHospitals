@@ -76,7 +76,13 @@ export function ReasonDialog({
               {suggestions && suggestions.length > 0 && (
                 <div role="group" aria-label="Common reasons" className={styles.suggestions}>
                   {suggestions.map((suggestion) => (
-                    <Button key={suggestion} size="small" shape="circular" appearance={reason === suggestion ? 'primary' : 'outline'} onClick={() => setReason(suggestion)}>
+                    <Button
+                      key={suggestion}
+                      size="small"
+                      shape="circular"
+                      appearance={reason === suggestion ? 'primary' : 'outline'}
+                      onClick={() => setReason(suggestion)}
+                    >
                       {suggestion}
                     </Button>
                   ))}
@@ -85,10 +91,20 @@ export function ReasonDialog({
               <Field
                 label={label}
                 required
-                hint={hint ?? (minLength > 3 ? `At least ${minLength} characters. This is recorded in the audit trail.` : 'This is recorded in the audit trail.')}
+                hint={
+                  hint ??
+                  (minLength > 3
+                    ? `At least ${minLength} characters. This is recorded in the audit trail.`
+                    : 'This is recorded in the audit trail.')
+                }
                 validationState={reason && tooShort ? 'warning' : 'none'}
               >
-                <Input value={reason} onChange={(_, data) => setReason(data.value.slice(0, maxLength))} autoFocus maxLength={maxLength} />
+                <Input
+                  value={reason}
+                  onChange={(_, data) => setReason(data.value.slice(0, maxLength))}
+                  autoFocus
+                  maxLength={maxLength}
+                />
               </Field>
             </DialogContent>
             <DialogActions>

@@ -18,7 +18,8 @@ export const doctorQueries = {
   filters: (facilityId?: string) =>
     queryOptions({
       queryKey: ['public', 'doctors', 'filters', facilityId ?? 'all'],
-      queryFn: ({ signal }) => api.get<DirectoryFilters>('/api/v1/public/doctors/filters', { query: { facilityId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DirectoryFilters>('/api/v1/public/doctors/filters', { query: { facilityId }, signal }),
       staleTime: 10 * 60_000,
     }),
 
@@ -47,7 +48,8 @@ export const doctorQueries = {
   profile: (doctorId: string) =>
     queryOptions({
       queryKey: ['public', 'doctors', 'profile', doctorId],
-      queryFn: ({ signal }) => api.get<PublicDoctorProfile>(`/api/v1/public/doctors/${encodeURIComponent(doctorId)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<PublicDoctorProfile>(`/api/v1/public/doctors/${encodeURIComponent(doctorId)}`, { signal }),
       staleTime: 5 * 60_000,
     }),
 

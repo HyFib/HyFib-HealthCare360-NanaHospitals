@@ -44,7 +44,11 @@ function FeedbackPage() {
           <div className={styles.list}>
             {forms.data.map((form) => (
               <CardLink key={form.id} to="/my-feedback/$formId" params={{ formId: form.id }}>
-                <ListRow icon={<PersonFeedbackRegular />} title={form.title} subtitle={t('feedback.formAt', { hospital: form.hospital })} />
+                <ListRow
+                  icon={<PersonFeedbackRegular />}
+                  title={form.title}
+                  subtitle={t('feedback.formAt', { hospital: form.hospital })}
+                />
               </CardLink>
             ))}
           </div>
@@ -71,7 +75,9 @@ function FeedbackPage() {
                     subtitle={f.date(item.submittedAt)}
                     meta={
                       [
-                        item.averageRating !== null ? t('feedback.history.rating', { value: f.number(Math.round(item.averageRating * 10) / 10) }) : null,
+                        item.averageRating !== null
+                          ? t('feedback.history.rating', { value: f.number(Math.round(item.averageRating * 10) / 10) })
+                          : null,
                         item.nps !== null ? t('feedback.history.nps', { value: f.number(item.nps) }) : null,
                         item.complaintNumber ? t('feedback.history.complaint', { number: item.complaintNumber }) : null,
                       ]
@@ -89,7 +95,11 @@ function FeedbackPage() {
       </ReportCard>
 
       <CardLink to="/profile/preferences">
-        <ListRow icon={<MegaphoneRegular />} title={t('feedback.preferences')} subtitle={t('feedback.preferences.hint')} />
+        <ListRow
+          icon={<MegaphoneRegular />}
+          title={t('feedback.preferences')}
+          subtitle={t('feedback.preferences.hint')}
+        />
       </CardLink>
     </PortalPage>
   );

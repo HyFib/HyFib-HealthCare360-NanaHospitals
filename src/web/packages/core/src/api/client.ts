@@ -144,7 +144,10 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     blob: async (path, options) => (await send('GET', path, undefined, options)).blob(),
     download: async (path, options) => {
       const response = await send('GET', path, undefined, options);
-      return { blob: await response.blob(), fileName: fileNameFromDisposition(response.headers.get('content-disposition')) };
+      return {
+        blob: await response.blob(),
+        fileName: fileNameFromDisposition(response.headers.get('content-disposition')),
+      };
     },
   };
 }

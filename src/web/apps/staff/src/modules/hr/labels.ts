@@ -48,7 +48,15 @@ export const employeeStatusLabel: Record<EmployeeStatus, string> = {
   Separated: 'Separated',
 };
 
-export const SEPARATION_REASONS = ['Resignation', 'Termination', 'Retirement', 'EndOfContract', 'Death', 'Absconding', 'Other'] as const;
+export const SEPARATION_REASONS = [
+  'Resignation',
+  'Termination',
+  'Retirement',
+  'EndOfContract',
+  'Death',
+  'Absconding',
+  'Other',
+] as const;
 export type SeparationReason = (typeof SEPARATION_REASONS)[number];
 
 export const PAYMENT_MODES = ['BankTransfer', 'Cheque', 'Cash'] as const;
@@ -84,7 +92,15 @@ export const attendanceStatusLabel: Record<AttendanceStatus, string> = {
   OnDuty: 'On duty',
 };
 
-export const ATTENDANCE_FLAGS = ['Late', 'EarlyExit', 'MissingPunch', 'Overtime', 'WorkedOnOffDay', 'Unrostered', 'Regularised'] as const;
+export const ATTENDANCE_FLAGS = [
+  'Late',
+  'EarlyExit',
+  'MissingPunch',
+  'Overtime',
+  'WorkedOnOffDay',
+  'Unrostered',
+  'Regularised',
+] as const;
 export type AttendanceFlag = (typeof ATTENDANCE_FLAGS)[number];
 export const attendanceFlagLabel: Record<AttendanceFlag, string> = {
   Late: 'Late',
@@ -143,15 +159,25 @@ export type SalaryCalculationType = (typeof SALARY_CALCULATION_TYPES)[number];
 export type PunchDirection = 'Unknown' | 'In' | 'Out';
 export type PunchSource = 'Adms' | 'DeviceApi' | 'Regularisation';
 
-export type RosterConflictKind = 'NotEmployed' | 'DuplicateAssignment' | 'WeekOffWithShift' | 'OverlappingShifts' | 'InsufficientRest' | 'OnLeave';
+export type RosterConflictKind =
+  'NotEmployed' | 'DuplicateAssignment' | 'WeekOffWithShift' | 'OverlappingShifts' | 'InsufficientRest' | 'OnLeave';
 export type ConflictSeverity = 'Warning' | 'Error';
 
 export const TITLES = ['Dr.', 'Mr.', 'Ms.', 'Mrs.'] as const;
 
 /** Plain words and colour for a credential's expiry stage ("Expires in 5 days"). */
-export function credentialExpiry(stage: CredentialExpiryStage, daysToExpiry: number | null): { label: string; tone: 'danger' | 'warning' | 'success' | 'informative' } {
+export function credentialExpiry(
+  stage: CredentialExpiryStage,
+  daysToExpiry: number | null,
+): { label: string; tone: 'danger' | 'warning' | 'success' | 'informative' } {
   if (stage === 'Expired' || (daysToExpiry !== null && daysToExpiry < 0)) {
-    return { label: daysToExpiry !== null && daysToExpiry < 0 ? `Expired ${-daysToExpiry} day${daysToExpiry === -1 ? '' : 's'} ago` : 'Expired', tone: 'danger' };
+    return {
+      label:
+        daysToExpiry !== null && daysToExpiry < 0
+          ? `Expired ${-daysToExpiry} day${daysToExpiry === -1 ? '' : 's'} ago`
+          : 'Expired',
+      tone: 'danger',
+    };
   }
   if (daysToExpiry === null) {
     return { label: 'No expiry', tone: 'informative' };

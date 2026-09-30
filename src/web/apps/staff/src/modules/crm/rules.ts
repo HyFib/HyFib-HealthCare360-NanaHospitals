@@ -114,7 +114,7 @@ export function inSendingWindow(istDateTimeInput: string): boolean {
 
 // GSM 03.38 characters that fit in a standard SMS (the extension characters count twice).
 const GSM_BASIC = new Set(
-  "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà",
+  '@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà',
 );
 const GSM_EXTENDED = new Set('^{}\\[~]|€');
 

@@ -121,7 +121,9 @@ export async function runCheckout(checkout: PaymentCheckout, context: CheckoutCo
     try {
       Razorpay = await loadRazorpay();
     } catch {
-      return isUsablePaymentLink(checkout.paymentLinkUrl) ? openHostedPage(checkout.paymentLinkUrl, context) : { kind: 'unavailable' };
+      return isUsablePaymentLink(checkout.paymentLinkUrl)
+        ? openHostedPage(checkout.paymentLinkUrl, context)
+        : { kind: 'unavailable' };
     }
     return new Promise<CheckoutOutcome>((resolve) => {
       let failedOnce = false;

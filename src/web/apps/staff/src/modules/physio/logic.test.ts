@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import type { PhysioSessionStatus } from './api';
-import { canCancelReferral, defaultIntervalDays, nextStep, painChange, planProgress, scheduleLimit, sessionTimes } from './logic';
+import {
+  canCancelReferral,
+  defaultIntervalDays,
+  nextStep,
+  painChange,
+  planProgress,
+  scheduleLimit,
+  sessionTimes,
+} from './logic';
 
 const sessions = (...statuses: PhysioSessionStatus[]) => statuses.map((status) => ({ status }));
 
 describe('treatment plan progress (mirrors TreatmentPlan.EnsureCanSchedule)', () => {
   it('counts every session except cancelled ones against the plan', () => {
-    expect(planProgress({ sessionsPlanned: 10 }, sessions('Attended', 'Attended', 'Missed', 'Cancelled', 'Scheduled'))).toEqual({
+    expect(
+      planProgress({ sessionsPlanned: 10 }, sessions('Attended', 'Attended', 'Missed', 'Cancelled', 'Scheduled')),
+    ).toEqual({
       planned: 10,
       booked: 4,
       attended: 2,
@@ -31,7 +41,11 @@ describe('treatment plan progress (mirrors TreatmentPlan.EnsureCanSchedule)', ()
   });
 
   it('previews the session times', () => {
-    expect(sessionTimes('2026-09-28T04:30:00.000Z', 3, 2)).toEqual(['2026-09-28T04:30:00.000Z', '2026-09-30T04:30:00.000Z', '2026-10-02T04:30:00.000Z']);
+    expect(sessionTimes('2026-09-28T04:30:00.000Z', 3, 2)).toEqual([
+      '2026-09-28T04:30:00.000Z',
+      '2026-09-30T04:30:00.000Z',
+      '2026-10-02T04:30:00.000Z',
+    ]);
     expect(sessionTimes('bad', 3, 2)).toEqual([]);
   });
 });

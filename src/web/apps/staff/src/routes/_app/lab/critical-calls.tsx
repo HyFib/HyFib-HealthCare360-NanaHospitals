@@ -12,7 +12,12 @@ import { useLabLive } from '@/modules/lab/useLabLive';
 
 const KINDS = ['Laboratory', 'Radiology', 'Cardiology'] as const satisfies readonly DiagnosticKind[];
 
-const METHOD_LABEL: Record<CommunicationMethod, string> = { Phone: 'Phone', InPerson: 'In person', VideoCall: 'Video call', SecureMessage: 'Secure message' };
+const METHOD_LABEL: Record<CommunicationMethod, string> = {
+  Phone: 'Phone',
+  InPerson: 'In person',
+  VideoCall: 'Video call',
+  SecureMessage: 'Secure message',
+};
 
 interface CallsSearch {
   from?: string;
@@ -44,8 +49,11 @@ function CriticalCallsPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   useLabLive();
-  const calls = useQuery(labQueries.criticalCalls({ from: search.from, to: search.to, kind: search.kind, page: search.page }));
-  const set = (patch: Partial<CallsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const calls = useQuery(
+    labQueries.criticalCalls({ from: search.from, to: search.to, kind: search.kind, page: search.page }),
+  );
+  const set = (patch: Partial<CallsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
 
   return (
@@ -53,7 +61,9 @@ function CriticalCallsPage() {
       <PageHeader
         title="Critical call register"
         subtitle={
-          search.from && search.from !== today ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}` : 'Today: who was told, how and when, with read-back'
+          search.from && search.from !== today
+            ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}`
+            : 'Today: who was told, how and when, with read-back'
         }
       />
       <Section flush>
@@ -61,7 +71,10 @@ function CriticalCallsPage() {
           <FilterBar>
             <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => set(range)} />
             <Field label="Department">
-              <Select value={search.kind ?? ''} onChange={(_, data) => set({ kind: (data.value || undefined) as DiagnosticKind | undefined })}>
+              <Select
+                value={search.kind ?? ''}
+                onChange={(_, data) => set({ kind: (data.value || undefined) as DiagnosticKind | undefined })}
+              >
                 <option value="">All</option>
                 {KINDS.map((kind) => (
                   <option key={kind} value={kind}>
@@ -81,7 +94,12 @@ function CriticalCallsPage() {
           getRowId={(call) => call.id}
           size="small"
           columns={[
-            { key: 'at', header: 'When', width: 170, render: (call: CriticalCallDto) => formatDateTime(call.informedAt) },
+            {
+              key: 'at',
+              header: 'When',
+              width: 170,
+              render: (call: CriticalCallDto) => formatDateTime(call.informedAt),
+            },
             {
               key: 'patient',
               header: 'Patient',

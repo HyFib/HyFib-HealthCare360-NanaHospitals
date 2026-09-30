@@ -18,7 +18,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, DismissCircleRegular, MoreHorizontalRegular, OpenRegular, SendRegular, VideoRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DismissCircleRegular,
+  MoreHorizontalRegular,
+  OpenRegular,
+  SendRegular,
+  VideoRegular,
+} from '@fluentui/react-icons';
 import { formatTime, useRealtimeEvent, useSession } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -88,14 +95,24 @@ function TelehealthPage() {
   const from = range === 'past' ? addDays(today, -7) : today;
   const to = range === 'today' ? today : range === 'upcoming' ? addDays(today, 6) : addDays(today, -1);
   const mine = scope === 'mine' && Boolean(myPractitionerId) && !search.practitionerId;
-  const sessions = useQuery(telehealthQueries.sessions({ date: from, to, practitionerId: search.practitionerId, status: search.status, mine: mine || undefined }));
+  const sessions = useQuery(
+    telehealthQueries.sessions({
+      date: from,
+      to,
+      practitionerId: search.practitionerId,
+      status: search.status,
+      mine: mine || undefined,
+    }),
+  );
 
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'telehealth.changed', () => {
     void queryClient.invalidateQueries({ queryKey: telehealthKeys.sessions });
   });
 
-  const set = (patch: Partial<TelehealthSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
-  const open = (s: TelehealthSessionListItem) => void navigate({ to: '/telehealth/$sessionId', params: { sessionId: s.id } });
+  const set = (patch: Partial<TelehealthSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const open = (s: TelehealthSessionListItem) =>
+    void navigate({ to: '/telehealth/$sessionId', params: { sessionId: s.id } });
   const rows = sessions.data ?? [];
   const waiting = rows.filter((s) => s.status === 'WaitingRoom');
 
@@ -116,7 +133,8 @@ function TelehealthPage() {
       {waiting.length > 0 && range !== 'past' && (
         <MessageBar intent="warning">
           <MessageBarBody>
-            {waiting.length === 1 ? `${waiting[0]!.patientName} is waiting` : `${waiting.length} patients are waiting`} for {waiting.length === 1 ? waiting[0]!.practitionerName : 'their doctors'}.
+            {waiting.length === 1 ? `${waiting[0]!.patientName} is waiting` : `${waiting.length} patients are waiting`}{' '}
+            for {waiting.length === 1 ? waiting[0]!.practitionerName : 'their doctors'}.
           </MessageBarBody>
           {canConsult && (
             <MessageBarActions>
@@ -130,18 +148,28 @@ function TelehealthPage() {
 
       <Section flush>
         <div className={styles.toolbar}>
-          <TabList selectedValue={range} onTabSelect={(_, d) => set({ range: d.value === 'today' ? undefined : (d.value as Range) })}>
+          <TabList
+            selectedValue={range}
+            onTabSelect={(_, d) => set({ range: d.value === 'today' ? undefined : (d.value as Range) })}
+          >
             <Tab value="today">Today</Tab>
             <Tab value="upcoming">Next 7 days</Tab>
             <Tab value="past">Last 7 days</Tab>
           </TabList>
           <FilterBar>
             {myPractitionerId && (
-              <Switch checked={scope === 'mine'} onChange={(_, d) => set({ scope: d.checked ? 'mine' : 'all', practitionerId: undefined })} label="Only my consultations" />
+              <Switch
+                checked={scope === 'mine'}
+                onChange={(_, d) => set({ scope: d.checked ? 'mine' : 'all', practitionerId: undefined })}
+                label="Only my consultations"
+              />
             )}
             {scope === 'all' && (
               <Field label="Doctor">
-                <Select value={search.practitionerId ?? ''} onChange={(_, d) => set({ practitionerId: d.value || undefined })}>
+                <Select
+                  value={search.practitionerId ?? ''}
+                  onChange={(_, d) => set({ practitionerId: d.value || undefined })}
+                >
                   <option value="">All doctors</option>
                   {toOptions(doctors.data).map((o) => (
                     <option key={o.value} value={o.value}>
@@ -152,7 +180,10 @@ function TelehealthPage() {
               </Field>
             )}
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as TelehealthStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as TelehealthStatus | undefined })}
+              >
                 <option value="">Any status</option>
                 {TELEHEALTH_STATUSES.map((status) => (
                   <option key={status} value={status}>
@@ -181,7 +212,9 @@ function TelehealthPage() {
                   <Text weight="semibold">
                     {formatTime(s.scheduledStartAt)} – {formatTime(s.scheduledEndAt)}
                   </Text>
-                  {range !== 'today' && <Caption1 className={styles.muted}>{relativeDayLabel(istDate(s.scheduledStartAt), today)}</Caption1>}
+                  {range !== 'today' && (
+                    <Caption1 className={styles.muted}>{relativeDayLabel(istDate(s.scheduledStartAt), today)}</Caption1>
+                  )}
                 </span>
               ),
             },
@@ -210,26 +243,50 @@ function TelehealthPage() {
               width: 170,
               render: (s) => (
                 <span className={styles.stack}>
-                  <StatusBadge status={s.status} tone={sessionStatusText[s.status].tone} label={sessionStatusText[s.status].label} />
+                  <StatusBadge
+                    status={s.status}
+                    tone={sessionStatusText[s.status].tone}
+                    label={sessionStatusText[s.status].label}
+                  />
                   {s.status === 'WaitingRoom' && s.patientWaitingSince && (
-                    <Caption1 className={styles.waiting}>waiting {formatDuration(minutesSince(s.patientWaitingSince, now))}</Caption1>
+                    <Caption1 className={styles.waiting}>
+                      waiting {formatDuration(minutesSince(s.patientWaitingSince, now))}
+                    </Caption1>
                   )}
-                  {s.status === 'Completed' && s.durationSeconds !== null && <Caption1 className={styles.muted}>{formatDuration(s.durationSeconds / 60)}</Caption1>}
+                  {s.status === 'Completed' && s.durationSeconds !== null && (
+                    <Caption1 className={styles.muted}>{formatDuration(s.durationSeconds / 60)}</Caption1>
+                  )}
                 </span>
               ),
             },
-            { key: 'link', header: 'Join link', priority: 'low', width: 100, render: (s) => (s.linkSent ? 'Sent' : <Text className={styles.muted}>Not sent</Text>) },
+            {
+              key: 'link',
+              header: 'Join link',
+              priority: 'low',
+              width: 100,
+              render: (s) => (s.linkSent ? 'Sent' : <Text className={styles.muted}>Not sent</Text>),
+            },
           ]}
           rowActions={(s) => (
             <div className={styles.actions}>
               {canConsult && isSessionOpen(s.status) && (
-                <Button size="small" appearance={s.status === 'WaitingRoom' ? 'primary' : 'secondary'} icon={<VideoRegular />} onClick={() => open(s)}>
+                <Button
+                  size="small"
+                  appearance={s.status === 'WaitingRoom' ? 'primary' : 'secondary'}
+                  icon={<VideoRegular />}
+                  onClick={() => open(s)}
+                >
                   {s.status === 'InProgress' ? 'Rejoin' : 'Join'}
                 </Button>
               )}
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More actions for ${s.patientName}`} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<MoreHorizontalRegular />}
+                    aria-label={`More actions for ${s.patientName}`}
+                  />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>
@@ -237,12 +294,21 @@ function TelehealthPage() {
                       Open
                     </MenuItem>
                     {actions.canManage && isSessionOpen(s.status) && (
-                      <MenuItem icon={<SendRegular />} disabled={actions.resending} onClick={() => actions.resendLink(s.id)}>
+                      <MenuItem
+                        icon={<SendRegular />}
+                        disabled={actions.resending}
+                        onClick={() => actions.resendLink(s.id)}
+                      >
                         Send a new link
                       </MenuItem>
                     )}
                     {actions.canManage && (s.status === 'Scheduled' || s.status === 'WaitingRoom') && (
-                      <MenuItem icon={<DismissCircleRegular />} onClick={() => actions.cancel({ id: s.id, patientName: s.patientName, scheduledStartAt: s.scheduledStartAt })}>
+                      <MenuItem
+                        icon={<DismissCircleRegular />}
+                        onClick={() =>
+                          actions.cancel({ id: s.id, patientName: s.patientName, scheduledStartAt: s.scheduledStartAt })
+                        }
+                      >
                         Cancel consultation
                       </MenuItem>
                     )}
@@ -251,7 +317,13 @@ function TelehealthPage() {
               </Menu>
             </div>
           )}
-          emptyTitle={range === 'today' ? 'No video consultations today' : range === 'upcoming' ? 'No video consultations in the next 7 days' : 'No video consultations in the last 7 days'}
+          emptyTitle={
+            range === 'today'
+              ? 'No video consultations today'
+              : range === 'upcoming'
+                ? 'No video consultations in the next 7 days'
+                : 'No video consultations in the last 7 days'
+          }
           emptyDescription="Book an appointment as a video consultation, or create one here for a follow-up call."
           size="small"
         />

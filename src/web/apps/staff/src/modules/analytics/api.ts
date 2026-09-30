@@ -11,9 +11,20 @@ const BASE = '/api/v1/analytics';
 
 // ------------------------------------------------------------------------------------------------ catalogue
 
-export type ReportCategory = 'OutPatient' | 'InPatient' | 'Revenue' | 'Diagnostics' | 'Pharmacy' | 'SpecialtyCare' | 'Quality' | 'Experience' | 'People';
-export type ReportValueType = 'Text' | 'Integer' | 'Decimal' | 'Money' | 'Percent' | 'Days' | 'Minutes' | 'Date' | 'DateTime' | 'Month';
-export type ReportParameterKind = 'Period' | 'Facility' | 'Department' | 'Practitioner' | 'Payer' | 'Ward' | 'Store' | 'Theatre' | 'Choice' | 'Number';
+export type ReportCategory =
+  | 'OutPatient'
+  | 'InPatient'
+  | 'Revenue'
+  | 'Diagnostics'
+  | 'Pharmacy'
+  | 'SpecialtyCare'
+  | 'Quality'
+  | 'Experience'
+  | 'People';
+export type ReportValueType =
+  'Text' | 'Integer' | 'Decimal' | 'Money' | 'Percent' | 'Days' | 'Minutes' | 'Date' | 'DateTime' | 'Month';
+export type ReportParameterKind =
+  'Period' | 'Facility' | 'Department' | 'Practitioner' | 'Payer' | 'Ward' | 'Store' | 'Theatre' | 'Choice' | 'Number';
 export type ReportChartType = 'Bar' | 'StackedBar' | 'Line' | 'Area' | 'Pie' | 'Table' | 'Summary';
 
 export interface ReportChoice {
@@ -349,7 +360,14 @@ export const analyticsKeys = {
 
 /** Report inputs plus paging/sorting as GET query parameters (the GET run is not stored by the idempotency layer). */
 function runQuery(inputs: ReportInputs, options: RunOptions): Record<string, string | number | boolean | undefined> {
-  return { ...inputs, page: options.page, pageSize: options.pageSize, sort: options.sort, desc: options.desc, chart: options.chart };
+  return {
+    ...inputs,
+    page: options.page,
+    pageSize: options.pageSize,
+    sort: options.sort,
+    desc: options.desc,
+    chart: options.chart,
+  };
 }
 
 export const analyticsQueries = {
@@ -363,7 +381,11 @@ export const analyticsQueries = {
     queryOptions({
       queryKey: [...analyticsKeys.runs, reportId, inputs, options],
       queryFn: ({ signal }) =>
-        api.get<ReportResult>(`${BASE}/reports/${encodeURIComponent(reportId)}/run`, { query: runQuery(inputs, options), signal, timeoutMs: 120_000 }),
+        api.get<ReportResult>(`${BASE}/reports/${encodeURIComponent(reportId)}/run`, {
+          query: runQuery(inputs, options),
+          signal,
+          timeoutMs: 120_000,
+        }),
       // Keep the previous page on screen while new inputs load, but never another report's columns.
       placeholderData: (previous) => (previous?.reportId === reportId ? previous : undefined),
       staleTime: 60_000,
@@ -371,7 +393,8 @@ export const analyticsQueries = {
   kpis: (from: string | undefined, to: string | undefined, facilityId: string | undefined) =>
     queryOptions({
       queryKey: [...analyticsKeys.kpis, from ?? '', to ?? '', facilityId ?? ''],
-      queryFn: ({ signal }) => api.get<KpiSet>(`${BASE}/kpis`, { query: { from, to, facilityId }, signal, timeoutMs: 120_000 }),
+      queryFn: ({ signal }) =>
+        api.get<KpiSet>(`${BASE}/kpis`, { query: { from, to, facilityId }, signal, timeoutMs: 120_000 }),
       placeholderData: keepPreviousData,
       staleTime: 2 * 60_000,
       refetchInterval: 5 * 60_000,
@@ -381,7 +404,10 @@ export const analyticsQueries = {
     queryOptions({
       queryKey: ['analytics', 'lookup', kind, facilityId ?? '', search ?? ''],
       queryFn: ({ signal }) =>
-        api.get<LookupItem[]>(`${BASE}/lookups/${kind}`, { query: { facilityId: facilityId ?? undefined, search: search || undefined }, signal }),
+        api.get<LookupItem[]>(`${BASE}/lookups/${kind}`, {
+          query: { facilityId: facilityId ?? undefined, search: search || undefined },
+          signal,
+        }),
       staleTime: 10 * 60_000,
       placeholderData: keepPreviousData,
     }),
@@ -409,7 +435,11 @@ export const analyticsQueries = {
   deliveries: (scheduleId: string, page: number) =>
     queryOptions({
       queryKey: [...analyticsKeys.schedules, scheduleId, 'deliveries', page],
-      queryFn: ({ signal }) => api.get<PagedResult<DeliveryDto>>(`${BASE}/schedules/${scheduleId}/deliveries`, { query: { page, pageSize: 10 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<DeliveryDto>>(`${BASE}/schedules/${scheduleId}/deliveries`, {
+          query: { page, pageSize: 10 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
 };
@@ -424,9 +454,11 @@ export const analyticsApi = {
       timeoutMs: 180_000,
     }),
   createDashboard: (body: SaveDashboardRequest) => api.post<DashboardDetail>(`${BASE}/dashboards`, body),
-  updateDashboard: (id: string, body: SaveDashboardRequest) => api.put<DashboardDetail>(`${BASE}/dashboards/${id}`, body),
+  updateDashboard: (id: string, body: SaveDashboardRequest) =>
+    api.put<DashboardDetail>(`${BASE}/dashboards/${id}`, body),
   copyDashboard: (id: string) => api.post<DashboardDetail>(`${BASE}/dashboards/${id}/copy`),
-  deleteDashboard: (id: string, version: number) => api.delete<void>(`${BASE}/dashboards/${id}`, { query: { version } }),
+  deleteDashboard: (id: string, version: number) =>
+    api.delete<void>(`${BASE}/dashboards/${id}`, { query: { version } }),
   createSchedule: (body: SaveScheduleRequest) => api.post<ScheduleDto>(`${BASE}/schedules`, body),
   updateSchedule: (id: string, body: SaveScheduleRequest) => api.put<ScheduleDto>(`${BASE}/schedules/${id}`, body),
   deleteSchedule: (id: string, version: number) => api.delete<void>(`${BASE}/schedules/${id}`, { query: { version } }),

@@ -101,7 +101,12 @@ function Shell({
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!canSubmit || busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!canSubmit || busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 {submitLabel}
               </Button>
             </DialogActions>
@@ -112,11 +117,22 @@ function Shell({
   );
 }
 
-export function ScheduleCardiologyDialog({ study, onClose, onDone }: { study: CardiologyStudyRef; onClose: () => void; onDone: () => void }) {
+export function ScheduleCardiologyDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: CardiologyStudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const [at, setAt] = useState(() => toZonedInput(study.scheduledAt ? new Date(study.scheduledAt) : new Date()));
   const [room, setRoom] = useState(study.room ?? '');
   const instant = fromZonedInput(at);
-  const schedule = useMutation({ mutationFn: () => cardiologyApi.schedule(study.id, instant!, room.trim() || null), onSuccess: onDone });
+  const schedule = useMutation({
+    mutationFn: () => cardiologyApi.schedule(study.id, instant!, room.trim() || null),
+    onSuccess: onDone,
+  });
   return (
     <Shell
       study={study}
@@ -133,15 +149,30 @@ export function ScheduleCardiologyDialog({ study, onClose, onDone }: { study: Ca
         <Input type="datetime-local" value={at} onChange={(_, data) => setAt(data.value)} autoFocus />
       </Field>
       <Field label="Room">
-        <Input value={room} onChange={(_, data) => setRoom(data.value.slice(0, 64))} placeholder="e.g. Cardiology lab 2" />
+        <Input
+          value={room}
+          onChange={(_, data) => setRoom(data.value.slice(0, 64))}
+          placeholder="e.g. Cardiology lab 2"
+        />
       </Field>
     </Shell>
   );
 }
 
-export function StartCardiologyDialog({ study, onClose, onDone }: { study: CardiologyStudyRef; onClose: () => void; onDone: () => void }) {
+export function StartCardiologyDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: CardiologyStudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const [device, setDevice] = useState(study.deviceName ?? '');
-  const start = useMutation({ mutationFn: () => cardiologyApi.start(study.id, device.trim() || null), onSuccess: onDone });
+  const start = useMutation({
+    mutationFn: () => cardiologyApi.start(study.id, device.trim() || null),
+    onSuccess: onDone,
+  });
   return (
     <Shell
       study={study}
@@ -155,7 +186,12 @@ export function StartCardiologyDialog({ study, onClose, onDone }: { study: Cardi
       onClose={onClose}
     >
       <Field label="Machine" hint="Printed on the report for traceability">
-        <Input value={device} onChange={(_, data) => setDevice(data.value.slice(0, 100))} placeholder="e.g. BPL Cardiart 9108" autoFocus />
+        <Input
+          value={device}
+          onChange={(_, data) => setDevice(data.value.slice(0, 100))}
+          placeholder="e.g. BPL Cardiart 9108"
+          autoFocus
+        />
       </Field>
     </Shell>
   );
@@ -165,7 +201,15 @@ export function StartCardiologyDialog({ study, onClose, onDone }: { study: Cardi
  * Uploads the device output (PDF tracing, echo images) to the encrypted file store against the patient, then attaches
  * it to the study.
  */
-export function AttachFilesDialog({ study, onClose, onDone }: { study: CardiologyStudyRef; onClose: () => void; onDone: () => void }) {
+export function AttachFilesDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: CardiologyStudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const styles = useStyles();
   const canUpload = usePermission('files.write');
   const [files, setFiles] = useState<File[]>([]);
@@ -197,8 +241,17 @@ export function AttachFilesDialog({ study, onClose, onDone }: { study: Cardiolog
     >
       {canUpload ? (
         <>
-          <Field label="Files from the machine (PDF or images, up to 25 MB each)" hint="Select several files at once if the machine exported more than one">
-            <input type="file" accept={ACCEPTED_FILE_TYPES} multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []))} aria-label="Device output files" />
+          <Field
+            label="Files from the machine (PDF or images, up to 25 MB each)"
+            hint="Select several files at once if the machine exported more than one"
+          >
+            <input
+              type="file"
+              accept={ACCEPTED_FILE_TYPES}
+              multiple
+              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+              aria-label="Device output files"
+            />
           </Field>
           {files.length > 0 && (
             <ul className={styles.list}>
@@ -223,10 +276,21 @@ export function AttachFilesDialog({ study, onClose, onDone }: { study: Cardiolog
   );
 }
 
-export function CompleteCardiologyDialog({ study, onClose, onDone }: { study: CardiologyStudyRef; onClose: () => void; onDone: () => void }) {
+export function CompleteCardiologyDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: CardiologyStudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const styles = useStyles();
   const [notes, setNotes] = useState('');
-  const complete = useMutation({ mutationFn: () => cardiologyApi.complete(study.id, notes.trim() || null), onSuccess: onDone });
+  const complete = useMutation({
+    mutationFn: () => cardiologyApi.complete(study.id, notes.trim() || null),
+    onSuccess: onDone,
+  });
   const noTracing = hasErrorCode(complete.error, 'cardiology.no_tracing') || study.fileCount === 0;
   return (
     <Shell
@@ -242,15 +306,24 @@ export function CompleteCardiologyDialog({ study, onClose, onDone }: { study: Ca
     >
       {noTracing ? (
         <MessageBar intent="warning">
-          <MessageBarBody>Attach the device output (tracing, loops or report) first. The cardiologist reports from it.</MessageBarBody>
+          <MessageBarBody>
+            Attach the device output (tracing, loops or report) first. The cardiologist reports from it.
+          </MessageBarBody>
         </MessageBar>
       ) : (
         <Caption1 className={styles.muted}>
-          {study.fileCount} {study.fileCount === 1 ? 'file is' : 'files are'} attached. The study moves to the cardiologist's reporting worklist.
+          {study.fileCount} {study.fileCount === 1 ? 'file is' : 'files are'} attached. The study moves to the
+          cardiologist's reporting worklist.
         </Caption1>
       )}
       <Field label="Technician notes">
-        <Textarea value={notes} onChange={(_, data) => setNotes(data.value.slice(0, 1000))} rows={3} resize="vertical" autoFocus />
+        <Textarea
+          value={notes}
+          onChange={(_, data) => setNotes(data.value.slice(0, 1000))}
+          rows={3}
+          resize="vertical"
+          autoFocus
+        />
       </Field>
     </Shell>
   );

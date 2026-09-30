@@ -38,7 +38,8 @@ export const verifyMessages = defineMessages({
     'verify.released': 'Released on',
     'verify.tests': 'Tests',
     'verify.revised': 'This report was updated after it was first released. Make sure you have the latest copy.',
-    'verify.privacy': 'This check shows only whether the document is genuine. It never shows results or personal details.',
+    'verify.privacy':
+      'This check shows only whether the document is genuine. It never shows results or personal details.',
     'verify.another': 'Check another document',
   },
   hi: {

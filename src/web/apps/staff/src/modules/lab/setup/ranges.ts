@@ -88,7 +88,14 @@ export function rangeSummary(range: ReferenceRangeDto): string {
     range.criticalHigh !== null ? `above ${formatNumber(range.criticalHigh)}` : null,
     ...(range.criticalValues ?? []),
   ].filter(Boolean);
-  return [who, ageBandLabel(range.ageFromDays, range.ageToDays), limits, critical.length ? `critical ${critical.join(', ')}` : null].filter(Boolean).join(' · ');
+  return [
+    who,
+    ageBandLabel(range.ageFromDays, range.ageToDays),
+    limits,
+    critical.length ? `critical ${critical.join(', ')}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** "Negative, Non-reactive" → ["Negative", "Non-reactive"] (commas or new lines, blanks dropped, duplicates removed). */

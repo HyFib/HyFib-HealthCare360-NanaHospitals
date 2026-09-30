@@ -29,7 +29,13 @@ import { flagDisplay } from './flags';
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { textAlign: 'start', padding: '4px 6px', color: tokens.colorNeutralForeground3, borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, fontWeight: tokens.fontWeightSemibold },
+  th: {
+    textAlign: 'start',
+    padding: '4px 6px',
+    color: tokens.colorNeutralForeground3,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   td: { padding: '4px 6px', borderBottom: `1px solid ${tokens.colorNeutralStroke3}`, verticalAlign: 'middle' },
   test: { padding: '8px 6px 2px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -85,14 +91,29 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
   const [needCall, setNeedCall] = useState(false);
 
   const changes: AmendmentChange[] = rows
-    .filter((row) => values[row.resultId] !== undefined && values[row.resultId]!.trim() !== '' && values[row.resultId]!.trim() !== (row.value ?? '').trim())
-    .map((row) => ({ resultId: row.resultId, value: values[row.resultId]!.trim(), remarks: row.remarks, organism: row.organism, colonyCount: row.colonyCount }));
+    .filter(
+      (row) =>
+        values[row.resultId] !== undefined &&
+        values[row.resultId]!.trim() !== '' &&
+        values[row.resultId]!.trim() !== (row.value ?? '').trim(),
+    )
+    .map((row) => ({
+      resultId: row.resultId,
+      value: values[row.resultId]!.trim(),
+      remarks: row.remarks,
+      organism: row.organism,
+      colonyCount: row.colonyCount,
+    }));
   const valid = changes.length > 0 && reason.trim().length >= 10;
 
   const amend = useMutation({
-    mutationFn: (criticalCall: CriticalCallDetails | null) => labApi.amendReport(view.reportId, { reason: reason.trim(), changes, criticalCall }),
+    mutationFn: (criticalCall: CriticalCallDetails | null) =>
+      labApi.amendReport(view.reportId, { reason: reason.trim(), changes, criticalCall }),
     onSuccess: () => {
-      notify.success(`Report amended (revision ${view.revision + 1})`, 'The doctor and the patient are informed of the corrected report.');
+      notify.success(
+        `Report amended (revision ${view.revision + 1})`,
+        'The doctor and the patient are informed of the corrected report.',
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.reports });
       void queryClient.invalidateQueries({ queryKey: labKeys.orders });
       onClose();
@@ -112,7 +133,10 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
         intro="Call the treating doctor about the corrected value, then save the call to complete the amendment."
         findings={changes.map((change) => {
           const row = rows.find((r) => r.resultId === change.resultId);
-          return { id: change.resultId, label: `${row?.name ?? 'Result'}: ${row?.value ?? '—'} → ${change.value}${row?.unit ? ` ${row.unit}` : ''}` };
+          return {
+            id: change.resultId,
+            label: `${row?.name ?? 'Result'}: ${row?.value ?? '—'} → ${change.value}${row?.unit ? ` ${row.unit}` : ''}`,
+          };
         })}
         submitLabel="Save call and amend"
         busy={amend.isPending}
@@ -172,12 +196,15 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
                           <tr className={changed ? styles.changed : undefined}>
                             <td className={styles.td}>{row.name}</td>
                             <td className={styles.td}>
-                              {row.value} {row.unit} {flagDisplay(row.flag)?.code ? `(${flagDisplay(row.flag)?.code})` : ''}
+                              {row.value} {row.unit}{' '}
+                              {flagDisplay(row.flag)?.code ? `(${flagDisplay(row.flag)?.code})` : ''}
                             </td>
                             <td className={styles.td}>
                               <Input
                                 value={values[row.resultId] ?? ''}
-                                onChange={(_, data) => setValues((current) => ({ ...current, [row.resultId]: data.value.slice(0, 2000) }))}
+                                onChange={(_, data) =>
+                                  setValues((current) => ({ ...current, [row.resultId]: data.value.slice(0, 2000) }))
+                                }
                                 aria-label={`Corrected value for ${row.name}`}
                                 placeholder="Unchanged"
                                 contentAfter={row.unit ? <Caption1>{row.unit}</Caption1> : undefined}
@@ -190,16 +217,32 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
                   </tbody>
                 </table>
               )}
-              <Field label="Reason for the amendment" required hint="At least 10 characters. Printed on the report and sent to the doctor.">
-                <Textarea value={reason} onChange={(_, data) => setReason(data.value.slice(0, 500))} rows={2} resize="vertical" />
+              <Field
+                label="Reason for the amendment"
+                required
+                hint="At least 10 characters. Printed on the report and sent to the doctor."
+              >
+                <Textarea
+                  value={reason}
+                  onChange={(_, data) => setReason(data.value.slice(0, 500))}
+                  rows={2}
+                  resize="vertical"
+                />
               </Field>
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={amend.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || amend.isPending} icon={amend.isPending ? <Spinner size="tiny" /> : undefined}>
-                {changes.length > 0 ? `Amend ${changes.length} ${changes.length === 1 ? 'result' : 'results'}` : 'Amend report'}
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || amend.isPending}
+                icon={amend.isPending ? <Spinner size="tiny" /> : undefined}
+              >
+                {changes.length > 0
+                  ? `Amend ${changes.length} ${changes.length === 1 ? 'result' : 'results'}`
+                  : 'Amend report'}
               </Button>
             </DialogActions>
           </DialogBody>

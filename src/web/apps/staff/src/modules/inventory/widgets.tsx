@@ -13,7 +13,11 @@ import { SUPPLY_PERMISSIONS as S } from './permissions';
 
 const useStyles = makeStyles({
   summary: { display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '12px' },
-  value: { fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase600 },
+  value: {
+    fontSize: tokens.fontSizeBase600,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase600,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   rows: { display: 'flex', flexDirection: 'column', gap: '6px' },
   row: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '2px 12px', alignItems: 'baseline' },
@@ -36,7 +40,9 @@ function ExpiringList({ batches }: { batches: readonly ExpiringBatch[] }) {
               {b.batchNumber} · {formatQty(b.quantity)} · {b.storeName}
             </Caption1>
           </span>
-          <Caption1 className={b.daysToExpiry <= 30 ? styles.soon : styles.later}>{expiryLabel(b.daysToExpiry)}</Caption1>
+          <Caption1 className={b.daysToExpiry <= 30 ? styles.soon : styles.later}>
+            {expiryLabel(b.daysToExpiry)}
+          </Caption1>
         </div>
       ))}
     </div>
@@ -51,13 +57,23 @@ export function NearExpiryStockWidget() {
   const styles = useStyles();
   const navigate = useNavigate();
   const canReadStock = usePermission(S.stockRead);
-  const canReadPharmacy = usePermission([PHARMACY_PERMISSIONS.queueRead, PHARMACY_PERMISSIONS.sales, PHARMACY_PERMISSIONS.ipIssue]);
+  const canReadPharmacy = usePermission([
+    PHARMACY_PERMISSIONS.queueRead,
+    PHARMACY_PERMISSIONS.sales,
+    PHARMACY_PERMISSIONS.ipIssue,
+  ]);
   const report = useQuery({ ...inventoryQueries.nearExpiry(null, 90), enabled: canReadStock });
   const pharmacy = useQuery({ ...pharmacyQueries.dashboard(null), enabled: !canReadStock && canReadPharmacy });
 
   const error = canReadStock ? report.error : pharmacy.error;
   if (error && !report.data && !pharmacy.data) {
-    return <ErrorState error={error} onRetry={() => void (canReadStock ? report.refetch() : pharmacy.refetch())} title="Near-expiry stock" />;
+    return (
+      <ErrorState
+        error={error}
+        onRetry={() => void (canReadStock ? report.refetch() : pharmacy.refetch())}
+        title="Near-expiry stock"
+      />
+    );
   }
 
   const batches = canReadStock ? report.data?.batches : pharmacy.data?.nearExpiry;
@@ -70,7 +86,12 @@ export function NearExpiryStockWidget() {
       description={canReadStock ? 'All stores, next 90 days' : 'Pharmacy stores, next 90 days'}
       actions={
         canReadStock ? (
-          <Button appearance="subtle" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/inventory/reports', search: { tab: 'near-expiry' } })}>
+          <Button
+            appearance="subtle"
+            icon={<ArrowRightRegular />}
+            iconPosition="after"
+            onClick={() => void navigate({ to: '/inventory/reports', search: { tab: 'near-expiry' } })}
+          >
             Report
           </Button>
         ) : undefined

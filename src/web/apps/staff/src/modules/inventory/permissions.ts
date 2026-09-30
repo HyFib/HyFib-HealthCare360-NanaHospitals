@@ -33,13 +33,26 @@ export const CATALOG_READERS = [
 export const STORE_READERS = [...CATALOG_READERS, S.adjustmentsApprove] as const;
 
 /** Batch lists and reservations. */
-export const BATCH_READERS = [S.stockRead, S.indentsIssue, S.transfers, S.counts, S.grnReceive, S.adjustmentsApprove] as const;
+export const BATCH_READERS = [
+  S.stockRead,
+  S.indentsIssue,
+  S.transfers,
+  S.counts,
+  S.grnReceive,
+  S.adjustmentsApprove,
+] as const;
 
 export const INDENT_READERS = [S.indentsRaise, S.indentsIssue, S.stockRead] as const;
 export const TRANSFER_READERS = [S.transfers, S.stockRead] as const;
 export const ADJUSTMENT_READERS = [S.counts, S.adjustmentsApprove, S.stockRead] as const;
 export const REPORT_READERS = [S.stockRead, S.purchaseManage] as const;
 
-export const VENDOR_READERS = [S.purchaseManage, S.purchaseApprove, S.grnReceive, S.assetsManage, S.assetsMaintenance] as const;
+export const VENDOR_READERS = [
+  S.purchaseManage,
+  S.purchaseApprove,
+  S.grnReceive,
+  S.assetsManage,
+  S.assetsMaintenance,
+] as const;
 export const PURCHASE_READERS = [S.purchaseManage, S.purchaseApprove, S.grnReceive] as const;
 export const ASSET_READERS = [S.assetsRead, S.assetsManage, S.assetsMaintenance] as const;

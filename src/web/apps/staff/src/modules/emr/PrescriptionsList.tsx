@@ -19,7 +19,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowRepeatAllRegular, ArrowSyncRegular, DismissRegular, MoreHorizontalRegular, OpenRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  ArrowRepeatAllRegular,
+  ArrowSyncRegular,
+  DismissRegular,
+  MoreHorizontalRegular,
+  OpenRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, isApiError, useSession } from '@hc360/core';
 import { DataTable, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -31,7 +38,15 @@ import { directionsText } from './dosing';
 import { printPrescription } from './print';
 import { prescriptionQueries, prescriptionsApi, type PrescriptionListItem } from './prescriptionsApi';
 import { SafetyReview } from './SafetyReview';
-import { alertsFromProblem, emptyDecision, groupAlerts, signBlockers, signRequirements, type SafetyAlert, type SignDecision } from './safety';
+import {
+  alertsFromProblem,
+  emptyDecision,
+  groupAlerts,
+  signBlockers,
+  signRequirements,
+  type SafetyAlert,
+  type SignDecision,
+} from './safety';
 import { ReasonDialog } from './ui';
 
 const useStyles = makeStyles({
@@ -44,15 +59,33 @@ const useStyles = makeStyles({
  * Authorised refill (ERX-05): issued as a new signed prescription. Safety checks run again on the server because
  * allergies or other medicines may have changed; anything it finds is resolved here before the refill is issued.
  */
-export function RefillDialog({ prescriptionId, patientId, onClose }: { prescriptionId: string | null; patientId: string; onClose: () => void }) {
+export function RefillDialog({
+  prescriptionId,
+  patientId,
+  onClose,
+}: {
+  prescriptionId: string | null;
+  patientId: string;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={prescriptionId !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 760 }}>{prescriptionId && <RefillBody prescriptionId={prescriptionId} patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 760 }}>
+        {prescriptionId && <RefillBody prescriptionId={prescriptionId} patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function RefillBody({ prescriptionId, patientId, onClose }: { prescriptionId: string; patientId: string; onClose: () => void }) {
+function RefillBody({
+  prescriptionId,
+  patientId,
+  onClose,
+}: {
+  prescriptionId: string;
+  patientId: string;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -108,13 +141,23 @@ function RefillBody({ prescriptionId, patientId, onClose }: { prescriptionId: st
         ) : (
           <>
             <Text>
-              {rx.prescriptionNumber} · {rx.refillsRemaining} of {rx.refillsAllowed} refills remaining · prescribed by {rx.practitionerName ?? 'the doctor'}
+              {rx.prescriptionNumber} · {rx.refillsRemaining} of {rx.refillsAllowed} refills remaining · prescribed by{' '}
+              {rx.practitionerName ?? 'the doctor'}
             </Text>
             <ul className={styles.lines}>
               {rx.items.map((i) => (
                 <li key={i.id}>
                   <Text weight="semibold">{i.drugName}</Text>{' '}
-                  <Caption1>{directionsText({ dose: i.dose, frequency: i.frequency, customFrequency: i.customFrequency, durationDays: i.durationDays, route: i.route, instructions: i.instructions })}</Caption1>
+                  <Caption1>
+                    {directionsText({
+                      dose: i.dose,
+                      frequency: i.frequency,
+                      customFrequency: i.customFrequency,
+                      durationDays: i.durationDays,
+                      route: i.route,
+                      instructions: i.instructions,
+                    })}
+                  </Caption1>
                 </li>
               ))}
             </ul>
@@ -163,7 +206,15 @@ function RefillBody({ prescriptionId, patientId, onClose }: { prescriptionId: st
 }
 
 /** Prescriptions of a patient (or one encounter): open, print, repeat, refill or cancel. */
-export function PrescriptionsList({ patientId, encounterId = null, excludeDrafts = false }: { patientId: string; encounterId?: string | null; excludeDrafts?: boolean }) {
+export function PrescriptionsList({
+  patientId,
+  encounterId = null,
+  excludeDrafts = false,
+}: {
+  patientId: string;
+  encounterId?: string | null;
+  excludeDrafts?: boolean;
+}) {
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -177,7 +228,8 @@ export function PrescriptionsList({ patientId, encounterId = null, excludeDrafts
   const list = useQuery(prescriptionQueries.list(patientId, { encounterId, page }));
   const rows = (list.data?.items ?? []).filter((p) => !excludeDrafts || p.status !== 'Draft');
 
-  const open = (id: string) => void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: id } });
+  const open = (id: string) =>
+    void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: id } });
 
   const print = useMutation({
     mutationFn: async (id: string) => printPrescription(await prescriptionsApi.print(id), facilityName),
@@ -216,17 +268,33 @@ export function PrescriptionsList({ patientId, encounterId = null, excludeDrafts
         onRowClick={(p) => open(p.id)}
         size="small"
         columns={[
-          { key: 'number', header: 'Prescription', width: 150, render: (p) => <Text font="monospace">{p.prescriptionNumber}</Text> },
+          {
+            key: 'number',
+            header: 'Prescription',
+            width: 150,
+            render: (p) => <Text font="monospace">{p.prescriptionNumber}</Text>,
+          },
           { key: 'date', header: 'Date', width: 170, render: (p) => formatDateTime(p.signedAt ?? p.prescribedAt) },
           { key: 'status', header: 'Status', width: 110, render: (p) => <StatusBadge status={p.status} /> },
           { key: 'drugs', header: 'Medicines', render: (p) => p.drugs.join(', ') },
           { key: 'doctor', header: 'Doctor', priority: 'low', render: (p) => p.practitionerName ?? '—' },
-          { key: 'setting', header: 'Setting', priority: 'low', width: 90, render: (p) => (p.isInpatient ? 'IP' : 'OP') },
+          {
+            key: 'setting',
+            header: 'Setting',
+            priority: 'low',
+            width: 90,
+            render: (p) => (p.isInpatient ? 'IP' : 'OP'),
+          },
         ]}
         rowActions={(p) => (
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${p.prescriptionNumber}`} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<MoreHorizontalRegular />}
+                aria-label={`Actions for ${p.prescriptionNumber}`}
+              />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -258,7 +326,11 @@ export function PrescriptionsList({ patientId, encounterId = null, excludeDrafts
           </Menu>
         )}
         emptyTitle="No prescriptions"
-        emptyDescription={encounterId ? 'Signed prescriptions of this encounter appear here.' : 'Prescriptions written in encounters appear here.'}
+        emptyDescription={
+          encounterId
+            ? 'Signed prescriptions of this encounter appear here.'
+            : 'Prescriptions written in encounters appear here.'
+        }
         page={page}
         pageSize={20}
         totalCount={list.data?.totalCount}
@@ -267,7 +339,11 @@ export function PrescriptionsList({ patientId, encounterId = null, excludeDrafts
       <ReasonDialog
         open={cancelling !== null}
         title={`Cancel ${cancelling?.prescriptionNumber ?? 'prescription'}?`}
-        description={cancelling?.status === 'Signed' ? 'It is withdrawn from the pharmacy queue. Medicines already dispensed are not affected.' : 'The draft is discarded.'}
+        description={
+          cancelling?.status === 'Signed'
+            ? 'It is withdrawn from the pharmacy queue. Medicines already dispensed are not affected.'
+            : 'The draft is discarded.'
+        }
         confirmLabel="Cancel prescription"
         destructive
         busy={cancel.isPending}

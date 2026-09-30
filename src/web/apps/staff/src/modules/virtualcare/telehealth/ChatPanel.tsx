@@ -10,7 +10,15 @@ const MAX_LENGTH = 2000;
 
 const useStyles = makeStyles({
   panel: { display: 'flex', flexDirection: 'column', gap: '8px', height: '100%', minHeight: '320px' },
-  list: { display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, maxHeight: '48vh', paddingRight: '4px' },
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    overflowY: 'auto',
+    flex: 1,
+    maxHeight: '48vh',
+    paddingRight: '4px',
+  },
   bubble: {
     maxWidth: '85%',
     padding: '8px 10px',
@@ -77,7 +85,9 @@ export function ChatPanel({
     <div className={styles.panel}>
       <div className={styles.list} ref={list} role="log" aria-label="Chat messages" aria-live="polite">
         {messages.length === 0 ? (
-          <Caption1 className={styles.muted}>No messages yet. Use chat for spellings, instructions or when the audio is poor.</Caption1>
+          <Caption1 className={styles.muted}>
+            No messages yet. Use chat for spellings, instructions or when the audio is poor.
+          </Caption1>
         ) : (
           messages.map((m) => (
             <div key={m.id} className={mergeClasses(styles.bubble, m.senderRole === 'Clinician' && styles.mine)}>
@@ -110,7 +120,12 @@ export function ChatPanel({
             <Caption1 className={styles.muted}>
               {text.length}/{MAX_LENGTH}
             </Caption1>
-            <Button appearance="primary" icon={<SendRegular />} disabled={disabled || sending || !text.trim()} onClick={send}>
+            <Button
+              appearance="primary"
+              icon={<SendRegular />}
+              disabled={disabled || sending || !text.trim()}
+              onClick={send}
+            >
               Send
             </Button>
           </div>

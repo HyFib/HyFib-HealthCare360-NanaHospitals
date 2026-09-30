@@ -54,13 +54,24 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorBrandBackground,
     color: tokens.colorNeutralForegroundOnBrand,
     border: `1px solid ${tokens.colorBrandBackground}`,
-    ':hover': { backgroundColor: tokens.colorBrandBackgroundHover, border: `1px solid ${tokens.colorBrandBackgroundHover}` },
+    ':hover': {
+      backgroundColor: tokens.colorBrandBackgroundHover,
+      border: `1px solid ${tokens.colorBrandBackgroundHover}`,
+    },
   },
   seats: { fontSize: tokens.fontSizeBase200, fontWeight: tokens.fontWeightRegular },
 });
 
 /** Free times of one day, grouped into morning / afternoon / evening, as large buttons (a radio group). */
-export function SlotPicker({ slots, selected, onSelect }: { slots: PublicSlot[]; selected: string | null; onSelect: (slot: PublicSlot) => void }) {
+export function SlotPicker({
+  slots,
+  selected,
+  onSelect,
+}: {
+  slots: PublicSlot[];
+  selected: string | null;
+  onSelect: (slot: PublicSlot) => void;
+}) {
   const styles = useStyles();
   const t = useT();
   const f = useFormat();

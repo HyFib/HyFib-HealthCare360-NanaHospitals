@@ -1,4 +1,14 @@
-import { Button, Caption1, Field, makeStyles, MessageBar, MessageBarBody, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AttachRegular, SendRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { todayIso } from '@hc360/core';
@@ -26,9 +36,17 @@ const schema = z
     if (v.fromDate && v.toDate && v.toDate < v.fromDate) {
       ctx.addIssue({ code: 'custom', path: ['toDate'], message: 'The leave ends before it starts.' });
     } else if (v.fromDate && v.toDate && v.fromDate.slice(0, 4) !== v.toDate.slice(0, 4)) {
-      ctx.addIssue({ code: 'custom', path: ['toDate'], message: 'Leave that crosses the new year must be applied as two requests.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toDate'],
+        message: 'Leave that crosses the new year must be applied as two requests.',
+      });
     } else if (v.fromDate === v.toDate && v.fromSession === 'SecondHalf' && v.toSession === 'FirstHalf') {
-      ctx.addIssue({ code: 'custom', path: ['toSession'], message: 'A one-day leave cannot run from the second half to the first half.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['toSession'],
+        message: 'A one-day leave cannot run from the second half to the first half.',
+      });
     }
   });
 
@@ -36,7 +54,14 @@ type Values = z.infer<typeof schema>;
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '14px' },
-  info: { display: 'flex', flexDirection: 'column', gap: '2px', padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  info: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
   estimate: { fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
   actions: { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' },
@@ -72,13 +97,28 @@ export function LeaveApplyForm({
   const start = defaultFromDate ?? todayIso(1);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { leaveTypeId: leaveTypes.length === 1 ? (leaveTypes[0]?.id ?? null) : null, fromDate: start, fromSession: 'FirstHalf', toDate: start, toSession: 'SecondHalf', reason: '' },
+    defaultValues: {
+      leaveTypeId: leaveTypes.length === 1 ? (leaveTypes[0]?.id ?? null) : null,
+      fromDate: start,
+      fromSession: 'FirstHalf',
+      toDate: start,
+      toSession: 'SecondHalf',
+      reason: '',
+    },
   });
-  const [leaveTypeId, fromDate, fromSession, toDate, toSession] = useWatch({ control: form.control, name: ['leaveTypeId', 'fromDate', 'fromSession', 'toDate', 'toSession'] });
+  const [leaveTypeId, fromDate, fromSession, toDate, toSession] = useWatch({
+    control: form.control,
+    name: ['leaveTypeId', 'fromDate', 'fromSession', 'toDate', 'toSession'],
+  });
   const type = leaveTypes.find((t) => t.id === leaveTypeId);
   const balance = balanceFor(balances, leaveTypeId);
   const halfDays = type?.allowHalfDay ?? true;
-  const estimate = estimateLeaveDays(fromDate, halfDays ? fromSession : 'FirstHalf', toDate, halfDays ? toSession : 'SecondHalf');
+  const estimate = estimateLeaveDays(
+    fromDate,
+    halfDays ? fromSession : 'FirstHalf',
+    toDate,
+    halfDays ? toSession : 'SecondHalf',
+  );
   const documentNeeded = needsDocument(type, estimate);
 
   const onValid = async (values: Values) => {
@@ -132,14 +172,20 @@ export function LeaveApplyForm({
               {balance.pending > 0 ? ` (${daysText(balance.pending)} waiting for approval)` : ''}.
             </Text>
           ) : (
-            <Text>{type.tracksBalance ? 'Balance not credited yet for this year.' : 'This leave does not use a yearly balance.'}</Text>
+            <Text>
+              {type.tracksBalance
+                ? 'Balance not credited yet for this year.'
+                : 'This leave does not use a yearly balance.'}
+            </Text>
           )}
           <Caption1 className={styles.muted}>
             {[
               type.isPaid ? 'Paid leave' : 'Unpaid leave (loss of pay)',
               type.allowHalfDay ? 'half days allowed' : 'full days only',
               type.maxDaysPerRequest ? `at most ${daysText(type.maxDaysPerRequest)} at a time` : '',
-              type.documentRequiredAfterDays !== null ? `document needed above ${daysText(type.documentRequiredAfterDays)}` : '',
+              type.documentRequiredAfterDays !== null
+                ? `document needed above ${daysText(type.documentRequiredAfterDays)}`
+                : '',
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -185,7 +231,10 @@ export function LeaveApplyForm({
       )}
       {type && balance && type.tracksBalance && estimate !== null && estimate > balance.available && (
         <MessageBar intent="warning">
-          <MessageBarBody>This may be more than the {daysText(balance.available)} available. HR checks the balance again when approving.</MessageBarBody>
+          <MessageBarBody>
+            This may be more than the {daysText(balance.available)} available. HR checks the balance again when
+            approving.
+          </MessageBarBody>
         </MessageBar>
       )}
       <TextAreaField control={form.control} name="reason" label="Reason" required rows={3} maxLength={500} />
@@ -223,7 +272,12 @@ export function LeaveApplyForm({
             Cancel
           </Button>
         )}
-        <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <SendRegular />}>
+        <Button
+          type="submit"
+          appearance="primary"
+          disabled={busy}
+          icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+        >
           {submitLabel}
         </Button>
       </div>

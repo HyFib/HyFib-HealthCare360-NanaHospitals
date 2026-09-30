@@ -15,7 +15,15 @@ export type AnaesthesiaType = (typeof ANAESTHESIA_TYPES)[number];
 export const SURGERY_PRIORITIES = ['Elective', 'Urgent', 'Emergency'] as const;
 export type SurgeryPriority = (typeof SURGERY_PRIORITIES)[number];
 
-export const SURGERY_STATUSES = ['Requested', 'Scheduled', 'InPreOp', 'InProgress', 'Completed', 'Cancelled', 'Postponed'] as const;
+export const SURGERY_STATUSES = [
+  'Requested',
+  'Scheduled',
+  'InPreOp',
+  'InProgress',
+  'Completed',
+  'Cancelled',
+  'Postponed',
+] as const;
 export type SurgeryStatus = (typeof SURGERY_STATUSES)[number];
 
 export const LATERALITIES = ['NotApplicable', 'Left', 'Right', 'Bilateral'] as const;
@@ -555,7 +563,8 @@ export const otQueries = {
   bookings: (filters: BookingFilters) =>
     queryOptions({
       queryKey: otKeys.bookings(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<SurgeryListItem>>('/api/v1/ot/bookings', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<SurgeryListItem>>('/api/v1/ot/bookings', { query: { ...filters, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   booking: (id: string) =>
@@ -582,14 +591,18 @@ export const otQueries = {
   storeItems: (search: string) =>
     queryOptions({
       queryKey: otKeys.storeItems(search),
-      queryFn: ({ signal }) => api.get<OtStoreItem[]>('/api/v1/ot/store-items', { query: { search: search || undefined, take: 20 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<OtStoreItem[]>('/api/v1/ot/store-items', { query: { search: search || undefined, take: 20 }, signal }),
       staleTime: 30_000,
     }),
   trace: (lot: string, serial: string) =>
     queryOptions({
       queryKey: otKeys.trace(lot, serial),
       queryFn: ({ signal }) =>
-        api.get<ImplantTraceItem[]>('/api/v1/ot/implants/trace', { query: { lot: lot || undefined, serial: serial || undefined }, signal }),
+        api.get<ImplantTraceItem[]>('/api/v1/ot/implants/trace', {
+          query: { lot: lot || undefined, serial: serial || undefined },
+          signal,
+        }),
       enabled: Boolean(lot || serial),
       staleTime: 0,
     }),
@@ -607,26 +620,35 @@ export const otApi = {
   },
   createBooking: (request: CreateSurgeryBookingRequest) => api.post<SurgeryCreated>('/api/v1/ot/bookings', request),
   updatePlan: (id: string, request: UpdateSurgeryPlanRequest) => api.put<void>(`/api/v1/ot/bookings/${id}`, request),
-  schedule: (id: string, request: ScheduleSurgeryRequest) => api.post<void>(`/api/v1/ot/bookings/${id}/schedule`, request),
+  schedule: (id: string, request: ScheduleSurgeryRequest) =>
+    api.post<void>(`/api/v1/ot/bookings/${id}/schedule`, request),
   postpone: (id: string, reason: string) => api.post<void>(`/api/v1/ot/bookings/${id}/postpone`, { reason }),
   cancel: (id: string, reason: string) => api.post<void>(`/api/v1/ot/bookings/${id}/cancel`, { reason }),
   receive: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/receive`),
-  recordPreOp: (id: string, items: ChecklistInput[]) => api.put<void>(`/api/v1/ot/bookings/${id}/pre-op-checklist`, { items }),
+  recordPreOp: (id: string, items: ChecklistInput[]) =>
+    api.put<void>(`/api/v1/ot/bookings/${id}/pre-op-checklist`, { items }),
   confirmSafety: (id: string, phase: SafetyPhase, items: ChecklistInput[]) =>
     api.post<void>(`/api/v1/ot/bookings/${id}/safety-checklist/${phasePath[phase]}`, { items }),
   start: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/start`),
   complete: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/complete`),
   retryCharges: (id: string) => api.post<ChargeOutcome>(`/api/v1/ot/bookings/${id}/charges/retry`),
-  saveAnaesthesia: (id: string, request: SaveAnaesthesiaRecordRequest) => api.put<AnaesthesiaRecordDto>(`/api/v1/ot/bookings/${id}/anaesthesia`, request),
-  addVitals: (id: string, rows: AnaesthesiaVitals[]) => api.post<AnaesthesiaRecordDto>(`/api/v1/ot/bookings/${id}/anaesthesia/vitals`, { rows }),
-  saveOperationNote: (id: string, request: SaveOperationNoteRequest) => api.put<OperationNoteDto>(`/api/v1/ot/bookings/${id}/operation-note`, request),
-  addMaterial: (id: string, request: AddSurgeryMaterialRequest) => api.post<SurgeryMaterialDto>(`/api/v1/ot/bookings/${id}/materials`, request),
-  removeMaterial: (id: string, materialId: string) => api.delete<void>(`/api/v1/ot/bookings/${id}/materials/${materialId}`),
+  saveAnaesthesia: (id: string, request: SaveAnaesthesiaRecordRequest) =>
+    api.put<AnaesthesiaRecordDto>(`/api/v1/ot/bookings/${id}/anaesthesia`, request),
+  addVitals: (id: string, rows: AnaesthesiaVitals[]) =>
+    api.post<AnaesthesiaRecordDto>(`/api/v1/ot/bookings/${id}/anaesthesia/vitals`, { rows }),
+  saveOperationNote: (id: string, request: SaveOperationNoteRequest) =>
+    api.put<OperationNoteDto>(`/api/v1/ot/bookings/${id}/operation-note`, request),
+  addMaterial: (id: string, request: AddSurgeryMaterialRequest) =>
+    api.post<SurgeryMaterialDto>(`/api/v1/ot/bookings/${id}/materials`, request),
+  removeMaterial: (id: string, materialId: string) =>
+    api.delete<void>(`/api/v1/ot/bookings/${id}/materials/${materialId}`),
 };
 
 /** Procedures from the service catalogue (Surgery category), without the OT time/fee items. */
 export async function searchProcedures(search: string): Promise<(LookupItem & { basePrice: number })[]> {
-  const items = await api.get<ServiceItemDto[]>('/api/v1/masters/lookups/services', { query: { category: 'Surgery', search: search || undefined } });
+  const items = await api.get<ServiceItemDto[]>('/api/v1/masters/lookups/services', {
+    query: { category: 'Surgery', search: search || undefined },
+  });
   return items
     .filter((item) => !item.code.toUpperCase().startsWith('OT-'))
     .map((item) => ({ id: item.id, code: item.code, name: item.name, basePrice: item.basePrice }));

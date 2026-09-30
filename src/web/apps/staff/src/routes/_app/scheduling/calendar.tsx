@@ -22,11 +22,35 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState, type CSSProperties } from 'react';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
-import { schedulingKeys, schedulingQueries, type AppointmentStatus, type CalendarAppointment, type ScheduleExceptionDto, type SlotDto } from '@/modules/scheduling/api';
+import {
+  schedulingKeys,
+  schedulingQueries,
+  type AppointmentStatus,
+  type CalendarAppointment,
+  type ScheduleExceptionDto,
+  type SlotDto,
+} from '@/modules/scheduling/api';
 import { useAppointmentDesk } from '@/modules/scheduling/useAppointmentDesk';
 import { AppointmentDrawer } from '@/modules/scheduling/AppointmentDrawer';
-import { assignLanes, hourMarks, utilisation, visibleRange, type MinuteRange } from '@/modules/scheduling/calendarLayout';
-import { addDays, dateRange, formatDayLong, formatDayShort, formatHour, isIsoDate, istDateTime, startOfWeek, timeToMinutes, type IsoDate } from '@/modules/scheduling/dates';
+import {
+  assignLanes,
+  hourMarks,
+  utilisation,
+  visibleRange,
+  type MinuteRange,
+} from '@/modules/scheduling/calendarLayout';
+import {
+  addDays,
+  dateRange,
+  formatDayLong,
+  formatDayShort,
+  formatHour,
+  isIsoDate,
+  istDateTime,
+  startOfWeek,
+  timeToMinutes,
+  type IsoDate,
+} from '@/modules/scheduling/dates';
 import { appointmentStatusText } from '@/modules/scheduling/labels';
 import { restrictionsOn } from '@/modules/scheduling/slots';
 import { useNow, useToday } from '@/modules/scheduling/useNow';
@@ -89,7 +113,13 @@ const useStyles = makeStyles({
   },
   headerToday: { backgroundColor: tokens.colorBrandBackground2 },
   gutter: { position: 'sticky', left: '0', zIndex: 2, backgroundColor: tokens.colorNeutralBackground1 },
-  hourLabel: { position: 'absolute', right: '6px', transform: 'translateY(-50%)', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase100 },
+  hourLabel: {
+    position: 'absolute',
+    right: '6px',
+    transform: 'translateY(-50%)',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase100,
+  },
   column: { position: 'relative', borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
   hourLine: { position: 'absolute', left: '0', right: '0', borderTop: `1px solid ${tokens.colorNeutralStroke3}` },
   slot: {
@@ -108,7 +138,11 @@ const useStyles = makeStyles({
   },
   slotBookable: {
     cursor: 'pointer',
-    ':hover': { backgroundColor: tokens.colorBrandBackground2, color: tokens.colorBrandForeground2, border: `1px dashed ${tokens.colorBrandStroke1}` },
+    ':hover': {
+      backgroundColor: tokens.colorBrandBackground2,
+      color: tokens.colorBrandForeground2,
+      border: `1px dashed ${tokens.colorBrandStroke1}`,
+    },
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
   slotFull: { border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground3 },
@@ -136,7 +170,13 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}`, zIndex: 2 },
   },
   blockDone: { opacity: 0.7 },
-  blockName: { fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' },
+  blockName: {
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '100%',
+  },
   blocked: {
     position: 'absolute',
     left: '0',
@@ -150,9 +190,30 @@ const useStyles = makeStyles({
     padding: '2px 4px',
     overflow: 'hidden',
   },
-  nowLine: { position: 'absolute', left: '0', right: '0', zIndex: 2, borderTop: `2px solid ${tokens.colorPaletteRedBorder2}`, pointerEvents: 'none' },
-  legend: { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', padding: '8px 16px', color: tokens.colorNeutralForeground3 },
-  swatch: { display: 'inline-block', width: '10px', height: '10px', borderRadius: '2px', marginRight: '4px', verticalAlign: 'middle' },
+  nowLine: {
+    position: 'absolute',
+    left: '0',
+    right: '0',
+    zIndex: 2,
+    borderTop: `2px solid ${tokens.colorPaletteRedBorder2}`,
+    pointerEvents: 'none',
+  },
+  legend: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    padding: '8px 16px',
+    color: tokens.colorNeutralForeground3,
+  },
+  swatch: {
+    display: 'inline-block',
+    width: '10px',
+    height: '10px',
+    borderRadius: '2px',
+    marginRight: '4px',
+    verticalAlign: 'middle',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -185,10 +246,18 @@ function CalendarPage() {
   const doctorOptions = usePractitioners(search.departmentId ?? null);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const scope = search.practitionerId ? { practitionerId: search.practitionerId } : search.departmentId ? { departmentId: search.departmentId } : null;
+  const scope = search.practitionerId
+    ? { practitionerId: search.practitionerId }
+    : search.departmentId
+      ? { departmentId: search.departmentId }
+      : null;
   const slots = useQuery({ ...schedulingQueries.slots({ ...scope, from, to }), enabled: scope !== null });
   const appointments = useQuery({ ...schedulingQueries.calendar({ ...scope, from, to }), enabled: scope !== null });
-  const exceptions = useQuery({ ...schedulingQueries.exceptions({ practitionerId: search.practitionerId ?? null, from, to }), enabled: scope !== null, retry: false });
+  const exceptions = useQuery({
+    ...schedulingQueries.exceptions({ practitionerId: search.practitionerId ?? null, from, to }),
+    enabled: scope !== null,
+    retry: false,
+  });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['scheduling', 'calendar'] });
@@ -196,7 +265,8 @@ function CalendarPage() {
   };
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'appointments.changed', refresh);
 
-  const set = (patch: Partial<CalendarSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<CalendarSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
   const step = view === 'week' ? 7 : 1;
   const move = (days: number) => set({ date: addDays(date, days) });
   useHotkey('alt+arrowleft', () => move(-step));
@@ -247,7 +317,10 @@ function CalendarPage() {
     const spans: MinuteRange[] = [];
     for (const column of columns) {
       for (const slot of column.slots) {
-        spans.push({ start: timeToMinutes(slot.localStart), end: timeToMinutes(slot.localStart) + minutesBetween(slot.startsAt, slot.endsAt) });
+        spans.push({
+          start: timeToMinutes(slot.localStart),
+          end: timeToMinutes(slot.localStart) + minutesBetween(slot.startsAt, slot.endsAt),
+        });
       }
       for (const a of column.appointments) {
         const start = istDateTime(a.startsAt).minutes;
@@ -265,13 +338,25 @@ function CalendarPage() {
       <PageHeader
         title="Appointment calendar"
         subtitle={view === 'week' ? `Week of ${formatDayLong(from)}` : formatDayLong(date)}
-        breadcrumbs={[{ label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) }, { label: 'Calendar' }]}
+        breadcrumbs={[
+          { label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) },
+          { label: 'Calendar' },
+        ]}
         actions={
           canBook && (
             <Button
               appearance="primary"
               icon={<CalendarAddRegular />}
-              onClick={() => void navigate({ to: '/scheduling/book', search: { departmentId: search.departmentId, practitionerId: search.practitionerId, date: date > today ? date : undefined } })}
+              onClick={() =>
+                void navigate({
+                  to: '/scheduling/book',
+                  search: {
+                    departmentId: search.departmentId,
+                    practitionerId: search.practitionerId,
+                    date: date > today ? date : undefined,
+                  },
+                })
+              }
             >
               Book appointment
             </Button>
@@ -281,7 +366,11 @@ function CalendarPage() {
 
       <Section flush>
         <div style={{ padding: '0 16px 12px' }} className={styles.toolbar}>
-          <TabList selectedValue={view} onTabSelect={(_, d) => set({ view: d.value === 'week' ? 'week' : undefined })} size="small">
+          <TabList
+            selectedValue={view}
+            onTabSelect={(_, d) => set({ view: d.value === 'week' ? 'week' : undefined })}
+            size="small"
+          >
             <Tab value="day">Day</Tab>
             <Tab value="week" disabled={!search.practitionerId}>
               Week
@@ -302,7 +391,12 @@ function CalendarPage() {
             </Button>
           </div>
           <Field label="Department">
-            <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined, view: undefined })}>
+            <Select
+              value={search.departmentId ?? ''}
+              onChange={(_, d) =>
+                set({ departmentId: d.value || undefined, practitionerId: undefined, view: undefined })
+              }
+            >
               <option value="">Choose department</option>
               {toOptions(departments.data).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -312,7 +406,12 @@ function CalendarPage() {
             </Select>
           </Field>
           <Field label="Doctor" hint={search.practitionerId ? undefined : 'Choose a doctor for the week view'}>
-            <Select value={search.practitionerId ?? ''} onChange={(_, d) => set({ practitionerId: d.value || undefined, view: d.value ? search.view : undefined })}>
+            <Select
+              value={search.practitionerId ?? ''}
+              onChange={(_, d) =>
+                set({ practitionerId: d.value || undefined, view: d.value ? search.view : undefined })
+              }
+            >
               <option value="">All doctors</option>
               {toOptions(doctorOptions.data).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -324,7 +423,10 @@ function CalendarPage() {
         </div>
 
         {scope === null ? (
-          <EmptyState title="Choose a department or a doctor" description="The calendar shows each doctor's sessions, bookings and free slots." />
+          <EmptyState
+            title="Choose a department or a doctor"
+            description="The calendar shows each doctor's sessions, bookings and free slots."
+          />
         ) : error ? (
           <div style={{ padding: 16 }}>
             <ErrorState error={error} onRetry={refresh} />
@@ -332,7 +434,10 @@ function CalendarPage() {
         ) : loading ? (
           <LoadingState label="Loading the calendar…" />
         ) : columns.length === 0 ? (
-          <EmptyState title="No OPD sessions" description="No doctor in this selection has sessions on these days. Set them up under Doctor schedules." />
+          <EmptyState
+            title="No OPD sessions"
+            description="No doctor in this selection has sessions on these days. Set them up under Doctor schedules."
+          />
         ) : (
           <>
             <CalendarGrid
@@ -359,7 +464,12 @@ function CalendarPage() {
         )}
       </Section>
 
-      <AppointmentDrawer appointmentId={openId} onClose={() => setOpenId(null)} onOpenAppointment={setOpenId} desk={desk} />
+      <AppointmentDrawer
+        appointmentId={openId}
+        onClose={() => setOpenId(null)}
+        onOpenAppointment={setOpenId}
+        desk={desk}
+      />
       {desk.dialogs}
     </Page>
   );
@@ -394,13 +504,19 @@ function CalendarGrid({
 
   return (
     <div className={styles.scroller} role="region" aria-label="Appointment calendar" tabIndex={0}>
-      <div className={styles.grid} style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(150px, 1fr))` }}>
+      <div
+        className={styles.grid}
+        style={{ gridTemplateColumns: `56px repeat(${columns.length}, minmax(150px, 1fr))` }}
+      >
         <div className={styles.corner} />
         {columns.map((column) => {
           const use = utilisation(column.slots);
           const restrictions = restrictionsOn(column.date, column.exceptions, column.practitionerId);
           return (
-            <div key={`h-${column.key}`} className={mergeClasses(styles.header, weekView && column.date === today && styles.headerToday)}>
+            <div
+              key={`h-${column.key}`}
+              className={mergeClasses(styles.header, weekView && column.date === today && styles.headerToday)}
+            >
               <Text weight="semibold" truncate wrap={false}>
                 {column.title}
               </Text>
@@ -454,7 +570,14 @@ function CalendarGrid({
                 const start = r.allDay ? range.start : timeToMinutes(r.start);
                 const end = r.allDay ? range.end : timeToMinutes(r.end);
                 return (
-                  <div key={`b-${index}`} className={styles.blocked} style={{ top: top(Math.max(start, range.start)), height: Math.max(0, (Math.min(end, range.end) - Math.max(start, range.start)) * PX) }}>
+                  <div
+                    key={`b-${index}`}
+                    className={styles.blocked}
+                    style={{
+                      top: top(Math.max(start, range.start)),
+                      height: Math.max(0, (Math.min(end, range.end) - Math.max(start, range.start)) * PX),
+                    }}
+                  >
                     {r.kind === 'leave' ? 'On leave' : 'Blocked'}: {r.reason}
                   </div>
                 );
@@ -462,10 +585,20 @@ function CalendarGrid({
 
               {column.slots.map((slot) => {
                 const start = timeToMinutes(slot.localStart);
-                const style: CSSProperties = { top: top(start) + 1, height: minutesBetween(slot.startsAt, slot.endsAt) * PX - 2 };
+                const style: CSSProperties = {
+                  top: top(start) + 1,
+                  height: minutesBetween(slot.startsAt, slot.endsAt) * PX - 2,
+                };
                 const full = slot.available <= 0;
                 if (full || !canBook) {
-                  return <div key={slot.startsAt} className={mergeClasses(styles.slot, full && styles.slotFull)} style={style} aria-hidden />;
+                  return (
+                    <div
+                      key={slot.startsAt}
+                      className={mergeClasses(styles.slot, full && styles.slotFull)}
+                      style={style}
+                      aria-hidden
+                    />
+                  );
                 }
                 return (
                   <button
@@ -501,13 +634,18 @@ function CalendarGrid({
                   >
                     <button
                       type="button"
-                      className={mergeClasses(styles.block, (a.status === 'Completed' || a.status === 'NoShow') && styles.blockDone)}
+                      className={mergeClasses(
+                        styles.block,
+                        (a.status === 'Completed' || a.status === 'NoShow') && styles.blockDone,
+                      )}
                       style={style}
                       aria-label={`${formatTime(a.startsAt)}, ${a.patientName}, ${status.label}`}
                       onClick={() => onOpen(a.id)}
                     >
                       <span className={styles.blockName}>
-                        {a.isTelehealth && <VideoRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 2 }} />}
+                        {a.isTelehealth && (
+                          <VideoRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 2 }} />
+                        )}
                         {a.patientName}
                       </span>
                       <span>
@@ -551,7 +689,10 @@ function Legend() {
         Free slot (click to book)
       </Caption1>
       <Caption1>
-        <span className={styles.swatch} style={{ backgroundColor: tokens.colorNeutralBackground3, border: `1px solid ${tokens.colorNeutralStroke2}` }} />
+        <span
+          className={styles.swatch}
+          style={{ backgroundColor: tokens.colorNeutralBackground3, border: `1px solid ${tokens.colorNeutralStroke2}` }}
+        />
         Full slot
       </Caption1>
     </div>

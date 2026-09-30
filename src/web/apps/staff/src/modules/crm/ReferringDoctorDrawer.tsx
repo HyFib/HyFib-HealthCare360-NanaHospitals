@@ -13,7 +13,10 @@ import { crmApi, crmKeys, crmQueries, type ReferringDoctorDetail } from './api';
 const schema = z.object({
   name: z.string().trim().min(1, 'Enter the doctor’s name.').max(200),
   clinic: z.string().trim().max(200),
-  phone: z.string().trim().refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
+  phone: z
+    .string()
+    .trim()
+    .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
   email: z
     .string()
     .trim()
@@ -33,19 +36,39 @@ type Values = z.infer<typeof schema>;
  * Add or edit a referring doctor. "Other spellings" are how front desks type the name in "Referred by"
  * (e.g. "Dr RK", "Kumar Clinic"); referrals are counted by matching them.
  */
-export function ReferringDoctorDrawer({ doctorId, prefillName, onClose }: { doctorId: string | null; prefillName?: string; onClose: () => void }) {
+export function ReferringDoctorDrawer({
+  doctorId,
+  prefillName,
+  onClose,
+}: {
+  doctorId: string | null;
+  prefillName?: string;
+  onClose: () => void;
+}) {
   const doctor = useQuery({ ...crmQueries.referringDoctor(doctorId ?? ''), enabled: doctorId !== null });
   if (doctorId && !doctor.data) {
     return (
       <EditorDrawer open title="Referring doctor" onClose={onClose} onSubmit={(e) => e.preventDefault()}>
-        {doctor.error ? <ErrorState error={doctor.error} onRetry={() => void doctor.refetch()} /> : <Spinner label="Loading…" />}
+        {doctor.error ? (
+          <ErrorState error={doctor.error} onRetry={() => void doctor.refetch()} />
+        ) : (
+          <Spinner label="Loading…" />
+        )}
       </EditorDrawer>
     );
   }
   return <DoctorForm doctor={doctor.data ?? null} prefillName={prefillName} onClose={onClose} />;
 }
 
-function DoctorForm({ doctor, prefillName, onClose }: { doctor: ReferringDoctorDetail | null; prefillName?: string; onClose: () => void }) {
+function DoctorForm({
+  doctor,
+  prefillName,
+  onClose,
+}: {
+  doctor: ReferringDoctorDetail | null;
+  prefillName?: string;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [alias, setAlias] = useState('');

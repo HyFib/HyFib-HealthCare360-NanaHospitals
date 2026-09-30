@@ -68,7 +68,11 @@ export function ActionError({ error, title, onReload }: { error: unknown; title?
         : (title ?? error.title);
 
   return (
-    <MessageBar intent={error.isNetworkError || concurrency ? 'warning' : 'error'} layout="multiline" politeness="assertive">
+    <MessageBar
+      intent={error.isNetworkError || concurrency ? 'warning' : 'error'}
+      layout="multiline"
+      politeness="assertive"
+    >
       <MessageBarBody>
         <MessageBarTitle>{heading}</MessageBarTitle>
         {concurrency ? 'Reload to see their changes, then make yours again.' : error.userMessage}
@@ -89,18 +93,32 @@ export function ActionError({ error, title, onReload }: { error: unknown; title?
  * Loading failure of a patient record: restricted (VIP) records explain break-the-glass, missing records say so,
  * everything else offers a retry.
  */
-export function RecordLoadError({ error, onRetry, patientId, what = 'record' }: { error: unknown; onRetry?: () => void; patientId?: string | null; what?: string }) {
+export function RecordLoadError({
+  error,
+  onRetry,
+  patientId,
+  what = 'record',
+}: {
+  error: unknown;
+  onRetry?: () => void;
+  patientId?: string | null;
+  what?: string;
+}) {
   const navigate = useNavigate();
   if (isApiError(error) && error.code === 'patient.restricted') {
     return (
       <MessageBar intent="warning" layout="multiline" icon={<ShieldKeyholeRegular />}>
         <MessageBarBody>
           <MessageBarTitle>Restricted record</MessageBarTitle>
-          {error.userMessage} Emergency access is requested from the patient&apos;s profile; it is time-limited and every screen opened is recorded.
+          {error.userMessage} Emergency access is requested from the patient&apos;s profile; it is time-limited and
+          every screen opened is recorded.
         </MessageBarBody>
         {patientId && (
           <MessageBarActions>
-            <Button icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}>
+            <Button
+              icon={<PersonRegular />}
+              onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}
+            >
               Open patient profile
             </Button>
           </MessageBarActions>
@@ -109,7 +127,12 @@ export function RecordLoadError({ error, onRetry, patientId, what = 'record' }: 
     );
   }
   if (isApiError(error) && error.status === 404) {
-    return <EmptyState title={`This ${what} was not found`} description="It may have been removed, or the link is wrong. Go back to the list and search again." />;
+    return (
+      <EmptyState
+        title={`This ${what} was not found`}
+        description="It may have been removed, or the link is wrong. Go back to the list and search again."
+      />
+    );
   }
   return <ErrorState error={error} onRetry={onRetry} />;
 }
@@ -128,7 +151,12 @@ export function NoAccess({ what }: { what: string }) {
 export function DetailGrid({ children, minColumnWidth }: { children: ReactNode; minColumnWidth?: number }) {
   const styles = useStyles();
   return (
-    <div className={styles.details} style={minColumnWidth ? { gridTemplateColumns: `repeat(auto-fill, minmax(${minColumnWidth}px, 1fr))` } : undefined}>
+    <div
+      className={styles.details}
+      style={
+        minColumnWidth ? { gridTemplateColumns: `repeat(auto-fill, minmax(${minColumnWidth}px, 1fr))` } : undefined
+      }
+    >
       {children}
     </div>
   );
@@ -147,7 +175,17 @@ export function Detail({ label, children }: { label: string; children: ReactNode
 }
 
 /** "Confirmed by Sister Mary · 26 Sept 2026, 9:02 am" — every clinical entry shows who and when. */
-export function WhoWhen({ by, at, prefix = 'Recorded by', locked }: { by: string | null | undefined; at: string | null | undefined; prefix?: string; locked?: boolean }) {
+export function WhoWhen({
+  by,
+  at,
+  prefix = 'Recorded by',
+  locked,
+}: {
+  by: string | null | undefined;
+  at: string | null | undefined;
+  prefix?: string;
+  locked?: boolean;
+}) {
   const styles = useStyles();
   if (!by && !at) {
     return null;
@@ -205,11 +243,16 @@ export function ChargeStatusPanel({
     <MessageBar intent="warning" layout="multiline">
       <MessageBarBody>
         <MessageBarTitle>The charge could not be posted to the bill</MessageBarTitle>
-        {error ? `${error}. ` : ''}The clinical record is saved. Retry when billing is available again; nothing is billed twice.
+        {error ? `${error}. ` : ''}The clinical record is saved. Retry when billing is available again; nothing is
+        billed twice.
       </MessageBarBody>
       {canRetry && onRetry && (
         <MessageBarActions>
-          <Button icon={retrying ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} disabled={retrying} onClick={onRetry}>
+          <Button
+            icon={retrying ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
+            disabled={retrying}
+            onClick={onRetry}
+          >
             Retry billing
           </Button>
         </MessageBarActions>
@@ -290,13 +333,22 @@ function ReasonForm(props: ReasonDialogProps) {
           {props.presets && props.presets.length > 0 && (
             <div className={styles.presets} role="group" aria-label="Common reasons">
               {props.presets.map((preset) => (
-                <Button key={preset} size="small" appearance={reason === preset ? 'primary' : 'secondary'} onClick={() => setReason(preset)}>
+                <Button
+                  key={preset}
+                  size="small"
+                  appearance={reason === preset ? 'primary' : 'secondary'}
+                  onClick={() => setReason(preset)}
+                >
                   {preset}
                 </Button>
               ))}
             </div>
           )}
-          <Field label={props.label ?? 'Reason'} required hint={`At least ${minLength} characters. Press Ctrl+Enter to confirm.`}>
+          <Field
+            label={props.label ?? 'Reason'}
+            required
+            hint={`At least ${minLength} characters. Press Ctrl+Enter to confirm.`}
+          >
             <Textarea
               value={reason}
               onChange={(_, data) => setReason(data.value)}
@@ -310,7 +362,11 @@ function ReasonForm(props: ReasonDialogProps) {
           </Field>
           {option && (
             <Field hint={option.hint}>
-              <Checkbox checked={checked} onChange={(_, data) => setChecked(data.checked === true)} label={option.label} />
+              <Checkbox
+                checked={checked}
+                onChange={(_, data) => setChecked(data.checked === true)}
+                label={option.label}
+              />
             </Field>
           )}
           <ActionError error={props.error} />

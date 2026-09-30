@@ -52,7 +52,12 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
   const cancel = useMutation({
     mutationFn: (reason: string) => canteenApi.cancelSale(saleId, reason),
     onSuccess: (s) => {
-      notify.success(`Bill ${s.billNumber} cancelled`, s.paymentMode === 'StaffCredit' ? 'Stock restored and the staff credit reversed.' : 'Stock restored. Return the money to the customer.');
+      notify.success(
+        `Bill ${s.billNumber} cancelled`,
+        s.paymentMode === 'StaffCredit'
+          ? 'Stock restored and the staff credit reversed.'
+          : 'Stock restored. Return the money to the customer.',
+      );
       setCancelling(false);
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
     },
@@ -64,7 +69,9 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {s ? `Bill ${s.billNumber}` : 'Bill'}
         </DrawerHeaderTitle>
         {s && (
@@ -140,7 +147,9 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               Paid by {PAYMENT_LABEL[s.paymentMode]}
               {s.paymentReference ? ` · ${s.paymentReference}` : ''}
             </Text>
-            {s.status === 'Completed' && !sameDay && <Caption1 className={styles.muted}>Bills can be cancelled only on the day they were made.</Caption1>}
+            {s.status === 'Completed' && !sameDay && (
+              <Caption1 className={styles.muted}>Bills can be cancelled only on the day they were made.</Caption1>
+            )}
           </div>
         )}
       </DrawerBody>
@@ -148,7 +157,12 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
         <Button
           icon={<PrintRegular />}
           disabled={!s}
-          onClick={() => s && void printCanteenReceipt(s, letterhead, { duplicate: true }).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+          onClick={() =>
+            s &&
+            void printCanteenReceipt(s, letterhead, { duplicate: true }).catch((error: unknown) =>
+              notify.error(error, 'Printing failed'),
+            )
+          }
         >
           Reprint
         </Button>
@@ -161,7 +175,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
       <ReasonDialog
         open={cancelling}
         title={s ? `Cancel bill ${s.billNumber}?` : 'Cancel bill?'}
-        description={s ? `${formatInr(s.netAmount)} by ${PAYMENT_LABEL[s.paymentMode]}. Stock is put back${s.paymentMode === 'StaffCredit' ? ' and the staff credit is reversed' : '; return the money to the customer'}.` : undefined}
+        description={
+          s
+            ? `${formatInr(s.netAmount)} by ${PAYMENT_LABEL[s.paymentMode]}. Stock is put back${s.paymentMode === 'StaffCredit' ? ' and the staff credit is reversed' : '; return the money to the customer'}.`
+            : undefined
+        }
         minLength={5}
         placeholder="e.g. Wrong item billed, customer changed order"
         confirmLabel="Cancel bill"

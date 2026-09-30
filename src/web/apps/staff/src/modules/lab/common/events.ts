@@ -58,7 +58,9 @@ export function mergePrefixes(prefixes: readonly KeyPrefix[]): KeyPrefix[] {
   const sorted = [...prefixes].sort((a, b) => a.length - b.length);
   const result: KeyPrefix[] = [];
   for (const prefix of sorted) {
-    const covered = result.some((kept) => kept.length <= prefix.length && kept.every((part, index) => prefix[index] === part));
+    const covered = result.some(
+      (kept) => kept.length <= prefix.length && kept.every((part, index) => prefix[index] === part),
+    );
     if (!covered) {
       result.push(prefix);
     }

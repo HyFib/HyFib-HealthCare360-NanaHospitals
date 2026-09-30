@@ -28,7 +28,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { enumOptions } from '@/lib/lookups';
-import { GUARDIAN_RELATIONS, guardianRelationLabel, PATIENT_CATEGORIES, patientApi, type DuplicateCandidate, type DuplicateCheckRequest } from './api';
+import {
+  GUARDIAN_RELATIONS,
+  guardianRelationLabel,
+  PATIENT_CATEGORIES,
+  patientApi,
+  type DuplicateCandidate,
+  type DuplicateCheckRequest,
+} from './api';
 import { PatientPhotoField } from './PatientPhotoField';
 import { INDIAN_STATES, LANGUAGES, patientFormSchema, TITLES, type PatientFormValues } from './validation';
 
@@ -109,10 +116,30 @@ export function PatientForm(props: PatientFormProps) {
         <div className={styles.main}>
           <Section title="Patient details">
             <FormGrid columns={4}>
-              <SelectField control={control} name="title" label="Title" placeholder="—" options={TITLES.map((t) => ({ value: t, label: t }))} />
-              <TextField control={control} name="firstName" label="First name" required autoFocus autoComplete="off" maxLength={100} />
+              <SelectField
+                control={control}
+                name="title"
+                label="Title"
+                placeholder="—"
+                options={TITLES.map((t) => ({ value: t, label: t }))}
+              />
+              <TextField
+                control={control}
+                name="firstName"
+                label="First name"
+                required
+                autoFocus
+                autoComplete="off"
+                maxLength={100}
+              />
               <TextField control={control} name="middleName" label="Middle name" autoComplete="off" maxLength={100} />
-              <TextField control={control} name="lastName" label="Last name / surname" autoComplete="off" maxLength={100} />
+              <TextField
+                control={control}
+                name="lastName"
+                label="Last name / surname"
+                autoComplete="off"
+                maxLength={100}
+              />
             </FormGrid>
             <div style={{ height: 12 }} />
             <FormGrid columns={4}>
@@ -142,7 +169,13 @@ export function PatientForm(props: PatientFormProps) {
                 />
                 <div className={styles.ageRow}>
                   {ageMode === 'dob' ? (
-                    <DateField control={control} name="dateOfBirth" label="Date of birth" min="1900-01-01" max={todayIso()} />
+                    <DateField
+                      control={control}
+                      name="dateOfBirth"
+                      label="Date of birth"
+                      min="1900-01-01"
+                      max={todayIso()}
+                    />
                   ) : (
                     <>
                       <NumberField control={control} name="ageYears" label="Years" min={0} max={130} />
@@ -168,7 +201,12 @@ export function PatientForm(props: PatientFormProps) {
                 placeholder="—"
                 options={GUARDIAN_RELATIONS.map((r) => ({ value: r, label: guardianRelationLabel[r] }))}
               />
-              <TextField control={control} name="guardianName" label="Father / husband / guardian name" autoComplete="off" />
+              <TextField
+                control={control}
+                name="guardianName"
+                label="Father / husband / guardian name"
+                autoComplete="off"
+              />
               <SelectField
                 control={control}
                 name="maritalStatus"
@@ -195,7 +233,13 @@ export function PatientForm(props: PatientFormProps) {
                 autoComplete="off"
                 hint="Used for SMS/WhatsApp updates and patient portal sign-in"
               />
-              <TextField control={control} name="alternatePhone" label="Alternate phone" type="tel" autoComplete="off" />
+              <TextField
+                control={control}
+                name="alternatePhone"
+                label="Alternate phone"
+                type="tel"
+                autoComplete="off"
+              />
               <TextField control={control} name="email" label="Email" type="email" autoComplete="off" />
               <SelectField
                 control={control}
@@ -230,7 +274,10 @@ export function PatientForm(props: PatientFormProps) {
             </FormGrid>
           </Section>
 
-          <Section title="Health IDs" description="ABHA is stored encrypted. For Aadhaar only the last 4 digits are kept, never the full number.">
+          <Section
+            title="Health IDs"
+            description="ABHA is stored encrypted. For Aadhaar only the last 4 digits are kept, never the full number."
+          >
             <FormGrid columns={3}>
               <TextField
                 control={control}
@@ -238,16 +285,30 @@ export function PatientForm(props: PatientFormProps) {
                 label="ABHA number"
                 autoComplete="off"
                 maxLength={17}
-                hint={props.identifierHints?.abha ? `On file: ${props.identifierHints.abha}. Leave blank to keep it.` : '14 digits, e.g. 12-3456-7890-1234'}
+                hint={
+                  props.identifierHints?.abha
+                    ? `On file: ${props.identifierHints.abha}. Leave blank to keep it.`
+                    : '14 digits, e.g. 12-3456-7890-1234'
+                }
               />
-              <TextField control={control} name="abhaAddress" label="ABHA address" autoComplete="off" hint="e.g. name@abdm" />
+              <TextField
+                control={control}
+                name="abhaAddress"
+                label="ABHA address"
+                autoComplete="off"
+                hint="e.g. name@abdm"
+              />
               <TextField
                 control={control}
                 name="aadhaarNumber"
                 label="Aadhaar number"
                 autoComplete="off"
                 maxLength={14}
-                hint={props.identifierHints?.aadhaarLast4 ? `On file: XXXX XXXX ${props.identifierHints.aadhaarLast4}. Leave blank to keep it.` : 'Optional. Used only to avoid duplicate records.'}
+                hint={
+                  props.identifierHints?.aadhaarLast4
+                    ? `On file: XXXX XXXX ${props.identifierHints.aadhaarLast4}. Leave blank to keep it.`
+                    : 'Optional. Used only to avoid duplicate records.'
+                }
               />
             </FormGrid>
           </Section>
@@ -259,7 +320,12 @@ export function PatientForm(props: PatientFormProps) {
               <TextField control={control} name="nationality" label="Nationality" autoComplete="off" />
             </FormGrid>
             <div style={{ height: 12 }} />
-            <SwitchField control={control} name="isVip" label="Restricted record (VIP, staff or high-profile patient)" hint="Only authorised staff can open it, and every access is audited." />
+            <SwitchField
+              control={control}
+              name="isVip"
+              label="Restricted record (VIP, staff or high-profile patient)"
+              hint="Only authorised staff can open it, and every access is audited."
+            />
             <TextAreaField control={control} name="notes" label="Notes for the front desk" rows={2} maxLength={2000} />
           </Section>
 
@@ -276,7 +342,13 @@ export function PatientForm(props: PatientFormProps) {
 
       <div className={styles.footer}>
         {props.secondaryActions}
-        <Button type="submit" appearance="primary" size="large" icon={props.busy ? <Spinner size="tiny" /> : <SaveRegular />} disabled={props.busy}>
+        <Button
+          type="submit"
+          appearance="primary"
+          size="large"
+          icon={props.busy ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={props.busy}
+        >
           {props.submitLabel}
         </Button>
       </div>
@@ -292,14 +364,25 @@ function PhotoBlock({ control }: { control: UseFormReturn<PatientFormValues>['co
       control={control}
       name="photoFileId"
       render={({ field, fieldState }) => (
-        <PatientPhotoField value={field.value} onChange={field.onChange} name={`${firstName} ${lastName}`} error={fieldState.error?.message} />
+        <PatientPhotoField
+          value={field.value}
+          onChange={field.onChange}
+          name={`${firstName} ${lastName}`}
+          error={fieldState.error?.message}
+        />
       )}
     />
   );
 }
 
 /** Live "may already be registered" check as the front desk types (SRS FO-02). */
-function DuplicatePanel({ control, onOpen }: { control: UseFormReturn<PatientFormValues>['control']; onOpen?: (candidate: DuplicateCandidate) => void }) {
+function DuplicatePanel({
+  control,
+  onOpen,
+}: {
+  control: UseFormReturn<PatientFormValues>['control'];
+  onOpen?: (candidate: DuplicateCandidate) => void;
+}) {
   const styles = useStyles();
   const [firstName, lastName, dateOfBirth, phone, abhaNumber, aadhaarNumber] = useWatch({
     control,
@@ -334,7 +417,11 @@ function DuplicatePanel({ control, onOpen }: { control: UseFormReturn<PatientFor
   return (
     <Section
       title="Possible matches"
-      description={enough ? 'Existing patients with similar details' : 'Type the name with the mobile number or date of birth to check for existing records.'}
+      description={
+        enough
+          ? 'Existing patients with similar details'
+          : 'Type the name with the mobile number or date of birth to check for existing records.'
+      }
     >
       {duplicates.isFetching && <Spinner size="tiny" label="Checking…" labelPosition="after" />}
       {enough && !duplicates.isFetching && candidates.length === 0 && (
@@ -347,7 +434,11 @@ function DuplicatePanel({ control, onOpen }: { control: UseFormReturn<PatientFor
           <div key={c.id} className={styles.candidate}>
             <div className={styles.candidateHeader}>
               <Text weight="semibold">{c.fullName}</Text>
-              <Badge appearance="tint" color={c.score >= 80 ? 'danger' : 'warning'} icon={c.score >= 80 ? <WarningRegular /> : undefined}>
+              <Badge
+                appearance="tint"
+                color={c.score >= 80 ? 'danger' : 'warning'}
+                icon={c.score >= 80 ? <WarningRegular /> : undefined}
+              >
                 {c.score >= 80 ? 'Likely same' : 'Similar'}
               </Badge>
             </div>

@@ -17,7 +17,12 @@ export const Route = createFileRoute('/_app/hr/me/apply-leave')({
 /** The "Apply for leave" quick action: a focused form with the balance alongside. */
 function ApplyLeavePage() {
   return (
-    <SelfServicePage title="Apply for leave" subtitle="Your reporting manager (or HR) is notified and decides the request." icon={<CalendarAddRegular />} maxWidth={1200}>
+    <SelfServicePage
+      title="Apply for leave"
+      subtitle="Your reporting manager (or HR) is notified and decides the request."
+      icon={<CalendarAddRegular />}
+      maxWidth={1200}
+    >
       {() => <ApplyLeave />}
     </SelfServicePage>
   );
@@ -57,10 +62,21 @@ function ApplyLeave() {
       <Section title={`My balance ${year}`}>
         {balances.isLoading && <LoadingState />}
         {balances.error && <ErrorState error={balances.error} onRetry={() => void balances.refetch()} />}
-        {balances.data?.length === 0 && <Caption1>Not credited yet for {year}. HR credits leave at the start of the year.</Caption1>}
+        {balances.data?.length === 0 && (
+          <Caption1>Not credited yet for {year}. HR credits leave at the start of the year.</Caption1>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {balances.data?.map((b) => (
-            <div key={b.leaveTypeId} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, paddingBottom: 6, borderBottom: `1px solid ${tokens.colorNeutralStroke3}` }}>
+            <div
+              key={b.leaveTypeId}
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                paddingBottom: 6,
+                borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+              }}
+            >
               <span>
                 <Text weight="semibold">{b.leaveTypeName}</Text>
                 <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>

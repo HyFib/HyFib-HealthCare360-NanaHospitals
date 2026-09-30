@@ -53,6 +53,12 @@ export function toOptions(items: LookupItem[] | undefined): { value: string; lab
 }
 
 /** Options for a string enum, labelled in plain words ("PartiallyPaid" → "Partially paid"). */
-export function enumOptions<T extends string>(values: readonly T[], labels: Partial<Record<T, string>> = {}): { value: T; label: string }[] {
-  return values.map((value) => ({ value, label: labels[value] ?? value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()) }));
+export function enumOptions<T extends string>(
+  values: readonly T[],
+  labels: Partial<Record<T, string>> = {},
+): { value: T; label: string }[] {
+  return values.map((value) => ({
+    value,
+    label: labels[value] ?? value.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()),
+  }));
 }

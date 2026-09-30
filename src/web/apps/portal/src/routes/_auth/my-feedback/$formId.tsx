@@ -44,7 +44,12 @@ function FeedbackFormPage() {
   }
 
   return (
-    <PortalPage title={form.title} subtitle={t('feedback.formAt', { hospital: form.hospital })} back={back} width="narrow">
+    <PortalPage
+      title={form.title}
+      subtitle={t('feedback.formAt', { hospital: form.hospital })}
+      back={back}
+      width="narrow"
+    >
       {receipt ? (
         <FeedbackThanks
           receipt={receipt}

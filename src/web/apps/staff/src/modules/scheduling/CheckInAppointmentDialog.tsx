@@ -17,7 +17,15 @@ import {
 import { CheckmarkCircleRegular, PersonRegular, PrintRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatTime, isApiError, useSession } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, SelectField, SwitchField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -40,8 +48,21 @@ const schema = z.object({
 type CheckInValues = z.infer<typeof schema>;
 
 const useStyles = makeStyles({
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px 0', textAlign: 'center' },
-  token: { fontSize: '56px', lineHeight: '64px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1, letterSpacing: '2px' },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 0',
+    textAlign: 'center',
+  },
+  token: {
+    fontSize: '56px',
+    lineHeight: '64px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+    letterSpacing: '2px',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
@@ -50,10 +71,18 @@ const useStyles = makeStyles({
  * Checks a booked patient in on the day (PMS-03): creates the OP visit and queue token through the Patients module.
  * The defaults suit most patients, so the usual path is "Check in" → Enter → print the token.
  */
-export function CheckInAppointmentDialog({ appointment, onClose }: { appointment: AppointmentRef | null; onClose: () => void }) {
+export function CheckInAppointmentDialog({
+  appointment,
+  onClose,
+}: {
+  appointment: AppointmentRef | null;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{appointment && <CheckInContent key={appointment.id} appointment={appointment} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {appointment && <CheckInContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -68,7 +97,12 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
 
   const form = useForm<CheckInValues>({
     resolver: zodResolver(schema),
-    defaultValues: { payerType: 'Self', priority: 'Normal', chiefComplaint: appointment.reason ?? '', issueToken: !appointment.isTelehealth },
+    defaultValues: {
+      payerType: 'Self',
+      priority: 'Normal',
+      chiefComplaint: appointment.reason ?? '',
+      issueToken: !appointment.isTelehealth,
+    },
   });
 
   const refresh = () => {
@@ -138,18 +172,27 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
                 <Text>{[appointment.departmentName, appointment.practitionerName].filter(Boolean).join(' · ')}</Text>
               </>
             ) : (
-              <Text>{appointment.isTelehealth ? 'Visit created for the video consultation. The doctor admits the patient from the waiting room.' : 'Visit created.'}</Text>
+              <Text>
+                {appointment.isTelehealth
+                  ? 'Visit created for the video consultation. The doctor admits the patient from the waiting room.'
+                  : 'Visit created.'}
+              </Text>
             )}
             <Caption1 className={styles.muted}>Visit number {done.visitNumber}</Caption1>
             {done.linkedExistingVisit && (
               <MessageBar intent="info">
-                <MessageBarBody>The patient was already registered as a walk-in today, so the appointment was linked to that visit.</MessageBarBody>
+                <MessageBarBody>
+                  The patient was already registered as a walk-in today, so the appointment was linked to that visit.
+                </MessageBarBody>
               </MessageBar>
             )}
           </div>
         </DialogContent>
         <DialogActions>
-          <Button icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: appointment.patientId } })}>
+          <Button
+            icon={<PersonRegular />}
+            onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: appointment.patientId } })}
+          >
             Open patient
           </Button>
           {done.tokenLabel && (
@@ -181,7 +224,10 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
                 control={form.control}
                 name="payerType"
                 label="Payment by"
-                options={enumOptions(PAYER_TYPES, { Self: 'Self (cash / card / UPI)', GovernmentScheme: 'Government scheme' })}
+                options={enumOptions(PAYER_TYPES, {
+                  Self: 'Self (cash / card / UPI)',
+                  GovernmentScheme: 'Government scheme',
+                })}
               />
             </FormGrid>
             <ChoiceField
@@ -195,15 +241,29 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
                 { value: 'Emergency', label: 'Emergency' },
               ]}
             />
-            <TextAreaField control={form.control} name="chiefComplaint" label="Reason for visit" rows={2} maxLength={500} />
-            {!appointment.isTelehealth && <SwitchField control={form.control} name="issueToken" label="Issue a queue token" />}
+            <TextAreaField
+              control={form.control}
+              name="chiefComplaint"
+              label="Reason for visit"
+              rows={2}
+              maxLength={500}
+            />
+            {!appointment.isTelehealth && (
+              <SwitchField control={form.control} name="issueToken" label="Issue a queue token" />
+            )}
           </div>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={checkIn.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" autoFocus disabled={checkIn.isPending} icon={checkIn.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            autoFocus
+            disabled={checkIn.isPending}
+            icon={checkIn.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Check in
           </Button>
         </DialogActions>

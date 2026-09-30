@@ -1,5 +1,11 @@
 import { Button, Radio, RadioGroup, Spinner, Field } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DismissCircleRegular, EditRegular, PlayRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  EditRegular,
+  PlayRegular,
+  ShieldCheckmarkRegular,
+} from '@fluentui/react-icons';
 import { useSession } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
@@ -22,7 +28,15 @@ export interface CapaLike {
  * Next steps on a corrective/preventive action: the owner starts and completes it; the quality team checks that it
  * worked (never on their own action) or cancels it.
  */
-export function CapaActionButtons({ capa, onEdit, size = 'medium' }: { capa: CapaLike; onEdit?: () => void; size?: 'small' | 'medium' }) {
+export function CapaActionButtons({
+  capa,
+  onEdit,
+  size = 'medium',
+}: {
+  capa: CapaLike;
+  onEdit?: () => void;
+  size?: 'small' | 'medium';
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const userId = useSession((s) => s.user?.id);
@@ -53,17 +67,34 @@ export function CapaActionButtons({ capa, onEdit, size = 'medium' }: { capa: Cap
   return (
     <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
       {actions.includes('start') && (
-        <Button size={size} icon={busy && !dialog ? <Spinner size="tiny" /> : <PlayRegular />} disabled={busy} onClick={() => void run(() => qualityApi.startCapa(capa.id), 'Action started')}>
+        <Button
+          size={size}
+          icon={busy && !dialog ? <Spinner size="tiny" /> : <PlayRegular />}
+          disabled={busy}
+          onClick={() => void run(() => qualityApi.startCapa(capa.id), 'Action started')}
+        >
           Start
         </Button>
       )}
       {actions.includes('complete') && (
-        <Button size={size} appearance="primary" icon={<CheckmarkCircleRegular />} disabled={busy} onClick={() => setDialog('complete')}>
+        <Button
+          size={size}
+          appearance="primary"
+          icon={<CheckmarkCircleRegular />}
+          disabled={busy}
+          onClick={() => setDialog('complete')}
+        >
           Mark done
         </Button>
       )}
       {actions.includes('verify') && (
-        <Button size={size} appearance="primary" icon={<ShieldCheckmarkRegular />} disabled={busy} onClick={() => setDialog('verify')}>
+        <Button
+          size={size}
+          appearance="primary"
+          icon={<ShieldCheckmarkRegular />}
+          disabled={busy}
+          onClick={() => setDialog('verify')}
+        >
           Check effectiveness
         </Button>
       )}
@@ -73,7 +104,13 @@ export function CapaActionButtons({ capa, onEdit, size = 'medium' }: { capa: Cap
         </Button>
       )}
       {actions.includes('cancel') && (
-        <Button size={size} appearance="subtle" icon={<DismissCircleRegular />} disabled={busy} onClick={() => setDialog('cancel')}>
+        <Button
+          size={size}
+          appearance="subtle"
+          icon={<DismissCircleRegular />}
+          disabled={busy}
+          onClick={() => setDialog('cancel')}
+        >
           Cancel action
         </Button>
       )}
@@ -87,7 +124,13 @@ export function CapaActionButtons({ capa, onEdit, size = 'medium' }: { capa: Cap
         confirmLabel="Mark done"
         maxLength={2000}
         busy={busy}
-        onConfirm={(note) => void run(() => qualityApi.completeCapa(capa.id, note), 'Action marked done', 'The quality team will check that it worked.')}
+        onConfirm={(note) =>
+          void run(
+            () => qualityApi.completeCapa(capa.id, note),
+            'Action marked done',
+            'The quality team will check that it worked.',
+          )
+        }
         onCancel={() => setDialog(null)}
       />
       <ReasonDialog

@@ -307,14 +307,16 @@ export const dialysisKeys = {
   session: (id: string) => ['dialysis', 'session', id] as const,
   profiles: (filters: ProfileFilters) => ['dialysis', 'profiles', filters] as const,
   profile: (patientId: string) => ['dialysis', 'profile', patientId] as const,
-  dialyzers: (patientId: string, includeDiscarded: boolean) => ['dialysis', 'dialyzers', patientId, includeDiscarded] as const,
+  dialyzers: (patientId: string, includeDiscarded: boolean) =>
+    ['dialysis', 'dialyzers', patientId, includeDiscarded] as const,
 };
 
 export const dialysisQueries = {
   machines: (includeInactive = false) =>
     queryOptions({
       queryKey: dialysisKeys.machines(includeInactive),
-      queryFn: ({ signal }) => api.get<DialysisMachineDto[]>('/api/v1/dialysis/machines', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DialysisMachineDto[]>('/api/v1/dialysis/machines', { query: { includeInactive }, signal }),
       refetchInterval: 60_000,
     }),
   board: (date: string, shift?: DialysisShift) =>
@@ -327,7 +329,11 @@ export const dialysisQueries = {
   sessions: (filters: SessionFilters) =>
     queryOptions({
       queryKey: dialysisKeys.sessions(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<DialysisSessionListItem>>('/api/v1/dialysis/sessions', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<DialysisSessionListItem>>('/api/v1/dialysis/sessions', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   session: (id: string) =>
@@ -338,7 +344,11 @@ export const dialysisQueries = {
   profiles: (filters: ProfileFilters) =>
     queryOptions({
       queryKey: dialysisKeys.profiles(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<DialysisProfileDto>>('/api/v1/dialysis/patients', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<DialysisProfileDto>>('/api/v1/dialysis/patients', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   /** The patient's dialysis enrolment, or null when not enrolled (404). */
@@ -359,7 +369,11 @@ export const dialysisQueries = {
   dialyzers: (patientId: string, includeDiscarded = false) =>
     queryOptions({
       queryKey: dialysisKeys.dialyzers(patientId, includeDiscarded),
-      queryFn: ({ signal }) => api.get<DialyzerDto[]>(`/api/v1/dialysis/patients/${patientId}/dialyzers`, { query: { includeDiscarded }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DialyzerDto[]>(`/api/v1/dialysis/patients/${patientId}/dialyzers`, {
+          query: { includeDiscarded },
+          signal,
+        }),
     }),
 };
 
@@ -371,16 +385,25 @@ export const dialysisApi = {
       await api.post<{ id: string }>('/api/v1/dialysis/machines', request);
     }
   },
-  recordDisinfection: (machineId: string, method: string) => api.post<void>(`/api/v1/dialysis/machines/${machineId}/disinfection`, { method }),
-  saveProfile: (patientId: string, request: SaveDialysisProfileRequest) => api.put<{ id: string }>(`/api/v1/dialysis/patients/${patientId}`, request),
-  registerDialyzer: (patientId: string, request: RegisterDialyzerRequest) => api.post<DialyzerDto>(`/api/v1/dialysis/patients/${patientId}/dialyzers`, request),
-  discardDialyzer: (id: string, reason: string) => api.post<void>(`/api/v1/dialysis/dialyzers/${id}/discard`, { reason }),
+  recordDisinfection: (machineId: string, method: string) =>
+    api.post<void>(`/api/v1/dialysis/machines/${machineId}/disinfection`, { method }),
+  saveProfile: (patientId: string, request: SaveDialysisProfileRequest) =>
+    api.put<{ id: string }>(`/api/v1/dialysis/patients/${patientId}`, request),
+  registerDialyzer: (patientId: string, request: RegisterDialyzerRequest) =>
+    api.post<DialyzerDto>(`/api/v1/dialysis/patients/${patientId}/dialyzers`, request),
+  discardDialyzer: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/dialysis/dialyzers/${id}/discard`, { reason }),
   schedule: (request: ScheduleDialysisRequest) => api.post<{ id: string }>('/api/v1/dialysis/sessions', request),
-  assignMachine: (sessionId: string, machineId: string) => api.put<void>(`/api/v1/dialysis/sessions/${sessionId}/machine`, { machineId }),
-  preAssessment: (sessionId: string, request: PreDialysisRequest) => api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/pre-assessment`, request),
-  start: (sessionId: string, request: StartDialysisRequest) => api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/start`, request),
-  addReadings: (sessionId: string, readings: DialysisReading[]) => api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/readings`, { readings }),
-  complete: (sessionId: string, request: CompleteDialysisRequest) => api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/complete`, request),
+  assignMachine: (sessionId: string, machineId: string) =>
+    api.put<void>(`/api/v1/dialysis/sessions/${sessionId}/machine`, { machineId }),
+  preAssessment: (sessionId: string, request: PreDialysisRequest) =>
+    api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/pre-assessment`, request),
+  start: (sessionId: string, request: StartDialysisRequest) =>
+    api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/start`, request),
+  addReadings: (sessionId: string, readings: DialysisReading[]) =>
+    api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/readings`, { readings }),
+  complete: (sessionId: string, request: CompleteDialysisRequest) =>
+    api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/complete`, request),
   cancel: (sessionId: string, reason: string, patientDidNotCome: boolean) =>
     api.post<void>(`/api/v1/dialysis/sessions/${sessionId}/cancel`, { reason, patientDidNotCome }),
   retryCharges: (sessionId: string) => api.post<ChargeOutcome>(`/api/v1/dialysis/sessions/${sessionId}/charges/retry`),

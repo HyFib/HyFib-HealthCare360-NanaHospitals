@@ -2,15 +2,44 @@ import { ApiError } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { LabReportSection, PublicSlot } from '@/lib/types';
 import { isDue, totalDue } from './bills/labels';
-import { chooseDay, dayPartOf, firstFreeDay, freeSeatsByDay, groupByDayPart, stripDays, stripStartFor } from './doctors/slots';
-import { checkAnswers, emptyAnswers, hasAnswer, linkProblem, ratingField, toFeedbackRequest, type FeedbackQuestions } from './feedback/model';
+import {
+  chooseDay,
+  dayPartOf,
+  firstFreeDay,
+  freeSeatsByDay,
+  groupByDayPart,
+  stripDays,
+  stripStartFor,
+} from './doctors/slots';
+import {
+  checkAnswers,
+  emptyAnswers,
+  hasAnswer,
+  linkProblem,
+  ratingField,
+  toFeedbackRequest,
+  type FeedbackQuestions,
+} from './feedback/model';
 import { greetingKey } from './home/greeting';
 import { frequencyText, medicineName } from './prescriptions/labels';
 import { splitLines } from './records/labels';
 import { parseRange, parseResultNumber, rangePosition, summarizeResults } from './reports/labResults';
 import { reportVerifyUrl } from './reports/verifyLink';
-import { canFallBackToAudio, classifyJoinError, classifyMediaError, detectPlatform, isInAppBrowser, mediaSupport } from './video/media';
-import { isWellFormedCode, normalizeReportCode, parseVerificationInput, verificationPagePath, verificationPageUrl } from './verify/verification';
+import {
+  canFallBackToAudio,
+  classifyJoinError,
+  classifyMediaError,
+  detectPlatform,
+  isInAppBrowser,
+  mediaSupport,
+} from './video/media';
+import {
+  isWellFormedCode,
+  normalizeReportCode,
+  parseVerificationInput,
+  verificationPagePath,
+  verificationPageUrl,
+} from './verify/verification';
 
 describe('slots', () => {
   const slot = (localTime: string, seatsLeft = 1): PublicSlot =>
@@ -102,20 +131,35 @@ describe('lab results in plain language', () => {
 describe('report QR codes', () => {
   it('opens the public check page: the server address when known, else this address', () => {
     const code = 'ABCDEFGHJKLMNPQRSTUV';
-    expect(reportVerifyUrl('lab', { verificationCode: code, verificationUrl: `https://care.example/portal/verify/lab/${code}` }, 'https://lan.local')).toBe(
-      `https://care.example/portal/verify/lab/${code}`,
+    expect(
+      reportVerifyUrl(
+        'lab',
+        { verificationCode: code, verificationUrl: `https://care.example/portal/verify/lab/${code}` },
+        'https://lan.local',
+      ),
+    ).toBe(`https://care.example/portal/verify/lab/${code}`);
+    expect(reportVerifyUrl('radiology', { verificationCode: code, verificationUrl: null }, 'https://lan.local')).toBe(
+      `https://lan.local/portal/verify/radiology/${code}`,
     );
-    expect(reportVerifyUrl('radiology', { verificationCode: code, verificationUrl: null }, 'https://lan.local')).toBe(`https://lan.local/portal/verify/radiology/${code}`);
-    expect(reportVerifyUrl('lab', { verificationCode: code, verificationUrl: 'javascript:alert(1)' }, 'https://h')).toBe(`https://h/portal/verify/lab/${code}`);
+    expect(
+      reportVerifyUrl('lab', { verificationCode: code, verificationUrl: 'javascript:alert(1)' }, 'https://h'),
+    ).toBe(`https://h/portal/verify/lab/${code}`);
     expect(reportVerifyUrl('cardiology', { verificationCode: null }, 'https://h')).toBeNull();
   });
 
   it('gives prescriptions the same choice of address', () => {
     const token = 'k3P9xLr0bPz7Kd2Nf5Hs';
-    expect(verificationPageUrl('prescription', token, `https://care.example/portal/verify/prescription/${token}`, 'https://lan.local')).toBe(
-      `https://care.example/portal/verify/prescription/${token}`,
+    expect(
+      verificationPageUrl(
+        'prescription',
+        token,
+        `https://care.example/portal/verify/prescription/${token}`,
+        'https://lan.local',
+      ),
+    ).toBe(`https://care.example/portal/verify/prescription/${token}`);
+    expect(verificationPageUrl('prescription', token, undefined, 'https://lan.local')).toBe(
+      `https://lan.local/portal/verify/prescription/${token}`,
     );
-    expect(verificationPageUrl('prescription', token, undefined, 'https://lan.local')).toBe(`https://lan.local/portal/verify/prescription/${token}`);
     expect(verificationPageUrl('prescription', null, null, 'https://lan.local')).toBeNull();
   });
 });
@@ -140,7 +184,9 @@ describe('video checks', () => {
 
   it('needs a secure page, a camera API and WebRTC', () => {
     expect(mediaSupport({ isSecureContext: false, hasGetUserMedia: true, hasPeerConnection: true })).toBe('insecure');
-    expect(mediaSupport({ isSecureContext: true, hasGetUserMedia: false, hasPeerConnection: true })).toBe('unsupported');
+    expect(mediaSupport({ isSecureContext: true, hasGetUserMedia: false, hasPeerConnection: true })).toBe(
+      'unsupported',
+    );
     expect(mediaSupport({ isSecureContext: true, hasGetUserMedia: true, hasPeerConnection: true })).toBe('ok');
   });
 
@@ -156,12 +202,19 @@ describe('document verification input', () => {
   const code = 'ABCDEFGHJKLMNPQRSTUV';
 
   it('reads printed QR links (API or portal addresses)', () => {
-    expect(parseVerificationInput(`https://hospital.example/api/v1/lab/reports/verify/${code}`, 'prescription')).toEqual({ kind: 'lab', code });
-    expect(parseVerificationInput('https://h.example/api/v1/public/prescriptions/verify/Abc_def-0123456789', 'lab')).toEqual({
+    expect(
+      parseVerificationInput(`https://hospital.example/api/v1/lab/reports/verify/${code}`, 'prescription'),
+    ).toEqual({ kind: 'lab', code });
+    expect(
+      parseVerificationInput('https://h.example/api/v1/public/prescriptions/verify/Abc_def-0123456789', 'lab'),
+    ).toEqual({
       kind: 'prescription',
       code: 'Abc_def-0123456789',
     });
-    expect(parseVerificationInput(`https://h.example/portal/verify/radiology/${code.toLowerCase()}`, 'lab')).toEqual({ kind: 'radiology', code });
+    expect(parseVerificationInput(`https://h.example/portal/verify/radiology/${code.toLowerCase()}`, 'lab')).toEqual({
+      kind: 'radiology',
+      code,
+    });
   });
 
   it('reads a typed code with the chosen kind, forgiving spaces and dashes', () => {
@@ -202,12 +255,33 @@ describe('feedback', () => {
 
   it('sends only what the form asks, and a phone number only for a call-back', () => {
     const body = toFeedbackRequest(
-      { ratings: { Overall: 4, FrontDesk: 2, Food: 5 }, nps: 11, comment: '  Long wait  ', wantsCallback: false, contactPhone: '9876543210' },
+      {
+        ratings: { Overall: 4, FrontDesk: 2, Food: 5 },
+        nps: 11,
+        comment: '  Long wait  ',
+        wantsCallback: false,
+        contactPhone: '9876543210',
+      },
       questions,
     );
-    expect(body).toEqual({ ratings: { overall: 4, frontDesk: 2 }, nps: null, comment: 'Long wait', wantsCallback: false, contactPhone: null });
-    const callback = toFeedbackRequest({ ...emptyAnswers('9876543210'), nps: 3, wantsCallback: true }, { ...questions, allowsComment: false });
-    expect(callback).toEqual({ ratings: null, nps: 3, comment: null, wantsCallback: true, contactPhone: '+919876543210' });
+    expect(body).toEqual({
+      ratings: { overall: 4, frontDesk: 2 },
+      nps: null,
+      comment: 'Long wait',
+      wantsCallback: false,
+      contactPhone: null,
+    });
+    const callback = toFeedbackRequest(
+      { ...emptyAnswers('9876543210'), nps: 3, wantsCallback: true },
+      { ...questions, allowsComment: false },
+    );
+    expect(callback).toEqual({
+      ratings: null,
+      nps: 3,
+      comment: null,
+      wantsCallback: true,
+      contactPhone: '+919876543210',
+    });
     expect(ratingField('FrontDesk')).toBe('frontDesk');
   });
 
@@ -235,7 +309,9 @@ describe('prescriptions', () => {
     expect(frequencyText(line, 'en')).toBe('Twice a day (1-0-1)');
     expect(frequencyText(line, 'hi')).toBe('दिन में दो बार (1-0-1)');
     expect(frequencyText({ ...line, frequencyHindi: '' }, 'hi')).toBe('Twice a day (1-0-1)');
-    expect(frequencyText({ frequency: 'SOS', frequencyEnglish: 'When needed (SOS)', frequencyHindi: '' }, 'en')).toBe('When needed (SOS)');
+    expect(frequencyText({ frequency: 'SOS', frequencyEnglish: 'When needed (SOS)', frequencyHindi: '' }, 'en')).toBe(
+      'When needed (SOS)',
+    );
     expect(medicineName({ drugName: 'Paracetamol', strength: '500 mg', dosageForm: null })).toBe('Paracetamol 500 mg');
   });
 });

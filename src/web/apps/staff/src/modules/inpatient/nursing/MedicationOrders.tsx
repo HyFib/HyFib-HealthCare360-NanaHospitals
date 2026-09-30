@@ -25,7 +25,18 @@ import {
 import { AddRegular, ArrowSyncRegular, MoreHorizontalRegular, StopRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { applyServerErrors, DataTable, FormGrid, LookupField, NumberField, StatusBadge, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FormGrid,
+  LookupField,
+  NumberField,
+  StatusBadge,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -56,7 +67,8 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: nursingKeys.admission(admissionId) });
   const stop = useMutation({
-    mutationFn: ({ order, reason }: { order: MedicationOrderDto; reason: string }) => nursingApi.stopOrder(order.id, reason),
+    mutationFn: ({ order, reason }: { order: MedicationOrderDto; reason: string }) =>
+      nursingApi.stopOrder(order.id, reason),
     onSuccess: (order) => {
       notify.success(`${order.drugName} stopped`, 'Doses not yet due were cancelled.');
       setStopping(null);
@@ -66,7 +78,11 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
   const extend = useMutation({
     mutationFn: (order: MedicationOrderDto) => nursingApi.extendSchedule(order.id),
     onSuccess: (result, order) => {
-      notify.success(result.dosesAdded ? `${result.dosesAdded} doses of ${order.drugName} scheduled` : 'The next 24 hours are already on the chart');
+      notify.success(
+        result.dosesAdded
+          ? `${result.dosesAdded} doses of ${order.drugName} scheduled`
+          : 'The next 24 hours are already on the chart',
+      );
       refresh();
     },
     onError: (error) => notify.error(error, 'Could not extend the schedule'),
@@ -74,7 +90,16 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 12,
+        }}
+      >
         <Switch checked={activeOnly} onChange={(_, d) => setActiveOnly(d.checked)} label="Active medicines only" />
         {canEdit && (
           <Button icon={<AddRegular />} onClick={() => setAdding(true)}>
@@ -117,7 +142,9 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
               <span>
                 {o.dose}
                 {o.route ? ` · ${o.route}` : ''} · <strong>{o.frequency}</strong>
-                {o.roundTimes.length > 0 && <Caption1 block>At {o.roundTimes.map(formatTimeOfDay).join(', ')}</Caption1>}
+                {o.roundTimes.length > 0 && (
+                  <Caption1 block>At {o.roundTimes.map(formatTimeOfDay).join(', ')}</Caption1>
+                )}
                 {o.isAsNeeded && <Caption1 block>Only when needed (not scheduled)</Caption1>}
               </span>
             ),
@@ -129,7 +156,13 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
             render: (o) => (
               <span>
                 {formatDateTime(o.startAt)}
-                <Caption1 block>{o.endAt ? `until ${formatDateTime(o.endAt)}` : o.durationDays ? `${o.durationDays} days` : 'Until stopped'}</Caption1>
+                <Caption1 block>
+                  {o.endAt
+                    ? `until ${formatDateTime(o.endAt)}`
+                    : o.durationDays
+                      ? `${o.durationDays} days`
+                      : 'Until stopped'}
+                </Caption1>
               </span>
             ),
           },
@@ -140,7 +173,10 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
             width: 120,
             render: (o) => (
               <span>
-                <StatusBadge status={o.status} tone={o.status === 'Active' ? 'success' : o.status === 'Stopped' ? 'danger' : 'informative'} />
+                <StatusBadge
+                  status={o.status}
+                  tone={o.status === 'Active' ? 'success' : o.status === 'Stopped' ? 'danger' : 'informative'}
+                />
                 {o.stopReason && <Caption1 block>{o.stopReason}</Caption1>}
               </span>
             ),
@@ -152,12 +188,20 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                 o.status === 'Active' ? (
                   <Menu>
                     <MenuTrigger disableButtonEnhancement>
-                      <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${o.drugName}`} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoreHorizontalRegular />}
+                        aria-label={`Actions for ${o.drugName}`}
+                      />
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
                         {!o.isAsNeeded && o.roundTimes.length > 0 && (
-                          <MenuItem icon={extend.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />} onClick={() => extend.mutate(o)}>
+                          <MenuItem
+                            icon={extend.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+                            onClick={() => extend.mutate(o)}
+                          >
                             Schedule next 24 hours
                           </MenuItem>
                         )}
@@ -255,7 +299,10 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
         orderedByPractitionerId: v.orderedByPractitionerId,
       }),
     onSuccess: (order) => {
-      notify.success(`${order.drugName} added to the chart`, order.isAsNeeded ? 'Record each dose when it is given.' : 'The next 24 hours of doses are scheduled.');
+      notify.success(
+        `${order.drugName} added to the chart`,
+        order.isAsNeeded ? 'Record each dose when it is given.' : 'The next 24 hours of doses are scheduled.',
+      );
       void queryClient.invalidateQueries({ queryKey: nursingKeys.admission(admissionId) });
       onClose();
     },
@@ -274,15 +321,33 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
               </Caption1>
               <FormGrid columns={3} minColumnWidth={180}>
                 <TextField control={form.control} name="drugName" label="Medicine" required maxLength={200} autoFocus />
-                <TextField control={form.control} name="strength" label="Strength" maxLength={64} placeholder="e.g. 500 mg" />
+                <TextField
+                  control={form.control}
+                  name="strength"
+                  label="Strength"
+                  maxLength={64}
+                  placeholder="e.g. 500 mg"
+                />
                 <TextField control={form.control} name="genericName" label="Generic name" maxLength={200} />
-                <TextField control={form.control} name="dose" label="Dose" required maxLength={64} placeholder="e.g. 1 tablet" />
+                <TextField
+                  control={form.control}
+                  name="dose"
+                  label="Dose"
+                  required
+                  maxLength={64}
+                  placeholder="e.g. 1 tablet"
+                />
                 <Controller
                   control={form.control}
                   name="route"
                   render={({ field }) => (
                     <Field label="Route">
-                      <Input value={field.value} onChange={(_, d) => field.onChange(d.value)} maxLength={32} list="order-routes" />
+                      <Input
+                        value={field.value}
+                        onChange={(_, d) => field.onChange(d.value)}
+                        maxLength={32}
+                        list="order-routes"
+                      />
                       <datalist id="order-routes">
                         {COMMON_ROUTES.map((r) => (
                           <option key={r} value={r} />
@@ -295,8 +360,19 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
                   control={form.control}
                   name="frequency"
                   render={({ field, fieldState }) => (
-                    <Field label="How often" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'} hint="OD, BD, TDS, 1-0-1, Q6H, SOS…">
-                      <Input value={field.value} onChange={(_, d) => field.onChange(d.value)} maxLength={32} list="order-frequencies" />
+                    <Field
+                      label="How often"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                      hint="OD, BD, TDS, 1-0-1, Q6H, SOS…"
+                    >
+                      <Input
+                        value={field.value}
+                        onChange={(_, d) => field.onChange(d.value)}
+                        maxLength={32}
+                        list="order-frequencies"
+                      />
                       <datalist id="order-frequencies">
                         {COMMON_FREQUENCIES.map((f) => (
                           <option key={f.value} value={f.value}>
@@ -307,18 +383,48 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
                     </Field>
                   )}
                 />
-                <NumberField control={form.control} name="durationDays" label="For (days)" min={1} max={90} hint="Blank: until stopped" />
-                <LookupField control={form.control} name="orderedByPractitionerId" label="Ordered by" load={searchPractitioners} hint="Defaults to you if you are a doctor" />
+                <NumberField
+                  control={form.control}
+                  name="durationDays"
+                  label="For (days)"
+                  min={1}
+                  max={90}
+                  hint="Blank: until stopped"
+                />
+                <LookupField
+                  control={form.control}
+                  name="orderedByPractitionerId"
+                  label="Ordered by"
+                  load={searchPractitioners}
+                  hint="Defaults to you if you are a doctor"
+                />
               </FormGrid>
-              <TextAreaField control={form.control} name="instructions" label="Instructions" rows={2} maxLength={500} placeholder="e.g. After food; check pulse before giving" />
-              <SwitchField control={form.control} name="isControlledDrug" label="Controlled drug (Schedule H1 / X, narcotic): needs a witness when given" />
+              <TextAreaField
+                control={form.control}
+                name="instructions"
+                label="Instructions"
+                rows={2}
+                maxLength={500}
+                placeholder="e.g. After food; check pulse before giving"
+              />
+              <SwitchField
+                control={form.control}
+                name="isControlledDrug"
+                label="Controlled drug (Schedule H1 / X, narcotic): needs a witness when given"
+              />
               <SwitchField control={form.control} name="later" label="Start later or earlier than now" />
               {later && (
                 <Controller
                   control={form.control}
                   name="startAt"
                   render={({ field, fieldState }) => (
-                    <Field label="Start at" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'} hint="Within the last 24 hours or the next 7 days">
+                    <Field
+                      label="Start at"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                      hint="Within the last 24 hours or the next 7 days"
+                    >
                       <Input type="datetime-local" value={field.value} onChange={(_, d) => field.onChange(d.value)} />
                     </Field>
                   )}
@@ -326,7 +432,9 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
               )}
               {add.error && !(isApiError(add.error) && add.error.isValidation) && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(add.error) ? add.error.userMessage : 'The order could not be added.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(add.error) ? add.error.userMessage : 'The order could not be added.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -334,7 +442,12 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
               <Button onClick={onClose} disabled={add.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={add.isPending} icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={add.isPending}
+                icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+              >
                 Add to chart
               </Button>
             </DialogActions>

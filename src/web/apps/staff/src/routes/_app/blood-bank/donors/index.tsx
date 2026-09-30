@@ -13,7 +13,9 @@ import { NoAccess } from '@/modules/ot/shared/feedback';
 
 export const Route = createFileRoute('/_app/blood-bank/donors/')({
   validateSearch: (s: Record<string, unknown>): DonorFilters => ({
-    bloodGroup: (KNOWN_GROUPS as readonly string[]).includes(s.bloodGroup as string) ? (s.bloodGroup as BloodGroup) : undefined,
+    bloodGroup: (KNOWN_GROUPS as readonly string[]).includes(s.bloodGroup as string)
+      ? (s.bloodGroup as BloodGroup)
+      : undefined,
     eligibleOnly: s.eligibleOnly === true ? true : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
@@ -29,7 +31,9 @@ function donorStatus(d: DonorListItem, today: string) {
     return <StatusBadge status="Deferred" tone="warning" label={`Deferred until ${formatDateOnly(d.deferredUntil)}`} />;
   }
   if (d.nextEligibleOn && d.nextEligibleOn > today) {
-    return <StatusBadge status="Waiting" tone="informative" label={`Can donate from ${formatDateOnly(d.nextEligibleOn)}`} />;
+    return (
+      <StatusBadge status="Waiting" tone="informative" label={`Can donate from ${formatDateOnly(d.nextEligibleOn)}`} />
+    );
   }
   return <StatusBadge status="Eligible" tone="success" label="Can donate" />;
 }
@@ -47,7 +51,10 @@ function DonorsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -59,14 +66,18 @@ function DonorsPage() {
     );
   }
 
-  const set = (patch: Partial<DonorFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<DonorFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Blood donors"
         subtitle="Search by donor number, name or mobile. Donor details are confidential."
-        breadcrumbs={[{ label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) }, { label: 'Donors' }]}
+        breadcrumbs={[
+          { label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) },
+          { label: 'Donors' },
+        ]}
         actions={
           <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => setRegistering(true)}>
             Register donor
@@ -77,10 +88,17 @@ function DonorsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Donor number, name or mobile" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Donor number, name or mobile"
+              />
             </Field>
             <Field label="Group">
-              <Select value={filters.bloodGroup ?? ''} onChange={(_, d) => set({ bloodGroup: (d.value || undefined) as BloodGroup | undefined })}>
+              <Select
+                value={filters.bloodGroup ?? ''}
+                onChange={(_, d) => set({ bloodGroup: (d.value || undefined) as BloodGroup | undefined })}
+              >
                 <option value="">All</option>
                 {KNOWN_GROUPS.map((g) => (
                   <option key={g} value={g}>
@@ -89,7 +107,11 @@ function DonorsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(filters.eligibleOnly)} onChange={(_, d) => set({ eligibleOnly: d.checked || undefined })} label="Only donors not deferred" />
+            <Switch
+              checked={Boolean(filters.eligibleOnly)}
+              onChange={(_, d) => set({ eligibleOnly: d.checked || undefined })}
+              label="Only donors not deferred"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -101,13 +123,21 @@ function DonorsPage() {
           getRowId={(d) => d.id}
           onRowClick={(d) => void navigate({ to: '/blood-bank/donors/$id', params: { id: d.id } })}
           columns={[
-            { key: 'number', header: 'Donor', width: 130, render: (d) => <Text style={{ fontFamily: tokens.fontFamilyMonospace }}>{d.donorNumber}</Text> },
+            {
+              key: 'number',
+              header: 'Donor',
+              width: 130,
+              render: (d) => <Text style={{ fontFamily: tokens.fontFamilyMonospace }}>{d.donorNumber}</Text>,
+            },
             {
               key: 'name',
               header: 'Name',
               render: (d) => (
                 <span>
-                  <Text weight="semibold">{d.fullName}</Text> <Text size={200}>({d.age} / {d.gender.charAt(0)})</Text>
+                  <Text weight="semibold">{d.fullName}</Text>{' '}
+                  <Text size={200}>
+                    ({d.age} / {d.gender.charAt(0)})
+                  </Text>
                 </span>
               ),
             },
@@ -127,8 +157,20 @@ function DonorsPage() {
               ),
             },
             { key: 'phone', header: 'Mobile', width: 140, priority: 'low', render: (d) => d.phoneMasked },
-            { key: 'count', header: 'Donations', align: 'end', width: 100, priority: 'low', render: (d) => d.donationCount },
-            { key: 'last', header: 'Last donated', priority: 'low', render: (d) => (d.lastDonationAt ? formatDate(d.lastDonationAt) : 'Never') },
+            {
+              key: 'count',
+              header: 'Donations',
+              align: 'end',
+              width: 100,
+              priority: 'low',
+              render: (d) => d.donationCount,
+            },
+            {
+              key: 'last',
+              header: 'Last donated',
+              priority: 'low',
+              render: (d) => (d.lastDonationAt ? formatDate(d.lastDonationAt) : 'Never'),
+            },
             { key: 'status', header: 'Status', render: (d) => donorStatus(d, today) },
           ]}
           emptyTitle={filters.search ? 'No donor matches' : 'No donors registered yet'}
@@ -141,7 +183,11 @@ function DonorsPage() {
         />
       </Section>
       {registering && (
-        <DonorDrawer donor={null} onClose={() => setRegistering(false)} onSaved={(id) => void navigate({ to: '/blood-bank/donors/$id', params: { id } })} />
+        <DonorDrawer
+          donor={null}
+          onClose={() => setRegistering(false)}
+          onSaved={(id) => void navigate({ to: '/blood-bank/donors/$id', params: { id } })}
+        />
       )}
     </Page>
   );

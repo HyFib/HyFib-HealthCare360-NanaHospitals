@@ -27,7 +27,14 @@ import { UserPicker } from '@/modules/hr/shared/UserPicker';
 import type { PickedUser } from '@/modules/hr/shared/users';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { qualityApi, qualityKeys, type IncidentDetail } from './api';
-import { INCIDENT_SEVERITIES, INCIDENT_TYPES, incidentTypeLabel, SENTINEL_KINDS, sentinelKindLabel, severityLabel } from './labels';
+import {
+  INCIDENT_SEVERITIES,
+  INCIDENT_TYPES,
+  incidentTypeLabel,
+  SENTINEL_KINDS,
+  sentinelKindLabel,
+  severityLabel,
+} from './labels';
 import { isSentinel } from './rules';
 
 const schema = z.object({
@@ -45,7 +52,15 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 /** Re-grading after review: kind, harm grade, sentinel classification, place, patient and staff involved. */
-export function IncidentEditDialog({ open, onClose, incident }: { open: boolean; onClose: () => void; incident: IncidentDetail }) {
+export function IncidentEditDialog({
+  open,
+  onClose,
+  incident,
+}: {
+  open: boolean;
+  onClose: () => void;
+  incident: IncidentDetail;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 760 }}>{open && <Body onClose={onClose} incident={incident} />}</DialogSurface>
@@ -66,7 +81,11 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       type: incident.type,
       severity: incident.severity,
       sentinelKind: incident.sentinelKind,
-      flagAsSentinel: incident.isSentinel && !incident.sentinelKind && incident.severity !== 'Severe' && incident.severity !== 'Death',
+      flagAsSentinel:
+        incident.isSentinel &&
+        !incident.sentinelKind &&
+        incident.severity !== 'Severe' &&
+        incident.severity !== 'Death',
       location: incident.location,
       departmentId: incident.departmentId,
       keepPatient: Boolean(incident.patientId),
@@ -74,7 +93,10 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
       staff: incident.involvedStaff,
     },
   });
-  const [severity, sentinelKind, flag, keepPatient] = useWatch({ control: form.control, name: ['severity', 'sentinelKind', 'flagAsSentinel', 'keepPatient'] });
+  const [severity, sentinelKind, flag, keepPatient] = useWatch({
+    control: form.control,
+    name: ['severity', 'sentinelKind', 'flagAsSentinel', 'keepPatient'],
+  });
   const becomesSentinel = !incident.isSentinel && isSentinel(severity, sentinelKind, flag);
 
   const submit = async (v: Values) => {
@@ -91,7 +113,10 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
         involvedStaffUserIds: v.staff.map((s) => s.id),
         version: incident.version,
       });
-      notify.success('Incident updated', becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined);
+      notify.success(
+        'Incident updated',
+        becomesSentinel ? 'It is now a sentinel event: the quality team has been alerted.' : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: qualityKeys.all });
       onClose();
     } catch (error) {
@@ -115,24 +140,59 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
         </DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <FormGrid columns={2} minColumnWidth={220}>
-            <SelectField control={form.control} name="type" label="Kind of incident" required options={INCIDENT_TYPES.map((t) => ({ value: t, label: incidentTypeLabel[t] }))} />
-            <SelectField control={form.control} name="severity" label="Harm grade" required options={INCIDENT_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))} />
-            <SelectField control={form.control} name="sentinelKind" label="Never event" placeholder="None" options={SENTINEL_KINDS.map((k) => ({ value: k, label: sentinelKindLabel[k] }))} />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Kind of incident"
+              required
+              options={INCIDENT_TYPES.map((t) => ({ value: t, label: incidentTypeLabel[t] }))}
+            />
+            <SelectField
+              control={form.control}
+              name="severity"
+              label="Harm grade"
+              required
+              options={INCIDENT_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))}
+            />
+            <SelectField
+              control={form.control}
+              name="sentinelKind"
+              label="Never event"
+              placeholder="None"
+              options={SENTINEL_KINDS.map((k) => ({ value: k, label: sentinelKindLabel[k] }))}
+            />
             <SwitchField control={form.control} name="flagAsSentinel" label="Treat as sentinel event" />
             <TextField control={form.control} name="location" label="Where" required maxLength={150} />
-            <SelectField control={form.control} name="departmentId" label="Department" placeholder="None" options={toOptions(departments.data)} />
+            <SelectField
+              control={form.control}
+              name="departmentId"
+              label="Department"
+              placeholder="None"
+              options={toOptions(departments.data)}
+            />
           </FormGrid>
           {becomesSentinel && (
             <MessageBar intent="warning">
-              <MessageBarBody>Saving makes this a sentinel event: the quality team is alerted and a completed root-cause analysis is required before closing.</MessageBarBody>
+              <MessageBarBody>
+                Saving makes this a sentinel event: the quality team is alerted and a completed root-cause analysis is
+                required before closing.
+              </MessageBarBody>
             </MessageBar>
           )}
-          {incident.patientId && <SwitchField control={form.control} name="keepPatient" label="Keep the linked patient" />}
+          {incident.patientId && (
+            <SwitchField control={form.control} name="keepPatient" label="Keep the linked patient" />
+          )}
           {canLookUpPatients && (!incident.patientId || !keepPatient) && (
             <Controller
               control={form.control}
               name="patient"
-              render={({ field }) => <PatientPicker label={incident.patientId ? 'Link a different patient' : 'Patient involved'} value={field.value as PickedPatient | null} onChange={field.onChange} />}
+              render={({ field }) => (
+                <PatientPicker
+                  label={incident.patientId ? 'Link a different patient' : 'Patient involved'}
+                  value={field.value as PickedPatient | null}
+                  onChange={field.onChange}
+                />
+              )}
             />
           )}
           <Controller
@@ -145,7 +205,13 @@ function Body({ onClose, incident }: { onClose: () => void; incident: IncidentDe
                   {field.value.map((person) => (
                     <Badge key={person.id} appearance="tint" size="large">
                       {person.name}
-                      <Button size="small" appearance="transparent" icon={<DismissRegular />} aria-label={`Remove ${person.name}`} onClick={() => field.onChange(field.value.filter((p) => p.id !== person.id))} />
+                      <Button
+                        size="small"
+                        appearance="transparent"
+                        icon={<DismissRegular />}
+                        aria-label={`Remove ${person.name}`}
+                        onClick={() => field.onChange(field.value.filter((p) => p.id !== person.id))}
+                      />
                     </Badge>
                   ))}
                 </div>

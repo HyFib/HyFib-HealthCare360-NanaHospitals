@@ -5,7 +5,13 @@ import { arcPoint, npsAngle, npsBand, npsText } from './rules';
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' },
   split: { display: 'flex', width: '100%', maxWidth: '280px', height: '10px', borderRadius: '5px', overflow: 'hidden' },
-  legend: { display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center', color: tokens.colorNeutralForeground2 },
+  legend: {
+    display: 'flex',
+    gap: '12px',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    color: tokens.colorNeutralForeground2,
+  },
   dot: { display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', marginRight: '4px' },
 });
 
@@ -43,7 +49,10 @@ export function NpsGauge({ nps, size = 240 }: { nps: NpsResult; size?: number })
   const score = nps.score;
   const band = npsBand(score);
   const needle = score === null ? null : arcPoint(CX, CY, R - 22, npsAngle(score));
-  const label = score === null ? 'Net promoter score: not enough answers yet' : `Net promoter score ${npsText(score)}, ${band.label}`;
+  const label =
+    score === null
+      ? 'Net promoter score: not enough answers yet'
+      : `Net promoter score ${npsText(score)}, ${band.label}`;
 
   return (
     <div className={styles.root}>
@@ -53,11 +62,26 @@ export function NpsGauge({ nps, size = 240 }: { nps: NpsResult; size?: number })
         ))}
         {needle && (
           <>
-            <line x1={CX} y1={CY} x2={needle.x} y2={needle.y} stroke={tokens.colorNeutralForeground1} strokeWidth={3} strokeLinecap="round" />
+            <line
+              x1={CX}
+              y1={CY}
+              x2={needle.x}
+              y2={needle.y}
+              stroke={tokens.colorNeutralForeground1}
+              strokeWidth={3}
+              strokeLinecap="round"
+            />
             <circle cx={CX} cy={CY} r={6} fill={tokens.colorNeutralForeground1} />
           </>
         )}
-        <text x={CX} y={CY - 30} textAnchor="middle" fontSize={30} fontWeight={600} fill={tokens.colorNeutralForeground1}>
+        <text
+          x={CX}
+          y={CY - 30}
+          textAnchor="middle"
+          fontSize={30}
+          fontWeight={600}
+          fill={tokens.colorNeutralForeground1}
+        >
           {npsText(score)}
         </text>
         <text x={14} y={138} fontSize={11} fill={tokens.colorNeutralForeground3}>

@@ -92,7 +92,13 @@ function RolesPage() {
           ]}
         />
       </Section>
-      {editing && <RoleDrawer roleId={editing === 'new' ? null : editing} readOnly={!canManage} onClose={() => setEditing(null)} />}
+      {editing && (
+        <RoleDrawer
+          roleId={editing === 'new' ? null : editing}
+          readOnly={!canManage}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </Page>
   );
 }
@@ -108,13 +114,25 @@ function RoleDrawer({ roleId, readOnly, onClose }: { roleId: string | null; read
       {ready ? (
         <RoleForm role={role.data ?? null} groups={groups.data} readOnly={readOnly} onClose={onClose} />
       ) : (
-        <DrawerBody>{error ? <ErrorState error={error} title="Could not load the role" /> : <Spinner label="Loading…" />}</DrawerBody>
+        <DrawerBody>
+          {error ? <ErrorState error={error} title="Could not load the role" /> : <Spinner label="Loading…" />}
+        </DrawerBody>
       )}
     </OverlayDrawer>
   );
 }
 
-function RoleForm({ role, groups, readOnly, onClose }: { role: RoleDetail | null; groups: PermissionGroup[]; readOnly: boolean; onClose: () => void }) {
+function RoleForm({
+  role,
+  groups,
+  readOnly,
+  onClose,
+}: {
+  role: RoleDetail | null;
+  groups: PermissionGroup[];
+  readOnly: boolean;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -132,7 +150,10 @@ function RoleForm({ role, groups, readOnly, onClose }: { role: RoleDetail | null
       return groups;
     }
     return groups
-      .map((g) => ({ ...g, permissions: g.permissions.filter((p) => `${p.name} ${p.description} ${g.group}`.toLowerCase().includes(term)) }))
+      .map((g) => ({
+        ...g,
+        permissions: g.permissions.filter((p) => `${p.name} ${p.description} ${g.group}`.toLowerCase().includes(term)),
+      }))
       .filter((g) => g.permissions.length > 0);
   }, [groups, filter]);
 
@@ -158,7 +179,12 @@ function RoleForm({ role, groups, readOnly, onClose }: { role: RoleDetail | null
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), description: description.trim() || null, permissions: [...selected], version: role?.version ?? null };
+      const body = {
+        name: name.trim(),
+        description: description.trim() || null,
+        permissions: [...selected],
+        version: role?.version ?? null,
+      };
       return role ? api.put(`/api/v1/admin/roles/${role.id}`, body) : api.post('/api/v1/admin/roles', body);
     },
     onSuccess: () => {
@@ -185,17 +211,30 @@ function RoleForm({ role, groups, readOnly, onClose }: { role: RoleDetail | null
   return (
     <>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {role ? role.name : 'New role'}
         </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.form}>
           <Field label="Name" required>
-            <Input value={name} onChange={(_, d) => setName(d.value)} disabled={readOnly || role?.isSystem} maxLength={100} />
+            <Input
+              value={name}
+              onChange={(_, d) => setName(d.value)}
+              disabled={readOnly || role?.isSystem}
+              maxLength={100}
+            />
           </Field>
           <Field label="Description">
-            <Textarea value={description} onChange={(_, d) => setDescription(d.value)} disabled={readOnly} rows={2} maxLength={500} />
+            <Textarea
+              value={description}
+              onChange={(_, d) => setDescription(d.value)}
+              disabled={readOnly}
+              rows={2}
+              maxLength={500}
+            />
           </Field>
           {isWildcard ? (
             <MessageBar intent="info">
@@ -252,12 +291,21 @@ function RoleForm({ role, groups, readOnly, onClose }: { role: RoleDetail | null
       </DrawerBody>
       {!readOnly && (
         <DrawerFooter>
-          <Button appearance="primary" disabled={!name.trim() || save.isPending || isWildcard} onClick={() => save.mutate()}>
+          <Button
+            appearance="primary"
+            disabled={!name.trim() || save.isPending || isWildcard}
+            onClick={() => save.mutate()}
+          >
             Save
           </Button>
           <Button onClick={onClose}>Cancel</Button>
           {role && !role.isSystem && (
-            <Button appearance="subtle" icon={<DeleteRegular />} onClick={() => setConfirmDelete(true)} style={{ marginLeft: 'auto' }}>
+            <Button
+              appearance="subtle"
+              icon={<DeleteRegular />}
+              onClick={() => setConfirmDelete(true)}
+              style={{ marginLeft: 'auto' }}
+            >
               Delete
             </Button>
           )}

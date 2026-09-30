@@ -79,15 +79,25 @@ export function ScheduleSessionDialog({
   const queryClient = useQueryClient();
   const form = useForm<ScheduleValues>({
     resolver: zodResolver(scheduleSchema),
-    defaultValues: { patient: preset?.patient ?? null, date: preset?.date ?? todayIso(), shift: preset?.shift ?? 'Morning', machineId: null },
+    defaultValues: {
+      patient: preset?.patient ?? null,
+      date: preset?.date ?? todayIso(),
+      shift: preset?.shift ?? 'Morning',
+      machineId: null,
+    },
   });
-  const [patient, date, shift, machineId] = useWatch({ control: form.control, name: ['patient', 'date', 'shift', 'machineId'] });
+  const [patient, date, shift, machineId] = useWatch({
+    control: form.control,
+    name: ['patient', 'date', 'shift', 'machineId'],
+  });
   const profile = useQuery({ ...dialysisQueries.profile(patient?.id ?? ''), enabled: Boolean(patient) });
   const board = useQuery({ ...dialysisQueries.board(date ?? todayIso()), enabled: Boolean(date) });
 
   const sero = profile.data?.seroStatus ?? null;
   const choices = machineChoices(board.data, sero, shift, 'schedule');
-  const suggestion = sero ? suggestMachine(board.data?.machines.map((m) => ({ ...m, isActive: true })) ?? [], sero, shift, board.data) : null;
+  const suggestion = sero
+    ? suggestMachine(board.data?.machines.map((m) => ({ ...m, isActive: true })) ?? [], sero, shift, board.data)
+    : null;
   const chosen = choices.find((c) => c.id === machineId);
 
   const schedule = useMutation({
@@ -124,18 +134,33 @@ export function ScheduleSessionDialog({
                 control={form.control}
                 name="patient"
                 render={({ field, fieldState }) => (
-                  <PatientPicker value={field.value} onChange={field.onChange} required validationMessage={fieldState.error?.message} hint="Only patients enrolled in the dialysis unit can be booked." />
+                  <PatientPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    required
+                    validationMessage={fieldState.error?.message}
+                    hint="Only patients enrolled in the dialysis unit can be booked."
+                  />
                 )}
               />
-              {patient && profile.isLoading && <Spinner size="tiny" label="Checking enrolment…" labelPosition="after" />}
+              {patient && profile.isLoading && (
+                <Spinner size="tiny" label="Checking enrolment…" labelPosition="after" />
+              )}
               {notEnrolled && (
                 <MessageBar intent="warning" layout="multiline">
                   <MessageBarBody>
                     <MessageBarTitle>Not enrolled in the dialysis unit</MessageBarTitle>
-                    Enrol the patient with their dry weight, access and sero status first. The sero status decides which machines they may use.
+                    Enrol the patient with their dry weight, access and sero status first. The sero status decides which
+                    machines they may use.
                   </MessageBarBody>
                   <MessageBarActions>
-                    <Button icon={<PersonAddRegular />} onClick={() => patient && void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: patient.id } })}>
+                    <Button
+                      icon={<PersonAddRegular />}
+                      onClick={() =>
+                        patient &&
+                        void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: patient.id } })
+                      }
+                    >
                       Enrol patient
                     </Button>
                   </MessageBarActions>
@@ -153,9 +178,19 @@ export function ScheduleSessionDialog({
               <FormGrid columns={2}>
                 <DateField control={form.control} name="date" label="Date" required min={todayIso()} />
                 <div>
-                  <ChoiceField control={form.control} name="shift" label="Shift" required options={DIALYSIS_SHIFTS.map((s) => ({ value: s, label: shiftLabel[s] }))} />
+                  <ChoiceField
+                    control={form.control}
+                    name="shift"
+                    label="Shift"
+                    required
+                    options={DIALYSIS_SHIFTS.map((s) => ({ value: s, label: shiftLabel[s] }))}
+                  />
                   {profile.data && profile.data.shift !== shift && (
-                    <Button size="small" appearance="subtle" onClick={() => profile.data && form.setValue('shift', profile.data.shift, { shouldDirty: true })}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      onClick={() => profile.data && form.setValue('shift', profile.data.shift, { shouldDirty: true })}
+                    >
                       Use the usual shift ({shiftLabel[profile.data.shift]})
                     </Button>
                   )}
@@ -176,7 +211,9 @@ export function ScheduleSessionDialog({
                     <Controller
                       control={form.control}
                       name="machineId"
-                      render={({ field }) => <MachinePicker choices={choices} value={field.value} onChange={field.onChange} />}
+                      render={({ field }) => (
+                        <MachinePicker choices={choices} value={field.value} onChange={field.onChange} />
+                      )}
                     />
                   )}
                 </Field>
@@ -197,7 +234,12 @@ export function ScheduleSessionDialog({
               <Button onClick={onClose} disabled={schedule.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={schedule.isPending || Boolean(notEnrolled)} icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={schedule.isPending || Boolean(notEnrolled)}
+                icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Book session
               </Button>
             </DialogActions>
@@ -213,7 +255,14 @@ export function AssignMachineDialog({
   session,
   onClose,
 }: {
-  session: { id: string; patientId: string; patientName: string; scheduledDate: string; shift: DialysisShift; machineId: string | null };
+  session: {
+    id: string;
+    patientId: string;
+    patientName: string;
+    scheduledDate: string;
+    shift: DialysisShift;
+    machineId: string | null;
+  };
   onClose: () => void;
 }) {
   const styles = useStyles();
@@ -257,7 +306,9 @@ export function AssignMachineDialog({
                   </div>
                 ) : (
                   <MessageBar intent="warning">
-                    <MessageBarBody>The patient&apos;s dialysis enrolment (with sero status) was not found.</MessageBarBody>
+                    <MessageBarBody>
+                      The patient&apos;s dialysis enrolment (with sero status) was not found.
+                    </MessageBarBody>
                   </MessageBar>
                 )}
                 <MachinePicker choices={choices} value={machineId} onChange={setMachineId} />
@@ -285,7 +336,13 @@ export function AssignMachineDialog({
 }
 
 /** Records the disinfection that must follow every session before the machine takes the next patient. */
-export function DisinfectionDialog({ machine, onClose }: { machine: { id: string; code: string }; onClose: () => void }) {
+export function DisinfectionDialog({
+  machine,
+  onClose,
+}: {
+  machine: { id: string; code: string };
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -314,10 +371,18 @@ export function DisinfectionDialog({ machine, onClose }: { machine: { id: string
           <DialogBody>
             <DialogTitle>Record disinfection of {machine.code}</DialogTitle>
             <DialogContent className={styles.body}>
-              <Text>Disinfect after every session, as per the machine manual. The machine cannot take the next patient until this is recorded.</Text>
+              <Text>
+                Disinfect after every session, as per the machine manual. The machine cannot take the next patient until
+                this is recorded.
+              </Text>
               <div className={styles.methods} role="group" aria-label="Common methods">
                 {DISINFECTION_METHODS.map((m) => (
-                  <Button key={m} size="small" appearance={method === m ? 'primary' : 'secondary'} onClick={() => setMethod(m)}>
+                  <Button
+                    key={m}
+                    size="small"
+                    appearance={method === m ? 'primary' : 'secondary'}
+                    onClick={() => setMethod(m)}
+                  >
                     {m}
                   </Button>
                 ))}
@@ -331,7 +396,12 @@ export function DisinfectionDialog({ machine, onClose }: { machine: { id: string
               <Button onClick={onClose} disabled={record.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!method.trim() || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!method.trim() || record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record disinfection
               </Button>
             </DialogActions>

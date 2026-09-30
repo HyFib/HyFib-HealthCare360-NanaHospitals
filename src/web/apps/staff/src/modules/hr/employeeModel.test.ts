@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { EmployeeDetail } from './api';
-import { emptyEmployeeForm, employeeFormSchema, employeeToForm, formToRequest, isValidIfsc, isValidPan, normalizeIdentifier, withBiometricPin } from './employeeModel';
+import {
+  emptyEmployeeForm,
+  employeeFormSchema,
+  employeeToForm,
+  formToRequest,
+  isValidIfsc,
+  isValidPan,
+  normalizeIdentifier,
+  withBiometricPin,
+} from './employeeModel';
 
 const detail: EmployeeDetail = {
   id: 'e1',
@@ -67,14 +76,26 @@ describe('employee form rules', () => {
   });
 
   it('requires bank details to be typed twice and valid', () => {
-    const result = employeeFormSchema.safeParse({ ...valid, accountNumber: '123456789012', confirmAccountNumber: '123456789013', ifsc: 'SBIN0001234' });
+    const result = employeeFormSchema.safeParse({
+      ...valid,
+      accountNumber: '123456789012',
+      confirmAccountNumber: '123456789013',
+      ifsc: 'SBIN0001234',
+    });
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => issue.path.join('.'))).toEqual(['confirmAccountNumber']);
   });
 
   it('refuses under-age joiners and confirmation before joining', () => {
-    const result = employeeFormSchema.safeParse({ ...valid, dateOfBirth: '2010-01-01', confirmationDate: '2026-08-01' });
-    expect(result.error?.issues.map((issue) => issue.path.join('.')).sort()).toEqual(['confirmationDate', 'dateOfBirth']);
+    const result = employeeFormSchema.safeParse({
+      ...valid,
+      dateOfBirth: '2010-01-01',
+      confirmationDate: '2026-08-01',
+    });
+    expect(result.error?.issues.map((issue) => issue.path.join('.')).sort()).toEqual([
+      'confirmationDate',
+      'dateOfBirth',
+    ]);
   });
 });
 
@@ -97,7 +118,16 @@ describe('employee payloads', () => {
   });
 
   it('sends bank details only when creating', () => {
-    const request = formToRequest({ ...emptyEmployeeForm(), firstName: 'Ravi', accountNumber: '1234 5678 9012', confirmAccountNumber: '123456789012', ifsc: 'sbin0001234' }, null);
+    const request = formToRequest(
+      {
+        ...emptyEmployeeForm(),
+        firstName: 'Ravi',
+        accountNumber: '1234 5678 9012',
+        confirmAccountNumber: '123456789012',
+        ifsc: 'sbin0001234',
+      },
+      null,
+    );
     expect(request.bank).toEqual({ bankName: null, accountNumber: '123456789012', ifsc: 'SBIN0001234' });
     expect(request.phone).toBeNull();
   });

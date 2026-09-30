@@ -88,7 +88,12 @@ function DoctorPage() {
       <Section flush>
         <FilterPad>
           <FilterBar>
-            <PeriodFields preset={preset} from={period.from} to={period.to} onChange={(patch) => void navigate({ search: (prev) => ({ ...prev, ...patch }) })} />
+            <PeriodFields
+              preset={preset}
+              from={period.from}
+              to={period.to}
+              onChange={(patch) => void navigate({ search: (prev) => ({ ...prev, ...patch }) })}
+            />
           </FilterBar>
         </FilterPad>
       </Section>
@@ -112,9 +117,21 @@ function StatsView({ stats }: { stats: ReferralStats }) {
     () => ({
       grid: { left: 40, right: 16, top: 16, bottom: 32 },
       tooltip: { trigger: 'axis' },
-      xAxis: { type: 'category', data: stats.byMonth.map((m) => monthKeyLabel(m.label)), axisLabel: { hideOverlap: true } },
+      xAxis: {
+        type: 'category',
+        data: stats.byMonth.map((m) => monthKeyLabel(m.label)),
+        axisLabel: { hideOverlap: true },
+      },
       yAxis: { type: 'value', minInterval: 1 },
-      series: [{ type: 'bar', name: 'Referrals', data: stats.byMonth.map((m) => m.count), itemStyle: { color: BLUE }, barMaxWidth: 32 }],
+      series: [
+        {
+          type: 'bar',
+          name: 'Referrals',
+          data: stats.byMonth.map((m) => m.count),
+          itemStyle: { color: BLUE },
+          barMaxWidth: 32,
+        },
+      ],
     }),
     [stats.byMonth],
   );
@@ -125,7 +142,16 @@ function StatsView({ stats }: { stats: ReferralStats }) {
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'value', minInterval: 1 },
       yAxis: { type: 'category', data: rows.map((r) => r.label) },
-      series: [{ type: 'bar', name: 'Referrals', data: rows.map((r) => r.count), itemStyle: { color: '#5C2E91' }, barMaxWidth: 22, label: { show: true, position: 'right' } }],
+      series: [
+        {
+          type: 'bar',
+          name: 'Referrals',
+          data: rows.map((r) => r.count),
+          itemStyle: { color: '#5C2E91' },
+          barMaxWidth: 22,
+          label: { show: true, position: 'right' },
+        },
+      ],
     };
   }, [stats.byDepartment]);
   const byType = useMemo<ChartOption>(
@@ -139,7 +165,11 @@ function StatsView({ stats }: { stats: ReferralStats }) {
           radius: ['45%', '72%'],
           top: -10,
           label: { formatter: '{d}%' },
-          data: stats.byVisitType.map((t, index) => ({ name: humanize(t.label), value: t.count, itemStyle: { color: PALETTE[index % PALETTE.length] } })),
+          data: stats.byVisitType.map((t, index) => ({
+            name: humanize(t.label),
+            value: t.count,
+            itemStyle: { color: PALETTE[index % PALETTE.length] },
+          })),
         },
       ],
     }),
@@ -149,16 +179,32 @@ function StatsView({ stats }: { stats: ReferralStats }) {
   return (
     <Stack>
       <KpiGrid>
-        <KpiCard label="Referrals in the period" value={stats.referrals.toLocaleString('en-IN')} icon={<PeopleRegular />} />
-        <KpiCard label="Last referral" value={stats.lastReferralAt ? formatDateTime(stats.lastReferralAt) : '—'} icon={<CalendarRegular />} />
+        <KpiCard
+          label="Referrals in the period"
+          value={stats.referrals.toLocaleString('en-IN')}
+          icon={<PeopleRegular />}
+        />
+        <KpiCard
+          label="Last referral"
+          value={stats.lastReferralAt ? formatDateTime(stats.lastReferralAt) : '—'}
+          icon={<CalendarRegular />}
+        />
       </KpiGrid>
       <Section title="Month by month">
-        {stats.referrals === 0 ? <Caption1>No referrals in this period.</Caption1> : <EChart option={byMonth} height={240} ariaLabel="Referrals per month" />}
+        {stats.referrals === 0 ? (
+          <Caption1>No referrals in this period.</Caption1>
+        ) : (
+          <EChart option={byMonth} height={240} ariaLabel="Referrals per month" />
+        )}
       </Section>
       {stats.referrals > 0 && (
         <Columns>
           <Section title="Departments">
-            <EChart option={byDepartment} height={Math.max(140, Math.min(stats.byDepartment.length, 10) * 34 + 40)} ariaLabel="Referrals by department" />
+            <EChart
+              option={byDepartment}
+              height={Math.max(140, Math.min(stats.byDepartment.length, 10) * 34 + 40)}
+              ariaLabel="Referrals by department"
+            />
           </Section>
           <Section title="Kind of visit">
             <EChart option={byType} height={240} ariaLabel="Referrals by kind of visit" />

@@ -39,7 +39,14 @@ export function radiologyPatientRows(view: RadiologyReportView): [string, string
     ['Referred by', view.referredBy ?? 'Self'],
     ['Ordered', formatDateTime(view.orderedAt)],
     ['Scanned', view.acquiredAt ? formatDateTime(view.acquiredAt) : '—'],
-    ['Reported', view.releasedAt ? formatDateTime(view.releasedAt) : view.verifiedAt ? formatDateTime(view.verifiedAt) : 'Not signed'],
+    [
+      'Reported',
+      view.releasedAt
+        ? formatDateTime(view.releasedAt)
+        : view.verifiedAt
+          ? formatDateTime(view.verifiedAt)
+          : 'Not signed',
+    ],
   ];
 }
 

@@ -23,11 +23,31 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatDuration } from '@/modules/ot/shared/datetime';
 import { ActionError } from '@/modules/ot/shared/feedback';
-import { bloodApi, bloodKeys, COMPONENT_TYPES, KNOWN_GROUPS, type BloodComponentType, type BloodUnitDto, type DonationDetail, type TtiPanel, type TtiResult } from './api';
+import {
+  bloodApi,
+  bloodKeys,
+  COMPONENT_TYPES,
+  KNOWN_GROUPS,
+  type BloodComponentType,
+  type BloodUnitDto,
+  type DonationDetail,
+  type TtiPanel,
+  type TtiResult,
+} from './api';
 import { BloodGroupBadge, ExpiryText, TtiBadge, UnitStatusBadge } from './BloodBadges';
 import { componentLabel, groupLabel, ttiMarkers, ttiResultLabel } from './labels';
 import { printUnitLabels } from './print';
-import { canDiscardUnit, defaultVolumeMl, expiryFor, maxComponents, needsPromptSeparation, separationCheck, separationMinutesLeft, SHELF_LIFE_DAYS, ttiState } from './rules';
+import {
+  canDiscardUnit,
+  defaultVolumeMl,
+  expiryFor,
+  maxComponents,
+  needsPromptSeparation,
+  separationCheck,
+  separationMinutesLeft,
+  SHELF_LIFE_DAYS,
+  ttiState,
+} from './rules';
 import { DiscardUnitDialog } from './UnitActions';
 
 const useStyles = makeStyles({
@@ -42,7 +62,10 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  reactive: { border: `2px solid ${tokens.colorPaletteRedBorder2}`, backgroundColor: tokens.colorPaletteRedBackground1 },
+  reactive: {
+    border: `2px solid ${tokens.colorPaletteRedBorder2}`,
+    backgroundColor: tokens.colorPaletteRedBackground1,
+  },
   clean: { border: `1px solid ${tokens.colorPaletteGreenBorder2}` },
   resultText: { fontWeight: tokens.fontWeightSemibold },
   reactiveText: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightBold },
@@ -94,8 +117,14 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
     onSuccess: () => {
       setConfirmReactive(false);
       notify.success(
-        draft.reactive.length > 0 ? 'Reactive result recorded' : draft.cleared ? 'Results recorded — units released to stock' : 'Results saved',
-        draft.reactive.length > 0 ? 'All units from this donation were discarded and the donor was deferred.' : undefined,
+        draft.reactive.length > 0
+          ? 'Reactive result recorded'
+          : draft.cleared
+            ? 'Results recorded — units released to stock'
+            : 'Results saved',
+        draft.reactive.length > 0
+          ? 'All units from this donation were discarded and the donor was deferred.'
+          : undefined,
       );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
     },
@@ -109,7 +138,8 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
           <MessageBar intent="error" layout="multiline">
             <MessageBarBody>
               <MessageBarTitle>Reactive screening result</MessageBarTitle>
-              All units from this donation were discarded and the donor was deferred. Recall the donor for confirmatory testing and counselling.
+              All units from this donation were discarded and the donor was deferred. Recall the donor for confirmatory
+              testing and counselling.
             </MessageBarBody>
           </MessageBar>
         )}
@@ -118,13 +148,24 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         </div>
         <div className={styles.markers}>
           {ttiMarkers.map((m) => (
-            <div key={m.key} className={mergeClasses(styles.marker, donation.tti[m.key] === 'Reactive' && styles.reactive, donation.tti[m.key] === 'NonReactive' && styles.clean)}>
+            <div
+              key={m.key}
+              className={mergeClasses(
+                styles.marker,
+                donation.tti[m.key] === 'Reactive' && styles.reactive,
+                donation.tti[m.key] === 'NonReactive' && styles.clean,
+              )}
+            >
               <Text>{m.label}</Text>
-              <Text className={donation.tti[m.key] === 'Reactive' ? styles.reactiveText : styles.resultText}>{ttiResultLabel[donation.tti[m.key]]}</Text>
+              <Text className={donation.tti[m.key] === 'Reactive' ? styles.reactiveText : styles.resultText}>
+                {ttiResultLabel[donation.tti[m.key]]}
+              </Text>
             </div>
           ))}
         </div>
-        <Caption1 className={styles.muted}>{donation.labResultsAt ? `Recorded ${formatDateTime(donation.labResultsAt)}` : 'No results yet.'}</Caption1>
+        <Caption1 className={styles.muted}>
+          {donation.labResultsAt ? `Recorded ${formatDateTime(donation.labResultsAt)}` : 'No results yet.'}
+        </Caption1>
       </div>
     );
   }
@@ -147,7 +188,12 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         {ttiMarkers.map((m) => (
           <div key={m.key} className={mergeClasses(styles.marker, tti[m.key] === 'Reactive' && styles.reactive)}>
             <Text weight="semibold">{m.label}</Text>
-            <RadioGroup layout="horizontal" aria-label={m.label} value={tti[m.key]} onChange={(_, d) => setTti((current) => ({ ...current, [m.key]: d.value as TtiResult }))}>
+            <RadioGroup
+              layout="horizontal"
+              aria-label={m.label}
+              value={tti[m.key]}
+              onChange={(_, d) => setTti((current) => ({ ...current, [m.key]: d.value as TtiResult }))}
+            >
               <Radio value="Pending" label="Pending" />
               <Radio value="NonReactive" label="Non-reactive" />
               <Radio value="Reactive" label="Reactive" />
@@ -159,8 +205,11 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>A reactive result discards every unit from this donation</MessageBarTitle>
-            The donor is deferred ({draft.reactive.includes('hiv') || draft.reactive.includes('hbsAg') || draft.reactive.includes('hcv') ? 'permanently' : 'for a period'}) and flagged
-            for recall. Check the result before saving.
+            The donor is deferred (
+            {draft.reactive.includes('hiv') || draft.reactive.includes('hbsAg') || draft.reactive.includes('hcv')
+              ? 'permanently'
+              : 'for a period'}
+            ) and flagged for recall. Check the result before saving.
           </MessageBarBody>
         </MessageBar>
       ) : draft.cleared ? (
@@ -168,11 +217,18 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
           <MessageBarBody>All five markers non-reactive: the units leave quarantine when saved.</MessageBarBody>
         </MessageBar>
       ) : (
-        <Caption1 className={styles.muted}>Pending markers keep every unit in quarantine. You can save now and complete the results later.</Caption1>
+        <Caption1 className={styles.muted}>
+          Pending markers keep every unit in quarantine. You can save now and complete the results later.
+        </Caption1>
       )}
       <ActionError error={save.error} />
       <div className={styles.footer}>
-        <Button appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <BeakerRegular />} disabled={!group || save.isPending} onClick={submit}>
+        <Button
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <BeakerRegular />}
+          disabled={!group || save.isPending}
+          onClick={submit}
+        >
           Save results
         </Button>
       </div>
@@ -185,8 +241,8 @@ export function LabResultsPanel({ donation, canManage }: { donation: DonationDet
         onConfirm={() => save.mutate()}
         onCancel={() => setConfirmReactive(false)}
       >
-        Reactive: {draft.reactive.join(', ')}. Every unit from bag {donation.bagNumber} is discarded, the donor is deferred and officers are alerted for recall. This
-        cannot be undone.
+        Reactive: {draft.reactive.join(', ')}. Every unit from bag {donation.bagNumber} is discarded, the donor is
+        deferred and officers are alerted for recall. This cannot be undone.
       </ConfirmDialog>
     </div>
   );
@@ -212,7 +268,8 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
   const [plan, setPlan] = useState<Record<BloodComponentType, PlanRow>>(() => {
     const initial = {} as Record<BloodComponentType, PlanRow>;
     for (const type of COMPONENT_TYPES) {
-      const checked = donation.bagType === 'Single' ? type === 'WholeBlood' : type === 'PRBC' || (type === 'FFP' && minutesLeft >= 0);
+      const checked =
+        donation.bagType === 'Single' ? type === 'WholeBlood' : type === 'PRBC' || (type === 'FFP' && minutesLeft >= 0);
       initial[type] = { checked, volume: String(defaultVolumeMl(type, donation.volumeMl)), location: '' };
     }
     return initial;
@@ -228,21 +285,30 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
     mutationFn: () =>
       bloodApi.separate(
         donation.id,
-        chosen.map((type) => ({ type, volumeMl: plan[type].volume ? Number(plan[type].volume) : null, storageLocation: plan[type].location.trim() || null })),
+        chosen.map((type) => ({
+          type,
+          volumeMl: plan[type].volume ? Number(plan[type].volume) : null,
+          storageLocation: plan[type].location.trim() || null,
+        })),
       ),
     onSuccess: (units) => {
-      notify.success(`${units.length} unit${units.length === 1 ? '' : 's'} prepared (in quarantine)`, 'Print the labels now; units are released when the screening results are in.');
+      notify.success(
+        `${units.length} unit${units.length === 1 ? '' : 's'} prepared (in quarantine)`,
+        'Print the labels now; units are released when the screening results are in.',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       void printUnitLabels(units).catch((error: unknown) => notify.error(error, 'Printing the labels failed'));
     },
   });
 
-  const update = (type: BloodComponentType, next: Partial<PlanRow>) => setPlan((current) => ({ ...current, [type]: { ...current[type], ...next } }));
+  const update = (type: BloodComponentType, next: Partial<PlanRow>) =>
+    setPlan((current) => ({ ...current, [type]: { ...current[type], ...next } }));
 
   return (
     <div className={styles.stack}>
       <Text>
-        {donation.bagType} bag: up to {maxComponents(donation.bagType)} component{maxComponents(donation.bagType) === 1 ? '' : 's'}.{' '}
+        {donation.bagType} bag: up to {maxComponents(donation.bagType)} component
+        {maxComponents(donation.bagType) === 1 ? '' : 's'}.{' '}
         <span className={mergeClasses(styles.window, minutesLeft < 0 && styles.late)}>
           {minutesLeft >= 0
             ? `${formatDuration(minutesLeft)} left to separate plasma or platelets (8-hour window).`
@@ -263,7 +329,8 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
                   <span>
                     {componentLabel[type]}
                     <Caption1 block className={styles.muted}>
-                      Keeps {SHELF_LIFE_DAYS[type]} days · expires {formatDateTime(expiryFor(type, donation.collectedAt))}
+                      Keeps {SHELF_LIFE_DAYS[type]} days · expires{' '}
+                      {formatDateTime(expiryFor(type, donation.collectedAt))}
                     </Caption1>
                   </span>
                 }
@@ -284,7 +351,9 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
                 maxLength={64}
                 onChange={(_, d) => update(type, { location: d.value })}
               />
-              <Caption1 className={styles.muted}>{blockedByTime ? 'Too late to separate' : row.checked ? 'Will be prepared' : ''}</Caption1>
+              <Caption1 className={styles.muted}>
+                {blockedByTime ? 'Too late to separate' : row.checked ? 'Will be prepared' : ''}
+              </Caption1>
             </div>
           );
         })}
@@ -298,7 +367,12 @@ export function SeparationPanel({ donation, now }: { donation: DonationDetail; n
       <ActionError error={separate.error} />
       <div className={styles.footer}>
         <Caption1 className={styles.muted}>Units start in quarantine and inherit the donation’s results.</Caption1>
-        <Button appearance="primary" disabled={Boolean(problem) || !volumesValid || separate.isPending} icon={separate.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => separate.mutate()}>
+        <Button
+          appearance="primary"
+          disabled={Boolean(problem) || !volumesValid || separate.isPending}
+          icon={separate.isPending ? <Spinner size="tiny" /> : undefined}
+          onClick={() => separate.mutate()}
+        >
           Prepare {chosen.length} unit{chosen.length === 1 ? '' : 's'} and print labels
         </Button>
       </div>
@@ -321,7 +395,11 @@ export function ComponentsTable({ units, now, canManage }: { units: BloodUnitDto
         size="small"
         columns={[
           { key: 'number', header: 'Unit number', render: (u) => <Text className={styles.mono}>{u.unitNumber}</Text> },
-          { key: 'component', header: 'Component', render: (u) => `${componentLabel[u.componentType]} · ${u.volumeMl} ml` },
+          {
+            key: 'component',
+            header: 'Component',
+            render: (u) => `${componentLabel[u.componentType]} · ${u.volumeMl} ml`,
+          },
           { key: 'group', header: 'Group', width: 110, render: (u) => groupLabel(u.bloodGroup) },
           { key: 'expiry', header: 'Expiry', render: (u) => <ExpiryText expiresAt={u.expiresAt} now={now} /> },
           { key: 'status', header: 'Status', render: (u) => <UnitStatusBadge status={u.status} /> },
@@ -335,10 +413,18 @@ export function ComponentsTable({ units, now, canManage }: { units: BloodUnitDto
               appearance="subtle"
               icon={<PrintRegular />}
               aria-label={`Print label for ${u.unitNumber}`}
-              onClick={() => void printUnitLabels([u]).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+              onClick={() =>
+                void printUnitLabels([u]).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
             />
             {canManage && canDiscardUnit(u.status) && (
-              <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Discard ${u.unitNumber}`} onClick={() => setDiscarding(u)} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<DeleteRegular />}
+                aria-label={`Discard ${u.unitNumber}`}
+                onClick={() => setDiscarding(u)}
+              />
             )}
           </span>
         )}

@@ -80,7 +80,12 @@ function BackupsPage() {
             <Button icon={<KeyRegular />} onClick={() => setConfirmKey(true)}>
               Recovery key
             </Button>
-            <Button appearance="primary" icon={<DatabaseArrowUpRegular />} disabled={running || start.isPending} onClick={() => start.mutate()}>
+            <Button
+              appearance="primary"
+              icon={<DatabaseArrowUpRegular />}
+              disabled={running || start.isPending}
+              onClick={() => start.mutate()}
+            >
               {running ? 'Backup running…' : 'Back up now'}
             </Button>
           </>
@@ -89,9 +94,9 @@ function BackupsPage() {
       <MessageBar intent="info" layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>Restoring</MessageBarTitle>
-          Each backup holds the database, the encryption key for identifiers and documents, and the stored documents. To restore, also on replacement
-          hardware, run <Text font="monospace">Restore-HC360.ps1</Text> on the server with a backup file and the recovery key. The deployment guide has the
-          steps.
+          Each backup holds the database, the encryption key for identifiers and documents, and the stored documents. To
+          restore, also on replacement hardware, run <Text font="monospace">Restore-HC360.ps1</Text> on the server with
+          a backup file and the recovery key. The deployment guide has the steps.
         </MessageBarBody>
       </MessageBar>
       <Section flush>
@@ -108,8 +113,20 @@ function BackupsPage() {
             { key: 'status', header: 'Status', width: 120, render: (b) => <StatusBadge status={b.status} /> },
             { key: 'size', header: 'Size', width: 100, render: (b) => formatBytes(b.sizeBytes) },
             { key: 'contents', header: 'Contents', width: 250, render: (b) => backupContents(b) },
-            { key: 'checked', header: 'Checked', width: 170, priority: 'low', render: (b) => (b.verifiedAt ? formatDateTime(b.verifiedAt) : '—') },
-            { key: 'copy', header: 'Second copy', width: 120, priority: 'low', render: (b) => (b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—') },
+            {
+              key: 'checked',
+              header: 'Checked',
+              width: 170,
+              priority: 'low',
+              render: (b) => (b.verifiedAt ? formatDateTime(b.verifiedAt) : '—'),
+            },
+            {
+              key: 'copy',
+              header: 'Second copy',
+              width: 120,
+              priority: 'low',
+              render: (b) => (b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—'),
+            },
             {
               key: 'file',
               header: 'File / error',
@@ -143,8 +160,9 @@ function BackupsPage() {
         onConfirm={() => reveal.mutate()}
         onCancel={() => setConfirmKey(false)}
       >
-        Anyone with this key and a backup file can read everything in it: the database, identifiers such as Aadhaar and ABHA, and the stored documents.
-        Showing it is recorded in the audit log. Write it down or print it and keep it in a locked place away from the server.
+        Anyone with this key and a backup file can read everything in it: the database, identifiers such as Aadhaar and
+        ABHA, and the stored documents. Showing it is recorded in the audit log. Write it down or print it and keep it
+        in a locked place away from the server.
       </ConfirmDialog>
 
       <Dialog open={recoveryKey !== null} onOpenChange={(_, d) => !d.open && setRecoveryKey(null)}>
@@ -158,7 +176,10 @@ function BackupsPage() {
               </MessageBar>
             </DialogContent>
             <DialogActions>
-              <Button icon={<CopyRegular />} onClick={() => recoveryKey && void navigator.clipboard?.writeText(recoveryKey)}>
+              <Button
+                icon={<CopyRegular />}
+                onClick={() => recoveryKey && void navigator.clipboard?.writeText(recoveryKey)}
+              >
                 Copy
               </Button>
               <Button appearance="primary" onClick={() => setRecoveryKey(null)}>

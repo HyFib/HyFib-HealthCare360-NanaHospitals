@@ -62,7 +62,8 @@ function FindDoctorPage() {
   const total = doctors.data?.pages[0]?.totalCount ?? 0;
   const hasFilters = Boolean(search.q || search.specialtyId || search.facilityId || search.language || search.video);
 
-  const setFilter = (patch: Partial<DoctorSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const setFilter = (patch: Partial<DoctorSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <PortalPage title={t('doctors.title')} subtitle={t('doctors.subtitle')}>
@@ -79,7 +80,11 @@ function FindDoctorPage() {
         </Field>
         <div className={styles.filters}>
           <Field label={t('doctors.filter.speciality')}>
-            <Select size="large" value={search.specialtyId ?? ''} onChange={(_, data) => setFilter({ specialtyId: data.value || undefined })}>
+            <Select
+              size="large"
+              value={search.specialtyId ?? ''}
+              onChange={(_, data) => setFilter({ specialtyId: data.value || undefined })}
+            >
               <option value="">{t('doctors.filter.anySpeciality')}</option>
               {filters.data?.specialties.map((option) => (
                 <option key={option.id} value={option.id}>
@@ -89,7 +94,11 @@ function FindDoctorPage() {
             </Select>
           </Field>
           <Field label={t('doctors.filter.language')}>
-            <Select size="large" value={search.language ?? ''} onChange={(_, data) => setFilter({ language: data.value || undefined })}>
+            <Select
+              size="large"
+              value={search.language ?? ''}
+              onChange={(_, data) => setFilter({ language: data.value || undefined })}
+            >
               <option value="">{t('doctors.filter.anyLanguage')}</option>
               {filters.data?.languages.map((language) => (
                 <option key={language} value={language}>
@@ -100,7 +109,11 @@ function FindDoctorPage() {
           </Field>
           {(filters.data?.facilities.length ?? 0) > 1 && (
             <Field label={t('doctors.filter.branch')}>
-              <Select size="large" value={search.facilityId ?? ''} onChange={(_, data) => setFilter({ facilityId: data.value || undefined })}>
+              <Select
+                size="large"
+                value={search.facilityId ?? ''}
+                onChange={(_, data) => setFilter({ facilityId: data.value || undefined })}
+              >
                 <option value="">{t('doctors.filter.anyBranch')}</option>
                 {filters.data?.facilities.map((facility) => (
                   <option key={facility.id} value={facility.id}>
@@ -112,7 +125,11 @@ function FindDoctorPage() {
           )}
         </div>
         <div className={styles.row}>
-          <Switch checked={Boolean(search.video)} label={t('doctors.filter.video')} onChange={(_, data) => setFilter({ video: data.checked || undefined })} />
+          <Switch
+            checked={Boolean(search.video)}
+            label={t('doctors.filter.video')}
+            onChange={(_, data) => setFilter({ video: data.checked || undefined })}
+          />
           {hasFilters && (
             <Button
               appearance="subtle"
@@ -137,14 +154,23 @@ function FindDoctorPage() {
         ) : doctors.isError ? (
           <ErrorBlock error={doctors.error} onRetry={() => void doctors.refetch()} />
         ) : rows.length === 0 ? (
-          <EmptyState icon={<StethoscopeRegular />} title={t('doctors.empty.title')} description={t('doctors.empty.body')} />
+          <EmptyState
+            icon={<StethoscopeRegular />}
+            title={t('doctors.empty.title')}
+            description={t('doctors.empty.body')}
+          />
         ) : (
           <>
             {rows.map((doctor) => (
               <DoctorCard key={doctor.id} doctor={doctor} video={Boolean(search.video)} now={now} />
             ))}
             {doctors.hasNextPage && (
-              <Button className={styles.more} size="large" onClick={() => void doctors.fetchNextPage()} disabled={doctors.isFetchingNextPage}>
+              <Button
+                className={styles.more}
+                size="large"
+                onClick={() => void doctors.fetchNextPage()}
+                disabled={doctors.isFetchingNextPage}
+              >
                 {t('common.showMore')}
               </Button>
             )}

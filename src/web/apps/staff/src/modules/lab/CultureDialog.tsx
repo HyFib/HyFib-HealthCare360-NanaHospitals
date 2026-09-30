@@ -19,7 +19,11 @@ import { FormGrid } from '@hc360/ui';
 import { useId, useState } from 'react';
 import type { SusceptibilityDto, SusceptibilityInterpretation } from './api';
 
-const GROWTH_STATEMENTS = ['No growth after 48 hours of incubation', 'Growth isolated', 'Mixed growth of more than two organisms (likely contamination)'];
+const GROWTH_STATEMENTS = [
+  'No growth after 48 hours of incubation',
+  'Growth isolated',
+  'Mixed growth of more than two organisms (likely contamination)',
+];
 
 const COMMON_ANTIBIOTICS = [
   'Amikacin',
@@ -98,12 +102,19 @@ export function CultureDialog({
   const [rows, setRows] = useState<SusceptibilityDto[]>(initial.susceptibilities);
   const statements = options.length > 0 ? options : GROWTH_STATEMENTS;
 
-  const update = (index: number, patch: Partial<SusceptibilityDto>) => setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  const update = (index: number, patch: Partial<SusceptibilityDto>) =>
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   const addAntibiotic = (name = '') =>
-    setRows((current) => (name && current.some((row) => row.antibiotic.toLowerCase() === name.toLowerCase()) ? current : [...current, { antibiotic: name, interpretation: 'Sensitive', mic: null }]));
+    setRows((current) =>
+      name && current.some((row) => row.antibiotic.toLowerCase() === name.toLowerCase())
+        ? current
+        : [...current, { antibiotic: name, interpretation: 'Sensitive', mic: null }],
+    );
 
   const complete = rows.every((row) => row.antibiotic.trim().length > 0);
-  const unused = COMMON_ANTIBIOTICS.filter((name) => !rows.some((row) => row.antibiotic.toLowerCase() === name.toLowerCase()));
+  const unused = COMMON_ANTIBIOTICS.filter(
+    (name) => !rows.some((row) => row.antibiotic.toLowerCase() === name.toLowerCase()),
+  );
 
   return (
     <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
@@ -112,7 +123,16 @@ export function CultureDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!readOnly && complete) {
-              onApply({ value: value.trim(), organism: organism.trim(), colonyCount: colonyCount.trim(), susceptibilities: rows.map((row) => ({ ...row, antibiotic: row.antibiotic.trim(), mic: row.mic?.trim() || null })) });
+              onApply({
+                value: value.trim(),
+                organism: organism.trim(),
+                colonyCount: colonyCount.trim(),
+                susceptibilities: rows.map((row) => ({
+                  ...row,
+                  antibiotic: row.antibiotic.trim(),
+                  mic: row.mic?.trim() || null,
+                })),
+              });
             }
           }}
         >
@@ -120,11 +140,22 @@ export function CultureDialog({
             <DialogTitle>{testName}: culture and sensitivity</DialogTitle>
             <DialogContent className={styles.content}>
               <Field label="Growth" required hint="Choose a statement or type your own">
-                <Input value={value} onChange={(_, data) => setValue(data.value.slice(0, 2000))} disabled={readOnly} autoFocus />
+                <Input
+                  value={value}
+                  onChange={(_, data) => setValue(data.value.slice(0, 2000))}
+                  disabled={readOnly}
+                  autoFocus
+                />
                 {!readOnly && (
                   <div className={styles.quick}>
                     {statements.map((statement) => (
-                      <Button key={statement} size="small" shape="circular" appearance={value === statement ? 'primary' : 'outline'} onClick={() => setValue(statement)}>
+                      <Button
+                        key={statement}
+                        size="small"
+                        shape="circular"
+                        appearance={value === statement ? 'primary' : 'outline'}
+                        onClick={() => setValue(statement)}
+                      >
                         {statement}
                       </Button>
                     ))}
@@ -133,10 +164,20 @@ export function CultureDialog({
               </Field>
               <FormGrid columns={2}>
                 <Field label="Organism isolated" hint="Leave empty when there is no growth">
-                  <Input value={organism} onChange={(_, data) => setOrganism(data.value.slice(0, 200))} disabled={readOnly} placeholder="e.g. Escherichia coli" />
+                  <Input
+                    value={organism}
+                    onChange={(_, data) => setOrganism(data.value.slice(0, 200))}
+                    disabled={readOnly}
+                    placeholder="e.g. Escherichia coli"
+                  />
                 </Field>
                 <Field label="Colony count">
-                  <Input value={colonyCount} onChange={(_, data) => setColonyCount(data.value.slice(0, 100))} disabled={readOnly} placeholder="e.g. >10^5 CFU/mL" />
+                  <Input
+                    value={colonyCount}
+                    onChange={(_, data) => setColonyCount(data.value.slice(0, 100))}
+                    disabled={readOnly}
+                    placeholder="e.g. >10^5 CFU/mL"
+                  />
                 </Field>
               </FormGrid>
 
@@ -166,7 +207,11 @@ export function CultureDialog({
                         aria-label={`Antibiotic ${index + 1}`}
                         list={listId}
                       />
-                      <div className={styles.sir} role="radiogroup" aria-label={`Result for ${row.antibiotic || `antibiotic ${index + 1}`}`}>
+                      <div
+                        className={styles.sir}
+                        role="radiogroup"
+                        aria-label={`Result for ${row.antibiotic || `antibiotic ${index + 1}`}`}
+                      >
                         {INTERPRETATIONS.map((option) => (
                           <ToggleButton
                             key={option.value}
@@ -183,7 +228,12 @@ export function CultureDialog({
                           </ToggleButton>
                         ))}
                       </div>
-                      <Input value={row.mic ?? ''} onChange={(_, data) => update(index, { mic: data.value.slice(0, 32) })} disabled={readOnly} aria-label={`MIC for ${row.antibiotic}`} />
+                      <Input
+                        value={row.mic ?? ''}
+                        onChange={(_, data) => update(index, { mic: data.value.slice(0, 32) })}
+                        disabled={readOnly}
+                        aria-label={`MIC for ${row.antibiotic}`}
+                      />
                       {!readOnly && (
                         <Button
                           appearance="subtle"
@@ -210,7 +260,13 @@ export function CultureDialog({
                     {organism.trim() && unused.length > 0 && (
                       <div className={styles.quick} role="group" aria-label="Common antibiotics">
                         {unused.slice(0, 14).map((name) => (
-                          <Button key={name} size="small" shape="circular" appearance="outline" onClick={() => addAntibiotic(name)}>
+                          <Button
+                            key={name}
+                            size="small"
+                            shape="circular"
+                            appearance="outline"
+                            onClick={() => addAntibiotic(name)}
+                          >
                             + {name}
                           </Button>
                         ))}

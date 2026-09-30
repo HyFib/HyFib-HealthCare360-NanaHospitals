@@ -7,7 +7,9 @@ describe('amount in words', () => {
     expect(amountInWords(0)).toBe('Rupees Zero Only');
     expect(amountInWords(45)).toBe('Rupees Forty-Five Only');
     expect(amountInWords(1005)).toBe('Rupees One Thousand Five Only');
-    expect(amountInWords(145320.5)).toBe('Rupees One Lakh Forty-Five Thousand Three Hundred Twenty and Fifty Paise Only');
+    expect(amountInWords(145320.5)).toBe(
+      'Rupees One Lakh Forty-Five Thousand Three Hundred Twenty and Fifty Paise Only',
+    );
     expect(amountInWords(12_500_000)).toBe('Rupees One Crore Twenty-Five Lakh Only');
     expect(amountInWords(99.99)).toBe('Rupees Ninety-Nine and Ninety-Nine Paise Only');
   });

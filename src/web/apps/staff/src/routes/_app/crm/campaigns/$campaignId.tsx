@@ -1,7 +1,17 @@
 import { Body1, Button, Caption1, makeStyles, MessageBar, MessageBarBody, tokens } from '@fluentui/react-components';
 import { ArrowUndoRegular, CalendarClockRegular, DismissCircleRegular, MegaphoneRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, humanize } from '@hc360/core';
-import { ConfirmDialog, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -54,7 +64,8 @@ function segmentSummary(segment: SegmentInput, departmentName: (id: string) => s
       `Last visit ${segment.lastVisitFrom ? `from ${formatDateOnly(segment.lastVisitFrom)}` : ''}${segment.lastVisitFrom && segment.lastVisitTo ? ' ' : ''}${segment.lastVisitTo ? `to ${formatDateOnly(segment.lastVisitTo)}` : ''}`,
     );
   }
-  if (segment.departmentIds && segment.departmentIds.length > 0) lines.push(`Seen in ${segment.departmentIds.map(departmentName).join(', ')}`);
+  if (segment.departmentIds && segment.departmentIds.length > 0)
+    lines.push(`Seen in ${segment.departmentIds.map(departmentName).join(', ')}`);
   return lines.length > 0 ? lines : ['Every patient with a marketing consent'];
 }
 
@@ -70,14 +81,24 @@ function CampaignPage() {
     return (
       <Page>
         <PageHeader title="Campaign" icon={<MegaphoneRegular />} breadcrumbs={crumbs} />
-        {campaign.error ? <ErrorState error={campaign.error} onRetry={() => void campaign.refetch()} /> : <LoadingState />}
+        {campaign.error ? (
+          <ErrorState error={campaign.error} onRetry={() => void campaign.refetch()} />
+        ) : (
+          <LoadingState />
+        )}
       </Page>
     );
   }
   return <CampaignView campaign={campaign.data} crumbs={crumbs} />;
 }
 
-function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumbs: { label: string; onClick: () => void }[] }) {
+function CampaignView({
+  campaign: c,
+  crumbs,
+}: {
+  campaign: CampaignDetail;
+  crumbs: { label: string; onClick: () => void }[];
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -89,7 +110,8 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
   const [unscheduling, setUnscheduling] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [busy, setBusy] = useState(false);
-  const started = c.status === 'Sending' || c.status === 'Completed' || (c.status === 'Cancelled' && c.startedAt !== null);
+  const started =
+    c.status === 'Sending' || c.status === 'Completed' || (c.status === 'Cancelled' && c.startedAt !== null);
   const delivery = useQuery({ ...crmQueries.delivery(c.id, c.status === 'Sending'), enabled: started });
   const departmentName = (id: string) => departments.data?.find((d) => d.id === id)?.name ?? 'a department';
 
@@ -125,7 +147,12 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
         actions={
           <>
             {actions.includes('schedule') && (
-              <Button appearance="primary" icon={<CalendarClockRegular />} onClick={() => setScheduling(true)} disabled={busy}>
+              <Button
+                appearance="primary"
+                icon={<CalendarClockRegular />}
+                onClick={() => setScheduling(true)}
+                disabled={busy}
+              >
                 Schedule…
               </Button>
             )}
@@ -146,7 +173,8 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
       {c.status === 'Scheduled' && (
         <MessageBar intent="info" style={{ marginBottom: 12 }}>
           <MessageBarBody>
-            Scheduled for {c.scheduledAt ? formatDateTime(c.scheduledAt) : 'later'}. To change the message or audience, take it back to draft first.
+            Scheduled for {c.scheduledAt ? formatDateTime(c.scheduledAt) : 'later'}. To change the message or audience,
+            take it back to draft first.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -187,14 +215,19 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
               <Detail label="Skipped">{c.skippedCount.toLocaleString('en-IN')}</Detail>
               <Detail label="Scheduled">{c.scheduledAt ? formatDateTime(c.scheduledAt) : null}</Detail>
               <Detail label="Started">{c.startedAt ? formatDateTime(c.startedAt) : null}</Detail>
-              <Detail label={c.status === 'Cancelled' ? 'Cancelled' : 'Finished'}>{c.completedAt ? formatDateTime(c.completedAt) : null}</Detail>
+              <Detail label={c.status === 'Cancelled' ? 'Cancelled' : 'Finished'}>
+                {c.completedAt ? formatDateTime(c.completedAt) : null}
+              </Detail>
             </DetailGrid>
           </Section>
         </MainAside>
       )}
 
       {started && (
-        <Section title="Delivery" description={c.status === 'Sending' ? 'Updates every 30 seconds while sending' : undefined}>
+        <Section
+          title="Delivery"
+          description={c.status === 'Sending' ? 'Updates every 30 seconds while sending' : undefined}
+        >
           {delivery.error ? (
             <ErrorState error={delivery.error} onRetry={() => void delivery.refetch()} />
           ) : !delivery.data ? (
@@ -202,15 +235,31 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
           ) : (
             <KpiGrid>
               <KpiCard label="Recipients" value={delivery.data.recipients.toLocaleString('en-IN')} />
-              <KpiCard label="Delivered to the gateway" value={delivery.data.sent.toLocaleString('en-IN')} hint={percent(delivery.data.sent, delivery.data.recipients)} />
-              <KpiCard label="Waiting" value={delivery.data.queued.toLocaleString('en-IN')} hint="Queued for the next sending window" />
-              <KpiCard label="Failed" value={delivery.data.failed.toLocaleString('en-IN')} hint={percent(delivery.data.failed, delivery.data.recipients)} />
+              <KpiCard
+                label="Delivered to the gateway"
+                value={delivery.data.sent.toLocaleString('en-IN')}
+                hint={percent(delivery.data.sent, delivery.data.recipients)}
+              />
+              <KpiCard
+                label="Waiting"
+                value={delivery.data.queued.toLocaleString('en-IN')}
+                hint="Queued for the next sending window"
+              />
+              <KpiCard
+                label="Failed"
+                value={delivery.data.failed.toLocaleString('en-IN')}
+                hint={percent(delivery.data.failed, delivery.data.recipients)}
+              />
               <KpiCard
                 label="Skipped"
                 value={delivery.data.skipped.toLocaleString('en-IN')}
                 hint="No consent or no mobile number at send time, or the number replied STOP on WhatsApp"
               />
-              <KpiCard label="Opted out since" value={delivery.data.optedOut.toLocaleString('en-IN')} hint="Used the link in the message" />
+              <KpiCard
+                label="Opted out since"
+                value={delivery.data.optedOut.toLocaleString('en-IN')}
+                hint="Used the link in the message"
+              />
             </KpiGrid>
           )}
         </Section>
@@ -222,7 +271,13 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
         title="Take the campaign back to draft?"
         confirmLabel="Back to draft"
         busy={busy}
-        onConfirm={() => void run(() => crmApi.unscheduleCampaign(c.id), 'Back to draft', () => setUnscheduling(false))}
+        onConfirm={() =>
+          void run(
+            () => crmApi.unscheduleCampaign(c.id),
+            'Back to draft',
+            () => setUnscheduling(false),
+          )
+        }
         onCancel={() => setUnscheduling(false)}
       >
         It will not be sent until someone schedules it again.
@@ -230,13 +285,23 @@ function CampaignView({ campaign: c, crumbs }: { campaign: CampaignDetail; crumb
       <ReasonDialog
         open={cancelling}
         title="Cancel the campaign"
-        description={c.status === 'Sending' ? 'Messages already handed to the gateway are still delivered. The rest are not sent.' : 'Nothing will be sent.'}
+        description={
+          c.status === 'Sending'
+            ? 'Messages already handed to the gateway are still delivered. The rest are not sent.'
+            : 'Nothing will be sent.'
+        }
         label="Reason"
         maxLength={300}
         confirmLabel="Cancel campaign"
         destructive
         busy={busy}
-        onConfirm={(reason) => void run(() => crmApi.cancelCampaign(c.id, reason), 'Campaign cancelled', () => setCancelling(false))}
+        onConfirm={(reason) =>
+          void run(
+            () => crmApi.cancelCampaign(c.id, reason),
+            'Campaign cancelled',
+            () => setCancelling(false),
+          )
+        }
         onCancel={() => setCancelling(false)}
       />
     </Page>

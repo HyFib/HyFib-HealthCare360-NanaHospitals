@@ -59,7 +59,9 @@ export function AppointmentCard({ appointment }: { appointment: PortalAppointmen
         <span className={styles.where}>
           {appointment.isTelehealth ? <VideoRegular aria-hidden /> : <BuildingRegular aria-hidden />}
           {f.dateLong(appointment.startsAt)}, {f.time(appointment.startsAt)} ·{' '}
-          {appointment.isTelehealth ? t('appointment.mode.video') : (appointment.facilityName ?? t('appointment.mode.inPerson'))}
+          {appointment.isTelehealth
+            ? t('appointment.mode.video')
+            : (appointment.facilityName ?? t('appointment.mode.inPerson'))}
         </span>
         <span className={styles.pills}>
           <StatusPill tone={status.tone}>{t(status.key)}</StatusPill>

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { LeaveTypeDto } from './api';
-import { applicableLeaveTypes, balanceFor, canCancelLeave, daysText, estimateLeaveDays, leavePeriodText, needsDocument, sessionNote } from './leave';
+import {
+  applicableLeaveTypes,
+  balanceFor,
+  canCancelLeave,
+  daysText,
+  estimateLeaveDays,
+  leavePeriodText,
+  needsDocument,
+  sessionNote,
+} from './leave';
 
 function type(partial: Partial<LeaveTypeDto>): LeaveTypeDto {
   return {
@@ -46,7 +55,11 @@ describe('leave day estimate', () => {
 
 describe('leave rules', () => {
   it('offers only active types for the right gender', () => {
-    const types = [type({ id: 'cl' }), type({ id: 'ml', applicableGender: 'Female' }), type({ id: 'old', isActive: false })];
+    const types = [
+      type({ id: 'cl' }),
+      type({ id: 'ml', applicableGender: 'Female' }),
+      type({ id: 'old', isActive: false }),
+    ];
     expect(applicableLeaveTypes(types, 'Male').map((t) => t.id)).toEqual(['cl']);
     expect(applicableLeaveTypes(types, 'Female').map((t) => t.id)).toEqual(['cl', 'ml']);
     expect(applicableLeaveTypes(types, null).map((t) => t.id)).toEqual(['cl', 'ml']);
@@ -76,9 +89,21 @@ describe('leave rules', () => {
 
 describe('leave period text', () => {
   it('describes single and multi-day leave with halves', () => {
-    expect(leavePeriodText({ fromDate: '2026-09-28', fromSession: 'FirstHalf', toDate: '2026-09-28', toSession: 'FirstHalf' })).toMatch(/28 Sep.*2026 \(first half\)/);
-    expect(leavePeriodText({ fromDate: '2026-09-28', fromSession: 'SecondHalf', toDate: '2026-09-30', toSession: 'SecondHalf' })).toMatch(
-      /28 Sep.*2026 \(from the second half\) to 30 Sep.*2026$/,
-    );
+    expect(
+      leavePeriodText({
+        fromDate: '2026-09-28',
+        fromSession: 'FirstHalf',
+        toDate: '2026-09-28',
+        toSession: 'FirstHalf',
+      }),
+    ).toMatch(/28 Sep.*2026 \(first half\)/);
+    expect(
+      leavePeriodText({
+        fromDate: '2026-09-28',
+        fromSession: 'SecondHalf',
+        toDate: '2026-09-30',
+        toSession: 'SecondHalf',
+      }),
+    ).toMatch(/28 Sep.*2026 \(from the second half\) to 30 Sep.*2026$/);
   });
 });

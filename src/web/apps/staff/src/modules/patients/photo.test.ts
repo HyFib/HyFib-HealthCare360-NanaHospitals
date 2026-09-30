@@ -40,7 +40,12 @@ describe('fitWithin', () => {
 });
 
 describe('photoSourceProblem', () => {
-  const file = (over: Partial<{ name: string; size: number; type: string }> = {}) => ({ name: 'me.jpg', size: 200_000, type: 'image/jpeg', ...over });
+  const file = (over: Partial<{ name: string; size: number; type: string }> = {}) => ({
+    name: 'me.jpg',
+    size: 200_000,
+    type: 'image/jpeg',
+    ...over,
+  });
 
   it('accepts JPEG, PNG and WebP photos', () => {
     for (const type of ['image/jpeg', 'image/png', 'image/webp']) {
@@ -54,9 +59,13 @@ describe('photoSourceProblem', () => {
 
   it('refuses an empty file, something that is not a photo, and a huge file', () => {
     expect(photoSourceProblem(file({ size: 0 }))).toBe('me.jpg is empty.');
-    expect(photoSourceProblem(file({ name: 'report.pdf', type: 'application/pdf' }))).toBe('report.pdf is not a photo. Choose a JPEG, PNG or WebP image.');
+    expect(photoSourceProblem(file({ name: 'report.pdf', type: 'application/pdf' }))).toBe(
+      'report.pdf is not a photo. Choose a JPEG, PNG or WebP image.',
+    );
     expect(photoSourceProblem(file({ type: '' }))).toContain('is not a photo');
-    expect(photoSourceProblem(file({ size: PHOTO_MAX_SOURCE_BYTES + 1 }))).toBe('me.jpg is larger than 25 MB. Choose a smaller photo.');
+    expect(photoSourceProblem(file({ size: PHOTO_MAX_SOURCE_BYTES + 1 }))).toBe(
+      'me.jpg is larger than 25 MB. Choose a smaller photo.',
+    );
   });
 });
 

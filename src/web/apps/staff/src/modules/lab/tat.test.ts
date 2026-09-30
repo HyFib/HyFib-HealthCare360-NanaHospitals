@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { busiestTests, bySection, complianceTone, formatMinutes, rejectionRate, toHours, withinTargetPercent } from './tat';
+import {
+  busiestTests,
+  bySection,
+  complianceTone,
+  formatMinutes,
+  rejectionRate,
+  toHours,
+  withinTargetPercent,
+} from './tat';
 
 describe('turnaround formatting', () => {
   it('uses minutes, hours and days', () => {

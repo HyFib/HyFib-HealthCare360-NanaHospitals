@@ -9,7 +9,12 @@ import { toOptions, useDepartments } from '@/lib/lookups';
 import { hrApi, hrKeys, hrQueries } from '@/modules/hr/api';
 import { AttendanceTable } from '@/modules/hr/AttendanceTable';
 import type { PickedEmployee } from '@/modules/hr/EmployeePicker';
-import { ATTENDANCE_STATUSES, attendanceStatusLabel, HR_PERMISSIONS as P, type AttendanceStatus } from '@/modules/hr/labels';
+import {
+  ATTENDANCE_STATUSES,
+  attendanceStatusLabel,
+  HR_PERMISSIONS as P,
+  type AttendanceStatus,
+} from '@/modules/hr/labels';
 import { ATTENDANCE_NAV } from '@/modules/hr/nav';
 import { RegularisationDialog } from '@/modules/hr/RegularisationDialog';
 import { addDays, isIsoDate } from '@/modules/hr/shared/dates';
@@ -49,10 +54,21 @@ function DailySheetPage() {
   const today = todayIso();
   const date = search.date ?? addDays(today, -1);
   const [correcting, setCorrecting] = useState<{ employee: PickedEmployee | null; date: string } | null>(null);
-  const days = useQuery(hrQueries.attendance({ from: date, to: date, departmentId: search.departmentId, status: search.status, page: search.page, pageSize: 50 }));
+  const days = useQuery(
+    hrQueries.attendance({
+      from: date,
+      to: date,
+      departmentId: search.departmentId,
+      status: search.status,
+      page: search.page,
+      pageSize: 50,
+    }),
+  );
   // One small request per status keeps the counts right whatever page or filter is shown.
   const countQueries = useQueries({
-    queries: COUNTED.map((status) => hrQueries.attendance({ from: date, to: date, departmentId: search.departmentId, status, pageSize: 1 })),
+    queries: COUNTED.map((status) =>
+      hrQueries.attendance({ from: date, to: date, departmentId: search.departmentId, status, pageSize: 1 }),
+    ),
   });
   const counts = COUNTED.map((status, index) => ({ status, query: countQueries[index] }));
 
@@ -65,7 +81,8 @@ function DailySheetPage() {
     onError: (error) => notify.error(error, 'Could not compute attendance'),
   });
 
-  const set = (patch: Partial<SheetSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<SheetSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -78,7 +95,12 @@ function DailySheetPage() {
             <Button icon={<CalendarEditRegular />} onClick={() => setCorrecting({ employee: null, date })}>
               Correct attendance
             </Button>
-            <Button appearance="primary" icon={compute.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />} disabled={compute.isPending} onClick={() => compute.mutate()}>
+            <Button
+              appearance="primary"
+              icon={compute.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
+              disabled={compute.isPending}
+              onClick={() => compute.mutate()}
+            >
               Compute {date === today ? 'today' : formatDateOnly(date)}
             </Button>
           </>
@@ -100,10 +122,20 @@ function DailySheetPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Date">
-              <Input type="date" value={date} max={today} onChange={(_, d) => isIsoDate(d.value) && set({ date: d.value === addDays(today, -1) ? undefined : d.value })} />
+              <Input
+                type="date"
+                value={date}
+                max={today}
+                onChange={(_, d) =>
+                  isIsoDate(d.value) && set({ date: d.value === addDays(today, -1) ? undefined : d.value })
+                }
+              />
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -113,7 +145,10 @@ function DailySheetPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as AttendanceStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as AttendanceStatus | undefined })}
+              >
                 <option value="">All</option>
                 {ATTENDANCE_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -131,8 +166,18 @@ function DailySheetPage() {
           onRetry={() => void days.refetch()}
           showEmployee
           showDate={false}
-          onCorrect={(day) => setCorrecting({ employee: { id: day.employeeId, code: day.employeeCode, name: day.employeeName }, date: day.date })}
-          onRowClick={(day) => void navigate({ to: '/hr/attendance/punches', search: { employeeId: day.employeeId, from: day.date, to: day.date } })}
+          onCorrect={(day) =>
+            setCorrecting({
+              employee: { id: day.employeeId, code: day.employeeCode, name: day.employeeName },
+              date: day.date,
+            })
+          }
+          onRowClick={(day) =>
+            void navigate({
+              to: '/hr/attendance/punches',
+              search: { employeeId: day.employeeId, from: day.date, to: day.date },
+            })
+          }
           page={search.page ?? 1}
           pageSize={50}
           totalCount={days.data?.totalCount}

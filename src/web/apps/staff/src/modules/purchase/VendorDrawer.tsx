@@ -14,7 +14,17 @@ import {
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, normalizePhone, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -72,7 +82,11 @@ const schema = z
   })
   .superRefine((v, ctx) => {
     if (v.gstin && v.pan && v.gstin.length >= 12 && v.gstin.slice(2, 12) !== v.pan) {
-      ctx.addIssue({ code: 'custom', path: ['pan'], message: 'The PAN does not match the one inside the GSTIN (characters 3 to 12).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['pan'],
+        message: 'The PAN does not match the one inside the GSTIN (characters 3 to 12).',
+      });
     }
   });
 
@@ -103,7 +117,15 @@ function toValues(v: VendorDetail | null): VendorValues {
 }
 
 /** Vendor master editor: GSTIN (decides CGST + SGST or IGST), PAN, drug licence (Form 20B/21B) and credit terms. */
-export function VendorDrawer({ vendorId, canManage, onClose }: { vendorId: string | null; canManage: boolean; onClose: () => void }) {
+export function VendorDrawer({
+  vendorId,
+  canManage,
+  onClose,
+}: {
+  vendorId: string | null;
+  canManage: boolean;
+  onClose: () => void;
+}) {
   const existing = useQuery({ ...purchaseQueries.vendor(vendorId ?? ''), enabled: vendorId !== null, staleTime: 0 });
   if (vendorId && !existing.data) {
     return (
@@ -111,7 +133,9 @@ export function VendorDrawer({ vendorId, canManage, onClose }: { vendorId: strin
         <DrawerBody>
           {existing.error ? (
             <MessageBar intent="error">
-              <MessageBarBody>{isApiError(existing.error) ? existing.error.userMessage : 'Could not load the vendor.'}</MessageBarBody>
+              <MessageBarBody>
+                {isApiError(existing.error) ? existing.error.userMessage : 'Could not load the vendor.'}
+              </MessageBarBody>
             </MessageBar>
           ) : (
             <Spinner label="Loading…" />
@@ -123,10 +147,22 @@ export function VendorDrawer({ vendorId, canManage, onClose }: { vendorId: strin
   return <VendorForm vendor={existing.data ?? null} canManage={canManage} onClose={onClose} />;
 }
 
-function VendorForm({ vendor, canManage, onClose }: { vendor: VendorDetail | null; canManage: boolean; onClose: () => void }) {
+function VendorForm({
+  vendor,
+  canManage,
+  onClose,
+}: {
+  vendor: VendorDetail | null;
+  canManage: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<VendorValues>({ resolver: zodResolver(schema), defaultValues: toValues(vendor), mode: 'onTouched' });
+  const form = useForm<VendorValues>({
+    resolver: zodResolver(schema),
+    defaultValues: toValues(vendor),
+    mode: 'onTouched',
+  });
   const [gstin, validUntil] = useWatch({ control: form.control, name: ['gstin', 'drugLicenseValidUntil'] });
   const readOnly = !canManage;
   const state = GSTIN.test((gstin ?? '').toUpperCase()) ? gstStateName(gstin) : null;
@@ -144,7 +180,15 @@ function VendorForm({ vendor, canManage, onClose }: { vendor: VendorDetail | nul
         contactPerson: v.contactPerson || null,
         phone: v.phone || null,
         email: v.email || null,
-        address: { line1: v.line1 || null, line2: v.line2 || null, city: v.city || null, district: v.district || null, state: v.state, pinCode: v.pinCode || null, country: 'India' },
+        address: {
+          line1: v.line1 || null,
+          line2: v.line2 || null,
+          city: v.city || null,
+          district: v.district || null,
+          state: v.state,
+          pinCode: v.pinCode || null,
+          country: 'India',
+        },
         paymentTermsDays: v.paymentTermsDays,
         rating: v.rating,
         notes: v.notes || null,
@@ -171,14 +215,24 @@ function VendorForm({ vendor, canManage, onClose }: { vendor: VendorDetail | nul
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {vendor ? vendor.name : 'Add vendor'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="code" label="Vendor code" required autoFocus={!vendor} disabled={readOnly} maxLength={24} />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Vendor code"
+                required
+                autoFocus={!vendor}
+                disabled={readOnly}
+                maxLength={24}
+              />
               <TextField control={form.control} name="name" label="Name" required disabled={readOnly} maxLength={200} />
             </FormGrid>
             <Subtitle2 as="h3">Tax</Subtitle2>
@@ -189,18 +243,37 @@ function VendorForm({ vendor, canManage, onClose }: { vendor: VendorDetail | nul
                 label="GSTIN"
                 disabled={readOnly}
                 maxLength={15}
-                hint={state ? `Registered in ${state}. Decides CGST + SGST (same state) or IGST.` : 'Leave blank for unregistered vendors'}
+                hint={
+                  state
+                    ? `Registered in ${state}. Decides CGST + SGST (same state) or IGST.`
+                    : 'Leave blank for unregistered vendors'
+                }
               />
-              <TextField control={form.control} name="pan" label="PAN" disabled={readOnly} maxLength={10} hint="Must match characters 3 to 12 of the GSTIN" />
+              <TextField
+                control={form.control}
+                name="pan"
+                label="PAN"
+                disabled={readOnly}
+                maxLength={10}
+                hint="Must match characters 3 to 12 of the GSTIN"
+              />
             </FormGrid>
             <Subtitle2 as="h3">Drug licence</Subtitle2>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="drugLicenseNumber" label="Licence number (Form 20B / 21B)" disabled={readOnly} maxLength={64} />
+              <TextField
+                control={form.control}
+                name="drugLicenseNumber"
+                label="Licence number (Form 20B / 21B)"
+                disabled={readOnly}
+                maxLength={64}
+              />
               <DateField control={form.control} name="drugLicenseValidUntil" label="Valid until" disabled={readOnly} />
             </FormGrid>
             {licenceExpired && (
               <MessageBar intent="warning">
-                <MessageBarBody>The licence has expired: medicines cannot be received from this vendor until it is renewed.</MessageBarBody>
+                <MessageBarBody>
+                  The licence has expired: medicines cannot be received from this vendor until it is renewed.
+                </MessageBarBody>
               </MessageBar>
             )}
             <Subtitle2 as="h3">Contact</Subtitle2>
@@ -212,22 +285,63 @@ function VendorForm({ vendor, canManage, onClose }: { vendor: VendorDetail | nul
               <TextField control={form.control} name="line2" label="Area" disabled={readOnly} />
               <TextField control={form.control} name="city" label="City" disabled={readOnly} />
               <TextField control={form.control} name="district" label="District" disabled={readOnly} />
-              <SelectField control={form.control} name="state" label="State" placeholder="—" disabled={readOnly} options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} />
+              <SelectField
+                control={form.control}
+                name="state"
+                label="State"
+                placeholder="—"
+                disabled={readOnly}
+                options={INDIAN_STATES.map((s) => ({ value: s, label: s }))}
+              />
               <TextField control={form.control} name="pinCode" label="PIN code" maxLength={6} disabled={readOnly} />
             </FormGrid>
             <Subtitle2 as="h3">Terms</Subtitle2>
             <FormGrid columns={2}>
-              <NumberField control={form.control} name="paymentTermsDays" label="Credit days" min={0} max={365} disabled={readOnly} hint="Default for new purchase orders" />
-              <NumberField control={form.control} name="rating" label="Rating (0 to 5)" min={0} max={5} step={0.5} disabled={readOnly} hint="Quality, timeliness and pricing" />
+              <NumberField
+                control={form.control}
+                name="paymentTermsDays"
+                label="Credit days"
+                min={0}
+                max={365}
+                disabled={readOnly}
+                hint="Default for new purchase orders"
+              />
+              <NumberField
+                control={form.control}
+                name="rating"
+                label="Rating (0 to 5)"
+                min={0}
+                max={5}
+                step={0.5}
+                disabled={readOnly}
+                hint="Quality, timeliness and pricing"
+              />
             </FormGrid>
-            <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} disabled={readOnly} />
-            <SwitchField control={form.control} name="isActive" label="Active (can be ordered from)" disabled={readOnly} />
+            <TextAreaField
+              control={form.control}
+              name="notes"
+              label="Notes"
+              rows={2}
+              maxLength={1000}
+              disabled={readOnly}
+            />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Active (can be ordered from)"
+              disabled={readOnly}
+            />
             {vendor?.pan && <Caption1>The PAN is kept out of logs and audit trails.</Caption1>}
           </div>
         </DrawerBody>
         <DrawerFooter>
           {canManage && (
-            <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={save.isPending}
+              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            >
               {vendor ? 'Save' : 'Add vendor'}
             </Button>
           )}

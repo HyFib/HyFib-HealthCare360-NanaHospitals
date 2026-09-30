@@ -62,7 +62,10 @@ export interface MinuteRange {
 }
 
 /** Whole hours covering every span (sessions and appointments); a default working day when there is nothing. */
-export function visibleRange(spans: readonly MinuteRange[], fallback: MinuteRange = { start: 8 * 60, end: 20 * 60 }): MinuteRange {
+export function visibleRange(
+  spans: readonly MinuteRange[],
+  fallback: MinuteRange = { start: 8 * 60, end: 20 * 60 },
+): MinuteRange {
   if (spans.length === 0) {
     return fallback;
   }

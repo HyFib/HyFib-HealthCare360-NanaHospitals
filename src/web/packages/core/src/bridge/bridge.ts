@@ -55,11 +55,20 @@ export interface PrintHtmlRequest {
   landscape?: boolean;
 }
 
-type BridgeResponse = { type: 'response'; id: number; ok: boolean; result?: unknown; error?: { code: string; message: string } };
+type BridgeResponse = {
+  type: 'response';
+  id: number;
+  ok: boolean;
+  result?: unknown;
+  error?: { code: string; message: string };
+};
 type BridgeEvent = { type: 'event'; name: string; payload: unknown };
 
 const host: WebViewHost | undefined = typeof window !== 'undefined' ? window.chrome?.webview : undefined;
-const pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const pending = new Map<
+  number,
+  { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> }
+>();
 const listeners = new Map<string, Set<(payload: unknown) => void>>();
 let sequence = 0;
 

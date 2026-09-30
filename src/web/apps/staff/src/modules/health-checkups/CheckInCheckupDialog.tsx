@@ -36,22 +36,42 @@ const useStyles = makeStyles({
  * Checks a booked patient in. Check-in adds the package fee to the patient's bill in the same step, so anything Billing
  * refuses (package without a billing item, merged UHID…) is explained here and the booking stays as it was.
  */
-export function CheckInCheckupDialog({ booking, onClose, onCheckedIn }: { booking: BookingDto | null; onClose: () => void; onCheckedIn?: (booking: BookingDto) => void }) {
+export function CheckInCheckupDialog({
+  booking,
+  onClose,
+  onCheckedIn,
+}: {
+  booking: BookingDto | null;
+  onClose: () => void;
+  onCheckedIn?: (booking: BookingDto) => void;
+}) {
   return (
     <Dialog open={booking !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{booking && <CheckInBody key={booking.id} booking={booking} onClose={onClose} onCheckedIn={onCheckedIn} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {booking && <CheckInBody key={booking.id} booking={booking} onClose={onClose} onCheckedIn={onCheckedIn} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function CheckInBody({ booking, onClose, onCheckedIn }: { booking: BookingDto; onClose: () => void; onCheckedIn?: (booking: BookingDto) => void }) {
+function CheckInBody({
+  booking,
+  onClose,
+  onCheckedIn,
+}: {
+  booking: BookingDto;
+  onClose: () => void;
+  onCheckedIn?: (booking: BookingDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const pkg = useQuery(checkupQueries.package(booking.packageId));
   const visits = useQuery(patientQueries.visits(booking.patientId, 1));
   const today = todayIso();
-  const todaysVisits = (visits.data?.items ?? []).filter((v) => (v.status === 'Open' || v.status === 'InProgress') && istDay(v.visitedAt) === today);
+  const todaysVisits = (visits.data?.items ?? []).filter(
+    (v) => (v.status === 'Open' || v.status === 'InProgress') && istDay(v.visitedAt) === today,
+  );
   const [visitId, setVisitId] = useState<string>(booking.visitId ?? '');
   const [problem, setProblem] = useState<Wording | null>(null);
 
@@ -59,7 +79,10 @@ function CheckInBody({ booking, onClose, onCheckedIn }: { booking: BookingDto; o
     mutationFn: () => checkupApi.checkIn(booking.id, visitId || null),
     onSuccess: (updated) => {
       void queryClient.invalidateQueries({ queryKey: checkupKeys.all });
-      notify.success(`${updated.patientName ?? 'Patient'} checked in`, 'The package fee is on the bill. Send the patient to the first station.');
+      notify.success(
+        `${updated.patientName ?? 'Patient'} checked in`,
+        'The package fee is on the bill. Send the patient to the first station.',
+      );
       onCheckedIn?.(updated);
       onClose();
     },
@@ -84,11 +107,15 @@ function CheckInBody({ booking, onClose, onCheckedIn }: { booking: BookingDto; o
         </Text>
         <MessageBar intent="info">
           <MessageBarBody>
-            The package fee {pkg.data ? <strong>{formatInr(pkg.data.price)}</strong> : ''} is added to the patient's bill when you check in. The tests are covered by the package and not charged separately.
+            The package fee {pkg.data ? <strong>{formatInr(pkg.data.price)}</strong> : ''} is added to the patient's
+            bill when you check in. The tests are covered by the package and not charged separately.
           </MessageBarBody>
         </MessageBar>
         {todaysVisits.length > 0 && (
-          <Field label="Link to today's visit" hint="Optional. The bill follows the visit's payer (self, insurance or corporate).">
+          <Field
+            label="Link to today's visit"
+            hint="Optional. The bill follows the visit's payer (self, insurance or corporate)."
+          >
             <Select value={visitId} onChange={(_, d) => setVisitId(d.value)}>
               <option value="">Do not link a visit</option>
               {todaysVisits.map((v) => (
@@ -108,7 +135,9 @@ function CheckInBody({ booking, onClose, onCheckedIn }: { booking: BookingDto; o
             </MessageBarBody>
           </MessageBar>
         )}
-        {problem && <Caption1 className={styles.muted}>Nothing was changed: the booking is still waiting for check-in.</Caption1>}
+        {problem && (
+          <Caption1 className={styles.muted}>Nothing was changed: the booking is still waiting for check-in.</Caption1>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={checkIn.isPending}>

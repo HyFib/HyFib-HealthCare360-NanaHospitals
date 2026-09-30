@@ -137,7 +137,17 @@ describe('leave and blocked time', () => {
   it('finds leave and blocks on a date, ignoring extra sessions and other doctors', () => {
     const exceptions: ScheduleExceptionDto[] = [
       base,
-      { ...base, id: 'e2', type: 'Block', isAllDay: false, startTime: '11:00:00', endTime: '13:00:00', fromDate: '2026-09-29', toDate: '2026-09-29', reason: 'Surgery list' },
+      {
+        ...base,
+        id: 'e2',
+        type: 'Block',
+        isAllDay: false,
+        startTime: '11:00:00',
+        endTime: '13:00:00',
+        fromDate: '2026-09-29',
+        toDate: '2026-09-29',
+        reason: 'Surgery list',
+      },
       { ...base, id: 'e3', type: 'ExtraSession', fromDate: '2026-09-29', toDate: '2026-09-29' },
       { ...base, id: 'e4', practitionerId: 'p2' },
     ];
@@ -148,7 +158,9 @@ describe('leave and blocked time', () => {
     ]);
     expect(isOnLeaveAllDay(onDay)).toBe(true);
     expect(restrictionsOn('2026-10-01', exceptions, 'p1')).toEqual([]);
-    expect(isOnLeaveAllDay([{ kind: 'leave', reason: 'Half day', allDay: false, start: '14:00:00', end: '18:00:00' }])).toBe(false);
+    expect(
+      isOnLeaveAllDay([{ kind: 'leave', reason: 'Half day', allDay: false, start: '14:00:00', end: '18:00:00' }]),
+    ).toBe(false);
   });
 
   it('compares instants regardless of formatting', () => {

@@ -26,7 +26,9 @@ export async function payAppointment(
     try {
       order = await appointmentApi.startPayment(appointmentId);
     } catch (error) {
-      return isApiError(error) && error.status === 422 ? { status: 'not-paid', messageKey: 'payment.unavailable' } : { status: 'error', error };
+      return isApiError(error) && error.status === 422
+        ? { status: 'not-paid', messageKey: 'payment.unavailable' }
+        : { status: 'error', error };
     }
   }
 
@@ -34,7 +36,11 @@ export async function payAppointment(
   switch (outcome.kind) {
     case 'completed':
       try {
-        await appointmentApi.confirmPayment(appointmentId, { orderId: outcome.orderId, paymentId: outcome.paymentId, signature: outcome.signature });
+        await appointmentApi.confirmPayment(appointmentId, {
+          orderId: outcome.orderId,
+          paymentId: outcome.paymentId,
+          signature: outcome.signature,
+        });
         return { status: 'paid' };
       } catch (error) {
         return { status: 'error', error };

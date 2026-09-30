@@ -10,7 +10,9 @@ import { paymentLabel, visitTypeLabel } from './labels';
  */
 export async function printAppointmentSlip(facilityName: string, appointment: AppointmentRef): Promise<void> {
   const qr = await barcodeSvg(appointment.number, 'qrcode', { scale: 2 });
-  const where = [appointment.departmentName, appointment.room ? `Room ${appointment.room}` : null].filter(Boolean).join(' · ');
+  const where = [appointment.departmentName, appointment.room ? `Room ${appointment.room}` : null]
+    .filter(Boolean)
+    .join(' · ');
   const body = `
     <div class="slip">
       <div class="hospital">${escapeHtml(facilityName)}</div>
@@ -48,5 +50,8 @@ export async function printAppointmentSlip(facilityName: string, appointment: Ap
     .qr svg { width: 24mm; height: 24mm; margin-top: 6px; }
     .note { margin-top: 6px; font-size: 8pt; }
     hr { border: none; border-top: 1px dashed #666; margin: 6px 0; }`;
-  await printHtml(printDocument(body, { title: `Appointment ${appointment.number}`, pageSize: 'Receipt80', styles }), { pageSize: 'Receipt80', silent: true });
+  await printHtml(printDocument(body, { title: `Appointment ${appointment.number}`, pageSize: 'Receipt80', styles }), {
+    pageSize: 'Receipt80',
+    silent: true,
+  });
 }

@@ -37,7 +37,10 @@ function NewEmployeePage() {
     },
     onError: (error) => {
       if (isApiError(error) && error.code === 'employee.bank_account_shared') {
-        form?.setError('accountNumber', { type: 'server', message: `${error.userMessage} Save without bank details, then change them from the profile after checking.` });
+        form?.setError('accountNumber', {
+          type: 'server',
+          message: `${error.userMessage} Save without bank details, then change them from the profile after checking.`,
+        });
       } else if (!(form && applyServerErrors(error, form.setError))) {
         notify.error(error, 'Could not add the employee');
       }
@@ -50,7 +53,10 @@ function NewEmployeePage() {
         title="Add employee"
         subtitle="The employee code is issued on saving. Press Ctrl+S to save."
         icon={<PersonAddRegular />}
-        breadcrumbs={[{ label: 'Employees', onClick: () => void navigate({ to: '/hr/employees' }) }, { label: 'Add employee' }]}
+        breadcrumbs={[
+          { label: 'Employees', onClick: () => void navigate({ to: '/hr/employees' }) },
+          { label: 'Add employee' },
+        ]}
       />
       <EmployeeForm
         defaultValues={defaults}

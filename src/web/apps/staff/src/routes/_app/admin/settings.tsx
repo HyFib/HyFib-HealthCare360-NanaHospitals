@@ -57,7 +57,9 @@ function SettingsPage() {
 
   const rows = useMemo(() => {
     const t = term.trim().toLowerCase();
-    return (settings.data ?? []).filter((s) => !t || s.key.toLowerCase().includes(t) || (s.description ?? '').toLowerCase().includes(t));
+    return (settings.data ?? []).filter(
+      (s) => !t || s.key.toLowerCase().includes(t) || (s.description ?? '').toLowerCase().includes(t),
+    );
   }, [settings.data, term]);
 
   return (
@@ -116,8 +118,20 @@ function SettingsPage() {
                   <Text font="monospace">{display(s.value)}</Text>
                 ),
             },
-            { key: 'scope', header: 'Applies to', priority: 'low', width: 130, render: (s) => (s.facilityId ? 'This facility' : 'All facilities') },
-            { key: 'updated', header: 'Changed', priority: 'low', width: 130, render: (s) => (s.updatedAt ? formatRelative(s.updatedAt) : '—') },
+            {
+              key: 'scope',
+              header: 'Applies to',
+              priority: 'low',
+              width: 130,
+              render: (s) => (s.facilityId ? 'This facility' : 'All facilities'),
+            },
+            {
+              key: 'updated',
+              header: 'Changed',
+              priority: 'low',
+              width: 130,
+              render: (s) => (s.updatedAt ? formatRelative(s.updatedAt) : '—'),
+            },
           ]}
           emptyTitle="No settings yet"
           emptyDescription="Defaults are used until a setting is added here."
@@ -134,7 +148,11 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
   const queryClient = useQueryClient();
   const [key, setKey] = useState(setting?.key ?? '');
   const [secret, setSecret] = useState(setting?.isSecret ?? false);
-  const [raw, setRaw] = useState(setting && !setting.isSecret && setting.value !== undefined && setting.value !== null ? JSON.stringify(setting.value, null, 2) : '');
+  const [raw, setRaw] = useState(
+    setting && !setting.isSecret && setting.value !== undefined && setting.value !== null
+      ? JSON.stringify(setting.value, null, 2)
+      : '',
+  );
   const [description, setDescription] = useState(setting?.description ?? '');
 
   // Anything that parses as JSON is stored as JSON; other text is stored as a plain string (no quotes needed).
@@ -188,12 +206,21 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
               </Field>
             )}
             {KNOWN[key] && <Caption1>{KNOWN[key]}</Caption1>}
-            <Switch checked={secret} onChange={(_, d) => setSecret(d.checked)} label="Secret (API key or password). Stored encrypted and never shown again." />
+            <Switch
+              checked={secret}
+              onChange={(_, d) => setSecret(d.checked)}
+              label="Secret (API key or password). Stored encrypted and never shown again."
+            />
             <Field label="Value" hint={secret ? 'Enter the new secret.' : 'Text, a number, true/false, or JSON'}>
               {secret ? (
                 <Input type="password" value={raw} onChange={(_, d) => setRaw(d.value)} autoComplete="off" />
               ) : (
-                <Textarea value={raw} onChange={(_, d) => setRaw(d.value)} rows={4} textarea={{ style: { fontFamily: 'Consolas, monospace' } }} />
+                <Textarea
+                  value={raw}
+                  onChange={(_, d) => setRaw(d.value)}
+                  rows={4}
+                  textarea={{ style: { fontFamily: 'Consolas, monospace' } }}
+                />
               )}
             </Field>
             <Field label="Description">
@@ -207,7 +234,11 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose}>Cancel</Button>
-            <Button appearance="primary" disabled={!keyValid || save.isPending || keepSecret} onClick={() => save.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!keyValid || save.isPending || keepSecret}
+              onClick={() => save.mutate()}
+            >
               Save
             </Button>
           </DialogActions>

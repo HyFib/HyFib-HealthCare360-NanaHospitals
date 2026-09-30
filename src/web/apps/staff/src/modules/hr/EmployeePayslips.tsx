@@ -68,9 +68,25 @@ export function EmployeePayslips({ employee }: { employee: PickedEmployee }) {
           { key: 'status', header: 'Payroll', render: (r) => <StatusBadge status={r.runStatus} /> },
           { key: 'days', header: 'Paid days', align: 'end', render: (r) => r.payslip.payableDays },
           { key: 'lop', header: 'Loss of pay', align: 'end', priority: 'low', render: (r) => r.payslip.lopDays },
-          { key: 'gross', header: 'Gross', align: 'end', priority: 'low', render: (r) => <Amount value={r.payslip.grossEarnings} hidden={!revealed} /> },
-          { key: 'net', header: 'Net pay', align: 'end', render: (r) => <Amount value={r.payslip.netPay} hidden={!revealed} /> },
-          { key: 'errors', header: '', width: 90, render: (r) => (r.payslip.hasErrors ? <StatusBadge status="Failed" label="Has errors" /> : null) },
+          {
+            key: 'gross',
+            header: 'Gross',
+            align: 'end',
+            priority: 'low',
+            render: (r) => <Amount value={r.payslip.grossEarnings} hidden={!revealed} />,
+          },
+          {
+            key: 'net',
+            header: 'Net pay',
+            align: 'end',
+            render: (r) => <Amount value={r.payslip.netPay} hidden={!revealed} />,
+          },
+          {
+            key: 'errors',
+            header: '',
+            width: 90,
+            render: (r) => (r.payslip.hasErrors ? <StatusBadge status="Failed" label="Has errors" /> : null),
+          },
         ]}
         emptyTitle={`No payslips in ${year}`}
         emptyDescription="Payslips appear once the month's payroll is processed."

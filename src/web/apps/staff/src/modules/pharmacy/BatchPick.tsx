@@ -72,13 +72,24 @@ export function BatchPick({
       })}
       <Menu>
         <MenuTrigger disableButtonEnhancement>
-          <Button size="small" appearance="subtle" icon={<ChevronDownRegular />} iconPosition="after" disabled={disabled} aria-label="Choose the batch">
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<ChevronDownRegular />}
+            iconPosition="after"
+            disabled={disabled}
+            aria-label="Choose the batch"
+          >
             {pickedBatchId ? 'Picked' : 'FEFO'}
           </Button>
         </MenuTrigger>
         <MenuPopover>
           <MenuList>
-            <MenuItem icon={pickedBatchId ? undefined : <CheckmarkRegular />} onClick={() => onPick(null)} secondaryContent="Suggested">
+            <MenuItem
+              icon={pickedBatchId ? undefined : <CheckmarkRegular />}
+              onClick={() => onPick(null)}
+              secondaryContent="Suggested"
+            >
               Earliest expiry first
             </MenuItem>
             <MenuDivider />
@@ -92,7 +103,11 @@ export function BatchPick({
                   icon={b.batchId === pickedBatchId ? <CheckmarkRegular /> : undefined}
                   disabled={problem !== null}
                   onClick={() => onPick(b.batchId)}
-                  secondaryContent={problem ? batchProblemText(problem, b, minimumShelfLifeDays) : `${formatQty(b.available, unit)} free`}
+                  secondaryContent={
+                    problem
+                      ? batchProblemText(problem, b, minimumShelfLifeDays)
+                      : `${formatQty(b.available, unit)} free`
+                  }
                 >
                   {b.batchNumber} · exp {formatExpiry(b.expiryDate)}
                   {showMrp ? ` · MRP ${formatInr(b.mrp)}` : ''}

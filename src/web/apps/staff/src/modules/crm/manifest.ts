@@ -10,11 +10,36 @@ const manifest: ModuleManifest = {
   order: 10,
   links: [
     { label: 'CRM overview', to: '/crm', permission: CRM_USERS, keywords: ['crm', 'dashboard'] },
-    { label: 'Leads', to: '/crm/leads', permission: C.leadsManage, keywords: ['enquiry', 'prospect', 'pipeline', 'health package'] },
-    { label: 'Follow-up calls', to: '/crm/follow-ups', permission: C.followUpsManage, keywords: ['call list', 'worklist', 'reminder', 'post discharge'] },
-    { label: 'Referring doctors', to: '/crm/referrals', permission: C.referralsManage, keywords: ['referral', 'doctor', 'referred by'] },
-    { label: 'Campaigns', to: '/crm/campaigns', permission: CAMPAIGN_VIEWERS, keywords: ['sms', 'whatsapp', 'marketing', 'audience'] },
-    { label: 'Patient 360', to: '/crm/patients', permission: C.patient360Read, keywords: ['360', 'patient view', 'engagement', 'lifetime'] },
+    {
+      label: 'Leads',
+      to: '/crm/leads',
+      permission: C.leadsManage,
+      keywords: ['enquiry', 'prospect', 'pipeline', 'health package'],
+    },
+    {
+      label: 'Follow-up calls',
+      to: '/crm/follow-ups',
+      permission: C.followUpsManage,
+      keywords: ['call list', 'worklist', 'reminder', 'post discharge'],
+    },
+    {
+      label: 'Referring doctors',
+      to: '/crm/referrals',
+      permission: C.referralsManage,
+      keywords: ['referral', 'doctor', 'referred by'],
+    },
+    {
+      label: 'Campaigns',
+      to: '/crm/campaigns',
+      permission: CAMPAIGN_VIEWERS,
+      keywords: ['sms', 'whatsapp', 'marketing', 'audience'],
+    },
+    {
+      label: 'Patient 360',
+      to: '/crm/patients',
+      permission: C.patient360Read,
+      keywords: ['360', 'patient view', 'engagement', 'lifetime'],
+    },
   ],
   quickActions: [
     {

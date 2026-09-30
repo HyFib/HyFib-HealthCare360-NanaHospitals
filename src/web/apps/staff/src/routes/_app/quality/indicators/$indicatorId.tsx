@@ -1,7 +1,19 @@
 import { Button, Caption1, Field, Select, Text, Tooltip } from '@fluentui/react-components';
 import { DataTrendingRegular, DeleteRegular, EditRegular, NotepadRegular } from '@fluentui/react-icons';
 import { humanize, todayIso } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -9,7 +21,13 @@ import { addMonths } from '@/modules/hr/shared/dates';
 import { Detail, DetailGrid } from '@/modules/hr/shared/DetailGrid';
 import { KpiGrid } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
-import { qualityApi, qualityKeys, qualityQueries, type IndicatorDto, type IndicatorValueDto } from '@/modules/quality/api';
+import {
+  qualityApi,
+  qualityKeys,
+  qualityQueries,
+  type IndicatorDto,
+  type IndicatorValueDto,
+} from '@/modules/quality/api';
 import { IndicatorDrawer } from '@/modules/quality/IndicatorDrawer';
 import { IndicatorValueDialog } from '@/modules/quality/IndicatorValueDialog';
 import { indicatorUnitLabel, QUALITY_PERMISSIONS as Q } from '@/modules/quality/labels';
@@ -44,13 +62,18 @@ function IndicatorPage() {
           <ErrorState error={indicators.error} onRetry={() => void indicators.refetch()} />
         ) : (
           <Section>
-            <EmptyState title="Indicator not found" description="It may have been removed. Go back to the list of indicators." />
+            <EmptyState
+              title="Indicator not found"
+              description="It may have been removed. Go back to the list of indicators."
+            />
           </Section>
         )}
       </Page>
     );
   }
-  return <IndicatorView indicator={indicator} categories={[...new Set((indicators.data ?? []).map((i) => i.category))]} />;
+  return (
+    <IndicatorView indicator={indicator} categories={[...new Set((indicators.data ?? []).map((i) => i.category))]} />
+  );
 }
 
 function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto; categories: string[] }) {
@@ -85,7 +108,10 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
         title={ind.name}
         subtitle={`${ind.code}${ind.nabhReference ? ` · NABH ${ind.nabhReference}` : ''} · ${ind.category} · measured ${humanize(ind.frequency).toLowerCase()}`}
         icon={<DataTrendingRegular />}
-        breadcrumbs={[{ label: 'Quality indicators', onClick: () => void navigate({ to: '/quality/indicators' }) }, { label: ind.code }]}
+        breadcrumbs={[
+          { label: 'Quality indicators', onClick: () => void navigate({ to: '/quality/indicators' }) },
+          { label: ind.code },
+        ]}
         actions={
           <>
             <Button icon={<EditRegular />} onClick={() => setEditing(true)}>
@@ -98,17 +124,38 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
         }
       />
       <KpiGrid>
-        <KpiCard label="Latest" value={formatIndicatorValue(t?.latest ?? ind.latest?.value ?? null, ind.unit)} hint={ind.latest?.periodLabel} />
-        <KpiCard label="Target" value={ind.target === null ? 'None' : formatIndicatorValue(ind.target, ind.unit)} hint={ind.direction === 'HigherIsBetter' ? 'Higher is better' : 'Lower is better'} />
-        <KpiCard label="Average" value={formatIndicatorValue(t?.average ?? null, ind.unit)} hint="Over the periods shown" />
-        <KpiCard label="Trend" value={t ? <StatusBadge status={t.trend} tone={trendTone(t.trend)} label={trendText(t.trend)} /> : '…'} hint="Latest against the previous three" />
+        <KpiCard
+          label="Latest"
+          value={formatIndicatorValue(t?.latest ?? ind.latest?.value ?? null, ind.unit)}
+          hint={ind.latest?.periodLabel}
+        />
+        <KpiCard
+          label="Target"
+          value={ind.target === null ? 'None' : formatIndicatorValue(ind.target, ind.unit)}
+          hint={ind.direction === 'HigherIsBetter' ? 'Higher is better' : 'Lower is better'}
+        />
+        <KpiCard
+          label="Average"
+          value={formatIndicatorValue(t?.average ?? null, ind.unit)}
+          hint="Over the periods shown"
+        />
+        <KpiCard
+          label="Trend"
+          value={t ? <StatusBadge status={t.trend} tone={trendTone(t.trend)} label={trendText(t.trend)} /> : '…'}
+          hint="Latest against the previous three"
+        />
       </KpiGrid>
       <Section
         title="Trend"
         description="Green points meet the target, red points miss it; the dashed line is the target."
         actions={
           <Field label="Show" orientation="horizontal">
-            <Select value={range} onChange={(_, d) => void navigate({ search: { range: d.value === '12p' ? undefined : (d.value as Range) }, replace: true })}>
+            <Select
+              value={range}
+              onChange={(_, d) =>
+                void navigate({ search: { range: d.value === '12p' ? undefined : (d.value as Range) }, replace: true })
+              }
+            >
               <option value="12p">Last 12 periods</option>
               <option value="24m">Last 2 years</option>
               <option value="36m">Last 3 years</option>
@@ -118,8 +165,12 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
       >
         {trend.isLoading && <LoadingState />}
         {trend.error && <ErrorState error={trend.error} onRetry={() => void trend.refetch()} />}
-        {t && t.points.length === 0 && <EmptyState title="No values yet" description='Use "Record value" to enter the first period.' />}
-        {t && t.points.length > 0 && <TrendChart points={t.points} unit={ind.unit} target={ind.target} direction={ind.direction} name={ind.name} />}
+        {t && t.points.length === 0 && (
+          <EmptyState title="No values yet" description='Use "Record value" to enter the first period.' />
+        )}
+        {t && t.points.length > 0 && (
+          <TrendChart points={t.points} unit={ind.unit} target={ind.target} direction={ind.direction} name={ind.name} />
+        )}
       </Section>
       <Section title="Definition">
         <DetailGrid>
@@ -151,9 +202,22 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
               key: 'status',
               header: 'Target',
               render: (v) =>
-                v.meetsTarget === null ? '—' : <StatusBadge status={v.meetsTarget ? 'Met' : 'Missed'} tone={v.meetsTarget ? 'success' : 'danger'} label={v.meetsTarget ? 'Met' : 'Missed'} />,
+                v.meetsTarget === null ? (
+                  '—'
+                ) : (
+                  <StatusBadge
+                    status={v.meetsTarget ? 'Met' : 'Missed'}
+                    tone={v.meetsTarget ? 'success' : 'danger'}
+                    label={v.meetsTarget ? 'Met' : 'Missed'}
+                  />
+                ),
             },
-            { key: 'notes', header: 'Notes', priority: 'low', render: (v) => (v.notes ? <Caption1>{v.notes}</Caption1> : '—') },
+            {
+              key: 'notes',
+              header: 'Notes',
+              priority: 'low',
+              render: (v) => (v.notes ? <Caption1>{v.notes}</Caption1> : '—'),
+            },
           ]}
           rowActions={(v) => (
             <span style={{ display: 'inline-flex', gap: 4 }}>
@@ -169,7 +233,14 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
           size="small"
         />
       </Section>
-      {recording && <IndicatorValueDialog open onClose={() => setRecording(null)} indicator={ind} value={recording === 'new' ? null : recording} />}
+      {recording && (
+        <IndicatorValueDialog
+          open
+          onClose={() => setRecording(null)}
+          indicator={ind}
+          value={recording === 'new' ? null : recording}
+        />
+      )}
       {editing && <IndicatorDrawer indicator={ind} categories={categories} onClose={() => setEditing(false)} />}
       <ConfirmDialog
         open={deleting !== null}
@@ -180,7 +251,9 @@ function IndicatorView({ indicator: ind, categories }: { indicator: IndicatorDto
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
-        {deleting ? `${deleting.periodLabel}: ${formatIndicatorValue(deleting.value, ind.unit)}. The scorecard for that period will show no data.` : null}
+        {deleting
+          ? `${deleting.periodLabel}: ${formatIndicatorValue(deleting.value, ind.unit)}. The scorecard for that period will show no data.`
+          : null}
       </ConfirmDialog>
     </Page>
   );

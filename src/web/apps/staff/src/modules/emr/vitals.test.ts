@@ -18,8 +18,20 @@ import {
   type VitalsReading,
 } from './vitals';
 
-const fever: VitalFlag = { parameter: 'temperature', value: 38.6, direction: 'High', severity: 'Abnormal', message: 'Fever' };
-const hypoxia: VitalFlag = { parameter: 'spo2', value: 86, direction: 'Low', severity: 'Critical', message: 'Severe hypoxaemia (SpO₂ < 90%)' };
+const fever: VitalFlag = {
+  parameter: 'temperature',
+  value: 38.6,
+  direction: 'High',
+  severity: 'Abnormal',
+  message: 'Fever',
+};
+const hypoxia: VitalFlag = {
+  parameter: 'spo2',
+  value: 86,
+  direction: 'Low',
+  severity: 'Critical',
+  message: 'Severe hypoxaemia (SpO₂ < 90%)',
+};
 
 function reading(partial: Partial<VitalsReading>): VitalsReading {
   return {
@@ -69,7 +81,9 @@ describe('validation', () => {
   });
 
   it('needs the diastolic pressure below the systolic', () => {
-    expect(validateVitals({ ...emptyVitals, systolicBp: 80, diastolicBp: 90 }).diastolicBp).toContain('lower than systolic');
+    expect(validateVitals({ ...emptyVitals, systolicBp: 80, diastolicBp: 90 }).diastolicBp).toContain(
+      'lower than systolic',
+    );
   });
 
   it('knows when anything was measured', () => {
@@ -79,7 +93,13 @@ describe('validation', () => {
 
   it('builds the request with nulls for empty fields', () => {
     const payload = toVitalsPayload({ ...emptyVitals, pulse: 72, notes: '  after walk ' }, 'enc-1');
-    expect(payload).toMatchObject({ encounterId: 'enc-1', pulse: 72, spO2: null, notes: 'after walk', temperatureUnit: 'Fahrenheit' });
+    expect(payload).toMatchObject({
+      encounterId: 'enc-1',
+      pulse: 72,
+      spO2: null,
+      notes: 'after walk',
+      temperatureUnit: 'Fahrenheit',
+    });
   });
 });
 
@@ -97,7 +117,9 @@ describe('flags', () => {
   });
 
   it('builds summary chips with their flags', () => {
-    const chips = vitalChips(reading({ systolicBp: 150, diastolicBp: 95, spO2: 86, temperatureCelsius: 38.6, flags: [fever, hypoxia] }));
+    const chips = vitalChips(
+      reading({ systolicBp: 150, diastolicBp: 95, spO2: 86, temperatureCelsius: 38.6, flags: [fever, hypoxia] }),
+    );
     expect(chips.map((c) => c.label)).toEqual(['BP', 'SpO₂', 'Temp']);
     expect(chips.find((c) => c.label === 'SpO₂')?.flag).toBe(hypoxia);
     expect(chips.find((c) => c.label === 'BP')?.flag).toBeUndefined();

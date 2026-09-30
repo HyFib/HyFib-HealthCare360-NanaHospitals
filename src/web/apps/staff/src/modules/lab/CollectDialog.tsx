@@ -26,7 +26,15 @@ import { useState } from 'react';
 import { fromZonedInput, isInFuture, toZonedInput } from './common/datetime';
 import { errorData, errorMessage, hasErrorCode } from './common/errors';
 import type { OrderPriority } from './common/types';
-import { labApi, labKeys, type ContainerType, type LabSection, type SampleLabel, type SpecimenType, type UnpaidTest } from './api';
+import {
+  labApi,
+  labKeys,
+  type ContainerType,
+  type LabSection,
+  type SampleLabel,
+  type SpecimenType,
+  type UnpaidTest,
+} from './api';
 import { PriorityBadge, TubeChip } from './badges';
 import { billingStateLabel, sectionLabel, specimenLabel } from './labels';
 import { printSampleLabels } from './print';
@@ -88,7 +96,14 @@ const useStyles = makeStyles({
   prep: { display: 'flex', gap: '6px', alignItems: 'center', color: tokens.colorPaletteMarigoldForeground1 },
   row: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' },
   timeRow: { display: 'flex', gap: '8px', alignItems: 'flex-end' },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textAlign: 'center', padding: '8px 0' },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    textAlign: 'center',
+    padding: '8px 0',
+  },
   mono: { fontFamily: tokens.fontFamilyMonospace },
 });
 
@@ -109,7 +124,11 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
   const [printing, setPrinting] = useState(false);
 
   const collectedIso = fromZonedInput(collectedAt);
-  const timeProblem = !collectedIso ? 'Enter the collection time.' : isInFuture(collectedIso, new Date()) ? 'The collection time cannot be in the future.' : null;
+  const timeProblem = !collectedIso
+    ? 'Enter the collection time.'
+    : isInFuture(collectedIso, new Date())
+      ? 'The collection time cannot be in the future.'
+      : null;
 
   const print = async (toPrint: SampleLabel[]) => {
     setPrinting(true);
@@ -140,10 +159,14 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
     },
   });
 
-  const unpaid = hasErrorCode(collect.error, 'lab.payment_pending') ? (errorData<{ tests?: UnpaidTest[] }>(collect.error)?.tests ?? []) : null;
+  const unpaid = hasErrorCode(collect.error, 'lab.payment_pending')
+    ? (errorData<{ tests?: UnpaidTest[] }>(collect.error)?.tests ?? [])
+    : null;
 
   const toggle = (sampleId: string, checked: boolean) =>
-    setSelected((current) => (checked ? [...new Set([...current, sampleId])] : current.filter((id) => id !== sampleId)));
+    setSelected((current) =>
+      checked ? [...new Set([...current, sampleId])] : current.filter((id) => id !== sampleId),
+    );
 
   const preparation = [...new Set(target.tubes.flatMap((tube) => tube.preparation ?? []))];
 
@@ -160,7 +183,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                   {labels.length} {labels.length === 1 ? 'tube' : 'tubes'} collected for {target.patientName}
                 </Text>
                 <Caption1 className={styles.muted}>
-                  {printLabels ? 'Labels were sent to the label printer. Stick each label on its tube before the patient leaves.' : 'Print the labels before sending the tubes to the lab.'}
+                  {printLabels
+                    ? 'Labels were sent to the label printer. Stick each label on its tube before the patient leaves.'
+                    : 'Print the labels before sending the tubes to the lab.'}
                 </Caption1>
                 <div className={styles.tubes} style={{ width: '100%' }}>
                   {labels.map((label) => (
@@ -174,7 +199,11 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
               </div>
             </DialogContent>
             <DialogActions>
-              <Button icon={printing ? <Spinner size="tiny" /> : <PrintRegular />} disabled={printing} onClick={() => void print(labels)}>
+              <Button
+                icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
+                disabled={printing}
+                onClick={() => void print(labels)}
+              >
                 {printLabels ? 'Print labels again' : 'Print labels'}
               </Button>
               <Button appearance="primary" onClick={onClose} autoFocus>
@@ -222,7 +251,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                 )}
                 {collect.error && !unpaid && (
                   <MessageBar intent="error">
-                    <MessageBarBody>{errorMessage(collect.error, 'The samples could not be marked as collected.')}</MessageBarBody>
+                    <MessageBarBody>
+                      {errorMessage(collect.error, 'The samples could not be marked as collected.')}
+                    </MessageBarBody>
                   </MessageBar>
                 )}
 
@@ -249,7 +280,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                           <Caption1 className={styles.muted}>{sectionLabel[tube.section]}</Caption1>
                           <Caption1 className={styles.mono}>{tube.barcode}</Caption1>
                           {tube.isRecollection && (
-                            <Caption1 style={{ color: tokens.colorPaletteRedForeground1, fontWeight: 600 }}>Repeat sample</Caption1>
+                            <Caption1 style={{ color: tokens.colorPaletteRedForeground1, fontWeight: 600 }}>
+                              Repeat sample
+                            </Caption1>
                           )}
                         </span>
                         <Text block>{tube.tests.join(', ')}</Text>
@@ -266,15 +299,28 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                     validationState={timeProblem ? 'error' : 'none'}
                   >
                     <div className={styles.timeRow}>
-                      <Input type="datetime-local" value={collectedAt} onChange={(_, data) => setCollectedAt(data.value)} style={{ flex: 1 }} />
+                      <Input
+                        type="datetime-local"
+                        value={collectedAt}
+                        onChange={(_, data) => setCollectedAt(data.value)}
+                        style={{ flex: 1 }}
+                      />
                       <Button onClick={() => setCollectedAt(toZonedInput(new Date()))}>Now</Button>
                     </div>
                   </Field>
                   <Field label="Collection site" hint="Remembered on this computer">
-                    <Input value={site} onChange={(_, data) => setSite(data.value.slice(0, 100))} placeholder="e.g. OP collection room, Ward 3" />
+                    <Input
+                      value={site}
+                      onChange={(_, data) => setSite(data.value.slice(0, 100))}
+                      placeholder="e.g. OP collection room, Ward 3"
+                    />
                   </Field>
                 </div>
-                <Switch checked={printLabels} onChange={(_, data) => setPrintLabels(data.checked)} label="Print barcode labels now" />
+                <Switch
+                  checked={printLabels}
+                  onChange={(_, data) => setPrintLabels(data.checked)}
+                  label="Print barcode labels now"
+                />
               </DialogContent>
               <DialogActions>
                 <Button onClick={onClose} disabled={collect.isPending}>

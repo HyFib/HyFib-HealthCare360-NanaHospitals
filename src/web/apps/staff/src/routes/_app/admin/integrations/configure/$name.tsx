@@ -6,7 +6,13 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { healthDisplay, INTEGRATION_LABELS, integrationQueries, isIntegrationName, providerLabel } from '@/modules/admin/integrationsApi';
+import {
+  healthDisplay,
+  INTEGRATION_LABELS,
+  integrationQueries,
+  isIntegrationName,
+  providerLabel,
+} from '@/modules/admin/integrationsApi';
 import { NoAccess } from '@/modules/admin/NoAccess';
 import { SettingsForm } from '@/modules/admin/SettingsForm';
 import { INTEGRATION_SETTINGS } from '@/modules/admin/settingsForms';
@@ -33,7 +39,10 @@ function ConfigureIntegrationPage() {
   const spec = known ? INTEGRATION_SETTINGS[known] : undefined;
   const title = known ? INTEGRATION_LABELS[known] : 'Integration';
   const row = status.data?.find((item) => item.name === name);
-  const breadcrumbs = [{ label: 'Integrations', onClick: () => void navigate({ to: '/admin/integrations' }) }, { label: title }];
+  const breadcrumbs = [
+    { label: 'Integrations', onClick: () => void navigate({ to: '/admin/integrations' }) },
+    { label: title },
+  ];
 
   if (!allowed) {
     return (
@@ -69,7 +78,9 @@ function ConfigureIntegrationPage() {
             <span className={styles.status}>
               <StatusBadge status={row.health} tone={health.tone} label={health.label} />
               <span>{providerLabel(row.provider)}</span>
-              {row.lastSuccessAt && <span className={styles.muted}>Last worked {formatRelative(row.lastSuccessAt)}</span>}
+              {row.lastSuccessAt && (
+                <span className={styles.muted}>Last worked {formatRelative(row.lastSuccessAt)}</span>
+              )}
             </span>
           ) : undefined
         }
@@ -94,10 +105,13 @@ function ConfigureIntegrationPage() {
       )}
 
       <Caption1 className={styles.muted}>
-        After saving, send a test to check the connection. Every setting is also listed under <Link to="/admin/settings">Administration → Settings</Link>.
+        After saving, send a test to check the connection. Every setting is also listed under{' '}
+        <Link to="/admin/settings">Administration → Settings</Link>.
       </Caption1>
 
-      {testing && <TestIntegrationDialog name={known} displayName={row?.displayName ?? title} onClose={() => setTesting(false)} />}
+      {testing && (
+        <TestIntegrationDialog name={known} displayName={row?.displayName ?? title} onClose={() => setTesting(false)} />
+      )}
     </Page>
   );
 }

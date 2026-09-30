@@ -35,7 +35,18 @@ import {
   PaymentRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -78,7 +89,11 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase200,
   },
   done: { backgroundColor: tokens.colorPaletteGreenBackground1, color: tokens.colorPaletteGreenForeground1 },
-  current: { backgroundColor: tokens.colorBrandBackground, color: tokens.colorNeutralForegroundOnBrand, fontWeight: tokens.fontWeightSemibold },
+  current: {
+    backgroundColor: tokens.colorBrandBackground,
+    color: tokens.colorNeutralForegroundOnBrand,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   arrow: { color: tokens.colorNeutralForeground4 },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -117,7 +132,12 @@ function RunView({ run }: { run: PayrollRunDto }) {
   const title = `Payroll · ${monthLabel(run.year, run.month)}`;
   const refresh = () => void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
 
-  const act = async (label: string, work: () => Promise<unknown>, success: string, detail?: string): Promise<boolean> => {
+  const act = async (
+    label: string,
+    work: () => Promise<unknown>,
+    success: string,
+    detail?: string,
+  ): Promise<boolean> => {
     setBusy(true);
     try {
       await work();
@@ -138,7 +158,10 @@ function RunView({ run }: { run: PayrollRunDto }) {
     mutationFn: () => hrApi.processRun(run.id),
     onSuccess: (outcome) => {
       setResult(outcome);
-      notify.success('Payroll processed', `${outcome.payslips} payslip(s)${outcome.payslipsWithErrors ? `, ${outcome.payslipsWithErrors} with errors` : ''}.`);
+      notify.success(
+        'Payroll processed',
+        `${outcome.payslips} payslip(s)${outcome.payslipsWithErrors ? `, ${outcome.payslipsWithErrors} with errors` : ''}.`,
+      );
       refresh();
     },
     onError: (error) => notify.error(error, 'Could not process the payroll'),
@@ -162,9 +185,14 @@ function RunView({ run }: { run: PayrollRunDto }) {
     <Page>
       <PageHeader
         title={title}
-        subtitle={run.notes ?? 'Maker-checker: the person who approves must be different from the person who processed.'}
+        subtitle={
+          run.notes ?? 'Maker-checker: the person who approves must be different from the person who processed.'
+        }
         icon={<MoneyRegular />}
-        breadcrumbs={[{ label: 'Payroll', onClick: () => void navigate({ to: '/hr/payroll', search: { year: run.year } }) }, { label: monthLabel(run.year, run.month) }]}
+        breadcrumbs={[
+          { label: 'Payroll', onClick: () => void navigate({ to: '/hr/payroll', search: { year: run.year } }) },
+          { label: monthLabel(run.year, run.month) },
+        ]}
         actions={
           <>
             {has('delete') && (
@@ -193,8 +221,20 @@ function RunView({ run }: { run: PayrollRunDto }) {
               </Button>
             )}
             {has('approve') && (
-              <Tooltip content={run.payslipsWithErrors > 0 ? 'Fix the payslips with errors first' : 'Approve after checking the payslips'} relationship="description">
-                <Button appearance="primary" icon={<CheckmarkRegular />} disabled={run.payslipsWithErrors > 0} onClick={() => setPending('approve')}>
+              <Tooltip
+                content={
+                  run.payslipsWithErrors > 0
+                    ? 'Fix the payslips with errors first'
+                    : 'Approve after checking the payslips'
+                }
+                relationship="description"
+              >
+                <Button
+                  appearance="primary"
+                  icon={<CheckmarkRegular />}
+                  disabled={run.payslipsWithErrors > 0}
+                  onClick={() => setPending('approve')}
+                >
                   Approve
                 </Button>
               </Tooltip>
@@ -218,7 +258,13 @@ function RunView({ run }: { run: PayrollRunDto }) {
           const current = runStepIndex(run.status);
           return (
             <span key={step} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span className={mergeClasses(styles.step, index < current && styles.done, index === current && styles.current)}>
+              <span
+                className={mergeClasses(
+                  styles.step,
+                  index < current && styles.done,
+                  index === current && styles.current,
+                )}
+              >
                 {index < current && <CheckmarkCircleRegular aria-hidden />}
                 {runStepLabel[step]}
               </span>
@@ -265,7 +311,9 @@ function RunView({ run }: { run: PayrollRunDto }) {
           hint={[
             run.processedAt ? `Processed ${formatDateTime(run.processedAt)}` : '',
             run.approvedAt ? `approved ${formatDateTime(run.approvedAt)}` : '',
-            run.paidOn ? `paid ${formatDateOnly(run.paidOn)}${run.paymentReference ? ` (${run.paymentReference})` : ''}` : '',
+            run.paidOn
+              ? `paid ${formatDateOnly(run.paidOn)}${run.paymentReference ? ` (${run.paymentReference})` : ''}`
+              : '',
           ]
             .filter(Boolean)
             .join(' · ')}
@@ -274,12 +322,26 @@ function RunView({ run }: { run: PayrollRunDto }) {
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={search.tab ?? 'payslips'} onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, tab: d.value === 'inputs' ? 'inputs' : undefined }), replace: true })}>
+          <TabList
+            selectedValue={search.tab ?? 'payslips'}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: (prev) => ({ ...prev, tab: d.value === 'inputs' ? 'inputs' : undefined }),
+                replace: true,
+              })
+            }
+          >
             <Tab value="payslips">Payslips</Tab>
             <Tab value="inputs">Inputs</Tab>
           </TabList>
         </div>
-        <div style={{ paddingTop: 12 }}>{search.tab === 'inputs' ? <PayrollInputsPanelWrap run={run} editable={has('editInputs')} /> : <Payslips run={run} />}</div>
+        <div style={{ paddingTop: 12 }}>
+          {search.tab === 'inputs' ? (
+            <PayrollInputsPanelWrap run={run} editable={has('editInputs')} />
+          ) : (
+            <Payslips run={run} />
+          )}
+        </div>
       </Section>
 
       <ConfirmDialog
@@ -287,11 +349,18 @@ function RunView({ run }: { run: PayrollRunDto }) {
         title={`Approve payroll for ${monthLabel(run.year, run.month)}?`}
         confirmLabel="Approve payroll"
         busy={busy}
-        onConfirm={() => void act('approve the payroll', () => hrApi.approveRun(run.id), 'Payroll approved', 'Payslips are now visible to employees.')}
+        onConfirm={() =>
+          void act(
+            'approve the payroll',
+            () => hrApi.approveRun(run.id),
+            'Payroll approved',
+            'Payslips are now visible to employees.',
+          )
+        }
         onCancel={() => setPending(null)}
       >
-        Net pay of {formatInr(run.totalNet)} for {run.employeeCount} employee(s). Employees can see their payslips once approved. You must not be the person who processed
-        this payroll.
+        Net pay of {formatInr(run.totalNet)} for {run.employeeCount} employee(s). Employees can see their payslips once
+        approved. You must not be the person who processed this payroll.
       </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'lock'}
@@ -299,7 +368,14 @@ function RunView({ run }: { run: PayrollRunDto }) {
         confirmLabel="Lock payroll"
         destructive
         busy={busy}
-        onConfirm={() => void act('lock the payroll', () => hrApi.lockRun(run.id), 'Payroll locked', "The month's attendance is locked too.")}
+        onConfirm={() =>
+          void act(
+            'lock the payroll',
+            () => hrApi.lockRun(run.id),
+            'Payroll locked',
+            "The month's attendance is locked too.",
+          )
+        }
         onCancel={() => setPending(null)}
       >
         Locking closes the month for good: the payroll and the month's attendance can no longer be changed.
@@ -319,8 +395,8 @@ function RunView({ run }: { run: PayrollRunDto }) {
         }
         onCancel={() => setPending(null)}
       >
-        The payslips and manual inputs of {monthLabel(run.year, run.month)} are removed. Deductions posted by other modules are kept and come back when the payroll is created
-        again.
+        The payslips and manual inputs of {monthLabel(run.year, run.month)} are removed. Deductions posted by other
+        modules are kept and come back when the payroll is created again.
       </ConfirmDialog>
       <ConfirmDialog
         open={pending === 'bankFile'}
@@ -330,8 +406,8 @@ function RunView({ run }: { run: PayrollRunDto }) {
         onConfirm={() => void downloadBankFile()}
         onCancel={() => setPending(null)}
       >
-        The file contains full bank account numbers. The download is recorded in the audit trail under your name. Keep it on this computer only until it is uploaded to the
-        bank, then delete it.
+        The file contains full bank account numbers. The download is recorded in the audit trail under your name. Keep
+        it on this computer only until it is uploaded to the bank, then delete it.
       </ConfirmDialog>
       <ReasonDialog
         open={pending === 'reopen'}
@@ -340,7 +416,9 @@ function RunView({ run }: { run: PayrollRunDto }) {
         label="Reason"
         confirmLabel="Reopen"
         busy={busy}
-        onConfirm={(reason) => void act('reopen the payroll', () => hrApi.reopenRun(run.id, reason), 'Payroll reopened')}
+        onConfirm={(reason) =>
+          void act('reopen the payroll', () => hrApi.reopenRun(run.id, reason), 'Payroll reopened')
+        }
         onCancel={() => setPending(null)}
       />
       {pending === 'markPaid' && (
@@ -349,7 +427,12 @@ function RunView({ run }: { run: PayrollRunDto }) {
           busy={busy}
           onCancel={() => setPending(null)}
           onConfirm={(paidOn, reference) =>
-            void act('mark the payroll paid', () => hrApi.markRunPaid(run.id, paidOn, reference), 'Payroll marked as paid', 'Employees are notified that the salary is credited.')
+            void act(
+              'mark the payroll paid',
+              () => hrApi.markRunPaid(run.id, paidOn, reference),
+              'Payroll marked as paid',
+              'Employees are notified that the salary is credited.',
+            )
           }
         />
       )}
@@ -377,7 +460,9 @@ function Payslips({ run }: { run: PayrollRunDto }) {
   const debounced = useDebouncedValue(term.trim(), 300);
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState<string | null>(null);
-  const payslips = useQuery(hrQueries.payslips(run.id, { search: debounced || undefined, errorsOnly: search.errorsOnly, page }));
+  const payslips = useQuery(
+    hrQueries.payslips(run.id, { search: debounced || undefined, errorsOnly: search.errorsOnly, page }),
+  );
 
   return (
     <>
@@ -399,7 +484,10 @@ function Payslips({ run }: { run: PayrollRunDto }) {
             label={`Only payslips with errors (${run.payslipsWithErrors})`}
             onChange={(_, d) => {
               setPage(1);
-              void navigate({ search: (prev) => ({ ...prev, errorsOnly: d.checked ? true : undefined }), replace: true });
+              void navigate({
+                search: (prev) => ({ ...prev, errorsOnly: d.checked ? true : undefined }),
+                replace: true,
+              });
             }}
           />
         </Toolbar>
@@ -426,11 +514,33 @@ function Payslips({ run }: { run: PayrollRunDto }) {
           { key: 'days', header: 'Paid days', align: 'end', width: 90, render: (p) => p.payableDays },
           { key: 'lop', header: 'Loss of pay', align: 'end', width: 100, render: (p) => (p.lopDays ? p.lopDays : '—') },
           { key: 'gross', header: 'Gross', align: 'end', priority: 'low', render: (p) => formatInr(p.grossEarnings) },
-          { key: 'deductions', header: 'Deductions', align: 'end', priority: 'low', render: (p) => formatInr(p.totalDeductions) },
-          { key: 'net', header: 'Net pay', align: 'end', render: (p) => <Text weight="semibold">{formatInr(p.netPay)}</Text> },
-          { key: 'errors', header: '', width: 110, render: (p) => (p.hasErrors ? <StatusBadge status="Failed" label="Has errors" /> : null) },
+          {
+            key: 'deductions',
+            header: 'Deductions',
+            align: 'end',
+            priority: 'low',
+            render: (p) => formatInr(p.totalDeductions),
+          },
+          {
+            key: 'net',
+            header: 'Net pay',
+            align: 'end',
+            render: (p) => <Text weight="semibold">{formatInr(p.netPay)}</Text>,
+          },
+          {
+            key: 'errors',
+            header: '',
+            width: 110,
+            render: (p) => (p.hasErrors ? <StatusBadge status="Failed" label="Has errors" /> : null),
+          },
         ]}
-        emptyTitle={run.status === 'Draft' ? 'Not processed yet' : search.errorsOnly ? 'No payslips with errors' : 'No payslips match'}
+        emptyTitle={
+          run.status === 'Draft'
+            ? 'Not processed yet'
+            : search.errorsOnly
+              ? 'No payslips with errors'
+              : 'No payslips match'
+        }
         emptyDescription={run.status === 'Draft' ? 'Add the inputs, then press "Process payroll".' : undefined}
         page={page}
         pageSize={50}
@@ -443,7 +553,17 @@ function Payslips({ run }: { run: PayrollRunDto }) {
   );
 }
 
-function MarkPaidDialog({ open, busy, onCancel, onConfirm }: { open: boolean; busy: boolean; onCancel: () => void; onConfirm: (paidOn: string, reference: string) => void }) {
+function MarkPaidDialog({
+  open,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: (paidOn: string, reference: string) => void;
+}) {
   const [paidOn, setPaidOn] = useState(todayIso());
   const [reference, setReference] = useState('');
   const valid = Boolean(paidOn) && reference.trim().length > 0;
@@ -473,7 +593,12 @@ function MarkPaidDialog({ open, busy, onCancel, onConfirm }: { open: boolean; bu
               <Button onClick={onCancel} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 Mark as paid
               </Button>
             </DialogActions>

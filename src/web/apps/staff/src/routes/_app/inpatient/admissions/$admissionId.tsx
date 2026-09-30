@@ -33,7 +33,17 @@ import {
   TagRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PatientBanner,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
@@ -52,7 +62,11 @@ import {
   type AdmissionDetail,
 } from '@/modules/inpatient/api';
 import { ConsultantVisits } from '@/modules/inpatient/ConsultantVisits';
-import { ClearanceStatus, CompleteDischargeDialog, InitiateDischargeDialog } from '@/modules/inpatient/DischargeDialogs';
+import {
+  ClearanceStatus,
+  CompleteDischargeDialog,
+  InitiateDischargeDialog,
+} from '@/modules/inpatient/DischargeDialogs';
 import { EditAdmissionDrawer } from '@/modules/inpatient/EditAdmissionDrawer';
 import { useInpatientPermissions, useInpatientRealtime } from '@/modules/inpatient/hooks';
 import { printAdmissionSlip, printWristband } from '@/modules/inpatient/print';
@@ -132,15 +146,19 @@ function AdmissionPage() {
           <MessageBar intent="warning" layout="multiline" icon={<ShieldKeyholeRegular />}>
             <MessageBarBody>
               <MessageBarTitle>Restricted record</MessageBarTitle>
-              Access to this patient's record is restricted. If it is clinically necessary, open the patient from Patients and request emergency access; the
-              request is recorded.
+              Access to this patient's record is restricted. If it is clinically necessary, open the patient from
+              Patients and request emergency access; the request is recorded.
             </MessageBarBody>
             <MessageBarActions>
               <Button onClick={() => void navigate({ to: '/patients' })}>Go to Patients</Button>
             </MessageBarActions>
           </MessageBar>
         ) : (
-          <ErrorState error={admission.error} onRetry={() => void admission.refetch()} title="Could not load the admission" />
+          <ErrorState
+            error={admission.error}
+            onRetry={() => void admission.refetch()}
+            title="Could not load the admission"
+          />
         )}
       </Page>
     );
@@ -149,8 +167,14 @@ function AdmissionPage() {
   const a = admission.data;
   const active = isActiveAdmission(a.status);
   const initiated = a.status === 'DischargeInitiated';
-  const chartOpen = active || (a.dischargedAt !== null && a.status !== 'Cancelled' && Date.parse(a.dischargedAt) > admission.dataUpdatedAt - 24 * 3600_000);
-  const alerts = [a.isMlc ? 'Medico-legal case' : null, initiated ? 'Discharge in progress' : null].filter((x): x is string => x !== null);
+  const chartOpen =
+    active ||
+    (a.dischargedAt !== null &&
+      a.status !== 'Cancelled' &&
+      Date.parse(a.dischargedAt) > admission.dataUpdatedAt - 24 * 3600_000);
+  const alerts = [a.isMlc ? 'Medico-legal case' : null, initiated ? 'Discharge in progress' : null].filter(
+    (x): x is string => x !== null,
+  );
 
   const print = (what: 'slip' | 'wristband') => {
     const job = what === 'slip' ? printAdmissionSlip(a, facilityName) : printWristband(a);
@@ -160,7 +184,15 @@ function AdmissionPage() {
   return (
     <Page>
       <PatientBanner
-        patient={{ id: a.patientId, uhid: a.uhid, fullName: a.patientName, gender: a.gender, age: a.age, alerts, payer: PAYER_LABEL[a.payerType] }}
+        patient={{
+          id: a.patientId,
+          uhid: a.uhid,
+          fullName: a.patientName,
+          gender: a.gender,
+          age: a.age,
+          alerts,
+          payer: PAYER_LABEL[a.payerType],
+        }}
         actions={
           <>
             {initiated && permissions.discharge && (
@@ -169,7 +201,11 @@ function AdmissionPage() {
               </Button>
             )}
             {a.status === 'Admitted' && permissions.transfer && (
-              <Button appearance={permissions.discharge ? 'secondary' : 'primary'} icon={<ArrowSwapRegular />} onClick={() => setDialog('transfer')}>
+              <Button
+                appearance={permissions.discharge ? 'secondary' : 'primary'}
+                icon={<ArrowSwapRegular />}
+                onClick={() => setDialog('transfer')}
+              >
                 Transfer
               </Button>
             )}
@@ -192,12 +228,17 @@ function AdmissionPage() {
                   {(permissions.chart || permissions.mar) && active && a.wardId && (
                     <MenuItem
                       icon={<ClipboardPulseRegular />}
-                      onClick={() => void navigate({ to: '/nursing', search: { wardId: a.wardId ?? undefined, admissionId: a.id } })}
+                      onClick={() =>
+                        void navigate({ to: '/nursing', search: { wardId: a.wardId ?? undefined, admissionId: a.id } })
+                      }
                     >
                       Nursing chart
                     </MenuItem>
                   )}
-                  <MenuItem icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: a.patientId } })}>
+                  <MenuItem
+                    icon={<PersonRegular />}
+                    onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: a.patientId } })}
+                  >
                     Patient profile
                   </MenuItem>
                   <MenuDivider />
@@ -237,7 +278,10 @@ function AdmissionPage() {
       <StayHeader admission={a} />
 
       {initiated && (
-        <Section title="Discharge in progress" description={a.dischargeInitiatedAt ? `Started ${formatDateTime(a.dischargeInitiatedAt)}` : undefined}>
+        <Section
+          title="Discharge in progress"
+          description={a.dischargeInitiatedAt ? `Started ${formatDateTime(a.dischargeInitiatedAt)}` : undefined}
+        >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <ClearanceStatus admissionId={a.id} />
             {a.dischargeNotes && <Caption1>Notes: {a.dischargeNotes}</Caption1>}
@@ -249,7 +293,9 @@ function AdmissionPage() {
         <div style={{ padding: '0 8px' }}>
           <TabList
             selectedValue={tab}
-            onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })
+            }
           >
             <Tab value="overview">Details</Tab>
             <Tab value="beds">Bed history</Tab>
@@ -265,13 +311,21 @@ function AdmissionPage() {
             <ConsultantVisits
               admissionId={a.id}
               chartOpen={chartOpen}
-              defaultPractitioner={a.consultantPractitionerId ? { id: a.consultantPractitionerId, code: '', name: a.consultantName ?? 'Consultant' } : null}
+              defaultPractitioner={
+                a.consultantPractitionerId
+                  ? { id: a.consultantPractitionerId, code: '', name: a.consultantName ?? 'Consultant' }
+                  : null
+              }
             />
           )}
           {tab === 'charges' && <Charges admissionId={a.id} />}
           {tab === 'diet' && canSeeDiet && (
             <AdmissionDietPanel
-              admission={{ admissionId: a.id, patientName: a.patientName, place: [a.wardName, a.bedLabel ? `bed ${a.bedLabel}` : null].filter(Boolean).join(', ') }}
+              admission={{
+                admissionId: a.id,
+                patientName: a.patientName,
+                place: [a.wardName, a.bedLabel ? `bed ${a.bedLabel}` : null].filter(Boolean).join(', '),
+              }}
               canOrder={active}
             />
           )}
@@ -327,7 +381,15 @@ function AdmissionPage() {
 
 function StayHeader({ admission: a }: { admission: AdmissionDetail }) {
   const statusTone =
-    a.status === 'Admitted' ? 'brand' : a.status === 'DischargeInitiated' ? 'warning' : a.status === 'Discharged' ? 'success' : a.status === 'Cancelled' ? 'informative' : 'danger';
+    a.status === 'Admitted'
+      ? 'brand'
+      : a.status === 'DischargeInitiated'
+        ? 'warning'
+        : a.status === 'Discharged'
+          ? 'success'
+          : a.status === 'Cancelled'
+            ? 'informative'
+            : 'danger';
   return (
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
       <StatusBadge status={a.status} label={ADMISSION_STATUS_LABEL[a.status]} tone={statusTone} />
@@ -350,7 +412,11 @@ function StayHeader({ admission: a }: { admission: AdmissionDetail }) {
 
 function Overview({ admission: a }: { admission: AdmissionDetail }) {
   const styles = useStyles();
-  const attendant = [a.attendantName, a.attendantRelation ? `(${a.attendantRelation})` : null, a.attendantPhone ? formatPhone(a.attendantPhone) : null]
+  const attendant = [
+    a.attendantName,
+    a.attendantRelation ? `(${a.attendantRelation})` : null,
+    a.attendantPhone ? formatPhone(a.attendantPhone) : null,
+  ]
     .filter(Boolean)
     .join(' ');
   return (
@@ -366,7 +432,9 @@ function Overview({ admission: a }: { admission: AdmissionDetail }) {
         <Detail label="Admitting doctor">{a.admittingPractitionerName}</Detail>
         <Detail label="Consultant in charge">{a.consultantName}</Detail>
         <Detail label="Ward and bed">{[a.wardName, a.bedLabel].filter(Boolean).join(' · ')}</Detail>
-        <Detail label="Expected discharge">{a.expectedDischargeDate ? formatDateOnly(a.expectedDischargeDate) : null}</Detail>
+        <Detail label="Expected discharge">
+          {a.expectedDischargeDate ? formatDateOnly(a.expectedDischargeDate) : null}
+        </Detail>
         <Detail label="Payment by">{PAYER_LABEL[a.payerType] ?? humanize(a.payerType)}</Detail>
         {a.policyNumberMasked && <Detail label="Policy / TPA card">{a.policyNumberMasked}</Detail>}
         <Detail label="Attendant">{attendant}</Detail>
@@ -415,16 +483,32 @@ function BedHistory({ admissionId }: { admissionId: string }) {
         {
           key: 'reason',
           header: 'Why',
-          render: (h) => (h.reason === 'Admission' ? 'Admitted' : `Transferred${h.transferReason ? `: ${h.transferReason}` : ''}`),
+          render: (h) =>
+            h.reason === 'Admission' ? 'Admitted' : `Transferred${h.transferReason ? `: ${h.transferReason}` : ''}`,
         },
         { key: 'from', header: 'From', width: 170, render: (h) => formatDateTime(h.fromAt) },
-        { key: 'to', header: 'To', width: 170, render: (h) => (h.toAt ? formatDateTime(h.toAt) : <Badge appearance="tint" color="brand">Now</Badge>) },
+        {
+          key: 'to',
+          header: 'To',
+          width: 170,
+          render: (h) =>
+            h.toAt ? (
+              formatDateTime(h.toAt)
+            ) : (
+              <Badge appearance="tint" color="brand">
+                Now
+              </Badge>
+            ),
+        },
         {
           key: 'duration',
           header: 'Stay',
           width: 110,
           priority: 'low',
-          render: (h) => formatDuration(Math.round(((h.toAt ? Date.parse(h.toAt) : history.dataUpdatedAt) - Date.parse(h.fromAt)) / 60_000)),
+          render: (h) =>
+            formatDuration(
+              Math.round(((h.toAt ? Date.parse(h.toAt) : history.dataUpdatedAt) - Date.parse(h.fromAt)) / 60_000),
+            ),
         },
       ]}
       emptyTitle="No bed history"
@@ -452,8 +536,9 @@ function Charges({ admissionId }: { admissionId: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <Text>
-        <strong>{bedDays}</strong> bed days, <strong>{nursingDays}</strong> nursing days and <strong>{visitCount}</strong> consultant visits charged so far. Amounts,
-        discounts and deposits are on the IP bill in Billing.
+        <strong>{bedDays}</strong> bed days, <strong>{nursingDays}</strong> nursing days and{' '}
+        <strong>{visitCount}</strong> consultant visits charged so far. Amounts, discounts and deposits are on the IP
+        bill in Billing.
       </Text>
       <DataTable
         ariaLabel="Daily charges"
@@ -466,13 +551,23 @@ function Charges({ admissionId }: { admissionId: string }) {
         columns={[
           { key: 'date', header: 'Day', width: 130, render: (c) => formatDateOnly(c.chargeDate) },
           { key: 'kind', header: 'Charge', render: (c) => (c.kind === 'Bed' ? 'Bed day' : 'Nursing day') },
-          { key: 'code', header: 'Service', width: 130, render: (c) => <Text font="monospace">{c.serviceCode ?? '—'}</Text> },
+          {
+            key: 'code',
+            header: 'Service',
+            width: 130,
+            render: (c) => <Text font="monospace">{c.serviceCode ?? '—'}</Text>,
+          },
           { key: 'posted', header: 'Posted', width: 130, priority: 'low', render: (c) => formatDate(c.postedAt) },
           {
             key: 'status',
             header: 'Status',
             width: 120,
-            render: (c) => (c.cancelledAt ? <StatusBadge status="Cancelled" label="Reversed" /> : <StatusBadge status="Completed" label="On bill" />),
+            render: (c) =>
+              c.cancelledAt ? (
+                <StatusBadge status="Cancelled" label="Reversed" />
+              ) : (
+                <StatusBadge status="Completed" label="On bill" />
+              ),
           },
         ]}
         emptyTitle="No bed or nursing days charged yet"

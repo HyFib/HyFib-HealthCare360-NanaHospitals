@@ -1,12 +1,49 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Select, Spinner, Text, ToggleButton, tokens } from '@fluentui/react-components';
-import { ArrowSyncRegular, BowlChopsticksRegular, CheckmarkRegular, DismissRegular, PrintRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Select,
+  Spinner,
+  Text,
+  ToggleButton,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  ArrowSyncRegular,
+  BowlChopsticksRegular,
+  CheckmarkRegular,
+  DismissRegular,
+  PrintRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatTime, isApiError, todayIso, useSession } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { DELIVERY_LABEL, dietaryApi, dietaryKeys, dietaryQueries, type PlannedMealDto, type WardMealPlan } from '@/modules/dietary/api';
+import {
+  DELIVERY_LABEL,
+  dietaryApi,
+  dietaryKeys,
+  dietaryQueries,
+  type PlannedMealDto,
+  type WardMealPlan,
+} from '@/modules/dietary/api';
 import { printWardMealList } from '@/modules/dietary/print';
 import { isMealSlot, MEAL_SLOT_LABEL, MEAL_SLOTS, PREFERENCE_SHORT, type MealSlot } from '@/modules/dietary/rules';
 import { inpatientQueries } from '@/modules/inpatient/api';
@@ -54,21 +91,32 @@ function MealPlansPage() {
   const plans = useQuery(dietaryQueries.mealPlans(date, search.wardId ?? null, search.slot ?? null));
   const [notTaken, setNotTaken] = useState<PlannedMealDto | null>(null);
   const [bulk, setBulk] = useState<WardMealPlan | null>(null);
-  const set = (patch: Partial<MealPlanSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<MealPlanSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: dietaryKeys.all });
   const canGenerate = date >= addDays(today, -1) && date <= addDays(today, 2);
 
   const generate = useMutation({
     mutationFn: () => dietaryApi.generatePlan(date),
     onSuccess: (r) => {
-      notify.success(`Meal plan for ${formatDateOnly(r.date)} is up to date`, `${r.mealsPlanned} meals planned (${r.mealsAdded} added, ${r.mealsCancelled} cancelled).`);
+      notify.success(
+        `Meal plan for ${formatDateOnly(r.date)} is up to date`,
+        `${r.mealsPlanned} meals planned (${r.mealsAdded} added, ${r.mealsCancelled} cancelled).`,
+      );
       refresh();
     },
     onError: (error) => notify.error(error, 'Could not generate the meal plan'),
   });
   const deliver = useMutation({
-    mutationFn: ({ meal, status, remarks }: { meal: PlannedMealDto; status: 'Delivered' | 'NotTaken' | 'Returned'; remarks: string | null }) =>
-      dietaryApi.recordDelivery(meal.id, { status, remarks, version: meal.version }),
+    mutationFn: ({
+      meal,
+      status,
+      remarks,
+    }: {
+      meal: PlannedMealDto;
+      status: 'Delivered' | 'NotTaken' | 'Returned';
+      remarks: string | null;
+    }) => dietaryApi.recordDelivery(meal.id, { status, remarks, version: meal.version }),
     onSuccess: (meal) => {
       notify.success(`${meal.patientName ?? 'Meal'}: ${DELIVERY_LABEL[meal.status].toLowerCase()}`);
       setNotTaken(null);
@@ -84,7 +132,8 @@ function MealPlansPage() {
     },
   });
   const deliverRound = useMutation({
-    mutationFn: (plan: WardMealPlan) => dietaryApi.deliverRound({ date, slot: search.slot!, wardId: plan.wardId!, status: 'Delivered' }),
+    mutationFn: (plan: WardMealPlan) =>
+      dietaryApi.deliverRound({ date, slot: search.slot!, wardId: plan.wardId!, status: 'Delivered' }),
     onSuccess: (result, plan) => {
       notify.success(`${result.updated} meals marked delivered`, plan.wardName ?? undefined);
       setBulk(null);
@@ -106,7 +155,11 @@ function MealPlansPage() {
               appearance="primary"
               icon={generate.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
               disabled={!canGenerate || generate.isPending}
-              title={canGenerate ? 'Adds meals for active diet orders and cancels meals no longer needed' : 'Plans can be generated from yesterday up to two days ahead'}
+              title={
+                canGenerate
+                  ? 'Adds meals for active diet orders and cancels meals no longer needed'
+                  : 'Plans can be generated from yesterday up to two days ahead'
+              }
               onClick={() => generate.mutate()}
             >
               Update plan
@@ -118,7 +171,11 @@ function MealPlansPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <FilterBar>
             <Field label="Date">
-              <Input type="date" value={date} onChange={(_, d) => d.value && set({ date: d.value === today ? undefined : d.value })} />
+              <Input
+                type="date"
+                value={date}
+                onChange={(_, d) => d.value && set({ date: d.value === today ? undefined : d.value })}
+              />
             </Field>
             {canReadWards && (
               <Field label="Ward">
@@ -138,7 +195,12 @@ function MealPlansPage() {
               All rounds
             </ToggleButton>
             {MEAL_SLOTS.map((slot) => (
-              <ToggleButton key={slot} shape="circular" checked={search.slot === slot} onClick={() => set({ slot: search.slot === slot ? undefined : slot })}>
+              <ToggleButton
+                key={slot}
+                shape="circular"
+                checked={search.slot === slot}
+                onClick={() => set({ slot: search.slot === slot ? undefined : slot })}
+              >
                 {MEAL_SLOT_LABEL[slot]}
               </ToggleButton>
             ))}
@@ -156,7 +218,11 @@ function MealPlansPage() {
         <EmptyState
           icon={<BowlChopsticksRegular />}
           title="No meals planned"
-          description={canManage && canGenerate ? 'Use Update plan to plan meals from the active diet orders. Plans also refresh by themselves every hour.' : 'Meals appear here once diet orders are written.'}
+          description={
+            canManage && canGenerate
+              ? 'Use Update plan to plan meals from the active diet orders. Plans also refresh by themselves every hour.'
+              : 'Meals appear here once diet orders are written.'
+          }
         />
       ) : (
         <div className={styles.wards}>
@@ -169,11 +235,24 @@ function MealPlansPage() {
                 description={`${plan.meals} meals · ${pending} to deliver`}
                 actions={
                   <>
-                    <Button size="small" icon={<PrintRegular />} onClick={() => void printWardMealList(plan, date, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+                    <Button
+                      size="small"
+                      icon={<PrintRegular />}
+                      onClick={() =>
+                        void printWardMealList(plan, date, facilityName).catch((error: unknown) =>
+                          notify.error(error, 'Printing failed'),
+                        )
+                      }
+                    >
                       Print list
                     </Button>
                     {canManage && search.slot && plan.wardId && pending > 0 && (
-                      <Button size="small" appearance="primary" icon={<CheckmarkRegular />} onClick={() => setBulk(plan)}>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => setBulk(plan)}
+                      >
                         Mark all {pending} delivered
                       </Button>
                     )}
@@ -187,8 +266,22 @@ function MealPlansPage() {
                   getRowId={(m) => m.id}
                   size="small"
                   columns={[
-                    ...(search.slot ? [] : [{ key: 'slot', header: 'Round', width: 140, render: (m: PlannedMealDto) => MEAL_SLOT_LABEL[m.slot] }]),
-                    { key: 'bed', header: 'Bed', width: 80, render: (m) => <Text weight="semibold">{m.bedLabel ?? '—'}</Text> },
+                    ...(search.slot
+                      ? []
+                      : [
+                          {
+                            key: 'slot',
+                            header: 'Round',
+                            width: 140,
+                            render: (m: PlannedMealDto) => MEAL_SLOT_LABEL[m.slot],
+                          },
+                        ]),
+                    {
+                      key: 'bed',
+                      header: 'Bed',
+                      width: 80,
+                      render: (m) => <Text weight="semibold">{m.bedLabel ?? '—'}</Text>,
+                    },
                     { key: 'patient', header: 'Patient', render: (m) => m.patientName ?? '—' },
                     {
                       key: 'diet',
@@ -200,7 +293,9 @@ function MealPlansPage() {
                             {PREFERENCE_SHORT[m.preference]}
                           </Badge>
                           {(m.restrictions.length > 0 || m.instructions) && (
-                            <Caption1 block>{[m.restrictions.join(', '), m.instructions].filter(Boolean).join(' · ')}</Caption1>
+                            <Caption1 block>
+                              {[m.restrictions.join(', '), m.instructions].filter(Boolean).join(' · ')}
+                            </Caption1>
                           )}
                           {m.allergyNotes && (
                             <Caption1 block className={styles.allergy}>
@@ -219,7 +314,15 @@ function MealPlansPage() {
                           <StatusBadge
                             status={m.status}
                             label={DELIVERY_LABEL[m.status]}
-                            tone={m.status === 'Delivered' ? 'success' : m.status === 'Planned' ? 'warning' : m.status === 'Cancelled' ? 'informative' : 'danger'}
+                            tone={
+                              m.status === 'Delivered'
+                                ? 'success'
+                                : m.status === 'Planned'
+                                  ? 'warning'
+                                  : m.status === 'Cancelled'
+                                    ? 'informative'
+                                    : 'danger'
+                            }
                           />
                           {m.deliveredAt && <Caption1 block>{formatTime(m.deliveredAt)}</Caption1>}
                           {m.remarks && <Caption1 block>{m.remarks}</Caption1>}
@@ -242,12 +345,20 @@ function MealPlansPage() {
                               >
                                 Delivered
                               </Button>
-                              <Button size="small" className={styles.big} icon={<DismissRegular />} onClick={() => setNotTaken(m)}>
+                              <Button
+                                size="small"
+                                className={styles.big}
+                                icon={<DismissRegular />}
+                                onClick={() => setNotTaken(m)}
+                              >
                                 Not taken
                               </Button>
                             </span>
                           ) : m.status === 'Delivered' ? (
-                            <Button size="small" onClick={() => deliver.mutate({ meal: m, status: 'Returned', remarks: null })}>
+                            <Button
+                              size="small"
+                              onClick={() => deliver.mutate({ meal: m, status: 'Returned', remarks: null })}
+                            >
                               Returned
                             </Button>
                           ) : null
@@ -277,13 +388,18 @@ function MealPlansPage() {
       />
       <ConfirmDialog
         open={bulk !== null}
-        title={bulk ? `Mark the ${search.slot ? MEAL_SLOT_LABEL[search.slot].toLowerCase() : ''} round delivered on ${bulk.wardName ?? 'the ward'}?` : ''}
+        title={
+          bulk
+            ? `Mark the ${search.slot ? MEAL_SLOT_LABEL[search.slot].toLowerCase() : ''} round delivered on ${bulk.wardName ?? 'the ward'}?`
+            : ''
+        }
         confirmLabel="Mark delivered"
         busy={deliverRound.isPending}
         onConfirm={() => bulk && deliverRound.mutate(bulk)}
         onCancel={() => setBulk(null)}
       >
-        Every meal of this round still waiting on the ward is recorded as delivered now. Record meals that were not taken one by one first.
+        Every meal of this round still waiting on the ward is recorded as delivered now. Record meals that were not
+        taken one by one first.
       </ConfirmDialog>
     </Page>
   );

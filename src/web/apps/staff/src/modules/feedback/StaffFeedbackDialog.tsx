@@ -44,7 +44,9 @@ interface Props {
 export function StaffFeedbackDialog({ open, onClose, patient, visitId }: Props) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>{open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
+        {open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -55,9 +57,19 @@ function defaultForm(forms: FeedbackFormDto[], visit: VisitListItem | null): Fee
   return forms.find((f) => f.type === preferred) ?? forms.find((f) => f.type === 'General') ?? forms[0];
 }
 
-type Errors = Partial<Record<'patientId' | 'visitId' | 'formId' | 'ratings' | 'nps' | 'comment' | 'contactPhone', string>>;
+type Errors = Partial<
+  Record<'patientId' | 'visitId' | 'formId' | 'ratings' | 'nps' | 'comment' | 'contactPhone', string>
+>;
 
-function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fixedPatient: PickedPatient | null; fixedVisitId: string | null }) {
+function Body({
+  onClose,
+  fixedPatient,
+  fixedVisitId,
+}: {
+  onClose: () => void;
+  fixedPatient: PickedPatient | null;
+  fixedVisitId: string | null;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const forms = useQuery(feedbackQueries.forms({ activeOnly: true }));
@@ -71,7 +83,10 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
   const [busy, setBusy] = useState(false);
 
   // A fixed visit (from a follow-up call) is looked up in the patient's recent visits to choose the IP or OP form.
-  const recentVisits = useQuery({ ...patientQueries.visits(fixedPatient?.id ?? '', 1), enabled: Boolean(fixedVisitId && fixedPatient) });
+  const recentVisits = useQuery({
+    ...patientQueries.visits(fixedPatient?.id ?? '', 1),
+    enabled: Boolean(fixedVisitId && fixedPatient),
+  });
   const fixedVisit = recentVisits.data?.items.find((v) => v.id === fixedVisitId) ?? null;
 
   const available = forms.data ?? [];
@@ -104,7 +119,10 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
         contactPhone: wantsCallback ? normalizePhone(phone) : null,
       });
       if (outcome.complaintNumber) {
-        notify.warning('Feedback recorded; complaint raised', `Complaint ${outcome.complaintNumber} has gone to the complaint handlers.`);
+        notify.warning(
+          'Feedback recorded; complaint raised',
+          `Complaint ${outcome.complaintNumber} has gone to the complaint handlers.`,
+        );
       } else {
         notify.success('Feedback recorded', `Thank you noted for ${patient.fullName}.`);
       }
@@ -113,7 +131,11 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
       onClose();
     } catch (error) {
       if (isApiError(error) && error.isValidation) {
-        setErrors(Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? ''])) as Errors);
+        setErrors(
+          Object.fromEntries(
+            Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? '']),
+          ) as Errors,
+        );
       } else {
         notify.error(error, 'Could not record the feedback');
       }
@@ -135,7 +157,9 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
       <DialogBody>
         <DialogTitle>Record feedback for the patient</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <Caption1>Read each question out and record the patient's own answer. Leave out anything they do not want to answer.</Caption1>
+          <Caption1>
+            Read each question out and record the patient's own answer. Leave out anything they do not want to answer.
+          </Caption1>
           {fixedPatient ? (
             <Body1>
               <strong>{fixedPatient.fullName}</strong> · {fixedPatient.uhid}
@@ -165,7 +189,9 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
             <Spinner size="small" label="Loading feedback forms…" />
           ) : formsForbidden ? (
             <MessageBar intent="warning">
-              <MessageBarBody>You need the “View feedback” permission to see the hospital's feedback forms. Ask an administrator.</MessageBarBody>
+              <MessageBarBody>
+                You need the “View feedback” permission to see the hospital's feedback forms. Ask an administrator.
+              </MessageBarBody>
             </MessageBar>
           ) : forms.error ? (
             <MessageBar intent="error">
@@ -173,10 +199,17 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
             </MessageBar>
           ) : available.length === 0 ? (
             <MessageBar intent="warning">
-              <MessageBarBody>There is no active feedback form. A feedback manager can add one under Feedback › Forms.</MessageBarBody>
+              <MessageBarBody>
+                There is no active feedback form. A feedback manager can add one under Feedback › Forms.
+              </MessageBarBody>
             </MessageBar>
           ) : (
-            <Field label="Feedback form" required validationMessage={errors.formId} validationState={errors.formId ? 'error' : 'none'}>
+            <Field
+              label="Feedback form"
+              required
+              validationMessage={errors.formId}
+              validationState={errors.formId ? 'error' : 'none'}
+            >
               <Select value={form?.id ?? ''} onChange={(_, d) => setChosenFormId(d.value || null)}>
                 {available.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -201,7 +234,11 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
 
           {form && (
             <>
-              <Switch checked={wantsCallback} onChange={(_, d) => setWantsCallback(d.checked)} label="The patient would like a call back" />
+              <Switch
+                checked={wantsCallback}
+                onChange={(_, d) => setWantsCallback(d.checked)}
+                label="The patient would like a call back"
+              />
               {wantsCallback && (
                 <Field
                   label="Call back on"
@@ -210,7 +247,13 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
                   validationMessage={errors.contactPhone}
                   validationState={errors.contactPhone ? 'error' : 'none'}
                 >
-                  <Input type="tel" value={phone} onChange={(_, d) => setPhone(d.value)} maxLength={20} autoComplete="off" />
+                  <Input
+                    type="tel"
+                    value={phone}
+                    onChange={(_, d) => setPhone(d.value)}
+                    maxLength={20}
+                    autoComplete="off"
+                  />
                 </Field>
               )}
             </>
@@ -219,8 +262,8 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
           {willRaiseComplaint && (
             <MessageBar intent="warning">
               <MessageBarBody>
-                These answers include a low score (a rating of 2 or less, or a recommendation of 6 or less). Saving raises a complaint for the complaint
-                handlers to follow up.
+                These answers include a low score (a rating of 2 or less, or a recommendation of 6 or less). Saving
+                raises a complaint for the complaint handlers to follow up.
               </MessageBarBody>
             </MessageBar>
           )}
@@ -229,7 +272,12 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy || !form} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy || !form}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             Save feedback
           </Button>
         </DialogActions>

@@ -14,7 +14,9 @@ export function NoAccess({ what, description }: { what: string; description?: st
         <EmptyState
           icon={<LockClosedRegular />}
           title={`You do not have access to ${what}`}
-          description={description ?? 'Ask your hospital administrator to give your role access if you need it for your work.'}
+          description={
+            description ?? 'Ask your hospital administrator to give your role access if you need it for your work.'
+          }
           action={<Button onClick={() => void navigate({ to: '/' })}>Go to the home page</Button>}
         />
       </Section>

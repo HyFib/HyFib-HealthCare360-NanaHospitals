@@ -38,7 +38,9 @@ describe('sero segregation (mirrors SeroSegregation)', () => {
     const check = checkMachine(machine({ code: 'HD-04', seroDedication: 'HBsAg' }), 'Negative', 'assign');
     expect(check.eligible).toBe(false);
     expect(check.seroMatch).toBe(false);
-    expect(check.blockers).toContain('Machine HD-04 is dedicated to HBsAg-positive patients; this patient is sero-negative.');
+    expect(check.blockers).toContain(
+      'Machine HD-04 is dedicated to HBsAg-positive patients; this patient is sero-negative.',
+    );
   });
 
   it('needs the patient to be enrolled with a sero status', () => {
@@ -54,7 +56,9 @@ describe('machine readiness (mirrors DialysisMachine.EnsureReadyFor)', () => {
     expect(booking.warnings).toContain('Needs disinfection before the patient is connected.');
     const connecting = checkMachine(dirty, 'Negative', 'start');
     expect(connecting.eligible).toBe(false);
-    expect(connecting.blockers).toContain('Record the disinfection of machine HD-01 before connecting the next patient.');
+    expect(connecting.blockers).toContain(
+      'Record the disinfection of machine HD-01 before connecting the next patient.',
+    );
   });
 
   it('refuses a machine that is running another session at the chair', () => {
@@ -63,7 +67,9 @@ describe('machine readiness (mirrors DialysisMachine.EnsureReadyFor)', () => {
   });
 
   it('refuses machines out of service or booked by someone else in the shift', () => {
-    expect(checkMachine(machine({ status: 'Maintenance' }), 'Negative', 'assign').blockers[0]).toMatch(/out of service/);
+    expect(checkMachine(machine({ status: 'Maintenance' }), 'Negative', 'assign').blockers[0]).toMatch(
+      /out of service/,
+    );
     expect(checkMachine(machine({ isActive: false }), 'Negative', 'assign').eligible).toBe(false);
     expect(checkMachine(machine(), 'Negative', 'assign', true).blockers[0]).toMatch(/booked for another patient/);
   });
@@ -90,9 +96,33 @@ function session(id: string, shift: DialysisShift, status: DialysisSessionStatus
 describe('shift booking', () => {
   const board: Pick<DialysisBoard, 'machines'> = {
     machines: [
-      { id: 'm1', code: 'HD-01', station: null, seroDedication: 'Negative', status: 'Available', needsDisinfection: false, sessions: [session('s1', 'Morning', 'Completed'), session('s2', 'Evening', 'Missed')] },
-      { id: 'm2', code: 'HD-02', station: null, seroDedication: 'Negative', status: 'Available', needsDisinfection: true, sessions: [] },
-      { id: 'm4', code: 'HD-04', station: null, seroDedication: 'HBsAg', status: 'Available', needsDisinfection: false, sessions: [] },
+      {
+        id: 'm1',
+        code: 'HD-01',
+        station: null,
+        seroDedication: 'Negative',
+        status: 'Available',
+        needsDisinfection: false,
+        sessions: [session('s1', 'Morning', 'Completed'), session('s2', 'Evening', 'Missed')],
+      },
+      {
+        id: 'm2',
+        code: 'HD-02',
+        station: null,
+        seroDedication: 'Negative',
+        status: 'Available',
+        needsDisinfection: true,
+        sessions: [],
+      },
+      {
+        id: 'm4',
+        code: 'HD-04',
+        station: null,
+        seroDedication: 'HBsAg',
+        status: 'Available',
+        needsDisinfection: false,
+        sessions: [],
+      },
     ],
   };
 

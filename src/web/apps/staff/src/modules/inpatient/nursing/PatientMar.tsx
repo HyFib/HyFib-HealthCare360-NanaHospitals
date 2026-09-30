@@ -26,16 +26,37 @@ import { DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { COMMON_ROUTES, MAR_STATUS_LABEL, nursingApi, nursingKeys, nursingQueries, type MarEntryDto, type MarOutcome, type MedicationOrderDto } from '../nursingApi';
+import {
+  COMMON_ROUTES,
+  MAR_STATUS_LABEL,
+  nursingApi,
+  nursingKeys,
+  nursingQueries,
+  type MarEntryDto,
+  type MarOutcome,
+  type MedicationOrderDto,
+} from '../nursingApi';
 import { addDays, fromIstInput, istDate, toIstInput } from '../time';
 import { RecordDoseDialog, type DoseToRecord } from './RecordDoseDialog';
 
 const useStyles = makeStyles({
-  toolbar: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' },
+  toolbar: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '12px',
+  },
   dateNav: { display: 'flex', gap: '4px', alignItems: 'center' },
   muted: { color: tokens.colorNeutralForeground3 },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  two: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 520px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  two: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 520px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
 });
 
 function statusTone(entry: MarEntryDto): 'success' | 'danger' | 'warning' | 'informative' | 'brand' {
@@ -82,10 +103,23 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
     <div>
       <div className={styles.toolbar}>
         <div className={styles.dateNav}>
-          <Button icon={<ChevronLeftRegular />} appearance="subtle" aria-label="Previous day" onClick={() => setDate(addDays(date, -1))} />
+          <Button
+            icon={<ChevronLeftRegular />}
+            appearance="subtle"
+            aria-label="Previous day"
+            onClick={() => setDate(addDays(date, -1))}
+          />
           <Text weight="semibold">{date === today ? 'Today' : formatDateOnly(date)}</Text>
-          <Button icon={<ChevronRightRegular />} appearance="subtle" aria-label="Next day" disabled={date >= today} onClick={() => setDate(addDays(date, 1))} />
-          {mar.data && <Caption1 className={styles.muted}>{pending ? `${pending} to record` : 'All doses recorded'}</Caption1>}
+          <Button
+            icon={<ChevronRightRegular />}
+            appearance="subtle"
+            aria-label="Next day"
+            disabled={date >= today}
+            onClick={() => setDate(addDays(date, 1))}
+          />
+          {mar.data && (
+            <Caption1 className={styles.muted}>{pending ? `${pending} to record` : 'All doses recorded'}</Caption1>
+          )}
         </div>
         {canRecord && (
           <Button icon={<AddRegular />} onClick={() => setAdHoc(true)}>
@@ -109,7 +143,9 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
             render: (e) => (
               <span>
                 <Text weight="semibold">{formatTime(e.scheduledAt)}</Text>
-                {istDate(e.scheduledAt) !== date && e.status === 'Due' && <Caption1 block>{formatDateOnly(istDate(e.scheduledAt))}</Caption1>}
+                {istDate(e.scheduledAt) !== date && e.status === 'Due' && (
+                  <Caption1 block>{formatDateOnly(istDate(e.scheduledAt))}</Caption1>
+                )}
               </span>
             ),
           },
@@ -136,7 +172,13 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
             key: 'status',
             header: 'Status',
             width: 130,
-            render: (e) => <StatusBadge status={e.status} label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]} tone={statusTone(e)} />,
+            render: (e) => (
+              <StatusBadge
+                status={e.status}
+                label={e.status === 'Due' && e.isOverdue ? 'Overdue' : MAR_STATUS_LABEL[e.status]}
+                tone={statusTone(e)}
+              />
+            ),
           },
           {
             key: 'by',
@@ -172,14 +214,30 @@ export function PatientMar({ admissionId, patientName }: { admissionId: string; 
         emptyTitle={date === today ? 'No doses charted for today' : 'No doses on this day'}
         emptyDescription="Doses are scheduled when the pharmacy issues the medicine, or when a ward order is added on the Medicines tab."
       />
-      {recording && <RecordDoseDialog dose={recording.dose} initialOutcome={recording.outcome} onClose={() => setRecording(null)} />}
-      {adHoc && <AdHocDoseDialog admissionId={admissionId} orders={(orders.data ?? []).filter((o) => o.status === 'Active')} onClose={() => setAdHoc(false)} />}
+      {recording && (
+        <RecordDoseDialog dose={recording.dose} initialOutcome={recording.outcome} onClose={() => setRecording(null)} />
+      )}
+      {adHoc && (
+        <AdHocDoseDialog
+          admissionId={admissionId}
+          orders={(orders.data ?? []).filter((o) => o.status === 'Active')}
+          onClose={() => setAdHoc(false)}
+        />
+      )}
     </div>
   );
 }
 
 /** An SOS/STAT or otherwise unscheduled dose; "given now" records it as given in the same step. */
-function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string; orders: MedicationOrderDto[]; onClose: () => void }) {
+function AdHocDoseDialog({
+  admissionId,
+  orders,
+  onClose,
+}: {
+  admissionId: string;
+  orders: MedicationOrderDto[];
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -226,7 +284,11 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
   });
 
   const needsWitness = givenNow && Boolean(order?.isControlledDrug);
-  const valid = (order !== null || drugName.trim().length > 0) && dose.trim().length > 0 && (!needsWitness || witness.trim().length > 0) && (givenNow || fromIstInput(scheduledAt) !== null);
+  const valid =
+    (order !== null || drugName.trim().length > 0) &&
+    dose.trim().length > 0 &&
+    (!needsWitness || witness.trim().length > 0) &&
+    (givenNow || fromIstInput(scheduledAt) !== null);
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !add.isPending && onClose()}>
@@ -255,7 +317,11 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
                 </Select>
               </Field>
               {!order && (
-                <Field label="Medicine name" required hint="Record the doctor's verbal order in a nursing note as well.">
+                <Field
+                  label="Medicine name"
+                  required
+                  hint="Record the doctor's verbal order in a nursing note as well."
+                >
                   <Input value={drugName} onChange={(_, d) => setDrugName(d.value)} maxLength={200} autoFocus />
                 </Field>
               )}
@@ -273,7 +339,13 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
                 </Field>
               </div>
               <Field label="Why was it needed?">
-                <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={300} rows={2} placeholder="e.g. Fever 101 °F, pain score 7" />
+                <Textarea
+                  value={reason}
+                  onChange={(_, d) => setReason(d.value)}
+                  maxLength={300}
+                  rows={2}
+                  placeholder="e.g. Fever 101 °F, pain score 7"
+                />
               </Field>
               <Switch checked={givenNow} onChange={(_, d) => setGivenNow(d.checked)} label="Given now" />
               {!givenNow && (
@@ -286,7 +358,11 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
                   <Field label="Batch number">
                     <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} />
                   </Field>
-                  <Field label="Witness (second nurse)" required={needsWitness} hint={needsWitness ? 'Required: controlled drug' : undefined}>
+                  <Field
+                    label="Witness (second nurse)"
+                    required={needsWitness}
+                    hint={needsWitness ? 'Required: controlled drug' : undefined}
+                  >
                     <Input value={witness} onChange={(_, d) => setWitness(d.value)} maxLength={200} />
                   </Field>
                 </div>
@@ -296,7 +372,9 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
               </Field>
               {add.error && (
                 <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>{isApiError(add.error) ? add.error.userMessage : 'The dose could not be recorded.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(add.error) ? add.error.userMessage : 'The dose could not be recorded.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -304,7 +382,12 @@ function AdHocDoseDialog({ admissionId, orders, onClose }: { admissionId: string
               <Button onClick={onClose} disabled={add.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <PillRegular />} disabled={!valid || add.isPending}>
+              <Button
+                type="submit"
+                appearance="primary"
+                icon={add.isPending ? <Spinner size="tiny" /> : <PillRegular />}
+                disabled={!valid || add.isPending}
+              >
                 {givenNow ? 'Record as given' : 'Add to chart'}
               </Button>
             </DialogActions>

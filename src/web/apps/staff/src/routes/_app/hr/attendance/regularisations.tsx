@@ -7,7 +7,12 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { DecisionButtons } from '@/modules/hr/ApprovalActions';
 import { hrApi, hrKeys, hrQueries } from '@/modules/hr/api';
-import { APPROVAL_STATUSES, HR_PERMISSIONS as P, regularisationKindLabel, type ApprovalStatus } from '@/modules/hr/labels';
+import {
+  APPROVAL_STATUSES,
+  HR_PERMISSIONS as P,
+  regularisationKindLabel,
+  type ApprovalStatus,
+} from '@/modules/hr/labels';
 import { ATTENDANCE_NAV } from '@/modules/hr/nav';
 import { RegularisationDialog } from '@/modules/hr/RegularisationDialog';
 import { formatTimeOfDay } from '@/modules/hr/shared/dates';
@@ -22,7 +27,10 @@ interface CorrectionSearch {
 
 export const Route = createFileRoute('/_app/hr/attendance/regularisations')({
   validateSearch: (s: Record<string, unknown>): CorrectionSearch => ({
-    status: s.status === 'all' || APPROVAL_STATUSES.includes(s.status as ApprovalStatus) ? (s.status as ApprovalStatus | 'all') : undefined,
+    status:
+      s.status === 'all' || APPROVAL_STATUSES.includes(s.status as ApprovalStatus)
+        ? (s.status as ApprovalStatus | 'all')
+        : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
   component: () => (
@@ -57,7 +65,14 @@ function CorrectionsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Status">
-              <Select value={status} onChange={(_, d) => void navigate({ search: { status: d.value === 'Pending' ? undefined : (d.value as ApprovalStatus | 'all') } })}>
+              <Select
+                value={status}
+                onChange={(_, d) =>
+                  void navigate({
+                    search: { status: d.value === 'Pending' ? undefined : (d.value as ApprovalStatus | 'all') },
+                  })
+                }
+              >
                 <option value="Pending">Waiting for approval</option>
                 <option value="Approved">Approved</option>
                 <option value="Rejected">Rejected</option>
@@ -89,7 +104,13 @@ function CorrectionsPage() {
             {
               key: 'times',
               header: 'Times asked for',
-              render: (r) => [r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '', r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : ''].filter(Boolean).join(' · ') || '—',
+              render: (r) =>
+                [
+                  r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '',
+                  r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—',
             },
             { key: 'reason', header: 'Reason', priority: 'low', render: (r) => r.reason },
             { key: 'raised', header: 'Asked', priority: 'low', render: (r) => formatDateTime(r.createdAt) },
@@ -116,7 +137,11 @@ function CorrectionsPage() {
             ) : null
           }
           emptyTitle={status === 'Pending' ? 'Nothing waiting for approval' : 'No corrections'}
-          emptyDescription={status === 'Pending' ? 'Staff ask for corrections from My HR; reporting managers can approve their team’s requests too.' : undefined}
+          emptyDescription={
+            status === 'Pending'
+              ? 'Staff ask for corrections from My HR; reporting managers can approve their team’s requests too.'
+              : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={requests.data?.totalCount}

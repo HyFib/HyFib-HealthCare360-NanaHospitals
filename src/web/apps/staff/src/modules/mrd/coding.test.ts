@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { addLine, applySuggestions, codingProblems, removeLine, setPrimary, toRequestLines, verification, type CodingLine } from './coding';
+import {
+  addLine,
+  applySuggestions,
+  codingProblems,
+  removeLine,
+  setPrimary,
+  toRequestLines,
+  verification,
+  type CodingLine,
+} from './coding';
 
 const dm = { kind: 'Diagnosis' as const, code: 'e11.9', title: 'Type 2 diabetes mellitus without complications' };
 const htn = { kind: 'Diagnosis' as const, code: 'I10', title: 'Essential (primary) hypertension' };
@@ -23,7 +32,11 @@ describe('coding lines', () => {
     let lines = addLine(addLine([], dm), htn);
     lines = setPrimary(lines, htn);
     expect(lines.filter((l) => l.isPrimary).map((l) => l.code)).toEqual(['I10']);
-    expect(setPrimary(addLine(lines, appendectomy), appendectomy).filter((l) => l.isPrimary).map((l) => l.code)).toEqual(['I10']);
+    expect(
+      setPrimary(addLine(lines, appendectomy), appendectomy)
+        .filter((l) => l.isPrimary)
+        .map((l) => l.code),
+    ).toEqual(['I10']);
   });
 
   it('hands the primary flag on when the primary is removed', () => {
@@ -45,18 +58,31 @@ describe('codingProblems', () => {
   it('explains what is wrong', () => {
     expect(codingProblems([])).toEqual(['Add at least one diagnosis code.']);
     expect(codingProblems([{ ...appendectomy, isPrimary: false }])[0]).toContain('principal diagnosis');
-    expect(codingProblems([{ ...dm, isPrimary: true }, { ...htn, isPrimary: true }])).toContain('Mark exactly one diagnosis as the principal diagnosis.');
-    expect(codingProblems([{ ...dm, isPrimary: true }, { ...dm, isPrimary: false }]).some((p) => p.includes('more than once'))).toBe(true);
+    expect(
+      codingProblems([
+        { ...dm, isPrimary: true },
+        { ...htn, isPrimary: true },
+      ]),
+    ).toContain('Mark exactly one diagnosis as the principal diagnosis.');
+    expect(
+      codingProblems([
+        { ...dm, isPrimary: true },
+        { ...dm, isPrimary: false },
+      ]).some((p) => p.includes('more than once')),
+    ).toBe(true);
   });
 });
 
 describe('suggestions and verification', () => {
   it('adds coded suggestions, primary first', () => {
-    const lines = applySuggestions([], [
-      { code: 'I10', title: htn.title, isPrimary: false },
-      { code: null, title: 'Viral fever', isPrimary: false },
-      { code: 'E11.9', title: dm.title, isPrimary: true },
-    ]);
+    const lines = applySuggestions(
+      [],
+      [
+        { code: 'I10', title: htn.title, isPrimary: false },
+        { code: null, title: 'Viral fever', isPrimary: false },
+        { code: 'E11.9', title: dm.title, isPrimary: true },
+      ],
+    );
     expect(lines.map((l) => [l.code, l.isPrimary])).toEqual([
       ['E11.9', true],
       ['I10', false],

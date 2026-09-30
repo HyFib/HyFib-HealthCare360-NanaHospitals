@@ -31,12 +31,20 @@ export const employeeFormSchema = z
   .object({
     isNew: z.boolean(),
     title: z.string().nullable(),
-    firstName: z.string().trim().min(1, 'Enter the first name.').max(100).regex(NAME, 'Use letters, spaces, dots, apostrophes or hyphens.'),
+    firstName: z
+      .string()
+      .trim()
+      .min(1, 'Enter the first name.')
+      .max(100)
+      .regex(NAME, 'Use letters, spaces, dots, apostrophes or hyphens.'),
     middleName: z.string().trim().max(100).regex(NAME, 'Use letters only.'),
     lastName: z.string().trim().max(100).regex(NAME, 'Use letters only.'),
     gender: z.enum(['Male', 'Female', 'Other', 'Unknown']),
     dateOfBirth: z.string().nullable(),
-    phone: z.string().trim().refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid mobile number.'),
+    phone: z
+      .string()
+      .trim()
+      .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid mobile number.'),
     email: z
       .string()
       .trim()
@@ -48,10 +56,16 @@ export const employeeFormSchema = z
       city: z.string().trim().max(100),
       district: z.string().trim().max(100),
       state: z.string().trim().max(100),
-      pinCode: z.string().trim().refine((v) => !v || PIN_CODE.test(v), 'PIN codes have 6 digits.'),
+      pinCode: z
+        .string()
+        .trim()
+        .refine((v) => !v || PIN_CODE.test(v), 'PIN codes have 6 digits.'),
     }),
     emergencyContactName: z.string().trim().max(200),
-    emergencyContactPhone: z.string().trim().refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
+    emergencyContactPhone: z
+      .string()
+      .trim()
+      .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
     departmentId: z.string().nullable(),
     designationId: z.string().nullable(),
     employmentType: z.enum(EMPLOYMENT_TYPES),
@@ -61,16 +75,34 @@ export const employeeFormSchema = z
     reportingManager: person,
     user: person,
     practitionerId: z.string().nullable(),
-    biometricPin: z.string().trim().refine((v) => !v || TERMINAL_PIN.test(v), 'Use up to 24 letters or digits, exactly as enrolled on the terminal.'),
+    biometricPin: z
+      .string()
+      .trim()
+      .refine(
+        (v) => !v || TERMINAL_PIN.test(v),
+        'Use up to 24 letters or digits, exactly as enrolled on the terminal.',
+      ),
     defaultShiftId: z.string().nullable(),
     weeklyOff: z.enum(WEEKDAYS).nullable(),
     isAttendanceExempt: z.boolean(),
     paymentMode: z.enum(PAYMENT_MODES),
-    pan: z.string().trim().refine((v) => !v || isValidPan(v), 'Enter a valid PAN, for example ABCDE1234F.'),
+    pan: z
+      .string()
+      .trim()
+      .refine((v) => !v || isValidPan(v), 'Enter a valid PAN, for example ABCDE1234F.'),
     removePan: z.boolean(),
-    uan: z.string().trim().refine((v) => !v || isValidUan(v), 'The UAN has 12 digits.'),
-    pfNumber: z.string().trim().refine((v) => !v || PF_NUMBER.test(v), 'Enter a valid PF member number.'),
-    esiNumber: z.string().trim().refine((v) => !v || isValidEsi(v), 'The ESI insurance number has 10 (or 17) digits.'),
+    uan: z
+      .string()
+      .trim()
+      .refine((v) => !v || isValidUan(v), 'The UAN has 12 digits.'),
+    pfNumber: z
+      .string()
+      .trim()
+      .refine((v) => !v || PF_NUMBER.test(v), 'Enter a valid PF member number.'),
+    esiNumber: z
+      .string()
+      .trim()
+      .refine((v) => !v || isValidEsi(v), 'The ESI insurance number has 10 (or 17) digits.'),
     notes: z.string().trim().max(1000),
     bankName: z.string().trim().max(100),
     accountNumber: z.string().trim(),
@@ -83,7 +115,11 @@ export const employeeFormSchema = z
       if (v.dateOfBirth > today || v.dateOfBirth < '1930-01-01') {
         ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: 'Enter a valid date of birth.' });
       } else if (v.joiningDate && addYears(v.dateOfBirth, 18) > v.joiningDate) {
-        ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: 'Employees must be at least 18 years old on the joining date.' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['dateOfBirth'],
+          message: 'Employees must be at least 18 years old on the joining date.',
+        });
       }
     }
     if (v.confirmationDate && v.joiningDate && v.confirmationDate < v.joiningDate) {
@@ -180,7 +216,9 @@ export function employeeToForm(e: EmployeeDetail): EmployeeFormValues {
     status: e.status === 'Separated' ? 'Active' : e.status,
     joiningDate: e.joiningDate,
     confirmationDate: e.confirmationDate,
-    reportingManager: e.reportingManagerId ? { id: e.reportingManagerId, name: e.reportingManagerName ?? 'Reporting manager' } : null,
+    reportingManager: e.reportingManagerId
+      ? { id: e.reportingManagerId, name: e.reportingManagerName ?? 'Reporting manager' }
+      : null,
     user: e.userId ? { id: e.userId, name: '' } : null,
     practitionerId: e.practitionerId,
     biometricPin: e.biometricPin ?? '',
@@ -213,7 +251,11 @@ export function formToRequest(v: EmployeeFormValues, version: number | null): Sa
   const pan = v.removePan && !v.isNew ? '' : v.pan.trim() ? normalizeIdentifier(v.pan) : null;
   const bank =
     v.isNew && v.paymentMode === 'BankTransfer' && v.accountNumber.trim()
-      ? { bankName: orNull(v.bankName), accountNumber: v.accountNumber.replace(/[\s-]/g, ''), ifsc: normalizeIdentifier(v.ifsc) }
+      ? {
+          bankName: orNull(v.bankName),
+          accountNumber: v.accountNumber.replace(/[\s-]/g, ''),
+          ifsc: normalizeIdentifier(v.ifsc),
+        }
       : null;
   return {
     title: v.title ? orNull(v.title) : null,

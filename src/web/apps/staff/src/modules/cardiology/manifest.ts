@@ -12,8 +12,18 @@ const manifest: ModuleManifest = {
   icon: HeartPulseRegular,
   order: 30,
   links: [
-    { label: 'Cardiology studies', to: '/cardiology', permission: [READ, MANAGE, VERIFY], keywords: ['ecg', 'echo', 'tmt', 'holter', 'abpm', 'stress test'] },
-    { label: 'Cardiology reporting', to: '/cardiology/reporting', permission: VERIFY, keywords: ['cardiologist', 'sign off', 'ecg report'] },
+    {
+      label: 'Cardiology studies',
+      to: '/cardiology',
+      permission: [READ, MANAGE, VERIFY],
+      keywords: ['ecg', 'echo', 'tmt', 'holter', 'abpm', 'stress test'],
+    },
+    {
+      label: 'Cardiology reporting',
+      to: '/cardiology/reporting',
+      permission: VERIFY,
+      keywords: ['cardiologist', 'sign off', 'ecg report'],
+    },
   ],
 };
 

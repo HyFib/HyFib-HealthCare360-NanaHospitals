@@ -33,10 +33,13 @@ function IssuedPacksPage() {
   const canAcknowledge = usePermission('cssd.recalls');
   const canIssue = usePermission('cssd.process');
   const departments = useDepartments();
-  const issues = useQuery(cssdQueries.issues({ departmentId: search.departmentId, openRecalls: search.openRecalls, page: search.page }));
+  const issues = useQuery(
+    cssdQueries.issues({ departmentId: search.departmentId, openRecalls: search.openRecalls, page: search.page }),
+  );
   const [using, setUsing] = useState<SetIssueDto | null>(null);
   const [acknowledging, setAcknowledging] = useState<SetIssueDto | null>(null);
-  const set = (patch: Partial<IssuesSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<IssuesSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
   return (
     <Page>
@@ -45,7 +48,11 @@ function IssuedPacksPage() {
         subtitle="Record the patient each pack was used on, so a recall can reach every patient"
         actions={
           canIssue && (
-            <Button appearance="primary" icon={<BoxArrowUpRegular />} onClick={() => void navigate({ to: '/cssd/issue' })}>
+            <Button
+              appearance="primary"
+              icon={<BoxArrowUpRegular />}
+              onClick={() => void navigate({ to: '/cssd/issue' })}
+            >
               Issue packs
             </Button>
           )
@@ -55,7 +62,10 @@ function IssuedPacksPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All departments</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -64,7 +74,11 @@ function IssuedPacksPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(search.openRecalls)} onChange={(_, d) => set({ openRecalls: d.checked || undefined })} label="Open recalls only" />
+            <Switch
+              checked={Boolean(search.openRecalls)}
+              onChange={(_, d) => set({ openRecalls: d.checked || undefined })}
+              label="Open recalls only"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -101,14 +115,24 @@ function IssuedPacksPage() {
                 </span>
               ),
             },
-            { key: 'expiry', header: 'Use by', width: 120, priority: 'low', render: (i) => (i.sterileUntil ? formatDateOnly(i.sterileUntil) : '—') },
+            {
+              key: 'expiry',
+              header: 'Use by',
+              width: 120,
+              priority: 'low',
+              render: (i) => (i.sterileUntil ? formatDateOnly(i.sterileUntil) : '—'),
+            },
             {
               key: 'status',
               header: 'Status',
               width: 180,
               render: (i) => (
                 <span>
-                  <StatusBadge status={i.status} label={ISSUE_STATUS_LABEL[i.status]} tone={i.status === 'Recalled' ? 'danger' : i.status === 'Used' ? 'success' : undefined} />
+                  <StatusBadge
+                    status={i.status}
+                    label={ISSUE_STATUS_LABEL[i.status]}
+                    tone={i.status === 'Recalled' ? 'danger' : i.status === 'Used' ? 'success' : undefined}
+                  />
                   {i.usedAt && <Caption1 block>Used {formatDateTime(i.usedAt)}</Caption1>}
                 </span>
               ),
@@ -141,7 +165,12 @@ function IssuedPacksPage() {
                 </Button>
               )}
               {canAcknowledge && i.recallFlaggedAt && !i.recallAcknowledgedAt && (
-                <Button size="small" appearance="primary" icon={<ShieldCheckmarkRegular />} onClick={() => setAcknowledging(i)}>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  icon={<ShieldCheckmarkRegular />}
+                  onClick={() => setAcknowledging(i)}
+                >
                   Acknowledge
                 </Button>
               )}

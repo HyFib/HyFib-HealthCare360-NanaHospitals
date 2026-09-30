@@ -1,4 +1,14 @@
-import { Button, Caption1, makeStyles, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { BoxCheckmarkRegular } from '@fluentui/react-icons';
 import { todayIso } from '@hc360/core';
 import { ErrorState, Section } from '@hc360/ui';
@@ -41,7 +51,12 @@ export function CssdWidget() {
       title="Sterile supply (CSSD)"
       description="Last 30 days"
       actions={
-        <Button size="small" appearance="subtle" icon={<BoxCheckmarkRegular />} onClick={() => void navigate({ to: '/cssd' })}>
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<BoxCheckmarkRegular />}
+          onClick={() => void navigate({ to: '/cssd' })}
+        >
           CSSD
         </Button>
       }
@@ -71,11 +86,15 @@ export function CssdWidget() {
               <Text size={200}>Open requests</Text>
             </Link>
             <Link to="/cssd/loads" search={{ biologicalPending: true }} className={styles.cell}>
-              <span className={s.biologicalPending ? `${styles.value} ${styles.alert}` : styles.value}>{s.biologicalPending}</span>
+              <span className={s.biologicalPending ? `${styles.value} ${styles.alert}` : styles.value}>
+                {s.biologicalPending}
+              </span>
               <Text size={200}>Biological indicators to read</Text>
             </Link>
             <Link to="/cssd/packs" search={{ expiring: true }} className={styles.cell}>
-              <span className={s.packsExpiringSoon ? `${styles.value} ${styles.alert}` : styles.value}>{s.packsExpiringSoon}</span>
+              <span className={s.packsExpiringSoon ? `${styles.value} ${styles.alert}` : styles.value}>
+                {s.packsExpiringSoon}
+              </span>
               <Text size={200}>Packs expiring in 2 days</Text>
             </Link>
             <Link to="/cssd/loads" className={styles.cell}>

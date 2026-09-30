@@ -13,7 +13,13 @@ import {
   TabList,
   Text,
 } from '@fluentui/react-components';
-import { CalendarArrowRightRegular, CalendarCancelRegular, DismissCircleRegular, EditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import {
+  CalendarArrowRightRegular,
+  CalendarCancelRegular,
+  DismissCircleRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatTime, useRealtimeEvent } from '@hc360/core';
 import { LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -24,12 +30,28 @@ import { AnaesthesiaPanel } from '@/modules/ot/AnaesthesiaPanel';
 import { otApi, otKeys, otQueries, type SurgeryDetail } from '@/modules/ot/api';
 import { PlanDialog, ScheduleDialog } from '@/modules/ot/BookingDialogs';
 import { anaesthesiaLabel, lateralityLabel } from '@/modules/ot/labels';
-import { cancelGate, currentStepId, planGate, postponeGate, procedureWithSide, scheduleGate, STEP_IDS, type StepId } from '@/modules/ot/logic';
+import {
+  cancelGate,
+  currentStepId,
+  planGate,
+  postponeGate,
+  procedureWithSide,
+  scheduleGate,
+  STEP_IDS,
+  type StepId,
+} from '@/modules/ot/logic';
 import { MaterialsPanel } from '@/modules/ot/MaterialsPanel';
 import { OperationNotePanel } from '@/modules/ot/OperationNotePanel';
 import { PriorityBadge, SideBadge, SurgeryStatusBadge } from '@/modules/ot/OtBadges';
 import { formatDuration, minutesBetween } from '@/modules/ot/shared/datetime';
-import { ChargeStatusPanel, Detail, DetailGrid, NoAccess, ReasonDialog, RecordLoadError } from '@/modules/ot/shared/feedback';
+import {
+  ChargeStatusPanel,
+  Detail,
+  DetailGrid,
+  NoAccess,
+  ReasonDialog,
+  RecordLoadError,
+} from '@/modules/ot/shared/feedback';
 import { useFacilityId } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
 import { SurgeryStepper } from '@/modules/ot/SurgeryStepper';
@@ -107,7 +129,9 @@ function BookingPage() {
       booking={b}
       tab={search.tab ?? 'day'}
       step={search.step ?? currentStepId(b)}
-      onTab={(tab) => void navigate({ search: (prev) => ({ ...prev, tab: tab === 'day' ? undefined : tab }), replace: true })}
+      onTab={(tab) =>
+        void navigate({ search: (prev) => ({ ...prev, tab: tab === 'day' ? undefined : tab }), replace: true })
+      }
       onStep={(step) => void navigate({ search: (prev) => ({ ...prev, step }), replace: true })}
       onAdvance={() => void navigate({ search: (prev) => ({ ...prev, step: undefined }), replace: true })}
       dialog={dialog}
@@ -174,7 +198,11 @@ function BookingView({
     onError: (error) => notify.error(error, 'Could not retry billing'),
   });
 
-  const slot = b.scheduledStart ? `${formatDateTime(b.scheduledStart)}–${formatTime(b.scheduledEnd)}` : b.preferredDate ? `prefers ${formatDateOnly(b.preferredDate)}` : 'no slot yet';
+  const slot = b.scheduledStart
+    ? `${formatDateTime(b.scheduledStart)}–${formatTime(b.scheduledEnd)}`
+    : b.preferredDate
+      ? `prefers ${formatDateOnly(b.preferredDate)}`
+      : 'no slot yet';
   const needsSlot = b.status === 'Requested' || b.status === 'Postponed';
 
   return (
@@ -257,7 +285,13 @@ function BookingView({
         </MessageBar>
       )}
       {b.chargeStatus === 'Failed' && (
-        <ChargeStatusPanel status={b.chargeStatus} error={b.chargeError} canRetry={canManage} retrying={retry.isPending} onRetry={() => retry.mutate()} />
+        <ChargeStatusPanel
+          status={b.chargeStatus}
+          error={b.chargeError}
+          canRetry={canManage}
+          retrying={retry.isPending}
+          onRetry={() => retry.mutate()}
+        />
       )}
 
       <Section flush>
@@ -271,11 +305,21 @@ function BookingView({
           </TabList>
         </div>
         <div className={styles.body}>
-          {tab === 'day' && <SurgeryStepper booking={b} selected={step} onSelect={onStep} onAdvance={onAdvance} onSchedule={() => setDialog('schedule')} />}
+          {tab === 'day' && (
+            <SurgeryStepper
+              booking={b}
+              selected={step}
+              onSelect={onStep}
+              onAdvance={onAdvance}
+              onSchedule={() => setDialog('schedule')}
+            />
+          )}
           {tab === 'anaesthesia' && <AnaesthesiaPanel booking={b} />}
           {tab === 'note' && <OperationNotePanel booking={b} />}
           {tab === 'materials' && <MaterialsPanel booking={b} />}
-          {tab === 'details' && <Details booking={b} canRetry={canManage} retrying={retry.isPending} onRetry={() => retry.mutate()} />}
+          {tab === 'details' && (
+            <Details booking={b} canRetry={canManage} retrying={retry.isPending} onRetry={() => retry.mutate()} />
+          )}
         </div>
       </Section>
 
@@ -288,7 +332,13 @@ function BookingView({
         confirmLabel="Postpone"
         busy={postpone.isPending}
         error={postpone.error}
-        presets={['Patient not fit (PAC)', 'Theatre time over-ran', 'Surgeon unavailable', 'Blood not arranged', 'Patient request']}
+        presets={[
+          'Patient not fit (PAC)',
+          'Theatre time over-ran',
+          'Surgeon unavailable',
+          'Blood not arranged',
+          'Patient request',
+        ]}
         onConfirm={(reason) => postpone.mutate(reason)}
         onCancel={() => {
           postpone.reset();
@@ -314,8 +364,21 @@ function BookingView({
   );
 }
 
-function Details({ booking: b, canRetry, retrying, onRetry }: { booking: SurgeryDetail; canRetry: boolean; retrying: boolean; onRetry: () => void }) {
-  const inTheatre = b.completedAt && (b.inRoomAt ?? b.startedAt) ? minutesBetween(b.inRoomAt ?? b.startedAt ?? b.completedAt, b.completedAt) : null;
+function Details({
+  booking: b,
+  canRetry,
+  retrying,
+  onRetry,
+}: {
+  booking: SurgeryDetail;
+  canRetry: boolean;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  const inTheatre =
+    b.completedAt && (b.inRoomAt ?? b.startedAt)
+      ? minutesBetween(b.inRoomAt ?? b.startedAt ?? b.completedAt, b.completedAt)
+      : null;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <DetailGrid>
@@ -325,11 +388,17 @@ function Details({ booking: b, canRetry, retrying, onRetry }: { booking: Surgery
         <Detail label="Operative side">{lateralityLabel[b.laterality]}</Detail>
         <Detail label="Diagnosis">{b.diagnosis}</Detail>
         <Detail label="Operating surgeon">{b.surgeonName}</Detail>
-        <Detail label="Assistants">{b.assistantIds.length ? `${b.assistantIds.length} assistant surgeon${b.assistantIds.length === 1 ? '' : 's'}` : null}</Detail>
+        <Detail label="Assistants">
+          {b.assistantIds.length
+            ? `${b.assistantIds.length} assistant surgeon${b.assistantIds.length === 1 ? '' : 's'}`
+            : null}
+        </Detail>
         <Detail label="Anaesthetist">{b.anaesthetistName}</Detail>
         <Detail label="Anaesthesia">{anaesthesiaLabel[b.anaesthesiaType]}</Detail>
         <Detail label="Theatre">{b.theatreName}</Detail>
-        <Detail label="Slot">{b.scheduledStart ? `${formatDateTime(b.scheduledStart)} – ${formatTime(b.scheduledEnd)}` : null}</Detail>
+        <Detail label="Slot">
+          {b.scheduledStart ? `${formatDateTime(b.scheduledStart)} – ${formatTime(b.scheduledEnd)}` : null}
+        </Detail>
         <Detail label="Preferred date">{b.preferredDate ? formatDateOnly(b.preferredDate) : null}</Detail>
         <Detail label="Received in pre-op">{b.receivedInPreOpAt ? formatDateTime(b.receivedInPreOpAt) : null}</Detail>
         <Detail label="In theatre (Sign-in)">{b.inRoomAt ? formatDateTime(b.inRoomAt) : null}</Detail>
@@ -337,15 +406,26 @@ function Details({ booking: b, canRetry, retrying, onRetry }: { booking: Surgery
         <Detail label="Out of theatre">{b.completedAt ? formatDateTime(b.completedAt) : null}</Detail>
         <Detail label="Time in theatre">{inTheatre !== null ? formatDuration(inTheatre) : null}</Detail>
         <Detail label="Origin">{b.orderItemId ? 'From a doctor’s order' : 'Booked at the OT desk'}</Detail>
-        <Detail label="Encounter">{b.admissionId ? 'In-patient (charges go to the IP bill)' : b.visitId ? 'Out-patient / day care visit' : null}</Detail>
+        <Detail label="Encounter">
+          {b.admissionId ? 'In-patient (charges go to the IP bill)' : b.visitId ? 'Out-patient / day care visit' : null}
+        </Detail>
       </DetailGrid>
       {b.notes && (
         <Section title="Notes for the OT team">
           <Text style={{ whiteSpace: 'pre-wrap' }}>{b.notes}</Text>
         </Section>
       )}
-      <Section title="Billing" description="Theatre time, procedure, surgeon and anaesthetist fees are posted when surgery is completed.">
-        <ChargeStatusPanel status={b.chargeStatus} error={b.chargeError} canRetry={canRetry} retrying={retrying} onRetry={onRetry} />
+      <Section
+        title="Billing"
+        description="Theatre time, procedure, surgeon and anaesthetist fees are posted when surgery is completed."
+      >
+        <ChargeStatusPanel
+          status={b.chargeStatus}
+          error={b.chargeError}
+          canRetry={canRetry}
+          retrying={retrying}
+          onRetry={onRetry}
+        />
       </Section>
     </div>
   );

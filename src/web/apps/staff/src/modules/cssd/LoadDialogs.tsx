@@ -33,8 +33,18 @@ import { checkParameters, METHOD_HINT, METHOD_LABEL, METHODS, type Sterilization
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  two: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
-  three: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '12px', '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  two: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
+  three: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   line: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px auto', gap: '8px', alignItems: 'end' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -63,7 +73,11 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
   const methodSets = (sets.data ?? []).filter((s) => s.method === method);
   const filled = lines.filter((l) => l.setId && l.quantity !== '' && l.quantity > 0);
   const total = filled.reduce((sum, l) => sum + Number(l.quantity), 0);
-  const valid = sterilizer.trim().length > 0 && filled.length > 0 && total <= 200 && lines.every((l) => !l.setId || (l.quantity !== '' && l.quantity >= 1 && l.quantity <= 50));
+  const valid =
+    sterilizer.trim().length > 0 &&
+    filled.length > 0 &&
+    total <= 200 &&
+    lines.every((l) => !l.setId || (l.quantity !== '' && l.quantity >= 1 && l.quantity <= 50));
 
   const create = useMutation({
     mutationFn: () =>
@@ -78,7 +92,10 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
       }),
     onSuccess: (load) => {
       setLastSterilizer(sterilizer.trim());
-      notify.success(`Load ${load.cycleNumber} created`, `${load.packs.length} packs numbered. Print the labels before sealing.`);
+      notify.success(
+        `Load ${load.cycleNumber} created`,
+        `${load.packs.length} packs numbered. Print the labels before sealing.`,
+      );
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
       onCreated(load);
     },
@@ -106,14 +123,29 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
             <DialogContent className={styles.stack}>
               <div className={styles.two}>
                 <Field label="Sterilizer" required hint="Remembered on this computer">
-                  <Input value={sterilizer} onChange={(_, d) => setSterilizer(d.value)} maxLength={100} placeholder="e.g. Autoclave 1" autoFocus={!sterilizer} />
+                  <Input
+                    value={sterilizer}
+                    onChange={(_, d) => setSterilizer(d.value)}
+                    maxLength={100}
+                    placeholder="e.g. Autoclave 1"
+                    autoFocus={!sterilizer}
+                  />
                 </Field>
                 <Field label="Programme / cycle">
-                  <Input value={program} onChange={(_, d) => setProgram(d.value)} maxLength={100} placeholder="e.g. 134 °C wrapped" />
+                  <Input
+                    value={program}
+                    onChange={(_, d) => setProgram(d.value)}
+                    maxLength={100}
+                    placeholder="e.g. 134 °C wrapped"
+                  />
                 </Field>
               </div>
               <Field label="Method" hint={METHOD_HINT[method]}>
-                <RadioGroup layout="horizontal" value={method} onChange={(_, d) => changeMethod(d.value as SterilizationMethod)}>
+                <RadioGroup
+                  layout="horizontal"
+                  value={method}
+                  onChange={(_, d) => changeMethod(d.value as SterilizationMethod)}
+                >
                   {METHODS.map((m) => (
                     <Radio key={m} value={m} label={METHOD_LABEL[m]} />
                   ))}
@@ -141,17 +173,37 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
                         max={50}
                         aria-label={`Packs of set ${index + 1}`}
                         value={String(line.quantity)}
-                        onChange={(_, d) => setLines(lines.map((l, i) => (i === index ? { ...l, quantity: d.value === '' ? '' : Number(d.value) } : l)))}
+                        onChange={(_, d) =>
+                          setLines(
+                            lines.map((l, i) =>
+                              i === index ? { ...l, quantity: d.value === '' ? '' : Number(d.value) } : l,
+                            ),
+                          )
+                        }
                       />
-                      <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove set ${index + 1}`} disabled={lines.length === 1} onClick={() => setLines(lines.filter((_, i) => i !== index))} />
+                      <Button
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        aria-label={`Remove set ${index + 1}`}
+                        disabled={lines.length === 1}
+                        onClick={() => setLines(lines.filter((_, i) => i !== index))}
+                      />
                     </div>
                   ))}
                   <div>
-                    <Button size="small" icon={<AddRegular />} onClick={() => setLines([...lines, { setId: '', quantity: 1 }])}>
+                    <Button
+                      size="small"
+                      icon={<AddRegular />}
+                      onClick={() => setLines([...lines, { setId: '', quantity: 1 }])}
+                    >
                       Add another set
                     </Button>
                   </div>
-                  {sets.data && methodSets.length === 0 && <Caption1 className={styles.muted}>No sets use this method. Check the instrument set masters.</Caption1>}
+                  {sets.data && methodSets.length === 0 && (
+                    <Caption1 className={styles.muted}>
+                      No sets use this method. Check the instrument set masters.
+                    </Caption1>
+                  )}
                 </div>
               </Field>
               <Switch
@@ -169,7 +221,9 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
               </div>
               {create.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(create.error) ? create.error.userMessage : 'The load could not be created.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(create.error) ? create.error.userMessage : 'The load could not be created.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -177,7 +231,12 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
               <Button onClick={onClose} disabled={create.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || create.isPending}
+                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Create load ({total} packs)
               </Button>
             </DialogActions>
@@ -199,19 +258,41 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
   const [ci, setCi] = useState<'Pass' | 'Fail' | ''>('');
   const t = Number(temperature);
   const m = Number(minutes);
-  const haveNumbers = temperature !== '' && minutes !== '' && Number.isFinite(t) && Number.isInteger(m) && t >= 0 && t <= 200 && m >= 0 && m <= 1440;
+  const haveNumbers =
+    temperature !== '' &&
+    minutes !== '' &&
+    Number.isFinite(t) &&
+    Number.isInteger(m) &&
+    t >= 0 &&
+    t <= 200 &&
+    m >= 0 &&
+    m <= 1440;
   const check = haveNumbers ? checkParameters(load.method, t, m) : null;
   const pressureOk = pressure === '' || (Number(pressure) >= 0 && Number(pressure) <= 1000);
   const valid = haveNumbers && ci !== '' && pressureOk;
   const willFail = (check && !check.ok) || ci === 'Fail';
 
   const complete = useMutation({
-    mutationFn: () => cssdApi.completeLoad(load.id, { temperatureC: t, pressureKpa: pressure === '' ? null : Number(pressure), exposureMinutes: m, chemicalIndicator: ci as 'Pass' | 'Fail' }),
+    mutationFn: () =>
+      cssdApi.completeLoad(load.id, {
+        temperatureC: t,
+        pressureKpa: pressure === '' ? null : Number(pressure),
+        exposureMinutes: m,
+        chemicalIndicator: ci as 'Pass' | 'Fail',
+      }),
     onSuccess: (result) => {
       if (result.status === 'Failed') {
-        notify.warning(`Load ${result.cycleNumber} failed`, result.failureReason ?? 'Send the packs back for reprocessing.');
+        notify.warning(
+          `Load ${result.cycleNumber} failed`,
+          result.failureReason ?? 'Send the packs back for reprocessing.',
+        );
       } else {
-        notify.success(`Cycle ${result.cycleNumber} complete`, result.containsImplants ? 'Implant load: release after the biological indicator passes.' : 'Ready to release.');
+        notify.success(
+          `Cycle ${result.cycleNumber} complete`,
+          result.containsImplants
+            ? 'Implant load: release after the biological indicator passes.'
+            : 'Ready to release.',
+        );
       }
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
       onClose();
@@ -239,13 +320,40 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
             <DialogContent className={styles.stack}>
               <div className={styles.three}>
                 <Field label="Temperature (°C)" required>
-                  <Input type="number" inputMode="decimal" step={0.1} min={0} max={200} value={temperature} onChange={(_, d) => setTemperature(d.value)} autoFocus />
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step={0.1}
+                    min={0}
+                    max={200}
+                    value={temperature}
+                    onChange={(_, d) => setTemperature(d.value)}
+                    autoFocus
+                  />
                 </Field>
                 <Field label="Exposure (minutes)" required>
-                  <Input type="number" inputMode="numeric" min={0} max={1440} value={minutes} onChange={(_, d) => setMinutes(d.value)} />
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={1440}
+                    value={minutes}
+                    onChange={(_, d) => setMinutes(d.value)}
+                  />
                 </Field>
-                <Field label="Pressure (kPa)" validationMessage={pressureOk ? undefined : '0 to 1000 kPa'} validationState={pressureOk ? 'none' : 'error'}>
-                  <Input type="number" inputMode="decimal" min={0} max={1000} value={pressure} onChange={(_, d) => setPressure(d.value)} />
+                <Field
+                  label="Pressure (kPa)"
+                  validationMessage={pressureOk ? undefined : '0 to 1000 kPa'}
+                  validationState={pressureOk ? 'none' : 'error'}
+                >
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={1000}
+                    value={pressure}
+                    onChange={(_, d) => setPressure(d.value)}
+                  />
                 </Field>
               </div>
               <Field label="Chemical indicator" required>
@@ -269,7 +377,9 @@ export function CompleteLoadDialog({ load, onClose }: { load: LoadDto; onClose: 
               )}
               {complete.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(complete.error) ? complete.error.userMessage : 'The cycle could not be recorded.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(complete.error) ? complete.error.userMessage : 'The cycle could not be recorded.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
               <Text size={200} className={styles.muted}>
@@ -312,10 +422,17 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
       if (result === 'Fail') {
         notify.warning(
           released ? `Recall started for ${updated.cycleNumber}` : `Load ${updated.cycleNumber} failed`,
-          released ? 'Every issue of this load is flagged and the recall team alerted.' : 'Send the packs for reprocessing.',
+          released
+            ? 'Every issue of this load is flagged and the recall team alerted.'
+            : 'Send the packs for reprocessing.',
         );
       } else {
-        notify.success('Biological indicator passed', updated.containsImplants && updated.status === 'Completed' ? 'The implant load can now be released.' : undefined);
+        notify.success(
+          'Biological indicator passed',
+          updated.containsImplants && updated.status === 'Completed'
+            ? 'The implant load can now be released.'
+            : undefined,
+        );
       }
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
       onClose();
@@ -337,7 +454,11 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
             <DialogTitle>Biological indicator for {load.cycleNumber}</DialogTitle>
             <DialogContent className={styles.stack}>
               <Field label="Result" required>
-                <RadioGroup layout="horizontal" value={result} onChange={(_, d) => setResult(d.value as 'Pass' | 'Fail')}>
+                <RadioGroup
+                  layout="horizontal"
+                  value={result}
+                  onChange={(_, d) => setResult(d.value as 'Pass' | 'Fail')}
+                >
                   <Radio value="Pass" label="Passed (no growth)" />
                   <Radio value="Fail" label="Failed (growth)" />
                 </RadioGroup>
@@ -357,7 +478,9 @@ export function BiologicalIndicatorDialog({ load, onClose }: { load: LoadDto; on
               )}
               {record.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(record.error) ? record.error.userMessage : 'The result could not be saved.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(record.error) ? record.error.userMessage : 'The result could not be saved.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>

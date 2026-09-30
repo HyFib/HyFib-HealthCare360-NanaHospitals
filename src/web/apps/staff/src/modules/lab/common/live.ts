@@ -49,7 +49,10 @@ class InvalidationBatcher {
  * are all pushed there) and refetches the affected lists. `onEvent` lets a screen react to a specific event, for
  * example a new critical value.
  */
-export function useDiagnosticsLive(scopes: readonly LiveScope[], onEvent?: (name: string, payload: unknown) => void): void {
+export function useDiagnosticsLive(
+  scopes: readonly LiveScope[],
+  onEvent?: (name: string, payload: unknown) => void,
+): void {
   const facilityId = useSession((s) => s.user?.facilityId);
   const queryClient = useQueryClient();
   const [batcher] = useState(() => new InvalidationBatcher(queryClient, 600));

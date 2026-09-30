@@ -1,4 +1,17 @@
-import { Button, Field, Input, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Select, Text, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  Input,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Select,
+  Text,
+  Tooltip,
+} from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
   CheckmarkRegular,
@@ -17,7 +30,14 @@ import { usePermission } from '@/lib/permissions';
 import { addDays, dayLabel, isDateOnly } from '@/modules/ot/shared/datetime';
 import { NoAccess, ReasonDialog } from '@/modules/ot/shared/feedback';
 import { useFacilityId, useLiveInvalidation } from '@/modules/ot/shared/hooks';
-import { physioApi, physioKeys, physioQueries, PHYSIO_SESSION_STATUSES, type PhysioSessionStatus, type PhysioWorklistItem } from '@/modules/physio/api';
+import {
+  physioApi,
+  physioKeys,
+  physioQueries,
+  PHYSIO_SESSION_STATUSES,
+  type PhysioSessionStatus,
+  type PhysioWorklistItem,
+} from '@/modules/physio/api';
 import { physioSessionStatusLabel, physioSessionStatusTone } from '@/modules/physio/labels';
 import { AttendDialog, NewReferralDialog, RescheduleDialog } from '@/modules/physio/PhysioDialogs';
 
@@ -29,7 +49,9 @@ interface WorklistSearch {
 export const Route = createFileRoute('/_app/physio/')({
   validateSearch: (s: Record<string, unknown>): WorklistSearch => ({
     date: isDateOnly(s.date) ? s.date : undefined,
-    status: PHYSIO_SESSION_STATUSES.includes(s.status as PhysioSessionStatus) ? (s.status as PhysioSessionStatus) : undefined,
+    status: PHYSIO_SESSION_STATUSES.includes(s.status as PhysioSessionStatus)
+      ? (s.status as PhysioSessionStatus)
+      : undefined,
   }),
   component: PhysioWorklistPage,
 });
@@ -58,10 +80,14 @@ function PhysioWorklistPage() {
   const [moving, setMoving] = useState<PhysioWorklistItem | null>(null);
   const [closing, setClosing] = useState<PhysioWorklistItem | null>(null);
 
-  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'physio.worklist.changed', [physioKeys.worklists, physioKeys.referralLists]);
+  useLiveInvalidation(facilityId ? `facility:${facilityId}` : null, 'physio.worklist.changed', [
+    physioKeys.worklists,
+    physioKeys.referralLists,
+  ]);
 
   const close = useMutation({
-    mutationFn: ({ id, reason, missed }: { id: string; reason: string; missed: boolean }) => physioApi.close(id, reason, missed),
+    mutationFn: ({ id, reason, missed }: { id: string; reason: string; missed: boolean }) =>
+      physioApi.close(id, reason, missed),
     onSuccess: (_, { missed }) => {
       setClosing(null);
       notify.success(missed ? 'Recorded as missed' : 'Session cancelled');
@@ -113,10 +139,17 @@ function PhysioWorklistPage() {
               </Tooltip>
             </div>
             <Field label="Date">
-              <Input type="date" value={date} onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })} />
+              <Input
+                type="date"
+                value={date}
+                onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })}
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as PhysioSessionStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as PhysioSessionStatus | undefined })}
+              >
                 <option value="">All</option>
                 {PHYSIO_SESSION_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -136,11 +169,31 @@ function PhysioWorklistPage() {
           getRowId={(i) => i.sessionId}
           onRowClick={(i) => void navigate({ to: '/physio/referrals/$id', params: { id: i.referralId } })}
           columns={[
-            { key: 'time', header: 'Time', width: 90, render: (i) => <Text weight="semibold">{formatTime(i.scheduledAt)}</Text> },
+            {
+              key: 'time',
+              header: 'Time',
+              width: 90,
+              render: (i) => <Text weight="semibold">{formatTime(i.scheduledAt)}</Text>,
+            },
             { key: 'patient', header: 'Patient', render: (i) => <Text weight="semibold">{i.patientName}</Text> },
             { key: 'uhid', header: 'UHID', priority: 'low', render: (i) => <Text font="monospace">{i.uhid}</Text> },
-            { key: 'session', header: 'Session', width: 110, render: (i) => `${i.sessionNumber}${i.sessionsPlanned ? ` of ${i.sessionsPlanned}` : ''}` },
-            { key: 'status', header: 'Status', render: (i) => <StatusBadge status={i.status} tone={physioSessionStatusTone[i.status]} label={physioSessionStatusLabel[i.status]} /> },
+            {
+              key: 'session',
+              header: 'Session',
+              width: 110,
+              render: (i) => `${i.sessionNumber}${i.sessionsPlanned ? ` of ${i.sessionsPlanned}` : ''}`,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (i) => (
+                <StatusBadge
+                  status={i.status}
+                  tone={physioSessionStatusTone[i.status]}
+                  label={physioSessionStatusLabel[i.status]}
+                />
+              ),
+            },
             { key: 'therapist', header: 'Therapist', priority: 'low', render: (i) => i.therapistName ?? '—' },
           ]}
           rowActions={
@@ -148,12 +201,22 @@ function PhysioWorklistPage() {
               ? (i) =>
                   i.status === 'Scheduled' ? (
                     <span className={styles.actions}>
-                      <Button size="small" appearance="primary" icon={<CheckmarkRegular />} onClick={() => setAttending(i)}>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => setAttending(i)}
+                      >
                         Record
                       </Button>
                       <Menu>
                         <MenuTrigger disableButtonEnhancement>
-                          <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More actions for ${i.patientName}`} />
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<MoreHorizontalRegular />}
+                            aria-label={`More actions for ${i.patientName}`}
+                          />
                         </MenuTrigger>
                         <MenuPopover>
                           <MenuList>
@@ -178,14 +241,24 @@ function PhysioWorklistPage() {
 
       {referring && <NewReferralDialog onClose={() => setReferring(false)} />}
       {attending && <WorklistAttend item={attending} onClose={() => setAttending(null)} />}
-      {moving && <RescheduleDialog sessionId={moving.sessionId} scheduledAt={moving.scheduledAt} onClose={() => setMoving(null)} />}
+      {moving && (
+        <RescheduleDialog
+          sessionId={moving.sessionId}
+          scheduledAt={moving.scheduledAt}
+          onClose={() => setMoving(null)}
+        />
+      )}
       <ReasonDialog
         open={closing !== null}
         title={`Close session ${closing?.sessionNumber ?? ''} for ${closing?.patientName ?? ''}?`}
         confirmLabel="Save"
         busy={close.isPending}
         error={close.error}
-        option={{ label: 'The patient did not come (record as missed)', defaultChecked: true, hint: 'Untick if the department cancelled it.' }}
+        option={{
+          label: 'The patient did not come (record as missed)',
+          defaultChecked: true,
+          hint: 'Untick if the department cancelled it.',
+        }}
         presets={['Patient did not come', 'Patient unwell', 'Therapist unavailable', 'Patient discharged']}
         onConfirm={(reason, missed) => closing && close.mutate({ id: closing.sessionId, reason, missed })}
         onCancel={() => {
@@ -203,5 +276,7 @@ function WorklistAttend({ item, onClose }: { item: PhysioWorklistItem; onClose: 
   if (referral.isLoading) {
     return <LoadingState label="Loading the treatment plan…" />;
   }
-  return <AttendDialog session={item} plan={referral.data?.plan ?? null} patientName={item.patientName} onClose={onClose} />;
+  return (
+    <AttendDialog session={item} plan={referral.data?.plan ?? null} patientName={item.patientName} onClose={onClose} />
+  );
 }

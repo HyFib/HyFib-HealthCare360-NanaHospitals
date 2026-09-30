@@ -54,7 +54,8 @@ export function atIst(date: string, hours: number, minutes = 0): string {
   if (!match) {
     throw new RangeError(`Invalid date ${date}`);
   }
-  const ms = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hours, minutes) - IST_OFFSET_MINUTES * MINUTE;
+  const ms =
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), hours, minutes) - IST_OFFSET_MINUTES * MINUTE;
   return new Date(ms).toISOString();
 }
 
@@ -64,7 +65,9 @@ export function addDays(date: string, days: number): string {
   if (!match) {
     return date;
   }
-  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) + days * DAY).toISOString().slice(0, 10);
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) + days * DAY)
+    .toISOString()
+    .slice(0, 10);
 }
 
 /** Whole days from `from` to `to` ("yyyy-MM-dd"); negative when `to` is earlier. */

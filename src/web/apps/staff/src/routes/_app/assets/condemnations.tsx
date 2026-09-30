@@ -32,7 +32,12 @@ import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
 import { assetApi, assetKeys, assetQueries, type AssetListItem, type CondemnationDto } from '@/modules/assets/api';
 import { DisposeDialog } from '@/modules/assets/AssetDialogs';
-import { assetStatusLabel, assetStatusTone, CONDEMNATION_STATUSES, type CondemnationStatus } from '@/modules/assets/labels';
+import {
+  assetStatusLabel,
+  assetStatusTone,
+  CONDEMNATION_STATUSES,
+  type CondemnationStatus,
+} from '@/modules/assets/labels';
 import { SearchPicker } from '@/modules/inventory/ItemPicker';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
@@ -48,13 +53,20 @@ interface CondemnationSearch {
 
 export const Route = createFileRoute('/_app/assets/condemnations')({
   validateSearch: (s: Record<string, unknown>): CondemnationSearch => ({
-    status: s.status === 'all' || (CONDEMNATION_STATUSES.includes(s.status as CondemnationStatus) && s.status !== 'Pending') ? (s.status as StatusFilter) : undefined,
+    status:
+      s.status === 'all' || (CONDEMNATION_STATUSES.includes(s.status as CondemnationStatus) && s.status !== 'Pending')
+        ? (s.status as StatusFilter)
+        : undefined,
     id: typeof s.id === 'string' && s.id ? s.id : undefined,
   }),
   component: CondemnationsPage,
 });
 
-const STATUS_TEXT: Record<CondemnationStatus, string> = { Pending: 'Awaiting decision', Approved: 'Condemned', Rejected: 'Rejected' };
+const STATUS_TEXT: Record<CondemnationStatus, string> = {
+  Pending: 'Awaiting decision',
+  Approved: 'Condemned',
+  Rejected: 'Rejected',
+};
 const SELF_DECISION = 'condemnation.self_approval';
 
 const useStyles = makeStyles({
@@ -95,7 +107,12 @@ function CondemnationsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Show">
-              <Select value={status} onChange={(_, d) => void navigate({ search: { status: d.value === 'Pending' ? undefined : (d.value as StatusFilter) } })}>
+              <Select
+                value={status}
+                onChange={(_, d) =>
+                  void navigate({ search: { status: d.value === 'Pending' ? undefined : (d.value as StatusFilter) } })
+                }
+              >
                 <option value="Pending">Awaiting decision</option>
                 <option value="Approved">Condemned</option>
                 <option value="Rejected">Rejected</option>
@@ -119,12 +136,19 @@ function CondemnationsPage() {
               header: 'Equipment',
               render: (c) => (
                 <span>
-                  <Text weight="semibold">{c.assetName}</Text> <Caption1 className={styles.muted}>{c.assetTag}</Caption1>
+                  <Text weight="semibold">{c.assetName}</Text>{' '}
+                  <Caption1 className={styles.muted}>{c.assetTag}</Caption1>
                 </span>
               ),
             },
             { key: 'reason', header: 'Why', render: (c) => <span className={styles.reason}>{c.reason}</span> },
-            { key: 'book', header: 'Book value', align: 'end', priority: 'low', render: (c) => formatInr(c.bookValueAtRequest) },
+            {
+              key: 'book',
+              header: 'Book value',
+              align: 'end',
+              priority: 'low',
+              render: (c) => formatInr(c.bookValueAtRequest),
+            },
             {
               key: 'requested',
               header: 'Requested',
@@ -183,7 +207,12 @@ function CondemnationDrawer({ request: c, onClose }: { request: CondemnationDto;
       approve ? assetApi.approveCondemnation(c.id, remarks) : assetApi.rejectCondemnation(c.id, remarks),
     onSuccess: (_, { approve }) => {
       setDialog(null);
-      notify.success(approve ? `${c.assetName} condemned` : 'Request rejected', approve ? 'Record the disposal once it is auctioned, bought back or handed to the recycler.' : 'The equipment stays in service.');
+      notify.success(
+        approve ? `${c.assetName} condemned` : 'Request rejected',
+        approve
+          ? 'Record the disposal once it is auctioned, bought back or handed to the recycler.'
+          : 'The equipment stays in service.',
+      );
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
     },
   });
@@ -197,13 +226,23 @@ function CondemnationDrawer({ request: c, onClose }: { request: CondemnationDto;
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>{c.assetName}</DrawerHeaderTitle>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          {c.assetName}
+        </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.stack}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <DocStatus status={c.status} label={STATUS_TEXT[c.status]} />
-            {a && <StatusBadge status={a.status} tone={assetStatusTone[a.status]} label={`Asset: ${assetStatusLabel[a.status]}`} />}
+            {a && (
+              <StatusBadge
+                status={a.status}
+                tone={assetStatusTone[a.status]}
+                label={`Asset: ${assetStatusLabel[a.status]}`}
+              />
+            )}
           </div>
           <div>
             <Caption1 className={styles.muted}>Why it should be condemned</Caption1>
@@ -230,23 +269,35 @@ function CondemnationDrawer({ request: c, onClose }: { request: CondemnationDto;
           </DetailGrid>
           {pending && canDecide && blocked && (
             <MessageBar intent="warning">
-              <MessageBarBody>You asked for this condemnation, so someone else with asset rights must approve or reject it.</MessageBarBody>
+              <MessageBarBody>
+                You asked for this condemnation, so someone else with asset rights must approve or reject it.
+              </MessageBarBody>
             </MessageBar>
           )}
           {decide.error && !selfRefused && dialog === null && (
             <MessageBar intent="error">
-              <MessageBarBody>{isApiError(decide.error) ? decide.error.userMessage : 'The decision was not saved.'}</MessageBarBody>
+              <MessageBarBody>
+                {isApiError(decide.error) ? decide.error.userMessage : 'The decision was not saved.'}
+              </MessageBarBody>
             </MessageBar>
           )}
         </div>
       </DrawerBody>
       <DrawerFooter>
-        <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/assets/$assetId', params: { assetId: c.assetId } })}>
+        <Button
+          icon={<OpenRegular />}
+          onClick={() => void navigate({ to: '/assets/$assetId', params: { assetId: c.assetId } })}
+        >
           Asset
         </Button>
         {pending && canDecide && (
           <>
-            <Button appearance="primary" icon={<CheckmarkRegular />} disabled={blocked} onClick={() => setDialog('approve')}>
+            <Button
+              appearance="primary"
+              icon={<CheckmarkRegular />}
+              disabled={blocked}
+              onClick={() => setDialog('approve')}
+            >
               Approve
             </Button>
             <Button icon={<DismissRegular />} disabled={blocked} onClick={() => setDialog('reject')}>
@@ -275,7 +326,8 @@ function CondemnationDrawer({ request: c, onClose }: { request: CondemnationDto;
           onSubmit={(remarks) => decide.mutate({ approve: true, remarks: remarks || null })}
           onClose={() => setDialog(null)}
         >
-          The asset is taken out of service for good: no more repairs, maintenance or use. Book value today {a ? formatInr(a.bookValue) : formatInr(c.bookValueAtRequest)}.
+          The asset is taken out of service for good: no more repairs, maintenance or use. Book value today{' '}
+          {a ? formatInr(a.bookValue) : formatInr(c.bookValueAtRequest)}.
         </ReasonDialog>
       )}
       {dialog === 'reject' && (
@@ -294,7 +346,12 @@ function CondemnationDrawer({ request: c, onClose }: { request: CondemnationDto;
           The equipment stays in service. The requester sees your reason.
         </ReasonDialog>
       )}
-      {dialog === 'dispose' && a && <DisposeDialog asset={{ id: a.id, name: a.name, assetTag: a.assetTag, bookValue: a.bookValue }} onClose={() => setDialog(null)} />}
+      {dialog === 'dispose' && a && (
+        <DisposeDialog
+          asset={{ id: a.id, name: a.name, assetTag: a.assetTag, bookValue: a.bookValue }}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </OverlayDrawer>
   );
 }
@@ -325,9 +382,15 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
               autoFocus
               placeholder="Asset tag (scan the label), name, model or serial number"
               queryKey={['assets', 'picker']}
-              fetch={(term, signal) => api.get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search: term, pageSize: 10 }, signal }).then((r) => r.items)}
+              fetch={(term, signal) =>
+                api
+                  .get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search: term, pageSize: 10 }, signal })
+                  .then((r) => r.items)
+              }
               getKey={(x) => x.id}
-              bestMatch={(items, typed) => items.find((x) => x.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]}
+              bestMatch={(items, typed) =>
+                items.find((x) => x.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]
+              }
               selectedText={asset ? `${asset.name} (${asset.assetTag})` : null}
               emptyText="No equipment matches. Condemned and disposed assets are not listed."
               onPick={setAsset}
@@ -345,12 +408,18 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
                 </div>
               )}
             />
-            <Field label="Why should it be condemned?" required hint="Beyond economical repair, obsolete, unsafe, parts no longer available… at least 10 characters">
+            <Field
+              label="Why should it be condemned?"
+              required
+              hint="Beyond economical repair, obsolete, unsafe, parts no longer available… at least 10 characters"
+            >
               <Textarea value={reason} rows={4} maxLength={1000} onChange={(_, d) => setReason(d.value)} />
             </Field>
             {request.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(request.error) ? request.error.userMessage : 'Not requested. Try again.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(request.error) ? request.error.userMessage : 'Not requested. Try again.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -358,7 +427,12 @@ function RequestDialog({ onClose, onRequested }: { onClose: () => void; onReques
             <Button onClick={onClose} disabled={request.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || request.isPending} icon={request.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => request.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || request.isPending}
+              icon={request.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => request.mutate()}
+            >
               Request condemnation
             </Button>
           </DialogActions>

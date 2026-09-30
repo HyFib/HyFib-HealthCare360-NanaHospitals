@@ -27,7 +27,13 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { SearchPicker } from '@/modules/inventory/ItemPicker';
 import { assetApi, assetKeys, type AssetListItem } from './api';
-import { assetStatusLabel, criticalityTone, TICKET_PRIORITIES, type AssetCriticality, type TicketPriority } from './labels';
+import {
+  assetStatusLabel,
+  criticalityTone,
+  TICKET_PRIORITIES,
+  type AssetCriticality,
+  type TicketPriority,
+} from './labels';
 
 const useStyles = makeStyles({
   asset: {
@@ -53,7 +59,15 @@ export interface BreakdownAsset {
  * Report an equipment breakdown (AST-04). Any ward can report; the priority follows the equipment's criticality
  * unless changed, and "cannot be used" takes it out of service and alerts biomedical engineering at once.
  */
-export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?: BreakdownAsset | null; onClose: () => void; onReported?: (ticketId: string) => void }) {
+export function BreakdownDialog({
+  asset: preset,
+  onClose,
+  onReported,
+}: {
+  asset?: BreakdownAsset | null;
+  onClose: () => void;
+  onReported?: (ticketId: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -64,9 +78,20 @@ export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?
   const valid = asset !== null && issue.trim().length >= 5;
 
   const report = useMutation({
-    mutationFn: () => assetApi.reportBreakdown({ assetId: asset!.id, issue: issue.trim(), priority: priority || null, assetDown: down }),
+    mutationFn: () =>
+      assetApi.reportBreakdown({
+        assetId: asset!.id,
+        issue: issue.trim(),
+        priority: priority || null,
+        assetDown: down,
+      }),
     onSuccess: (ticket) => {
-      notify.success(`Breakdown ${ticket.number} reported`, down ? 'The equipment is marked out of service and biomedical engineering has been alerted.' : 'Biomedical engineering will pick it up.');
+      notify.success(
+        `Breakdown ${ticket.number} reported`,
+        down
+          ? 'The equipment is marked out of service and biomedical engineering has been alerted.'
+          : 'Biomedical engineering will pick it up.',
+      );
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
       onReported?.(ticket.id);
       onClose();
@@ -105,11 +130,25 @@ export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?
                 autoFocus
                 placeholder="Asset tag (scan the label), name, model or serial number"
                 queryKey={['assets', 'picker']}
-                fetch={(search, signal) => api.get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search, pageSize: 10 }, signal }).then((r) => r.items)}
+                fetch={(search, signal) =>
+                  api
+                    .get<PagedResult<AssetListItem>>('/api/v1/assets', { query: { search, pageSize: 10 }, signal })
+                    .then((r) => r.items)
+                }
                 getKey={(a) => a.id}
-                bestMatch={(items, typed) => items.find((a) => a.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]}
+                bestMatch={(items, typed) =>
+                  items.find((a) => a.assetTag.toUpperCase() === typed.trim().toUpperCase()) ?? items[0]
+                }
                 emptyText="No equipment matches. Check the tag on the label."
-                onPick={(a) => setAsset({ id: a.id, assetTag: a.assetTag, name: a.name, location: a.location ?? a.departmentName, criticality: a.criticality })}
+                onPick={(a) =>
+                  setAsset({
+                    id: a.id,
+                    assetTag: a.assetTag,
+                    name: a.name,
+                    location: a.location ?? a.departmentName,
+                    criticality: a.criticality,
+                  })
+                }
                 renderOption={(a) => (
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, width: '100%' }}>
                     <span>
@@ -125,8 +164,18 @@ export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?
                 )}
               />
             )}
-            <Field label="What is wrong?" required hint="What happened and what you see, e.g. alarm keeps sounding, screen blank after power on">
-              <Textarea value={issue} rows={3} maxLength={2000} onChange={(_, d) => setIssue(d.value)} autoFocus={Boolean(preset)} />
+            <Field
+              label="What is wrong?"
+              required
+              hint="What happened and what you see, e.g. alarm keeps sounding, screen blank after power on"
+            >
+              <Textarea
+                value={issue}
+                rows={3}
+                maxLength={2000}
+                onChange={(_, d) => setIssue(d.value)}
+                autoFocus={Boolean(preset)}
+              />
             </Field>
             <Field label="Priority">
               <Select value={priority} onChange={(_, d) => setPriority(d.value as TicketPriority | '')}>
@@ -143,10 +192,16 @@ export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?
               onChange={(_, d) => setDown(d.checked)}
               label="The equipment cannot be used until it is repaired"
             />
-            {down && <Caption1>It is marked under maintenance and the biomedical engineers are notified straight away.</Caption1>}
+            {down && (
+              <Caption1>
+                It is marked under maintenance and the biomedical engineers are notified straight away.
+              </Caption1>
+            )}
             {report.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(report.error) ? report.error.userMessage : 'Not reported. Try again.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(report.error) ? report.error.userMessage : 'Not reported. Try again.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -154,7 +209,12 @@ export function BreakdownDialog({ asset: preset, onClose, onReported }: { asset?
             <Button onClick={onClose} disabled={report.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || report.isPending} icon={report.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => report.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || report.isPending}
+              icon={report.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => report.mutate()}
+            >
               Report breakdown
             </Button>
           </DialogActions>

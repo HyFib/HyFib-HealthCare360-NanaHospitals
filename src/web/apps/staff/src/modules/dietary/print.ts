@@ -35,7 +35,9 @@ export async function printProductionSheet(summary: ProductionSummary, facilityN
   }).join('');
   const body = `<div class="hospital">${escapeHtml(facilityName)} · Kitchen</div>
     <h1>Production list for ${escapeHtml(formatDateOnly(summary.date))} (${summary.totalMeals} meals)</h1>${sections || '<p>No meals planned.</p>'}`;
-  await printHtml(printDocument(body, { title: `Kitchen ${summary.date}`, pageSize: 'A4', styles: TABLE_STYLES }), { pageSize: 'A4' });
+  await printHtml(printDocument(body, { title: `Kitchen ${summary.date}`, pageSize: 'A4', styles: TABLE_STYLES }), {
+    pageSize: 'A4',
+  });
 }
 
 /** A4 delivery list for one ward and round: bed, patient, diet, restrictions and allergies, with a tick column. */
@@ -57,5 +59,8 @@ export async function printWardMealList(plan: WardMealPlan, date: string, facili
   const body = `<div class="hospital">${escapeHtml(facilityName)} · Dietary</div>
     <h1>${escapeHtml(plan.wardName ?? 'Ward')} · meals for ${escapeHtml(formatDateOnly(date))}</h1>
     <table><thead><tr><th>Round</th><th>Bed</th><th>Patient</th><th>Diet</th><th>Restrictions</th><th>Allergies</th><th>Served</th></tr></thead><tbody>${rows}</tbody></table>`;
-  await printHtml(printDocument(body, { title: `Meals ${plan.wardName ?? ''} ${date}`, pageSize: 'A4', styles: TABLE_STYLES }), { pageSize: 'A4' });
+  await printHtml(
+    printDocument(body, { title: `Meals ${plan.wardName ?? ''} ${date}`, pageSize: 'A4', styles: TABLE_STYLES }),
+    { pageSize: 'A4' },
+  );
 }

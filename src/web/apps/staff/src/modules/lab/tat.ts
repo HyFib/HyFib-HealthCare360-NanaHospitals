@@ -41,7 +41,10 @@ export function rejectionRate(samples: number, rejections: number): number | nul
 }
 
 /** The busiest tests first (ties by name), for charts that can show only a few bars. */
-export function busiestTests<T extends Pick<LabTatRow, 'released' | 'testName'>>(rows: readonly T[], count: number): T[] {
+export function busiestTests<T extends Pick<LabTatRow, 'released' | 'testName'>>(
+  rows: readonly T[],
+  count: number,
+): T[] {
   return [...rows]
     .filter((row) => row.released > 0)
     .sort((a, b) => b.released - a.released || a.testName.localeCompare(b.testName))

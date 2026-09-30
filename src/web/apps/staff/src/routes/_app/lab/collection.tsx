@@ -1,4 +1,16 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Select, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  Select,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { BarcodeScannerRegular, DropRegular, InfoRegular } from '@fluentui/react-icons';
 import { formatRelative, useHotkey } from '@hc360/core';
 import { EmptyState, ErrorState, FilterBar, Page, PageHeader, Pagination, Section } from '@hc360/ui';
@@ -54,7 +66,13 @@ const useStyles = makeStyles({
   mono: { fontFamily: tokens.fontFamilyMonospace },
   tubes: { display: 'flex', flexDirection: 'column', gap: '6px', gridColumn: '1 / -1' },
   tube: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
-  prep: { display: 'flex', gap: '6px', alignItems: 'center', color: tokens.colorPaletteMarigoldForeground1, gridColumn: '1 / -1' },
+  prep: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+    color: tokens.colorPaletteMarigoldForeground1,
+    gridColumn: '1 / -1',
+  },
   actions: { display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' },
 });
 
@@ -85,7 +103,11 @@ function toTarget(group: OrderGroup): CollectTarget {
     patientName: first.patientName,
     uhid: first.uhid,
     ageSex: `${first.age ?? '—'} / ${first.gender.charAt(0)}`,
-    priority: group.tubes.some((t) => t.priority === 'Stat') ? 'Stat' : group.tubes.some((t) => t.priority === 'Urgent') ? 'Urgent' : 'Routine',
+    priority: group.tubes.some((t) => t.priority === 'Stat')
+      ? 'Stat'
+      : group.tubes.some((t) => t.priority === 'Urgent')
+        ? 'Urgent'
+        : 'Routine',
     tubes: group.tubes.map((tube) => ({
       sampleId: tube.sampleId,
       barcode: tube.barcode,
@@ -114,13 +136,20 @@ function CollectionPage() {
   const [target, setTarget] = useState<CollectTarget | null>(null);
 
   useLabLive();
-  const filters = { search: search.search, section: search.section, priority: search.priority, patientClass: search.patientClass, page: search.page };
+  const filters = {
+    search: search.search,
+    section: search.section,
+    priority: search.priority,
+    patientClass: search.patientClass,
+    page: search.page,
+  };
   const pending = useQuery(labQueries.pendingCollection(filters, PAGE_SIZE));
   const groups = groupByOrder(pending.data?.items ?? []);
 
   useHotkey('f2', () => scanRef.current?.focus(), { allowInInputs: true });
 
-  const set = (patch: Partial<CollectionSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<CollectionSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
   /** Scanner flow: one matching order opens the collection dialog straight away. */
   const submitSearch = async () => {
@@ -131,7 +160,9 @@ function CollectionPage() {
       return;
     }
     try {
-      const result = await queryClient.fetchQuery(labQueries.pendingCollection({ ...filters, search: value, page: undefined }, PAGE_SIZE));
+      const result = await queryClient.fetchQuery(
+        labQueries.pendingCollection({ ...filters, search: value, page: undefined }, PAGE_SIZE),
+      );
       const found = groupByOrder(result.items);
       if (found.length === 1) {
         setTarget(toTarget(found[0]!));
@@ -177,7 +208,10 @@ function CollectionPage() {
             />
           </Field>
           <Field label="Bench">
-            <Select value={search.section ?? ''} onChange={(_, data) => set({ section: (data.value || undefined) as LabSection | undefined })}>
+            <Select
+              value={search.section ?? ''}
+              onChange={(_, data) => set({ section: (data.value || undefined) as LabSection | undefined })}
+            >
               <option value="">All</option>
               {LAB_SECTIONS.map((value) => (
                 <option key={value} value={value}>
@@ -187,7 +221,10 @@ function CollectionPage() {
             </Select>
           </Field>
           <Field label="Priority">
-            <Select value={search.priority ?? ''} onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}>
+            <Select
+              value={search.priority ?? ''}
+              onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}
+            >
               <option value="">All</option>
               {ORDER_PRIORITIES.map((value) => (
                 <option key={value} value={value}>
@@ -197,7 +234,10 @@ function CollectionPage() {
             </Select>
           </Field>
           <Field label="Patient type">
-            <Select value={search.patientClass ?? ''} onChange={(_, data) => set({ patientClass: (data.value || undefined) as PatientClass | undefined })}>
+            <Select
+              value={search.patientClass ?? ''}
+              onChange={(_, data) => set({ patientClass: (data.value || undefined) as PatientClass | undefined })}
+            >
               <option value="">All</option>
               {PATIENT_CLASSES.map((value) => (
                 <option key={value} value={value}>
@@ -241,14 +281,19 @@ function CollectionPage() {
       ) : (
         <div className={styles.groups} aria-label="Patients waiting for sample collection">
           <Caption1 className={styles.muted}>
-            {pending.data?.totalCount ?? 0} {pending.data?.totalCount === 1 ? 'tube' : 'tubes'} waiting · {groups.length} {groups.length === 1 ? 'order' : 'orders'} on this page
+            {pending.data?.totalCount ?? 0} {pending.data?.totalCount === 1 ? 'tube' : 'tubes'} waiting ·{' '}
+            {groups.length} {groups.length === 1 ? 'order' : 'orders'} on this page
           </Caption1>
           {groups.map((group) => {
             const { first } = group;
             const stat = group.tubes.some((tube) => tube.priority === 'Stat');
             const preparation = [...new Set(group.tubes.flatMap((tube) => tube.preparation))];
             return (
-              <section key={group.orderId} className={mergeClasses(styles.card, stat ? styles.stat : '')} aria-label={`${first.patientName}, ${group.tubes.length} tubes`}>
+              <section
+                key={group.orderId}
+                className={mergeClasses(styles.card, stat ? styles.stat : '')}
+                aria-label={`${first.patientName}, ${group.tubes.length} tubes`}
+              >
                 <div>
                   <div className={styles.head}>
                     <Text weight="semibold" size={400}>
@@ -257,7 +302,9 @@ function CollectionPage() {
                     <Caption1>
                       {first.age ?? '—'} / {first.gender.charAt(0)}
                     </Caption1>
-                    <PriorityBadge priority={stat ? 'Stat' : group.tubes.some((t) => t.priority === 'Urgent') ? 'Urgent' : 'Routine'} />
+                    <PriorityBadge
+                      priority={stat ? 'Stat' : group.tubes.some((t) => t.priority === 'Urgent') ? 'Urgent' : 'Routine'}
+                    />
                     <PatientClassBadge patientClass={first.patientClass} />
                     {group.tubes.some((tube) => tube.isRecollection) && (
                       <Badge color="danger" appearance="tint" shape="rounded">
@@ -266,7 +313,8 @@ function CollectionPage() {
                     )}
                   </div>
                   <Caption1 className={styles.muted}>
-                    UHID <span className={styles.mono}>{first.uhid}</span> · {first.accessionNumber} · ordered {formatRelative(first.orderedAt)}
+                    UHID <span className={styles.mono}>{first.uhid}</span> · {first.accessionNumber} · ordered{' '}
+                    {formatRelative(first.orderedAt)}
                   </Caption1>
                 </div>
                 <div className={styles.actions}>
@@ -297,7 +345,9 @@ function CollectionPage() {
               page={search.page ?? 1}
               pageSize={PAGE_SIZE}
               totalCount={pending.data.totalCount}
-              onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+              onPageChange={(page) =>
+                void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })
+              }
             />
           )}
         </div>

@@ -39,7 +39,12 @@ export function MealRoundWidget() {
       title={`${MEAL_SLOT_LABEL[slot]} round`}
       description="Today"
       actions={
-        <Button size="small" appearance="subtle" icon={<FoodRegular />} onClick={() => void navigate({ to: '/dietary/meal-plans', search: { slot } })}>
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<FoodRegular />}
+          onClick={() => void navigate({ to: '/dietary/meal-plans', search: { slot } })}
+        >
           Meal plans
         </Button>
       }
@@ -51,7 +56,9 @@ export function MealRoundWidget() {
       ) : (
         <div className={styles.rows}>
           {wards.length === 0 ? (
-            <Text className={styles.muted}>No meals planned for this round. {canManageMeals ? 'Generate today’s plan on the Meal plans page.' : ''}</Text>
+            <Text className={styles.muted}>
+              No meals planned for this round. {canManageMeals ? 'Generate today’s plan on the Meal plans page.' : ''}
+            </Text>
           ) : (
             wards.map((w) => (
               <div key={w.key} className={styles.row}>
@@ -60,7 +67,12 @@ export function MealRoundWidget() {
                   {w.done}/{w.total} served
                 </Caption1>
                 <div className={styles.full}>
-                  <ProgressBar value={w.total ? w.done / w.total : 0} thickness="large" color={w.done === w.total ? 'success' : 'brand'} aria-label={`${w.name}: ${w.done} of ${w.total} served`} />
+                  <ProgressBar
+                    value={w.total ? w.done / w.total : 0}
+                    thickness="large"
+                    color={w.done === w.total ? 'success' : 'brand'}
+                    aria-label={`${w.name}: ${w.done} of ${w.total} served`}
+                  />
                 </div>
               </div>
             ))

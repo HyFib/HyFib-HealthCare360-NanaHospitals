@@ -82,7 +82,14 @@ type Feature = 'oxygen' | 'ventilator' | 'monitor';
  * Pick a vacant bed: grouped by ward, filterable by ward, bed label and equipment. Beds the patient may not use are
  * shown disabled with the reason, so the front desk understands why a vacant bed cannot be chosen.
  */
-export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'Bed', validationMessage }: BedPickerProps) {
+export function BedPicker({
+  patientId,
+  value,
+  onChange,
+  excludeBedId,
+  label = 'Bed',
+  validationMessage,
+}: BedPickerProps) {
   const styles = useStyles();
   const navigation = useArrowNavigationGroup({ axis: 'grid-linear', memorizeCurrent: true });
   const [wardId, setWardId] = useState<string | null>(null);
@@ -90,12 +97,23 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
   const [features, setFeatures] = useState<Feature[]>([]);
   const available = useQuery(inpatientQueries.available(patientId));
 
-  const beds = useMemo(() => (available.data ?? []).filter((bed) => bed.bedId !== excludeBedId), [available.data, excludeBedId]);
+  const beds = useMemo(
+    () => (available.data ?? []).filter((bed) => bed.bedId !== excludeBedId),
+    [available.data, excludeBedId],
+  );
 
   const wards = useMemo(() => {
-    const map = new Map<string, { wardId: string; wardName: string; wardType: AvailableBedDto['wardType']; beds: AvailableBedDto[] }>();
+    const map = new Map<
+      string,
+      { wardId: string; wardName: string; wardType: AvailableBedDto['wardType']; beds: AvailableBedDto[] }
+    >();
     for (const bed of beds) {
-      const entry = map.get(bed.wardId) ?? { wardId: bed.wardId, wardName: bed.wardName, wardType: bed.wardType, beds: [] };
+      const entry = map.get(bed.wardId) ?? {
+        wardId: bed.wardId,
+        wardName: bed.wardName,
+        wardType: bed.wardType,
+        beds: [],
+      };
       entry.beds.push(bed);
       map.set(bed.wardId, entry);
     }
@@ -118,21 +136,40 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
     .filter((ward) => ward.beds.length > 0);
 
   const toggleFeature = (feature: Feature) =>
-    setFeatures((current) => (current.includes(feature) ? current.filter((f) => f !== feature) : [...current, feature]));
+    setFeatures((current) =>
+      current.includes(feature) ? current.filter((f) => f !== feature) : [...current, feature],
+    );
 
   if (available.error) {
-    return <ErrorState error={available.error} onRetry={() => void available.refetch()} title="Could not load vacant beds" />;
+    return (
+      <ErrorState error={available.error} onRetry={() => void available.refetch()} title="Could not load vacant beds" />
+    );
   }
 
   return (
-    <Field label={label} required validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'}>
+    <Field
+      label={label}
+      required
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+    >
       <div className={styles.root}>
         <div className={styles.filters}>
-          <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Bed or room number" aria-label="Find a bed" style={{ minWidth: 200 }} />
+          <SearchBox
+            value={term}
+            onChange={(_, d) => setTerm(d.value)}
+            placeholder="Bed or room number"
+            aria-label="Find a bed"
+            style={{ minWidth: 200 }}
+          />
           <ToggleButton size="small" checked={features.includes('oxygen')} onClick={() => toggleFeature('oxygen')}>
             Oxygen
           </ToggleButton>
-          <ToggleButton size="small" checked={features.includes('ventilator')} onClick={() => toggleFeature('ventilator')}>
+          <ToggleButton
+            size="small"
+            checked={features.includes('ventilator')}
+            onClick={() => toggleFeature('ventilator')}
+          >
             Ventilator
           </ToggleButton>
           <ToggleButton size="small" checked={features.includes('monitor')} onClick={() => toggleFeature('monitor')}>
@@ -161,7 +198,8 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
 
         {!patientId && (
           <Caption1 className={styles.muted}>
-            <InfoRegular aria-hidden /> Choose the patient first so ward rules (male/female wards, NICU, PICU, maternity) are checked.
+            <InfoRegular aria-hidden /> Choose the patient first so ward rules (male/female wards, NICU, PICU,
+            maternity) are checked.
           </Caption1>
         )}
 
@@ -190,7 +228,8 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
                 <div className={styles.groupHeader}>
                   <Subtitle2 as="h3">{ward.wardName}</Subtitle2>
                   <Caption1 className={styles.muted}>
-                    {WARD_TYPE_LABEL[ward.wardType] ?? ward.wardType} · {ward.beds.filter((b) => b.isEligible).length} available
+                    {WARD_TYPE_LABEL[ward.wardType] ?? ward.wardType} · {ward.beds.filter((b) => b.isEligible).length}{' '}
+                    available
                   </Caption1>
                 </div>
                 <div className={styles.grid}>
@@ -204,7 +243,11 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
                         aria-checked={selected}
                         aria-disabled={!bed.isEligible}
                         aria-label={`Bed ${bed.label}${bed.roomNumber ? `, room ${bed.roomNumber}` : ''}, ${ward.wardName}${bed.isEligible ? '' : `. Not allowed: ${bed.ineligibleReason ?? ''}`}`}
-                        className={mergeClasses(styles.bed, selected && styles.selected, !bed.isEligible && styles.disabled)}
+                        className={mergeClasses(
+                          styles.bed,
+                          selected && styles.selected,
+                          !bed.isEligible && styles.disabled,
+                        )}
                         onClick={() => bed.isEligible && onChange(selected ? null : bed)}
                       >
                         <span className={styles.bedHeader}>
@@ -226,7 +269,11 @@ export function BedPicker({ patientId, value, onChange, excludeBedId, label = 'B
                     return bed.isEligible ? (
                       button
                     ) : (
-                      <Tooltip key={bed.bedId} content={bed.ineligibleReason ?? 'This patient cannot use this bed.'} relationship="description">
+                      <Tooltip
+                        key={bed.bedId}
+                        content={bed.ineligibleReason ?? 'This patient cannot use this bed.'}
+                        relationship="description"
+                      >
                         {button}
                       </Tooltip>
                     );

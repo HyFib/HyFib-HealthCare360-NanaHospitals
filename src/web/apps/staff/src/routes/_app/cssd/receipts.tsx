@@ -37,7 +37,8 @@ function SoiledReceiptsPage() {
   const to = search.to ?? today;
   const from = search.from ?? addDays(to, -6);
   const receipts = useQuery(cssdQueries.receipts({ from, to, discrepanciesOnly: search.discrepancies }));
-  const set = (patch: Partial<ReceiptsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<ReceiptsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
@@ -59,9 +60,19 @@ function SoiledReceiptsPage() {
               <Input type="date" value={from} max={to} onChange={(_, d) => d.value && set({ from: d.value })} />
             </Field>
             <Field label="To">
-              <Input type="date" value={to} min={from} max={today} onChange={(_, d) => d.value && set({ to: d.value })} />
+              <Input
+                type="date"
+                value={to}
+                min={from}
+                max={today}
+                onChange={(_, d) => d.value && set({ to: d.value })}
+              />
             </Field>
-            <Switch checked={Boolean(search.discrepancies)} onChange={(_, d) => set({ discrepancies: d.checked || undefined })} label="Only with count differences" />
+            <Switch
+              checked={Boolean(search.discrepancies)}
+              onChange={(_, d) => set({ discrepancies: d.checked || undefined })}
+              label="Only with count differences"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -92,7 +103,11 @@ function SoiledReceiptsPage() {
               render: (r) => (
                 <span>
                   {r.lines.map((l, index) => (
-                    <Caption1 key={`${l.instrumentSetId}-${index}`} block style={l.discrepancies ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
+                    <Caption1
+                      key={`${l.instrumentSetId}-${index}`}
+                      block
+                      style={l.discrepancies ? { color: tokens.colorPaletteRedForeground1 } : undefined}
+                    >
                       {l.setName ?? 'Tray'}: {l.receivedCount}/{l.expectedCount}
                       {l.discrepancies ? ` · ${l.discrepancies}` : ''}
                     </Caption1>
@@ -117,7 +132,9 @@ function SoiledReceiptsPage() {
             },
           ]}
           emptyTitle={search.discrepancies ? 'No count differences in this period' : 'No trays received in this period'}
-          emptyDescription={canReceive ? 'Receive used trays from OT and wards and count them against the count sheet.' : undefined}
+          emptyDescription={
+            canReceive ? 'Receive used trays from OT and wards and count them against the count sheet.' : undefined
+          }
         />
       </Section>
       {receiving && <SoiledReceiptDialog onClose={() => setReceiving(false)} />}

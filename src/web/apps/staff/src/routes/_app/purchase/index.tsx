@@ -40,7 +40,10 @@ function PurchaseOverviewPage() {
   const grnDrafts = useQuery(purchaseQueries.count('grns', 'Draft'));
   const recent = useQuery(purchaseQueries.orders({}));
   const n = (value: number | undefined) => (value === undefined ? '…' : value.toLocaleString('en-IN'));
-  const due = ordersSent.data === undefined || ordersPartial.data === undefined ? undefined : ordersSent.data + ordersPartial.data;
+  const due =
+    ordersSent.data === undefined || ordersPartial.data === undefined
+      ? undefined
+      : ordersSent.data + ordersPartial.data;
 
   return (
     <Page>
@@ -55,7 +58,11 @@ function PurchaseOverviewPage() {
               </Button>
             )}
             {canReceive && (
-              <Button appearance="primary" icon={<BoxArrowLeftRegular />} onClick={() => void navigate({ to: '/purchase/grns/new' })}>
+              <Button
+                appearance="primary"
+                icon={<BoxArrowLeftRegular />}
+                onClick={() => void navigate({ to: '/purchase/grns/new' })}
+              >
                 Receive goods
               </Button>
             )}
@@ -76,10 +83,32 @@ function PurchaseOverviewPage() {
           hint="Turn them into purchase orders"
           onClick={() => void navigate({ to: '/purchase/requisitions', search: { status: 'Approved' } })}
         />
-        <KpiCard label="Orders to approve" value={n(ordersWaiting.data)} icon={<DocumentBulletListRegular />} onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Submitted' } })} />
-        <KpiCard label="Orders to send" value={n(ordersToSend.data)} icon={<SendRegular />} onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Approved' } })} />
-        <KpiCard label="Awaiting delivery" value={n(due)} icon={<VehicleTruckProfileRegular />} hint="Sent or partly received" onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Sent' } })} />
-        <KpiCard label="Receipts not posted" value={n(grnDrafts.data)} icon={<BoxArrowLeftRegular />} hint="Draft GRNs" onClick={() => void navigate({ to: '/purchase/grns', search: { status: 'Draft' } })} />
+        <KpiCard
+          label="Orders to approve"
+          value={n(ordersWaiting.data)}
+          icon={<DocumentBulletListRegular />}
+          onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Submitted' } })}
+        />
+        <KpiCard
+          label="Orders to send"
+          value={n(ordersToSend.data)}
+          icon={<SendRegular />}
+          onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Approved' } })}
+        />
+        <KpiCard
+          label="Awaiting delivery"
+          value={n(due)}
+          icon={<VehicleTruckProfileRegular />}
+          hint="Sent or partly received"
+          onClick={() => void navigate({ to: '/purchase/orders', search: { status: 'Sent' } })}
+        />
+        <KpiCard
+          label="Receipts not posted"
+          value={n(grnDrafts.data)}
+          icon={<BoxArrowLeftRegular />}
+          hint="Draft GRNs"
+          onClick={() => void navigate({ to: '/purchase/grns', search: { status: 'Draft' } })}
+        />
       </div>
       <Section title="Latest purchase orders" flush>
         <DataTable
@@ -97,7 +126,11 @@ function PurchaseOverviewPage() {
             { key: 'store', header: 'Store', priority: 'low', render: (o) => o.storeName },
             { key: 'date', header: 'Date', render: (o) => formatDateOnly(o.orderDate) },
             { key: 'net', header: 'Value', align: 'end', render: (o) => formatInr(o.netAmount) },
-            { key: 'status', header: 'Status', render: (o) => <DocStatus status={o.status} label={orderStatusLabel[o.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (o) => <DocStatus status={o.status} label={orderStatusLabel[o.status]} />,
+            },
           ]}
           emptyTitle="No purchase orders yet"
         />

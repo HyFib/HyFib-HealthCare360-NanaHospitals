@@ -16,7 +16,19 @@ import {
 import { LockClosedRegular, SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useHotkey, useSession } from '@hc360/core';
-import { applyServerErrors, ErrorState, FormGrid, FullRow, LoadingState, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ErrorState,
+  FormGrid,
+  FullRow,
+  LoadingState,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
@@ -96,7 +108,8 @@ export function SettingsForm({ spec }: { spec: SettingsSpec }) {
     return (
       <MessageBar intent="info" layout="multiline">
         <MessageBarBody>
-          Changing these settings needs the “Change system settings” permission (admin.settings.manage). Ask an administrator who has it.
+          Changing these settings needs the “Change system settings” permission (admin.settings.manage). Ask an
+          administrator who has it.
         </MessageBarBody>
       </MessageBar>
     );
@@ -145,11 +158,22 @@ function ScopedSettings({
       ) : (
         <Field
           label="Applies to"
-          hint={spec.backgroundUsesGlobal ? 'Reminders, reports and other messages sent in the background always use the settings for all facilities.' : undefined}
+          hint={
+            spec.backgroundUsesGlobal
+              ? 'Reminders, reports and other messages sent in the background always use the settings for all facilities.'
+              : undefined
+          }
         >
-          <RadioGroup layout="horizontal" value={scope} onChange={(_, data) => onScopeChange(data.value === 'facility' ? 'facility' : 'global')}>
+          <RadioGroup
+            layout="horizontal"
+            value={scope}
+            onChange={(_, data) => onScopeChange(data.value === 'facility' ? 'facility' : 'global')}
+          >
             <Radio value="global" label="All facilities" />
-            <Radio value="facility" label={facilityName ? `This facility only (${facilityName})` : 'This facility only'} />
+            <Radio
+              value="facility"
+              label={facilityName ? `This facility only (${facilityName})` : 'This facility only'}
+            />
           </RadioGroup>
         </Field>
       )}
@@ -173,7 +197,17 @@ function groupsOf(fields: readonly SettingField[]): { title?: string; fields: Se
   return groups;
 }
 
-function SettingsFormBody({ spec, rows, scope, facilityId }: { spec: SettingsSpec; rows: SettingDto[]; scope: Scope; facilityId: string | null }) {
+function SettingsFormBody({
+  spec,
+  rows,
+  scope,
+  facilityId,
+}: {
+  spec: SettingsSpec;
+  rows: SettingDto[];
+  scope: Scope;
+  facilityId: string | null;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -192,10 +226,20 @@ function SettingsFormBody({ spec, rows, scope, facilityId }: { spec: SettingsSpe
       const existing = (key: string) => rows.some((row) => row.key === key && (row.facilityId ?? null) === target);
       const description = (key: string) => (existing(key) ? null : `${spec.title} (set in Administration)`);
       for (const change of changes) {
-        await api.put(`/api/v1/admin/settings/${encodeURIComponent(change.key)}`, { value: change.value, facilityId: target, secret: false, description: description(change.key) });
+        await api.put(`/api/v1/admin/settings/${encodeURIComponent(change.key)}`, {
+          value: change.value,
+          facilityId: target,
+          secret: false,
+          description: description(change.key),
+        });
       }
       for (const secret of secrets) {
-        await api.put(`/api/v1/admin/settings/${encodeURIComponent(secret.key)}`, { value: secret.value, facilityId: target, secret: true, description: description(secret.key) });
+        await api.put(`/api/v1/admin/settings/${encodeURIComponent(secret.key)}`, {
+          value: secret.value,
+          facilityId: target,
+          secret: true,
+          description: description(secret.key),
+        });
       }
       return changes.length + secrets.length;
     },
@@ -227,7 +271,9 @@ function SettingsFormBody({ spec, rows, scope, facilityId }: { spec: SettingsSpe
     <form className={styles.form} onSubmit={(event) => void submit(event)} noValidate>
       {scoped.inherited.length > 0 && (
         <MessageBar intent="info">
-          <MessageBarBody>This facility uses the settings for all facilities. Saving here gives it its own settings.</MessageBarBody>
+          <MessageBarBody>
+            This facility uses the settings for all facilities. Saving here gives it its own settings.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -261,7 +307,11 @@ function SettingsFormBody({ spec, rows, scope, facilityId }: { spec: SettingsSpe
       {secretKeys.map((key) => (
         <CredentialsGroup
           key={key}
-          title={secretKeys.length > 1 ? (spec.secrets.find((secret) => secret.key === key)?.label ?? 'Credentials') : 'Credentials'}
+          title={
+            secretKeys.length > 1
+              ? (spec.secrets.find((secret) => secret.key === key)?.label ?? 'Credentials')
+              : 'Credentials'
+          }
           spec={spec}
           secretKey={key}
           status={scoped.secretStatus[key] ?? 'not-set'}
@@ -270,11 +320,18 @@ function SettingsFormBody({ spec, rows, scope, facilityId }: { spec: SettingsSpe
         />
       ))}
       {noCredentials && !replacingAny && (
-        <Caption1 className={styles.muted}>No credentials are stored yet. Most providers need them; the simulator does not.</Caption1>
+        <Caption1 className={styles.muted}>
+          No credentials are stored yet. Most providers need them; the simulator does not.
+        </Caption1>
       )}
 
       <div className={styles.actions}>
-        <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending || !form.formState.isDirty}>
+        <Button
+          type="submit"
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={save.isPending || !form.formState.isDirty}
+        >
           Save
         </Button>
         <Button onClick={() => form.reset(defaults)} disabled={save.isPending || !form.formState.isDirty}>
@@ -291,14 +348,18 @@ function SettingInput({ field, control }: { field: SettingField; control: Contro
   const name = fieldId(field);
   const hint =
     field.kind === 'number' && field.defaultNumber !== undefined
-      ? [field.hint, `Leave empty for the default (${field.defaultNumber.toLocaleString('en-IN')}).`].filter(Boolean).join(' ')
+      ? [field.hint, `Leave empty for the default (${field.defaultNumber.toLocaleString('en-IN')}).`]
+          .filter(Boolean)
+          .join(' ')
       : field.hint;
 
   switch (field.kind) {
     case 'switch':
       return <SwitchField control={control} name={name} label={field.label} hint={hint} />;
     case 'number':
-      return <NumberField control={control} name={name} label={field.label} hint={hint} min={field.min} max={field.max} />;
+      return (
+        <NumberField control={control} name={name} label={field.label} hint={hint} min={field.min} max={field.max} />
+      );
     case 'select':
       return (
         <SelectField
@@ -311,7 +372,16 @@ function SettingInput({ field, control }: { field: SettingField; control: Contro
         />
       );
     case 'textarea':
-      return <TextAreaField control={control} name={name} label={field.label} hint={hint} rows={4} placeholder={field.placeholder} />;
+      return (
+        <TextAreaField
+          control={control}
+          name={name}
+          label={field.label}
+          hint={hint}
+          rows={4}
+          placeholder={field.placeholder}
+        />
+      );
     case 'map':
     case 'list':
     case 'json':
@@ -320,7 +390,12 @@ function SettingInput({ field, control }: { field: SettingField; control: Contro
           control={control}
           name={name}
           render={({ field: input, fieldState }) => (
-            <Field label={field.label} hint={hint} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+            <Field
+              label={field.label}
+              hint={hint}
+              validationMessage={fieldState.error?.message}
+              validationState={fieldState.error ? 'error' : 'none'}
+            >
               <Textarea
                 name={input.name}
                 ref={input.ref}
@@ -353,7 +428,11 @@ function SettingInput({ field, control }: { field: SettingField; control: Contro
   }
 }
 
-const STATUS_TEXT: Record<SecretStatus, string> = { set: 'Set', inherited: 'Set for all facilities', 'not-set': 'Not set' };
+const STATUS_TEXT: Record<SecretStatus, string> = {
+  set: 'Set',
+  inherited: 'Set for all facilities',
+  'not-set': 'Not set',
+};
 
 function CredentialsGroup({
   title,
@@ -381,7 +460,11 @@ function CredentialsGroup({
         </Badge>
       </div>
       <Caption1 className={styles.muted}>Stored encrypted and never shown again, not even to administrators.</Caption1>
-      <SwitchField control={control} name={replaceFlagId(secretKey)} label={status === 'not-set' ? 'Enter credentials' : 'Replace credentials'} />
+      <SwitchField
+        control={control}
+        name={replaceFlagId(secretKey)}
+        label={status === 'not-set' ? 'Enter credentials' : 'Replace credentials'}
+      />
       {replacing && (
         <>
           {status !== 'not-set' && (

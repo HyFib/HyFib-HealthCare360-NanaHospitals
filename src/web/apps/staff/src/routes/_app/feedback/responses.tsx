@@ -1,5 +1,11 @@
 import { Badge, Button, Caption1, Checkbox, Field, Select, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { CommentRegular, LockClosedRegular, PersonFeedbackRegular, SendRegular, TextBulletListLtrRegular } from '@fluentui/react-icons';
+import {
+  CommentRegular,
+  LockClosedRegular,
+  PersonFeedbackRegular,
+  SendRegular,
+  TextBulletListLtrRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, todayIso } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -9,7 +15,15 @@ import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { feedbackQueries } from '@/modules/feedback/api';
 import { NpsAnswer, SentimentBadge, StarsValue } from '@/modules/feedback/badges';
-import { CHANNELS, channelLabel, FEEDBACK_CAPTURERS, FEEDBACK_PERMISSIONS as F, SENTIMENTS, type FeedbackChannel, type Sentiment } from '@/modules/feedback/labels';
+import {
+  CHANNELS,
+  channelLabel,
+  FEEDBACK_CAPTURERS,
+  FEEDBACK_PERMISSIONS as F,
+  SENTIMENTS,
+  type FeedbackChannel,
+  type Sentiment,
+} from '@/modules/feedback/labels';
 import { PeriodFields } from '@/modules/feedback/PeriodFields';
 import { ResponseDrawer } from '@/modules/feedback/ResponseDrawer';
 import { PERIOD_PRESETS, resolvePeriod, type PeriodPreset } from '@/modules/feedback/rules';
@@ -74,9 +88,12 @@ function ResponsesPage() {
     }),
   );
   const departmentName = new Map((departments.data ?? []).map((d) => [d.id, d.name]));
-  const filtered = Boolean(search.formId || search.departmentId || search.channel || search.sentiment || search.lowOnly);
+  const filtered = Boolean(
+    search.formId || search.departmentId || search.channel || search.sentiment || search.lowOnly,
+  );
 
-  const set = (patch: Partial<ResponsesSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<ResponsesSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -113,7 +130,10 @@ function ResponsesPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -123,7 +143,10 @@ function ResponsesPage() {
               </Select>
             </Field>
             <Field label="Came through">
-              <Select value={search.channel ?? ''} onChange={(_, d) => set({ channel: (d.value || undefined) as FeedbackChannel | undefined })}>
+              <Select
+                value={search.channel ?? ''}
+                onChange={(_, d) => set({ channel: (d.value || undefined) as FeedbackChannel | undefined })}
+              >
                 <option value="">Any channel</option>
                 {CHANNELS.map((c) => (
                   <option key={c} value={c}>
@@ -133,7 +156,10 @@ function ResponsesPage() {
               </Select>
             </Field>
             <Field label="Sentiment">
-              <Select value={search.sentiment ?? ''} onChange={(_, d) => set({ sentiment: (d.value || undefined) as Sentiment | undefined })}>
+              <Select
+                value={search.sentiment ?? ''}
+                onChange={(_, d) => set({ sentiment: (d.value || undefined) as Sentiment | undefined })}
+              >
                 <option value="">Any</option>
                 {SENTIMENTS.map((s) => (
                   <option key={s} value={s}>
@@ -175,7 +201,12 @@ function ResponsesPage() {
             },
             { key: 'rating', header: 'Rating', render: (r) => <StarsValue value={r.averageRating} /> },
             { key: 'nps', header: 'Recommend', align: 'center', render: (r) => <NpsAnswer value={r.nps} /> },
-            { key: 'sentiment', header: 'Sentiment', priority: 'low', render: (r) => <SentimentBadge sentiment={r.sentiment} /> },
+            {
+              key: 'sentiment',
+              header: 'Sentiment',
+              priority: 'low',
+              render: (r) => <SentimentBadge sentiment={r.sentiment} />,
+            },
             {
               key: 'flags',
               header: 'Notes',
@@ -201,7 +232,11 @@ function ResponsesPage() {
             },
           ]}
           emptyTitle={filtered ? 'No responses match' : 'No feedback in this period'}
-          emptyDescription={filtered ? 'Clear a filter or choose a longer period.' : 'Answers from QR posters, kiosks, SMS links and staff appear here as they arrive.'}
+          emptyDescription={
+            filtered
+              ? 'Clear a filter or choose a longer period.'
+              : 'Answers from QR posters, kiosks, SMS links and staff appear here as they arrive.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={responses.data?.totalCount}

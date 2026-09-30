@@ -6,7 +6,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
-import { pharmacyApi, pharmacyKeys, pharmacyQueries, REFILL_STATUSES, type RefillRequestDto, type RefillStatus } from '@/modules/pharmacy/api';
+import {
+  pharmacyApi,
+  pharmacyKeys,
+  pharmacyQueries,
+  REFILL_STATUSES,
+  type RefillRequestDto,
+  type RefillStatus,
+} from '@/modules/pharmacy/api';
 import { usePharmacyLive } from '@/modules/pharmacy/counter';
 
 export const Route = createFileRoute('/_app/pharmacy/refills')({
@@ -40,7 +47,10 @@ function RefillsPage() {
     onSuccess: (result, request) => {
       setApproving(null);
       refresh();
-      notify.success(`Refill for ${request.patientName} is in the queue`, 'The patient gets an SMS/WhatsApp that it is being prepared.');
+      notify.success(
+        `Refill for ${request.patientName} is in the queue`,
+        'The patient gets an SMS/WhatsApp that it is being prepared.',
+      );
       void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: result.queueEntryId } });
     },
     onError: (error) => {
@@ -49,7 +59,8 @@ function RefillsPage() {
     },
   });
   const reject = useMutation({
-    mutationFn: ({ request, reason }: { request: RefillRequestDto; reason: string }) => pharmacyApi.rejectRefill(request.id, reason),
+    mutationFn: ({ request, reason }: { request: RefillRequestDto; reason: string }) =>
+      pharmacyApi.rejectRefill(request.id, reason),
     onSuccess: () => {
       setRejecting(null);
       refresh();
@@ -67,7 +78,12 @@ function RefillsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Status">
-              <Select value={status} onChange={(_, d) => void navigate({ search: { status: d.value === 'Requested' ? undefined : (d.value as RefillStatus) } })}>
+              <Select
+                value={status}
+                onChange={(_, d) =>
+                  void navigate({ search: { status: d.value === 'Requested' ? undefined : (d.value as RefillStatus) } })
+                }
+              >
                 {REFILL_STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {s === 'Requested' ? 'Waiting for a decision' : humanize(s)}
@@ -99,7 +115,11 @@ function RefillsPage() {
               key: 'rx',
               header: 'Prescription',
               render: (r) => (
-                <Button appearance="transparent" size="small" onClick={() => void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: r.queueEntryId } })}>
+                <Button
+                  appearance="transparent"
+                  size="small"
+                  onClick={() => void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: r.queueEntryId } })}
+                >
                   {r.prescriptionNumber}
                 </Button>
               ),
@@ -115,14 +135,27 @@ function RefillsPage() {
               ),
             },
             { key: 'when', header: 'Requested', render: (r) => formatRelative(r.requestedAt) },
-            { key: 'pickup', header: 'Wants it on', render: (r) => (r.preferredPickupDate ? formatDateOnly(r.preferredPickupDate) : 'Any day') },
+            {
+              key: 'pickup',
+              header: 'Wants it on',
+              render: (r) => (r.preferredPickupDate ? formatDateOnly(r.preferredPickupDate) : 'Any day'),
+            },
             {
               key: 'notes',
               header: 'Notes',
               priority: 'low',
-              render: (r) => (r.rejectReason ? <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{r.rejectReason}</Caption1> : (r.notes ?? '—')),
+              render: (r) =>
+                r.rejectReason ? (
+                  <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{r.rejectReason}</Caption1>
+                ) : (
+                  (r.notes ?? '—')
+                ),
             },
-            { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} label={r.status === 'Requested' ? 'Waiting' : undefined} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (r) => <StatusBadge status={r.status} label={r.status === 'Requested' ? 'Waiting' : undefined} />,
+            },
           ]}
           rowActions={(r) =>
             r.status === 'Requested' ? (
@@ -135,7 +168,10 @@ function RefillsPage() {
                 </Button>
               </span>
             ) : r.refillEntryId ? (
-              <Button size="small" onClick={() => void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: r.refillEntryId! } })}>
+              <Button
+                size="small"
+                onClick={() => void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: r.refillEntryId! } })}
+              >
                 Open refill
               </Button>
             ) : null
@@ -157,8 +193,8 @@ function RefillsPage() {
         onConfirm={() => approving && approve.mutate(approving)}
         onCancel={() => setApproving(null)}
       >
-        One of the authorised refills of prescription {approving?.prescriptionNumber} is used, and the full prescription goes into the dispensing queue. The patient
-        is told it is being prepared.
+        One of the authorised refills of prescription {approving?.prescriptionNumber} is used, and the full prescription
+        goes into the dispensing queue. The patient is told it is being prepared.
       </ConfirmDialog>
       {rejecting && (
         <ReasonDialog

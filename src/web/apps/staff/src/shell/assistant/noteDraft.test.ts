@@ -23,7 +23,10 @@ describe('EMR note draft', () => {
   });
 
   it('never overwrites an unsaved note: the new text is added at the end', () => {
-    const existing = JSON.stringify({ value: { type: 'ProgressNote', title: 'Ward round', body: 'S: pain less' }, savedAt: 1 });
+    const existing = JSON.stringify({
+      value: { type: 'ProgressNote', title: 'Ward round', body: 'S: pain less' },
+      savedAt: 1,
+    });
     expect(JSON.parse(mergeNoteDraft(existing, draft, 2000))).toEqual({
       value: { type: 'ProgressNote', title: 'Ward round', body: 'S: pain less\n\nSuturing done.' },
       savedAt: 2000,
@@ -41,7 +44,12 @@ describe('EMR note draft', () => {
     expect(keepNoteDraft(storage, 'k', draft, 5)).toBe(true);
     expect(storage.read('k')).toEqual({ value: draft, savedAt: 5 });
     expect(keepNoteDraft(null, 'k', draft)).toBe(false);
-    const full = { getItem: () => null, setItem: () => { throw new DOMException('Quota', 'QuotaExceededError'); } };
+    const full = {
+      getItem: () => null,
+      setItem: () => {
+        throw new DOMException('Quota', 'QuotaExceededError');
+      },
+    };
     expect(keepNoteDraft(full, 'k', draft)).toBe(false);
   });
 });

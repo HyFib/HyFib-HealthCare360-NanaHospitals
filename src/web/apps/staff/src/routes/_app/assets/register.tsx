@@ -29,7 +29,9 @@ export const Route = createFileRoute('/_app/assets/register')({
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     category: ASSET_CATEGORIES.includes(s.category as AssetCategory) ? (s.category as AssetCategory) : undefined,
     status: ASSET_STATUSES.includes(s.status as AssetStatus) ? (s.status as AssetStatus) : undefined,
-    criticality: CRITICALITIES.includes(s.criticality as AssetCriticality) ? (s.criticality as AssetCriticality) : undefined,
+    criticality: CRITICALITIES.includes(s.criticality as AssetCriticality)
+      ? (s.criticality as AssetCriticality)
+      : undefined,
     departmentId: typeof s.departmentId === 'string' && s.departmentId ? s.departmentId : undefined,
     includeRetired: s.includeRetired === true || s.includeRetired === 'true' ? true : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
@@ -43,7 +45,15 @@ function dueCell(date: string | null, today: string) {
   }
   const days = daysBetween(today, date);
   return (
-    <span style={days < 0 ? { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold } : days <= 7 ? { color: tokens.colorPaletteMarigoldForeground1 } : undefined}>
+    <span
+      style={
+        days < 0
+          ? { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold }
+          : days <= 7
+            ? { color: tokens.colorPaletteMarigoldForeground1 }
+            : undefined
+      }
+    >
       {formatDateOnly(date)}
     </span>
   );
@@ -63,12 +73,16 @@ function AssetRegisterPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
   const assets = useQuery(assetQueries.list(search));
-  const set = (patch: Partial<AssetFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<AssetFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const open = (id: string) => void navigate({ to: '/assets/$assetId', params: { assetId: id } });
 
   const onScan = async (event: KeyboardEvent<HTMLInputElement>) => {
@@ -101,10 +115,19 @@ function AssetRegisterPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} onKeyDown={(e) => void onScan(e)} placeholder="Tag, name, model or serial number" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                onKeyDown={(e) => void onScan(e)}
+                placeholder="Tag, name, model or serial number"
+                autoFocus
+              />
             </Field>
             <Field label="Category">
-              <Select value={search.category ?? ''} onChange={(_, d) => set({ category: (d.value || undefined) as AssetCategory | undefined })}>
+              <Select
+                value={search.category ?? ''}
+                onChange={(_, d) => set({ category: (d.value || undefined) as AssetCategory | undefined })}
+              >
                 <option value="">All</option>
                 {ASSET_CATEGORIES.map((c) => (
                   <option key={c} value={c}>
@@ -114,7 +137,10 @@ function AssetRegisterPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as AssetStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as AssetStatus | undefined })}
+              >
                 <option value="">All in service</option>
                 {ASSET_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -124,7 +150,10 @@ function AssetRegisterPage() {
               </Select>
             </Field>
             <Field label="Criticality">
-              <Select value={search.criticality ?? ''} onChange={(_, d) => set({ criticality: (d.value || undefined) as AssetCriticality | undefined })}>
+              <Select
+                value={search.criticality ?? ''}
+                onChange={(_, d) => set({ criticality: (d.value || undefined) as AssetCriticality | undefined })}
+              >
                 <option value="">All</option>
                 {CRITICALITIES.map((c) => (
                   <option key={c} value={c}>
@@ -134,7 +163,10 @@ function AssetRegisterPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -143,7 +175,12 @@ function AssetRegisterPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.includeRetired === true} onChange={(_, d) => set({ includeRetired: d.checked || undefined })} label="Include condemned and disposed" disabled={Boolean(search.status)} />
+            <Switch
+              checked={search.includeRetired === true}
+              onChange={(_, d) => set({ includeRetired: d.checked || undefined })}
+              label="Include condemned and disposed"
+              disabled={Boolean(search.status)}
+            />
           </FilterBar>
         </div>
         <DataTable<AssetListItem>
@@ -174,7 +211,12 @@ function AssetRegisterPage() {
                 </span>
               ),
             },
-            { key: 'where', header: 'Where', priority: 'low', render: (a) => [a.departmentName, a.location].filter(Boolean).join(' · ') || '—' },
+            {
+              key: 'where',
+              header: 'Where',
+              priority: 'low',
+              render: (a) => [a.departmentName, a.location].filter(Boolean).join(' · ') || '—',
+            },
             {
               key: 'crit',
               header: 'Criticality',
@@ -188,7 +230,13 @@ function AssetRegisterPage() {
             { key: 'pm', header: 'Next PM', priority: 'low', render: (a) => dueCell(a.nextPmDue, today) },
             { key: 'cal', header: 'Calibration', priority: 'low', render: (a) => dueCell(a.nextCalibrationDue, today) },
             { key: 'warranty', header: 'Warranty', priority: 'low', render: (a) => dueCell(a.warrantyExpiry, today) },
-            { key: 'status', header: 'Status', render: (a) => <StatusBadge status={a.status} tone={assetStatusTone[a.status]} label={assetStatusLabel[a.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (a) => (
+                <StatusBadge status={a.status} tone={assetStatusTone[a.status]} label={assetStatusLabel[a.status]} />
+              ),
+            },
           ]}
           emptyTitle={search.search ? 'No asset matches' : 'No assets registered'}
           emptyDescription={canManage ? 'Add equipment with its make, model, serial number and warranty.' : undefined}

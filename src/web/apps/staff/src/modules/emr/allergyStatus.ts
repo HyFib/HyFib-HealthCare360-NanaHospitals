@@ -28,11 +28,17 @@ const ALLERGY_NOTE: Record<AllergyRecordingStatus, string | null> = {
  * The line under "Alerts and allergies" on the chart summary when no active allergy is listed: "No active alerts."
  * (when there are none) and what is known about allergies. Null while allergies are listed.
  */
-export function flagsSummaryNote(status: AllergyRecordingStatus, alertCount: number, allergyCount: number): string | null {
+export function flagsSummaryNote(
+  status: AllergyRecordingStatus,
+  alertCount: number,
+  allergyCount: number,
+): string | null {
   if (allergyCount > 0) {
     return null;
   }
-  const parts = [alertCount === 0 ? 'No active alerts.' : null, ALLERGY_NOTE[status]].filter((part): part is string => Boolean(part));
+  const parts = [alertCount === 0 ? 'No active alerts.' : null, ALLERGY_NOTE[status]].filter((part): part is string =>
+    Boolean(part),
+  );
   return parts.length > 0 ? parts.join(' ') : null;
 }
 
@@ -40,18 +46,26 @@ export function flagsSummaryNote(status: AllergyRecordingStatus, alertCount: num
  * "No known allergies" is offered to allergy managers only while the chart has neither active allergies nor the
  * statement (`activeAllergies` is what the screen lists, so a stale status never offers it next to an allergy).
  */
-export function canRecordNoKnownAllergies(status: AllergyRecordingStatus | undefined, canManage: boolean, activeAllergies: number): boolean {
+export function canRecordNoKnownAllergies(
+  status: AllergyRecordingStatus | undefined,
+  canManage: boolean,
+  activeAllergies: number,
+): boolean {
   return canManage && status === 'NotRecorded' && activeAllergies === 0;
 }
 
 /** "Recorded by Dr. Asha Rao on 28 Sept 2026, 10:30 am." — who confirmed the status and when. */
-export function recordedByText(status: Pick<AllergyStatusDto, 'recordedAt' | 'recordedByName'>, formatWhen: (iso: string) => string = formatDateTime): string {
+export function recordedByText(
+  status: Pick<AllergyStatusDto, 'recordedAt' | 'recordedByName'>,
+  formatWhen: (iso: string) => string = formatDateTime,
+): string {
   const who = status.recordedByName?.trim() || 'a clinician';
   return status.recordedAt ? `Recorded by ${who} on ${formatWhen(status.recordedAt)}.` : `Recorded by ${who}.`;
 }
 
 function activeAllergyCount(data: unknown): number | null {
-  const count = typeof data === 'object' && data !== null ? (data as { activeAllergies?: unknown }).activeAllergies : undefined;
+  const count =
+    typeof data === 'object' && data !== null ? (data as { activeAllergies?: unknown }).activeAllergies : undefined;
   return typeof count === 'number' && count > 0 ? count : null;
 }
 

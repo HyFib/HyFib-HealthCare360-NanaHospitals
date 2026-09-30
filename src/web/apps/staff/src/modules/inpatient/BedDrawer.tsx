@@ -86,17 +86,30 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 type Pending = { action: BedAction } | null;
 
 /** Everything about one bed and what may be done with it, in a side panel that keeps the board visible. */
-export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pick<BedBoardWard, 'wardId' | 'name'>; onClose: () => void }) {
+export function BedDrawer({
+  bed,
+  ward,
+  onClose,
+}: {
+  bed: BedBoardItem;
+  ward: Pick<BedBoardWard, 'wardId' | 'name'>;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const permissions = useInpatientPermissions();
   const [pending, setPending] = useState<Pending>(null);
-  const actions = bedActions(bed.status, { admit: permissions.admit, manage: permissions.manageBeds, housekeeping: permissions.housekeeping });
+  const actions = bedActions(bed.status, {
+    admit: permissions.admit,
+    manage: permissions.manageBeds,
+    housekeeping: permissions.housekeeping,
+  });
   const needsTask = bed.status === 'Cleaning' && (permissions.housekeeping || permissions.manageBeds);
   const tasks = useQuery({ ...inpatientQueries.housekeeping(ward.wardId), enabled: needsTask });
-  const task = tasks.data?.find((t) => t.bedId === bed.bedId && (t.status === 'Pending' || t.status === 'InProgress')) ?? null;
+  const task =
+    tasks.data?.find((t) => t.bedId === bed.bedId && (t.status === 'Pending' || t.status === 'InProgress')) ?? null;
   const history = useQuery({ ...inpatientQueries.bedHistory(bed.bedId), enabled: permissions.read });
 
   const visibleActions = actions.filter((action) => {
@@ -172,13 +185,21 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
   };
 
   const occupant = bed.occupant;
-  const reasonAction = pending && ['block', 'startMaintenance', 'sendForCleaning', 'completeCleaning'].includes(pending.action) ? pending.action : null;
-  const confirmAction = pending && ['cancelReservation', 'unblock', 'endMaintenance'].includes(pending.action) ? pending.action : null;
+  const reasonAction =
+    pending && ['block', 'startMaintenance', 'sendForCleaning', 'completeCleaning'].includes(pending.action)
+      ? pending.action
+      : null;
+  const confirmAction =
+    pending && ['cancelReservation', 'unblock', 'endMaintenance'].includes(pending.action) ? pending.action : null;
 
   return (
     <OverlayDrawer open position="end" size="small" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>Bed {bed.label}</DrawerHeaderTitle>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          Bed {bed.label}
+        </DrawerHeaderTitle>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <BedStateChip status={bed.status} />
           <Caption1 className={styles.muted}>
@@ -190,14 +211,24 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
       <DrawerBody>
         <div className={styles.body}>
           <div className={styles.rows}>
-            <Row label="Since">{bed.statusChangedAt ? `${formatDateTime(bed.statusChangedAt)} (${formatRelative(bed.statusChangedAt)})` : null}</Row>
+            <Row label="Since">
+              {bed.statusChangedAt
+                ? `${formatDateTime(bed.statusChangedAt)} (${formatRelative(bed.statusChangedAt)})`
+                : null}
+            </Row>
             {bed.statusReason && <Row label="Reason">{bed.statusReason}</Row>}
             {bed.reservedUntil && <Row label="Held until">{formatDateTime(bed.reservedUntil)}</Row>}
             <Row label="Equipment">
               <BedFeatures oxygen={bed.hasOxygen} ventilator={bed.hasVentilator} monitor={bed.hasMonitor} />
               {!bed.hasOxygen && !bed.hasVentilator && !bed.hasMonitor ? 'Standard bed' : null}
             </Row>
-            {task && <Row label="Cleaning">{task.status === 'InProgress' ? `In progress since ${formatRelative(task.startedAt)}` : `Waiting ${task.waitingMinutes} min`}</Row>}
+            {task && (
+              <Row label="Cleaning">
+                {task.status === 'InProgress'
+                  ? `In progress since ${formatRelative(task.startedAt)}`
+                  : `Waiting ${task.waitingMinutes} min`}
+              </Row>
+            )}
           </div>
 
           {bed.alerts.length > 0 && <BedAlertBadges alerts={bed.alerts} max={10} />}
@@ -212,7 +243,9 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                 <Row label="Admission">{occupant.admissionNumber}</Row>
                 <Row label="Admitted">{`${formatDateTime(occupant.admittedAt)} · day ${occupant.lengthOfStayDays}`}</Row>
                 <Row label="Consultant">{occupant.consultantName}</Row>
-                <Row label="Expected discharge">{occupant.expectedDischargeDate ? formatDateOnly(occupant.expectedDischargeDate) : null}</Row>
+                <Row label="Expected discharge">
+                  {occupant.expectedDischargeDate ? formatDateOnly(occupant.expectedDischargeDate) : null}
+                </Row>
                 <Row label="Payment by">{PAYER_LABEL[occupant.payerType] ?? occupant.payerType}</Row>
               </div>
               <div className={styles.actions}>
@@ -221,7 +254,12 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                     className={styles.actionButton}
                     appearance="primary"
                     icon={<OpenRegular />}
-                    onClick={() => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: occupant.admissionId } })}
+                    onClick={() =>
+                      void navigate({
+                        to: '/inpatient/admissions/$admissionId',
+                        params: { admissionId: occupant.admissionId },
+                      })
+                    }
                   >
                     Open admission
                   </Button>
@@ -230,7 +268,12 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                   <Button
                     className={styles.actionButton}
                     icon={<ClipboardPulseRegular />}
-                    onClick={() => void navigate({ to: '/nursing', search: { wardId: ward.wardId, admissionId: occupant.admissionId } })}
+                    onClick={() =>
+                      void navigate({
+                        to: '/nursing',
+                        search: { wardId: ward.wardId, admissionId: occupant.admissionId },
+                      })
+                    }
                   >
                     Nursing chart
                   </Button>
@@ -238,7 +281,9 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                 <Button
                   className={styles.actionButton}
                   icon={<PersonRegular />}
-                  onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: occupant.patientId } })}
+                  onClick={() =>
+                    void navigate({ to: '/patients/$patientId', params: { patientId: occupant.patientId } })
+                  }
                 >
                   Patient profile
                 </Button>
@@ -255,7 +300,9 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                     key={action}
                     className={styles.actionButton}
                     appearance={index === 0 && !occupant ? 'primary' : 'secondary'}
-                    icon={run.isPending && run.variables?.action === action ? <Spinner size="tiny" /> : ACTION_ICONS[action]}
+                    icon={
+                      run.isPending && run.variables?.action === action ? <Spinner size="tiny" /> : ACTION_ICONS[action]
+                    }
                     disabled={run.isPending}
                     onClick={() => start(action)}
                   >
@@ -267,7 +314,9 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
           )}
           {run.error && !pending && (
             <MessageBar intent="error">
-              <MessageBarBody>{isApiError(run.error) ? run.error.userMessage : 'The bed could not be updated.'}</MessageBarBody>
+              <MessageBarBody>
+                {isApiError(run.error) ? run.error.userMessage : 'The bed could not be updated.'}
+              </MessageBarBody>
             </MessageBar>
           )}
 
@@ -325,7 +374,13 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
                 : 'Housekeeping sees it in the cleaning queue.'
         }
         label={reasonAction === 'block' || reasonAction === 'startMaintenance' ? 'Reason' : 'Note'}
-        placeholder={reasonAction === 'startMaintenance' ? 'e.g. Side rail broken, oxygen flowmeter leaking' : reasonAction === 'block' ? 'e.g. Reserved for isolation, AC not working' : undefined}
+        placeholder={
+          reasonAction === 'startMaintenance'
+            ? 'e.g. Side rail broken, oxygen flowmeter leaking'
+            : reasonAction === 'block'
+              ? 'e.g. Reserved for isolation, AC not working'
+              : undefined
+        }
         optional={reasonAction === 'sendForCleaning' || reasonAction === 'completeCleaning'}
         confirmLabel={reasonAction ? BED_ACTION_LABEL[reasonAction] : 'Confirm'}
         destructive={reasonAction === 'block'}
@@ -350,7 +405,9 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
             : `${bed.label} goes to the cleaning queue before it can be used.`}
         {run.error && (
           <MessageBar intent="error" style={{ marginTop: 12 }}>
-            <MessageBarBody>{isApiError(run.error) ? run.error.userMessage : 'The bed could not be updated.'}</MessageBarBody>
+            <MessageBarBody>
+              {isApiError(run.error) ? run.error.userMessage : 'The bed could not be updated.'}
+            </MessageBarBody>
           </MessageBar>
         )}
       </ConfirmDialog>
@@ -358,7 +415,17 @@ export function BedDrawer({ bed, ward, onClose }: { bed: BedBoardItem; ward: Pic
   );
 }
 
-function ReserveDialog({ bedId, bedLabel, onClose, onDone }: { bedId: string; bedLabel: string; onClose: () => void; onDone: () => void }) {
+function ReserveDialog({
+  bedId,
+  bedLabel,
+  onClose,
+  onDone,
+}: {
+  bedId: string;
+  bedLabel: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const notify = useNotify();
   const [patient, setPatient] = useState<PickedPatient | null>(null);
   const [limits] = useState(() => {
@@ -372,7 +439,8 @@ function ReserveDialog({ bedId, bedLabel, onClose, onDone }: { bedId: string; be
   const [until, setUntil] = useState(limits.initial);
   const [note, setNote] = useState('');
   const reserve = useMutation({
-    mutationFn: () => bedApi.reserve(bedId, { patientId: patient!.id, reservedUntil: fromIstInput(until)!, note: note.trim() || null }),
+    mutationFn: () =>
+      bedApi.reserve(bedId, { patientId: patient!.id, reservedUntil: fromIstInput(until)!, note: note.trim() || null }),
     onSuccess: () => {
       notify.success(`${bedLabel} reserved`, `Held for ${patient?.fullName} until the chosen time.`);
       onDone();
@@ -395,15 +463,33 @@ function ReserveDialog({ bedId, bedLabel, onClose, onDone }: { bedId: string; be
             <DialogTitle>Reserve bed {bedLabel}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <PatientPicker value={patient} onChange={setPatient} label="Reserve for" required />
-              <Field label="Hold until" required hint="At most 7 days. After this time anyone may be admitted to the bed.">
-                <Input type="datetime-local" value={until} min={limits.min} max={limits.max} onChange={(_, d) => setUntil(d.value)} />
+              <Field
+                label="Hold until"
+                required
+                hint="At most 7 days. After this time anyone may be admitted to the bed."
+              >
+                <Input
+                  type="datetime-local"
+                  value={until}
+                  min={limits.min}
+                  max={limits.max}
+                  onChange={(_, d) => setUntil(d.value)}
+                />
               </Field>
               <Field label="Note">
-                <Textarea value={note} onChange={(_, d) => setNote(d.value)} maxLength={300} rows={2} placeholder="e.g. Planned surgery tomorrow 9 am" />
+                <Textarea
+                  value={note}
+                  onChange={(_, d) => setNote(d.value)}
+                  maxLength={300}
+                  rows={2}
+                  placeholder="e.g. Planned surgery tomorrow 9 am"
+                />
               </Field>
               {reserve.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(reserve.error) ? reserve.error.userMessage : 'The bed could not be reserved.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(reserve.error) ? reserve.error.userMessage : 'The bed could not be reserved.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -411,7 +497,12 @@ function ReserveDialog({ bedId, bedLabel, onClose, onDone }: { bedId: string; be
               <Button onClick={onClose} disabled={reserve.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || reserve.isPending} icon={reserve.isPending ? <Spinner size="tiny" /> : <CalendarClockRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || reserve.isPending}
+                icon={reserve.isPending ? <Spinner size="tiny" /> : <CalendarClockRegular />}
+              >
                 Reserve bed
               </Button>
             </DialogActions>

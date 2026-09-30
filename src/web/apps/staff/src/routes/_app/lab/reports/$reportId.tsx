@@ -19,12 +19,17 @@ export const Route = createFileRoute('/_app/lab/reports/$reportId')({
 
 /** Verified tests that are waiting for release. */
 function releasableTests(view: LabReportView): string[] {
-  return view.sections.flatMap((section) => section.tests.filter((test) => test.status === 'Verified').map((test) => test.name));
+  return view.sections.flatMap((section) =>
+    section.tests.filter((test) => test.status === 'Verified').map((test) => test.name),
+  );
 }
 
 /** Tests already released (the ones an amendment can correct). */
 function releasedTests(view: LabReportView): number {
-  return view.sections.reduce((sum, section) => sum + section.tests.filter((test) => test.status === 'Released').length, 0);
+  return view.sections.reduce(
+    (sum, section) => sum + section.tests.filter((test) => test.status === 'Released').length,
+    0,
+  );
 }
 
 /** The lab report with release, amendment and A4 printing with QR verification (SRS LIS-07). */
@@ -46,7 +51,9 @@ function LabReportPage() {
       setConfirmRelease(false);
       notify.success(
         outcome.releasedItemIds.length === 1 ? 'Test released' : `${outcome.releasedItemIds.length} tests released`,
-        outcome.isPartial ? 'The report is partial: the other tests follow when they are verified.' : 'The doctor and the patient are informed.',
+        outcome.isPartial
+          ? 'The report is partial: the other tests follow when they are verified.'
+          : 'The doctor and the patient are informed.',
       );
       void queryClient.invalidateQueries({ queryKey: labKeys.reports });
       void queryClient.invalidateQueries({ queryKey: labKeys.orders });
@@ -63,7 +70,11 @@ function LabReportPage() {
   if (report.error || !report.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={report.error} onRetry={() => void report.refetch()} title={isApiError(report.error) && report.error.status === 404 ? 'Report not found' : undefined} />
+        <ErrorState
+          error={report.error}
+          onRetry={() => void report.refetch()}
+          title={isApiError(report.error) && report.error.status === 404 ? 'Report not found' : undefined}
+        />
       </Page>
     );
   }
@@ -85,9 +96,18 @@ function LabReportPage() {
   return (
     <Page>
       <PatientBanner
-        patient={{ id: view.patient.id, uhid: view.patient.uhid, fullName: view.patient.name, gender: view.patient.gender, age: view.patient.age }}
+        patient={{
+          id: view.patient.id,
+          uhid: view.patient.uhid,
+          fullName: view.patient.name,
+          gender: view.patient.gender,
+          age: view.patient.age,
+        }}
         actions={
-          <Button icon={<DocumentBulletListRegular />} onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: view.labOrderId } })}>
+          <Button
+            icon={<DocumentBulletListRegular />}
+            onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: view.labOrderId } })}
+          >
             Order
           </Button>
         }
@@ -95,7 +115,10 @@ function LabReportPage() {
       <PageHeader
         title={`Lab report ${view.reportNumber}`}
         subtitle={<ReportStatusBadge status={view.status} partial={view.isPartial} />}
-        breadcrumbs={[{ label: 'Lab reports', onClick: () => void navigate({ to: '/lab/reports' }) }, { label: view.reportNumber }]}
+        breadcrumbs={[
+          { label: 'Lab reports', onClick: () => void navigate({ to: '/lab/reports' }) },
+          { label: view.reportNumber },
+        ]}
         actions={
           <>
             {canVerify && waiting.length > 0 && (
@@ -131,8 +154,8 @@ function LabReportPage() {
         onCancel={() => setConfirmRelease(false)}
       >
         <Text>
-          {waiting.join(', ')} will be visible in the patient record and the patient portal, and the patient is informed by SMS or WhatsApp. Corrections
-          after release are recorded as amendments.
+          {waiting.join(', ')} will be visible in the patient record and the patient portal, and the patient is informed
+          by SMS or WhatsApp. Corrections after release are recorded as amendments.
         </Text>
       </ConfirmDialog>
 

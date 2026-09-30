@@ -43,7 +43,16 @@ export interface PortalProfile {
 
 export type ConsultationMode = 'InPerson' | 'Telehealth' | 'Both';
 export type Weekday = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
-export const APPOINTMENT_STATUSES = ['Booked', 'Confirmed', 'CheckedIn', 'InConsultation', 'Completed', 'Cancelled', 'NoShow', 'Rescheduled'] as const;
+export const APPOINTMENT_STATUSES = [
+  'Booked',
+  'Confirmed',
+  'CheckedIn',
+  'InConsultation',
+  'Completed',
+  'Cancelled',
+  'NoShow',
+  'Rescheduled',
+] as const;
 export type AppointmentStatus = (typeof APPOINTMENT_STATUSES)[number];
 export type AppointmentVisitType = 'New' | 'FollowUp';
 export type AppointmentPaymentStatus = 'Unpaid' | 'PaidOnline' | 'PayAtHospital';
@@ -280,7 +289,8 @@ export type DiagnosticReportStatus = 'Draft' | 'Reported' | 'Verified' | 'Releas
 export type SusceptibilityInterpretation = 'Sensitive' | 'Intermediate' | 'Resistant';
 export type Modality = 'XR' | 'CT' | 'MR' | 'US' | 'MG' | 'RF' | 'DX';
 export type CardiologyStudyType = 'Ecg' | 'Echo' | 'Tmt' | 'Holter' | 'Abpm' | 'Other';
-export type LabSection = 'Hematology' | 'Biochemistry' | 'Microbiology' | 'Serology' | 'ClinicalPathology' | 'Histopathology' | 'Immunology';
+export type LabSection =
+  'Hematology' | 'Biochemistry' | 'Microbiology' | 'Serology' | 'ClinicalPathology' | 'Histopathology' | 'Immunology';
 
 export interface PortalReportItem {
   kind: DiagnosticKind;
@@ -823,7 +833,15 @@ export interface PortalPaymentStatus {
 
 // ------------------------------------------------------------------ engagement
 
-export const FEEDBACK_ASPECTS = ['Overall', 'Doctor', 'Nursing', 'FrontDesk', 'Billing', 'Cleanliness', 'Food'] as const;
+export const FEEDBACK_ASPECTS = [
+  'Overall',
+  'Doctor',
+  'Nursing',
+  'FrontDesk',
+  'Billing',
+  'Cleanliness',
+  'Food',
+] as const;
 export type FeedbackAspect = (typeof FEEDBACK_ASPECTS)[number];
 export type ComplaintStatus = 'Open' | 'InProgress' | 'Resolved' | 'Closed';
 

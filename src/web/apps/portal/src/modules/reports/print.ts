@@ -38,7 +38,10 @@ const REPORT_STYLES = `
 `;
 
 function letterhead(head: ReportLetterhead, title: string): string {
-  const contact = [head.address, head.phone, head.email].filter(Boolean).map((part) => escapeHtml(part)).join(' · ');
+  const contact = [head.address, head.phone, head.email]
+    .filter(Boolean)
+    .map((part) => escapeHtml(part))
+    .join(' · ');
   return `<div class="letterhead"><div><div class="facility">${escapeHtml(head.facilityName)}</div>${
     contact ? `<div class="small muted">${contact}</div>` : ''
   }${head.nabhNumber ? `<div class="small muted">NABH ${escapeHtml(head.nabhNumber)}</div>` : ''}</div><div><h1>${escapeHtml(title)}</h1></div></div>`;
@@ -49,12 +52,18 @@ function patientLine(patient: ReportPatient, ctx: PrintContext, extra: [string, 
   const items: [string, string | null | undefined][] = [
     [t('print.patient'), patient.name],
     [t('common.uhid'), patient.uhid],
-    [t('common.details'), [patient.age, patient.gender === 'Unknown' ? null : t(GENDER_KEY[patient.gender])].filter(Boolean).join(' · ')],
+    [
+      t('common.details'),
+      [patient.age, patient.gender === 'Unknown' ? null : t(GENDER_KEY[patient.gender])].filter(Boolean).join(' · '),
+    ],
     ...extra,
   ];
   return `<div class="patient">${items
     .filter(([, value]) => value)
-    .map(([label, value]) => `<span><span class="muted">${escapeHtml(label)}:</span> <strong>${escapeHtml(value)}</strong></span>`)
+    .map(
+      ([label, value]) =>
+        `<span><span class="muted">${escapeHtml(label)}:</span> <strong>${escapeHtml(value)}</strong></span>`,
+    )
     .join('')}</div>`;
 }
 
@@ -89,7 +98,9 @@ function resultRow(line: LabReportResultLine, ctx: PrintContext): string {
   const micro = [
     line.organism ? `${ctx.t('lab.organism')}: ${line.organism}` : null,
     line.colonyCount ? `${ctx.t('lab.colonyCount')}: ${line.colonyCount}` : null,
-    ...line.susceptibilities.map((s) => `${s.antibiotic}: ${ctx.t(SUSCEPTIBILITY_KEY[s.interpretation])}${s.mic ? ` (MIC ${s.mic})` : ''}`),
+    ...line.susceptibilities.map(
+      (s) => `${s.antibiotic}: ${ctx.t(SUSCEPTIBILITY_KEY[s.interpretation])}${s.mic ? ` (MIC ${s.mic})` : ''}`,
+    ),
   ].filter(Boolean);
   return `<tr class="avoid-break"><td>${escapeHtml(line.name)}${line.remarks ? `<div class="small muted">${escapeHtml(line.remarks)}</div>` : ''}${
     micro.length ? `<div class="small">${micro.map((m) => escapeHtml(m)).join('<br/>')}</div>` : ''
@@ -110,7 +121,9 @@ export function labReportDocument(report: LabReportView, ctx: PrintContext): Pri
               `<h3>${escapeHtml(test.name)}</h3><table><thead><tr><th>${escapeHtml(t('common.details'))}</th><th>${escapeHtml(t('lab.result'))}</th><th>${escapeHtml(
                 t('lab.range'),
               )}</th><th></th></tr></thead><tbody>${test.results.map((line) => resultRow(line, ctx)).join('')}</tbody></table>${
-                test.interpretation ? `<div class="box small"><strong>${escapeHtml(t('lab.note'))}:</strong> ${escapeMultiline(test.interpretation)}</div>` : ''
+                test.interpretation
+                  ? `<div class="box small"><strong>${escapeHtml(t('lab.note'))}:</strong> ${escapeMultiline(test.interpretation)}</div>`
+                  : ''
               }`,
           )
           .join('')}`,
@@ -118,7 +131,10 @@ export function labReportDocument(report: LabReportView, ctx: PrintContext): Pri
     .join('');
   const amendments = report.amendments.length
     ? `<h2>${escapeHtml(t('reports.changes'))}</h2><ul>${report.amendments
-        .map((a) => `<li>${escapeHtml(t('reports.change', { revision: a.revision, date: f.dateTime(a.amendedAt), reason: a.reason }))}</li>`)
+        .map(
+          (a) =>
+            `<li>${escapeHtml(t('reports.change', { revision: a.revision, date: f.dateTime(a.amendedAt), reason: a.reason }))}</li>`,
+        )
         .join('')}</ul>`
     : '';
   const body = `${letterhead(report.letterhead, title)}${patientLine(report.patient, ctx, [
@@ -126,16 +142,25 @@ export function labReportDocument(report: LabReportView, ctx: PrintContext): Pri
     [t('reports.releasedOn'), report.releasedAt ? f.dateTime(report.releasedAt) : null],
     [t('reports.referredBy'), report.referredBy],
   ])}${sections}${amendments}${signatories(report.signatories, ctx)}${footer(report.verificationCode, ctx)}`;
-  return { title: `${title} ${report.reportNumber}`, body, styles: REPORT_STYLES, fileName: safeFileName(`lab-report-${report.reportNumber}`) };
+  return {
+    title: `${title} ${report.reportNumber}`,
+    body,
+    styles: REPORT_STYLES,
+    fileName: safeFileName(`lab-report-${report.reportNumber}`),
+  };
 }
 
 export function radiologyReportDocument(report: RadiologyReportView, ctx: PrintContext): PrintableDocument {
   const { t, f } = ctx;
   const title = `${t(MODALITY_KEY[report.modality])}: ${report.studyName}`;
-  const block = (label: string, text: string | null) => (text ? `<h2>${escapeHtml(label)}</h2><div>${escapeMultiline(text)}</div>` : '');
+  const block = (label: string, text: string | null) =>
+    text ? `<h2>${escapeHtml(label)}</h2><div>${escapeMultiline(text)}</div>` : '';
   const addenda = report.addenda.length
     ? `<h2>${escapeHtml(t('rad.addenda'))}</h2>${report.addenda
-        .map((a) => `<div class="box"><div class="small muted">${escapeHtml(f.dateTime(a.addedAt))}</div>${escapeMultiline(a.text)}</div>`)
+        .map(
+          (a) =>
+            `<div class="box"><div class="small muted">${escapeHtml(f.dateTime(a.addedAt))}</div>${escapeMultiline(a.text)}</div>`,
+        )
         .join('')}`
     : '';
   const body = `${letterhead(report.letterhead, title)}${patientLine(report.patient, ctx, [
@@ -163,7 +188,9 @@ export function cardiologyReportDocument(report: CardiologyReportView, ctx: Prin
     [t('card.recorded'), report.acquiredAt ? f.dateTime(report.acquiredAt) : null],
     [t('reports.referredBy'), report.referredBy],
   ])}${table}${report.conclusion ? `<div class="box"><h2>${escapeHtml(t('card.conclusion'))}</h2>${escapeMultiline(report.conclusion)}</div>` : ''}${
-    report.recommendations ? `<h2>${escapeHtml(t('card.advice'))}</h2><div>${escapeMultiline(report.recommendations)}</div>` : ''
+    report.recommendations
+      ? `<h2>${escapeHtml(t('card.advice'))}</h2><div>${escapeMultiline(report.recommendations)}</div>`
+      : ''
   }${signatories(report.signatories, ctx)}${footer(report.verificationCode, ctx)}`;
   return { title, body, styles: REPORT_STYLES, fileName: safeFileName(`heart-test-${report.accessionNumber}`) };
 }

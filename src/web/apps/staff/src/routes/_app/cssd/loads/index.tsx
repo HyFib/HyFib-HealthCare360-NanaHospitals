@@ -38,7 +38,15 @@ function LoadsPage() {
   const [creating, setCreating] = useState(false);
   const [term, setTerm] = useState(search.q ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
-  const loads = useQuery(cssdQueries.loads({ status: search.status, method: search.method, biologicalPending: search.biologicalPending, search: search.q, page: search.page }));
+  const loads = useQuery(
+    cssdQueries.loads({
+      status: search.status,
+      method: search.method,
+      biologicalPending: search.biologicalPending,
+      search: search.q,
+      page: search.page,
+    }),
+  );
 
   useEffect(() => {
     if ((debounced || undefined) !== search.q) {
@@ -46,7 +54,8 @@ function LoadsPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const set = (patch: Partial<LoadsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<LoadsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
   return (
     <Page>
@@ -69,7 +78,10 @@ function LoadsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Cycle number or sterilizer" />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as LoadStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as LoadStatus | undefined })}
+              >
                 <option value="">Any</option>
                 {LOAD_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -79,7 +91,10 @@ function LoadsPage() {
               </Select>
             </Field>
             <Field label="Method">
-              <Select value={search.method ?? ''} onChange={(_, d) => set({ method: (d.value || undefined) as SterilizationMethod | undefined })}>
+              <Select
+                value={search.method ?? ''}
+                onChange={(_, d) => set({ method: (d.value || undefined) as SterilizationMethod | undefined })}
+              >
                 <option value="">Any</option>
                 {METHODS.map((m) => (
                   <option key={m} value={m}>
@@ -88,7 +103,11 @@ function LoadsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(search.biologicalPending)} onChange={(_, d) => set({ biologicalPending: d.checked || undefined })} label="Biological indicator to read" />
+            <Switch
+              checked={Boolean(search.biologicalPending)}
+              onChange={(_, d) => set({ biologicalPending: d.checked || undefined })}
+              label="Biological indicator to read"
+            />
           </FilterBar>
         </div>
         <DataTable

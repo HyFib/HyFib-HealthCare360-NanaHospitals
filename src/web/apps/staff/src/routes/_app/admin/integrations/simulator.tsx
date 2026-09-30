@@ -53,7 +53,9 @@ export const Route = createFileRoute('/_app/admin/integrations/simulator')({
   validateSearch: (s: Record<string, unknown>): SimulatorSearch => ({
     view: s.view === 'payments' ? 'payments' : undefined,
     channel: SIMULATOR_CHANNELS.includes(s.channel as SimulatorChannel) ? (s.channel as SimulatorChannel) : undefined,
-    kind: SIMULATOR_TRANSACTION_KINDS.includes(s.kind as SimulatorTransactionKind) ? (s.kind as SimulatorTransactionKind) : undefined,
+    kind: SIMULATOR_TRANSACTION_KINDS.includes(s.kind as SimulatorTransactionKind)
+      ? (s.kind as SimulatorTransactionKind)
+      : undefined,
     q: typeof s.q === 'string' && s.q.trim() ? s.q.trim().slice(0, 100) : undefined,
     page: pageFromUrl(s.page),
   }),
@@ -106,13 +108,15 @@ function SimulatorPage() {
       <MessageBar intent="warning" layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>Training and simulation only</MessageBarTitle>
-          Nothing on this page was really sent, charged or posted to Tally. When an integration’s provider is Simulator, what it would have done is
-          recorded here so staff can practise without real messages or money.
+          Nothing on this page was really sent, charged or posted to Tally. When an integration’s provider is Simulator,
+          what it would have done is recorded here so staff can practise without real messages or money.
         </MessageBarBody>
       </MessageBar>
       <TabList
         selectedValue={payments ? 'payments' : 'messages'}
-        onTabSelect={(_, data) => void navigate({ search: { view: data.value === 'payments' ? 'payments' : undefined } })}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { view: data.value === 'payments' ? 'payments' : undefined } })
+        }
         aria-label="Simulator records"
         size="small"
       >
@@ -146,14 +150,24 @@ function SimulatedMessages() {
       <div className={styles.toolbar}>
         <FilterBar>
           <Field label="Search" style={{ flex: '1 1 220px' }}>
-            <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Text, subject or reference" />
+            <SearchBox
+              value={term}
+              onChange={(_, data) => setTerm(data.value)}
+              placeholder="Text, subject or reference"
+            />
           </Field>
           <Field label="Channel">
             <Select
               value={search.channel ?? ''}
               onChange={(_, data) =>
                 void navigate({
-                  search: (prev) => ({ ...prev, channel: SIMULATOR_CHANNELS.includes(data.value as SimulatorChannel) ? (data.value as SimulatorChannel) : undefined, page: undefined }),
+                  search: (prev) => ({
+                    ...prev,
+                    channel: SIMULATOR_CHANNELS.includes(data.value as SimulatorChannel)
+                      ? (data.value as SimulatorChannel)
+                      : undefined,
+                    page: undefined,
+                  }),
                 })
               }
             >
@@ -178,7 +192,12 @@ function SimulatedMessages() {
         size="small"
         columns={[
           { key: 'when', header: 'When', width: 180, render: (row) => formatDateTime(row.createdAt) },
-          { key: 'channel', header: 'Channel', width: 110, render: (row) => SIMULATOR_CHANNEL_LABELS[row.channel] ?? row.channel },
+          {
+            key: 'channel',
+            header: 'Channel',
+            width: 110,
+            render: (row) => SIMULATOR_CHANNEL_LABELS[row.channel] ?? row.channel,
+          },
           { key: 'to', header: 'To', width: 160, render: (row) => row.recipient ?? '—' },
           {
             key: 'content',
@@ -203,7 +222,9 @@ function SimulatedMessages() {
       <Dialog open={open !== null} onOpenChange={(_, data) => !data.open && setOpen(null)}>
         <DialogSurface style={{ maxWidth: 720 }}>
           <DialogBody>
-            <DialogTitle>Simulated {open ? (SIMULATOR_CHANNEL_LABELS[open.channel] ?? open.channel) : ''} message</DialogTitle>
+            <DialogTitle>
+              Simulated {open ? (SIMULATOR_CHANNEL_LABELS[open.channel] ?? open.channel) : ''} message
+            </DialogTitle>
             <DialogContent className={styles.detail}>
               {open && (
                 <>
@@ -254,7 +275,9 @@ function SimulatedPayments() {
                 void navigate({
                   search: (prev) => ({
                     ...prev,
-                    kind: SIMULATOR_TRANSACTION_KINDS.includes(data.value as SimulatorTransactionKind) ? (data.value as SimulatorTransactionKind) : undefined,
+                    kind: SIMULATOR_TRANSACTION_KINDS.includes(data.value as SimulatorTransactionKind)
+                      ? (data.value as SimulatorTransactionKind)
+                      : undefined,
                     page: undefined,
                   }),
                 })
@@ -281,7 +304,13 @@ function SimulatedPayments() {
         columns={[
           { key: 'when', header: 'When', width: 180, render: (row) => formatDateTime(row.createdAt) },
           { key: 'kind', header: 'Kind', width: 130, render: (row) => TRANSACTION_KIND_LABELS[row.kind] ?? row.kind },
-          { key: 'amount', header: 'Amount', width: 130, align: 'end', render: (row) => (row.currency === 'INR' ? formatInr(row.amount) : `${row.amount} ${row.currency}`) },
+          {
+            key: 'amount',
+            header: 'Amount',
+            width: 130,
+            align: 'end',
+            render: (row) => (row.currency === 'INR' ? formatInr(row.amount) : `${row.amount} ${row.currency}`),
+          },
           {
             key: 'status',
             header: 'Status',
@@ -292,9 +321,20 @@ function SimulatedPayments() {
             },
           },
           { key: 'reference', header: 'Reference', render: (row) => row.reference ?? '—' },
-          { key: 'external', header: 'Simulator id', priority: 'low', render: (row) => <Text font="monospace">{row.externalId}</Text> },
+          {
+            key: 'external',
+            header: 'Simulator id',
+            priority: 'low',
+            render: (row) => <Text font="monospace">{row.externalId}</Text>,
+          },
           { key: 'terminal', header: 'Terminal', priority: 'low', render: (row) => row.terminalId ?? '—' },
-          { key: 'refunded', header: 'Refunded', priority: 'low', align: 'end', render: (row) => (row.refundedAmount > 0 ? formatInr(row.refundedAmount) : '—') },
+          {
+            key: 'refunded',
+            header: 'Refunded',
+            priority: 'low',
+            align: 'end',
+            render: (row) => (row.refundedAmount > 0 ? formatInr(row.refundedAmount) : '—'),
+          },
         ]}
         emptyTitle="No simulated payments"
         emptyDescription="Set the payment gateway or POS provider to Simulator to practise payment links and card/UPI sales. No money moves."

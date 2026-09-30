@@ -42,7 +42,10 @@ const useStyles = makeStyles({
   },
   muted: { color: tokens.colorNeutralForeground3 },
   row: { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' },
-  destructive: { backgroundColor: tokens.colorPaletteRedBackground3, ':hover': { backgroundColor: tokens.colorPaletteRedForeground1 } },
+  destructive: {
+    backgroundColor: tokens.colorPaletteRedBackground3,
+    ':hover': { backgroundColor: tokens.colorPaletteRedForeground1 },
+  },
 });
 
 // ------------------------------------------------------------------ join link
@@ -54,7 +57,10 @@ export function LinkIssuedDialog({ link, onClose }: { link: TelehealthLinkIssued
   const url = link ? new URL(link.joinUrl, window.location.origin).toString() : '';
 
   const copy = () => {
-    void navigator.clipboard?.writeText(url).then(() => setCopied(true), () => setCopied(false));
+    void navigator.clipboard?.writeText(url).then(
+      () => setCopied(true),
+      () => setCopied(false),
+    );
   };
 
   return (
@@ -80,7 +86,8 @@ export function LinkIssuedDialog({ link, onClose }: { link: TelehealthLinkIssued
             </MessageBar>
             <div className={styles.link}>{url}</div>
             <Caption1 className={styles.muted}>
-              {link?.expiresAt ? `The link works until ${formatDateTime(link.expiresAt)}. ` : ''}Any earlier link for this consultation no longer works.
+              {link?.expiresAt ? `The link works until ${formatDateTime(link.expiresAt)}. ` : ''}Any earlier link for
+              this consultation no longer works.
             </Caption1>
           </DialogContent>
           <DialogActions>
@@ -102,15 +109,31 @@ export function LinkIssuedDialog({ link, onClose }: { link: TelehealthLinkIssued
 const DURATIONS = [10, 15, 20, 30, 45, 60];
 
 /** A video consultation without an appointment (for example a follow-up call arranged by the doctor). */
-export function NewSessionDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (link: TelehealthLinkIssued) => void }) {
+export function NewSessionDialog({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (link: TelehealthLinkIssued) => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 600 }}>{open && <NewSessionContent onClose={onClose} onCreated={onCreated} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 600 }}>
+        {open && <NewSessionContent onClose={onClose} onCreated={onCreated} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function NewSessionContent({ onClose, onCreated }: { onClose: () => void; onCreated: (link: TelehealthLinkIssued) => void }) {
+function NewSessionContent({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (link: TelehealthLinkIssued) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -129,7 +152,14 @@ function NewSessionContent({ onClose, onCreated }: { onClose: () => void; onCrea
 
   const create = useMutation({
     mutationFn: () =>
-      telehealthApi.create({ appointmentId: null, patientId: patient!.id, practitionerId, scheduledStartAt: iso, durationMinutes: duration, sendLink }),
+      telehealthApi.create({
+        appointmentId: null,
+        patientId: patient!.id,
+        practitionerId,
+        scheduledStartAt: iso,
+        durationMinutes: duration,
+        sendLink,
+      }),
     onSuccess: (link) => {
       void queryClient.invalidateQueries({ queryKey: telehealthKeys.all });
       onCreated(link);
@@ -208,7 +238,11 @@ function NewSessionContent({ onClose, onCreated }: { onClose: () => void; onCrea
               </Select>
             </Field>
           </div>
-          <Switch checked={sendLink} onChange={(_, d) => setSendLink(d.checked)} label="Send the join link to the patient by SMS/WhatsApp now" />
+          <Switch
+            checked={sendLink}
+            onChange={(_, d) => setSendLink(d.checked)}
+            label="Send the join link to the patient by SMS/WhatsApp now"
+          />
           {problem && (
             <MessageBar intent="error">
               <MessageBarBody>{problem}</MessageBarBody>
@@ -219,7 +253,12 @@ function NewSessionContent({ onClose, onCreated }: { onClose: () => void; onCrea
           <Button onClick={onClose} disabled={create.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={create.isPending}
+            icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Create consultation
           </Button>
         </DialogActions>
@@ -239,7 +278,9 @@ export interface SessionRef {
 export function CancelSessionDialog({ session, onClose }: { session: SessionRef | null; onClose: () => void }) {
   return (
     <Dialog open={session !== null} onOpenChange={(_, d) => !d.open && onClose()} modalType="alert">
-      <DialogSurface style={{ maxWidth: 520 }}>{session && <CancelSessionContent key={session.id} session={session} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        {session && <CancelSessionContent key={session.id} session={session} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -276,15 +317,30 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
           </Caption1>
         </DialogTitle>
         <DialogContent className={styles.form}>
-          <Field label="Reason" required hint="To cancel the appointment too, cancel it from the appointment desk instead.">
-            <Textarea value={reason} onChange={(_, d) => setReason(d.value.slice(0, 300))} rows={2} autoFocus resize="vertical" />
+          <Field
+            label="Reason"
+            required
+            hint="To cancel the appointment too, cancel it from the appointment desk instead."
+          >
+            <Textarea
+              value={reason}
+              onChange={(_, d) => setReason(d.value.slice(0, 300))}
+              rows={2}
+              autoFocus
+              resize="vertical"
+            />
           </Field>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={cancel.isPending}>
             Keep it
           </Button>
-          <Button type="submit" appearance="primary" className={styles.destructive} disabled={!reason.trim() || cancel.isPending}>
+          <Button
+            type="submit"
+            appearance="primary"
+            className={styles.destructive}
+            disabled={!reason.trim() || cancel.isPending}
+          >
             Cancel consultation
           </Button>
         </DialogActions>
@@ -308,12 +364,22 @@ export function EndSessionDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()} modalType="alert">
-      <DialogSurface style={{ maxWidth: 520 }}>{open && <EndSessionContent sessionId={sessionId} onClose={onClose} onEnded={onEnded} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        {open && <EndSessionContent sessionId={sessionId} onClose={onClose} onEnded={onEnded} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function EndSessionContent({ sessionId, onClose, onEnded }: { sessionId: string; onClose: () => void; onEnded: (session: TelehealthSessionDetail) => void }) {
+function EndSessionContent({
+  sessionId,
+  onClose,
+  onEnded,
+}: {
+  sessionId: string;
+  onClose: () => void;
+  onEnded: (session: TelehealthSessionDetail) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -337,7 +403,10 @@ function EndSessionContent({ sessionId, onClose, onEnded }: { sessionId: string;
       <DialogBody>
         <DialogTitle>End the consultation?</DialogTitle>
         <DialogContent className={styles.form}>
-          <Caption1>The call closes for everyone and the patient's link stops working. Notes and the prescription are written against the visit afterwards.</Caption1>
+          <Caption1>
+            The call closes for everyone and the patient's link stops working. Notes and the prescription are written
+            against the visit afterwards.
+          </Caption1>
           <Field label="Call quality notes (optional)" hint="For example: patient's video froze, switched to audio.">
             <Textarea value={notes} onChange={(_, d) => setNotes(d.value.slice(0, 500))} rows={2} resize="vertical" />
           </Field>
@@ -346,7 +415,14 @@ function EndSessionContent({ sessionId, onClose, onEnded }: { sessionId: string;
           <Button onClick={onClose} disabled={end.isPending}>
             Continue the call
           </Button>
-          <Button type="submit" appearance="primary" className={styles.destructive} disabled={end.isPending} icon={end.isPending ? <Spinner size="tiny" /> : undefined} autoFocus>
+          <Button
+            type="submit"
+            appearance="primary"
+            className={styles.destructive}
+            disabled={end.isPending}
+            icon={end.isPending ? <Spinner size="tiny" /> : undefined}
+            autoFocus
+          >
             End consultation
           </Button>
         </DialogActions>
@@ -361,13 +437,24 @@ function EndSessionContent({ sessionId, onClose, onEnded }: { sessionId: string;
  * Records whether the patient agreed to the consultation being recorded (TEL-05). HealthCare360 never records a
  * call; the consent authorises a recording made by other means, and it is kept with the session for audit.
  */
-export function RecordingConsentDialog({ open, sessionId, onClose }: { open: boolean; sessionId: string; onClose: () => void }) {
+export function RecordingConsentDialog({
+  open,
+  sessionId,
+  onClose,
+}: {
+  open: boolean;
+  sessionId: string;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const record = useMutation({
     mutationFn: (granted: boolean) => telehealthApi.recordingConsent(sessionId, granted),
     onSuccess: (_, granted) => {
-      notify.success(granted ? 'Consent to record noted' : 'Patient declined recording', `Recorded at ${formatTime(new Date().toISOString())}.`);
+      notify.success(
+        granted ? 'Consent to record noted' : 'Patient declined recording',
+        `Recorded at ${formatTime(new Date().toISOString())}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: telehealthKeys.session(sessionId) });
       onClose();
     },
@@ -380,8 +467,8 @@ export function RecordingConsentDialog({ open, sessionId, onClose }: { open: boo
         <DialogBody>
           <DialogTitle>Consent to record</DialogTitle>
           <DialogContent>
-            Ask the patient: "Do you agree to this consultation being recorded for your medical record?" Record their answer. HealthCare360 does not record calls by
-            itself.
+            Ask the patient: "Do you agree to this consultation being recorded for your medical record?" Record their
+            answer. HealthCare360 does not record calls by itself.
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose} disabled={record.isPending}>

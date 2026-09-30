@@ -69,7 +69,11 @@ function RecallsPage() {
               width: 180,
               render: (i) => (
                 <span>
-                  <StatusBadge status={i.status} label={ISSUE_STATUS_LABEL[i.status]} tone={i.patientId ? 'danger' : undefined} />
+                  <StatusBadge
+                    status={i.status}
+                    label={ISSUE_STATUS_LABEL[i.status]}
+                    tone={i.patientId ? 'danger' : undefined}
+                  />
                   {i.patientId && (
                     <Badge appearance="filled" color="danger" style={{ marginLeft: 6 }}>
                       Used on a patient
@@ -78,16 +82,32 @@ function RecallsPage() {
                 </span>
               ),
             },
-            { key: 'flagged', header: 'Recalled', width: 170, priority: 'low', render: (i) => (i.recallFlaggedAt ? formatDateTime(i.recallFlaggedAt) : '—') },
+            {
+              key: 'flagged',
+              header: 'Recalled',
+              width: 170,
+              priority: 'low',
+              render: (i) => (i.recallFlaggedAt ? formatDateTime(i.recallFlaggedAt) : '—'),
+            },
             { key: 'reason', header: 'Reason', priority: 'low', render: (i) => i.recallReason ?? '—' },
           ]}
           rowActions={(i) => (
             <span style={{ display: 'inline-flex', gap: 6 }}>
-              <Button size="small" onClick={() => void navigate({ to: '/cssd/loads/$loadId', params: { loadId: i.loadId }, search: { tab: 'recall' } })}>
+              <Button
+                size="small"
+                onClick={() =>
+                  void navigate({ to: '/cssd/loads/$loadId', params: { loadId: i.loadId }, search: { tab: 'recall' } })
+                }
+              >
                 Load report
               </Button>
               {canAcknowledge && (
-                <Button size="small" appearance="primary" icon={<ShieldCheckmarkRegular />} onClick={() => setAcknowledging(i)}>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  icon={<ShieldCheckmarkRegular />}
+                  onClick={() => setAcknowledging(i)}
+                >
                   Acknowledge
                 </Button>
               )}
@@ -105,12 +125,23 @@ function RecallsPage() {
           error={failed.error}
           onRetry={() => void failed.refetch()}
           getRowId={(l) => l.id}
-          onRowClick={(l) => void navigate({ to: '/cssd/loads/$loadId', params: { loadId: l.id }, search: { tab: 'recall' } })}
+          onRowClick={(l) =>
+            void navigate({ to: '/cssd/loads/$loadId', params: { loadId: l.id }, search: { tab: 'recall' } })
+          }
           size="small"
           columns={[
             { key: 'cycle', header: 'Cycle', width: 180, render: (l) => <Text font="monospace">{l.cycleNumber}</Text> },
-            { key: 'sterilizer', header: 'Sterilizer', render: (l) => `${l.sterilizerName} · ${METHOD_LABEL[l.method]}` },
-            { key: 'released', header: 'Released', width: 170, render: (l) => (l.releasedAt ? formatDateTime(l.releasedAt) : '—') },
+            {
+              key: 'sterilizer',
+              header: 'Sterilizer',
+              render: (l) => `${l.sterilizerName} · ${METHOD_LABEL[l.method]}`,
+            },
+            {
+              key: 'released',
+              header: 'Released',
+              width: 170,
+              render: (l) => (l.releasedAt ? formatDateTime(l.releasedAt) : '—'),
+            },
             { key: 'reason', header: 'Failure', render: (l) => l.failureReason ?? '—' },
           ]}
           emptyTitle="No released load has failed"

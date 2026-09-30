@@ -77,7 +77,9 @@ export function ReasonDialog(props: ReasonDialogProps) {
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {props.description && (
                 // A block container, so descriptions may include lists.
-                <div style={{ fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300 }}>{props.description}</div>
+                <div style={{ fontSize: tokens.fontSizeBase300, lineHeight: tokens.lineHeightBase300 }}>
+                  {props.description}
+                </div>
               )}
               <Field
                 label={props.label ?? 'Reason'}
@@ -101,7 +103,9 @@ export function ReasonDialog(props: ReasonDialogProps) {
               </Field>
               {props.error !== undefined && props.error !== null && (
                 <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>{isApiError(props.error) ? props.error.userMessage : 'The action failed. Please try again.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(props.error) ? props.error.userMessage : 'The action failed. Please try again.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>

@@ -6,7 +6,13 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Can } from '@/lib/permissions';
-import { labQueries, ORDER_STATUSES, type LabOrderFilters, type LabOrderListItem, type LabOrderStatus } from '@/modules/lab/api';
+import {
+  labQueries,
+  ORDER_STATUSES,
+  type LabOrderFilters,
+  type LabOrderListItem,
+  type LabOrderStatus,
+} from '@/modules/lab/api';
 import { PatientClassBadge, PriorityBadge, ReportStatusBadge } from '@/modules/lab/badges';
 import { DateRangeFields } from '@/modules/lab/common/DateRangeFields';
 import { searchDate, searchFlag, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
@@ -59,7 +65,10 @@ function LabOrdersPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
@@ -76,9 +85,13 @@ function LabOrdersPage() {
     desc: search.sort ? !search.asc : undefined,
   };
   const orders = useQuery(labQueries.orders(filters));
-  const set = (patch: Partial<OrdersSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<OrdersSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
-  const range = search.from && search.from !== today ? `${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}` : 'Today';
+  const range =
+    search.from && search.from !== today
+      ? `${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}`
+      : 'Today';
 
   return (
     <Page>
@@ -97,11 +110,19 @@ function LabOrdersPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="UHID, name, mobile or accession number" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, data) => setTerm(data.value)}
+                placeholder="UHID, name, mobile or accession number"
+                autoFocus
+              />
             </Field>
             <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => set(range)} />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, data) => set({ status: (data.value || undefined) as LabOrderStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, data) => set({ status: (data.value || undefined) as LabOrderStatus | undefined })}
+              >
                 <option value="">All</option>
                 {ORDER_STATUSES.map((value) => (
                   <option key={value} value={value}>
@@ -111,7 +132,10 @@ function LabOrdersPage() {
               </Select>
             </Field>
             <Field label="Priority">
-              <Select value={search.priority ?? ''} onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}>
+              <Select
+                value={search.priority ?? ''}
+                onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}
+              >
                 <option value="">All</option>
                 {ORDER_PRIORITIES.map((value) => (
                   <option key={value} value={value}>
@@ -121,7 +145,10 @@ function LabOrdersPage() {
               </Select>
             </Field>
             <Field label="Patient type">
-              <Select value={search.patientClass ?? ''} onChange={(_, data) => set({ patientClass: (data.value || undefined) as PatientClass | undefined })}>
+              <Select
+                value={search.patientClass ?? ''}
+                onChange={(_, data) => set({ patientClass: (data.value || undefined) as PatientClass | undefined })}
+              >
                 <option value="">All</option>
                 {PATIENT_CLASSES.map((value) => (
                   <option key={value} value={value}>
@@ -141,9 +168,7 @@ function LabOrdersPage() {
           getRowId={(order) => order.id}
           onRowClick={(order) => void navigate({ to: '/lab/orders/$orderId', params: { orderId: order.id } })}
           sort={{ key: search.sort ?? 'orderedAt', desc: search.sort ? !search.asc : true }}
-          onSortChange={(sort) =>
-            set({ sort: sort.key as OrdersSearch['sort'], asc: sort.desc ? undefined : true })
-          }
+          onSortChange={(sort) => set({ sort: sort.key as OrdersSearch['sort'], asc: sort.desc ? undefined : true })}
           columns={[
             {
               key: 'orderedAt',
@@ -200,7 +225,13 @@ function LabOrdersPage() {
               sortable: true,
               render: (order: LabOrderListItem) => <PriorityBadge priority={order.priority} showRoutine />,
             },
-            { key: 'class', header: 'Type', width: 90, priority: 'low', render: (order: LabOrderListItem) => <PatientClassBadge patientClass={order.patientClass} /> },
+            {
+              key: 'class',
+              header: 'Type',
+              width: 90,
+              priority: 'low',
+              render: (order: LabOrderListItem) => <PatientClassBadge patientClass={order.patientClass} />,
+            },
             {
               key: 'status',
               header: 'Status',
@@ -208,14 +239,21 @@ function LabOrdersPage() {
               sortable: true,
               render: (order: LabOrderListItem) =>
                 order.reportStatus ? (
-                  <ReportStatusBadge status={order.reportStatus} partial={order.releasedCount > 0 && order.releasedCount < order.testCount} />
+                  <ReportStatusBadge
+                    status={order.reportStatus}
+                    partial={order.releasedCount > 0 && order.releasedCount < order.testCount}
+                  />
                 ) : (
                   <StatusBadge status={order.status} label={orderStatusLabel[order.status]} />
                 ),
             },
           ]}
           emptyTitle={search.search ? 'No order matches your search' : 'No lab orders for these dates'}
-          emptyDescription={search.search ? 'Check the UHID or accession number, or change the dates.' : 'Doctors’ orders appear here automatically. Register walk-in patients with New lab order.'}
+          emptyDescription={
+            search.search
+              ? 'Check the UHID or accession number, or change the dates.'
+              : 'Doctors’ orders appear here automatically. Register walk-in patients with New lab order.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={orders.data?.totalCount}

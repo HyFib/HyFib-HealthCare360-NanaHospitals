@@ -1,4 +1,16 @@
-import { Badge, Caption1, Checkbox, Field, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Text, Textarea, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Caption1,
+  Checkbox,
+  Field,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  Textarea,
+  tokens,
+} from '@fluentui/react-components';
 import { ShieldCheckmarkRegular } from '@fluentui/react-icons';
 import {
   affectedDrugs,
@@ -20,7 +32,13 @@ const useStyles = makeStyles({
   confirm: { marginTop: '8px' },
 });
 
-function AlertList({ alerts, items }: { alerts: readonly SafetyAlert[]; items: readonly { id: string; drugName: string }[] }) {
+function AlertList({
+  alerts,
+  items,
+}: {
+  alerts: readonly SafetyAlert[];
+  items: readonly { id: string; drugName: string }[];
+}) {
   const styles = useStyles();
   return (
     <ul className={styles.list}>
@@ -68,7 +86,8 @@ export function SafetyReview({
 }) {
   const styles = useStyles();
   const reasonLength = decision.overrideReason.trim().length;
-  const clean = grouped.blocking.length === 0 && grouped.warnings.length === 0 && !requirements.needsControlledConfirmation;
+  const clean =
+    grouped.blocking.length === 0 && grouped.warnings.length === 0 && !requirements.needsControlledConfirmation;
 
   return (
     <div className={styles.root} aria-live="polite">
@@ -85,9 +104,13 @@ export function SafetyReview({
         <MessageBar intent="error" layout="multiline" role="alert">
           <MessageBarBody>
             <MessageBarTitle>
-              Stop: {grouped.blocking.length} {grouped.blocking.length === 1 ? 'problem blocks' : 'problems block'} signing
+              Stop: {grouped.blocking.length} {grouped.blocking.length === 1 ? 'problem blocks' : 'problems block'}{' '}
+              signing
             </MessageBarTitle>
-            <Text block>Change the prescription, or give the clinical reason for prescribing anyway. Overrides are recorded and reviewed.</Text>
+            <Text block>
+              Change the prescription, or give the clinical reason for prescribing anyway. Overrides are recorded and
+              reviewed.
+            </Text>
             <AlertList alerts={grouped.blocking} items={items} />
             <Field
               className={styles.confirm}
@@ -132,8 +155,10 @@ export function SafetyReview({
           <MessageBarBody>
             <MessageBarTitle>Schedule H1/X medicines</MessageBarTitle>
             <Text block>
-              {controlledItems.length > 0 ? controlledItems.join(', ') : 'This prescription contains narcotic or psychotropic medicines.'} Signing enters them in the
-              controlled-drug register under your name.
+              {controlledItems.length > 0
+                ? controlledItems.join(', ')
+                : 'This prescription contains narcotic or psychotropic medicines.'}{' '}
+              Signing enters them in the controlled-drug register under your name.
             </Text>
             {grouped.controlled.length > 0 && <AlertList alerts={grouped.controlled} items={items} />}
             <Checkbox

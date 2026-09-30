@@ -57,7 +57,15 @@ function DialogHeading({ title, study }: { title: string; study: StudyRef }) {
   );
 }
 
-export function ScheduleDialog({ study, onClose, onDone }: { study: StudyRef; onClose: () => void; onDone: () => void }) {
+export function ScheduleDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: StudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const styles = useStyles();
   const [at, setAt] = useState(() => toZonedInput(study.scheduledAt ? new Date(study.scheduledAt) : new Date()));
   const [room, setRoom] = useState(study.room ?? '');
@@ -65,7 +73,12 @@ export function ScheduleDialog({ study, onClose, onDone }: { study: StudyRef; on
   const instant = fromZonedInput(at);
   const stationProblem = station && !/^[A-Za-z0-9_-]{1,16}$/.test(station) ? 'Up to 16 letters, digits, - or _.' : null;
   const schedule = useMutation({
-    mutationFn: () => radiologyApi.schedule(study.id, { scheduledAt: instant!, room: room.trim() || null, stationAeTitle: station.trim().toUpperCase() || null }),
+    mutationFn: () =>
+      radiologyApi.schedule(study.id, {
+        scheduledAt: instant!,
+        room: room.trim() || null,
+        stationAeTitle: station.trim().toUpperCase() || null,
+      }),
     onSuccess: onDone,
   });
   return (
@@ -87,15 +100,31 @@ export function ScheduleDialog({ study, onClose, onDone }: { study: StudyRef; on
                   <MessageBarBody>{errorMessage(schedule.error, 'The study could not be scheduled.')}</MessageBarBody>
                 </MessageBar>
               )}
-              <Field label="Appointment (hospital time)" required validationMessage={!instant ? 'Enter the date and time.' : undefined}>
+              <Field
+                label="Appointment (hospital time)"
+                required
+                validationMessage={!instant ? 'Enter the date and time.' : undefined}
+              >
                 <Input type="datetime-local" value={at} onChange={(_, data) => setAt(data.value)} autoFocus />
               </Field>
               <div className={styles.row}>
                 <Field label="Room">
-                  <Input value={room} onChange={(_, data) => setRoom(data.value.slice(0, 64))} placeholder="e.g. CT room 1" />
+                  <Input
+                    value={room}
+                    onChange={(_, data) => setRoom(data.value.slice(0, 64))}
+                    placeholder="e.g. CT room 1"
+                  />
                 </Field>
-                <Field label="Modality station (AE title)" hint="Sends the study to that machine's worklist" validationMessage={stationProblem ?? undefined}>
-                  <Input value={station} onChange={(_, data) => setStation(data.value.slice(0, 16))} placeholder="e.g. CT01" />
+                <Field
+                  label="Modality station (AE title)"
+                  hint="Sends the study to that machine's worklist"
+                  validationMessage={stationProblem ?? undefined}
+                >
+                  <Input
+                    value={station}
+                    onChange={(_, data) => setStation(data.value.slice(0, 16))}
+                    placeholder="e.g. CT01"
+                  />
                 </Field>
               </div>
             </DialogContent>
@@ -103,7 +132,12 @@ export function ScheduleDialog({ study, onClose, onDone }: { study: StudyRef; on
               <Button onClick={onClose} disabled={schedule.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!instant || Boolean(stationProblem) || schedule.isPending} icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!instant || Boolean(stationProblem) || schedule.isPending}
+                icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Schedule
               </Button>
             </DialogActions>
@@ -114,7 +148,15 @@ export function ScheduleDialog({ study, onClose, onDone }: { study: StudyRef; on
   );
 }
 
-export function AcquireDialog({ study, onClose, onDone }: { study: StudyRef; onClose: () => void; onDone: () => void }) {
+export function AcquireDialog({
+  study,
+  onClose,
+  onDone,
+}: {
+  study: StudyRef;
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const styles = useStyles();
   const [contrast, setContrast] = useState(false);
   const [agent, setAgent] = useState('');
@@ -122,7 +164,10 @@ export function AcquireDialog({ study, onClose, onDone }: { study: StudyRef; onC
   const [dose, setDose] = useState('');
   const [notes, setNotes] = useState('');
   const volumeNumber = volume.trim() ? Number(volume) : null;
-  const volumeProblem = volumeNumber !== null && (!Number.isFinite(volumeNumber) || volumeNumber < 0 || volumeNumber > 1000) ? 'Enter 0 to 1000 mL.' : null;
+  const volumeProblem =
+    volumeNumber !== null && (!Number.isFinite(volumeNumber) || volumeNumber < 0 || volumeNumber > 1000)
+      ? 'Enter 0 to 1000 mL.'
+      : null;
   const agentProblem = contrast && !agent.trim() ? 'Enter the contrast agent used.' : null;
   const acquire = useMutation({
     mutationFn: () =>
@@ -159,7 +204,12 @@ export function AcquireDialog({ study, onClose, onDone }: { study: StudyRef; onC
               {contrast && (
                 <div className={styles.row}>
                   <Field label="Contrast agent" required validationMessage={agentProblem ?? undefined}>
-                    <Input value={agent} onChange={(_, data) => setAgent(data.value.slice(0, 100))} placeholder="e.g. Iohexol 350" autoFocus />
+                    <Input
+                      value={agent}
+                      onChange={(_, data) => setAgent(data.value.slice(0, 100))}
+                      placeholder="e.g. Iohexol 350"
+                      autoFocus
+                    />
                   </Field>
                   <Field label="Volume (mL)" validationMessage={volumeProblem ?? undefined}>
                     <Input value={volume} onChange={(_, data) => setVolume(data.value)} inputMode="decimal" />
@@ -170,14 +220,24 @@ export function AcquireDialog({ study, onClose, onDone }: { study: StudyRef; onC
                 <Input value={dose} onChange={(_, data) => setDose(data.value.slice(0, 200))} />
               </Field>
               <Field label="Technologist notes">
-                <Textarea value={notes} onChange={(_, data) => setNotes(data.value.slice(0, 1000))} rows={2} resize="vertical" />
+                <Textarea
+                  value={notes}
+                  onChange={(_, data) => setNotes(data.value.slice(0, 1000))}
+                  rows={2}
+                  resize="vertical"
+                />
               </Field>
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={acquire.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || acquire.isPending} icon={acquire.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || acquire.isPending}
+                icon={acquire.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Complete scan
               </Button>
             </DialogActions>
@@ -193,7 +253,10 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
   const [reason, setReason] = useState<ImageRepeatReason | ''>('');
   const [note, setNote] = useState('');
   const needsNote = reason === 'Other' && !note.trim();
-  const record = useMutation({ mutationFn: () => radiologyApi.recordRepeat(study.id, reason as ImageRepeatReason, note.trim() || null), onSuccess: onDone });
+  const record = useMutation({
+    mutationFn: () => radiologyApi.recordRepeat(study.id, reason as ImageRepeatReason, note.trim() || null),
+    onSuccess: onDone,
+  });
   return (
     <Dialog open onOpenChange={(_, data) => !data.open && !record.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 600 }}>
@@ -208,14 +271,20 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
           <DialogBody>
             <DialogHeading title="Record a repeated image" study={study} />
             <DialogContent className={styles.content}>
-              <Caption1 className={styles.muted}>Repeats are counted in the reject analysis used for radiographer training and equipment checks.</Caption1>
+              <Caption1 className={styles.muted}>
+                Repeats are counted in the reject analysis used for radiographer training and equipment checks.
+              </Caption1>
               {record.error && (
                 <MessageBar intent="error">
                   <MessageBarBody>{errorMessage(record.error, 'The repeat could not be recorded.')}</MessageBarBody>
                 </MessageBar>
               )}
               <Field label="Why was the image repeated?" required>
-                <RadioGroup value={reason} onChange={(_, data) => setReason(data.value as ImageRepeatReason)} className={styles.reasons}>
+                <RadioGroup
+                  value={reason}
+                  onChange={(_, data) => setReason(data.value as ImageRepeatReason)}
+                  className={styles.reasons}
+                >
                   {REPEAT_REASONS.map((value) => (
                     <Radio key={value} value={value} label={repeatReasonLabel[value]} />
                   ))}
@@ -229,7 +298,12 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
               <Button onClick={onClose} disabled={record.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!reason || needsNote || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!reason || needsNote || record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record repeat
               </Button>
             </DialogActions>

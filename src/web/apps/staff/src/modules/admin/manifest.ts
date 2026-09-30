@@ -9,12 +9,42 @@ const manifest: ModuleManifest = {
   icon: SettingsRegular,
   order: 900,
   links: [
-    { label: 'Users', to: '/admin/users', permission: 'admin.users.read', keywords: ['staff', 'login', 'password', 'account'] },
-    { label: 'Roles and permissions', to: '/admin/roles', permission: 'admin.users.read', keywords: ['access', 'rights'] },
-    { label: 'Devices', to: '/admin/devices', permission: 'admin.devices.manage', keywords: ['workstation', 'kiosk', 'enrol', 'tablet'] },
-    { label: 'System health', to: '/admin/system', permission: 'admin.system.read', keywords: ['wifi', 'server', 'ups', 'disk', 'certificate'] },
-    { label: 'Audit log', to: '/admin/audit', permission: 'admin.audit.read', keywords: ['security', 'who accessed', 'history'] },
-    { label: 'Settings', to: '/admin/settings', permission: 'admin.settings.manage', keywords: ['configuration', 'sms', 'whatsapp'] },
+    {
+      label: 'Users',
+      to: '/admin/users',
+      permission: 'admin.users.read',
+      keywords: ['staff', 'login', 'password', 'account'],
+    },
+    {
+      label: 'Roles and permissions',
+      to: '/admin/roles',
+      permission: 'admin.users.read',
+      keywords: ['access', 'rights'],
+    },
+    {
+      label: 'Devices',
+      to: '/admin/devices',
+      permission: 'admin.devices.manage',
+      keywords: ['workstation', 'kiosk', 'enrol', 'tablet'],
+    },
+    {
+      label: 'System health',
+      to: '/admin/system',
+      permission: 'admin.system.read',
+      keywords: ['wifi', 'server', 'ups', 'disk', 'certificate'],
+    },
+    {
+      label: 'Audit log',
+      to: '/admin/audit',
+      permission: 'admin.audit.read',
+      keywords: ['security', 'who accessed', 'history'],
+    },
+    {
+      label: 'Settings',
+      to: '/admin/settings',
+      permission: 'admin.settings.manage',
+      keywords: ['configuration', 'sms', 'whatsapp'],
+    },
     {
       label: 'Integrations',
       to: '/admin/integrations',
@@ -52,7 +82,12 @@ const manifest: ModuleManifest = {
       permission: 'ai.settings.manage',
       keywords: ['ai', 'claude', 'anthropic', 'voice', 'speech', 'whisper', 'dictation', 'usage', 'quota'],
     },
-    { label: 'Backups', to: '/admin/backups', permission: 'admin.backups.manage', keywords: ['restore', 'recovery key'] },
+    {
+      label: 'Backups',
+      to: '/admin/backups',
+      permission: 'admin.backups.manage',
+      keywords: ['restore', 'recovery key'],
+    },
   ],
   quickActions: [
     {
@@ -69,9 +104,17 @@ const manifest: ModuleManifest = {
       icon: BeakerRegular,
       description: 'Training messages and payments that were not really sent',
     },
-    { label: 'AI usage', to: '/admin/ai', permission: 'ai.settings.manage', icon: SparkleRegular, description: 'Is AI on, and who used it' },
+    {
+      label: 'AI usage',
+      to: '/admin/ai',
+      permission: 'ai.settings.manage',
+      icon: SparkleRegular,
+      description: 'Is AI on, and who used it',
+    },
   ],
-  widgets: [{ id: 'admin-system-health', permission: 'admin.system.read', span: 2, order: 900, component: SystemHealthWidget }],
+  widgets: [
+    { id: 'admin-system-health', permission: 'admin.system.read', span: 2, order: 900, component: SystemHealthWidget },
+  ],
 };
 
 export default manifest;

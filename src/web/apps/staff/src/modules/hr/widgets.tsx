@@ -44,22 +44,44 @@ export function PendingApprovalsWidget() {
   const canLeave = usePermission(HR_PERMISSIONS.leaveApprove);
   const canAttendance = usePermission(HR_PERMISSIONS.attendanceManage);
   const isStaff = usePermission(HR_PERMISSIONS.self);
-  const hrLeave = useQuery({ ...hrQueries.leaveRequests({ status: 'Pending', pageSize: 1 }), enabled: canLeave, refetchInterval: 120_000 });
-  const hrRegularisations = useQuery({ ...hrQueries.regularisations('Pending', 1, 1), enabled: canAttendance, refetchInterval: 120_000 });
+  const hrLeave = useQuery({
+    ...hrQueries.leaveRequests({ status: 'Pending', pageSize: 1 }),
+    enabled: canLeave,
+    refetchInterval: 120_000,
+  });
+  const hrRegularisations = useQuery({
+    ...hrQueries.regularisations('Pending', 1, 1),
+    enabled: canAttendance,
+    refetchInterval: 120_000,
+  });
   const profile = useQuery({ ...hrQueries.myProfile(), enabled: isStaff, retry: false });
   const linked = isStaff && Boolean(profile.data);
   const manager = linked && (profile.data?.reportees ?? 0) > 0;
   const teamLeave = useQuery({ ...hrQueries.teamLeave('Pending'), enabled: manager, refetchInterval: 120_000 });
-  const teamRegularisations = useQuery({ ...hrQueries.teamRegularisations('Pending'), enabled: manager, refetchInterval: 120_000 });
+  const teamRegularisations = useQuery({
+    ...hrQueries.teamRegularisations('Pending'),
+    enabled: manager,
+    refetchInterval: 120_000,
+  });
   const myLeave = useQuery({ ...hrQueries.myLeaveRequests(), enabled: linked });
   const myRegularisations = useQuery({ ...hrQueries.myRegularisations(), enabled: linked });
 
   const loading =
-    (canLeave && hrLeave.isLoading) || (canAttendance && hrRegularisations.isLoading) || (isStaff && profile.isLoading) || (manager && (teamLeave.isLoading || teamRegularisations.isLoading));
+    (canLeave && hrLeave.isLoading) ||
+    (canAttendance && hrRegularisations.isLoading) ||
+    (isStaff && profile.isLoading) ||
+    (manager && (teamLeave.isLoading || teamRegularisations.isLoading));
 
   const items: Item[] = [];
   if (canLeave && hrLeave.data) {
-    items.push({ key: 'hr-leave', label: 'Leave requests', hint: 'Waiting for HR', count: hrLeave.data.totalCount, to: '/hr/leave', urgent: true });
+    items.push({
+      key: 'hr-leave',
+      label: 'Leave requests',
+      hint: 'Waiting for HR',
+      count: hrLeave.data.totalCount,
+      to: '/hr/leave',
+      urgent: true,
+    });
   }
   if (canAttendance && hrRegularisations.data) {
     items.push({
@@ -82,8 +104,16 @@ export function PendingApprovalsWidget() {
     });
   }
   if (linked) {
-    const mine = (myLeave.data?.filter((r) => r.status === 'Pending').length ?? 0) + (myRegularisations.data?.filter((r) => r.status === 'Pending').length ?? 0);
-    items.push({ key: 'mine', label: 'Your requests', hint: 'Waiting for your manager or HR', count: mine, to: '/hr/me/leave' });
+    const mine =
+      (myLeave.data?.filter((r) => r.status === 'Pending').length ?? 0) +
+      (myRegularisations.data?.filter((r) => r.status === 'Pending').length ?? 0);
+    items.push({
+      key: 'mine',
+      label: 'Your requests',
+      hint: 'Waiting for your manager or HR',
+      count: mine,
+      to: '/hr/me/leave',
+    });
   }
 
   const notLinked = isStaff && isApiError(profile.error) && profile.error.code === 'hr.self.not_linked';
@@ -91,13 +121,20 @@ export function PendingApprovalsWidget() {
   const waiting = items.reduce((sum, item) => sum + (item.urgent ? item.count : 0), 0);
 
   return (
-    <Section title="Pending approvals" description={waiting > 0 ? `${waiting} waiting for your decision` : 'Leave and attendance requests'}>
+    <Section
+      title="Pending approvals"
+      description={waiting > 0 ? `${waiting} waiting for your decision` : 'Leave and attendance requests'}
+    >
       {loading ? (
         <Spinner size="tiny" label="Checking…" labelPosition="after" />
       ) : visible.length === 0 || visible.every((item) => item.count === 0) ? (
         <div className={styles.done} role="status">
           <CheckmarkCircleRegular fontSize={20} color={tokens.colorPaletteGreenForeground1} />
-          <Text>{notLinked ? 'Nothing waiting. Your sign-in is not linked to an employee record; HR can link it.' : 'Nothing is waiting for approval.'}</Text>
+          <Text>
+            {notLinked
+              ? 'Nothing waiting. Your sign-in is not linked to an employee record; HR can link it.'
+              : 'Nothing is waiting for approval.'}
+          </Text>
         </div>
       ) : (
         <div className={styles.list}>
@@ -109,7 +146,11 @@ export function PendingApprovalsWidget() {
                   {item.hint}
                 </Caption1>
               </span>
-              <Badge appearance={item.count > 0 ? 'filled' : 'tint'} color={item.count > 0 && item.urgent ? 'danger' : 'informative'} size="large">
+              <Badge
+                appearance={item.count > 0 ? 'filled' : 'tint'}
+                color={item.count > 0 && item.urgent ? 'danger' : 'informative'}
+                size="large"
+              >
                 {item.count}
               </Badge>
               <ChevronRightRegular aria-hidden />

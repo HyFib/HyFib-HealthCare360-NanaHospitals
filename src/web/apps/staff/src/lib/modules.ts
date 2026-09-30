@@ -70,7 +70,10 @@ export function visibleModules(user: AuthUser | null, manifests: ModuleManifest[
 }
 
 /** The link that best matches a path (longest prefix), used to highlight navigation. */
-export function matchLink(pathname: string, manifests: ModuleManifest[]): { module: ModuleManifest; link: NavLink } | null {
+export function matchLink(
+  pathname: string,
+  manifests: ModuleManifest[],
+): { module: ModuleManifest; link: NavLink } | null {
   let best: { module: ModuleManifest; link: NavLink } | null = null;
   for (const module of manifests) {
     for (const link of module.links) {

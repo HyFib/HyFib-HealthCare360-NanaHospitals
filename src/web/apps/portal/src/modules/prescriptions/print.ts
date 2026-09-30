@@ -42,12 +42,16 @@ export function prescriptionDocument(rx: PortalPrescriptionDetail, ctx: Prescrip
         }</td><td>${escapeHtml(line.dose)}</td><td>${escapeHtml(frequencyText(line, language))}</td><td>${escapeHtml(
           t('rx.forDays', { count: line.durationDays }),
         )}</td><td class="right">${escapeHtml(line.quantity)}</td></tr>${
-          line.instructions ? `<tr><td></td><td colspan="5" class="small">${escapeHtml(line.instructions)}</td></tr>` : ''
+          line.instructions
+            ? `<tr><td></td><td colspan="5" class="small">${escapeHtml(line.instructions)}</td></tr>`
+            : ''
         }`,
     )
     .join('');
   const body = `<div class="head"><div><div class="facility">${escapeHtml(rx.facility ?? '')}</div><div><strong>${escapeHtml(doctor)}</strong></div>${
-    rx.doctorRegistrationNumber ? `<div class="small muted">${escapeHtml(t('rx.registration'))} ${escapeHtml(rx.doctorRegistrationNumber)}</div>` : ''
+    rx.doctorRegistrationNumber
+      ? `<div class="small muted">${escapeHtml(t('rx.registration'))} ${escapeHtml(rx.doctorRegistrationNumber)}</div>`
+      : ''
   }</div><div class="right"><h1>${escapeHtml(t('rx.print.title'))}</h1><div class="small">${escapeHtml(t('rx.number', { number: rx.prescriptionNumber }))}</div><div class="small">${escapeHtml(
     f.dateTime(rx.signedAt),
   )}</div></div></div>
@@ -68,5 +72,10 @@ ${
     : ''
 }
 <div class="footer">${escapeHtml(t('rx.safety'))}<br/>${escapeHtml(t('print.printedOn', { date: f.dateTime(ctx.printedAt) }))}</div>`;
-  return { title: `${t('rx.print.title')} ${rx.prescriptionNumber}`, body, styles: STYLES, fileName: safeFileName(`prescription-${rx.prescriptionNumber}`) };
+  return {
+    title: `${t('rx.print.title')} ${rx.prescriptionNumber}`,
+    body,
+    styles: STYLES,
+    fileName: safeFileName(`prescription-${rx.prescriptionNumber}`),
+  };
 }

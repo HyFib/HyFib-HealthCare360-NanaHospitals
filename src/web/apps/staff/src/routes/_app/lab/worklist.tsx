@@ -14,14 +14,27 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AlertUrgentRegular, BarcodeScannerRegular, CheckmarkCircleRegular, ChevronRightRegular, ShieldErrorRegular } from '@fluentui/react-icons';
+import {
+  AlertUrgentRegular,
+  BarcodeScannerRegular,
+  CheckmarkCircleRegular,
+  ChevronRightRegular,
+  ShieldErrorRegular,
+} from '@fluentui/react-icons';
 import { formatTime, isApiError, useHotkey } from '@hc360/core';
 import { DataTable, EmptyState, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { LAB_PERMISSIONS, LAB_SECTIONS, labQueries, type LabSection, type SampleStatus, type WorklistItem } from '@/modules/lab/api';
+import {
+  LAB_PERMISSIONS,
+  LAB_SECTIONS,
+  labQueries,
+  type LabSection,
+  type SampleStatus,
+  type WorklistItem,
+} from '@/modules/lab/api';
 import { PriorityBadge } from '@/modules/lab/badges';
 import { BulkVerifyDialog } from '@/modules/lab/BulkVerifyDialog';
 import { searchId, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
@@ -97,20 +110,29 @@ function WorklistPage() {
   const canReceive = usePermission(LAB_PERMISSIONS.receive);
   const scanRef = useRef<HTMLInputElement>(null);
   const [term, setTerm] = useState('');
-  const [scanNote, setScanNote] = useState<{ intent: 'warning' | 'error'; text: string; receive?: boolean } | null>(null);
+  const [scanNote, setScanNote] = useState<{ intent: 'warning' | 'error'; text: string; receive?: boolean } | null>(
+    null,
+  );
   const [checked, setChecked] = useState<string[]>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
   const section = search.section ?? rememberedSection();
 
   useLabLive();
-  const filters = { section, status: search.status, priority: search.priority, search: search.search, page: search.page };
+  const filters = {
+    section,
+    status: search.status,
+    priority: search.priority,
+    search: search.search,
+    page: search.page,
+  };
   const worklist = useQuery(labQueries.worklist(filters));
   const qc = useQuery({ ...labQueries.qcStatus(), retry: false });
   const locked = qc.data ? summarizeQc(qc.data).lockedTests : [];
 
   useHotkey('f2', () => scanRef.current?.focus(), { allowInInputs: true });
 
-  const set = (patch: Partial<WorklistSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<WorklistSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
   const open = (sampleId: string) => void navigate({ search: (prev) => ({ ...prev, sampleId }), replace: true });
 
   const chooseSection = (value: LabSection | undefined) => {
@@ -146,7 +168,15 @@ function WorklistPage() {
         return;
       }
       if (kind === 'labAccession' && found.items.length > 0) {
-        void navigate({ search: (prev) => ({ ...prev, search: code.toUpperCase(), sampleId: found.items[0]!.sampleId, page: undefined }), replace: true });
+        void navigate({
+          search: (prev) => ({
+            ...prev,
+            search: code.toUpperCase(),
+            sampleId: found.items[0]!.sampleId,
+            page: undefined,
+          }),
+          replace: true,
+        });
         return;
       }
       if (kind === 'sample') {
@@ -155,11 +185,21 @@ function WorklistPage() {
         if (sample.status === 'Completed') {
           open(sample.id);
         } else if (sample.status === 'Collected') {
-          setScanNote({ intent: 'warning', text: `Sample ${code} (${sample.patientName}) has not been received in the lab yet.`, receive: canReceive });
+          setScanNote({
+            intent: 'warning',
+            text: `Sample ${code} (${sample.patientName}) has not been received in the lab yet.`,
+            receive: canReceive,
+          });
         } else if (sample.status === 'Pending') {
-          setScanNote({ intent: 'warning', text: `Sample ${code} (${sample.patientName}) has not been collected yet.` });
+          setScanNote({
+            intent: 'warning',
+            text: `Sample ${code} (${sample.patientName}) has not been collected yet.`,
+          });
         } else {
-          setScanNote({ intent: 'error', text: `Sample ${code} (${sample.patientName}) was ${sample.status === 'Rejected' ? 'rejected' : 'cancelled'}. Enter results on the new sample.` });
+          setScanNote({
+            intent: 'error',
+            text: `Sample ${code} (${sample.patientName}) was ${sample.status === 'Rejected' ? 'rejected' : 'cancelled'}. Enter results on the new sample.`,
+          });
         }
         return;
       }
@@ -167,7 +207,12 @@ function WorklistPage() {
     } catch (error) {
       setScanNote({
         intent: 'error',
-        text: isApiError(error) && error.status === 404 ? `No sample has barcode ${code}. Check the label.` : isApiError(error) ? error.userMessage : 'The sample could not be found.',
+        text:
+          isApiError(error) && error.status === 404
+            ? `No sample has barcode ${code}. Check the label.`
+            : isApiError(error)
+              ? error.userMessage
+              : 'The sample could not be found.',
       });
     }
   };
@@ -183,7 +228,12 @@ function WorklistPage() {
         subtitle="Scan a sample or pick it from the list. F2 returns to the scan box; in the sheet, Tab or Enter moves down and Ctrl+S saves."
         actions={
           canVerify && (
-            <Button appearance="primary" icon={<CheckmarkCircleRegular />} disabled={visibleChecked.length === 0} onClick={() => setBulkOpen(true)}>
+            <Button
+              appearance="primary"
+              icon={<CheckmarkCircleRegular />}
+              disabled={visibleChecked.length === 0}
+              onClick={() => setBulkOpen(true)}
+            >
               Verify normal results{visibleChecked.length ? ` (${visibleChecked.length} samples)` : ''}
             </Button>
           )
@@ -225,7 +275,10 @@ function WorklistPage() {
             />
           </Field>
           <Field label="Bench">
-            <Select value={section ?? ''} onChange={(_, data) => chooseSection((data.value || undefined) as LabSection | undefined)}>
+            <Select
+              value={section ?? ''}
+              onChange={(_, data) => chooseSection((data.value || undefined) as LabSection | undefined)}
+            >
               <option value="">All benches</option>
               {LAB_SECTIONS.map((value) => (
                 <option key={value} value={value}>
@@ -235,7 +288,10 @@ function WorklistPage() {
             </Select>
           </Field>
           <Field label="Samples">
-            <Select value={search.status ?? ''} onChange={(_, data) => set({ status: (data.value || undefined) as WorklistSearch['status'] })}>
+            <Select
+              value={search.status ?? ''}
+              onChange={(_, data) => set({ status: (data.value || undefined) as WorklistSearch['status'] })}
+            >
               <option value="">In the lab</option>
               <option value="Received">Received, not started</option>
               <option value="InProcess">In process</option>
@@ -243,7 +299,10 @@ function WorklistPage() {
             </Select>
           </Field>
           <Field label="Priority">
-            <Select value={search.priority ?? ''} onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}>
+            <Select
+              value={search.priority ?? ''}
+              onChange={(_, data) => set({ priority: (data.value || undefined) as OrderPriority | undefined })}
+            >
               <option value="">All</option>
               {ORDER_PRIORITIES.map((value) => (
                 <option key={value} value={value}>
@@ -273,13 +332,19 @@ function WorklistPage() {
       </Section>
 
       <div className={styles.layout}>
-        <Section title={`Samples${worklist.data ? ` (${worklist.data.totalCount})` : ''}`} description="STAT first, then critical values, then by receipt time" flush>
+        <Section
+          title={`Samples${worklist.data ? ` (${worklist.data.totalCount})` : ''}`}
+          description="STAT first, then critical values, then by receipt time"
+          flush
+        >
           {canVerify && items && items.some(checkable) && (
             <div className={styles.listActions}>
               <Button
                 size="small"
                 appearance="subtle"
-                onClick={() => setChecked(visibleChecked.length ? [] : items.filter(checkable).map((item) => item.sampleId))}
+                onClick={() =>
+                  setChecked(visibleChecked.length ? [] : items.filter(checkable).map((item) => item.sampleId))
+                }
               >
                 {visibleChecked.length ? 'Clear selection' : 'Select samples with results to verify'}
               </Button>
@@ -303,11 +368,18 @@ function WorklistPage() {
                       width: 36,
                       render: (item: WorklistItem) =>
                         checkable(item) ? (
-                          <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                          <span
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          >
                             <Checkbox
                               checked={visibleChecked.includes(item.sampleId)}
                               onChange={(_, data) =>
-                                setChecked((current) => (data.checked ? [...current, item.sampleId] : current.filter((id) => id !== item.sampleId)))
+                                setChecked((current) =>
+                                  data.checked
+                                    ? [...current, item.sampleId]
+                                    : current.filter((id) => id !== item.sampleId),
+                                )
                               }
                               aria-label={`Select ${item.patientName} for bulk verification`}
                             />
@@ -322,7 +394,9 @@ function WorklistPage() {
                 render: (item: WorklistItem) => (
                   <span className={styles.cell}>
                     <span className={styles.row}>
-                      {item.sampleId === search.sampleId && <ChevronRightRegular className={styles.open} aria-label="Open" />}
+                      {item.sampleId === search.sampleId && (
+                        <ChevronRightRegular className={styles.open} aria-label="Open" />
+                      )}
                       <Text weight="semibold">{item.patientName}</Text>
                       <PriorityBadge priority={item.priority} />
                       {item.critical > 0 && (
@@ -332,7 +406,8 @@ function WorklistPage() {
                       )}
                     </span>
                     <Caption1 className={styles.muted}>
-                      <span className={styles.mono}>{item.barcode}</span> · {item.age ?? '—'}/{item.gender.charAt(0)} · {sectionLabel[item.section]}
+                      <span className={styles.mono}>{item.barcode}</span> · {item.age ?? '—'}/{item.gender.charAt(0)} ·{' '}
+                      {sectionLabel[item.section]}
                     </Caption1>
                     <Caption1>{item.tests.join(', ')}</Caption1>
                   </span>
@@ -345,17 +420,25 @@ function WorklistPage() {
                 render: (item: WorklistItem) => (
                   <span className={styles.cell}>
                     <Caption1>{tubeProgress(item)}</Caption1>
-                    <Caption1 className={styles.muted}>{item.receivedAt ? `In at ${formatTime(item.receivedAt)}` : ''}</Caption1>
+                    <Caption1 className={styles.muted}>
+                      {item.receivedAt ? `In at ${formatTime(item.receivedAt)}` : ''}
+                    </Caption1>
                   </span>
                 ),
               },
             ]}
             emptyTitle={search.search ? 'No sample in the lab matches' : 'No samples waiting'}
-            emptyDescription={search.search ? 'Clear the search or check the barcode.' : 'Samples appear here as soon as they are received in the lab.'}
+            emptyDescription={
+              search.search
+                ? 'Clear the search or check the barcode.'
+                : 'Samples appear here as soon as they are received in the lab.'
+            }
             page={search.page ?? 1}
             pageSize={25}
             totalCount={worklist.data?.totalCount}
-            onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+            onPageChange={(page) =>
+              void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })
+            }
           />
         </Section>
 

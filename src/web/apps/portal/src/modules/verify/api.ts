@@ -11,7 +11,8 @@ const REPORT_ENDPOINT: Record<Exclude<VerifyKind, 'prescription'>, string> = {
   cardiology: '/api/v1/cardiology/reports/verify/',
 };
 
-export type VerificationAnswer = { kind: 'prescription'; result: PrescriptionVerification } | { kind: 'report'; result: ReportAuthenticity };
+export type VerificationAnswer =
+  { kind: 'prescription'; result: PrescriptionVerification } | { kind: 'report'; result: ReportAuthenticity };
 
 /** Anonymous authenticity checks of printed documents (answers carry no patient data). */
 export const verifyQueries = {
@@ -20,8 +21,16 @@ export const verifyQueries = {
       queryKey: ['public', 'verify', kind, value],
       queryFn: async ({ signal }): Promise<VerificationAnswer> =>
         kind === 'prescription'
-          ? { kind, result: await api.get<PrescriptionVerification>(`/api/v1/public/prescriptions/verify/${code(value)}`, { signal }) }
-          : { kind: 'report', result: await api.get<ReportAuthenticity>(`${REPORT_ENDPOINT[kind]}${code(value)}`, { signal }) },
+          ? {
+              kind,
+              result: await api.get<PrescriptionVerification>(`/api/v1/public/prescriptions/verify/${code(value)}`, {
+                signal,
+              }),
+            }
+          : {
+              kind: 'report',
+              result: await api.get<ReportAuthenticity>(`${REPORT_ENDPOINT[kind]}${code(value)}`, { signal }),
+            },
       retry: false,
       staleTime: 60_000,
     }),

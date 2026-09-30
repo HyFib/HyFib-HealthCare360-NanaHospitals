@@ -42,7 +42,19 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, isApiError, normalizePhone, useDebouncedValue, useSession } from '@hc360/core';
-import { applyServerErrors, ConfirmDialog, DataTable, FilterBar, LookupField, Page, PageHeader, Section, StatusBadge, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ConfirmDialog,
+  DataTable,
+  FilterBar,
+  LookupField,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -75,13 +87,21 @@ const useStyles = makeStyles({
 type RowAction = 'reset-password' | 'unlock' | 'reset-mfa' | 'revoke-sessions';
 
 const ACTION_TEXT: Record<Exclude<RowAction, 'reset-password'>, { title: string; body: string; done: string }> = {
-  unlock: { title: 'Unlock this account?', body: 'The user can sign in again straight away.', done: 'Account unlocked' },
+  unlock: {
+    title: 'Unlock this account?',
+    body: 'The user can sign in again straight away.',
+    done: 'Account unlocked',
+  },
   'reset-mfa': {
     title: 'Reset two-step verification?',
     body: 'Use this when the user lost their phone. They will set up two-step verification again at next sign-in.',
     done: 'Two-step verification reset',
   },
-  'revoke-sessions': { title: 'Sign this user out everywhere?', body: 'All their open sessions on every computer and tablet end immediately.', done: 'Signed out everywhere' },
+  'revoke-sessions': {
+    title: 'Sign this user out everywhere?',
+    body: 'All their open sessions on every computer and tablet end immediately.',
+    done: 'Signed out everywhere',
+  },
 };
 
 function UsersPage() {
@@ -99,11 +119,17 @@ function UsersPage() {
   const [tempPassword, setTempPassword] = useState<{ name: string; password: string } | null>(null);
   const roles = useQuery(adminQueries.roles());
   const users = useQuery(
-    adminQueries.users({ search: search || undefined, page, active: active === 'all' ? undefined : active === 'active', roleId: roleId || undefined }),
+    adminQueries.users({
+      search: search || undefined,
+      page,
+      active: active === 'all' ? undefined : active === 'active',
+      roleId: roleId || undefined,
+    }),
   );
 
   const act = useMutation({
-    mutationFn: ({ user, action }: { user: UserListItem; action: RowAction }) => api.post<{ temporaryPassword?: string }>(`/api/v1/admin/users/${user.id}/${action}`),
+    mutationFn: ({ user, action }: { user: UserListItem; action: RowAction }) =>
+      api.post<{ temporaryPassword?: string }>(`/api/v1/admin/users/${user.id}/${action}`),
     onSuccess: (result, { user, action }) => {
       setPending(null);
       if (action === 'reset-password' && result?.temporaryPassword) {
@@ -133,7 +159,11 @@ function UsersPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, user name, email or phone" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, user name, email or phone"
+              />
             </Field>
             <Field label="Role">
               <Select
@@ -188,13 +218,39 @@ function UsersPage() {
               ),
             },
             { key: 'roles', header: 'Roles', render: (u) => u.roles.join(', ') || '—' },
-            { key: 'mfa', header: 'Two-step', width: 110, priority: 'low', render: (u) => (u.mfaEnabled ? <Badge appearance="tint" color="success">On</Badge> : <Badge appearance="tint">Off</Badge>) },
-            { key: 'last', header: 'Last sign-in', priority: 'low', render: (u) => (u.lastLoginAt ? formatRelative(u.lastLoginAt) : 'Never') },
+            {
+              key: 'mfa',
+              header: 'Two-step',
+              width: 110,
+              priority: 'low',
+              render: (u) =>
+                u.mfaEnabled ? (
+                  <Badge appearance="tint" color="success">
+                    On
+                  </Badge>
+                ) : (
+                  <Badge appearance="tint">Off</Badge>
+                ),
+            },
+            {
+              key: 'last',
+              header: 'Last sign-in',
+              priority: 'low',
+              render: (u) => (u.lastLoginAt ? formatRelative(u.lastLoginAt) : 'Never'),
+            },
             {
               key: 'status',
               header: 'Status',
               width: 120,
-              render: (u) => (u.isLocked ? <StatusBadge status="Blocked" label="Locked" /> : <StatusBadge status={u.isActive ? 'Active' : 'Inactive'} tone={u.isActive ? 'success' : 'informative'} />),
+              render: (u) =>
+                u.isLocked ? (
+                  <StatusBadge status="Blocked" label="Locked" />
+                ) : (
+                  <StatusBadge
+                    status={u.isActive ? 'Active' : 'Inactive'}
+                    tone={u.isActive ? 'success' : 'informative'}
+                  />
+                ),
             },
           ]}
           rowActions={
@@ -202,24 +258,41 @@ function UsersPage() {
               ? (u) => (
                   <Menu>
                     <MenuTrigger disableButtonEnhancement>
-                      <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${u.displayName}`} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoreHorizontalRegular />}
+                        aria-label={`Actions for ${u.displayName}`}
+                      />
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
-                        <MenuItem icon={<KeyResetRegular />} onClick={() => setPending({ user: u, action: 'reset-password' })}>
+                        <MenuItem
+                          icon={<KeyResetRegular />}
+                          onClick={() => setPending({ user: u, action: 'reset-password' })}
+                        >
                           Reset password
                         </MenuItem>
                         {u.isLocked && (
-                          <MenuItem icon={<LockOpenRegular />} onClick={() => setPending({ user: u, action: 'unlock' })}>
+                          <MenuItem
+                            icon={<LockOpenRegular />}
+                            onClick={() => setPending({ user: u, action: 'unlock' })}
+                          >
                             Unlock
                           </MenuItem>
                         )}
                         {u.mfaEnabled && (
-                          <MenuItem icon={<PhoneKeyRegular />} onClick={() => setPending({ user: u, action: 'reset-mfa' })}>
+                          <MenuItem
+                            icon={<PhoneKeyRegular />}
+                            onClick={() => setPending({ user: u, action: 'reset-mfa' })}
+                          >
                             Reset two-step verification
                           </MenuItem>
                         )}
-                        <MenuItem icon={<SignOutRegular />} onClick={() => setPending({ user: u, action: 'revoke-sessions' })}>
+                        <MenuItem
+                          icon={<SignOutRegular />}
+                          onClick={() => setPending({ user: u, action: 'revoke-sessions' })}
+                        >
                           Sign out everywhere
                         </MenuItem>
                       </MenuList>
@@ -249,7 +322,9 @@ function UsersPage() {
 
       <ConfirmDialog
         open={pending !== null}
-        title={pending?.action === 'reset-password' ? 'Reset password?' : pending ? ACTION_TEXT[pending.action].title : ''}
+        title={
+          pending?.action === 'reset-password' ? 'Reset password?' : pending ? ACTION_TEXT[pending.action].title : ''
+        }
         confirmLabel="Continue"
         destructive={pending?.action === 'revoke-sessions'}
         busy={act.isPending}
@@ -270,11 +345,17 @@ function UsersPage() {
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className={styles.password}>{tempPassword?.password}</div>
               <MessageBar intent="warning">
-                <MessageBarBody>This is shown only once. Give it to the user in person. They will be asked to change it when they sign in.</MessageBarBody>
+                <MessageBarBody>
+                  This is shown only once. Give it to the user in person. They will be asked to change it when they sign
+                  in.
+                </MessageBarBody>
               </MessageBar>
             </DialogContent>
             <DialogActions>
-              <Button icon={<CopyRegular />} onClick={() => tempPassword && void navigator.clipboard?.writeText(tempPassword.password)}>
+              <Button
+                icon={<CopyRegular />}
+                onClick={() => tempPassword && void navigator.clipboard?.writeText(tempPassword.password)}
+              >
                 Copy
               </Button>
               <Button appearance="primary" onClick={() => setTempPassword(null)}>
@@ -313,7 +394,15 @@ const userSchema = z.object({
 
 type UserForm = z.infer<typeof userSchema>;
 
-function UserDrawer({ userId, onClose, onCreated }: { userId: string | null; onClose: () => void; onCreated: (name: string, password: string) => void }) {
+function UserDrawer({
+  userId,
+  onClose,
+  onCreated,
+}: {
+  userId: string | null;
+  onClose: () => void;
+  onCreated: (name: string, password: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -324,16 +413,36 @@ function UserDrawer({ userId, onClose, onCreated }: { userId: string | null; onC
   if (userId && !existing.data) {
     return (
       <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
-        <DrawerBody>{existing.error ? <MessageBar intent="error"><MessageBarBody>{isApiError(existing.error) ? existing.error.userMessage : 'Could not load the user.'}</MessageBarBody></MessageBar> : <Spinner label="Loading…" />}</DrawerBody>
+        <DrawerBody>
+          {existing.error ? (
+            <MessageBar intent="error">
+              <MessageBarBody>
+                {isApiError(existing.error) ? existing.error.userMessage : 'Could not load the user.'}
+              </MessageBarBody>
+            </MessageBar>
+          ) : (
+            <Spinner label="Loading…" />
+          )}
+        </DrawerBody>
       </OverlayDrawer>
     );
   }
 
-  return <UserDrawerForm user={existing.data ?? null} roles={roles.data ?? []} isSelf={existing.data?.id === selfId} onClose={onClose} onCreated={onCreated} onSaved={() => {
-    notify.success('User saved');
-    void queryClient.invalidateQueries({ queryKey: ['admin'] });
-    onClose();
-  }} styles={styles} />;
+  return (
+    <UserDrawerForm
+      user={existing.data ?? null}
+      roles={roles.data ?? []}
+      isSelf={existing.data?.id === selfId}
+      onClose={onClose}
+      onCreated={onCreated}
+      onSaved={() => {
+        notify.success('User saved');
+        void queryClient.invalidateQueries({ queryKey: ['admin'] });
+        onClose();
+      }}
+      styles={styles}
+    />
+  );
 }
 
 function UserDrawerForm({
@@ -407,35 +516,66 @@ function UserDrawerForm({
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {user ? user.displayName : 'Add user'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
-            <TextField control={form.control} name="userName" label="User name" required disabled={Boolean(user)} autoComplete="off" hint={user ? 'User names cannot be changed.' : 'Used to sign in, e.g. priya.s'} />
-            <TextField control={form.control} name="displayName" label="Full name" required hint="As shown on screens and prints, e.g. Dr. Priya Sharma" />
+            <TextField
+              control={form.control}
+              name="userName"
+              label="User name"
+              required
+              disabled={Boolean(user)}
+              autoComplete="off"
+              hint={user ? 'User names cannot be changed.' : 'Used to sign in, e.g. priya.s'}
+            />
+            <TextField
+              control={form.control}
+              name="displayName"
+              label="Full name"
+              required
+              hint="As shown on screens and prints, e.g. Dr. Priya Sharma"
+            />
             <TextField control={form.control} name="email" label="Email" type="email" />
             <TextField control={form.control} name="phone" label="Mobile" type="tel" />
             <Controller
               control={form.control}
               name="roleIds"
               render={({ field, fieldState }) => (
-                <Field label="Roles" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                <Field
+                  label="Roles"
+                  required
+                  validationMessage={fieldState.error?.message}
+                  validationState={fieldState.error ? 'error' : 'none'}
+                >
                   <div className={styles.roles}>
                     {roles.map((role) => (
                       <Checkbox
                         key={role.id}
                         label={role.name}
                         checked={field.value.includes(role.id)}
-                        onChange={(_, d) => field.onChange(d.checked ? [...field.value, role.id] : field.value.filter((id) => id !== role.id))}
+                        onChange={(_, d) =>
+                          field.onChange(
+                            d.checked ? [...field.value, role.id] : field.value.filter((id) => id !== role.id),
+                          )
+                        }
                       />
                     ))}
                   </div>
                 </Field>
               )}
             />
-            <LookupField control={form.control} name="practitionerId" label="Linked doctor / practitioner" load={searchPractitioners} hint="Link doctors so their queue, orders and fees follow their sign-in." />
+            <LookupField
+              control={form.control}
+              name="practitionerId"
+              label="Linked doctor / practitioner"
+              load={searchPractitioners}
+              hint="Link doctors so their queue, orders and fees follow their sign-in."
+            />
             {!user && (
               <TextField
                 control={form.control}
@@ -451,7 +591,12 @@ function UserDrawerForm({
                 control={form.control}
                 name="isActive"
                 render={({ field }) => (
-                  <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="Account is active" disabled={isSelf} />
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="Account is active"
+                    disabled={isSelf}
+                  />
                 )}
               />
             )}

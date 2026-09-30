@@ -37,7 +37,9 @@ describe('schema', () => {
   const schema = encounterFormSchema(today);
 
   it('accepts an ordinary note', () => {
-    expect(schema.safeParse({ ...emptyEncounterForm, chiefComplaint: 'Cough', followUpDate: '2026-10-03' }).success).toBe(true);
+    expect(
+      schema.safeParse({ ...emptyEncounterForm, chiefComplaint: 'Cough', followUpDate: '2026-10-03' }).success,
+    ).toBe(true);
   });
 
   it('rejects a follow-up in the past or beyond two years', () => {
@@ -59,11 +61,20 @@ describe('mapping', () => {
     const values = toFormValues({ chiefComplaint: 'Cough', plan: null, followUpDate: '2026-10-01' });
     expect(values.plan).toBe('');
     const content = toContent({ ...values, examination: '   ', referralReason: 'left over' });
-    expect(content).toMatchObject({ chiefComplaint: 'Cough', examination: null, followUpDate: '2026-10-01', referralReason: null });
+    expect(content).toMatchObject({
+      chiefComplaint: 'Cough',
+      examination: null,
+      followUpDate: '2026-10-01',
+      referralReason: null,
+    });
   });
 
   it('keeps the referral reason when a referral is made', () => {
-    const content = toContent({ ...emptyEncounterForm, referralDepartmentId: 'dept-1', referralReason: ' Chest pain evaluation ' });
+    const content = toContent({
+      ...emptyEncounterForm,
+      referralDepartmentId: 'dept-1',
+      referralReason: ' Chest pain evaluation ',
+    });
     expect(content.referralReason).toBe('Chest pain evaluation');
   });
 
@@ -82,13 +93,20 @@ describe('templates', () => {
   });
 
   it('replaces fields on request but keeps a chosen follow-up date', () => {
-    const next = applyTemplate({ ...emptyEncounterForm, chiefComplaint: 'High fever', followUpDate: '2026-10-10' }, template, 'replace', today);
+    const next = applyTemplate(
+      { ...emptyEncounterForm, chiefComplaint: 'High fever', followUpDate: '2026-10-10' },
+      template,
+      'replace',
+      today,
+    );
     expect(next.chiefComplaint).toBe('Fever');
     expect(next.followUpDate).toBe('2026-10-10');
   });
 
   it('lists the fields a template would overwrite', () => {
-    expect(templateConflicts({ ...emptyEncounterForm, chiefComplaint: 'High fever', plan: 'Paracetamol, fluids' }, template)).toEqual(['chiefComplaint']);
+    expect(
+      templateConflicts({ ...emptyEncounterForm, chiefComplaint: 'High fever', plan: 'Paracetamol, fluids' }, template),
+    ).toEqual(['chiefComplaint']);
   });
 
   it('appends common complaints without repeats', () => {

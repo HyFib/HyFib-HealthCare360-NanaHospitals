@@ -26,7 +26,13 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { ArrowUndoRegular, DismissCircleRegular, DismissRegular, MoneyRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  ArrowUndoRegular,
+  DismissCircleRegular,
+  DismissRegular,
+  MoneyRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, todayIso } from '@hc360/core';
 import { DataTable, ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -36,7 +42,16 @@ import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatPercent, formatQty, istDateOf, parseNumber } from '@/modules/inventory/format';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, ExpiryText, ScheduleBadge } from '@/modules/inventory/StockBits';
-import { pharmacyApi, pharmacyKeys, pharmacyQueries, paymentModeLabel, type PaymentMode, type PharmacySaleDetail, type PharmacySaleItemDto, type SaleReturnDto } from './api';
+import {
+  pharmacyApi,
+  pharmacyKeys,
+  pharmacyQueries,
+  paymentModeLabel,
+  type PaymentMode,
+  type PharmacySaleDetail,
+  type PharmacySaleItemDto,
+  type SaleReturnDto,
+} from './api';
 import { useLetterhead } from './counter';
 import { PHARMACY_PERMISSIONS as P } from './permissions';
 import { refundFor } from './pricing';
@@ -48,7 +63,14 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   net: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightBold },
   due: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
-  returnRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px 150px 110px', gap: '8px', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  returnRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 110px 150px 110px',
+    gap: '8px',
+    alignItems: 'center',
+    padding: '6px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' },
 });
 
@@ -80,14 +102,18 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
 
   const reprint = () => {
     if (s) {
-      void printReceipt(s, letterhead, 'Duplicate copy').catch((error: unknown) => notify.error(error, 'Printing failed'));
+      void printReceipt(s, letterhead, 'Duplicate copy').catch((error: unknown) =>
+        notify.error(error, 'Printing failed'),
+      );
     }
   };
 
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {s ? `Invoice ${s.invoiceNumber}` : 'Invoice'}
         </DrawerHeaderTitle>
         {s && (
@@ -118,7 +144,9 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                 {s.patientUhid ? ` (${s.patientUhid})` : ''}
               </Detail>
               <Detail label="Prescriber">
-                {s.prescriberName ? `${s.prescriberName}${s.prescriberRegistrationNumber ? ` · Reg. ${s.prescriberRegistrationNumber}` : ''}` : null}
+                {s.prescriberName
+                  ? `${s.prescriberName}${s.prescriberRegistrationNumber ? ` · Reg. ${s.prescriberRegistrationNumber}` : ''}`
+                  : null}
               </Detail>
               <Detail label="Prescription">{s.prescriptionNumber}</Detail>
               <Detail label="Sold by">{s.soldBy}</Detail>
@@ -137,7 +165,10 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                     <span>
                       <Text weight="semibold">{i.itemName}</Text> <ScheduleBadge schedule={i.schedule} />
                       {i.isSubstitution && (
-                        <Tooltip content={`Substituted for ${i.prescribedDrugName ?? 'the prescribed drug'}: ${i.substitutionReason ?? ''}`} relationship="description">
+                        <Tooltip
+                          content={`Substituted for ${i.prescribedDrugName ?? 'the prescribed drug'}: ${i.substitutionReason ?? ''}`}
+                          relationship="description"
+                        >
                           <Caption1 block className={styles.muted}>
                             Substitute for {i.prescribedDrugName}
                           </Caption1>
@@ -155,7 +186,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                   render: (i) => (
                     <span>
                       {formatQty(i.quantity)}
-                      {i.returnedQuantity > 0 && <Caption1 block className={styles.muted}>{formatQty(i.returnedQuantity)} returned</Caption1>}
+                      {i.returnedQuantity > 0 && (
+                        <Caption1 block className={styles.muted}>
+                          {formatQty(i.returnedQuantity)} returned
+                        </Caption1>
+                      )}
                     </span>
                   ),
                 },
@@ -166,7 +201,10 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                   align: 'end',
                   priority: 'low',
                   render: (i) => (
-                    <Tooltip content={`Taxable ${formatInr(i.taxableAmount)} · CGST ${formatInr(i.cgstAmount)} · SGST ${formatInr(i.sgstAmount)}`} relationship="description">
+                    <Tooltip
+                      content={`Taxable ${formatInr(i.taxableAmount)} · CGST ${formatInr(i.cgstAmount)} · SGST ${formatInr(i.sgstAmount)}`}
+                      relationship="description"
+                    >
                       <span>{formatPercent(i.gstRate)}</span>
                     </Tooltip>
                   ),
@@ -204,9 +242,18 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                 size="small"
                 columns={[
                   { key: 'at', header: 'When', render: (p) => formatDateTime(p.receivedAt) },
-                  { key: 'mode', header: 'Mode', render: (p) => `${p.isRefund ? 'Refund · ' : ''}${paymentModeLabel[p.mode]}` },
+                  {
+                    key: 'mode',
+                    header: 'Mode',
+                    render: (p) => `${p.isRefund ? 'Refund · ' : ''}${paymentModeLabel[p.mode]}`,
+                  },
                   { key: 'ref', header: 'Reference', render: (p) => p.reference ?? '—' },
-                  { key: 'amount', header: 'Amount', align: 'end', render: (p) => formatInr(p.isRefund ? -p.amount : p.amount) },
+                  {
+                    key: 'amount',
+                    header: 'Amount',
+                    align: 'end',
+                    render: (p) => formatInr(p.isRefund ? -p.amount : p.amount),
+                  },
                 ]}
                 emptyTitle="No payments"
               />
@@ -223,7 +270,16 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                   columns={[
                     { key: 'no', header: 'Return', render: (r) => <Text font="monospace">{r.returnNumber}</Text> },
                     { key: 'at', header: 'When', render: (r) => formatDateTime(r.returnedAt) },
-                    { key: 'items', header: 'Items', render: (r) => r.items.map((i) => `${i.itemName} × ${formatQty(i.quantity)}${i.restocked ? '' : ' (not restocked)'}`).join(', ') },
+                    {
+                      key: 'items',
+                      header: 'Items',
+                      render: (r) =>
+                        r.items
+                          .map(
+                            (i) => `${i.itemName} × ${formatQty(i.quantity)}${i.restocked ? '' : ' (not restocked)'}`,
+                          )
+                          .join(', '),
+                    },
                     { key: 'reason', header: 'Reason', priority: 'low', render: (r) => r.reason },
                     {
                       key: 'refund',
@@ -232,7 +288,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                       render: (r) => (
                         <span>
                           {formatInr(r.refundAmount)}
-                          {r.adjustedAgainstDue > 0 && <Caption1 block className={styles.muted}>{formatInr(r.adjustedAgainstDue)} off the due</Caption1>}
+                          {r.adjustedAgainstDue > 0 && (
+                            <Caption1 block className={styles.muted}>
+                              {formatInr(r.adjustedAgainstDue)} off the due
+                            </Caption1>
+                          )}
                         </span>
                       ),
                     },
@@ -262,9 +322,19 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
             {canReturn && s.status !== 'Cancelled' && (
               <Tooltip
                 relationship="description"
-                content={!soldToday ? "Only today's invoices can be cancelled. Use a return instead." : hasReturns ? 'Invoices with returns cannot be cancelled.' : 'Voids the invoice, refunds the money and puts the stock back'}
+                content={
+                  !soldToday
+                    ? "Only today's invoices can be cancelled. Use a return instead."
+                    : hasReturns
+                      ? 'Invoices with returns cannot be cancelled.'
+                      : 'Voids the invoice, refunds the money and puts the stock back'
+                }
               >
-                <Button icon={<DismissCircleRegular />} disabled={!soldToday || hasReturns} onClick={() => setDialog('cancel')}>
+                <Button
+                  icon={<DismissCircleRegular />}
+                  disabled={!soldToday || hasReturns}
+                  onClick={() => setDialog('cancel')}
+                >
                   Cancel invoice
                 </Button>
               </Tooltip>
@@ -332,8 +402,18 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                   <option value="Upi">UPI</option>
                 </Select>
               </Field>
-              <Field label="Amount" required validationMessage={value > sale.dueAmount ? `At most ${formatInr(sale.dueAmount)}` : undefined}>
-                <Input type="number" contentBefore="₹" value={amount} onChange={(_, d) => setAmount(d.value)} autoFocus />
+              <Field
+                label="Amount"
+                required
+                validationMessage={value > sale.dueAmount ? `At most ${formatInr(sale.dueAmount)}` : undefined}
+              >
+                <Input
+                  type="number"
+                  contentBefore="₹"
+                  value={amount}
+                  onChange={(_, d) => setAmount(d.value)}
+                  autoFocus
+                />
               </Field>
               {needsReference && (
                 <Field label={mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'} required>
@@ -342,7 +422,9 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
               )}
               {collect.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(collect.error) ? collect.error.userMessage : 'Could not record the payment.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(collect.error) ? collect.error.userMessage : 'Could not record the payment.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -350,7 +432,12 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
               <Button onClick={onClose} disabled={collect.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || collect.isPending} icon={collect.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || collect.isPending}
+                icon={collect.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record payment
               </Button>
             </DialogActions>
@@ -366,7 +453,15 @@ interface ReturnLine {
   restock: boolean;
 }
 
-function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; returns: SaleReturnDto[] | undefined; onClose: () => void }) {
+function ReturnDialog({
+  sale,
+  returns,
+  onClose,
+}: {
+  sale: PharmacySaleDetail;
+  returns: SaleReturnDto[] | undefined;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const refresh = useSaleRefresh(sale.id);
@@ -385,7 +480,10 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
       const max = toNumber(dec(item.quantity) - dec(item.returnedQuantity));
       const expired = item.expiryDate !== null && item.expiryDate < today;
       const restock = !expired && (line?.restock ?? true);
-      const refund = quantity > 0 && quantity <= max ? refundFor(item.netAmount, item.quantity, item.returnedQuantity, refunded.get(item.id) ?? 0, quantity) : 0;
+      const refund =
+        quantity > 0 && quantity <= max
+          ? refundFor(item.netAmount, item.quantity, item.returnedQuantity, refunded.get(item.id) ?? 0, quantity)
+          : 0;
       return { item, quantity, max, expired, restock, refund, invalid: quantity < 0 || quantity > max };
     })
     .filter((p) => p.quantity !== 0 || lines[p.item.id]);
@@ -395,7 +493,8 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
   const payBack = toNumber(dec(totalRefund) - dec(againstDue));
   const invalid = planned.some((p) => p.invalid);
   const needsReference = payBack > 0 && refundMode !== 'Cash';
-  const valid = chosen.length > 0 && !invalid && reason.trim().length >= 3 && (!needsReference || reference.trim().length > 0);
+  const valid =
+    chosen.length > 0 && !invalid && reason.trim().length >= 3 && (!needsReference || reference.trim().length > 0);
 
   const submit = useMutation({
     mutationFn: () =>
@@ -408,14 +507,20 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
     onSuccess: (result) => {
       notify.success(
         `Return ${result.returnNumber} recorded`,
-        result.cashRefund > 0 ? `Pay back ${formatInr(result.cashRefund)}${result.adjustedAgainstDue > 0 ? `; ${formatInr(result.adjustedAgainstDue)} taken off the balance due` : ''}.` : 'The refund was taken off the balance due.',
+        result.cashRefund > 0
+          ? `Pay back ${formatInr(result.cashRefund)}${result.adjustedAgainstDue > 0 ? `; ${formatInr(result.adjustedAgainstDue)} taken off the balance due` : ''}.`
+          : 'The refund was taken off the balance due.',
       );
       refresh();
       onClose();
     },
   });
 
-  const setLine = (id: string, patch: Partial<ReturnLine>) => setLines((prev) => ({ ...prev, [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch } }));
+  const setLine = (id: string, patch: Partial<ReturnLine>) =>
+    setLines((prev) => ({
+      ...prev,
+      [id]: { quantity: prev[id]?.quantity ?? '', restock: prev[id]?.restock ?? true, ...patch },
+    }));
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !submit.isPending && onClose()}>
@@ -424,8 +529,8 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
           <DialogTitle>Return items from {sale.invoiceNumber}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Caption1>
-              Enter what is being returned. Unopened, in-date packs go back on the shelf; expired or damaged ones are refunded but not restocked. The refund
-              first clears any balance due, the rest is paid back.
+              Enter what is being returned. Unopened, in-date packs go back on the shelf; expired or damaged ones are
+              refunded but not restocked. The refund first clears any balance due, the rest is paid back.
             </Caption1>
             <div>
               <div className={styles.returnRow}>
@@ -446,7 +551,10 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
                         Batch {item.batchNumber} · up to {formatQty(max)}
                       </Caption1>
                     </span>
-                    <Field validationState={p?.invalid ? 'error' : 'none'} validationMessage={p?.invalid ? `Max ${formatQty(max)}` : undefined}>
+                    <Field
+                      validationState={p?.invalid ? 'error' : 'none'}
+                      validationMessage={p?.invalid ? `Max ${formatQty(max)}` : undefined}
+                    >
                       <Input
                         type="number"
                         min={0}
@@ -472,7 +580,12 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
               })}
             </div>
             <Field label="Reason" required>
-              <Input value={reason} maxLength={300} onChange={(_, d) => setReason(d.value)} placeholder="e.g. Doctor changed the prescription, patient discharged" />
+              <Input
+                value={reason}
+                maxLength={300}
+                onChange={(_, d) => setReason(d.value)}
+                placeholder="e.g. Doctor changed the prescription, patient discharged"
+              />
             </Field>
             <div className={styles.grid2}>
               <Field label="Pay back by">
@@ -492,14 +605,17 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
               <MessageBar intent="info">
                 <MessageBarBody>
                   Refund {formatInr(totalRefund)}
-                  {againstDue > 0 ? ` · ${formatInr(againstDue)} clears the balance due` : ''} · pay back {formatInr(payBack)}
+                  {againstDue > 0 ? ` · ${formatInr(againstDue)} clears the balance due` : ''} · pay back{' '}
+                  {formatInr(payBack)}
                   {payBack > 0 ? ` by ${paymentModeLabel[refundMode]}` : ''}
                 </MessageBarBody>
               </MessageBar>
             )}
             {submit.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(submit.error) ? submit.error.userMessage : 'Could not record the return.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(submit.error) ? submit.error.userMessage : 'Could not record the return.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -507,7 +623,12 @@ function ReturnDialog({ sale, returns, onClose }: { sale: PharmacySaleDetail; re
             <Button onClick={onClose} disabled={submit.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || submit.isPending} icon={submit.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => submit.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || submit.isPending}
+              icon={submit.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => submit.mutate()}
+            >
               Record return
             </Button>
           </DialogActions>
@@ -523,7 +644,10 @@ function CancelSale({ sale, onClose }: { sale: PharmacySaleDetail; onClose: () =
   const cancel = useMutation({
     mutationFn: (reason: string) => pharmacyApi.cancelSale(sale.id, reason),
     onSuccess: () => {
-      notify.success(`Invoice ${sale.invoiceNumber} cancelled`, sale.paidAmount > 0 ? `Refund ${formatInr(sale.paidAmount)} in cash.` : undefined);
+      notify.success(
+        `Invoice ${sale.invoiceNumber} cancelled`,
+        sale.paidAmount > 0 ? `Refund ${formatInr(sale.paidAmount)} in cash.` : undefined,
+      );
       refresh();
       onClose();
     },
@@ -541,7 +665,9 @@ function CancelSale({ sale, onClose }: { sale: PharmacySaleDetail; onClose: () =
     >
       {`The stock goes back to the original batches${sale.type === 'Prescription' ? ' and the prescription returns to the queue' : ''}. ${
         sale.paidAmount > 0 ? `${formatInr(sale.paidAmount)} taken is refunded in cash.` : ''
-      } This cannot be undone.`.replace(/\s+/g, ' ').trim()}
+      } This cannot be undone.`
+        .replace(/\s+/g, ' ')
+        .trim()}
     </ReasonDialog>
   );
 }

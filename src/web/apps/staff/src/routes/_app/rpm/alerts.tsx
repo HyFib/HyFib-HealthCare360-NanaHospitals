@@ -2,7 +2,13 @@ import { Field, Select } from '@fluentui/react-components';
 import { FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { ALERT_SEVERITIES, ALERT_STATUSES, rpmQueries, type RpmAlertSeverity, type RpmAlertStatus } from '@/modules/virtualcare/rpm/api';
+import {
+  ALERT_SEVERITIES,
+  ALERT_STATUSES,
+  rpmQueries,
+  type RpmAlertSeverity,
+  type RpmAlertStatus,
+} from '@/modules/virtualcare/rpm/api';
 import { AlertsTable } from '@/modules/virtualcare/rpm/AlertsTable';
 import { alertSeverityText, alertStatusText } from '@/modules/virtualcare/rpm/labels';
 import { useRpmLive } from '@/modules/virtualcare/rpm/useRpmLive';
@@ -28,20 +34,27 @@ function RpmAlertsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   useRpmLive();
   const alerts = useQuery(rpmQueries.alerts({ status: search.status, severity: search.severity, page: search.page }));
-  const set = (patch: Partial<AlertsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<AlertsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Monitoring alerts"
         subtitle="Mark alerts as seen when someone is looking at them, and resolve them with what was done."
-        breadcrumbs={[{ label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) }, { label: 'Alerts' }]}
+        breadcrumbs={[
+          { label: 'Remote monitoring', onClick: () => void navigate({ to: '/rpm' }) },
+          { label: 'Alerts' },
+        ]}
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as RpmAlertStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as RpmAlertStatus | undefined })}
+              >
                 <option value="">New or seen</option>
                 {ALERT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -51,7 +64,10 @@ function RpmAlertsPage() {
               </Select>
             </Field>
             <Field label="Severity">
-              <Select value={search.severity ?? ''} onChange={(_, d) => set({ severity: (d.value || undefined) as RpmAlertSeverity | undefined })}>
+              <Select
+                value={search.severity ?? ''}
+                onChange={(_, d) => set({ severity: (d.value || undefined) as RpmAlertSeverity | undefined })}
+              >
                 <option value="">Any</option>
                 {ALERT_SEVERITIES.map((s) => (
                   <option key={s} value={s}>
@@ -67,7 +83,13 @@ function RpmAlertsPage() {
           loading={alerts.isLoading}
           error={alerts.error}
           onRetry={() => void alerts.refetch()}
-          onOpen={(a) => void navigate({ to: '/rpm/enrollments/$enrollmentId', params: { enrollmentId: a.enrollmentId }, search: { alert: a.id } })}
+          onOpen={(a) =>
+            void navigate({
+              to: '/rpm/enrollments/$enrollmentId',
+              params: { enrollmentId: a.enrollmentId },
+              search: { alert: a.id },
+            })
+          }
           emptyTitle={search.status === 'Resolved' ? 'No resolved alerts' : 'No alerts need attention'}
           page={search.page ?? 1}
           pageSize={25}

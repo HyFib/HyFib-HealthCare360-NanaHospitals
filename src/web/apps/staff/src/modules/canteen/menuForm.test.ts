@@ -20,11 +20,28 @@ const water: MenuItemDto = {
   version: 7,
 };
 
-const tea: MenuItemDto = { ...water, id: 'm2', code: 'TEA', name: 'Tea', category: 'Beverages', price: 10, gstRate: 5, hsnSac: null, trackStock: false };
+const tea: MenuItemDto = {
+  ...water,
+  id: 'm2',
+  code: 'TEA',
+  name: 'Tea',
+  category: 'Beverages',
+  price: 10,
+  gstRate: 5,
+  hsnSac: null,
+  trackStock: false,
+};
 
 describe('menu item form', () => {
   it('starts a new item with no HSN/SAC code, so food made in the canteen gets the canteen SAC', () => {
-    expect(menuFormValues(null)).toMatchObject({ code: '', category: 'Snacks', gstRate: '5', hsnSac: '', priceIncludesGst: true, description: '' });
+    expect(menuFormValues(null)).toMatchObject({
+      code: '',
+      category: 'Snacks',
+      gstRate: '5',
+      hsnSac: '',
+      priceIncludesGst: true,
+      description: '',
+    });
   });
 
   it('shows an item’s own code, or an empty box when it has none', () => {
@@ -35,7 +52,12 @@ describe('menu item form', () => {
   it('sends the code, or null for the canteen SAC, with the GST rate as a number and the item’s version', () => {
     const values = menuFormValues(water);
 
-    expect(menuItemRequest(values, water)).toMatchObject({ hsnSac: '220190', gstRate: 18, description: null, version: 7 });
+    expect(menuItemRequest(values, water)).toMatchObject({
+      hsnSac: '220190',
+      gstRate: 18,
+      description: null,
+      version: 7,
+    });
     expect(menuItemRequest({ ...values, hsnSac: ' 22019090 ' }, water).hsnSac).toBe('22019090');
     expect(menuItemRequest({ ...values, hsnSac: '  ' }, water).hsnSac).toBeNull();
     expect(menuItemRequest(menuFormValues(null), null)).toMatchObject({ hsnSac: null, gstRate: 5, version: null });
@@ -54,7 +76,11 @@ describe('menu item form', () => {
   });
 
   it('keeps the code when only availability is switched from the menu list', () => {
-    expect(menuItemBody(water, { isAvailable: false })).toMatchObject({ hsnSac: '220190', isAvailable: false, version: 7 });
+    expect(menuItemBody(water, { isAvailable: false })).toMatchObject({
+      hsnSac: '220190',
+      isAvailable: false,
+      version: 7,
+    });
     expect(menuItemBody(tea).hsnSac).toBeNull();
   });
 });

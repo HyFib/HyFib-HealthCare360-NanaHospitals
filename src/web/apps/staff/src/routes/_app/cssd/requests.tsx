@@ -7,7 +7,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
-import { cssdApi, cssdKeys, cssdQueries, REQUEST_STATUS_LABEL, type CssdRequestDto, type CssdRequestStatus } from '@/modules/cssd/api';
+import {
+  cssdApi,
+  cssdKeys,
+  cssdQueries,
+  REQUEST_STATUS_LABEL,
+  type CssdRequestDto,
+  type CssdRequestStatus,
+} from '@/modules/cssd/api';
 import { RequestDialog } from '@/modules/cssd/RequestDialog';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
 
@@ -40,10 +47,13 @@ function CssdRequestsPage() {
   const [creating, setCreating] = useState(false);
   const [cancelling, setCancelling] = useState<CssdRequestDto | null>(null);
   const openOnly = !search.all && !search.status;
-  const requests = useQuery(cssdQueries.requests({ departmentId: search.departmentId, status: search.status, openOnly: openOnly || undefined }));
+  const requests = useQuery(
+    cssdQueries.requests({ departmentId: search.departmentId, status: search.status, openOnly: openOnly || undefined }),
+  );
 
   const cancel = useMutation({
-    mutationFn: ({ request, reason }: { request: CssdRequestDto; reason: string }) => cssdApi.cancelRequest(request.id, reason),
+    mutationFn: ({ request, reason }: { request: CssdRequestDto; reason: string }) =>
+      cssdApi.cancelRequest(request.id, reason),
     onSuccess: () => {
       notify.success('Request cancelled');
       setCancelling(null);
@@ -51,7 +61,8 @@ function CssdRequestsPage() {
     },
   });
 
-  const set = (patch: Partial<RequestsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<RequestsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
@@ -70,7 +81,10 @@ function CssdRequestsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All departments</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -80,7 +94,10 @@ function CssdRequestsPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as CssdRequestStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as CssdRequestStatus | undefined })}
+              >
                 <option value="">Any</option>
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -89,7 +106,12 @@ function CssdRequestsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={!openOnly} disabled={Boolean(search.status)} onChange={(_, d) => set({ all: d.checked || undefined })} label="Include closed" />
+            <Switch
+              checked={!openOnly}
+              disabled={Boolean(search.status)}
+              onChange={(_, d) => set({ all: d.checked || undefined })}
+              label="Include closed"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -141,14 +163,24 @@ function CssdRequestsPage() {
                 </span>
               ),
             },
-            { key: 'needed', header: 'Needed by', width: 170, priority: 'low', render: (r) => (r.requiredBy ? formatDateTime(r.requiredBy) : '—') },
+            {
+              key: 'needed',
+              header: 'Needed by',
+              width: 170,
+              priority: 'low',
+              render: (r) => (r.requiredBy ? formatDateTime(r.requiredBy) : '—'),
+            },
             {
               key: 'status',
               header: 'Status',
               width: 130,
               render: (r) => (
                 <span>
-                  <StatusBadge status={r.status} label={REQUEST_STATUS_LABEL[r.status]} tone={r.status === 'PartiallyIssued' ? 'warning' : undefined} />
+                  <StatusBadge
+                    status={r.status}
+                    label={REQUEST_STATUS_LABEL[r.status]}
+                    tone={r.status === 'PartiallyIssued' ? 'warning' : undefined}
+                  />
                   {r.cancelReason && <Caption1 block>{r.cancelReason}</Caption1>}
                 </span>
               ),
@@ -162,13 +194,20 @@ function CssdRequestsPage() {
                     size="small"
                     appearance="primary"
                     icon={<BoxArrowUpRegular />}
-                    onClick={() => void navigate({ to: '/cssd/issue', search: { requestId: r.id, departmentId: r.departmentId } })}
+                    onClick={() =>
+                      void navigate({ to: '/cssd/issue', search: { requestId: r.id, departmentId: r.departmentId } })
+                    }
                   >
                     Issue
                   </Button>
                 )}
                 {canRequest && (
-                  <Button size="small" icon={<DismissCircleRegular />} onClick={() => setCancelling(r)} aria-label={`Cancel request ${r.requestNumber}`}>
+                  <Button
+                    size="small"
+                    icon={<DismissCircleRegular />}
+                    onClick={() => setCancelling(r)}
+                    aria-label={`Cancel request ${r.requestNumber}`}
+                  >
                     Cancel
                   </Button>
                 )}
@@ -176,7 +215,9 @@ function CssdRequestsPage() {
             ) : null
           }
           emptyTitle={openOnly ? 'No open requests' : 'No requests'}
-          emptyDescription={canRequest ? 'Departments request sterile sets here; CSSD sees them immediately.' : undefined}
+          emptyDescription={
+            canRequest ? 'Departments request sterile sets here; CSSD sees them immediately.' : undefined
+          }
         />
       </Section>
       {creating && <RequestDialog onClose={() => setCreating(false)} />}

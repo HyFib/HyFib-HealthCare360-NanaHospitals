@@ -48,13 +48,17 @@ export function fitWithin(width: number, height: number, maxSide: number): { wid
  * The photo to send in a save, given the patient's photo before editing and now. A save that leaves the photo alone sends
  * nothing about it (the server then keeps it); a new photo is sent; taking the photo away is asked for explicitly.
  */
-export function photoChange(original: string | null, current: string | null): { photoFileId: string | null; removePhoto: boolean } {
+export function photoChange(
+  original: string | null,
+  current: string | null,
+): { photoFileId: string | null; removePhoto: boolean } {
   return { photoFileId: current !== original ? current : null, removePhoto: original !== null && current === null };
 }
 
 /** A sentence for the front desk when the camera cannot be started, from the browser's error. */
 export function cameraProblem(error: unknown): string {
-  const name = typeof error === 'object' && error !== null && 'name' in error ? String((error as { name: unknown }).name) : '';
+  const name =
+    typeof error === 'object' && error !== null && 'name' in error ? String((error as { name: unknown }).name) : '';
   switch (name) {
     case 'NotAllowedError':
     case 'SecurityError':

@@ -24,14 +24,31 @@ import { DataTable, ErrorState, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { previousMonth } from '@/modules/inpatient/time';
-import { canteenApi, canteenKeys, canteenQueries, CREDIT_KIND_LABEL, type SettlementResult, type StaffBalanceDto } from './api';
+import {
+  canteenApi,
+  canteenKeys,
+  canteenQueries,
+  CREDIT_KIND_LABEL,
+  type SettlementResult,
+  type StaffBalanceDto,
+} from './api';
 import { isValidEmployeeCode, monthLabel, recentMonths } from './rules';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
   summary: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '8px' },
-  cell: { display: 'flex', flexDirection: 'column', padding: '8px 10px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground2 },
-  value: { fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400, fontFamily: tokens.fontFamilyNumeric },
+  cell: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: '8px 10px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
+  value: {
+    fontWeight: tokens.fontWeightSemibold,
+    fontSize: tokens.fontSizeBase400,
+    fontFamily: tokens.fontFamilyNumeric,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   plus: { color: tokens.colorPaletteRedForeground1 },
   minus: { color: tokens.colorPaletteGreenForeground1 },
@@ -101,7 +118,11 @@ export function StatementPanel({ employeeCode, currentMonth }: { employeeCode: s
                 header: 'Amount',
                 width: 110,
                 align: 'end',
-                render: (l) => <span className={l.amount > 0 ? styles.plus : styles.minus}>{l.amount > 0 ? `+${formatInr(l.amount)}` : formatInr(l.amount)}</span>,
+                render: (l) => (
+                  <span className={l.amount > 0 ? styles.plus : styles.minus}>
+                    {l.amount > 0 ? `+${formatInr(l.amount)}` : formatInr(l.amount)}
+                  </span>
+                ),
               },
               { key: 'balance', header: 'Balance', width: 110, align: 'end', render: (l) => formatInr(l.balance) },
             ]}
@@ -125,9 +146,13 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
   const amountOk = amount !== '' && value > 0 && value <= 100_000 && Math.round(value * 100) === value * 100;
   const valid = isValidEmployeeCode(code) && amountOk;
   const pay = useMutation({
-    mutationFn: () => canteenApi.recordPayment({ employeeCode: code.trim(), amount: value, reference: reference.trim() || null }),
+    mutationFn: () =>
+      canteenApi.recordPayment({ employeeCode: code.trim(), amount: value, reference: reference.trim() || null }),
     onSuccess: (updated) => {
-      notify.success(`Payment recorded for ${updated.employeeName ?? updated.employeeCode}`, `Balance now ${formatInr(updated.balance)}.`);
+      notify.success(
+        `Payment recorded for ${updated.employeeName ?? updated.employeeCode}`,
+        `Balance now ${formatInr(updated.balance)}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
       onClose();
     },
@@ -151,18 +176,39 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
                   {balance.employeeName ?? balance.employeeCode} owes <strong>{formatInr(balance.balance)}</strong>.
                 </Text>
               )}
-              <Field label="Employee code" required validationMessage={code && !isValidEmployeeCode(code) ? 'Check the code on the staff ID card.' : undefined}>
+              <Field
+                label="Employee code"
+                required
+                validationMessage={
+                  code && !isValidEmployeeCode(code) ? 'Check the code on the staff ID card.' : undefined
+                }
+              >
                 <Input value={code} onChange={(_, d) => setCode(d.value)} maxLength={20} disabled={Boolean(balance)} />
               </Field>
-              <Field label="Amount paid (₹)" required validationMessage={amount && !amountOk ? 'Enter an amount up to ₹1,00,000 with at most two decimals.' : undefined}>
-                <Input type="number" inputMode="decimal" min={0} value={amount} onChange={(_, d) => setAmount(d.value)} autoFocus />
+              <Field
+                label="Amount paid (₹)"
+                required
+                validationMessage={
+                  amount && !amountOk ? 'Enter an amount up to ₹1,00,000 with at most two decimals.' : undefined
+                }
+              >
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={amount}
+                  onChange={(_, d) => setAmount(d.value)}
+                  autoFocus
+                />
               </Field>
               <Field label="Reference" hint="Receipt or UPI transaction number">
                 <Input value={reference} onChange={(_, d) => setReference(d.value)} maxLength={64} />
               </Field>
               {pay.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(pay.error) ? pay.error.userMessage : 'The payment could not be recorded.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(pay.error) ? pay.error.userMessage : 'The payment could not be recorded.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -170,7 +216,12 @@ export function PaymentDialog({ balance, onClose }: { balance: StaffBalanceDto |
               <Button onClick={onClose} disabled={pay.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || pay.isPending} icon={pay.isPending ? <Spinner size="tiny" /> : <MoneyRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || pay.isPending}
+                icon={pay.isPending ? <Spinner size="tiny" /> : <MoneyRegular />}
+              >
                 Record payment
               </Button>
             </DialogActions>
@@ -212,7 +263,8 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }} role="status">
                 <CheckmarkCircleRegular fontSize={32} color={tokens.colorPaletteGreenForeground1} />
                 <Text>
-                  {result.employees} employees, <strong>{formatInr(result.amount)}</strong> sent to payroll as canteen deductions.
+                  {result.employees} employees, <strong>{formatInr(result.amount)}</strong> sent to payroll as canteen
+                  deductions.
                 </Text>
               </div>
               {skipped.length > 0 && (
@@ -248,8 +300,8 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
               <DialogTitle>Settle staff credit with payroll</DialogTitle>
               <DialogContent className={styles.stack}>
                 <Text>
-                  Each employee's balance up to the end of the month is deducted from salary. A month is settled once per employee, so running it again does not
-                  deduct twice.
+                  Each employee's balance up to the end of the month is deducted from salary. A month is settled once
+                  per employee, so running it again does not deduct twice.
                 </Text>
                 <Field label="Month" required hint="Only months that have ended can be settled">
                   <Select value={period} onChange={(_, d) => setPeriod(d.value)}>
@@ -261,11 +313,19 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
                   </Select>
                 </Field>
                 <Field label="Payroll run reference" required>
-                  <Input value={reference} onChange={(_, d) => setReference(d.value)} maxLength={64} placeholder="e.g. PAYROLL-2026-09" autoFocus />
+                  <Input
+                    value={reference}
+                    onChange={(_, d) => setReference(d.value)}
+                    maxLength={64}
+                    placeholder="e.g. PAYROLL-2026-09"
+                    autoFocus
+                  />
                 </Field>
                 {settle.error && (
                   <MessageBar intent="error">
-                    <MessageBarBody>{isApiError(settle.error) ? settle.error.userMessage : 'The settlement could not be completed.'}</MessageBarBody>
+                    <MessageBarBody>
+                      {isApiError(settle.error) ? settle.error.userMessage : 'The settlement could not be completed.'}
+                    </MessageBarBody>
                   </MessageBar>
                 )}
               </DialogContent>
@@ -273,7 +333,12 @@ export function SettleDialog({ currentMonth, onClose }: { currentMonth: string; 
                 <Button onClick={onClose} disabled={settle.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" appearance="primary" disabled={!valid || settle.isPending} icon={settle.isPending ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!valid || settle.isPending}
+                  icon={settle.isPending ? <Spinner size="tiny" /> : undefined}
+                >
                   Settle {period ? monthLabel(period) : ''}
                 </Button>
               </DialogActions>

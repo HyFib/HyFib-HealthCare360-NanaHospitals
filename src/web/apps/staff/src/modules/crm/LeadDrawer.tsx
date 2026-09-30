@@ -1,7 +1,24 @@
-import { Button, Field, Input, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  Input,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+} from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, normalizePhone } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, NumberField, SelectField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -20,8 +37,16 @@ const NAME = /^[\p{L} .'-]+$/u;
 
 const schema = z
   .object({
-    name: z.string().trim().min(1, 'Enter the name.').max(200).regex(NAME, 'Use letters, spaces, dots, apostrophes or hyphens.'),
-    phone: z.string().trim().refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid mobile number.'),
+    name: z
+      .string()
+      .trim()
+      .min(1, 'Enter the name.')
+      .max(200)
+      .regex(NAME, 'Use letters, spaces, dots, apostrophes or hyphens.'),
+    phone: z
+      .string()
+      .trim()
+      .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid mobile number.'),
     email: z
       .string()
       .trim()
@@ -39,7 +64,10 @@ const schema = z
     owner: z.object({ id: z.string(), name: z.string() }).nullable(),
     nextFollowUpAt: z.string(),
   })
-  .refine((v) => Boolean(v.phone || v.email), { path: ['phone'], message: 'Enter a phone number or an email address to follow up.' });
+  .refine((v) => Boolean(v.phone || v.email), {
+    path: ['phone'],
+    message: 'Enter a phone number or an email address to follow up.',
+  });
 
 type Values = z.infer<typeof schema>;
 
@@ -105,7 +133,9 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
         const created = await crmApi.createLead(request);
         notify.success(
           'Lead added',
-          created.existingPatientId ? `${created.leadNumber}. This mobile number already belongs to a registered patient.` : created.leadNumber,
+          created.existingPatientId
+            ? `${created.leadNumber}. This mobile number already belongs to a registered patient.`
+            : created.leadNumber,
         );
         void queryClient.invalidateQueries({ queryKey: crmKeys.leads });
         onClose();
@@ -178,7 +208,13 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
       <FormGrid columns={2} minColumnWidth={180}>
         <NumberField control={form.control} name="ageYears" label="Age (years)" min={0} max={120} />
         <TextField control={form.control} name="city" label="City / area" />
-        <SelectField control={form.control} name="source" label="How they found us" required options={LEAD_SOURCES.map((s) => ({ value: s, label: leadSourceLabel[s] }))} />
+        <SelectField
+          control={form.control}
+          name="source"
+          label="How they found us"
+          required
+          options={LEAD_SOURCES.map((s) => ({ value: s, label: leadSourceLabel[s] }))}
+        />
         <TextField control={form.control} name="sourceDetail" label="Source detail" hint="Camp name, ad, company…" />
         {canReferrals && (
           <SelectField
@@ -186,15 +222,33 @@ export function LeadDrawer({ lead, onClose }: { lead: LeadDetail | null; onClose
             name="referringDoctorId"
             label="Referring doctor"
             placeholder="None"
-            options={(doctors.data?.items ?? []).map((d) => ({ value: d.id, label: `${d.name}${d.clinic ? `, ${d.clinic}` : ''}` }))}
+            options={(doctors.data?.items ?? []).map((d) => ({
+              value: d.id,
+              label: `${d.name}${d.clinic ? `, ${d.clinic}` : ''}`,
+            }))}
           />
         )}
-        <SelectField control={form.control} name="interestDepartmentId" label="Interested in (department)" placeholder="Not sure yet" options={toOptions(departments.data)} />
+        <SelectField
+          control={form.control}
+          name="interestDepartmentId"
+          label="Interested in (department)"
+          placeholder="Not sure yet"
+          options={toOptions(departments.data)}
+        />
       </FormGrid>
-      <TextField control={form.control} name="interestPackage" label="Package or service asked about" placeholder="For example: Master health check-up" />
+      <TextField
+        control={form.control}
+        name="interestPackage"
+        label="Package or service asked about"
+        placeholder="For example: Master health check-up"
+      />
       <TextAreaField control={form.control} name="notes" label="Notes" rows={3} maxLength={2000} />
       <FormGrid columns={2} minColumnWidth={200}>
-        <Controller control={form.control} name="owner" render={({ field }) => <UserPicker label="Owner" value={field.value} onChange={field.onChange} />} />
+        <Controller
+          control={form.control}
+          name="owner"
+          render={({ field }) => <UserPicker label="Owner" value={field.value} onChange={field.onChange} />}
+        />
         <Controller
           control={form.control}
           name="nextFollowUpAt"

@@ -6,7 +6,12 @@ import type { SaleTotals } from './pricing';
 const useStyles = makeStyles({
   rows: { display: 'grid', gridTemplateColumns: '1fr auto', gap: '4px 12px', alignItems: 'baseline' },
   muted: { color: tokens.colorNeutralForeground3 },
-  net: { fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700, fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  net: {
+    fontSize: tokens.fontSizeHero700,
+    lineHeight: tokens.lineHeightHero700,
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
   right: { textAlign: 'end', fontVariantNumeric: 'tabular-nums' },
 });
 
@@ -14,7 +19,15 @@ const useStyles = makeStyles({
  * The bill as it will be printed: MRP value, discount, taxable value with CGST and SGST (GST is included in
  * MRP), round-off and the amount to collect.
  */
-export function BillSummary({ totals, discountPercent, label = 'To collect' }: { totals: SaleTotals; discountPercent: number; label?: string }) {
+export function BillSummary({
+  totals,
+  discountPercent,
+  label = 'To collect',
+}: {
+  totals: SaleTotals;
+  discountPercent: number;
+  label?: string;
+}) {
   const styles = useStyles();
   return (
     <div className={styles.rows} aria-live="polite">

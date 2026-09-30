@@ -29,10 +29,17 @@ export type DiagnosisType = 'Provisional' | 'Final' | 'Differential';
 export type DiagnosisStatus = 'Active' | 'Resolved' | 'Chronic';
 export type FavouriteKind = 'Order' | 'Drug';
 export type DischargeSummaryStatus = 'Draft' | 'Signed' | 'Amended';
-export type AdmissionStatus = 'Admitted' | 'DischargeInitiated' | 'Discharged' | 'Cancelled' | 'Absconded' | 'Expired' | 'Lama' | 'Dama';
+export type AdmissionStatus =
+  'Admitted' | 'DischargeInitiated' | 'Discharged' | 'Cancelled' | 'Absconded' | 'Expired' | 'Lama' | 'Dama';
 export type AdmissionType = 'Elective' | 'Emergency' | 'DayCare' | 'Maternity' | 'TransferIn';
 
-export const ENCOUNTER_TYPES: readonly EncounterType[] = ['OutPatient', 'Emergency', 'InPatient', 'Telehealth', 'HealthCheckup'];
+export const ENCOUNTER_TYPES: readonly EncounterType[] = [
+  'OutPatient',
+  'Emergency',
+  'InPatient',
+  'Telehealth',
+  'HealthCheckup',
+];
 export const encounterTypeLabel: Record<EncounterType, string> = {
   OutPatient: 'Out-patient (OP)',
   InPatient: 'In-patient',
@@ -41,7 +48,13 @@ export const encounterTypeLabel: Record<EncounterType, string> = {
   HealthCheckup: 'Health check-up',
 };
 
-export const NOTE_TYPES: readonly ClinicalNoteType[] = ['ProgressNote', 'Procedure', 'Referral', 'Counselling', 'Other'];
+export const NOTE_TYPES: readonly ClinicalNoteType[] = [
+  'ProgressNote',
+  'Procedure',
+  'Referral',
+  'Counselling',
+  'Other',
+];
 export const noteTypeLabel: Record<ClinicalNoteType, string> = {
   ProgressNote: 'Progress note',
   Procedure: 'Procedure note',
@@ -52,7 +65,14 @@ export const noteTypeLabel: Record<ClinicalNoteType, string> = {
 
 export const ALLERGY_TYPES: readonly AllergyType[] = ['Drug', 'Food', 'Environmental', 'Other'];
 export const ALLERGY_SEVERITIES: readonly AllergySeverity[] = ['Mild', 'Moderate', 'Severe', 'Anaphylaxis'];
-export const ALERT_TYPES: readonly PatientAlertType[] = ['Dnr', 'FallRisk', 'Isolation', 'InfectionControl', 'Pregnancy', 'Custom'];
+export const ALERT_TYPES: readonly PatientAlertType[] = [
+  'Dnr',
+  'FallRisk',
+  'Isolation',
+  'InfectionControl',
+  'Pregnancy',
+  'Custom',
+];
 export const alertTypeLabel: Record<PatientAlertType, string> = {
   Dnr: 'Do not resuscitate (DNR)',
   FallRisk: 'Fall risk',
@@ -490,7 +510,10 @@ export interface ImmunizationDto {
   enteredInErrorReason: string | null;
 }
 
-export type RecordImmunizationRequest = Omit<ImmunizationDto, 'id' | 'patientId' | 'isEnteredInError' | 'enteredInErrorReason'>;
+export type RecordImmunizationRequest = Omit<
+  ImmunizationDto,
+  'id' | 'patientId' | 'isEnteredInError' | 'enteredInErrorReason'
+>;
 
 // ---------------------------------------------------------------------------------------------------- templates and favourites
 
@@ -692,7 +715,10 @@ export interface LabReportView {
   status: string;
   isPartial: boolean;
   releasedAt: string | null;
-  sections: { section: string; tests: { orderItemId: string; name: string; interpretation: string | null; results: LabReportResultLine[] }[] }[];
+  sections: {
+    section: string;
+    tests: { orderItemId: string; name: string; interpretation: string | null; results: LabReportResultLine[] }[];
+  }[];
 }
 
 // ---------------------------------------------------------------------------------------------------- query keys and queries
@@ -702,16 +728,23 @@ export const emrKeys = {
   worklist: (params: WorklistParams) => ['emr', 'worklist', params] as const,
   patient: (patientId: string) => ['emr', 'patient', patientId] as const,
   summary: (patientId: string) => ['emr', 'patient', patientId, 'summary'] as const,
-  timeline: (patientId: string, filters: TimelineFilters) => ['emr', 'patient', patientId, 'timeline', filters] as const,
+  timeline: (patientId: string, filters: TimelineFilters) =>
+    ['emr', 'patient', patientId, 'timeline', filters] as const,
   encounters: (patientId: string, page: number) => ['emr', 'patient', patientId, 'encounters', page] as const,
-  vitals: (patientId: string, encounterId: string | null, page: number, pageSize: number) => ['emr', 'patient', patientId, 'vitals', encounterId, page, pageSize] as const,
-  allergies: (patientId: string, includeInactive: boolean) => ['emr', 'patient', patientId, 'allergies', includeInactive] as const,
+  vitals: (patientId: string, encounterId: string | null, page: number, pageSize: number) =>
+    ['emr', 'patient', patientId, 'vitals', encounterId, page, pageSize] as const,
+  allergies: (patientId: string, includeInactive: boolean) =>
+    ['emr', 'patient', patientId, 'allergies', includeInactive] as const,
   /** Under the patient key, so every allergy change (which invalidates `patient`) refreshes it with the summary. */
   allergyStatus: (patientId: string) => ['emr', 'patient', patientId, 'allergy-status'] as const,
-  alerts: (patientId: string, includeInactive: boolean) => ['emr', 'patient', patientId, 'alerts', includeInactive] as const,
-  diagnoses: (patientId: string, encounterId: string | null, problemsOnly: boolean) => ['emr', 'patient', patientId, 'diagnoses', encounterId, problemsOnly] as const,
-  notes: (patientId: string, encounterId: string | null, page: number) => ['emr', 'patient', patientId, 'notes', encounterId, page] as const,
-  immunizations: (patientId: string, includeErrors: boolean) => ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
+  alerts: (patientId: string, includeInactive: boolean) =>
+    ['emr', 'patient', patientId, 'alerts', includeInactive] as const,
+  diagnoses: (patientId: string, encounterId: string | null, problemsOnly: boolean) =>
+    ['emr', 'patient', patientId, 'diagnoses', encounterId, problemsOnly] as const,
+  notes: (patientId: string, encounterId: string | null, page: number) =>
+    ['emr', 'patient', patientId, 'notes', encounterId, page] as const,
+  immunizations: (patientId: string, includeErrors: boolean) =>
+    ['emr', 'patient', patientId, 'immunizations', includeErrors] as const,
   admissions: (patientId: string) => ['emr', 'patient', patientId, 'admissions'] as const,
   encounter: (id: string) => ['emr', 'encounter', id] as const,
   templates: (specialtyCode: string | null) => ['emr', 'templates', specialtyCode ?? 'all'] as const,
@@ -755,49 +788,68 @@ export const emrQueries = {
   encounters: (patientId: string, page = 1) =>
     queryOptions({
       queryKey: emrKeys.encounters(patientId, page),
-      queryFn: ({ signal }) => api.get<PagedResult<EncounterListItem>>(`/api/v1/emr/patients/${patientId}/encounters`, { query: { page, pageSize: 15 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<EncounterListItem>>(`/api/v1/emr/patients/${patientId}/encounters`, {
+          query: { page, pageSize: 15 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   vitals: (patientId: string, encounterId: string | null = null, page = 1, pageSize = 20) =>
     queryOptions({
       queryKey: emrKeys.vitals(patientId, encounterId, page, pageSize),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<VitalsDto>>(`/api/v1/emr/patients/${patientId}/vitals`, { query: { encounterId, page, pageSize }, signal }),
+        api.get<PagedResult<VitalsDto>>(`/api/v1/emr/patients/${patientId}/vitals`, {
+          query: { encounterId, page, pageSize },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   allergies: (patientId: string, includeInactive = false) =>
     queryOptions({
       queryKey: emrKeys.allergies(patientId, includeInactive),
-      queryFn: ({ signal }) => api.get<AllergyDto[]>(`/api/v1/emr/patients/${patientId}/allergies`, { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<AllergyDto[]>(`/api/v1/emr/patients/${patientId}/allergies`, { query: { includeInactive }, signal }),
     }),
   allergyStatus: (patientId: string) =>
     queryOptions({
       queryKey: emrKeys.allergyStatus(patientId),
-      queryFn: ({ signal }) => api.get<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/status`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/status`, { signal }),
     }),
   alerts: (patientId: string, includeInactive = false) =>
     queryOptions({
       queryKey: emrKeys.alerts(patientId, includeInactive),
-      queryFn: ({ signal }) => api.get<PatientAlertDto[]>(`/api/v1/emr/patients/${patientId}/alerts`, { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PatientAlertDto[]>(`/api/v1/emr/patients/${patientId}/alerts`, { query: { includeInactive }, signal }),
     }),
   diagnoses: (patientId: string, encounterId: string | null = null, problemsOnly = false) =>
     queryOptions({
       queryKey: emrKeys.diagnoses(patientId, encounterId, problemsOnly),
       queryFn: ({ signal }) =>
-        api.get<DiagnosisDto[]>(`/api/v1/emr/patients/${patientId}/diagnoses`, { query: { encounterId, problemsOnly: problemsOnly || undefined }, signal }),
+        api.get<DiagnosisDto[]>(`/api/v1/emr/patients/${patientId}/diagnoses`, {
+          query: { encounterId, problemsOnly: problemsOnly || undefined },
+          signal,
+        }),
     }),
   notes: (patientId: string, encounterId: string | null = null, page = 1) =>
     queryOptions({
       queryKey: emrKeys.notes(patientId, encounterId, page),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ClinicalNoteDto>>(`/api/v1/emr/patients/${patientId}/notes`, { query: { encounterId, page, pageSize: 20 }, signal }),
+        api.get<PagedResult<ClinicalNoteDto>>(`/api/v1/emr/patients/${patientId}/notes`, {
+          query: { encounterId, page, pageSize: 20 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   immunizations: (patientId: string, includeErrors = false) =>
     queryOptions({
       queryKey: emrKeys.immunizations(patientId, includeErrors),
       queryFn: ({ signal }) =>
-        api.get<ImmunizationDto[]>(`/api/v1/emr/patients/${patientId}/immunizations`, { query: { includeEnteredInError: includeErrors || undefined }, signal }),
+        api.get<ImmunizationDto[]>(`/api/v1/emr/patients/${patientId}/immunizations`, {
+          query: { includeEnteredInError: includeErrors || undefined },
+          signal,
+        }),
     }),
   admissions: (patientId: string) =>
     queryOptions({
@@ -812,7 +864,8 @@ export const emrQueries = {
   templates: (specialtyCode: string | null = null) =>
     queryOptions({
       queryKey: emrKeys.templates(specialtyCode),
-      queryFn: ({ signal }) => api.get<TemplateListItem[]>('/api/v1/emr/templates', { query: { specialtyCode }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<TemplateListItem[]>('/api/v1/emr/templates', { query: { specialtyCode }, signal }),
       staleTime: 5 * 60_000,
     }),
   template: (id: string) =>
@@ -833,7 +886,10 @@ export const emrQueries = {
       // 404 means "no summary yet"; the editor then starts a new draft.
       queryFn: async ({ signal }) => {
         try {
-          return await api.get<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/by-admission/${admissionId}`, { signal });
+          return await api.get<DischargeSummaryDto>(
+            `/api/v1/clinical/discharge-summaries/by-admission/${admissionId}`,
+            { signal },
+          );
         } catch (error) {
           if (isApiError(error) && error.status === 404) {
             return null;
@@ -853,30 +909,43 @@ export const emrQueries = {
 // ---------------------------------------------------------------------------------------------------- commands
 
 export const emrApi = {
-  acknowledgeResult: (id: string, note: string | null) => api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note }),
+  acknowledgeResult: (id: string, note: string | null) =>
+    api.post<void>(`/api/v1/emr/results/${id}/acknowledge`, { note }),
 
   startEncounter: (request: StartEncounterRequest) => api.post<EncounterDetail>('/api/v1/emr/encounters', request),
-  updateEncounter: (id: string, content: EncounterContent, version: number) => api.put<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { ...content, version }),
-  signEncounter: (id: string, version: number) => api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/sign`, { version }),
+  updateEncounter: (id: string, content: EncounterContent, version: number) =>
+    api.put<EncounterDetail>(`/api/v1/emr/encounters/${id}`, { ...content, version }),
+  signEncounter: (id: string, version: number) =>
+    api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/sign`, { version }),
   amendEncounter: (id: string, reason: string, content: EncounterContent, version: number) =>
     api.post<EncounterDetail>(`/api/v1/emr/encounters/${id}/amend`, { reason, ...content, version }),
 
-  recordVitals: (patientId: string, request: RecordVitalsPayload) => api.post<VitalsDto>(`/api/v1/emr/patients/${patientId}/vitals`, request),
+  recordVitals: (patientId: string, request: RecordVitalsPayload) =>
+    api.post<VitalsDto>(`/api/v1/emr/patients/${patientId}/vitals`, request),
   previewVitals: (patientId: string, request: RecordVitalsPayload, signal?: AbortSignal) =>
     api.post<VitalFlag[]>(`/api/v1/emr/patients/${patientId}/vitals/preview`, request, { signal }),
-  vitalsEnteredInError: (id: string, reason: string) => api.post<VitalsDto>(`/api/v1/emr/vitals/${id}/entered-in-error`, { reason }),
+  vitalsEnteredInError: (id: string, reason: string) =>
+    api.post<VitalsDto>(`/api/v1/emr/vitals/${id}/entered-in-error`, { reason }),
 
-  recordAllergy: (patientId: string, request: RecordAllergyRequest) => api.post<AllergyDto>(`/api/v1/emr/patients/${patientId}/allergies`, request),
-  updateAllergy: (id: string, request: UpdateAllergyRequest) => api.put<AllergyDto>(`/api/v1/emr/allergies/${id}`, request),
+  recordAllergy: (patientId: string, request: RecordAllergyRequest) =>
+    api.post<AllergyDto>(`/api/v1/emr/patients/${patientId}/allergies`, request),
+  updateAllergy: (id: string, request: UpdateAllergyRequest) =>
+    api.put<AllergyDto>(`/api/v1/emr/allergies/${id}`, request),
   /** Idempotent; 409 `allergy.active_exist` (with `data.activeAllergies`) while the patient has active allergies. */
-  recordNoKnownAllergies: (patientId: string) => api.post<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/none`),
-  raiseAlert: (patientId: string, request: RaiseAlertRequest) => api.post<PatientAlertDto>(`/api/v1/emr/patients/${patientId}/alerts`, request),
-  deactivateAlert: (id: string, reason: string) => api.post<PatientAlertDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
+  recordNoKnownAllergies: (patientId: string) =>
+    api.post<AllergyStatusDto>(`/api/v1/emr/patients/${patientId}/allergies/none`),
+  raiseAlert: (patientId: string, request: RaiseAlertRequest) =>
+    api.post<PatientAlertDto>(`/api/v1/emr/patients/${patientId}/alerts`, request),
+  deactivateAlert: (id: string, reason: string) =>
+    api.post<PatientAlertDto>(`/api/v1/emr/alerts/${id}/deactivate`, { reason }),
 
-  addDiagnosis: (encounterId: string, request: AddDiagnosisRequest) => api.post<DiagnosisDto>(`/api/v1/emr/encounters/${encounterId}/diagnoses`, request),
-  updateDiagnosis: (id: string, request: UpdateDiagnosisRequest) => api.put<DiagnosisDto>(`/api/v1/emr/diagnoses/${id}`, request),
+  addDiagnosis: (encounterId: string, request: AddDiagnosisRequest) =>
+    api.post<DiagnosisDto>(`/api/v1/emr/encounters/${encounterId}/diagnoses`, request),
+  updateDiagnosis: (id: string, request: UpdateDiagnosisRequest) =>
+    api.put<DiagnosisDto>(`/api/v1/emr/diagnoses/${id}`, request),
 
-  writeNote: (patientId: string, request: WriteNoteRequest) => api.post<ClinicalNoteDto>(`/api/v1/emr/patients/${patientId}/notes`, request),
+  writeNote: (patientId: string, request: WriteNoteRequest) =>
+    api.post<ClinicalNoteDto>(`/api/v1/emr/patients/${patientId}/notes`, request),
   editNote: (id: string, request: { type: ClinicalNoteType; title: string | null; body: string; version: number }) =>
     api.put<ClinicalNoteDto>(`/api/v1/emr/notes/${id}`, request),
   signNote: (id: string, version: number) => api.post<ClinicalNoteDto>(`/api/v1/emr/notes/${id}/sign`, { version }),
@@ -884,7 +953,8 @@ export const emrApi = {
 
   recordImmunization: (patientId: string, request: RecordImmunizationRequest) =>
     api.post<ImmunizationDto>(`/api/v1/emr/patients/${patientId}/immunizations`, request),
-  immunizationEnteredInError: (id: string, reason: string) => api.post<ImmunizationDto>(`/api/v1/emr/immunizations/${id}/entered-in-error`, { reason }),
+  immunizationEnteredInError: (id: string, reason: string) =>
+    api.post<ImmunizationDto>(`/api/v1/emr/immunizations/${id}/entered-in-error`, { reason }),
 
   addFavourite: (request: SaveFavouriteRequest) => api.post<FavouriteDto>('/api/v1/emr/favourites', request),
   removeFavourite: (id: string) => api.delete<void>(`/api/v1/emr/favourites/${id}`),
@@ -892,9 +962,13 @@ export const emrApi = {
   saveDischargeSummary: (admissionId: string, request: SaveDischargeSummaryRequest) =>
     api.put<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/by-admission/${admissionId}`, request),
   prefillDischargeSummary: (admissionId: string, patientId: string) =>
-    api.get<DischargeSummaryPrefill>(`/api/v1/clinical/discharge-summaries/by-admission/${admissionId}/prefill`, { query: { patientId } }),
-  signDischargeSummary: (id: string, version: number) => api.post<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/${id}/sign`, { version }),
+    api.get<DischargeSummaryPrefill>(`/api/v1/clinical/discharge-summaries/by-admission/${admissionId}/prefill`, {
+      query: { patientId },
+    }),
+  signDischargeSummary: (id: string, version: number) =>
+    api.post<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/${id}/sign`, { version }),
   amendDischargeSummary: (id: string, reason: string, content: DischargeContent, version: number) =>
     api.post<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/${id}/amend`, { reason, ...content, version }),
-  dischargeSummaryPrint: (id: string) => api.get<DischargeSummaryPrint>(`/api/v1/clinical/discharge-summaries/${id}/print`),
+  dischargeSummaryPrint: (id: string) =>
+    api.get<DischargeSummaryPrint>(`/api/v1/clinical/discharge-summaries/${id}/print`),
 };

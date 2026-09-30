@@ -38,7 +38,14 @@ const useStyles = makeStyles({
     '@media (max-width: 1180px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
   },
   column: { display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 },
-  qcRow: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '2px 12px', alignItems: 'center', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
+  qcRow: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) auto',
+    gap: '2px 12px',
+    alignItems: 'center',
+    padding: '6px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   red: { color: tokens.colorPaletteRedForeground1 },
   green: { color: tokens.colorPaletteGreenForeground1 },
@@ -73,7 +80,11 @@ function LabDashboard() {
         actions={
           <>
             <Can permission={LAB_PERMISSIONS.collect}>
-              <Button appearance="primary" icon={<DropRegular />} onClick={() => void navigate({ to: '/lab/collection' })}>
+              <Button
+                appearance="primary"
+                icon={<DropRegular />}
+                onClick={() => void navigate({ to: '/lab/collection' })}
+              >
                 Collect samples
               </Button>
             </Can>
@@ -103,7 +114,13 @@ function LabDashboard() {
         )}
         {canBench && (
           <>
-            <KpiCard label="In the lab" value={value(counts?.inLab)} hint={counts ? `${counts.stat} STAT` : undefined} icon={<ClipboardTaskListLtrRegular />} onClick={() => void navigate({ to: '/lab/worklist' })} />
+            <KpiCard
+              label="In the lab"
+              value={value(counts?.inLab)}
+              hint={counts ? `${counts.stat} STAT` : undefined}
+              icon={<ClipboardTaskListLtrRegular />}
+              onClick={() => void navigate({ to: '/lab/worklist' })}
+            />
             <KpiCard
               label="Awaiting verification"
               value={value(counts?.awaitingVerification)}
@@ -113,7 +130,9 @@ function LabDashboard() {
             />
             <KpiCard
               label="Critical to call"
-              value={counts ? <span className={counts.critical > 0 ? styles.red : undefined}>{counts.critical}</span> : '…'}
+              value={
+                counts ? <span className={counts.critical > 0 ? styles.red : undefined}>{counts.critical}</span> : '…'
+              }
               hint="Critical values not verified yet"
               icon={<AlertUrgentRegular />}
               onClick={() => void navigate({ to: '/lab/worklist' })}
@@ -145,7 +164,11 @@ function LabDashboard() {
                 '…'
               )
             }
-            hint={qcSummary ? `${qcSummary.accepted} accepted · ${qcSummary.warnings} warnings · ${qcSummary.rejected} rejected` : undefined}
+            hint={
+              qcSummary
+                ? `${qcSummary.accepted} accepted · ${qcSummary.warnings} warnings · ${qcSummary.rejected} rejected`
+                : undefined
+            }
             icon={qcSummary && qcSummary.lockedTests.length > 0 ? <LockClosedRegular /> : <ShieldCheckmarkRegular />}
             onClick={() => void navigate({ to: '/lab/qc' })}
           />

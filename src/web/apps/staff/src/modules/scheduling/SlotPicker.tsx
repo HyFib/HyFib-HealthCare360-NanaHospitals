@@ -15,13 +15,31 @@ import {
   Tooltip,
   useArrowNavigationGroup,
 } from '@fluentui/react-components';
-import { ChevronLeftRegular, ChevronRightRegular, WeatherMoonRegular, WeatherPartlyCloudyDayRegular, WeatherSunnyRegular } from '@fluentui/react-icons';
+import {
+  ChevronLeftRegular,
+  ChevronRightRegular,
+  WeatherMoonRegular,
+  WeatherPartlyCloudyDayRegular,
+  WeatherSunnyRegular,
+} from '@fluentui/react-icons';
 import { todayIso } from '@hc360/core';
 import { EmptyState, ErrorState } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { schedulingQueries, type PreferredSession, type SlotDto } from './api';
-import { addDays, dateRange, dayParts, daysBetween, formatClock, formatDayLong, formatDayShort, isIsoDate, maxDate, minDate, type IsoDate } from './dates';
+import {
+  addDays,
+  dateRange,
+  dayParts,
+  daysBetween,
+  formatClock,
+  formatDayLong,
+  formatDayShort,
+  isIsoDate,
+  maxDate,
+  minDate,
+  type IsoDate,
+} from './dates';
 import {
   firstDayWithFreeSlots,
   groupSlotsByPartOfDay,
@@ -73,7 +91,11 @@ const useStyles = makeStyles({
   },
   dateChipQuiet: { color: tokens.colorNeutralForeground3 },
   dateWeekday: { fontSize: tokens.fontSizeBase200 },
-  dateDay: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500 },
+  dateDay: {
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase500,
+  },
   dateStatus: { fontSize: tokens.fontSizeBase100, whiteSpace: 'nowrap' },
   statusFree: { color: tokens.colorPaletteGreenForeground1 },
   statusLeave: { color: tokens.colorPaletteRedForeground1 },
@@ -112,7 +134,10 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorBrandBackground,
     color: tokens.colorNeutralForegroundOnBrand,
     border: `1px solid ${tokens.colorBrandBackground}`,
-    ':hover': { backgroundColor: tokens.colorBrandBackgroundHover, border: `1px solid ${tokens.colorBrandBackgroundHover}` },
+    ':hover': {
+      backgroundColor: tokens.colorBrandBackgroundHover,
+      border: `1px solid ${tokens.colorBrandBackgroundHover}`,
+    },
   },
   chipFew: { border: `1px solid ${tokens.colorPaletteMarigoldBorder2}` },
   chipOverbook: { border: `1px dashed ${tokens.colorNeutralStroke1}`, color: tokens.colorNeutralForeground3 },
@@ -197,16 +222,31 @@ export function SlotPicker({
   }, [date, windowStart]);
 
   const slotsQuery = useQuery(schedulingQueries.slots({ practitionerId, from: windowStart, to: windowEnd }));
-  const exceptionsQuery = useQuery({ ...schedulingQueries.exceptions({ practitionerId, from: windowStart, to: windowEnd }), retry: false });
+  const exceptionsQuery = useQuery({
+    ...schedulingQueries.exceptions({ practitionerId, from: windowStart, to: windowEnd }),
+    retry: false,
+  });
 
-  const allSlots = useMemo(() => slotsQuery.data?.find((d) => d.practitionerId === practitionerId)?.slots ?? [], [slotsQuery.data, practitionerId]);
+  const allSlots = useMemo(
+    () => slotsQuery.data?.find((d) => d.practitionerId === practitionerId)?.slots ?? [],
+    [slotsQuery.data, practitionerId],
+  );
   const modeSlots = useMemo(() => slotsForMode(allSlots, mode), [allSlots, mode]);
-  const summaries = useMemo(() => summarizeDays(dateRange(windowStart, windowSize), modeSlots), [windowStart, windowSize, modeSlots]);
+  const summaries = useMemo(
+    () => summarizeDays(dateRange(windowStart, windowSize), modeSlots),
+    [windowStart, windowSize, modeSlots],
+  );
   const exceptions = useMemo(() => exceptionsQuery.data ?? [], [exceptionsQuery.data]);
   const daySlots = useMemo(() => modeSlots.filter((slot) => slot.date === date), [modeSlots, date]);
   const groups = useMemo(() => groupSlotsByPartOfDay(daySlots), [daySlots]);
-  const restrictions = useMemo(() => restrictionsOn(date, exceptions, practitionerId), [date, exceptions, practitionerId]);
-  const otherModeHasSlots = useMemo(() => allSlots.some((slot) => slot.date === date) && daySlots.length === 0, [allSlots, daySlots, date]);
+  const restrictions = useMemo(
+    () => restrictionsOn(date, exceptions, practitionerId),
+    [date, exceptions, practitionerId],
+  );
+  const otherModeHasSlots = useMemo(
+    () => allSlots.some((slot) => slot.date === date) && daySlots.length === 0,
+    [allSlots, daySlots, date],
+  );
 
   // A slot chosen elsewhere (calendar) is selected once, as soon as it is known to exist.
   const preselected = useRef<string | null>(null);
@@ -279,14 +319,28 @@ export function SlotPicker({
       </div>
 
       <div className={styles.stripRow}>
-        <Button appearance="subtle" icon={<ChevronLeftRegular />} aria-label="Earlier dates" disabled={!canGoBack} onClick={() => shift(-1)} />
+        <Button
+          appearance="subtle"
+          icon={<ChevronLeftRegular />}
+          aria-label="Earlier dates"
+          disabled={!canGoBack}
+          onClick={() => shift(-1)}
+        />
         <div className={styles.strip} role="group" aria-label="Choose a date" {...stripNavigation}>
           {summaries.map((day) => {
             const parts = dayParts(day.date);
             const selected = day.date === date;
             const dayRestrictions = restrictionsOn(day.date, exceptions, practitionerId);
             const leave = isOnLeaveAllDay(dayRestrictions);
-            const status = slotsQuery.isLoading ? '…' : leave ? 'On leave' : day.total === 0 ? 'No OPD' : day.free === 0 ? 'Full' : `${day.free} free`;
+            const status = slotsQuery.isLoading
+              ? '…'
+              : leave
+                ? 'On leave'
+                : day.total === 0
+                  ? 'No OPD'
+                  : day.free === 0
+                    ? 'Full'
+                    : `${day.free} free`;
             return (
               <button
                 key={day.date}
@@ -294,24 +348,51 @@ export function SlotPicker({
                 ref={selected ? selectedChip : undefined}
                 aria-pressed={selected}
                 aria-label={`${formatDayLong(day.date)}: ${status}`}
-                className={mergeClasses(styles.dateChip, selected && styles.dateChipSelected, !selected && day.free === 0 && styles.dateChipQuiet)}
+                className={mergeClasses(
+                  styles.dateChip,
+                  selected && styles.dateChipSelected,
+                  !selected && day.free === 0 && styles.dateChipQuiet,
+                )}
                 onClick={() => onDateChange(day.date)}
               >
                 <span className={styles.dateWeekday}>{day.date === today ? 'Today' : parts.weekday}</span>
                 <span className={styles.dateDay}>{parts.day}</span>
                 <span className={styles.dateWeekday}>{parts.month}</span>
-                <span className={mergeClasses(styles.dateStatus, selected ? styles.onBrand : leave ? styles.statusLeave : day.free > 0 ? styles.statusFree : undefined)}>{status}</span>
+                <span
+                  className={mergeClasses(
+                    styles.dateStatus,
+                    selected
+                      ? styles.onBrand
+                      : leave
+                        ? styles.statusLeave
+                        : day.free > 0
+                          ? styles.statusFree
+                          : undefined,
+                  )}
+                >
+                  {status}
+                </span>
               </button>
             );
           })}
         </div>
-        <Button appearance="subtle" icon={<ChevronRightRegular />} aria-label="Later dates" disabled={!canGoForward} onClick={() => shift(1)} />
+        <Button
+          appearance="subtle"
+          icon={<ChevronRightRegular />}
+          aria-label="Later dates"
+          disabled={!canGoForward}
+          onClick={() => shift(1)}
+        />
       </div>
 
       {restrictions.length > 0 && <Restrictions restrictions={restrictions} practitionerName={practitionerName} />}
 
       {slotsQuery.error ? (
-        <ErrorState error={slotsQuery.error} onRetry={() => void slotsQuery.refetch()} title="Could not load the slots" />
+        <ErrorState
+          error={slotsQuery.error}
+          onRetry={() => void slotsQuery.refetch()}
+          title="Could not load the slots"
+        />
       ) : slotsQuery.isLoading ? (
         <div className={styles.skeletonChips} aria-busy="true" aria-label="Loading slots">
           {Array.from({ length: 12 }, (_, i) => (
@@ -322,8 +403,20 @@ export function SlotPicker({
         </div>
       ) : groups.length === 0 ? (
         <EmptyState
-          title={isOnLeaveAllDay(restrictions) ? 'The doctor is on leave' : otherModeHasSlots ? (mode === 'Telehealth' ? 'No video slots on this day' : 'Only video slots on this day') : 'No OPD session on this day'}
-          description={nextFree ? `The next day with a free slot is ${formatDayShort(nextFree)}.` : 'Try later dates, or add the patient to the waitlist.'}
+          title={
+            isOnLeaveAllDay(restrictions)
+              ? 'The doctor is on leave'
+              : otherModeHasSlots
+                ? mode === 'Telehealth'
+                  ? 'No video slots on this day'
+                  : 'Only video slots on this day'
+                : 'No OPD session on this day'
+          }
+          description={
+            nextFree
+              ? `The next day with a free slot is ${formatDayShort(nextFree)}.`
+              : 'Try later dates, or add the patient to the waitlist.'
+          }
           action={
             nextFree ? (
               <Button appearance="primary" onClick={() => onDateChange(nextFree)}>
@@ -357,7 +450,15 @@ export function SlotPicker({
                 const full = state === 'full';
                 const disabled = current || (full && !allowOverbook);
                 const label = formatClock(slot.localStart);
-                const note = current ? 'Current time' : full ? (allowOverbook ? 'Full · overbook' : 'Full') : slot.capacity > 1 ? `${slot.available} of ${slot.capacity} left` : null;
+                const note = current
+                  ? 'Current time'
+                  : full
+                    ? allowOverbook
+                      ? 'Full · overbook'
+                      : 'Full'
+                    : slot.capacity > 1
+                      ? `${slot.available} of ${slot.capacity} left`
+                      : null;
                 const chip = (
                   <button
                     key={slot.startsAt}
@@ -378,7 +479,11 @@ export function SlotPicker({
                   </button>
                 );
                 return full && allowOverbook && !current ? (
-                  <Tooltip key={slot.startsAt} content="This slot is full. Choosing it books one extra patient (overbooking)." relationship="description">
+                  <Tooltip
+                    key={slot.startsAt}
+                    content="This slot is full. Choosing it books one extra patient (overbooking)."
+                    relationship="description"
+                  >
                     {chip}
                   </Tooltip>
                 ) : (
@@ -393,7 +498,13 @@ export function SlotPicker({
   );
 }
 
-function Restrictions({ restrictions, practitionerName }: { restrictions: DayRestriction[]; practitionerName?: string }) {
+function Restrictions({
+  restrictions,
+  practitionerName,
+}: {
+  restrictions: DayRestriction[];
+  practitionerName?: string;
+}) {
   const styles = useStyles();
   const who = practitionerName ?? 'The doctor';
   return (

@@ -2,7 +2,19 @@ import { Button, Field, Input, Text } from '@fluentui/react-components';
 import { AddRegular, ClockRegular, WeatherMoonRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, DataTable, FormGrid, NumberField, Page, PageHeader, Section, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FormGrid,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -36,7 +48,10 @@ function ShiftsPage() {
         title="Shifts"
         subtitle="Timings used by the roster and by attendance to judge late arrival, early exit and overtime"
         icon={<ClockRegular />}
-        breadcrumbs={[{ label: 'Duty roster', onClick: () => void navigate({ to: '/hr/roster' }) }, { label: 'Shifts' }]}
+        breadcrumbs={[
+          { label: 'Duty roster', onClick: () => void navigate({ to: '/hr/roster' }) },
+          { label: 'Shifts' },
+        ]}
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
@@ -57,12 +72,41 @@ function ShiftsPage() {
           columns={[
             { key: 'code', header: 'Shift', width: 110, render: (s) => <ShiftChip shift={s} /> },
             { key: 'name', header: 'Name', render: (s) => <Text weight="semibold">{s.name}</Text> },
-            { key: 'time', header: 'Timing', render: (s) => `${formatTimeOfDay(s.startTime)} to ${formatTimeOfDay(s.endTime)}` },
-            { key: 'hours', header: 'Duration', priority: 'low', render: (s) => `${formatMinutes(s.durationMinutes)} (break ${formatMinutes(s.breakMinutes)})` },
+            {
+              key: 'time',
+              header: 'Timing',
+              render: (s) => `${formatTimeOfDay(s.startTime)} to ${formatTimeOfDay(s.endTime)}`,
+            },
+            {
+              key: 'hours',
+              header: 'Duration',
+              priority: 'low',
+              render: (s) => `${formatMinutes(s.durationMinutes)} (break ${formatMinutes(s.breakMinutes)})`,
+            },
             { key: 'grace', header: 'Grace', priority: 'low', render: (s) => formatMinutes(s.graceMinutes) },
-            { key: 'days', header: 'Half / full day', priority: 'low', render: (s) => `${formatMinutes(s.halfDayMinutes)} / ${formatMinutes(s.fullDayMinutes)}` },
-            { key: 'night', header: 'Night', width: 70, render: (s) => (s.isNightShift ? <WeatherMoonRegular aria-label="Night shift" /> : '—') },
-            { key: 'active', header: 'Status', width: 100, render: (s) => <StatusBadge status={s.isActive ? 'Active' : 'Inactive'} tone={s.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'days',
+              header: 'Half / full day',
+              priority: 'low',
+              render: (s) => `${formatMinutes(s.halfDayMinutes)} / ${formatMinutes(s.fullDayMinutes)}`,
+            },
+            {
+              key: 'night',
+              header: 'Night',
+              width: 70,
+              render: (s) => (s.isNightShift ? <WeatherMoonRegular aria-label="Night shift" /> : '—'),
+            },
+            {
+              key: 'active',
+              header: 'Status',
+              width: 100,
+              render: (s) => (
+                <StatusBadge
+                  status={s.isActive ? 'Active' : 'Inactive'}
+                  tone={s.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No shifts yet"
           emptyDescription="Add the hospital's shifts, for example General 09:00 to 17:30 and Night 21:00 to 07:00."
@@ -141,7 +185,13 @@ function ShiftDrawer({ shift, onClose }: { shift: ShiftDto | null; onClose: () =
   });
 
   return (
-    <EditorDrawer open title={shift ? `${shift.code} · ${shift.name}` : 'Add shift'} onClose={onClose} onSubmit={form.handleSubmit((v) => save.mutate(v))} busy={save.isPending}>
+    <EditorDrawer
+      open
+      title={shift ? `${shift.code} · ${shift.name}` : 'Add shift'}
+      onClose={onClose}
+      onSubmit={form.handleSubmit((v) => save.mutate(v))}
+      busy={save.isPending}
+    >
       <FormGrid columns={2} minColumnWidth={150}>
         <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} />
         <ColourField control={form.control} />
@@ -151,10 +201,38 @@ function ShiftDrawer({ shift, onClose }: { shift: ShiftDto | null; onClose: () =
         <TimeField control={form.control} name="startTime" label="Starts" />
         <TimeField control={form.control} name="endTime" label="Ends" />
         <NumberField control={form.control} name="breakMinutes" label="Break (minutes)" required min={0} max={240} />
-        <NumberField control={form.control} name="graceMinutes" label="Grace for late (minutes)" required min={0} max={120} />
-        <NumberField control={form.control} name="halfDayMinutes" label="Half day after (minutes)" min={30} max={1440} hint="Blank: half the shift" />
-        <NumberField control={form.control} name="fullDayMinutes" label="Full day after (minutes)" min={30} max={1440} hint="Blank: shift minus 30 min" />
-        <NumberField control={form.control} name="overtimeThresholdMinutes" label="Overtime after (minutes extra)" required min={0} max={240} />
+        <NumberField
+          control={form.control}
+          name="graceMinutes"
+          label="Grace for late (minutes)"
+          required
+          min={0}
+          max={120}
+        />
+        <NumberField
+          control={form.control}
+          name="halfDayMinutes"
+          label="Half day after (minutes)"
+          min={30}
+          max={1440}
+          hint="Blank: half the shift"
+        />
+        <NumberField
+          control={form.control}
+          name="fullDayMinutes"
+          label="Full day after (minutes)"
+          min={30}
+          max={1440}
+          hint="Blank: shift minus 30 min"
+        />
+        <NumberField
+          control={form.control}
+          name="overtimeThresholdMinutes"
+          label="Overtime after (minutes extra)"
+          required
+          min={0}
+          max={240}
+        />
       </FormGrid>
       <SwitchField control={form.control} name="isNightShift" label="Night shift (ends the next day)" />
       <SwitchField control={form.control} name="isActive" label="In use" />
@@ -162,14 +240,33 @@ function ShiftDrawer({ shift, onClose }: { shift: ShiftDto | null; onClose: () =
   );
 }
 
-function TimeField({ control, name, label }: { control: Control<Values>; name: 'startTime' | 'endTime'; label: string }) {
+function TimeField({
+  control,
+  name,
+  label,
+}: {
+  control: Control<Values>;
+  name: 'startTime' | 'endTime';
+  label: string;
+}) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-          <Input type="time" value={field.value} onChange={(_, d) => field.onChange(d.value)} onBlur={field.onBlur} ref={field.ref} />
+        <Field
+          label={label}
+          required
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
+          <Input
+            type="time"
+            value={field.value}
+            onChange={(_, d) => field.onChange(d.value)}
+            onBlur={field.onBlur}
+            ref={field.ref}
+          />
         </Field>
       )}
     />
@@ -183,9 +280,19 @@ function ColourField({ control }: { control: Control<Values> }) {
       control={control}
       name="color"
       render={({ field, fieldState }) => (
-        <Field label="Colour on the roster" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label="Colour on the roster"
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-            <input type="color" value={field.value} onChange={(e) => field.onChange(e.target.value)} aria-label="Colour" style={{ width: 44, height: 32, border: 'none', background: 'none' }} />
+            <input
+              type="color"
+              value={field.value}
+              onChange={(e) => field.onChange(e.target.value)}
+              aria-label="Colour"
+              style={{ width: 44, height: 32, border: 'none', background: 'none' }}
+            />
             <Text font="monospace">{color}</Text>
           </span>
         </Field>

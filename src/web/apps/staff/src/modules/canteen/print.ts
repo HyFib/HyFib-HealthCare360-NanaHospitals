@@ -1,7 +1,14 @@
 import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
 import { formatPercent } from '@/modules/inventory/format';
 import { gstSummaryByRate, type Letterhead } from '@/modules/pharmacy/print';
-import { CUSTOMER_LABEL, hsnSacLabel, PAYMENT_LABEL, type CanteenSaleDto, type DailySalesSummary, type HsnSacSummary } from './api';
+import {
+  CUSTOMER_LABEL,
+  hsnSacLabel,
+  PAYMENT_LABEL,
+  type CanteenSaleDto,
+  type DailySalesSummary,
+  type HsnSacSummary,
+} from './api';
 import { toPaise, toRupees } from './billCalculator';
 
 const money = (value: number) => escapeHtml(formatInr(value).replace('₹', ''));
@@ -39,15 +46,26 @@ const RECEIPT_STYLES = `
  * has none), the bill number and date, each line's HSN/SAC code and GST rate, the taxable value with CGST and SGST (also
  * by rate) and the total.
  */
-export function buildCanteenReceiptHtml(sale: CanteenSaleDto, letterhead: Letterhead, options: { duplicate?: boolean } = {}): string {
+export function buildCanteenReceiptHtml(
+  sale: CanteenSaleDto,
+  letterhead: Letterhead,
+  options: { duplicate?: boolean } = {},
+): string {
   const rows = sale.lines
     .map((l) => {
-      const details = [`${escapeHtml(l.quantity)} × ${money(l.unitPrice)}`, l.hsnSac ? escapeHtml(hsnSacLabel(l.hsnSac)) : null, `GST ${percent(l.gstRate)}`];
+      const details = [
+        `${escapeHtml(l.quantity)} × ${money(l.unitPrice)}`,
+        l.hsnSac ? escapeHtml(hsnSacLabel(l.hsnSac)) : null,
+        `GST ${percent(l.gstRate)}`,
+      ];
       return `<tr><td>${escapeHtml(l.itemName)}<div class="line">${details.filter(Boolean).join(' · ')}</div></td><td class="right">${money(l.lineTotal)}</td></tr>`;
     })
     .join('');
   const byRate = gstSummaryByRate(sale.lines)
-    .map((g) => `<tr><td>${percent(g.rate)}</td><td>${money(g.taxable)}</td><td>${money(g.cgst)}</td><td>${money(g.sgst)}</td></tr>`)
+    .map(
+      (g) =>
+        `<tr><td>${percent(g.rate)}</td><td>${money(g.taxable)}</td><td>${money(g.cgst)}</td><td>${money(g.sgst)}</td></tr>`,
+    )
     .join('');
   const customer =
     sale.customerType === 'Staff' && sale.employeeCode
@@ -86,13 +104,18 @@ export function buildCanteenReceiptHtml(sale: CanteenSaleDto, letterhead: Letter
   return printDocument(body, { title: `Bill ${sale.billNumber}`, pageSize: 'Receipt80', styles: RECEIPT_STYLES });
 }
 
-export async function printCanteenReceipt(sale: CanteenSaleDto, letterhead: Letterhead, options: { duplicate?: boolean } = {}): Promise<void> {
+export async function printCanteenReceipt(
+  sale: CanteenSaleDto,
+  letterhead: Letterhead,
+  options: { duplicate?: boolean } = {},
+): Promise<void> {
   await printHtml(buildCanteenReceiptHtml(sale, letterhead, options), { pageSize: 'Receipt80', silent: true });
 }
 
 /** HSN/SAC rows with a total line; bills made before codes were recorded show as "Not recorded". */
 function hsnSacTableHtml(rows: readonly HsnSacSummary[]): string {
-  const sum = (pick: (h: HsnSacSummary) => number) => money(toRupees(rows.reduce((total, h) => total + toPaise(pick(h)), 0)));
+  const sum = (pick: (h: HsnSacSummary) => number) =>
+    money(toRupees(rows.reduce((total, h) => total + toPaise(pick(h)), 0)));
   const body = rows
     .map(
       (h) =>
@@ -107,7 +130,12 @@ function hsnSacTableHtml(rows: readonly HsnSacSummary[]): string {
 /** A4 day-end report (CAN-04): totals with the GST split, the HSN/SAC summary for GSTR-1, collections by mode and item-wise consumption. */
 export function buildDailyReportHtml(report: DailySalesSummary, letterhead: Letterhead): string {
   const keyRows = (rows: { key: string; bills: number; amount: number }[], label: (key: string) => string) =>
-    rows.map((r) => `<tr><td>${escapeHtml(label(r.key))}</td><td class="right">${escapeHtml(r.bills)}</td><td class="right">${money(r.amount)}</td></tr>`).join('');
+    rows
+      .map(
+        (r) =>
+          `<tr><td>${escapeHtml(label(r.key))}</td><td class="right">${escapeHtml(r.bills)}</td><td class="right">${money(r.amount)}</td></tr>`,
+      )
+      .join('');
   const items = report.items
     .map(
       (i) =>

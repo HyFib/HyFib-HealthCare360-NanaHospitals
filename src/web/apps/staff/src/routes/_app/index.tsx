@@ -44,7 +44,11 @@ const useStyles = makeStyles({
 });
 
 function greeting(): string {
-  const hour = Number(new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hour12: false, timeZone: HOSPITAL_TIME_ZONE }).format(new Date()));
+  const hour = Number(
+    new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hour12: false, timeZone: HOSPITAL_TIME_ZONE }).format(
+      new Date(),
+    ),
+  );
   return hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 }
 
@@ -54,18 +58,29 @@ function Dashboard() {
   const user = useSession((s) => s.user);
   const modules = useMemo(() => visibleModules(user, moduleManifests), [user]);
 
-  const quickActions = modules.flatMap((m) => m.quickActions ?? []).filter((action) => hasPermission(user, action.permission));
+  const quickActions = modules
+    .flatMap((m) => m.quickActions ?? [])
+    .filter((action) => hasPermission(user, action.permission));
   const widgets = modules
     .flatMap((m) => m.widgets ?? [])
     .filter((widget) => hasPermission(user, widget.permission))
     .sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 
   const firstName = user?.displayName.replace(/^(Dr\.?|Mr\.?|Ms\.?|Mrs\.?)\s+/i, '').split(' ')[0] ?? '';
-  const today = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: HOSPITAL_TIME_ZONE }).format(new Date());
+  const today = new Intl.DateTimeFormat('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: HOSPITAL_TIME_ZONE,
+  }).format(new Date());
 
   return (
     <Page>
-      <PageHeader title={`${greeting()}, ${firstName}`} subtitle={`${today}${user?.facilityName ? ` · ${user.facilityName}` : ''}`} />
+      <PageHeader
+        title={`${greeting()}, ${firstName}`}
+        subtitle={`${today}${user?.facilityName ? ` · ${user.facilityName}` : ''}`}
+      />
 
       {quickActions.length > 0 && (
         <nav aria-label="Quick actions" className={styles.actions}>
@@ -104,7 +119,10 @@ function Dashboard() {
         </div>
       ) : (
         quickActions.length === 0 && (
-          <EmptyState title="Welcome to HealthCare360" description="Use the navigation on the left, or press Ctrl+K to find a patient or a screen." />
+          <EmptyState
+            title="Welcome to HealthCare360"
+            description="Use the navigation on the left, or press Ctrl+K to find a patient or a screen."
+          />
         )
       )}
     </Page>

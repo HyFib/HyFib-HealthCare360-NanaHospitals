@@ -86,7 +86,9 @@ describe('safeRedirect', () => {
 
 describe('visibleModules quick actions', () => {
   it('hides quick actions the user may not open, like links', () => {
-    const [admin] = visibleModules(user(['admin.users.read', 'admin.users.manage']), manifests).filter((m) => m.id === 'admin');
+    const [admin] = visibleModules(user(['admin.users.read', 'admin.users.manage']), manifests).filter(
+      (m) => m.id === 'admin',
+    );
     expect(admin?.quickActions?.map((a) => a.label)).toEqual(['Add user']);
   });
 });

@@ -45,7 +45,9 @@ export function setPrimary(lines: readonly CodingLine[], line: Pick<CodingLine, 
 
 /** Primary first, then diagnoses, then procedures (the order the server stores). */
 export function ordered(lines: readonly CodingLine[]): CodingLine[] {
-  return lines.toSorted((a, b) => Number(b.isPrimary) - Number(a.isPrimary) || (a.kind === b.kind ? 0 : a.kind === 'Diagnosis' ? -1 : 1));
+  return lines.toSorted(
+    (a, b) => Number(b.isPrimary) - Number(a.isPrimary) || (a.kind === b.kind ? 0 : a.kind === 'Diagnosis' ? -1 : 1),
+  );
 }
 
 /** Problems that stop saving, in plain words (empty = ready). */
@@ -61,7 +63,11 @@ export function codingProblems(lines: readonly CodingLine[]): string[] {
   }
   const primaries = diagnoses.filter((l) => l.isPrimary).length;
   if (primaries !== 1) {
-    problems.push(diagnoses.length === 0 ? 'Add the principal diagnosis.' : 'Mark exactly one diagnosis as the principal diagnosis.');
+    problems.push(
+      diagnoses.length === 0
+        ? 'Add the principal diagnosis.'
+        : 'Mark exactly one diagnosis as the principal diagnosis.',
+    );
   }
   if (lines.some((l) => l.kind === 'Procedure' && l.isPrimary)) {
     problems.push('Only a diagnosis can be the principal code.');
@@ -90,7 +96,9 @@ export interface SuggestionLike {
 /** Adds the doctors' coded diagnoses as starting lines (uncoded working diagnoses need a code picked by the coder). */
 export function applySuggestions(lines: readonly CodingLine[], suggestions: readonly SuggestionLike[]): CodingLine[] {
   let next = [...lines];
-  const withCodes = suggestions.filter((s): s is SuggestionLike & { code: string } => Boolean(s.code)).toSorted((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
+  const withCodes = suggestions
+    .filter((s): s is SuggestionLike & { code: string } => Boolean(s.code))
+    .toSorted((a, b) => Number(b.isPrimary) - Number(a.isPrimary));
   for (const suggestion of withCodes) {
     next = addLine(next, { kind: 'Diagnosis', code: suggestion.code, title: suggestion.title });
   }
@@ -98,7 +106,10 @@ export function applySuggestions(lines: readonly CodingLine[], suggestions: read
 }
 
 /** Four-eyes rule: coding is verified by a different coder, and only once it is coded. */
-export function verification(coding: { status: 'Pending' | 'Coded' | 'Verified'; coderUserId: string | null }, userId: string | null | undefined): { allowed: boolean; reason: string | null } {
+export function verification(
+  coding: { status: 'Pending' | 'Coded' | 'Verified'; coderUserId: string | null },
+  userId: string | null | undefined,
+): { allowed: boolean; reason: string | null } {
   if (coding.status === 'Pending') {
     return { allowed: false, reason: 'Save the codes before verifying.' };
   }

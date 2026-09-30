@@ -19,8 +19,21 @@ export const Route = createFileRoute('/_app/quality/report')({
 
 const useStyles = makeStyles({
   intro: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 16px', textAlign: 'center' },
-  number: { fontFamily: tokens.fontFamilyMonospace, fontSize: '34px', lineHeight: '42px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '10px',
+    padding: '24px 16px',
+    textAlign: 'center',
+  },
+  number: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: '34px',
+    lineHeight: '42px',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -73,7 +86,9 @@ function ReportPage() {
               >
                 Copy number
               </Button>
-              {!done.anonymous && <Button onClick={() => void navigate({ to: '/quality/my-reports' })}>My reports</Button>}
+              {!done.anonymous && (
+                <Button onClick={() => void navigate({ to: '/quality/my-reports' })}>My reports</Button>
+              )}
               <Button appearance="primary" onClick={() => setDone(null)}>
                 Report another incident
               </Button>

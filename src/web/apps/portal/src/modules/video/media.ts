@@ -75,7 +75,17 @@ export function currentCapabilities(): BrowserCapabilities {
   };
 }
 
-export type JoinProblem = 'tooEarly' | 'closed' | 'cancelled' | 'missed' | 'linkInvalid' | 'linkExpired' | 'notLinked' | 'signIn' | 'tooMany' | 'other';
+export type JoinProblem =
+  | 'tooEarly'
+  | 'closed'
+  | 'cancelled'
+  | 'missed'
+  | 'linkInvalid'
+  | 'linkExpired'
+  | 'notLinked'
+  | 'signIn'
+  | 'tooMany'
+  | 'other';
 
 /**
  * The hub answers a refused join with a sentence (HubException); this maps the known ones to the patient's language.

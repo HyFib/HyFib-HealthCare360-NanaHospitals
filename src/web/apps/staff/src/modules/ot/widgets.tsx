@@ -11,7 +11,11 @@ import { useFacilityId, useLiveInvalidation } from './shared/hooks';
 const useStyles = makeStyles({
   counts: { display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '10px' },
   count: { display: 'flex', flexDirection: 'column' },
-  number: { fontSize: tokens.fontSizeBase600, lineHeight: tokens.lineHeightBase600, fontWeight: tokens.fontWeightSemibold },
+  number: {
+    fontSize: tokens.fontSizeBase600,
+    lineHeight: tokens.lineHeightBase600,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   urgent: { color: tokens.colorPaletteRedForeground1 },
   list: { display: 'flex', flexDirection: 'column', gap: '4px' },
   row: {
@@ -95,11 +99,18 @@ export function TodaysSurgeriesWidget() {
             )}
           </div>
           {upcoming.length === 0 ? (
-            <Text className={styles.muted}>{cases.length ? 'All of today’s surgeries are complete.' : 'No surgeries are booked for today.'}</Text>
+            <Text className={styles.muted}>
+              {cases.length ? 'All of today’s surgeries are complete.' : 'No surgeries are booked for today.'}
+            </Text>
           ) : (
             <div className={styles.list}>
               {upcoming.map((c) => (
-                <button key={c.id} type="button" className={styles.row} onClick={() => void navigate({ to: '/ot/bookings/$id', params: { id: c.id } })}>
+                <button
+                  key={c.id}
+                  type="button"
+                  className={styles.row}
+                  onClick={() => void navigate({ to: '/ot/bookings/$id', params: { id: c.id } })}
+                >
                   <Text weight="semibold">{formatTime(c.start)}</Text>
                   <span className={styles.truncate}>
                     <Text weight="semibold">{c.patientName}</Text>{' '}
@@ -112,7 +123,12 @@ export function TodaysSurgeriesWidget() {
                     <SurgeryStatusBadge status={c.status} />
                   </span>
                   <span />
-                  <WhoProgress signInDone={c.signInDone} timeOutDone={c.timeOutDone} signOutDone={c.signOutDone} compact />
+                  <WhoProgress
+                    signInDone={c.signInDone}
+                    timeOutDone={c.timeOutDone}
+                    signOutDone={c.signOutDone}
+                    compact
+                  />
                 </button>
               ))}
             </div>

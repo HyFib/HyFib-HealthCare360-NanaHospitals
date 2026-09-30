@@ -15,7 +15,16 @@ import {
 import { CheckmarkCircleRegular, PrintRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSession, type PayerType } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -31,7 +40,16 @@ const schema = z
     practitionerId: z.string().nullable(),
     payerType: z.enum(['Self', 'Insurance', 'Corporate', 'GovernmentScheme', 'Staff', 'Charity']),
     priority: z.enum(['Normal', 'Priority', 'Emergency']),
-    referralSource: z.enum(['Self', 'Doctor', 'Hospital', 'HealthCamp', 'Online', 'Corporate', 'Advertisement', 'Other']),
+    referralSource: z.enum([
+      'Self',
+      'Doctor',
+      'Hospital',
+      'HealthCamp',
+      'Online',
+      'Corporate',
+      'Advertisement',
+      'Other',
+    ]),
     referredBy: z.string().trim().max(200),
     chiefComplaint: z.string().trim().max(500),
     isMlc: z.boolean(),
@@ -50,8 +68,21 @@ const schema = z
 type CheckInValues = z.infer<typeof schema>;
 
 const useStyles = makeStyles({
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '12px 0', textAlign: 'center' },
-  token: { fontSize: '56px', lineHeight: '64px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1, letterSpacing: '2px' },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '12px 0',
+    textAlign: 'center',
+  },
+  token: {
+    fontSize: '56px',
+    lineHeight: '64px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+    letterSpacing: '2px',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -65,7 +96,15 @@ export interface CheckInPatient {
  * Check-in / new OP visit with a queue token (SRS FO-03/04). Defaults suit a walk-in OP patient, so the common
  * case is: choose department → Enter.
  */
-export function CheckInDialog({ patient, open, onClose }: { patient: CheckInPatient; open: boolean; onClose: () => void }) {
+export function CheckInDialog({
+  patient,
+  open,
+  onClose,
+}: {
+  patient: CheckInPatient;
+  open: boolean;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -88,7 +127,10 @@ export function CheckInDialog({ patient, open, onClose }: { patient: CheckInPati
       notifyPatient: true,
     },
   });
-  const [departmentId, isMlc, referralSource] = useWatch({ control: form.control, name: ['departmentId', 'isMlc', 'referralSource'] });
+  const [departmentId, isMlc, referralSource] = useWatch({
+    control: form.control,
+    name: ['departmentId', 'isMlc', 'referralSource'],
+  });
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
 
@@ -229,10 +271,13 @@ export function CheckInDialog({ patient, open, onClose }: { patient: CheckInPati
                     control={form.control}
                     name="payerType"
                     label="Payment by"
-                    options={enumOptions(['Self', 'Insurance', 'Corporate', 'GovernmentScheme', 'Staff', 'Charity'] as const, {
-                      Self: 'Self (cash / card / UPI)',
-                      GovernmentScheme: 'Government scheme',
-                    })}
+                    options={enumOptions(
+                      ['Self', 'Insurance', 'Corporate', 'GovernmentScheme', 'Staff', 'Charity'] as const,
+                      {
+                        Self: 'Self (cash / card / UPI)',
+                        GovernmentScheme: 'Government scheme',
+                      },
+                    )}
                   />
                 </FormGrid>
                 <div style={{ height: 12 }} />
@@ -247,29 +292,58 @@ export function CheckInDialog({ patient, open, onClose }: { patient: CheckInPati
                     { value: 'Emergency', label: 'Emergency' },
                   ]}
                 />
-                <TextAreaField control={form.control} name="chiefComplaint" label="Reason for visit" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="chiefComplaint"
+                  label="Reason for visit"
+                  rows={2}
+                  maxLength={500}
+                />
                 <FormGrid columns={2}>
                   <SelectField
                     control={form.control}
                     name="referralSource"
                     label="Referred by"
-                    options={enumOptions(['Self', 'Doctor', 'Hospital', 'HealthCamp', 'Online', 'Corporate', 'Advertisement', 'Other'] as const, {
-                      Self: 'Self / walk-in',
-                      HealthCamp: 'Health camp',
-                    })}
+                    options={enumOptions(
+                      [
+                        'Self',
+                        'Doctor',
+                        'Hospital',
+                        'HealthCamp',
+                        'Online',
+                        'Corporate',
+                        'Advertisement',
+                        'Other',
+                      ] as const,
+                      {
+                        Self: 'Self / walk-in',
+                        HealthCamp: 'Health camp',
+                      },
+                    )}
                   />
-                  {referralSource !== 'Self' && <TextField control={form.control} name="referredBy" label="Referrer name" />}
+                  {referralSource !== 'Self' && (
+                    <TextField control={form.control} name="referredBy" label="Referrer name" />
+                  )}
                 </FormGrid>
                 <div style={{ height: 8 }} />
                 <SwitchField control={form.control} name="isMlc" label="Medico-legal case (MLC)" />
                 {isMlc && <TextField control={form.control} name="mlcNumber" label="MLC number" required />}
-                <SwitchField control={form.control} name="notifyPatient" label="Send the token number to the patient by SMS/WhatsApp" />
+                <SwitchField
+                  control={form.control}
+                  name="notifyPatient"
+                  label="Send the token number to the patient by SMS/WhatsApp"
+                />
               </DialogContent>
               <DialogActions>
                 <Button onClick={close} disabled={create.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" appearance="primary" disabled={create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={create.isPending}
+                  icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+                >
                   Check in and issue token
                 </Button>
               </DialogActions>

@@ -1,4 +1,17 @@
-import { Button, Caption1, Field, Input, MessageBar, MessageBarBody, Select, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  MessageBar,
+  MessageBarBody,
+  Select,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { ArrowDownloadRegular, DismissRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { formatDateTime, todayIso } from '@hc360/core';
 import { ConfirmDialog, DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
@@ -13,7 +26,13 @@ import { CATALOG_READERS } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { ExpiryText, ScheduleBadge } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { pharmacyApi, pharmacyQueries, type ControlledRegisterRow, type RegisterFilters, type ScheduleHRegisterRow } from '@/modules/pharmacy/api';
+import {
+  pharmacyApi,
+  pharmacyQueries,
+  type ControlledRegisterRow,
+  type RegisterFilters,
+  type ScheduleHRegisterRow,
+} from '@/modules/pharmacy/api';
 
 type RegisterTab = 'controlled' | 'schedule-h';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,10 +70,18 @@ function RegistersPage() {
   const today = todayIso();
   const from = search.from ?? `${today.slice(0, 8)}01`;
   const to = search.to ?? today;
-  const filters: RegisterFilters = { storeId: search.storeId, itemId: search.itemId, schedule: search.schedule, from, to, page: search.page };
+  const filters: RegisterFilters = {
+    storeId: search.storeId,
+    itemId: search.itemId,
+    schedule: search.schedule,
+    from,
+    to,
+    page: search.page,
+  };
   const controlled = useQuery({ ...pharmacyQueries.controlledRegister(filters), enabled: tab === 'controlled' });
   const scheduleH = useQuery({ ...pharmacyQueries.scheduleHRegister(filters), enabled: tab === 'schedule-h' });
-  const set = (patch: Partial<RegisterSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<RegisterSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const rangeDays = daysBetween(from, to);
   const tooLong = rangeDays > MAX_EXPORT_DAYS;
 
@@ -84,8 +111,16 @@ function RegistersPage() {
         title="Drug registers"
         subtitle="Statutory records kept automatically from every sale, issue, receipt and adjustment. Read-only."
         actions={
-          <Tooltip content={tooLong ? 'Download at most one year at a time' : 'CSV for inspections (opens in Excel)'} relationship="description">
-            <Button appearance="primary" icon={<ArrowDownloadRegular />} disabled={tooLong || exportCsv.isPending} onClick={() => setConfirmExport(true)}>
+          <Tooltip
+            content={tooLong ? 'Download at most one year at a time' : 'CSV for inspections (opens in Excel)'}
+            relationship="description"
+          >
+            <Button
+              appearance="primary"
+              icon={<ArrowDownloadRegular />}
+              disabled={tooLong || exportCsv.isPending}
+              onClick={() => setConfirmExport(true)}
+            >
               Download CSV
             </Button>
           </Tooltip>
@@ -93,7 +128,10 @@ function RegistersPage() {
       />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => set({ tab: d.value === 'schedule-h' ? 'schedule-h' : undefined })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) => set({ tab: d.value === 'schedule-h' ? 'schedule-h' : undefined })}
+          >
             <Tab value="controlled" icon={<ShieldKeyholeRegular />}>
               Controlled drugs (H1, X, NDPS)
             </Tab>
@@ -106,15 +144,31 @@ function RegistersPage() {
               <Input type="date" value={from} max={to} onChange={(_, d) => set({ from: d.value || undefined })} />
             </Field>
             <Field label="To">
-              <Input type="date" value={to} min={from} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={to}
+                min={from}
+                max={today}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             {working.stores.length > 0 && (
-              <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(storeId) => set({ storeId: storeId ?? undefined })} allowAll allLabel="All pharmacies" label="Pharmacy" />
+              <StorePicker
+                stores={working.stores}
+                value={search.storeId ?? null}
+                onChange={(storeId) => set({ storeId: storeId ?? undefined })}
+                allowAll
+                allLabel="All pharmacies"
+                label="Pharmacy"
+              />
             )}
             {tab === 'controlled' && (
               <>
                 <Field label="Schedule">
-                  <Select value={search.schedule ?? ''} onChange={(_, d) => set({ schedule: (d.value || undefined) as DrugSchedule | undefined })}>
+                  <Select
+                    value={search.schedule ?? ''}
+                    onChange={(_, d) => set({ schedule: (d.value || undefined) as DrugSchedule | undefined })}
+                  >
                     <option value="">All controlled</option>
                     <option value="H1">Schedule H1</option>
                     <option value="X">Schedule X</option>
@@ -122,12 +176,21 @@ function RegistersPage() {
                 </Field>
                 {canPickItem && !search.itemId && (
                   <div style={{ minWidth: 260 }}>
-                    <ItemPicker label="Drug" placeholder="All drugs, or search one" showStock={false} onPick={(item) => set({ itemId: item.id, itemName: item.name })} />
+                    <ItemPicker
+                      label="Drug"
+                      placeholder="All drugs, or search one"
+                      showStock={false}
+                      onPick={(item) => set({ itemId: item.id, itemName: item.name })}
+                    />
                   </div>
                 )}
                 {search.itemId && (
                   <Field label="Drug">
-                    <Button icon={<DismissRegular />} iconPosition="after" onClick={() => set({ itemId: undefined, itemName: undefined })}>
+                    <Button
+                      icon={<DismissRegular />}
+                      iconPosition="after"
+                      onClick={() => set({ itemId: undefined, itemName: undefined })}
+                    >
                       {search.itemName ?? 'Selected drug'}
                     </Button>
                   </Field>
@@ -157,17 +220,33 @@ function RegistersPage() {
                 header: 'Drug',
                 render: (r) => (
                   <span>
-                    <Text weight="semibold">{r.itemName}</Text> <ScheduleBadge schedule={r.schedule} isControlled={r.isControlled} />
+                    <Text weight="semibold">{r.itemName}</Text>{' '}
+                    <ScheduleBadge schedule={r.schedule} isControlled={r.isControlled} />
                     <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
                       {r.batchNumber} · <ExpiryText date={r.expiryDate} />
                     </Caption1>
                   </span>
                 ),
               },
-              { key: 'movement', header: 'Movement', priority: 'low', render: (r) => movementLabel[r.movementType] ?? r.movementType },
+              {
+                key: 'movement',
+                header: 'Movement',
+                priority: 'low',
+                render: (r) => movementLabel[r.movementType] ?? r.movementType,
+              },
               { key: 'in', header: 'In', align: 'end', render: (r) => (r.quantityIn ? formatQty(r.quantityIn) : '') },
-              { key: 'out', header: 'Out', align: 'end', render: (r) => (r.quantityOut ? formatQty(r.quantityOut) : '') },
-              { key: 'balance', header: 'Balance', align: 'end', render: (r) => <Text weight="semibold">{formatQty(r.balanceAfter)}</Text> },
+              {
+                key: 'out',
+                header: 'Out',
+                align: 'end',
+                render: (r) => (r.quantityOut ? formatQty(r.quantityOut) : ''),
+              },
+              {
+                key: 'balance',
+                header: 'Balance',
+                align: 'end',
+                render: (r) => <Text weight="semibold">{formatQty(r.balanceAfter)}</Text>,
+              },
               {
                 key: 'patient',
                 header: 'Patient',
@@ -191,7 +270,9 @@ function RegistersPage() {
                   r.prescriberName ? (
                     <span>
                       {r.prescriberName}
-                      {r.prescriberRegistrationNumber && <Caption1 block>Reg. {r.prescriberRegistrationNumber}</Caption1>}
+                      {r.prescriberRegistrationNumber && (
+                        <Caption1 block>Reg. {r.prescriberRegistrationNumber}</Caption1>
+                      )}
                     </span>
                   ) : (
                     '—'
@@ -242,7 +323,12 @@ function RegistersPage() {
               { key: 'prescriber', header: 'Prescriber', priority: 'low', render: (r) => r.prescriberName ?? '—' },
               { key: 'rx', header: 'Prescription', priority: 'low', render: (r) => r.prescriptionNumber ?? '—' },
               { key: 'drug', header: 'Drug', render: (r) => <Text weight="semibold">{r.itemName}</Text> },
-              { key: 'batch', header: 'Batch', priority: 'low', render: (r) => <Text font="monospace">{r.batchNumber}</Text> },
+              {
+                key: 'batch',
+                header: 'Batch',
+                priority: 'low',
+                render: (r) => <Text font="monospace">{r.batchNumber}</Text>,
+              },
               { key: 'qty', header: 'Qty', align: 'end', render: (r) => formatQty(r.quantity) },
             ]}
             emptyTitle="No Schedule H supplies in this period"
@@ -262,8 +348,8 @@ function RegistersPage() {
         onConfirm={() => exportCsv.mutate()}
         onCancel={() => setConfirmExport(false)}
       >
-        The file contains patient names, UHIDs and addresses. The download is recorded in the audit log with your name. Keep it on a secure computer and delete it
-        once the inspection is over.
+        The file contains patient names, UHIDs and addresses. The download is recorded in the audit log with your name.
+        Keep it on a secure computer and delete it once the inspection is over.
       </ConfirmDialog>
     </Page>
   );

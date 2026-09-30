@@ -75,7 +75,10 @@ function SystemHealthPage() {
         subtitle={`${h.server.machineName} · checked ${formatRelative(h.generatedAt)}`}
         actions={
           <>
-            <Button icon={<ArrowDownloadRegular />} onClick={() => window.open('/api/v1/system/ca-certificate', '_blank')}>
+            <Button
+              icon={<ArrowDownloadRegular />}
+              onClick={() => window.open('/api/v1/system/ca-certificate', '_blank')}
+            >
               Hospital CA certificate
             </Button>
             <Button icon={<ArrowClockwiseRegular />} onClick={() => void health.refetch()} disabled={health.isFetching}>
@@ -88,7 +91,11 @@ function SystemHealthPage() {
       {h.warnings.length > 0 && (
         <div className={styles.warnings}>
           {h.warnings.map((w) => (
-            <MessageBar key={w.code} intent={w.severity === 'critical' ? 'error' : w.severity === 'warning' ? 'warning' : 'info'} layout="multiline">
+            <MessageBar
+              key={w.code}
+              intent={w.severity === 'critical' ? 'error' : w.severity === 'warning' ? 'warning' : 'info'}
+              layout="multiline"
+            >
               <MessageBarBody>
                 <MessageBarTitle>{humanize(w.code.replace(/[._]/g, ' '))}</MessageBarTitle>
                 {w.message}
@@ -112,7 +119,9 @@ function SystemHealthPage() {
         {samples.data && samples.data.length > 0 ? (
           <WifiChart samples={samples.data} />
         ) : (
-          <Caption1 className={styles.label}>{samples.isLoading ? 'Loading…' : 'No WiFi samples yet (wired connection, or monitoring just started).'}</Caption1>
+          <Caption1 className={styles.label}>
+            {samples.isLoading ? 'Loading…' : 'No WiFi samples yet (wired connection, or monitoring just started).'}
+          </Caption1>
         )}
       </Section>
 
@@ -134,7 +143,16 @@ function SystemHealthPage() {
             <Row label="Data folder">
               <span className={styles.mono}>{h.storage.dataDirectory}</span>
             </Row>
-            <Row label="Free space" tone={h.storage.freeBytes !== null && h.storage.totalBytes !== null && h.storage.freeBytes / h.storage.totalBytes < 0.1 ? 'bad' : undefined}>
+            <Row
+              label="Free space"
+              tone={
+                h.storage.freeBytes !== null &&
+                h.storage.totalBytes !== null &&
+                h.storage.freeBytes / h.storage.totalBytes < 0.1
+                  ? 'bad'
+                  : undefined
+              }
+            >
               {formatBytes(h.storage.freeBytes)} of {formatBytes(h.storage.totalBytes)}
             </Row>
           </div>
@@ -145,7 +163,9 @@ function SystemHealthPage() {
               {h.backup.enabled ? 'On' : 'Off'}
             </Row>
             <Row label="Last success" tone={h.backup.lastSuccessAt ? undefined : 'warn'}>
-              {h.backup.lastSuccessAt ? `${formatDateTime(h.backup.lastSuccessAt)} (${formatBytes(h.backup.lastSizeBytes)})` : 'Never'}
+              {h.backup.lastSuccessAt
+                ? `${formatDateTime(h.backup.lastSuccessAt)} (${formatBytes(h.backup.lastSizeBytes)})`
+                : 'Never'}
             </Row>
             {h.backup.lastFailureAt && (
               <Row label="Last failure" tone="bad">
@@ -171,7 +191,9 @@ function SystemHealthPage() {
             <Row label="CA fingerprint">
               <span className={styles.mono}>{h.certificate.caFingerprint}</span>
             </Row>
-            <Row label="Server certificate expires">{h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}</Row>
+            <Row label="Server certificate expires">
+              {h.certificate.serverExpiresAt ? formatDateTime(h.certificate.serverExpiresAt) : '—'}
+            </Row>
             <Row label="Valid for">{h.certificate.subjectAlternativeNames.join(', ')}</Row>
           </div>
         </Section>
@@ -197,7 +219,11 @@ function SystemHealthPage() {
             <Row label="Mode">
               {humanize(h.server.environment)} · {h.server.role}
             </Row>
-            <Row label="Running for">{h.server.uptimeHours < 48 ? `${Math.round(h.server.uptimeHours)} hours` : `${Math.round(h.server.uptimeHours / 24)} days`}</Row>
+            <Row label="Running for">
+              {h.server.uptimeHours < 48
+                ? `${Math.round(h.server.uptimeHours)} hours`
+                : `${Math.round(h.server.uptimeHours / 24)} days`}
+            </Row>
             <Row label="Memory used">{formatBytes(h.server.workingSetBytes)}</Row>
             <Row label="Processors">{h.server.processorCount}</Row>
           </div>
@@ -210,7 +236,13 @@ function SystemHealthPage() {
 function NetworkCard({ h }: { h: SystemHealthReport }) {
   const styles = useStyles();
   const wifi = h.network.wifi;
-  const signalTone = wifi?.detailsAvailable ? (wifi.signalQuality < 40 ? 'bad' : wifi.signalQuality < 60 ? 'warn' : 'ok') : undefined;
+  const signalTone = wifi?.detailsAvailable
+    ? wifi.signalQuality < 40
+      ? 'bad'
+      : wifi.signalQuality < 60
+        ? 'warn'
+        : 'ok'
+    : undefined;
   return (
     <Section title="Network">
       <div className={styles.rows}>
@@ -243,7 +275,9 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
           <span className={styles.mono}>{h.network.ipAddresses.join(', ')}</span>
         </Row>
         <Row label="Port">{h.network.httpsPort}</Row>
-        <Row label="Auto-discovery">{h.network.mdnsEnabled ? 'On (HC360 Desktop finds the server by itself)' : 'Off'}</Row>
+        <Row label="Auto-discovery">
+          {h.network.mdnsEnabled ? 'On (HC360 Desktop finds the server by itself)' : 'Off'}
+        </Row>
         {h.network.lastDisconnectAt && <Row label="Last drop">{formatDateTime(h.network.lastDisconnectAt)}</Row>}
       </div>
       {h.network.recentEvents.length > 0 && (
@@ -274,7 +308,12 @@ function WifiChart({ samples }: { samples: WifiSample[] }) {
           smooth: true,
           areaStyle: { opacity: 0.15 },
           data: samples.map((s) => [s.at, s.connected ? s.signalQuality : 0]),
-          markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed' }, data: [{ yAxis: 40, name: 'Weak' }] },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { type: 'dashed' },
+            data: [{ yAxis: 40, name: 'Weak' }],
+          },
         },
       ],
     }),

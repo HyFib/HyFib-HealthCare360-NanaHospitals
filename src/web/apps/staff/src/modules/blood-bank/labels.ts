@@ -32,7 +32,13 @@ export const componentLabel: Record<BloodComponentType, string> = {
 };
 
 /** Short names for grids and labels. */
-export const componentShort: Record<BloodComponentType, string> = { WholeBlood: 'WB', PRBC: 'PRBC', FFP: 'FFP', PlateletConcentrate: 'PLT', Cryoprecipitate: 'CRYO' };
+export const componentShort: Record<BloodComponentType, string> = {
+  WholeBlood: 'WB',
+  PRBC: 'PRBC',
+  FFP: 'FFP',
+  PlateletConcentrate: 'PLT',
+  Cryoprecipitate: 'CRYO',
+};
 
 /** Storage condition printed on unit labels. */
 export const storageCondition: Record<BloodComponentType, string> = {
@@ -61,7 +67,11 @@ export const unitStatusTone: Record<BloodUnitStatus, StatusTone> = {
   Expired: 'danger',
 };
 
-export const ttiResultLabel: Record<TtiResult, string> = { Pending: 'Pending', NonReactive: 'Non-reactive', Reactive: 'REACTIVE' };
+export const ttiResultLabel: Record<TtiResult, string> = {
+  Pending: 'Pending',
+  NonReactive: 'Non-reactive',
+  Reactive: 'REACTIVE',
+};
 
 export const ttiMarkers: readonly { key: keyof TtiPanel; label: string }[] = [
   { key: 'hiv', label: 'HIV 1 & 2' },
@@ -71,11 +81,23 @@ export const ttiMarkers: readonly { key: keyof TtiPanel; label: string }[] = [
   { key: 'malaria', label: 'Malaria' },
 ];
 
-export const donationTypeLabel: Record<DonationType, string> = { Voluntary: 'Voluntary', Replacement: 'Replacement (for a patient)' };
+export const donationTypeLabel: Record<DonationType, string> = {
+  Voluntary: 'Voluntary',
+  Replacement: 'Replacement (for a patient)',
+};
 
-export const bagTypeLabel: Record<BloodBagType, string> = { Single: 'Single', Double: 'Double', Triple: 'Triple', Quadruple: 'Quadruple' };
+export const bagTypeLabel: Record<BloodBagType, string> = {
+  Single: 'Single',
+  Double: 'Double',
+  Triple: 'Triple',
+  Quadruple: 'Quadruple',
+};
 
-export const donationStatusLabel: Record<DonationStatus, string> = { Collected: 'Collected — to separate', Separated: 'Separated', Discarded: 'Discarded' };
+export const donationStatusLabel: Record<DonationStatus, string> = {
+  Collected: 'Collected — to separate',
+  Separated: 'Separated',
+  Discarded: 'Discarded',
+};
 
 export const outcomeLabel: Record<DonorEligibilityOutcome, string> = {
   Eligible: 'Eligible to donate',
@@ -83,11 +105,23 @@ export const outcomeLabel: Record<DonorEligibilityOutcome, string> = {
   PermanentlyDeferred: 'Permanently deferred',
 };
 
-export const outcomeTone: Record<DonorEligibilityOutcome, StatusTone> = { Eligible: 'success', TemporarilyDeferred: 'warning', PermanentlyDeferred: 'danger' };
+export const outcomeTone: Record<DonorEligibilityOutcome, StatusTone> = {
+  Eligible: 'success',
+  TemporarilyDeferred: 'warning',
+  PermanentlyDeferred: 'danger',
+};
 
-export const urgencyLabel: Record<BloodRequestUrgency, string> = { Routine: 'Routine', Urgent: 'Urgent', Emergency: 'Emergency' };
+export const urgencyLabel: Record<BloodRequestUrgency, string> = {
+  Routine: 'Routine',
+  Urgent: 'Urgent',
+  Emergency: 'Emergency',
+};
 
-export const urgencyTone: Record<BloodRequestUrgency, StatusTone> = { Routine: 'subtle', Urgent: 'warning', Emergency: 'danger' };
+export const urgencyTone: Record<BloodRequestUrgency, StatusTone> = {
+  Routine: 'subtle',
+  Urgent: 'warning',
+  Emergency: 'danger',
+};
 
 export const requestStatusLabel: Record<BloodRequestStatus, string> = {
   Pending: 'Waiting for sample',
@@ -148,10 +182,30 @@ export const reactionTypeLabel: Record<ReactionType, string> = {
   Other: 'Other',
 };
 
-export const severityLabel: Record<ReactionSeverity, string> = { Mild: 'Mild', Moderate: 'Moderate', Severe: 'Severe', LifeThreatening: 'Life-threatening', Death: 'Death' };
+export const severityLabel: Record<ReactionSeverity, string> = {
+  Mild: 'Mild',
+  Moderate: 'Moderate',
+  Severe: 'Severe',
+  LifeThreatening: 'Life-threatening',
+  Death: 'Death',
+};
 
-export const severityTone: Record<ReactionSeverity, StatusTone> = { Mild: 'informative', Moderate: 'warning', Severe: 'danger', LifeThreatening: 'danger', Death: 'danger' };
+export const severityTone: Record<ReactionSeverity, StatusTone> = {
+  Mild: 'informative',
+  Moderate: 'warning',
+  Severe: 'danger',
+  LifeThreatening: 'danger',
+  Death: 'danger',
+};
 
-export const reactionStatusLabel: Record<ReactionStatus, string> = { Reported: 'Reported', UnderInvestigation: 'Under investigation', Closed: 'Closed' };
+export const reactionStatusLabel: Record<ReactionStatus, string> = {
+  Reported: 'Reported',
+  UnderInvestigation: 'Under investigation',
+  Closed: 'Closed',
+};
 
-export const reactionStatusTone: Record<ReactionStatus, StatusTone> = { Reported: 'warning', UnderInvestigation: 'brand', Closed: 'success' };
+export const reactionStatusTone: Record<ReactionStatus, StatusTone> = {
+  Reported: 'warning',
+  UnderInvestigation: 'brand',
+  Closed: 'success',
+};

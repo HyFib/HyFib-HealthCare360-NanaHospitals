@@ -11,14 +11,41 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DismissCircleRegular, FireRegular, PlayRegular, PrintRegular, TimerRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  FireRegular,
+  PlayRegular,
+  PrintRegular,
+  TimerRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, isApiError, todayIso } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { cssdApi, cssdKeys, cssdQueries, ISSUE_STATUS_LABEL, LOAD_STATUS_LABEL, loadStatusTone, PACK_STATUS_LABEL, type LoadDto } from '@/modules/cssd/api';
+import {
+  cssdApi,
+  cssdKeys,
+  cssdQueries,
+  ISSUE_STATUS_LABEL,
+  LOAD_STATUS_LABEL,
+  loadStatusTone,
+  PACK_STATUS_LABEL,
+  type LoadDto,
+} from '@/modules/cssd/api';
 import { IndicatorBadge } from '@/modules/cssd/IndicatorBadge';
 import { BiologicalIndicatorDialog, CompleteLoadDialog } from '@/modules/cssd/LoadDialogs';
 import { printPackLabels } from '@/modules/cssd/print';
@@ -37,7 +64,12 @@ const useStyles = makeStyles({
   item: { display: 'flex', flexDirection: 'column', gap: '2px' },
   label: { color: tokens.colorNeutralForeground3 },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
-  kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', marginBottom: '12px' },
+  kpis: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+    marginBottom: '12px',
+  },
 });
 
 function Item({ label, children }: { label: string; children: ReactNode }) {
@@ -77,7 +109,10 @@ function LoadPage() {
   const release = useMutation({
     mutationFn: () => cssdApi.releaseLoad(loadId),
     onSuccess: (l) => {
-      notify.success(`Load ${l.cycleNumber} released`, `${l.packs.length} packs are on the shelf. Reprint labels to show the use-by date.`);
+      notify.success(
+        `Load ${l.cycleNumber} released`,
+        `${l.packs.length} packs are on the shelf. Reprint labels to show the use-by date.`,
+      );
       setAction(null);
       refresh();
     },
@@ -97,14 +132,19 @@ function LoadPage() {
   if (load.error || !load.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={load.error} onRetry={() => void load.refetch()} title="Could not load this sterilizer load" />
+        <ErrorState
+          error={load.error}
+          onRetry={() => void load.refetch()}
+          title="Could not load this sterilizer load"
+        />
       </Page>
     );
   }
 
   const l = load.data;
   const recallRequired = l.status === 'Failed' && l.releasedAt !== null;
-  const canBi = canRelease && (l.status === 'Completed' || l.status === 'Released') && l.biologicalIndicator === 'Pending';
+  const canBi =
+    canRelease && (l.status === 'Completed' || l.status === 'Released') && l.biologicalIndicator === 'Pending';
   const releaseBlocked = l.status === 'Completed' && l.containsImplants && l.biologicalIndicator !== 'Pass';
 
   const print = () => printPackLabels(l).catch((error: unknown) => notify.error(error, 'Printing failed'));
@@ -115,14 +155,22 @@ function LoadPage() {
         title={`Load ${l.cycleNumber}`}
         icon={<FireRegular />}
         subtitle={`${l.sterilizerName} · ${METHOD_LABEL[l.method]}${l.program ? ` · ${l.program}` : ''} · ${l.packs.length} packs`}
-        breadcrumbs={[{ label: 'Sterilizer loads', onClick: () => void navigate({ to: '/cssd/loads' }) }, { label: l.cycleNumber }]}
+        breadcrumbs={[
+          { label: 'Sterilizer loads', onClick: () => void navigate({ to: '/cssd/loads' }) },
+          { label: l.cycleNumber },
+        ]}
         actions={
           <div className={styles.actions}>
             <Button icon={<PrintRegular />} onClick={() => void print()}>
               Print pack labels
             </Button>
             {canProcess && l.status === 'Loaded' && (
-              <Button appearance="primary" icon={<PlayRegular />} disabled={start.isPending} onClick={() => start.mutate()}>
+              <Button
+                appearance="primary"
+                icon={<PlayRegular />}
+                disabled={start.isPending}
+                onClick={() => start.mutate()}
+              >
                 Start cycle
               </Button>
             )}
@@ -132,7 +180,12 @@ function LoadPage() {
               </Button>
             )}
             {canRelease && l.status === 'Completed' && (
-              <Button appearance="primary" icon={<CheckmarkCircleRegular />} disabled={releaseBlocked} onClick={() => setAction('release')}>
+              <Button
+                appearance="primary"
+                icon={<CheckmarkCircleRegular />}
+                disabled={releaseBlocked}
+                onClick={() => setAction('release')}
+              >
                 Release packs
               </Button>
             )}
@@ -154,7 +207,8 @@ function LoadPage() {
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Recall: this load failed after release</MessageBarTitle>
-            {l.failureReason} Every issue of this load has been flagged. See the recall report for departments and patients.
+            {l.failureReason} Every issue of this load has been flagged. See the recall report for departments and
+            patients.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -168,7 +222,9 @@ function LoadPage() {
       )}
       {releaseBlocked && (
         <MessageBar intent="warning">
-          <MessageBarBody>This load contains implants: release it after the biological indicator passes.</MessageBarBody>
+          <MessageBarBody>
+            This load contains implants: release it after the biological indicator passes.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -189,8 +245,14 @@ function LoadPage() {
               <IndicatorBadge result={l.biologicalIndicator} label="Biological" />
             </span>
           </Item>
-          {l.biologicalReadAt && <Item label="Biological read">{`${formatDateTime(l.biologicalReadAt)}${l.biologicalIndicatorLot ? ` · lot ${l.biologicalIndicatorLot}` : ''}`}</Item>}
-          <Item label="Released">{l.releasedAt ? `${formatDateTime(l.releasedAt)}${l.releasedByName ? ` by ${l.releasedByName}` : ''}` : null}</Item>
+          {l.biologicalReadAt && (
+            <Item label="Biological read">{`${formatDateTime(l.biologicalReadAt)}${l.biologicalIndicatorLot ? ` · lot ${l.biologicalIndicatorLot}` : ''}`}</Item>
+          )}
+          <Item label="Released">
+            {l.releasedAt
+              ? `${formatDateTime(l.releasedAt)}${l.releasedByName ? ` by ${l.releasedByName}` : ''}`
+              : null}
+          </Item>
           <Item label="Implants">{l.containsImplants ? 'Yes (quarantine until biological pass)' : 'No'}</Item>
           {l.notes && <Item label="Notes">{l.notes}</Item>}
         </div>
@@ -198,7 +260,12 @@ function LoadPage() {
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'recall' ? 'recall' : undefined }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'recall' ? 'recall' : undefined }, replace: true })
+            }
+          >
             <Tab value="packs">Packs ({l.packs.length})</Tab>
             <Tab value="recall">Where the packs went</Tab>
           </TabList>
@@ -219,10 +286,13 @@ function LoadPage() {
           release.reset();
         }}
       >
-        The {l.packs.length} packs go on the shelf, dated today plus each set's shelf life. The chemical indicator passed and the parameters are within range.
+        The {l.packs.length} packs go on the shelf, dated today plus each set's shelf life. The chemical indicator
+        passed and the parameters are within range.
         {release.error && (
           <MessageBar intent="error" style={{ marginTop: 12 }}>
-            <MessageBarBody>{isApiError(release.error) ? release.error.userMessage : 'The load could not be released.'}</MessageBarBody>
+            <MessageBarBody>
+              {isApiError(release.error) ? release.error.userMessage : 'The load could not be released.'}
+            </MessageBarBody>
           </MessageBar>
         )}
       </ConfirmDialog>
@@ -281,7 +351,24 @@ function Packs({ load }: { load: LoadDto }) {
             );
           },
         },
-        { key: 'status', header: 'Status', width: 140, render: (p) => <StatusBadge status={p.status} label={PACK_STATUS_LABEL[p.status]} tone={p.status === 'Available' ? 'success' : p.status === 'Recalled' || p.status === 'Reprocess' ? 'danger' : undefined} /> },
+        {
+          key: 'status',
+          header: 'Status',
+          width: 140,
+          render: (p) => (
+            <StatusBadge
+              status={p.status}
+              label={PACK_STATUS_LABEL[p.status]}
+              tone={
+                p.status === 'Available'
+                  ? 'success'
+                  : p.status === 'Recalled' || p.status === 'Reprocess'
+                    ? 'danger'
+                    : undefined
+              }
+            />
+          ),
+        },
       ]}
       emptyTitle="No packs in this load"
     />
@@ -301,7 +388,11 @@ function RecallTab({ loadId }: { loadId: string }) {
       {r && (
         <div className={styles.kpis}>
           <KpiCard label="Issues of this load" value={r.issues.length} />
-          <KpiCard label="Flagged for recall" value={r.issuesFlagged} hint={r.recallRequired ? 'Recall in progress' : 'No recall needed'} />
+          <KpiCard
+            label="Flagged for recall"
+            value={r.issuesFlagged}
+            hint={r.recallRequired ? 'Recall in progress' : 'No recall needed'}
+          />
           <KpiCard label="Acknowledged" value={`${r.issuesAcknowledged}/${r.issuesFlagged}`} />
           <KpiCard label="Patients exposed" value={r.patientsExposed} hint="For infection-control review" />
           <KpiCard label="Shelf packs withdrawn" value={r.packsOnShelfRecalled} />
@@ -314,21 +405,39 @@ function RecallTab({ loadId }: { loadId: string }) {
         getRowId={(i) => i.issueId}
         size="small"
         columns={[
-          { key: 'pack', header: 'Pack', width: 190, render: (i) => <Text font="monospace">{i.packNumber ?? '—'}</Text> },
-          { key: 'dept', header: 'Department', render: (i) => `${i.departmentName ?? '—'} · ${formatDateTime(i.issuedAt)}` },
+          {
+            key: 'pack',
+            header: 'Pack',
+            width: 190,
+            render: (i) => <Text font="monospace">{i.packNumber ?? '—'}</Text>,
+          },
+          {
+            key: 'dept',
+            header: 'Department',
+            render: (i) => `${i.departmentName ?? '—'} · ${formatDateTime(i.issuedAt)}`,
+          },
           {
             key: 'patient',
             header: 'Used on',
             render: (i) =>
               i.patientId ? (
-                <Button size="small" appearance="transparent" onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: i.patientId! } })}>
+                <Button
+                  size="small"
+                  appearance="transparent"
+                  onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: i.patientId! } })}
+                >
                   {i.patientName ?? 'Patient'} ({i.patientUhid ?? ''})
                 </Button>
               ) : (
                 '—'
               ),
           },
-          { key: 'status', header: 'Status', width: 130, render: (i) => <StatusBadge status={i.status} label={ISSUE_STATUS_LABEL[i.status]} /> },
+          {
+            key: 'status',
+            header: 'Status',
+            width: 130,
+            render: (i) => <StatusBadge status={i.status} label={ISSUE_STATUS_LABEL[i.status]} />,
+          },
           {
             key: 'recall',
             header: 'Recall',

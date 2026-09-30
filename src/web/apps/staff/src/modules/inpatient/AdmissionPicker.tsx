@@ -14,7 +14,14 @@ export interface PickedAdmission {
 }
 
 function toPickedAdmission(a: AdmissionListItem): PickedAdmission {
-  return { admissionId: a.id, admissionNumber: a.admissionNumber, patientName: a.patientName, uhid: a.uhid, wardName: a.wardName, bedLabel: a.bedLabel };
+  return {
+    admissionId: a.id,
+    admissionNumber: a.admissionNumber,
+    patientName: a.patientName,
+    uhid: a.uhid,
+    wardName: a.wardName,
+    bedLabel: a.bedLabel,
+  };
 }
 
 /** Find a patient who is in hospital now, by name, UHID, mobile or IP number (min. 3 characters). */

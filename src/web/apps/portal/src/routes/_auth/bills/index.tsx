@@ -15,7 +15,9 @@ import { BILL_STATUS, BILL_TYPE, isDue, totalDue } from '@/modules/bills/labels'
 import { useActiveProfile } from '@/shell/profileContext';
 
 export const Route = createFileRoute('/_auth/bills/')({
-  validateSearch: (search: Record<string, unknown>): { show?: 'due' } => ({ show: search.show === 'due' ? 'due' : undefined }),
+  validateSearch: (search: Record<string, unknown>): { show?: 'due' } => ({
+    show: search.show === 'due' ? 'due' : undefined,
+  }),
   component: BillsPage,
 });
 
@@ -30,7 +32,10 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorStatusWarningBackground1,
     border: `1px solid ${tokens.colorStatusWarningBorder1}`,
   },
-  paid: { backgroundColor: tokens.colorStatusSuccessBackground1, border: `1px solid ${tokens.colorStatusSuccessBorder1}` },
+  paid: {
+    backgroundColor: tokens.colorStatusSuccessBackground1,
+    border: `1px solid ${tokens.colorStatusSuccessBorder1}`,
+  },
   dueIcon: { fontSize: '32px', flexShrink: 0 },
   dueText: { display: 'flex', flexDirection: 'column', gap: '2px' },
   dueAmount: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
@@ -57,7 +62,9 @@ function BillsPage() {
         <div className={mergeClasses(styles.due, due <= 0 && styles.paid)} role="status">
           <WalletRegular className={styles.dueIcon} aria-hidden />
           <span className={styles.dueText}>
-            <span className={styles.dueAmount}>{due > 0 ? t('bills.due.total', { amount: f.inr(due) }) : t('bills.emptyDue.title')}</span>
+            <span className={styles.dueAmount}>
+              {due > 0 ? t('bills.due.total', { amount: f.inr(due) }) : t('bills.emptyDue.title')}
+            </span>
             <span>{due > 0 ? t('bills.due.count', { count: dueBills.length }) : t('bills.emptyDue.body')}</span>
           </span>
         </div>
@@ -65,7 +72,9 @@ function BillsPage() {
 
       <TabList
         selectedValue={show ?? 'all'}
-        onTabSelect={(_, data) => void navigate({ search: { show: data.value === 'due' ? 'due' : undefined }, replace: true })}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { show: data.value === 'due' ? 'due' : undefined }, replace: true })
+        }
         aria-label={t('bills.filter.label')}
         size="large"
       >
@@ -95,14 +104,23 @@ function BillsPage() {
                     tone={isDue(bill.dueAmount) ? 'warning' : 'success'}
                     title={`${t(BILL_TYPE[bill.type])}${bill.billNumber ? ` · ${bill.billNumber}` : ''}`}
                     subtitle={`${f.date(bill.billedAt)} · ${f.inr(bill.patientAmount)}`}
-                    meta={isDue(bill.dueAmount) ? <span className={styles.dueLine}>{t('bills.dueLine', { amount: f.inr(bill.dueAmount) })}</span> : undefined}
+                    meta={
+                      isDue(bill.dueAmount) ? (
+                        <span className={styles.dueLine}>{t('bills.dueLine', { amount: f.inr(bill.dueAmount) })}</span>
+                      ) : undefined
+                    }
                     trailing={<StatusPill tone={status.tone}>{t(status.key)}</StatusPill>}
                   />
                 </CardLink>
               );
             })}
             {bills.hasNextPage && (
-              <Button className={styles.more} size="large" onClick={() => void bills.fetchNextPage()} disabled={bills.isFetchingNextPage}>
+              <Button
+                className={styles.more}
+                size="large"
+                onClick={() => void bills.fetchNextPage()}
+                disabled={bills.isFetchingNextPage}
+              >
                 {t('common.showMore')}
               </Button>
             )}

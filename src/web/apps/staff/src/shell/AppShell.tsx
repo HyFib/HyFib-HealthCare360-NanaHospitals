@@ -113,14 +113,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }
 
-  const lockMinutes = typeof settings.data?.['ui.idleLockMinutes'] === 'number' ? (settings.data['ui.idleLockMinutes'] as number) : 10;
+  const lockMinutes =
+    typeof settings.data?.['ui.idleLockMinutes'] === 'number' ? (settings.data['ui.idleLockMinutes'] as number) : 10;
   useIdle(lockMinutes * 60_000, () => setLocked(true), lockMinutes > 0);
   useHotkey('mod+k', () => setPaletteOpen(true), { allowInInputs: true });
   useHotkey('mod+shift+l', () => setLocked(true), { allowInInputs: true });
 
-  const sections = NAV_SECTIONS.map((section) => ({ ...section, modules: modules.filter((m) => m.section === section.id) })).filter(
-    (section) => section.modules.length > 0,
-  );
+  const sections = NAV_SECTIONS.map((section) => ({
+    ...section,
+    modules: modules.filter((m) => m.section === section.id),
+  })).filter((section) => section.modules.length > 0);
 
   return (
     <div className={styles.root}>
@@ -134,7 +136,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link to="/" className={styles.brandLink} aria-label="Home">
           <BrandMark facility={user?.facilityName} compact={narrow} />
         </Link>
-        <Button className={styles.search} appearance="outline" icon={<SearchRegular />} onClick={() => setPaletteOpen(true)} aria-keyshortcuts="Control+K">
+        <Button
+          className={styles.search}
+          appearance="outline"
+          icon={<SearchRegular />}
+          onClick={() => setPaletteOpen(true)}
+          aria-keyshortcuts="Control+K"
+        >
           <span className={styles.searchText}>Search patients or screens</span>
           <Caption1 className={styles.kbd}>Ctrl+K</Caption1>
         </Button>
@@ -156,7 +164,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           selectedCategoryValue={current && current.module.links.length > 1 ? current.module.id : ''}
           openCategories={openCategories}
           onNavCategoryItemToggle={(_, data) =>
-            setOpenCategories((open) => (open.includes(String(data.value)) ? open.filter((v) => v !== data.value) : [String(data.value)]))
+            setOpenCategories((open) =>
+              open.includes(String(data.value)) ? open.filter((v) => v !== data.value) : [String(data.value)],
+            )
           }
           onNavItemSelect={(_, data) => {
             void navigate({ href: String(data.value) });

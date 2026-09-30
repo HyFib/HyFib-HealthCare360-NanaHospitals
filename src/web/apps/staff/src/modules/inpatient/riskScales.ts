@@ -71,7 +71,11 @@ export function morseScore(input: MorseInput): RiskScore {
     (input.overestimatesAbility ? 15 : 0);
 
   if (score >= MORSE_HIGH_RISK_FROM) {
-    return { score, risk: 'High', interpretation: 'High fall risk: apply high-risk fall precautions and reassess every shift.' };
+    return {
+      score,
+      risk: 'High',
+      interpretation: 'High fall risk: apply high-risk fall precautions and reassess every shift.',
+    };
   }
   if (score >= MORSE_MODERATE_RISK_FROM) {
     return { score, risk: 'Moderate', interpretation: 'Moderate fall risk: apply standard fall-prevention measures.' };
@@ -91,11 +95,23 @@ export const BRADEN_ITEMS: { key: BradenItem; label: string; options: string[] }
     label: 'Sensory perception',
     options: ['Completely limited', 'Very limited', 'Slightly limited', 'No impairment'],
   },
-  { key: 'moisture', label: 'Moisture', options: ['Constantly moist', 'Very moist', 'Occasionally moist', 'Rarely moist'] },
+  {
+    key: 'moisture',
+    label: 'Moisture',
+    options: ['Constantly moist', 'Very moist', 'Occasionally moist', 'Rarely moist'],
+  },
   { key: 'activity', label: 'Activity', options: ['Bedfast', 'Chairfast', 'Walks occasionally', 'Walks frequently'] },
-  { key: 'mobility', label: 'Mobility', options: ['Completely immobile', 'Very limited', 'Slightly limited', 'No limitation'] },
+  {
+    key: 'mobility',
+    label: 'Mobility',
+    options: ['Completely immobile', 'Very limited', 'Slightly limited', 'No limitation'],
+  },
   { key: 'nutrition', label: 'Nutrition', options: ['Very poor', 'Probably inadequate', 'Adequate', 'Excellent'] },
-  { key: 'frictionShear', label: 'Friction and shear', options: ['Problem', 'Potential problem', 'No apparent problem'] },
+  {
+    key: 'frictionShear',
+    label: 'Friction and shear',
+    options: ['Problem', 'Potential problem', 'No apparent problem'],
+  },
 ];
 
 export function bradenScore(input: BradenInput): RiskScore {
@@ -110,14 +126,23 @@ export function bradenScore(input: BradenInput): RiskScore {
     return {
       score,
       risk: 'VeryHigh',
-      interpretation: 'Very high pressure-injury risk: two-hourly repositioning, pressure-redistribution mattress, skin checks every shift.',
+      interpretation:
+        'Very high pressure-injury risk: two-hourly repositioning, pressure-redistribution mattress, skin checks every shift.',
     };
   }
   if (score <= 12) {
-    return { score, risk: 'High', interpretation: 'High pressure-injury risk: two-hourly repositioning and a pressure-relieving surface.' };
+    return {
+      score,
+      risk: 'High',
+      interpretation: 'High pressure-injury risk: two-hourly repositioning and a pressure-relieving surface.',
+    };
   }
   if (score <= 14) {
-    return { score, risk: 'Moderate', interpretation: 'Moderate pressure-injury risk: turning schedule and heel protection.' };
+    return {
+      score,
+      risk: 'Moderate',
+      interpretation: 'Moderate pressure-injury risk: turning schedule and heel protection.',
+    };
   }
   if (score <= 18) {
     return { score, risk: 'Low', interpretation: 'Mild pressure-injury risk: encourage mobility and keep skin dry.' };
@@ -146,9 +171,17 @@ export function painScore(score: number): RiskScore {
     return { score, risk: 'Low', interpretation: 'Mild pain: comfort measures; reassess next round.' };
   }
   if (score <= 6) {
-    return { score, risk: 'Moderate', interpretation: 'Moderate pain: give prescribed analgesia and reassess within an hour.' };
+    return {
+      score,
+      risk: 'Moderate',
+      interpretation: 'Moderate pain: give prescribed analgesia and reassess within an hour.',
+    };
   }
-  return { score, risk: 'High', interpretation: 'Severe pain: inform the doctor and reassess within 30 minutes of treatment.' };
+  return {
+    score,
+    risk: 'High',
+    interpretation: 'Severe pain: inform the doctor and reassess within 30 minutes of treatment.',
+  };
 }
 
 /** Scores the chosen pain scale allows (Wong-Baker faces are 0, 2, 4, 6, 8, 10). */

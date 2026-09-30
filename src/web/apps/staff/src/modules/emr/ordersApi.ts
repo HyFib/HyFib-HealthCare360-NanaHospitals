@@ -10,7 +10,11 @@ export type OrderItemStatus = 'Ordered' | 'InProgress' | 'Completed' | 'Cancelle
 export type OrderSource = 'Encounter' | 'HealthCheckup' | 'Direct';
 
 export const ORDER_PRIORITIES: readonly OrderPriority[] = ['Routine', 'Urgent', 'Stat'];
-export const orderPriorityLabel: Record<OrderPriority, string> = { Routine: 'Routine', Urgent: 'Urgent', Stat: 'STAT (immediately)' };
+export const orderPriorityLabel: Record<OrderPriority, string> = {
+  Routine: 'Routine',
+  Urgent: 'Urgent',
+  Stat: 'STAT (immediately)',
+};
 
 /** Service catalogue row (masters look-up). */
 export interface ServiceItemDto {
@@ -101,7 +105,8 @@ export interface OrderListParams {
 export const orderKeys = {
   list: (patientId: string, params: OrderListParams) => ['emr', 'patient', patientId, 'orders', params] as const,
   orderSets: (specialtyCode: string | null) => ['emr', 'order-sets', specialtyCode ?? 'all'] as const,
-  services: (category: ServiceCategory | null, search: string) => ['lookups', 'services', category ?? 'all', search] as const,
+  services: (category: ServiceCategory | null, search: string) =>
+    ['lookups', 'services', category ?? 'all', search] as const,
 };
 
 export const orderQueries = {
@@ -118,7 +123,8 @@ export const orderQueries = {
   orderSets: (specialtyCode: string | null = null) =>
     queryOptions({
       queryKey: orderKeys.orderSets(specialtyCode),
-      queryFn: ({ signal }) => api.get<OrderSetDto[]>('/api/v1/clinical/order-sets', { query: { specialtyCode }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<OrderSetDto[]>('/api/v1/clinical/order-sets', { query: { specialtyCode }, signal }),
       staleTime: 10 * 60_000,
     }),
   service: (id: string) =>
@@ -131,7 +137,10 @@ export const orderQueries = {
     queryOptions({
       queryKey: orderKeys.services(category, search),
       queryFn: ({ signal }) =>
-        api.get<ServiceItemDto[]>('/api/v1/masters/lookups/services', { query: { category: category ?? undefined, search: search || undefined }, signal }),
+        api.get<ServiceItemDto[]>('/api/v1/masters/lookups/services', {
+          query: { category: category ?? undefined, search: search || undefined },
+          signal,
+        }),
       staleTime: 10 * 60_000,
     }),
 };
@@ -139,7 +148,8 @@ export const orderQueries = {
 export const ordersApi = {
   place: (request: PlaceOrderRequest) => api.post<OrderDto>('/api/v1/clinical/orders', request),
   cancel: (id: string, reason: string) => api.post<OrderDto>(`/api/v1/clinical/orders/${id}/cancel`, { reason }),
-  cancelItem: (itemId: string, reason: string) => api.post<OrderDto>(`/api/v1/clinical/orders/items/${itemId}/cancel`, { reason }),
+  cancelItem: (itemId: string, reason: string) =>
+    api.post<OrderDto>(`/api/v1/clinical/orders/items/${itemId}/cancel`, { reason }),
   updateItemStatus: (itemId: string, status: 'InProgress' | 'Completed', resultReference: string | null) =>
     api.post<OrderDto>(`/api/v1/clinical/orders/items/${itemId}/status`, { status, resultReference }),
 };

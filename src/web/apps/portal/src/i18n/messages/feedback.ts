@@ -57,20 +57,24 @@ export const feedbackMessages = defineMessages({
     'feedback.link.used.title': 'Feedback already received',
     'feedback.link.used.body': 'Thank you. Feedback has already been given using this link.',
     'feedback.link.expired.title': 'This link has expired',
-    'feedback.link.expired.body': 'Feedback links work for 14 days. You can still share feedback at the hospital, or in the patient portal.',
+    'feedback.link.expired.body':
+      'Feedback links work for 14 days. You can still share feedback at the hospital, or in the patient portal.',
     'feedback.link.invalid.title': 'This link does not work',
-    'feedback.link.invalid.body': 'Please check that you opened the full link from the message. If it still does not work, share your feedback at the hospital.',
+    'feedback.link.invalid.body':
+      'Please check that you opened the full link from the message. If it still does not work, share your feedback at the hospital.',
 
     'unsubscribe.title': 'Stop offers and campaign messages',
     'unsubscribe.body':
       'You will no longer get offers, health camp news and other campaign messages from the hospital. You will still get messages about your own care, such as appointment reminders.',
     'unsubscribe.confirm': 'Stop these messages',
     'unsubscribe.done.title': 'You will not get these messages any more',
-    'unsubscribe.done.body': 'Messages that were already on their way may still arrive today. To start them again, ask the front desk or change your choices in the patient portal.',
+    'unsubscribe.done.body':
+      'Messages that were already on their way may still arrive today. To start them again, ask the front desk or change your choices in the patient portal.',
     'unsubscribe.already': 'You have already stopped these messages. Nothing more to do.',
     'unsubscribe.manage': 'Manage all message choices',
     'unsubscribe.invalid.title': 'This link does not work',
-    'unsubscribe.invalid.body': 'Please check that you opened the full link from the message. You can also stop these messages in the patient portal, or ask the front desk.',
+    'unsubscribe.invalid.body':
+      'Please check that you opened the full link from the message. You can also stop these messages in the patient portal, or ask the front desk.',
 
     'preferences.title': 'Messages from the hospital',
     'preferences.lead': 'Choose which SMS and WhatsApp messages {name} gets. You can change this at any time.',
@@ -137,20 +141,24 @@ export const feedbackMessages = defineMessages({
     'feedback.link.used.title': 'फ़ीडबैक पहले ही मिल चुका है',
     'feedback.link.used.body': 'धन्यवाद। इस लिंक से फ़ीडबैक पहले ही दिया जा चुका है।',
     'feedback.link.expired.title': 'इस लिंक की समय-सीमा खत्म हो गई है',
-    'feedback.link.expired.body': 'फ़ीडबैक लिंक 14 दिन तक काम करते हैं। आप अब भी अस्पताल में या मरीज़ पोर्टल में फ़ीडबैक दे सकते हैं।',
+    'feedback.link.expired.body':
+      'फ़ीडबैक लिंक 14 दिन तक काम करते हैं। आप अब भी अस्पताल में या मरीज़ पोर्टल में फ़ीडबैक दे सकते हैं।',
     'feedback.link.invalid.title': 'यह लिंक काम नहीं कर रहा',
-    'feedback.link.invalid.body': 'कृपया देखें कि आपने संदेश का पूरा लिंक खोला है। फिर भी काम न करे, तो अस्पताल में अपना फ़ीडबैक दें।',
+    'feedback.link.invalid.body':
+      'कृपया देखें कि आपने संदेश का पूरा लिंक खोला है। फिर भी काम न करे, तो अस्पताल में अपना फ़ीडबैक दें।',
 
     'unsubscribe.title': 'ऑफ़र और अभियान संदेश बंद करें',
     'unsubscribe.body':
       'आपको अस्पताल से ऑफ़र, हेल्थ कैंप की खबरें और दूसरे अभियान संदेश नहीं मिलेंगे। आपकी अपनी देखभाल से जुड़े संदेश, जैसे अपॉइंटमेंट रिमाइंडर, मिलते रहेंगे।',
     'unsubscribe.confirm': 'ये संदेश बंद करें',
     'unsubscribe.done.title': 'अब आपको ये संदेश नहीं मिलेंगे',
-    'unsubscribe.done.body': 'जो संदेश पहले से भेजे जा चुके हैं, वे आज आ सकते हैं। इन्हें फिर से शुरू करने के लिए फ्रंट डेस्क से कहें या मरीज़ पोर्टल में अपनी पसंद बदलें।',
+    'unsubscribe.done.body':
+      'जो संदेश पहले से भेजे जा चुके हैं, वे आज आ सकते हैं। इन्हें फिर से शुरू करने के लिए फ्रंट डेस्क से कहें या मरीज़ पोर्टल में अपनी पसंद बदलें।',
     'unsubscribe.already': 'आप ये संदेश पहले ही बंद कर चुके हैं। अब कुछ और करने की ज़रूरत नहीं।',
     'unsubscribe.manage': 'सभी संदेशों की पसंद बदलें',
     'unsubscribe.invalid.title': 'यह लिंक काम नहीं कर रहा',
-    'unsubscribe.invalid.body': 'कृपया देखें कि आपने संदेश का पूरा लिंक खोला है। आप ये संदेश मरीज़ पोर्टल में भी बंद कर सकते हैं, या फ्रंट डेस्क से कह सकते हैं।',
+    'unsubscribe.invalid.body':
+      'कृपया देखें कि आपने संदेश का पूरा लिंक खोला है। आप ये संदेश मरीज़ पोर्टल में भी बंद कर सकते हैं, या फ्रंट डेस्क से कह सकते हैं।',
 
     'preferences.title': 'अस्पताल से संदेश',
     'preferences.lead': 'चुनें कि {name} को कौन-से SMS और WhatsApp संदेश मिलें। आप इसे कभी भी बदल सकते हैं।',

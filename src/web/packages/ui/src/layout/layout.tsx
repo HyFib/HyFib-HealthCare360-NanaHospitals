@@ -58,7 +58,15 @@ const useStyles = makeStyles({
   filterBar: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'end' },
 });
 
-export function Page({ children, maxWidth, className }: { children: ReactNode; maxWidth?: number; className?: string }) {
+export function Page({
+  children,
+  maxWidth,
+  className,
+}: {
+  children: ReactNode;
+  maxWidth?: number;
+  className?: string;
+}) {
   const styles = useStyles();
   return (
     <main className={mergeClasses(styles.page, className)} style={maxWidth ? { maxWidth } : undefined}>
@@ -163,12 +171,22 @@ export function Section({
 }
 
 /** Responsive form/detail grid: `columns` on wide screens, collapsing to one column on phones/tablets. */
-export function FormGrid({ columns = 3, children, minColumnWidth = 220 }: { columns?: number; children: ReactNode; minColumnWidth?: number }) {
+export function FormGrid({
+  columns = 3,
+  children,
+  minColumnWidth = 220,
+}: {
+  columns?: number;
+  children: ReactNode;
+  minColumnWidth?: number;
+}) {
   const styles = useStyles();
   return (
     <div
       className={styles.grid}
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, max(${minColumnWidth}px, calc((100% - ${(columns - 1) * 16}px) / ${columns}))), 1fr))` }}
+      style={{
+        gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, max(${minColumnWidth}px, calc((100% - ${(columns - 1) * 16}px) / ${columns}))), 1fr))`,
+      }}
     >
       {children}
     </div>

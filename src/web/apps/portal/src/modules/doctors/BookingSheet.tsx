@@ -34,7 +34,12 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
   },
   doneIcon: { fontSize: '56px', color: tokens.colorStatusSuccessForeground1, alignSelf: 'center' },
-  doneTitle: { margin: 0, textAlign: 'center', fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
+  doneTitle: {
+    margin: 0,
+    textAlign: 'center',
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   doneText: { margin: 0, textAlign: 'center', color: tokens.colorNeutralForeground2 },
   fee: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: tokens.fontSizeBase400 },
   feeAmount: { fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase500 },
@@ -45,14 +50,20 @@ function bookingSchema(t: Translate) {
   return z.object({
     patientId: z.string().min(1),
     visitType: z.enum(['New', 'FollowUp']),
-    reason: z.string().trim().max(300, { error: t('booking.reason.tooLong') }),
+    reason: z
+      .string()
+      .trim()
+      .max(300, { error: t('booking.reason.tooLong') }),
     payment: z.enum(['online', 'hospital']),
   });
 }
 
 type BookingForm = z.infer<ReturnType<typeof bookingSchema>>;
 
-type Phase = { name: 'form' } | { name: 'working'; label: MessageKey } | { name: 'done'; appointment: PortalAppointment; paid: boolean; note: string | null };
+type Phase =
+  | { name: 'form' }
+  | { name: 'working'; label: MessageKey }
+  | { name: 'done'; appointment: PortalAppointment; paid: boolean; note: string | null };
 
 /**
  * Confirming a chosen time: for whom, first visit or follow-up, a short reason, and pay now or at the hospital.
@@ -207,13 +218,20 @@ export function BookingSheet({
             singleColumn
             items={[
               { label: t('common.doctor'), value: appointment.practitionerName },
-              { label: t('booking.confirm.when'), value: f.dateLong(appointment.startsAt) + ', ' + f.time(appointment.startsAt) },
+              {
+                label: t('booking.confirm.when'),
+                value: f.dateLong(appointment.startsAt) + ', ' + f.time(appointment.startsAt),
+              },
               { label: t('booking.confirm.patient'), value: appointment.patientName },
               { label: t('appointment.number'), value: appointment.number },
             ]}
           />
         </div>
-        {paid ? <Notice intent="success">{t('booking.done.paid')}</Notice> : note && <Notice intent="warning">{note}</Notice>}
+        {paid ? (
+          <Notice intent="success">{t('booking.done.paid')}</Notice>
+        ) : (
+          note && <Notice intent="warning">{note}</Notice>
+        )}
       </Sheet>
     );
   }
@@ -226,7 +244,13 @@ export function BookingSheet({
       dismissible={!working}
       footer={
         <>
-          <Button appearance="primary" size="large" onClick={() => void submit()} disabled={working} icon={working ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            appearance="primary"
+            size="large"
+            onClick={() => void submit()}
+            disabled={working}
+            icon={working ? <Spinner size="tiny" /> : undefined}
+          >
             {phase.name === 'working' ? t(phase.label) : t('booking.book')}
           </Button>
           <Button size="large" onClick={close} disabled={working}>
@@ -270,7 +294,12 @@ export function BookingSheet({
             name="patientId"
             render={({ field }) => (
               <Field label={t('booking.confirm.patient')} required>
-                <Select size="large" value={field.value} onChange={(_, data) => field.onChange(data.value)} disabled={working}>
+                <Select
+                  size="large"
+                  value={field.value}
+                  onChange={(_, data) => field.onChange(data.value)}
+                  disabled={working}
+                >
                   {profiles.map((person) => (
                     <option key={person.id} value={person.id}>
                       {person.fullName}
@@ -292,7 +321,11 @@ export function BookingSheet({
               onChange={field.onChange}
               options={[
                 { value: 'New', title: t('booking.visit.New'), hint: f.inr(doctor.feeNew, { whole: true }) },
-                { value: 'FollowUp', title: t('booking.visit.FollowUp'), hint: f.inr(doctor.feeFollowUp, { whole: true }) },
+                {
+                  value: 'FollowUp',
+                  title: t('booking.visit.FollowUp'),
+                  hint: f.inr(doctor.feeFollowUp, { whole: true }),
+                },
               ]}
             />
           )}
@@ -308,7 +341,14 @@ export function BookingSheet({
               validationState={fieldState.error ? 'error' : 'none'}
               validationMessage={fieldState.error?.message}
             >
-              <Textarea {...field} value={field.value ?? ''} resize="vertical" rows={2} maxLength={300} disabled={working} />
+              <Textarea
+                {...field}
+                value={field.value ?? ''}
+                resize="vertical"
+                rows={2}
+                maxLength={300}
+                disabled={working}
+              />
             </Field>
           )}
         />
@@ -323,8 +363,18 @@ export function BookingSheet({
                 value={field.value}
                 onChange={field.onChange}
                 options={[
-                  { value: 'online', title: t('booking.payment.online'), hint: t('booking.payment.onlineHint'), icon: <PaymentRegular /> },
-                  { value: 'hospital', title: t('booking.payment.hospital'), hint: t('booking.payment.hospitalHint'), icon: <BuildingRegular /> },
+                  {
+                    value: 'online',
+                    title: t('booking.payment.online'),
+                    hint: t('booking.payment.onlineHint'),
+                    icon: <PaymentRegular />,
+                  },
+                  {
+                    value: 'hospital',
+                    title: t('booking.payment.hospital'),
+                    hint: t('booking.payment.hospitalHint'),
+                    icon: <BuildingRegular />,
+                  },
                 ]}
               />
             )}

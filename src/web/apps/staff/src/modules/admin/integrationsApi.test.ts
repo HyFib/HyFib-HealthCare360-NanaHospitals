@@ -99,17 +99,48 @@ describe('send a test', () => {
   });
 
   it('sends only the fields that apply, with the mobile number in international form', () => {
-    const values = { to: '98765 43210', message: ' Hello ', dltTemplateId: '1107160000000000001', templateName: 'hello_world', languageCode: 'en_US' };
-    expect(toTestRequest('sms', values)).toEqual({ to: '+919876543210', message: 'Hello', dltTemplateId: '1107160000000000001', templateName: null, languageCode: null });
-    expect(toTestRequest('whatsapp', values)).toEqual({ to: '+919876543210', message: null, dltTemplateId: null, templateName: 'hello_world', languageCode: 'en_US' });
+    const values = {
+      to: '98765 43210',
+      message: ' Hello ',
+      dltTemplateId: '1107160000000000001',
+      templateName: 'hello_world',
+      languageCode: 'en_US',
+    };
+    expect(toTestRequest('sms', values)).toEqual({
+      to: '+919876543210',
+      message: 'Hello',
+      dltTemplateId: '1107160000000000001',
+      templateName: null,
+      languageCode: null,
+    });
+    expect(toTestRequest('whatsapp', values)).toEqual({
+      to: '+919876543210',
+      message: null,
+      dltTemplateId: null,
+      templateName: 'hello_world',
+      languageCode: 'en_US',
+    });
     expect(toTestRequest('email', { ...values, to: ' admin@nanahospitals.in ' }).to).toBe('admin@nanahospitals.in');
-    expect(toTestRequest('payment', values)).toEqual({ to: null, message: null, dltTemplateId: null, templateName: null, languageCode: null });
+    expect(toTestRequest('payment', values)).toEqual({
+      to: null,
+      message: null,
+      dltTemplateId: null,
+      templateName: null,
+      languageCode: null,
+    });
   });
 
   it('checks DLT ids, template names and language codes like the server', () => {
     expect(testFormSchema.safeParse({ ...EMPTY_TEST_FORM, dltTemplateId: '12345' }).success).toBe(false);
     expect(testFormSchema.safeParse({ ...EMPTY_TEST_FORM, templateName: 'Hello World' }).success).toBe(false);
     expect(testFormSchema.safeParse({ ...EMPTY_TEST_FORM, languageCode: 'english' }).success).toBe(false);
-    expect(testFormSchema.safeParse({ ...EMPTY_TEST_FORM, dltTemplateId: '1107160000000000001', templateName: 'hello_world', languageCode: 'en_US' }).success).toBe(true);
+    expect(
+      testFormSchema.safeParse({
+        ...EMPTY_TEST_FORM,
+        dltTemplateId: '1107160000000000001',
+        templateName: 'hello_world',
+        languageCode: 'en_US',
+      }).success,
+    ).toBe(true);
   });
 });

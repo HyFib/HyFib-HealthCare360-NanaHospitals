@@ -14,7 +14,10 @@ export interface PlanProgress {
   remaining: number;
 }
 
-export function planProgress(plan: Pick<TreatmentPlanDto, 'sessionsPlanned'> | null, sessions: readonly Pick<PhysioSessionDto, 'status'>[]): PlanProgress {
+export function planProgress(
+  plan: Pick<TreatmentPlanDto, 'sessionsPlanned'> | null,
+  sessions: readonly Pick<PhysioSessionDto, 'status'>[],
+): PlanProgress {
   const planned = plan?.sessionsPlanned ?? 0;
   const booked = sessions.filter((s) => s.status !== 'Cancelled').length;
   return {
@@ -27,7 +30,10 @@ export function planProgress(plan: Pick<TreatmentPlanDto, 'sessionsPlanned'> | n
 }
 
 /** The most sessions one scheduling request may add: what the plan still allows, and at most 30 at a time. */
-export function scheduleLimit(plan: Pick<TreatmentPlanDto, 'sessionsPlanned'> | null, sessions: readonly Pick<PhysioSessionDto, 'status'>[]): number {
+export function scheduleLimit(
+  plan: Pick<TreatmentPlanDto, 'sessionsPlanned'> | null,
+  sessions: readonly Pick<PhysioSessionDto, 'status'>[],
+): number {
   return Math.min(30, planProgress(plan, sessions).remaining);
 }
 
@@ -55,7 +61,10 @@ export interface NextStep {
 /** What the physiotherapist should do next with a referral. */
 export function nextStep(detail: Pick<PhysioReferralDetail, 'status' | 'assessments' | 'plan' | 'sessions'>): NextStep {
   if (detail.status === 'Completed' || detail.status === 'Cancelled') {
-    return { action: 'closed', message: detail.status === 'Completed' ? 'Treatment is complete.' : 'This referral was cancelled.' };
+    return {
+      action: 'closed',
+      message: detail.status === 'Completed' ? 'Treatment is complete.' : 'This referral was cancelled.',
+    };
   }
   if (detail.assessments.length === 0 || detail.status === 'New') {
     return { action: 'assess', message: 'Assess the patient first: treatment is never planned without an assessment.' };
@@ -66,17 +75,31 @@ export function nextStep(detail: Pick<PhysioReferralDetail, 'status' | 'assessme
   const progress = planProgress(detail.plan, detail.sessions);
   const upcoming = detail.sessions.filter((s) => s.status === 'Scheduled').length;
   if (upcoming > 0) {
-    return { action: 'treat', message: `${upcoming} session${upcoming === 1 ? ' is' : 's are'} booked. Record each one on the day.` };
+    return {
+      action: 'treat',
+      message: `${upcoming} session${upcoming === 1 ? ' is' : 's are'} booked. Record each one on the day.`,
+    };
   }
   if (progress.remaining > 0) {
-    return { action: 'schedule', message: `Book the remaining ${progress.remaining} session${progress.remaining === 1 ? '' : 's'} of the plan.` };
+    return {
+      action: 'schedule',
+      message: `Book the remaining ${progress.remaining} session${progress.remaining === 1 ? '' : 's'} of the plan.`,
+    };
   }
-  return { action: 'complete', message: 'All planned sessions are done. Complete the referral with a discharge summary, or revise the plan to add sessions.' };
+  return {
+    action: 'complete',
+    message:
+      'All planned sessions are done. Complete the referral with a discharge summary, or revise the plan to add sessions.',
+  };
 }
 
 /** A referral can be cancelled only before any treatment was given (then it must be completed instead). */
 export function canCancelReferral(detail: Pick<PhysioReferralDetail, 'status' | 'sessions'>): boolean {
-  return detail.status !== 'Completed' && detail.status !== 'Cancelled' && !detail.sessions.some((s) => s.status === 'Attended');
+  return (
+    detail.status !== 'Completed' &&
+    detail.status !== 'Cancelled' &&
+    !detail.sessions.some((s) => s.status === 'Attended')
+  );
 }
 
 /** Change in the 0–10 pain score within a session (negative = better). */

@@ -75,12 +75,18 @@ const useStyles = makeStyles({
 
 type FieldState = { message?: string; state: 'error' | 'warning' | 'none' };
 
-function fieldState(field: VitalField, errors: Partial<Record<VitalField, string>>, flags: readonly VitalFlag[]): FieldState {
+function fieldState(
+  field: VitalField,
+  errors: Partial<Record<VitalField, string>>,
+  flags: readonly VitalFlag[],
+): FieldState {
   const error = errors[field];
   if (error) {
     return { message: error, state: 'error' };
   }
-  const flag = worstFlag(flagsFor(flags, field === 'systolicBp' || field === 'diastolicBp' ? field : parameterFor(field)));
+  const flag = worstFlag(
+    flagsFor(flags, field === 'systolicBp' || field === 'diastolicBp' ? field : parameterFor(field)),
+  );
   if (!flag || field === 'heightCm') {
     return { state: 'none' };
   }
@@ -127,7 +133,9 @@ export function VitalsForm({
 
   const set = <K extends keyof VitalsValues>(key: K, value: VitalsValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }));
-    setServerErrors((current) => (key in current ? Object.fromEntries(Object.entries(current).filter(([k]) => k !== key)) : current));
+    setServerErrors((current) =>
+      key in current ? Object.fromEntries(Object.entries(current).filter(([k]) => k !== key)) : current,
+    );
   };
 
   const switchUnit = (unit: VitalsValues['temperatureUnit']) => {
@@ -135,13 +143,18 @@ export function VitalsForm({
       if (current.temperatureUnit === unit || current.temperature === null) {
         return { ...current, temperatureUnit: unit };
       }
-      const converted = unit === 'Celsius' ? fahrenheitToCelsius(current.temperature) : celsiusToFahrenheit(current.temperature);
+      const converted =
+        unit === 'Celsius' ? fahrenheitToCelsius(current.temperature) : celsiusToFahrenheit(current.temperature);
       return { ...current, temperatureUnit: unit, temperature: converted };
     });
   };
 
   const save = useMutation({
-    mutationFn: () => emrApi.recordVitals(patientId, toVitalsPayload(values, encounterId, recordedAt ? new Date(recordedAt).toISOString() : null)),
+    mutationFn: () =>
+      emrApi.recordVitals(
+        patientId,
+        toVitalsPayload(values, encounterId, recordedAt ? new Date(recordedAt).toISOString() : null),
+      ),
     onSuccess: (dto) => {
       setSaved(dto);
       setValues((current) => ({ ...emptyVitals, temperatureUnit: current.temperatureUnit }));
@@ -152,19 +165,31 @@ export function VitalsForm({
     },
     onError: (error) => {
       if (isApiError(error) && error.isValidation) {
-        setServerErrors(Object.fromEntries(Object.entries(error.fieldErrors).map(([name, messages]) => [name, messages[0] ?? ''])));
+        setServerErrors(
+          Object.fromEntries(Object.entries(error.fieldErrors).map(([name, messages]) => [name, messages[0] ?? ''])),
+        );
       } else {
         notify.error(error, 'Could not record the vitals');
       }
     },
   });
 
-  const numberInput = (field: VitalField, label: string, options: { step?: number; placeholder?: string; autoFocus?: boolean } = {}) => {
+  const numberInput = (
+    field: VitalField,
+    label: string,
+    options: { step?: number; placeholder?: string; autoFocus?: boolean } = {},
+  ) => {
     const limit = limitFor(field, values.temperatureUnit);
-    const state = serverErrors[field] ? { message: serverErrors[field], state: 'error' as const } : fieldState(field, errors, flags);
+    const state = serverErrors[field]
+      ? { message: serverErrors[field], state: 'error' as const }
+      : fieldState(field, errors, flags);
     const unit = limit.unit === '/10' ? '0–10' : limit.unit.replace(/^\//, 'per ');
     return (
-      <Field label={`${label}${unit ? ` (${unit})` : ''}`} validationMessage={state.message} validationState={state.state}>
+      <Field
+        label={`${label}${unit ? ` (${unit})` : ''}`}
+        validationMessage={state.message}
+        validationState={state.state}
+      >
         <Input
           type="number"
           inputMode="decimal"
@@ -183,7 +208,12 @@ export function VitalsForm({
   const systolic = fieldState('systolicBp', errors, flags);
   const diastolic = fieldState('diastolicBp', errors, flags);
   const bpMessage = [systolic.message, diastolic.message].filter(Boolean).join(' · ');
-  const bpState = systolic.state === 'error' || diastolic.state === 'error' ? 'error' : systolic.state === 'warning' || diastolic.state === 'warning' ? 'warning' : 'none';
+  const bpState =
+    systolic.state === 'error' || diastolic.state === 'error'
+      ? 'error'
+      : systolic.state === 'warning' || diastolic.state === 'warning'
+        ? 'warning'
+        : 'none';
   const critical = flags.filter((f) => f.severity === 'Critical');
 
   return (
@@ -211,9 +241,19 @@ export function VitalsForm({
       )}
       <FormGrid columns={4} minColumnWidth={150}>
         <div className={styles.inline}>
-          <div style={{ flex: 1 }}>{numberInput('temperature', 'Temperature', { step: 0.1, autoFocus, placeholder: values.temperatureUnit === 'Fahrenheit' ? '98.6' : '37.0' })}</div>
+          <div style={{ flex: 1 }}>
+            {numberInput('temperature', 'Temperature', {
+              step: 0.1,
+              autoFocus,
+              placeholder: values.temperatureUnit === 'Fahrenheit' ? '98.6' : '37.0',
+            })}
+          </div>
           <Field label="Unit">
-            <Select value={values.temperatureUnit} onChange={(_, d) => switchUnit(d.value as VitalsValues['temperatureUnit'])} aria-label="Temperature unit">
+            <Select
+              value={values.temperatureUnit}
+              onChange={(_, d) => switchUnit(d.value as VitalsValues['temperatureUnit'])}
+              aria-label="Temperature unit"
+            >
               <option value="Fahrenheit">°F</option>
               <option value="Celsius">°C</option>
             </Select>
@@ -241,7 +281,11 @@ export function VitalsForm({
         </Field>
         <div>
           {numberInput('spO2', 'SpO₂')}
-          <Switch label="On oxygen" checked={values.onSupplementalOxygen} onChange={(_, d) => set('onSupplementalOxygen', d.checked)} />
+          <Switch
+            label="On oxygen"
+            checked={values.onSupplementalOxygen}
+            onChange={(_, d) => set('onSupplementalOxygen', d.checked)}
+          />
         </div>
         {numberInput('respiratoryRate', 'Respiratory rate')}
         {numberInput('weightKg', 'Weight', { step: 0.1 })}
@@ -252,7 +296,11 @@ export function VitalsForm({
         <div className={styles.inline}>
           <div style={{ flex: 1 }}>{numberInput('bloodGlucose', 'Blood glucose')}</div>
           <Field label="Taken">
-            <Select value={values.glucoseTiming} onChange={(_, d) => set('glucoseTiming', d.value as GlucoseTiming)} aria-label="Glucose timing">
+            <Select
+              value={values.glucoseTiming}
+              onChange={(_, d) => set('glucoseTiming', d.value as GlucoseTiming)}
+              aria-label="Glucose timing"
+            >
               <option value="Random">Random</option>
               <option value="Fasting">Fasting</option>
               <option value="PostPrandial">After food</option>
@@ -266,7 +314,11 @@ export function VitalsForm({
         </Field>
       </FormGrid>
       <Field label="Notes">
-        <Input value={values.notes} onChange={(_, d) => set('notes', d.value.slice(0, 500))} placeholder="e.g. taken after nebulisation" />
+        <Input
+          value={values.notes}
+          onChange={(_, d) => set('notes', d.value.slice(0, 500))}
+          placeholder="e.g. taken after nebulisation"
+        />
       </Field>
       {critical.length > 0 && (
         <MessageBar intent="error">
@@ -284,7 +336,12 @@ export function VitalsForm({
             Close
           </Button>
         )}
-        <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={!ready || save.isPending}>
+        <Button
+          type="submit"
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={!ready || save.isPending}
+        >
           Record vitals
         </Button>
       </div>
@@ -292,13 +349,27 @@ export function VitalsForm({
   );
 }
 
-export function RecordVitalsDialog({ patientId, encounterId, open, onClose }: { patientId: string; encounterId: string | null; open: boolean; onClose: () => void }) {
+export function RecordVitalsDialog({
+  patientId,
+  encounterId,
+  open,
+  onClose,
+}: {
+  patientId: string;
+  encounterId: string | null;
+  open: boolean;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 880 }}>
         <DialogBody>
           <DialogTitle>Record vitals</DialogTitle>
-          <DialogContent>{open && <VitalsForm patientId={patientId} encounterId={encounterId} onCancel={onClose} onSaved={onClose} />}</DialogContent>
+          <DialogContent>
+            {open && (
+              <VitalsForm patientId={patientId} encounterId={encounterId} onCancel={onClose} onSaved={onClose} />
+            )}
+          </DialogContent>
         </DialogBody>
       </DialogSurface>
     </Dialog>
@@ -343,7 +414,8 @@ export function VitalsTab({ patientId }: { patientId: string }) {
     onError: (error) => notify.error(error, 'Could not update the vitals'),
   });
 
-  const flag = (v: VitalsDto, ...parameters: string[]) => worstFlag(v.flags.filter((f) => parameters.includes(f.parameter)));
+  const flag = (v: VitalsDto, ...parameters: string[]) =>
+    worstFlag(v.flags.filter((f) => parameters.includes(f.parameter)));
   const readings = trend.data?.items ?? [];
 
   return (
@@ -364,7 +436,10 @@ export function VitalsTab({ patientId }: { patientId: string }) {
           </Select>
         </Field>
       </div>
-      <Section title={TREND_METRICS.find((m) => m.id === metric)?.label ?? 'Trend'} description="Last 100 recordings. Dashed lines show the usual adult range.">
+      <Section
+        title={TREND_METRICS.find((m) => m.id === metric)?.label ?? 'Trend'}
+        description="Last 100 recordings. Dashed lines show the usual adult range."
+      >
         {trend.isLoading ? (
           <LoadingState />
         ) : readings.length < 2 ? (
@@ -386,18 +461,78 @@ export function VitalsTab({ patientId }: { patientId: string }) {
         size="small"
         columns={[
           { key: 'at', header: 'Recorded', width: 170, render: (v) => formatDateTime(v.recordedAt) },
-          { key: 'bp', header: 'BP', render: (v) => <FlaggedValue value={formatBp(v.systolicBp, v.diastolicBp)} flag={flag(v, 'systolicBp', 'diastolicBp')} /> },
-          { key: 'pulse', header: 'Pulse', render: (v) => (v.pulse === null ? '—' : <FlaggedValue value={`${v.pulse}`} flag={flag(v, 'pulse')} />) },
+          {
+            key: 'bp',
+            header: 'BP',
+            render: (v) => (
+              <FlaggedValue value={formatBp(v.systolicBp, v.diastolicBp)} flag={flag(v, 'systolicBp', 'diastolicBp')} />
+            ),
+          },
+          {
+            key: 'pulse',
+            header: 'Pulse',
+            render: (v) => (v.pulse === null ? '—' : <FlaggedValue value={`${v.pulse}`} flag={flag(v, 'pulse')} />),
+          },
           {
             key: 'spo2',
             header: 'SpO₂',
-            render: (v) => (v.spO2 === null ? '—' : <FlaggedValue value={`${v.spO2}%${v.onSupplementalOxygen ? ' (O₂)' : ''}`} flag={flag(v, 'spo2')} />),
+            render: (v) =>
+              v.spO2 === null ? (
+                '—'
+              ) : (
+                <FlaggedValue value={`${v.spO2}%${v.onSupplementalOxygen ? ' (O₂)' : ''}`} flag={flag(v, 'spo2')} />
+              ),
           },
-          { key: 'temp', header: 'Temperature', render: (v) => (v.temperatureCelsius === null ? '—' : <FlaggedValue value={formatTemperature(v.temperatureCelsius)} flag={flag(v, 'temperature')} />) },
-          { key: 'rr', header: 'RR', priority: 'low', render: (v) => (v.respiratoryRate === null ? '—' : <FlaggedValue value={`${v.respiratoryRate}`} flag={flag(v, 'respiratoryRate')} />) },
-          { key: 'weight', header: 'Weight / BMI', priority: 'low', render: (v) => (v.weightKg === null ? '—' : <FlaggedValue value={`${v.weightKg} kg${v.bmi ? ` · ${v.bmi}` : ''}`} flag={flag(v, 'bmi')} />) },
-          { key: 'glucose', header: 'Glucose', priority: 'low', render: (v) => (v.bloodGlucose === null ? '—' : <FlaggedValue value={`${v.bloodGlucose}`} flag={flag(v, 'bloodGlucose')} />) },
-          { key: 'pain', header: 'Pain', priority: 'low', render: (v) => (v.painScore === null ? '—' : <FlaggedValue value={`${v.painScore}/10`} flag={flag(v, 'painScore')} />) },
+          {
+            key: 'temp',
+            header: 'Temperature',
+            render: (v) =>
+              v.temperatureCelsius === null ? (
+                '—'
+              ) : (
+                <FlaggedValue value={formatTemperature(v.temperatureCelsius)} flag={flag(v, 'temperature')} />
+              ),
+          },
+          {
+            key: 'rr',
+            header: 'RR',
+            priority: 'low',
+            render: (v) =>
+              v.respiratoryRate === null ? (
+                '—'
+              ) : (
+                <FlaggedValue value={`${v.respiratoryRate}`} flag={flag(v, 'respiratoryRate')} />
+              ),
+          },
+          {
+            key: 'weight',
+            header: 'Weight / BMI',
+            priority: 'low',
+            render: (v) =>
+              v.weightKg === null ? (
+                '—'
+              ) : (
+                <FlaggedValue value={`${v.weightKg} kg${v.bmi ? ` · ${v.bmi}` : ''}`} flag={flag(v, 'bmi')} />
+              ),
+          },
+          {
+            key: 'glucose',
+            header: 'Glucose',
+            priority: 'low',
+            render: (v) =>
+              v.bloodGlucose === null ? (
+                '—'
+              ) : (
+                <FlaggedValue value={`${v.bloodGlucose}`} flag={flag(v, 'bloodGlucose')} />
+              ),
+          },
+          {
+            key: 'pain',
+            header: 'Pain',
+            priority: 'low',
+            render: (v) =>
+              v.painScore === null ? '—' : <FlaggedValue value={`${v.painScore}/10`} flag={flag(v, 'painScore')} />,
+          },
           { key: 'notes', header: 'Notes', priority: 'low', render: (v) => v.notes ?? '' },
         ]}
         rowActions={
@@ -405,7 +540,12 @@ export function VitalsTab({ patientId }: { patientId: string }) {
             ? (v) => (
                 <Menu>
                   <MenuTrigger disableButtonEnhancement>
-                    <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for vitals at ${formatDateTime(v.recordedAt)}`} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<MoreHorizontalRegular />}
+                      aria-label={`Actions for vitals at ${formatDateTime(v.recordedAt)}`}
+                    />
                   </MenuTrigger>
                   <MenuPopover>
                     <MenuList>
@@ -419,17 +559,30 @@ export function VitalsTab({ patientId }: { patientId: string }) {
             : undefined
         }
         emptyTitle="No vitals recorded"
-        emptyDescription={canRecord ? 'Use Record vitals to add the first set.' : 'Vitals recorded by nurses and doctors appear here.'}
+        emptyDescription={
+          canRecord ? 'Use Record vitals to add the first set.' : 'Vitals recorded by nurses and doctors appear here.'
+        }
         page={page}
         pageSize={20}
         totalCount={list.data?.totalCount}
         onPageChange={setPage}
       />
-      <RecordVitalsDialog patientId={patientId} encounterId={null} open={recording} onClose={() => setRecording(false)} />
+      <RecordVitalsDialog
+        patientId={patientId}
+        encounterId={null}
+        open={recording}
+        onClose={() => setRecording(false)}
+      />
       <ReasonDialog
         open={voiding !== null}
         title="Mark these vitals as entered in error?"
-        description={voiding ? `Recorded ${formatDateTime(voiding.recordedAt)}: ${vitalChips(voiding).map((c) => `${c.label} ${c.value}`).join(', ')}. The entry stays in the audit trail but no longer appears in summaries and trends.` : undefined}
+        description={
+          voiding
+            ? `Recorded ${formatDateTime(voiding.recordedAt)}: ${vitalChips(voiding)
+                .map((c) => `${c.label} ${c.value}`)
+                .join(', ')}. The entry stays in the audit trail but no longer appears in summaries and trends.`
+            : undefined
+        }
         label="What was wrong"
         confirmLabel="Mark as entered in error"
         destructive

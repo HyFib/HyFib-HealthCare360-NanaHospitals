@@ -23,7 +23,14 @@ import { formatDateTime, formatRelative, isApiError } from '@hc360/core';
 import { DataTable, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
-import { ASSESSMENT_LABEL, nursingApi, nursingKeys, nursingQueries, type AssessmentDto, type AssessmentType } from '../nursingApi';
+import {
+  ASSESSMENT_LABEL,
+  nursingApi,
+  nursingKeys,
+  nursingQueries,
+  type AssessmentDto,
+  type AssessmentType,
+} from '../nursingApi';
 import {
   AMBULATORY_AID_OPTIONS,
   BRADEN_ITEMS,
@@ -42,7 +49,12 @@ import {
 } from '../riskScales';
 
 const useStyles = makeStyles({
-  cards: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', marginBottom: '16px' },
+  cards: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    marginBottom: '16px',
+  },
   card: {
     appearance: 'none',
     margin: 0,
@@ -62,10 +74,27 @@ const useStyles = makeStyles({
   },
   active: { border: `2px solid ${tokens.colorBrandStroke1}` },
   cardHead: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' },
-  score: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
-  form: { display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2, marginBottom: '16px' },
+  score: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    padding: '12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+    marginBottom: '16px',
+  },
   items: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' },
-  painScores: { display: 'grid', gridTemplateColumns: 'repeat(11, minmax(36px, 1fr))', gap: '4px', '@media (max-width: 560px)': { gridTemplateColumns: 'repeat(6, minmax(36px, 1fr))' } },
+  painScores: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(11, minmax(36px, 1fr))',
+    gap: '4px',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'repeat(6, minmax(36px, 1fr))' },
+  },
   painButton: { minWidth: '36px', minHeight: '44px', fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
   result: { position: 'sticky', bottom: 0 },
@@ -82,7 +111,10 @@ function ScorePreview({ score, max }: { score: RiskScore; max: number }) {
   const tone = riskTone(score.risk);
   return (
     <div className={styles.result} aria-live="polite">
-      <MessageBar intent={tone === 'danger' ? 'error' : tone === 'warning' ? 'warning' : tone === 'success' ? 'success' : 'info'} layout="multiline">
+      <MessageBar
+        intent={tone === 'danger' ? 'error' : tone === 'warning' ? 'warning' : tone === 'success' ? 'success' : 'info'}
+        layout="multiline"
+      >
         <MessageBarBody>
           <MessageBarTitle>
             Score {score.score} of {max} · {RISK_LABEL[score.risk]} risk
@@ -136,7 +168,11 @@ export function Assessments({ admissionId, canWrite }: { admissionId: string; ca
               ) : (
                 <Caption1 className={styles.muted}>Not assessed yet</Caption1>
               )}
-              {canWrite && <Caption1 style={{ color: tokens.colorBrandForeground1 }}>{form === type ? 'Close' : 'New assessment'}</Caption1>}
+              {canWrite && (
+                <Caption1 style={{ color: tokens.colorBrandForeground1 }}>
+                  {form === type ? 'Close' : 'New assessment'}
+                </Caption1>
+              )}
             </button>
           );
         })}
@@ -157,7 +193,13 @@ export function Assessments({ admissionId, canWrite }: { admissionId: string; ca
         columns={[
           { key: 'at', header: 'When', width: 170, render: (a) => formatDateTime(a.assessedAt) },
           { key: 'type', header: 'Scale', render: (a) => ASSESSMENT_LABEL[a.type] ?? a.type },
-          { key: 'score', header: 'Score', width: 80, align: 'end', render: (a) => <Text weight="semibold">{a.score}</Text> },
+          {
+            key: 'score',
+            header: 'Score',
+            width: 80,
+            align: 'end',
+            render: (a) => <Text weight="semibold">{a.score}</Text>,
+          },
           {
             key: 'risk',
             header: 'Risk',
@@ -172,7 +214,9 @@ export function Assessments({ admissionId, canWrite }: { admissionId: string; ca
           { key: 'by', header: 'By', priority: 'low', render: (a) => a.assessedByName ?? '—' },
         ]}
         emptyTitle="No assessments yet"
-        emptyDescription={canWrite ? 'Assess fall risk and pressure-injury risk on admission and every shift.' : undefined}
+        emptyDescription={
+          canWrite ? 'Assess fall risk and pressure-injury risk on admission and every shift.' : undefined
+        }
       />
     </div>
   );
@@ -215,9 +259,20 @@ function MorseForm({ admissionId, onDone }: { admissionId: string; onDone: () =>
   });
   const [notes, setNotes] = useState('');
   const score = morseScore(input);
-  const save = useMutation({ mutationFn: () => nursingApi.addMorse(admissionId, { ...input, notes: notes.trim() || null }), ...handlers('Fall risk') });
-  const toggle = (key: 'historyOfFalling' | 'secondaryDiagnosis' | 'intravenousAccess' | 'overestimatesAbility', label: string, points: number) => (
-    <Switch checked={input[key]} onChange={(_, d) => setInput({ ...input, [key]: d.checked })} label={`${label} (${points})`} />
+  const save = useMutation({
+    mutationFn: () => nursingApi.addMorse(admissionId, { ...input, notes: notes.trim() || null }),
+    ...handlers('Fall risk'),
+  });
+  const toggle = (
+    key: 'historyOfFalling' | 'secondaryDiagnosis' | 'intravenousAccess' | 'overestimatesAbility',
+    label: string,
+    points: number,
+  ) => (
+    <Switch
+      checked={input[key]}
+      onChange={(_, d) => setInput({ ...input, [key]: d.checked })}
+      label={`${label} (${points})`}
+    />
   );
 
   return (
@@ -231,14 +286,20 @@ function MorseForm({ admissionId, onDone }: { admissionId: string; onDone: () =>
           {toggle('overestimatesAbility', 'Forgets own limits', 15)}
         </div>
         <Field label="Walking aid">
-          <RadioGroup value={input.ambulatoryAid} onChange={(_, d) => setInput({ ...input, ambulatoryAid: d.value as MorseInput['ambulatoryAid'] })}>
+          <RadioGroup
+            value={input.ambulatoryAid}
+            onChange={(_, d) => setInput({ ...input, ambulatoryAid: d.value as MorseInput['ambulatoryAid'] })}
+          >
             {AMBULATORY_AID_OPTIONS.map((o) => (
               <Radio key={o.value} value={o.value} label={`${o.label} (${o.points})`} />
             ))}
           </RadioGroup>
         </Field>
         <Field label="Gait">
-          <RadioGroup value={input.gait} onChange={(_, d) => setInput({ ...input, gait: d.value as MorseInput['gait'] })}>
+          <RadioGroup
+            value={input.gait}
+            onChange={(_, d) => setInput({ ...input, gait: d.value as MorseInput['gait'] })}
+          >
             {GAIT_OPTIONS.map((o) => (
               <Radio key={o.value} value={o.value} label={`${o.label} (${o.points})`} />
             ))}
@@ -251,7 +312,12 @@ function MorseForm({ admissionId, onDone }: { admissionId: string; onDone: () =>
       <ScorePreview score={score} max={125} />
       <ErrorBar error={save.error} />
       <div>
-        <Button appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => save.mutate()}>
+        <Button
+          appearance="primary"
+          disabled={save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          onClick={() => save.mutate()}
+        >
           Save fall risk ({score.score})
         </Button>
       </div>
@@ -266,7 +332,10 @@ function BradenForm({ admissionId, onDone }: { admissionId: string; onDone: () =
   const [notes, setNotes] = useState('');
   const complete = BRADEN_ITEMS.every((item) => input[item.key] !== undefined);
   const score = complete ? bradenScore(input as BradenInput) : null;
-  const save = useMutation({ mutationFn: () => nursingApi.addBraden(admissionId, { ...(input as BradenInput), notes: notes.trim() || null }), ...handlers('Braden score') });
+  const save = useMutation({
+    mutationFn: () => nursingApi.addBraden(admissionId, { ...(input as BradenInput), notes: notes.trim() || null }),
+    ...handlers('Braden score'),
+  });
 
   return (
     <section className={styles.form} aria-label="Braden scale">
@@ -275,7 +344,10 @@ function BradenForm({ admissionId, onDone }: { admissionId: string; onDone: () =
       <div className={styles.items}>
         {BRADEN_ITEMS.map((item) => (
           <Field key={item.key} label={item.label} required>
-            <RadioGroup value={input[item.key] ? String(input[item.key]) : ''} onChange={(_, d) => setInput({ ...input, [item.key]: Number(d.value) })}>
+            <RadioGroup
+              value={input[item.key] ? String(input[item.key]) : ''}
+              onChange={(_, d) => setInput({ ...input, [item.key]: Number(d.value) })}
+            >
               {item.options.map((option, index) => (
                 <Radio key={option} value={String(index + 1)} label={`${index + 1} · ${option}`} />
               ))}
@@ -289,11 +361,18 @@ function BradenForm({ admissionId, onDone }: { admissionId: string; onDone: () =
       {score ? (
         <ScorePreview score={score} max={23} />
       ) : (
-        <Caption1 className={styles.muted}>{BRADEN_ITEMS.filter((i) => input[i.key] === undefined).length} items left to answer.</Caption1>
+        <Caption1 className={styles.muted}>
+          {BRADEN_ITEMS.filter((i) => input[i.key] === undefined).length} items left to answer.
+        </Caption1>
       )}
       <ErrorBar error={save.error} />
       <div>
-        <Button appearance="primary" disabled={!complete || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => save.mutate()}>
+        <Button
+          appearance="primary"
+          disabled={!complete || save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          onClick={() => save.mutate()}
+        >
           Save Braden score{score ? ` (${score.score})` : ''}
         </Button>
       </div>
@@ -312,7 +391,14 @@ function PainForm({ admissionId, onDone }: { admissionId: string; onDone: () => 
   const options = painScoreOptions(scale);
   const score = value !== null && options.includes(value) ? painScore(value) : null;
   const save = useMutation({
-    mutationFn: () => nursingApi.addPain(admissionId, { score: value ?? 0, scale, location: location.trim() || null, character: character.trim() || null, notes: notes.trim() || null }),
+    mutationFn: () =>
+      nursingApi.addPain(admissionId, {
+        score: value ?? 0,
+        scale,
+        location: location.trim() || null,
+        character: character.trim() || null,
+        notes: notes.trim() || null,
+      }),
     ...handlers('Pain score'),
   });
 
@@ -356,10 +442,20 @@ function PainForm({ admissionId, onDone }: { admissionId: string; onDone: () => 
       </Field>
       <div className={styles.items}>
         <Field label="Where">
-          <Input value={location} onChange={(_, d) => setLocation(d.value)} maxLength={100} placeholder="e.g. Surgical wound, lower back" />
+          <Input
+            value={location}
+            onChange={(_, d) => setLocation(d.value)}
+            maxLength={100}
+            placeholder="e.g. Surgical wound, lower back"
+          />
         </Field>
         <Field label="What it feels like">
-          <Input value={character} onChange={(_, d) => setCharacter(d.value)} maxLength={100} placeholder="e.g. Throbbing, burning" />
+          <Input
+            value={character}
+            onChange={(_, d) => setCharacter(d.value)}
+            maxLength={100}
+            placeholder="e.g. Throbbing, burning"
+          />
         </Field>
       </div>
       <Field label="Notes">
@@ -368,7 +464,12 @@ function PainForm({ admissionId, onDone }: { admissionId: string; onDone: () => 
       {score && <ScorePreview score={score} max={10} />}
       <ErrorBar error={save.error} />
       <div>
-        <Button appearance="primary" disabled={score === null || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => save.mutate()}>
+        <Button
+          appearance="primary"
+          disabled={score === null || save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          onClick={() => save.mutate()}
+        >
           Save pain score{score ? ` (${score.score})` : ''}
         </Button>
       </div>

@@ -56,7 +56,10 @@ function letterheadHtml(letterhead: ReportLetterhead, logo: string | null | unde
 }
 
 function patientBlock(rows: ReportShell['patientRows']): string {
-  const cells = rows.map(([label, value]) => `<div class="pb-cell"><span class="pb-label">${escapeHtml(label)}</span><span class="pb-value">${escapeHtml(value)}</span></div>`);
+  const cells = rows.map(
+    ([label, value]) =>
+      `<div class="pb-cell"><span class="pb-label">${escapeHtml(label)}</span><span class="pb-value">${escapeHtml(value)}</span></div>`,
+  );
   return `<section class="pb">${cells.join('')}</section>`;
 }
 

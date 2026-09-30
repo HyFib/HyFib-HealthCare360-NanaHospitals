@@ -34,7 +34,13 @@ import { useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { crmApi, crmKeys, crmQueries, type LeadActivityDto, type LeadDetail } from '@/modules/crm/api';
 import { ConvertLeadDialog } from '@/modules/crm/ConvertLeadDialog';
-import { CRM_PERMISSIONS as C, leadActivityLabel, leadSourceLabel, leadStatusLabel, type LeadStatus } from '@/modules/crm/labels';
+import {
+  CRM_PERMISSIONS as C,
+  leadActivityLabel,
+  leadSourceLabel,
+  leadStatusLabel,
+  type LeadStatus,
+} from '@/modules/crm/labels';
 import { LeadActivityDialog } from '@/modules/crm/LeadActivityDialog';
 import { LeadDrawer } from '@/modules/crm/LeadDrawer';
 import { Patient360Link } from '@/modules/crm/Patient360Link';
@@ -119,14 +125,19 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
   const queryClient = useQueryClient();
   const departments = useDepartments('Clinical');
   const canReferrals = usePermission(C.referralsManage);
-  const doctor = useQuery({ ...crmQueries.referringDoctor(lead.referringDoctorId ?? ''), enabled: Boolean(lead.referringDoctorId) && canReferrals });
+  const doctor = useQuery({
+    ...crmQueries.referringDoctor(lead.referringDoctorId ?? ''),
+    enabled: Boolean(lead.referringDoctorId) && canReferrals,
+  });
   const [editing, setEditing] = useState(false);
   const [logging, setLogging] = useState(false);
   const [converting, setConverting] = useState(false);
   const [losing, setLosing] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const department = lead.interestDepartmentId ? (departments.data?.find((d) => d.id === lead.interestDepartmentId)?.name ?? 'Department') : null;
+  const department = lead.interestDepartmentId
+    ? (departments.data?.find((d) => d.id === lead.interestDepartmentId)?.name ?? 'Department')
+    : null;
   const open = isLeadOpen(lead.status);
 
   const move = async (to: LeadStatus, lostReason: string | null = null) => {
@@ -173,7 +184,11 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
                   <MenuList>
                     {leadMoves(lead.status).map((to) => (
                       <MenuItem key={to} onClick={() => (to === 'Lost' ? setLosing(true) : void move(to))}>
-                        {to === 'Lost' ? 'Mark as lost…' : lead.status === 'Lost' ? `Reopen as ${leadStatusLabel[to]}` : `Move to ${leadStatusLabel[to]}`}
+                        {to === 'Lost'
+                          ? 'Mark as lost…'
+                          : lead.status === 'Lost'
+                            ? `Reopen as ${leadStatusLabel[to]}`
+                            : `Move to ${leadStatusLabel[to]}`}
                       </MenuItem>
                     ))}
                   </MenuList>
@@ -204,7 +219,9 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
           <MessageBarBody>
             Converted {lead.convertedAt ? formatDateTime(lead.convertedAt) : ''}
             {lead.convertedAppointmentId ? ' with an appointment booked' : ''}.{' '}
-            {lead.convertedPatientId && <Patient360Link patientId={lead.convertedPatientId} size="small" appearance="transparent" />}
+            {lead.convertedPatientId && (
+              <Patient360Link patientId={lead.convertedPatientId} size="small" appearance="transparent" />
+            )}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -212,7 +229,9 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
       <MainAside>
         <Section title="Calls, messages and notes" description="Newest first">
           {lead.activities.length === 0 ? (
-            <Caption1 className={styles.muted}>Nothing recorded yet. Log the first call to move the lead to Contacted.</Caption1>
+            <Caption1 className={styles.muted}>
+              Nothing recorded yet. Log the first call to move the lead to Contacted.
+            </Caption1>
           ) : (
             <ol className={styles.timeline}>
               {lead.activities.map((a) => (
@@ -257,10 +276,14 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
             <DetailGrid minColumnWidth={160}>
               <Detail label="Interested in">{lead.interestPackage}</Detail>
               <Detail label="Department">{department}</Detail>
-              <Detail label="Referred by">{lead.referringDoctorId ? (doctor.data?.name ?? 'A registered doctor') : null}</Detail>
+              <Detail label="Referred by">
+                {lead.referringDoctorId ? (doctor.data?.name ?? 'A registered doctor') : null}
+              </Detail>
               <Detail label="Owner">{lead.ownerUserId ? <UserName id={lead.ownerUserId} /> : 'Not assigned'}</Detail>
               <Detail label="Next call">{lead.nextFollowUpAt ? formatDateTime(lead.nextFollowUpAt) : null}</Detail>
-              <Detail label="Last contacted">{lead.lastContactedAt ? formatDateTime(lead.lastContactedAt) : null}</Detail>
+              <Detail label="Last contacted">
+                {lead.lastContactedAt ? formatDateTime(lead.lastContactedAt) : null}
+              </Detail>
               {lead.notes && (
                 <Detail label="Notes" wide>
                   <span className={styles.text}>{lead.notes}</span>

@@ -5,7 +5,20 @@ import type { BedAlert, BedStatus } from './bedState';
 
 // ------------------------------------------------------------------ enums (strings, as the server sends them)
 
-export const WARD_TYPES = ['General', 'SemiPrivate', 'Private', 'Deluxe', 'Icu', 'Nicu', 'Picu', 'Hdu', 'Maternity', 'Isolation', 'DayCare', 'Emergency'] as const;
+export const WARD_TYPES = [
+  'General',
+  'SemiPrivate',
+  'Private',
+  'Deluxe',
+  'Icu',
+  'Nicu',
+  'Picu',
+  'Hdu',
+  'Maternity',
+  'Isolation',
+  'DayCare',
+  'Emergency',
+] as const;
 export type WardType = (typeof WARD_TYPES)[number];
 
 export const WARD_TYPE_LABEL: Record<WardType, string> = {
@@ -25,7 +38,11 @@ export const WARD_TYPE_LABEL: Record<WardType, string> = {
 
 export const GENDER_POLICIES = ['Any', 'MaleOnly', 'FemaleOnly'] as const;
 export type WardGenderPolicy = (typeof GENDER_POLICIES)[number];
-export const GENDER_POLICY_LABEL: Record<WardGenderPolicy, string> = { Any: 'Any patient', MaleOnly: 'Male patients only', FemaleOnly: 'Female patients only' };
+export const GENDER_POLICY_LABEL: Record<WardGenderPolicy, string> = {
+  Any: 'Any patient',
+  MaleOnly: 'Male patients only',
+  FemaleOnly: 'Female patients only',
+};
 
 export const ADMISSION_TYPES = ['Elective', 'Emergency', 'DayCare', 'Maternity', 'TransferIn'] as const;
 export type AdmissionType = (typeof ADMISSION_TYPES)[number];
@@ -46,7 +63,16 @@ export const ADMISSION_SOURCE_LABEL: Record<AdmissionSource, string> = {
   Direct: 'Direct admission',
 };
 
-export const ADMISSION_STATUSES = ['Admitted', 'DischargeInitiated', 'Discharged', 'Cancelled', 'Absconded', 'Expired', 'Lama', 'Dama'] as const;
+export const ADMISSION_STATUSES = [
+  'Admitted',
+  'DischargeInitiated',
+  'Discharged',
+  'Cancelled',
+  'Absconded',
+  'Expired',
+  'Lama',
+  'Dama',
+] as const;
 export type AdmissionStatus = (typeof ADMISSION_STATUSES)[number];
 export const ADMISSION_STATUS_LABEL: Record<AdmissionStatus, string> = {
   Admitted: 'In hospital',
@@ -84,7 +110,14 @@ export function dischargeNeedsNotes(type: DischargeType): boolean {
   return type === 'Lama' || type === 'Dama' || type === 'Absconded';
 }
 
-export const PAYER_TYPES: readonly PayerType[] = ['Self', 'Insurance', 'Corporate', 'GovernmentScheme', 'Staff', 'Charity'];
+export const PAYER_TYPES: readonly PayerType[] = [
+  'Self',
+  'Insurance',
+  'Corporate',
+  'GovernmentScheme',
+  'Staff',
+  'Charity',
+];
 export const PAYER_LABEL: Record<PayerType, string> = {
   Self: 'Self (cash / card / UPI)',
   Insurance: 'Insurance / TPA',
@@ -600,18 +633,21 @@ export const inpatientKeys = {
   all: ['inpatient'] as const,
   wards: (includeInactive = false) => ['inpatient', 'wards', includeInactive] as const,
   rooms: (wardId: string) => ['inpatient', 'rooms', wardId] as const,
-  beds: (wardId: string | null, includeInactive: boolean) => ['inpatient', 'beds', wardId ?? 'all', includeInactive] as const,
+  beds: (wardId: string | null, includeInactive: boolean) =>
+    ['inpatient', 'beds', wardId ?? 'all', includeInactive] as const,
   board: (wardId?: string | null) => ['inpatient', 'board', wardId ?? 'all'] as const,
   boardAll: ['inpatient', 'board'] as const,
   occupancy: ['inpatient', 'occupancy'] as const,
-  available: (patientId: string | null, wardId: string | null) => ['inpatient', 'available', patientId ?? 'any', wardId ?? 'all'] as const,
+  available: (patientId: string | null, wardId: string | null) =>
+    ['inpatient', 'available', patientId ?? 'any', wardId ?? 'all'] as const,
   housekeeping: (wardId?: string | null) => ['inpatient', 'housekeeping', wardId ?? 'all'] as const,
   bedHistory: (bedId: string) => ['inpatient', 'bed-history', bedId] as const,
   admissions: (filters: AdmissionFilters) => ['inpatient', 'admissions', filters] as const,
   admissionsAll: ['inpatient', 'admissions'] as const,
   admission: (id: string) => ['inpatient', 'admission', id] as const,
   pendingDischarges: (wardId?: string | null) => ['inpatient', 'pending-discharges', wardId ?? 'all'] as const,
-  census: (from: string, to: string, wardId?: string | null) => ['inpatient', 'census', from, to, wardId ?? 'all'] as const,
+  census: (from: string, to: string, wardId?: string | null) =>
+    ['inpatient', 'census', from, to, wardId ?? 'all'] as const,
   patientAdmissions: (patientId: string) => ['inpatient', 'patient-admissions', patientId] as const,
 };
 
@@ -619,7 +655,11 @@ export const inpatientQueries = {
   wards: (includeInactive = false) =>
     queryOptions({
       queryKey: inpatientKeys.wards(includeInactive),
-      queryFn: ({ signal }) => api.get<WardDto[]>('/api/v1/inpatient/wards', { query: { includeInactive: includeInactive || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<WardDto[]>('/api/v1/inpatient/wards', {
+          query: { includeInactive: includeInactive || undefined },
+          signal,
+        }),
       staleTime: 5 * 60_000,
     }),
   rooms: (wardId: string) =>
@@ -630,7 +670,8 @@ export const inpatientQueries = {
   beds: (wardId: string | null, includeInactive = true) =>
     queryOptions({
       queryKey: inpatientKeys.beds(wardId, includeInactive),
-      queryFn: ({ signal }) => api.get<BedDto[]>('/api/v1/beds', { query: { wardId, includeInactive: includeInactive || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<BedDto[]>('/api/v1/beds', { query: { wardId, includeInactive: includeInactive || undefined }, signal }),
     }),
   board: (wardId?: string | null) =>
     queryOptions({
@@ -648,25 +689,31 @@ export const inpatientQueries = {
   available: (patientId: string | null, wardId: string | null = null) =>
     queryOptions({
       queryKey: inpatientKeys.available(patientId, wardId),
-      queryFn: ({ signal }) => api.get<AvailableBedDto[]>('/api/v1/beds/available', { query: { patientId, wardId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<AvailableBedDto[]>('/api/v1/beds/available', { query: { patientId, wardId }, signal }),
       staleTime: 10_000,
     }),
   housekeeping: (wardId?: string | null) =>
     queryOptions({
       queryKey: inpatientKeys.housekeeping(wardId),
-      queryFn: ({ signal }) => api.get<HousekeepingTaskDto[]>('/api/v1/beds/housekeeping', { query: { wardId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<HousekeepingTaskDto[]>('/api/v1/beds/housekeeping', { query: { wardId }, signal }),
       refetchInterval: 60_000,
     }),
   bedHistory: (bedId: string) =>
     queryOptions({
       queryKey: inpatientKeys.bedHistory(bedId),
-      queryFn: ({ signal }) => api.get<PagedResult<BedHistoryItem>>(`/api/v1/beds/${bedId}/history`, { query: { pageSize: 10 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<BedHistoryItem>>(`/api/v1/beds/${bedId}/history`, { query: { pageSize: 10 }, signal }),
     }),
   admissions: (filters: AdmissionFilters) =>
     queryOptions({
       queryKey: inpatientKeys.admissions(filters),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<AdmissionListItem>>('/api/v1/inpatient/admissions', { query: { pageSize: 25, ...filters }, signal }),
+        api.get<PagedResult<AdmissionListItem>>('/api/v1/inpatient/admissions', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   admission: (id: string) =>
@@ -677,7 +724,8 @@ export const inpatientQueries = {
   bedAssignments: (id: string) =>
     queryOptions({
       queryKey: [...inpatientKeys.admission(id), 'bed-history'],
-      queryFn: ({ signal }) => api.get<BedAssignmentDto[]>(`/api/v1/inpatient/admissions/${id}/bed-history`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<BedAssignmentDto[]>(`/api/v1/inpatient/admissions/${id}/bed-history`, { signal }),
     }),
   charges: (id: string) =>
     queryOptions({
@@ -687,24 +735,28 @@ export const inpatientQueries = {
   visits: (id: string) =>
     queryOptions({
       queryKey: [...inpatientKeys.admission(id), 'visits'],
-      queryFn: ({ signal }) => api.get<ConsultantVisitDto[]>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<ConsultantVisitDto[]>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, { signal }),
     }),
   clearance: (id: string) =>
     queryOptions({
       queryKey: [...inpatientKeys.admission(id), 'clearance'],
-      queryFn: ({ signal }) => api.get<DischargeClearanceDto>(`/api/v1/inpatient/admissions/${id}/discharge/clearance`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<DischargeClearanceDto>(`/api/v1/inpatient/admissions/${id}/discharge/clearance`, { signal }),
       staleTime: 0,
     }),
   pendingDischarges: (wardId?: string | null) =>
     queryOptions({
       queryKey: inpatientKeys.pendingDischarges(wardId),
-      queryFn: ({ signal }) => api.get<PendingDischargeItem[]>('/api/v1/inpatient/discharges/pending', { query: { wardId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PendingDischargeItem[]>('/api/v1/inpatient/discharges/pending', { query: { wardId }, signal }),
       refetchInterval: 120_000,
     }),
   census: (from: string, to: string, wardId?: string | null) =>
     queryOptions({
       queryKey: inpatientKeys.census(from, to, wardId),
-      queryFn: ({ signal }) => api.get<CensusReport>('/api/v1/inpatient/census', { query: { from, to, wardId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<CensusReport>('/api/v1/inpatient/census', { query: { from, to, wardId }, signal }),
       placeholderData: keepPreviousData,
     }),
   patientAdmissions: (patientId: string) =>
@@ -716,7 +768,8 @@ export const inpatientQueries = {
   bedServices: () =>
     queryOptions({
       queryKey: ['inpatient', 'bed-services'],
-      queryFn: ({ signal }) => api.get<ServiceItemOption[]>('/api/v1/masters/lookups/services', { query: { category: 'BedCharge' }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ServiceItemOption[]>('/api/v1/masters/lookups/services', { query: { category: 'BedCharge' }, signal }),
       staleTime: 10 * 60_000,
     }),
 };
@@ -724,15 +777,19 @@ export const inpatientQueries = {
 // ------------------------------------------------------------------ commands
 
 export const bedApi = {
-  reserve: (bedId: string, body: { patientId: string; reservedUntil: string; note: string | null }) => api.post<BedDto>(`/api/v1/beds/${bedId}/reserve`, body),
+  reserve: (bedId: string, body: { patientId: string; reservedUntil: string; note: string | null }) =>
+    api.post<BedDto>(`/api/v1/beds/${bedId}/reserve`, body),
   cancelReservation: (bedId: string) => api.post<BedDto>(`/api/v1/beds/${bedId}/cancel-reservation`),
   block: (bedId: string, reason: string) => api.post<BedDto>(`/api/v1/beds/${bedId}/block`, { reason }),
   unblock: (bedId: string) => api.post<BedDto>(`/api/v1/beds/${bedId}/unblock`),
-  startMaintenance: (bedId: string, reason: string) => api.post<BedDto>(`/api/v1/beds/${bedId}/maintenance`, { reason }),
+  startMaintenance: (bedId: string, reason: string) =>
+    api.post<BedDto>(`/api/v1/beds/${bedId}/maintenance`, { reason }),
   endMaintenance: (bedId: string) => api.post<BedDto>(`/api/v1/beds/${bedId}/maintenance/complete`),
-  sendForCleaning: (bedId: string, notes: string | null) => api.post<BedDto>(`/api/v1/beds/${bedId}/cleaning`, { notes }),
+  sendForCleaning: (bedId: string, notes: string | null) =>
+    api.post<BedDto>(`/api/v1/beds/${bedId}/cleaning`, { notes }),
   startCleaning: (taskId: string) => api.post<HousekeepingTaskDto>(`/api/v1/beds/housekeeping/${taskId}/start`),
-  completeCleaning: (taskId: string, notes: string | null) => api.post<HousekeepingTaskDto>(`/api/v1/beds/housekeeping/${taskId}/complete`, { notes }),
+  completeCleaning: (taskId: string, notes: string | null) =>
+    api.post<HousekeepingTaskDto>(`/api/v1/beds/housekeeping/${taskId}/complete`, { notes }),
   create: (body: SaveBedRequest) => api.post<BedDto>('/api/v1/beds', body),
   createMany: (body: CreateBedsRequest) => api.post<BedDto[]>('/api/v1/beds/bulk', body),
   update: (bedId: string, body: SaveBedRequest) => api.put<void>(`/api/v1/beds/${bedId}`, body),
@@ -748,14 +805,19 @@ export const wardApi = {
 export const admissionApi = {
   admit: (body: AdmitPatientRequest) => api.post<AdmissionCreated>('/api/v1/inpatient/admissions', body),
   update: (id: string, body: UpdateAdmissionRequest) => api.put<void>(`/api/v1/inpatient/admissions/${id}`, body),
-  transfer: (id: string, body: TransferPatientRequest) => api.post<void>(`/api/v1/inpatient/admissions/${id}/transfer`, body),
+  transfer: (id: string, body: TransferPatientRequest) =>
+    api.post<void>(`/api/v1/inpatient/admissions/${id}/transfer`, body),
   cancel: (id: string, reason: string) => api.post<void>(`/api/v1/inpatient/admissions/${id}/cancel`, { reason }),
   initiateDischarge: (id: string, body: { expectedDischargeDate: string | null; notes: string | null }) =>
     api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/initiate`, body),
-  revokeDischarge: (id: string, reason: string) => api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/revoke`, { reason }),
-  completeDischarge: (id: string, body: { dischargeType: DischargeType; dischargedAt: string | null; notes: string | null; notifyPatient: boolean }) =>
-    api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/complete`, body),
+  revokeDischarge: (id: string, reason: string) =>
+    api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/revoke`, { reason }),
+  completeDischarge: (
+    id: string,
+    body: { dischargeType: DischargeType; dischargedAt: string | null; notes: string | null; notifyPatient: boolean },
+  ) => api.post<DischargeResult>(`/api/v1/inpatient/admissions/${id}/discharge/complete`, body),
   recordVisit: (id: string, body: { practitionerId: string | null; visitedAt: string | null; notes: string | null }) =>
     api.post<ConsultantVisitDto>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, body),
-  cancelVisit: (visitId: string, reason: string) => api.post<void>(`/api/v1/inpatient/admissions/consultant-visits/${visitId}/cancel`, { reason }),
+  cancelVisit: (visitId: string, reason: string) =>
+    api.post<void>(`/api/v1/inpatient/admissions/consultant-visits/${visitId}/cancel`, { reason }),
 };

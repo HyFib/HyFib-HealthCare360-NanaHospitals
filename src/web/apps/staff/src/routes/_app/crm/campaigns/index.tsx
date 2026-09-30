@@ -7,7 +7,15 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { crmQueries } from '@/modules/crm/api';
-import { CAMPAIGN_CHANNELS, CAMPAIGN_STATUSES, CAMPAIGN_VIEWERS, campaignChannelLabel, CRM_PERMISSIONS as C, type CampaignChannel, type CampaignStatus } from '@/modules/crm/labels';
+import {
+  CAMPAIGN_CHANNELS,
+  CAMPAIGN_STATUSES,
+  CAMPAIGN_VIEWERS,
+  campaignChannelLabel,
+  CRM_PERMISSIONS as C,
+  type CampaignChannel,
+  type CampaignStatus,
+} from '@/modules/crm/labels';
 import { campaignTone } from '@/modules/crm/rules';
 import { FilterPad } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -39,15 +47,21 @@ function CampaignsPage() {
   const canManage = usePermission(C.campaignsManage);
   const [term, setTerm] = useState(search.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
-  const campaigns = useQuery(crmQueries.campaigns({ status: search.status, channel: search.channel, search: search.search, page: search.page }));
+  const campaigns = useQuery(
+    crmQueries.campaigns({ status: search.status, channel: search.channel, search: search.search, page: search.page }),
+  );
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<CampaignsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<CampaignsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -58,7 +72,11 @@ function CampaignsPage() {
         breadcrumbs={[{ label: 'Patient relations', onClick: () => void navigate({ to: '/crm' }) }]}
         actions={
           canManage && (
-            <Button appearance="primary" icon={<AddRegular />} onClick={() => void navigate({ to: '/crm/campaigns/new' })}>
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ to: '/crm/campaigns/new' })}
+            >
               New campaign
             </Button>
           )
@@ -71,7 +89,10 @@ function CampaignsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Campaign name" />
             </Field>
             <Field label="Stage">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as CampaignStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as CampaignStatus | undefined })}
+              >
                 <option value="">Any</option>
                 {CAMPAIGN_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -81,7 +102,10 @@ function CampaignsPage() {
               </Select>
             </Field>
             <Field label="Channel">
-              <Select value={search.channel ?? ''} onChange={(_, d) => set({ channel: (d.value || undefined) as CampaignChannel | undefined })}>
+              <Select
+                value={search.channel ?? ''}
+                onChange={(_, d) => set({ channel: (d.value || undefined) as CampaignChannel | undefined })}
+              >
                 <option value="">Any</option>
                 {CAMPAIGN_CHANNELS.map((c) => (
                   <option key={c} value={c}>
@@ -113,7 +137,11 @@ function CampaignsPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Stage', render: (c) => <StatusBadge status={c.status} tone={campaignTone(c.status)} /> },
+            {
+              key: 'status',
+              header: 'Stage',
+              render: (c) => <StatusBadge status={c.status} tone={campaignTone(c.status)} />,
+            },
             { key: 'scheduled', header: 'Sends', render: (c) => (c.scheduledAt ? formatDateTime(c.scheduledAt) : '—') },
             {
               key: 'audience',
@@ -126,11 +154,18 @@ function CampaignsPage() {
               header: 'Queued · skipped',
               align: 'end',
               priority: 'low',
-              render: (c) => (c.queuedCount + c.skippedCount === 0 ? '—' : `${c.queuedCount.toLocaleString('en-IN')} · ${c.skippedCount.toLocaleString('en-IN')}`),
+              render: (c) =>
+                c.queuedCount + c.skippedCount === 0
+                  ? '—'
+                  : `${c.queuedCount.toLocaleString('en-IN')} · ${c.skippedCount.toLocaleString('en-IN')}`,
             },
           ]}
           emptyTitle="No campaigns yet"
-          emptyDescription={canManage ? 'Create a campaign, check the audience and schedule it.' : 'Campaigns drafted by the CRM team appear here.'}
+          emptyDescription={
+            canManage
+              ? 'Create a campaign, check the audience and schedule it.'
+              : 'Campaigns drafted by the CRM team appear here.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={campaigns.data?.totalCount}

@@ -2,7 +2,16 @@ import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-export const MENU_CATEGORIES = ['Breakfast', 'Meals', 'Snacks', 'Beverages', 'Juices', 'Sweets', 'Packaged', 'Other'] as const;
+export const MENU_CATEGORIES = [
+  'Breakfast',
+  'Meals',
+  'Snacks',
+  'Beverages',
+  'Juices',
+  'Sweets',
+  'Packaged',
+  'Other',
+] as const;
 export type MenuCategory = (typeof MENU_CATEGORIES)[number];
 
 export const CUSTOMER_TYPES = ['Staff', 'Attendant', 'Visitor', 'Patient'] as const;
@@ -15,8 +24,18 @@ export type CanteenSaleStatus = 'Completed' | 'Cancelled';
 export type StockMovementKind = 'Receipt' | 'Adjustment' | 'Wastage';
 export type StaffCreditEntryKind = 'Sale' | 'Cancellation' | 'PayrollDeduction' | 'Payment';
 
-export const PAYMENT_LABEL: Record<CanteenPaymentMode, string> = { Cash: 'Cash', Upi: 'UPI', Card: 'Card', StaffCredit: 'Staff credit' };
-export const CUSTOMER_LABEL: Record<CanteenCustomerType, string> = { Staff: 'Staff', Attendant: 'Attendant', Visitor: 'Visitor', Patient: 'Patient' };
+export const PAYMENT_LABEL: Record<CanteenPaymentMode, string> = {
+  Cash: 'Cash',
+  Upi: 'UPI',
+  Card: 'Card',
+  StaffCredit: 'Staff credit',
+};
+export const CUSTOMER_LABEL: Record<CanteenCustomerType, string> = {
+  Staff: 'Staff',
+  Attendant: 'Attendant',
+  Visitor: 'Visitor',
+  Patient: 'Patient',
+};
 export const CREDIT_KIND_LABEL: Record<StaffCreditEntryKind, string> = {
   Sale: 'Canteen purchase',
   Cancellation: 'Bill cancelled',
@@ -236,14 +255,22 @@ export const canteenQueries = {
   menu: (availableOnly: boolean) =>
     queryOptions({
       queryKey: canteenKeys.menu(availableOnly),
-      queryFn: ({ signal }) => api.get<MenuItemDto[]>('/api/v1/canteen/menu', { query: { availableOnly: availableOnly || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<MenuItemDto[]>('/api/v1/canteen/menu', {
+          query: { availableOnly: availableOnly || undefined },
+          signal,
+        }),
       // Stock of packaged items changes with every bill at every counter.
       refetchInterval: 60_000,
     }),
   sales: (filters: SalesFilters) =>
     queryOptions({
       queryKey: canteenKeys.sales(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<CanteenSaleListItem>>('/api/v1/canteen/sales', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CanteenSaleListItem>>('/api/v1/canteen/sales', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   sale: (id: string) =>
@@ -259,23 +286,29 @@ export const canteenQueries = {
   balances: (outstandingOnly: boolean) =>
     queryOptions({
       queryKey: canteenKeys.balances(outstandingOnly),
-      queryFn: ({ signal }) => api.get<StaffBalanceDto[]>('/api/v1/canteen/staff-credit/balances', { query: { outstandingOnly }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<StaffBalanceDto[]>('/api/v1/canteen/staff-credit/balances', { query: { outstandingOnly }, signal }),
     }),
   statement: (employeeCode: string, period: string) =>
     queryOptions({
       queryKey: canteenKeys.statement(employeeCode, period),
-      queryFn: ({ signal }) => api.get<StaffStatement>('/api/v1/canteen/staff-credit/statement', { query: { employeeCode, period }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<StaffStatement>('/api/v1/canteen/staff-credit/statement', { query: { employeeCode, period }, signal }),
     }),
 };
 
 export const canteenApi = {
   createMenuItem: (body: SaveMenuItemRequest) => api.post<MenuItemDto>('/api/v1/canteen/menu', body),
   updateMenuItem: (id: string, body: SaveMenuItemRequest) => api.put<void>(`/api/v1/canteen/menu/${id}`, body),
-  moveStock: (id: string, body: { kind: StockMovementKind; quantity: number; reason: string | null }) => api.post<MenuItemDto>(`/api/v1/canteen/menu/${id}/stock`, body),
+  moveStock: (id: string, body: { kind: StockMovementKind; quantity: number; reason: string | null }) =>
+    api.post<MenuItemDto>(`/api/v1/canteen/menu/${id}/stock`, body),
   createSale: (body: CreateSaleRequest) => api.post<CanteenSaleDto>('/api/v1/canteen/sales', body),
-  cancelSale: (id: string, reason: string) => api.post<CanteenSaleDto>(`/api/v1/canteen/sales/${id}/cancel`, { reason }),
-  recordPayment: (body: { employeeCode: string; amount: number; reference: string | null }) => api.post<StaffBalanceDto>('/api/v1/canteen/staff-credit/payments', body),
-  settle: (body: { period: string; reference: string; employeeCodes: string[] | null }) => api.post<SettlementResult>('/api/v1/canteen/staff-credit/settlements', body),
+  cancelSale: (id: string, reason: string) =>
+    api.post<CanteenSaleDto>(`/api/v1/canteen/sales/${id}/cancel`, { reason }),
+  recordPayment: (body: { employeeCode: string; amount: number; reference: string | null }) =>
+    api.post<StaffBalanceDto>('/api/v1/canteen/staff-credit/payments', body),
+  settle: (body: { period: string; reference: string; employeeCodes: string[] | null }) =>
+    api.post<SettlementResult>('/api/v1/canteen/staff-credit/settlements', body),
   exportCsv: (period: string) => api.blob('/api/v1/canteen/staff-credit/export', { query: { period } }),
 };
 

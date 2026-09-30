@@ -31,9 +31,30 @@ import type { DuplicateCandidate } from '@/modules/patients/api';
 import { crmApi, crmKeys, type LeadConversion, type LeadDetail } from './api';
 
 const useStyles = makeStyles({
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textAlign: 'center', padding: '8px 0' },
-  uhid: { fontFamily: tokens.fontFamilyMonospace, fontSize: '28px', lineHeight: '36px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
-  candidate: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', padding: '8px 10px', border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    textAlign: 'center',
+    padding: '8px 0',
+  },
+  uhid: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: '28px',
+    lineHeight: '36px',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
+  candidate: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '8px',
+    alignItems: 'center',
+    padding: '8px 10px',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: tokens.borderRadiusMedium,
+  },
   row: { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' },
 });
 
@@ -105,7 +126,12 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
     }
     void convert({
       patientId: null,
-      registerPatient: { gender, dateOfBirth: dateOfBirth || null, ageYears: dateOfBirth ? null : Number(age), confirmedNotDuplicate },
+      registerPatient: {
+        gender,
+        dateOfBirth: dateOfBirth || null,
+        ageYears: dateOfBirth ? null : Number(age),
+        confirmedNotDuplicate,
+      },
       appointmentId: null,
     });
   };
@@ -129,7 +155,11 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
         </DialogContent>
         <DialogActions fluid>
           {result.patientId && (
-            <Button onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: result.patientId! } })}>Open patient</Button>
+            <Button
+              onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: result.patientId! } })}
+            >
+              Open patient
+            </Button>
           )}
           <Button onClick={onClose}>Done</Button>
           {result.patientId && (
@@ -137,7 +167,10 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
               appearance="primary"
               icon={<CalendarAddRegular />}
               onClick={() =>
-                void navigate({ to: '/scheduling/book', search: { patientId: result.patientId!, departmentId: lead.interestDepartmentId ?? undefined } })
+                void navigate({
+                  to: '/scheduling/book',
+                  search: { patientId: result.patientId!, departmentId: lead.interestDepartmentId ?? undefined },
+                })
               }
             >
               Book appointment
@@ -180,11 +213,23 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
               </Field>
               <div className={styles.row}>
                 <Field label="Date of birth">
-                  <Input type="date" value={dateOfBirth} max={todayIso()} onChange={(_, d) => setDateOfBirth(d.value)} />
+                  <Input
+                    type="date"
+                    value={dateOfBirth}
+                    max={todayIso()}
+                    onChange={(_, d) => setDateOfBirth(d.value)}
+                  />
                 </Field>
                 <Text>or</Text>
                 <Field label="Age (years)">
-                  <Input type="number" min={0} max={130} value={age} disabled={Boolean(dateOfBirth)} onChange={(_, d) => setAge(d.value)} />
+                  <Input
+                    type="number"
+                    min={0}
+                    max={130}
+                    value={age}
+                    disabled={Boolean(dateOfBirth)}
+                    onChange={(_, d) => setAge(d.value)}
+                  />
                 </Field>
               </div>
             </>
@@ -198,7 +243,8 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>This person may already be registered</MessageBarTitle>
-                Registering the same person twice splits their medical history. Use the existing record if it is the same person.
+                Registering the same person twice splits their medical history. Use the existing record if it is the
+                same person.
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
                   {candidates.map((c) => (
                     <div key={c.id} className={styles.candidate}>
@@ -209,7 +255,11 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
                           {c.phoneMasked ? ` · ${c.phoneMasked}` : ''} · {c.reason}
                         </Caption1>
                       </span>
-                      <Button size="small" disabled={busy} onClick={() => void convert({ patientId: c.id, registerPatient: null, appointmentId: null })}>
+                      <Button
+                        size="small"
+                        disabled={busy}
+                        onClick={() => void convert({ patientId: c.id, registerPatient: null, appointmentId: null })}
+                      >
                         Use this patient
                       </Button>
                     </div>
@@ -224,11 +274,21 @@ function Body({ onClose, lead }: { onClose: () => void; lead: LeadDetail }) {
             Cancel
           </Button>
           {candidates ? (
-            <Button appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => submit(true)}>
+            <Button
+              appearance="primary"
+              disabled={busy}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+              onClick={() => submit(true)}
+            >
               It is a different person, register
             </Button>
           ) : (
-            <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={busy}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+            >
               {mode === 'register' ? 'Register and convert' : 'Convert'}
             </Button>
           )}

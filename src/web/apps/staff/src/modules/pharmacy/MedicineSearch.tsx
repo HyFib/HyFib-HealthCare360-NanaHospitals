@@ -41,7 +41,9 @@ export function MedicineSearch({
       hint={hint}
       placeholder={placeholder ?? 'Scan a barcode, or type a medicine or generic name'}
       queryKey={['pharmacy', 'stock', 'search', storeId]}
-      fetch={(search, signal) => api.get<PharmacyStockRow[]>('/api/v1/pharmacy/stock', { query: { storeId, search, take: 25 }, signal })}
+      fetch={(search, signal) =>
+        api.get<PharmacyStockRow[]>('/api/v1/pharmacy/stock', { query: { storeId, search, take: 25 }, signal })
+      }
       getKey={(row) => row.itemId}
       bestMatch={bestItemMatch}
       onPick={onPick}
@@ -53,21 +55,21 @@ export function MedicineSearch({
       emptyText="No medicine matches. Check the spelling, or search by the generic name."
       renderOption={(row) => (
         <>
-        <ItemOption
-          name={row.name}
-          code={row.code}
-          genericName={row.genericName}
-          strength={row.strength}
-          schedule={row.schedule}
-          isControlled={row.isControlled}
-          isColdChain={row.isColdChain}
-          available={row.available}
-          unit={row.baseUnit}
-          mrp={row.mrp}
-          nearestExpiry={row.nearestExpiry}
-          showStock
-        />
-        {renderExtra?.(row)}
+          <ItemOption
+            name={row.name}
+            code={row.code}
+            genericName={row.genericName}
+            strength={row.strength}
+            schedule={row.schedule}
+            isControlled={row.isControlled}
+            isColdChain={row.isColdChain}
+            available={row.available}
+            unit={row.baseUnit}
+            mrp={row.mrp}
+            nearestExpiry={row.nearestExpiry}
+            showStock
+          />
+          {renderExtra?.(row)}
         </>
       )}
     />

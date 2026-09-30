@@ -19,13 +19,28 @@ interface BaseProps<T extends FieldValues> {
  * Date and time as "yyyy-MM-ddTHH:mm" in hospital time (IST). Convert with `fromIstInput` when submitting.
  * Uses the native picker: keyboard and touch friendly on workstations and tablets.
  */
-export function DateTimeField<T extends FieldValues>({ control, name, label, hint, required, disabled, min, max }: BaseProps<T> & { min?: string; max?: string }) {
+export function DateTimeField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  min,
+  max,
+}: BaseProps<T> & { min?: string; max?: string }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Input
             type="datetime-local"
             name={field.name}
@@ -50,7 +65,13 @@ export function TimeField<T extends FieldValues>({ control, name, label, hint, r
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Input
             type="time"
             name={field.name}
@@ -86,7 +107,13 @@ export function CheckboxGroupField<T extends FieldValues>({
       render={({ field, fieldState }) => {
         const selected = (field.value as string[] | null | undefined) ?? [];
         return (
-          <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+          <Field
+            label={label}
+            hint={hint}
+            required={required}
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
             <div className={layout === 'columns' ? styles.columns : styles.group} role="group" aria-label={label}>
               {options.map((option) => (
                 <Checkbox
@@ -95,7 +122,11 @@ export function CheckboxGroupField<T extends FieldValues>({
                   disabled={disabled}
                   checked={selected.includes(option.value)}
                   onChange={(_, data) =>
-                    field.onChange(data.checked === true ? [...selected, option.value] : selected.filter((value) => value !== option.value))
+                    field.onChange(
+                      data.checked === true
+                        ? [...selected, option.value]
+                        : selected.filter((value) => value !== option.value),
+                    )
                   }
                 />
               ))}

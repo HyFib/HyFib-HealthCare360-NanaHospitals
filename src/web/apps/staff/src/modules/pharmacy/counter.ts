@@ -44,7 +44,10 @@ export function useCounterPrefs(): [CounterPrefs, (patch: Partial<CounterPrefs>)
 export function useLetterhead(): Letterhead {
   const user = useSession((s) => s.user);
   const canReadMasters = usePermission('masters.read');
-  const facility = useQuery({ ...facilityQuery(user?.facilityId), enabled: Boolean(user?.facilityId) && canReadMasters });
+  const facility = useQuery({
+    ...facilityQuery(user?.facilityId),
+    enabled: Boolean(user?.facilityId) && canReadMasters,
+  });
   return {
     name: facility.data?.legalName || facility.data?.name || user?.facilityName || 'Nana Hospitals',
     address: addressLine(facility.data?.address),
@@ -57,9 +60,14 @@ export function useLetterhead(): Letterhead {
  * Item-master details (GST rate, HSN) for items on a bill. Only catalogue readers can see the master; without it
  * the bill preview still shows the exact payable amount and leaves the CGST/SGST breakup to the invoice.
  */
-export function useItemMaster(itemIds: readonly string[]): { canRead: boolean; items: ReadonlyMap<string, ItemDetail> } {
+export function useItemMaster(itemIds: readonly string[]): {
+  canRead: boolean;
+  items: ReadonlyMap<string, ItemDetail>;
+} {
   const canRead = usePermission(CATALOG_READERS);
-  const results = useQueries({ queries: itemIds.map((id) => ({ ...inventoryQueries.item(id), enabled: canRead, retry: false })) });
+  const results = useQueries({
+    queries: itemIds.map((id) => ({ ...inventoryQueries.item(id), enabled: canRead, retry: false })),
+  });
   const items = new Map<string, ItemDetail>();
   for (let index = 0; index < results.length; index++) {
     const id = itemIds[index];
@@ -110,4 +118,3 @@ export function usePharmacyLive() {
     void queryClient.invalidateQueries({ queryKey: pharmacyKeys.refills });
   });
 }
-

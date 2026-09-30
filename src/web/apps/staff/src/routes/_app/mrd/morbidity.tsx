@@ -8,7 +8,14 @@ import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { addDaysIso } from '@/modules/emr/encounterForm';
 import { mrdQueries, type MorbidityGroupBy, type MorbiditySource } from '@/modules/mrd/api';
-import { chartLabel, morbidityCsv, periodProblem, topRows, totals, type MorbidityRowLike } from '@/modules/mrd/morbidity';
+import {
+  chartLabel,
+  morbidityCsv,
+  periodProblem,
+  topRows,
+  totals,
+  type MorbidityRowLike,
+} from '@/modules/mrd/morbidity';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -33,7 +40,11 @@ const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' },
 });
 
-const groupLabel: Record<MorbidityGroupBy, string> = { code: 'ICD-10 code', block: 'ICD-10 block', chapter: 'ICD-10 chapter' };
+const groupLabel: Record<MorbidityGroupBy, string> = {
+  code: 'ICD-10 code',
+  block: 'ICD-10 block',
+  chapter: 'ICD-10 chapter',
+};
 
 function downloadCsv(name: string, content: string) {
   // UTF-8 byte-order mark so Excel opens Indian-language names correctly.
@@ -73,7 +84,8 @@ function MorbidityPage() {
     };
   }, [rows]);
 
-  const set = (patch: Partial<MorbiditySearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<MorbiditySearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
@@ -81,7 +93,13 @@ function MorbidityPage() {
         title="Morbidity report"
         subtitle={`${formatDateOnly(from)} to ${formatDateOnly(to)} · ${source === 'coded' ? 'verified MRD coding' : "doctors' diagnoses"}`}
         actions={
-          <Button icon={<ArrowDownloadRegular />} disabled={rows.length === 0} onClick={() => downloadCsv(`morbidity-${groupBy}-${from}-to-${to}.csv`, morbidityCsv(rows, groupLabel[groupBy]))}>
+          <Button
+            icon={<ArrowDownloadRegular />}
+            disabled={rows.length === 0}
+            onClick={() =>
+              downloadCsv(`morbidity-${groupBy}-${from}-to-${to}.csv`, morbidityCsv(rows, groupLabel[groupBy]))
+            }
+          >
             Download CSV
           </Button>
         }
@@ -92,10 +110,19 @@ function MorbidityPage() {
             <Input type="date" value={from} max={to} onChange={(_, d) => set({ from: d.value || undefined })} />
           </Field>
           <Field label="To">
-            <Input type="date" value={to} min={from} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+            <Input
+              type="date"
+              value={to}
+              min={from}
+              max={today}
+              onChange={(_, d) => set({ to: d.value || undefined })}
+            />
           </Field>
           <Field label="Group by">
-            <Select value={groupBy} onChange={(_, d) => set({ groupBy: d.value === 'code' ? undefined : (d.value as MorbidityGroupBy) })}>
+            <Select
+              value={groupBy}
+              onChange={(_, d) => set({ groupBy: d.value === 'code' ? undefined : (d.value as MorbidityGroupBy) })}
+            >
               <option value="code">ICD-10 code</option>
               <option value="block">Block (disease group)</option>
               <option value="chapter">Chapter</option>
@@ -117,18 +144,33 @@ function MorbidityPage() {
       ) : report.isLoading ? (
         <LoadingState label="Building the report…" />
       ) : rows.length === 0 ? (
-        <EmptyState title="No episodes in this period" description="Choose a longer period, or switch the source if coding has not been verified yet." />
+        <EmptyState
+          title="No episodes in this period"
+          description="Choose a longer period, or switch the source if coding has not been verified yet."
+        />
       ) : (
         <>
           <div className={styles.kpis}>
-            <KpiCard label="Episodes" value={formatNumber(report.data?.totalEpisodes ?? sum.episodes)} icon={<DataBarHorizontalRegular />} />
+            <KpiCard
+              label="Episodes"
+              value={formatNumber(report.data?.totalEpisodes ?? sum.episodes)}
+              icon={<DataBarHorizontalRegular />}
+            />
             <KpiCard label={`${groupLabel[groupBy]}s`} value={formatNumber(rows.length)} />
-            <KpiCard label="Male / female" value={`${formatNumber(sum.male)} / ${formatNumber(sum.female)}`} icon={<PeopleRegular />} />
+            <KpiCard
+              label="Male / female"
+              value={`${formatNumber(sum.male)} / ${formatNumber(sum.female)}`}
+              icon={<PeopleRegular />}
+            />
             <KpiCard label="Children (0–14)" value={formatNumber(sum.children)} icon={<PersonRegular />} />
             <KpiCard label="Elderly (65+)" value={formatNumber(sum.elderly)} icon={<PersonRegular />} />
           </div>
           <Section title="Most frequent" description="Top 15 by number of episodes">
-            <EChart option={option} height={Math.max(260, Math.min(15, rows.length) * 30)} ariaLabel="Bar chart of the most frequent diagnoses. The table below lists every group." />
+            <EChart
+              option={option}
+              height={Math.max(260, Math.min(15, rows.length) * 30)}
+              ariaLabel="Bar chart of the most frequent diagnoses. The table below lists every group."
+            />
           </Section>
           <Section title={`All ${groupLabel[groupBy].toLowerCase()}s`} flush>
             <DataTable
@@ -137,14 +179,38 @@ function MorbidityPage() {
               getRowId={(r) => r.key}
               size="small"
               columns={[
-                { key: 'key', header: groupLabel[groupBy], width: 120, render: (r) => <Text font="monospace">{r.key}</Text> },
+                {
+                  key: 'key',
+                  header: groupLabel[groupBy],
+                  width: 120,
+                  render: (r) => <Text font="monospace">{r.key}</Text>,
+                },
                 { key: 'title', header: 'Title', render: (r) => r.title },
-                { key: 'episodes', header: 'Episodes', width: 90, align: 'end', render: (r) => formatNumber(r.episodes) },
-                { key: 'patients', header: 'Patients', width: 90, align: 'end', render: (r) => formatNumber(r.patients) },
+                {
+                  key: 'episodes',
+                  header: 'Episodes',
+                  width: 90,
+                  align: 'end',
+                  render: (r) => formatNumber(r.episodes),
+                },
+                {
+                  key: 'patients',
+                  header: 'Patients',
+                  width: 90,
+                  align: 'end',
+                  render: (r) => formatNumber(r.patients),
+                },
                 { key: 'mf', header: 'M / F', width: 90, priority: 'low', render: (r) => `${r.male} / ${r.female}` },
                 { key: 'child', header: '0–14', width: 70, priority: 'low', align: 'end', render: (r) => r.age0To14 },
                 { key: 'adult', header: '15–44', width: 70, priority: 'low', align: 'end', render: (r) => r.age15To44 },
-                { key: 'middle', header: '45–64', width: 70, priority: 'low', align: 'end', render: (r) => r.age45To64 },
+                {
+                  key: 'middle',
+                  header: '45–64',
+                  width: 70,
+                  priority: 'low',
+                  align: 'end',
+                  render: (r) => r.age45To64,
+                },
                 { key: 'old', header: '65+', width: 70, priority: 'low', align: 'end', render: (r) => r.age65Plus },
               ]}
             />

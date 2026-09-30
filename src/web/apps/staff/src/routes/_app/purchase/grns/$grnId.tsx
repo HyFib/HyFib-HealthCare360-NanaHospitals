@@ -1,4 +1,13 @@
-import { Button, Caption1, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { BoxCheckmarkRegular, DismissCircleRegular, OpenRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, isApiError } from '@hc360/core';
 import { ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
@@ -81,22 +90,45 @@ function GrnPage() {
   const g = grn.data;
   const split = explainGstSplit(g.vendorGstin, facilityGstin ?? null);
   const savedSplit: GstSplit = g.isInterState
-    ? { interState: true, known: true, headline: 'IGST (inter-state supply)', detail: split.interState ? split.detail : 'The vendor is registered in another state, so the full GST is IGST.' }
-    : { interState: false, known: true, headline: 'CGST + SGST (same state)', detail: split.interState ? 'Saved as a supply within the state.' : split.detail };
+    ? {
+        interState: true,
+        known: true,
+        headline: 'IGST (inter-state supply)',
+        detail: split.interState ? split.detail : 'The vendor is registered in another state, so the full GST is IGST.',
+      }
+    : {
+        interState: false,
+        known: true,
+        headline: 'CGST + SGST (same state)',
+        detail: split.interState ? 'Saved as a supply within the state.' : split.detail,
+      };
 
   return (
     <Page>
       <PageHeader
         title={`Goods receipt ${g.number}`}
         subtitle={`${g.vendorName} · invoice ${g.vendorInvoiceNumber} · into ${g.storeName}`}
-        breadcrumbs={[{ label: 'Goods receipts', onClick: () => void navigate({ to: '/purchase/grns' }) }, { label: g.number }]}
+        breadcrumbs={[
+          { label: 'Goods receipts', onClick: () => void navigate({ to: '/purchase/grns' }) },
+          { label: g.number },
+        ]}
         actions={
           <>
-            <Button icon={<PrintRegular />} onClick={() => void printGoodsReceipt(g, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button
+              icon={<PrintRegular />}
+              onClick={() =>
+                void printGoodsReceipt(g, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
+            >
               Print
             </Button>
             {g.purchaseOrderId && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/purchase/orders/$orderId', params: { orderId: g.purchaseOrderId! } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() =>
+                  void navigate({ to: '/purchase/orders/$orderId', params: { orderId: g.purchaseOrderId! } })
+                }
+              >
                 Purchase order
               </Button>
             )}
@@ -181,16 +213,31 @@ function GrnPage() {
                     </span>
                   ),
                 },
-                { key: 'rate', header: 'Rate', align: 'end', priority: 'low', render: (l) => `${formatInr(l.rate)}${l.discountPercent ? ` − ${formatPercent(l.discountPercent)}` : ''}` },
+                {
+                  key: 'rate',
+                  header: 'Rate',
+                  align: 'end',
+                  priority: 'low',
+                  render: (l) =>
+                    `${formatInr(l.rate)}${l.discountPercent ? ` − ${formatPercent(l.discountPercent)}` : ''}`,
+                },
                 { key: 'gst', header: 'GST', align: 'end', width: 70, render: (l) => formatPercent(l.gstRate) },
                 {
                   key: 'tax',
                   header: g.isInterState ? 'IGST' : 'CGST + SGST',
                   align: 'end',
                   priority: 'low',
-                  render: (l) => (g.isInterState ? formatInr(l.igstAmount) : `${formatInr(l.cgstAmount)} + ${formatInr(l.sgstAmount)}`),
+                  render: (l) =>
+                    g.isInterState
+                      ? formatInr(l.igstAmount)
+                      : `${formatInr(l.cgstAmount)} + ${formatInr(l.sgstAmount)}`,
                 },
-                { key: 'total', header: 'Amount', align: 'end', render: (l) => <Text weight="semibold">{formatInr(l.lineTotal)}</Text> },
+                {
+                  key: 'total',
+                  header: 'Amount',
+                  align: 'end',
+                  render: (l) => <Text weight="semibold">{formatInr(l.lineTotal)}</Text>,
+                },
                 {
                   key: 'stock',
                   header: 'Into stock',
@@ -211,14 +258,31 @@ function GrnPage() {
           <GstSplitNote split={savedSplit} />
           <Section title="Invoice value">
             <PurchaseTotals
-              totals={{ gross: g.grossAmount, discount: g.discountAmount, taxable: g.taxableAmount, cgst: g.cgstAmount, sgst: g.sgstAmount, igst: g.igstAmount, roundOff: g.roundOff, net: g.netAmount }}
+              totals={{
+                gross: g.grossAmount,
+                discount: g.discountAmount,
+                taxable: g.taxableAmount,
+                cgst: g.cgstAmount,
+                sgst: g.sgstAmount,
+                igst: g.igstAmount,
+                roundOff: g.roundOff,
+                net: g.netAmount,
+              }}
               interState={g.isInterState}
             />
           </Section>
         </aside>
       </div>
-      <ConfirmDialog open={dialog === 'post'} title="Post this receipt into stock?" confirmLabel="Post" busy={post.isPending} onConfirm={() => post.mutate()} onCancel={() => setDialog(null)}>
-        The batches are added to {g.storeName} with their expiry and MRP, and the purchase order is updated. A posted receipt cannot be changed.
+      <ConfirmDialog
+        open={dialog === 'post'}
+        title="Post this receipt into stock?"
+        confirmLabel="Post"
+        busy={post.isPending}
+        onConfirm={() => post.mutate()}
+        onCancel={() => setDialog(null)}
+      >
+        The batches are added to {g.storeName} with their expiry and MRP, and the purchase order is updated. A posted
+        receipt cannot be changed.
       </ConfirmDialog>
       {dialog === 'cancel' && (
         <ReasonDialog

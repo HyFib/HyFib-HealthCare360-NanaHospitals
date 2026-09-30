@@ -17,7 +17,14 @@ import { usePermission } from '@/lib/permissions';
 import { DecisionButtons } from '@/modules/hr/ApprovalActions';
 import { hrApi, hrKeys, hrQueries } from '@/modules/hr/api';
 import { formatDays } from '@/modules/hr/attendance';
-import { CREDENTIAL_VIEWERS, credentialExpiry, HR_PERMISSIONS as P, HR_STAFF, PAYROLL_VIEWERS, regularisationKindLabel } from '@/modules/hr/labels';
+import {
+  CREDENTIAL_VIEWERS,
+  credentialExpiry,
+  HR_PERMISSIONS as P,
+  HR_STAFF,
+  PAYROLL_VIEWERS,
+  regularisationKindLabel,
+} from '@/modules/hr/labels';
 import { leavePeriodText } from '@/modules/hr/leave';
 import { NoAccess } from '@/modules/hr/shared/NoAccess';
 import { currentMonth, formatTimeOfDay, monthLabel } from '@/modules/hr/shared/dates';
@@ -56,9 +63,18 @@ function Overview() {
   const today = todayIso();
 
   const headcount = useQuery({ ...hrQueries.employees({}, 1), enabled: canEmployees });
-  const present = useQuery({ ...hrQueries.attendance({ from: today, to: today, status: 'Present', pageSize: 1 }), enabled: canAttendance });
-  const absent = useQuery({ ...hrQueries.attendance({ from: today, to: today, status: 'Absent', pageSize: 1 }), enabled: canAttendance });
-  const onLeave = useQuery({ ...hrQueries.leaveRequests({ status: 'Approved', from: today, to: today, pageSize: 1 }), enabled: canLeave });
+  const present = useQuery({
+    ...hrQueries.attendance({ from: today, to: today, status: 'Present', pageSize: 1 }),
+    enabled: canAttendance,
+  });
+  const absent = useQuery({
+    ...hrQueries.attendance({ from: today, to: today, status: 'Absent', pageSize: 1 }),
+    enabled: canAttendance,
+  });
+  const onLeave = useQuery({
+    ...hrQueries.leaveRequests({ status: 'Approved', from: today, to: today, pageSize: 1 }),
+    enabled: canLeave,
+  });
   const expiring = useQuery({ ...hrQueries.credentials({ expiringWithinDays: 30 }), enabled: canCredentials });
   const pendingLeave = useQuery({ ...hrQueries.leaveRequests({ status: 'Pending', pageSize: 6 }), enabled: canLeave });
   const pendingRegularisations = useQuery({ ...hrQueries.regularisations('Pending', 1, 6), enabled: canAttendance });
@@ -67,7 +83,10 @@ function Overview() {
   const compute = useMutation({
     mutationFn: () => hrApi.computeAttendance(today, today),
     onSuccess: (result) => {
-      notify.success("Today's attendance updated", `${result.employeeDays} employee-days computed from the terminal punches.`);
+      notify.success(
+        "Today's attendance updated",
+        `${result.employeeDays} employee-days computed from the terminal punches.`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.attendance });
     },
     onError: (error) => notify.error(error, 'Could not compute attendance'),
@@ -75,7 +94,13 @@ function Overview() {
 
   const count = (value: number | undefined, loading: boolean) => (loading ? '…' : (value ?? 0).toLocaleString('en-IN'));
   const pendingTotal = (pendingLeave.data?.totalCount ?? 0) + (pendingRegularisations.data?.totalCount ?? 0);
-  const longDate = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: HOSPITAL_TIME_ZONE }).format(new Date());
+  const longDate = new Intl.DateTimeFormat('en-IN', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: HOSPITAL_TIME_ZONE,
+  }).format(new Date());
   const latestRun = runs.data?.items[0];
 
   return (
@@ -86,7 +111,11 @@ function Overview() {
         icon={<PeopleTeamRegular />}
         actions={
           canManage && (
-            <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/hr/employees/new' })}>
+            <Button
+              appearance="primary"
+              icon={<PersonAddRegular />}
+              onClick={() => void navigate({ to: '/hr/employees/new' })}
+            >
               Add employee
             </Button>
           )
@@ -269,7 +298,13 @@ function Overview() {
                 error={expiring.error}
                 onRetry={() => void expiring.refetch()}
                 getRowId={(c) => c.id}
-                onRowClick={(c) => void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: c.employeeId }, search: { tab: 'credentials' } })}
+                onRowClick={(c) =>
+                  void navigate({
+                    to: '/hr/employees/$employeeId',
+                    params: { employeeId: c.employeeId },
+                    search: { tab: 'credentials' },
+                  })
+                }
                 columns={[
                   {
                     key: 'who',
@@ -301,7 +336,11 @@ function Overview() {
             <Section
               title="Payroll"
               actions={
-                <Button appearance="subtle" icon={<MoneyRegular />} onClick={() => void navigate({ to: '/hr/payroll' })}>
+                <Button
+                  appearance="subtle"
+                  icon={<MoneyRegular />}
+                  onClick={() => void navigate({ to: '/hr/payroll' })}
+                >
                   Open payroll
                 </Button>
               }
@@ -317,7 +356,9 @@ function Overview() {
                   <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
                     <Text weight="semibold">{monthLabel(latestRun.year, latestRun.month)}</Text>
                     <StatusBadge status={latestRun.status} />
-                    {latestRun.payslipsWithErrors > 0 && <StatusBadge status="Failed" label={`${latestRun.payslipsWithErrors} with errors`} />}
+                    {latestRun.payslipsWithErrors > 0 && (
+                      <StatusBadge status="Failed" label={`${latestRun.payslipsWithErrors} with errors`} />
+                    )}
                   </span>
                 </Button>
               ) : (

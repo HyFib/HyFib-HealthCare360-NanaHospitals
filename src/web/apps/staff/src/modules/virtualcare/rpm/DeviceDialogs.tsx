@@ -76,12 +76,22 @@ export function RegisterDeviceDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 600 }}>{open && <RegisterContent enrollment={enrollment ?? null} onClose={onClose} onRegistered={onRegistered} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 600 }}>
+        {open && <RegisterContent enrollment={enrollment ?? null} onClose={onClose} onRegistered={onRegistered} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function RegisterContent({ enrollment, onClose, onRegistered }: { enrollment: PickedEnrollment | null; onClose: () => void; onRegistered: (key: DeviceKeyIssued) => void }) {
+function RegisterContent({
+  enrollment,
+  onClose,
+  onRegistered,
+}: {
+  enrollment: PickedEnrollment | null;
+  onClose: () => void;
+  onRegistered: (key: DeviceKeyIssued) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -116,8 +126,21 @@ function RegisterContent({ enrollment, onClose, onRegistered }: { enrollment: Pi
         <DialogTitle>Register device</DialogTitle>
         <DialogContent className={styles.form}>
           <FormGrid columns={2}>
-            <TextField control={form.control} name="serialNumber" label="Serial number" required autoFocus maxLength={64} />
-            <SelectField control={form.control} name="type" label="Type" required options={DEVICE_TYPES.map((t) => ({ value: t, label: deviceTypeLabel[t] }))} />
+            <TextField
+              control={form.control}
+              name="serialNumber"
+              label="Serial number"
+              required
+              autoFocus
+              maxLength={64}
+            />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Type"
+              required
+              options={DEVICE_TYPES.map((t) => ({ value: t, label: deviceTypeLabel[t] }))}
+            />
             <TextField control={form.control} name="manufacturer" label="Make (optional)" maxLength={100} />
             <TextField control={form.control} name="model" label="Model (optional)" maxLength={100} />
           </FormGrid>
@@ -125,16 +148,28 @@ function RegisterContent({ enrollment, onClose, onRegistered }: { enrollment: Pi
             control={form.control}
             name="enrollment"
             render={({ field }) => (
-              <EnrollmentPicker value={field.value ?? null} onChange={field.onChange} label="Give to patient (optional)" hint="You can also assign it later." />
+              <EnrollmentPicker
+                value={field.value ?? null}
+                onChange={field.onChange}
+                label="Give to patient (optional)"
+                hint="You can also assign it later."
+              />
             )}
           />
-          <Caption1 className={styles.muted}>A key for the device is shown next, once. Have the device or its setup app ready.</Caption1>
+          <Caption1 className={styles.muted}>
+            A key for the device is shown next, once. Have the device or its setup app ready.
+          </Caption1>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={register.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={register.isPending} icon={register.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={register.isPending}
+            icon={register.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Register and show key
           </Button>
         </DialogActions>
@@ -152,7 +187,9 @@ function RegisterContent({ enrollment, onClose, onRegistered }: { enrollment: Pi
 export function DeviceKeyDialog({ issued, onClose }: { issued: DeviceKeyIssued | null; onClose: () => void }) {
   return (
     <Dialog open={issued !== null} modalType="alert">
-      <DialogSurface style={{ maxWidth: 620 }}>{issued && <DeviceKeyContent key={issued.deviceId} issued={issued} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {issued && <DeviceKeyContent key={issued.deviceId} issued={issued} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -164,7 +201,10 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
   const ingestUrl = new URL(issued.ingestPath, window.location.origin).toString();
 
   const copy = (what: 'key' | 'url', text: string) => {
-    void navigator.clipboard?.writeText(text).then(() => setCopied(what), () => setCopied(null));
+    void navigator.clipboard?.writeText(text).then(
+      () => setCopied(what),
+      () => setCopied(null),
+    );
   };
 
   return (
@@ -174,13 +214,17 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Shown only this once</MessageBarTitle>
-            Enter it in the device or its phone gateway now. HealthCare360 cannot show it again; if it is lost, rotate the key (the old one stops working).
+            Enter it in the device or its phone gateway now. HealthCare360 cannot show it again; if it is lost, rotate
+            the key (the old one stops working).
           </MessageBarBody>
         </MessageBar>
         <Field label="Device key">
           <div className={styles.row}>
             <div className={mergeClasses(styles.secret, styles.grow)}>{issued.apiKey}</div>
-            <Button icon={copied === 'key' ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => copy('key', issued.apiKey)}>
+            <Button
+              icon={copied === 'key' ? <CheckmarkRegular /> : <CopyRegular />}
+              onClick={() => copy('key', issued.apiKey)}
+            >
               {copied === 'key' ? 'Copied' : 'Copy'}
             </Button>
           </div>
@@ -188,15 +232,23 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
         <Field label="Readings are sent to">
           <div className={styles.row}>
             <div className={mergeClasses(styles.secret, styles.grow)}>POST {ingestUrl}</div>
-            <Button icon={copied === 'url' ? <CheckmarkRegular /> : <CopyRegular />} onClick={() => copy('url', ingestUrl)}>
+            <Button
+              icon={copied === 'url' ? <CheckmarkRegular /> : <CopyRegular />}
+              onClick={() => copy('url', ingestUrl)}
+            >
               {copied === 'url' ? 'Copied' : 'Copy'}
             </Button>
           </div>
         </Field>
         <Text>
-          With the header <code>{issued.headerName}</code> set to the key. Readings are accepted as JSON or FHIR Observations.
+          With the header <code>{issued.headerName}</code> set to the key. Readings are accepted as JSON or FHIR
+          Observations.
         </Text>
-        <Checkbox checked={stored} onChange={(_, d) => setStored(Boolean(d.checked))} label="I have entered or safely stored this key" />
+        <Checkbox
+          checked={stored}
+          onChange={(_, d) => setStored(Boolean(d.checked))}
+          label="I have entered or safely stored this key"
+        />
       </DialogContent>
       <DialogActions>
         <Button appearance="primary" disabled={!stored} onClick={onClose}>
@@ -213,7 +265,9 @@ function DeviceKeyContent({ issued, onClose }: { issued: DeviceKeyIssued; onClos
 export function AssignDeviceDialog({ device, onClose }: { device: RpmDeviceDto | null; onClose: () => void }) {
   return (
     <Dialog open={device !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{device && <AssignContent key={device.id} device={device} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {device && <AssignContent key={device.id} device={device} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -246,11 +300,17 @@ function AssignContent({ device, onClose }: { device: RpmDeviceDto; onClose: () 
         <DialogTitle>
           {device.enrollmentId ? 'Move or take back device' : 'Give device to a patient'}
           <Caption1 block className={styles.muted}>
-            {deviceTypeLabel[device.type]} · {device.serialNumber} · measures {deviceMeasures[device.type].map((t) => readingTypeInfo[t].label.toLowerCase()).join(', ')}
+            {deviceTypeLabel[device.type]} · {device.serialNumber} · measures{' '}
+            {deviceMeasures[device.type].map((t) => readingTypeInfo[t].label.toLowerCase()).join(', ')}
           </Caption1>
         </DialogTitle>
         <DialogContent className={styles.form}>
-          <EnrollmentPicker value={enrollment} onChange={setEnrollment} label={device.enrollmentId ? 'Move to patient' : 'Patient'} required />
+          <EnrollmentPicker
+            value={enrollment}
+            onChange={setEnrollment}
+            label={device.enrollmentId ? 'Move to patient' : 'Patient'}
+            required
+          />
         </DialogContent>
         <DialogActions>
           {device.enrollmentId && (

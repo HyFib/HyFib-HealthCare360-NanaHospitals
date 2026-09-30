@@ -12,7 +12,13 @@ export interface DiagnosticsPatient {
 
 /** Banner data for a diagnostics screen (allergies are not part of diagnostics DTOs, so the banner omits them). */
 export function bannerFor(patient: DiagnosticsPatient): PatientBannerData {
-  return { id: patient.patientId, uhid: patient.uhid, fullName: patient.patientName, gender: patient.gender, age: patient.age };
+  return {
+    id: patient.patientId,
+    uhid: patient.uhid,
+    fullName: patient.patientName,
+    gender: patient.gender,
+    age: patient.age,
+  };
 }
 
 const SEX_CODES: Record<string, Gender> = { M: 'Male', F: 'Female', O: 'Other', U: 'Unknown' };
@@ -43,7 +49,11 @@ export function parseAgeYears(age: string | null | undefined): number | null {
 }
 
 /** Splits "34Y 2M / M" (labels, result sheets) into age text, approximate days and gender. */
-export function parseAgeSex(ageSex: string | null | undefined): { age: string | null; ageDays: number | null; gender: Gender } {
+export function parseAgeSex(ageSex: string | null | undefined): {
+  age: string | null;
+  ageDays: number | null;
+  gender: Gender;
+} {
   const [agePart, sexPart] = (ageSex ?? '').split('/').map((part) => part.trim());
   const age = agePart && agePart !== '-' ? agePart : null;
   return { age, ageDays: parseAge(age), gender: SEX_CODES[(sexPart ?? '').toUpperCase()] ?? 'Unknown' };

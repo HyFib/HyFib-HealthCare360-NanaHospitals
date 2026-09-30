@@ -80,7 +80,9 @@ const sale: PharmacySaleDetail = {
       substitutionReason: null,
     },
   ],
-  payments: [{ id: 'pay1', mode: 'Upi', amount: 172, reference: 'UTR99', receivedAt: '2026-09-26T05:00:00Z', isRefund: false }],
+  payments: [
+    { id: 'pay1', mode: 'Upi', amount: 172, reference: 'UTR99', receivedAt: '2026-09-26T05:00:00Z', isRefund: false },
+  ],
   version: 1,
 };
 
@@ -103,13 +105,24 @@ describe('pharmacy prints', () => {
   });
 
   it('marks cancelled invoices', () => {
-    expect(buildReceiptHtml({ ...sale, status: 'Cancelled', cancelReason: 'Wrong patient' }, { name: 'Nana Hospitals' })).toContain('CANCELLED: Wrong patient');
+    expect(
+      buildReceiptHtml({ ...sale, status: 'Cancelled', cancelReason: 'Wrong patient' }, { name: 'Nana Hospitals' }),
+    ).toContain('CANCELLED: Wrong patient');
   });
 
   it('prints one 50 × 25 mm label per medicine', () => {
     const html = buildLabelsHtml(
       [
-        { patientName: 'Asha Rao', drugName: 'Amoxicillin 500', quantity: 10, unit: 'TAB', directions: '1 tab · thrice a day', batchNumber: 'AMX1', expiryDate: '2027-03-31', dispensedOn: '2026-09-26' },
+        {
+          patientName: 'Asha Rao',
+          drugName: 'Amoxicillin 500',
+          quantity: 10,
+          unit: 'TAB',
+          directions: '1 tab · thrice a day',
+          batchNumber: 'AMX1',
+          expiryDate: '2027-03-31',
+          dispensedOn: '2026-09-26',
+        },
         { patientName: 'Asha Rao', drugName: 'Pantoprazole 40', quantity: 5, dispensedOn: '2026-09-26' },
       ],
       'Nana Hospitals',
@@ -121,9 +134,13 @@ describe('pharmacy prints', () => {
   });
 
   it('writes directions and addresses in plain words', () => {
-    expect(directionsText({ dose: '1 tab', frequency: 'Twice a day', durationDays: 5, instructions: ' after food ' })).toBe('1 tab · Twice a day · 5 days · after food');
+    expect(
+      directionsText({ dose: '1 tab', frequency: 'Twice a day', durationDays: 5, instructions: ' after food ' }),
+    ).toBe('1 tab · Twice a day · 5 days · after food');
     expect(directionsText({ dose: '5 ml', durationDays: 1 })).toBe('5 ml · 1 day');
-    expect(addressLine({ line1: 'MG Road', city: 'Pune', state: ' ', pinCode: '411001' })).toBe('MG Road, Pune, 411001');
+    expect(addressLine({ line1: 'MG Road', city: 'Pune', state: ' ', pinCode: '411001' })).toBe(
+      'MG Road, Pune, 411001',
+    );
     expect(addressLine(null)).toBeNull();
   });
 });

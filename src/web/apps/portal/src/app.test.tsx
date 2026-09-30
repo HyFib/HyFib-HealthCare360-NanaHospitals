@@ -15,7 +15,14 @@ const TOKEN = 'Abcdefghijklmnop_123';
 const RX_TOKEN = 'Rx_token-0123456789ab';
 const LAB_CODE = 'ABCDEFGHJKLMNPQRSTUV';
 
-const FORM = { title: 'Your stay with us', introText: null, aspects: ['Overall'], includesNps: true, allowsComment: true, hospital: 'Nana Hospitals' };
+const FORM = {
+  title: 'Your stay with us',
+  introText: null,
+  aspects: ['Overall'],
+  includesNps: true,
+  allowsComment: true,
+  hospital: 'Nana Hospitals',
+};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -106,7 +113,9 @@ describe('links the hospital sends', () => {
     await userEvent.click(screen.getByRole('radio', { name: '10 = extremely likely' }));
     await userEvent.click(screen.getByRole('button', { name: 'Send feedback' }));
     expect(await screen.findByText('Thank you for your feedback.', {}, SLOW)).toBeInTheDocument();
-    expect(requests.some((request) => request.method === 'POST' && request.url.includes('/feedback/invitations/'))).toBe(true);
+    expect(
+      requests.some((request) => request.method === 'POST' && request.url.includes('/feedback/invitations/')),
+    ).toBe(true);
   });
 
   it('says so when a feedback link is not a link at all', async () => {
@@ -122,7 +131,11 @@ describe('links the hospital sends', () => {
     expect(requests.some((request) => request.method === 'POST')).toBe(false);
     await userEvent.click(confirm);
     expect(await screen.findByText('You will not get these messages any more', {}, SLOW)).toBeInTheDocument();
-    expect(requests.some((request) => request.method === 'POST' && request.url.endsWith(`/api/v1/public/unsubscribe/${TOKEN}`))).toBe(true);
+    expect(
+      requests.some(
+        (request) => request.method === 'POST' && request.url.endsWith(`/api/v1/public/unsubscribe/${TOKEN}`),
+      ),
+    ).toBe(true);
   });
 });
 

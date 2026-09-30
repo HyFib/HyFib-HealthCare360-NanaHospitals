@@ -26,10 +26,13 @@ export function setScanSoundEnabled(enabled: boolean): void {
 export function beep(kind: 'ok' | 'problem'): void {
   try {
     context ??= new AudioContext();
-    const tones = kind === 'ok' ? [{ frequency: 1320, at: 0 }] : [
-      { frequency: 330, at: 0 },
-      { frequency: 262, at: 0.18 },
-    ];
+    const tones =
+      kind === 'ok'
+        ? [{ frequency: 1320, at: 0 }]
+        : [
+            { frequency: 330, at: 0 },
+            { frequency: 262, at: 0.18 },
+          ];
     for (const tone of tones) {
       const oscillator = context.createOscillator();
       const gain = context.createGain();

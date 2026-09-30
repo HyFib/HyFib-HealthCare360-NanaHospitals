@@ -3,7 +3,12 @@ import type { Letterhead } from '@/modules/pharmacy/print';
 import type { CanteenSaleDto, DailySalesSummary } from './api';
 import { buildCanteenReceiptHtml, buildDailyReportHtml, canteenBillTitle } from './print';
 
-const letterhead: Letterhead = { name: 'Nana Hospitals Pvt Ltd', address: '12 MG Road, Pune, Maharashtra, 411001', phone: null, gstin: '27AAACN1234F1Z5' };
+const letterhead: Letterhead = {
+  name: 'Nana Hospitals Pvt Ltd',
+  address: '12 MG Road, Pune, Maharashtra, 411001',
+  phone: null,
+  gstin: '27AAACN1234F1Z5',
+};
 
 const sale: CanteenSaleDto = {
   id: 's1',
@@ -27,8 +32,30 @@ const sale: CanteenSaleDto = {
   cancelledAt: null,
   cancelReason: null,
   lines: [
-    { menuItemId: 'm1', itemName: 'Tea', hsnSac: '996333', quantity: 2, unitPrice: 10, gstRate: 5, taxableAmount: 19.05, cgstAmount: 0.48, sgstAmount: 0.47, lineTotal: 20 },
-    { menuItemId: 'm2', itemName: 'Water 1 L', hsnSac: '220190', quantity: 1, unitPrice: 20, gstRate: 18, taxableAmount: 16.95, cgstAmount: 1.53, sgstAmount: 1.52, lineTotal: 20 },
+    {
+      menuItemId: 'm1',
+      itemName: 'Tea',
+      hsnSac: '996333',
+      quantity: 2,
+      unitPrice: 10,
+      gstRate: 5,
+      taxableAmount: 19.05,
+      cgstAmount: 0.48,
+      sgstAmount: 0.47,
+      lineTotal: 20,
+    },
+    {
+      menuItemId: 'm2',
+      itemName: 'Water 1 L',
+      hsnSac: '220190',
+      quantity: 1,
+      unitPrice: 20,
+      gstRate: 18,
+      taxableAmount: 16.95,
+      cgstAmount: 1.53,
+      sgstAmount: 1.52,
+      lineTotal: 20,
+    },
   ],
 };
 
@@ -101,13 +128,24 @@ describe('canteen receipt', () => {
   });
 
   it('is a bill of supply when nothing on it is taxed', () => {
-    const coconut = { ...sale.lines[1]!, itemName: 'Tender coconut', hsnSac: '080119', gstRate: 0, cgstAmount: 0, sgstAmount: 0 };
+    const coconut = {
+      ...sale.lines[1]!,
+      itemName: 'Tender coconut',
+      hsnSac: '080119',
+      gstRate: 0,
+      cgstAmount: 0,
+      sgstAmount: 0,
+    };
 
     expect(canteenBillTitle([{ gstRate: 5 }, { gstRate: 18 }])).toBe('Tax invoice');
     expect(canteenBillTitle([{ gstRate: 0 }])).toBe('Bill of supply');
     expect(canteenBillTitle([{ gstRate: 5 }, { gstRate: 0 }])).toBe('Invoice-cum-bill of supply');
-    expect(buildCanteenReceiptHtml({ ...sale, lines: [coconut] }, letterhead)).toContain('<div class="title">Bill of supply</div>');
-    expect(buildCanteenReceiptHtml({ ...sale, lines: [sale.lines[0]!, coconut] }, letterhead)).toContain('HSN 080119 · GST 0%');
+    expect(buildCanteenReceiptHtml({ ...sale, lines: [coconut] }, letterhead)).toContain(
+      '<div class="title">Bill of supply</div>',
+    );
+    expect(buildCanteenReceiptHtml({ ...sale, lines: [sale.lines[0]!, coconut] }, letterhead)).toContain(
+      'HSN 080119 · GST 0%',
+    );
   });
 });
 
@@ -124,7 +162,16 @@ describe('canteen day-end report', () => {
     byPaymentMode: [{ key: 'Upi', bills: 3, amount: 180 }],
     byCustomerType: [{ key: 'Visitor', bills: 3, amount: 180 }],
     byCategory: [],
-    items: [{ menuItemId: 'm1', itemName: 'Tea <masala>', category: 'Beverages', quantitySold: 3, amount: 30, closingStock: null }],
+    items: [
+      {
+        menuItemId: 'm1',
+        itemName: 'Tea <masala>',
+        category: 'Beverages',
+        quantitySold: 3,
+        amount: 30,
+        closingStock: null,
+      },
+    ],
     byHsnSac: [
       { hsnSac: '080119', gstRate: 0, quantity: 1, taxableAmount: 50, cgst: 0, sgst: 0, total: 50 },
       { hsnSac: '220190', gstRate: 18, quantity: 1, taxableAmount: 16.95, cgst: 1.53, sgst: 1.52, total: 20 },

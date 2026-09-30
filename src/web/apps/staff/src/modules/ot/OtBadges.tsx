@@ -1,4 +1,13 @@
-import { Badge, Link, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Link,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { CheckmarkCircleRegular, CircleRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDate, formatTime } from '@hc360/core';
 import { StatusBadge } from '@hc360/ui';
@@ -39,28 +48,55 @@ export function PriorityBadge({ priority, showElective }: { priority: SurgeryPri
     return null;
   }
   return (
-    <Badge appearance={priority === 'Emergency' ? 'filled' : 'tint'} color={priorityTone[priority]} shape="rounded" icon={priority === 'Emergency' ? <WarningRegular /> : undefined}>
+    <Badge
+      appearance={priority === 'Emergency' ? 'filled' : 'tint'}
+      color={priorityTone[priority]}
+      shape="rounded"
+      icon={priority === 'Emergency' ? <WarningRegular /> : undefined}
+    >
       {priorityLabel[priority]}
     </Badge>
   );
 }
 
 /** Operative side in capitals (wrong-site surgery prevention). Nothing for midline procedures. */
-export function SideBadge({ laterality, size = 'medium' }: { laterality: Laterality; size?: 'small' | 'medium' | 'large' }) {
+export function SideBadge({
+  laterality,
+  size = 'medium',
+}: {
+  laterality: Laterality;
+  size?: 'small' | 'medium' | 'large';
+}) {
   const styles = useStyles();
   const side = sideShort(laterality);
   if (!side) {
     return null;
   }
   return (
-    <Badge appearance="outline" color="important" size={size} className={styles.side} aria-label={`Operative side: ${side.toLowerCase()}`}>
+    <Badge
+      appearance="outline"
+      color="important"
+      size={size}
+      className={styles.side}
+      aria-label={`Operative side: ${side.toLowerCase()}`}
+    >
       {side}
     </Badge>
   );
 }
 
 /** Sign-in / Time-out / Sign-out progress, with ticks and words (colour is never the only signal). */
-export function WhoProgress({ signInDone, timeOutDone, signOutDone, compact }: { signInDone: boolean; timeOutDone: boolean; signOutDone: boolean; compact?: boolean }) {
+export function WhoProgress({
+  signInDone,
+  timeOutDone,
+  signOutDone,
+  compact,
+}: {
+  signInDone: boolean;
+  timeOutDone: boolean;
+  signOutDone: boolean;
+  compact?: boolean;
+}) {
   const styles = useStyles();
   const phases: [string, string, boolean][] = [
     ['Sign-in', 'SI', signInDone],
@@ -96,8 +132,13 @@ export function ConflictAlert({ conflicts }: { conflicts: SchedulingConflict[] }
           <ul className={styles.conflicts}>
             {conflicts.map((conflict, index) => (
               <li key={`${conflict.bookingId}-${conflict.kind}-${index}`}>
-                {conflictLabel[conflict.kind]} from {formatTime(conflict.start)} to {formatTime(conflict.end)} on {formatDate(conflict.start)}.{' '}
-                <Link as="button" inline onClick={() => void navigate({ to: '/ot/bookings/$id', params: { id: conflict.bookingId } })}>
+                {conflictLabel[conflict.kind]} from {formatTime(conflict.start)} to {formatTime(conflict.end)} on{' '}
+                {formatDate(conflict.start)}.{' '}
+                <Link
+                  as="button"
+                  inline
+                  onClick={() => void navigate({ to: '/ot/bookings/$id', params: { id: conflict.bookingId } })}
+                >
                   Open that booking
                 </Link>
               </li>

@@ -13,7 +13,10 @@ export const billQueries = {
     infiniteQueryOptions({
       queryKey: ['portal', patientId, 'bills', 'list'],
       queryFn: ({ pageParam, signal }) =>
-        api.get<PagedResult<PortalBillListItem>>('/api/v1/portal/bills', { query: { patientId, page: pageParam, pageSize: PAGE_SIZE }, signal }),
+        api.get<PagedResult<PortalBillListItem>>('/api/v1/portal/bills', {
+          query: { patientId, page: pageParam, pageSize: PAGE_SIZE },
+          signal,
+        }),
       initialPageParam: 1,
       getNextPageParam: (last) => (last.page * last.pageSize < last.totalCount ? last.page + 1 : undefined),
     }),

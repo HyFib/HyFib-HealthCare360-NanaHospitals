@@ -19,7 +19,15 @@ export class ErrorBoundary extends Component<{ children: ReactNode; fallback?: R
 
   override render(): ReactNode {
     if (this.state.error) {
-      return this.props.fallback ?? <ErrorState error={this.state.error} title="This panel could not be shown" onRetry={() => this.setState({ error: null })} />;
+      return (
+        this.props.fallback ?? (
+          <ErrorState
+            error={this.state.error}
+            title="This panel could not be shown"
+            onRetry={() => this.setState({ error: null })}
+          />
+        )
+      );
     }
     return this.props.children;
   }

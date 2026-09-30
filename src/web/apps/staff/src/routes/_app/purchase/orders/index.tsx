@@ -10,7 +10,14 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { DocStatus } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { ORDER_STATUSES, orderStatusLabel, purchaseQueries, type OrderFilters, type PurchaseOrderListItem, type PurchaseOrderStatus } from '@/modules/purchase/api';
+import {
+  ORDER_STATUSES,
+  orderStatusLabel,
+  purchaseQueries,
+  type OrderFilters,
+  type PurchaseOrderListItem,
+  type PurchaseOrderStatus,
+} from '@/modules/purchase/api';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -38,12 +45,16 @@ function OrdersPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
   const orders = useQuery(purchaseQueries.orders(search));
-  const set = (patch: Partial<OrderFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<OrderFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -52,7 +63,11 @@ function OrdersPage() {
         subtitle="Rates exclude GST; each order shows CGST + SGST or IGST from the vendor's state."
         actions={
           canManage && (
-            <Button appearance="primary" icon={<AddRegular />} onClick={() => void navigate({ to: '/purchase/orders/new' })}>
+            <Button
+              appearance="primary"
+              icon={<AddRegular />}
+              onClick={() => void navigate({ to: '/purchase/orders/new' })}
+            >
               New purchase order
             </Button>
           )
@@ -64,9 +79,17 @@ function OrdersPage() {
             <Field label="Order number" style={{ flex: '0 1 200px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as PurchaseOrderStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as PurchaseOrderStatus | undefined })}
+              >
                 <option value="">All</option>
                 {ORDER_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -76,10 +99,20 @@ function OrdersPage() {
               </Select>
             </Field>
             <Field label="From">
-              <Input type="date" value={search.from ?? ''} max={search.to ?? todayIso()} onChange={(_, d) => set({ from: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.from ?? ''}
+                max={search.to ?? todayIso()}
+                onChange={(_, d) => set({ from: d.value || undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={search.to ?? ''} max={todayIso()} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? ''}
+                max={todayIso()}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
           </FilterBar>
         </div>
@@ -97,10 +130,19 @@ function OrdersPage() {
             { key: 'vendor', header: 'Vendor', render: (o) => <Text weight="semibold">{o.vendorName}</Text> },
             { key: 'store', header: 'Deliver to', priority: 'low', render: (o) => o.storeName },
             { key: 'date', header: 'Ordered', render: (o) => formatDateOnly(o.orderDate) },
-            { key: 'expected', header: 'Expected', priority: 'low', render: (o) => formatDateOnly(o.expectedDeliveryDate) },
+            {
+              key: 'expected',
+              header: 'Expected',
+              priority: 'low',
+              render: (o) => formatDateOnly(o.expectedDeliveryDate),
+            },
             { key: 'lines', header: 'Items', align: 'end', width: 70, priority: 'low', render: (o) => o.lineCount },
             { key: 'net', header: 'Value', align: 'end', render: (o) => formatInr(o.netAmount) },
-            { key: 'status', header: 'Status', render: (o) => <DocStatus status={o.status} label={orderStatusLabel[o.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (o) => <DocStatus status={o.status} label={orderStatusLabel[o.status]} />,
+            },
           ]}
           emptyTitle="No purchase orders match"
           emptyDescription={canManage ? 'Create an order for a vendor, or from an approved requisition.' : undefined}

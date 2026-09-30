@@ -1,4 +1,15 @@
-import { Badge, Button, Caption1, Field, SearchBox, Select, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  SearchBox,
+  Select,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AddRegular, CallRegular } from '@fluentui/react-icons';
 import { formatDateOnly, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
@@ -42,7 +53,9 @@ export const Route = createFileRoute('/_app/crm/follow-ups')({
   validateSearch: (s: Record<string, unknown>): FollowUpSearch => ({
     view: VIEWS.includes(s.view as View) && s.view !== 'today' ? (s.view as View) : undefined,
     type: FOLLOW_UP_TYPES.includes(s.type as FollowUpType) ? (s.type as FollowUpType) : undefined,
-    priority: FOLLOW_UP_PRIORITIES.includes(s.priority as FollowUpPriority) ? (s.priority as FollowUpPriority) : undefined,
+    priority: FOLLOW_UP_PRIORITIES.includes(s.priority as FollowUpPriority)
+      ? (s.priority as FollowUpPriority)
+      : undefined,
     status: FOLLOW_UP_STATUSES.includes(s.status as FollowUpStatus) ? (s.status as FollowUpStatus) : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
@@ -74,7 +87,10 @@ function Due({ f }: { f: FollowUpListItem }) {
   const closed = f.status === 'Completed' || f.status === 'Cancelled';
   return (
     <span>
-      <Text weight={f.isOverdue ? 'semibold' : 'regular'} style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}>
+      <Text
+        weight={f.isOverdue ? 'semibold' : 'regular'}
+        style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}
+      >
         {closed ? formatDateOnly(f.dueDate) : dueLabel(days)}
       </Text>
       {!closed && (
@@ -107,11 +123,15 @@ function FollowUpsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<FollowUpSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<FollowUpSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -126,7 +146,11 @@ function FollowUpsPage() {
           </Button>
         }
       />
-      <TabList selectedValue={view} onTabSelect={(_, d) => set({ view: d.value === 'today' ? undefined : (d.value as View), status: undefined })} style={{ marginBottom: 8 }}>
+      <TabList
+        selectedValue={view}
+        onTabSelect={(_, d) => set({ view: d.value === 'today' ? undefined : (d.value as View), status: undefined })}
+        style={{ marginBottom: 8 }}
+      >
         <Tab value="today">Due today</Tab>
         <Tab value="overdue">Overdue</Tab>
         <Tab value="mine">Mine</Tab>
@@ -140,7 +164,10 @@ function FollowUpsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name or UHID" />
             </Field>
             <Field label="Reason">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as FollowUpType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as FollowUpType | undefined })}
+              >
                 <option value="">All</option>
                 {FOLLOW_UP_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -150,7 +177,10 @@ function FollowUpsPage() {
               </Select>
             </Field>
             <Field label="Priority">
-              <Select value={search.priority ?? ''} onChange={(_, d) => set({ priority: (d.value || undefined) as FollowUpPriority | undefined })}>
+              <Select
+                value={search.priority ?? ''}
+                onChange={(_, d) => set({ priority: (d.value || undefined) as FollowUpPriority | undefined })}
+              >
                 <option value="">Any</option>
                 {FOLLOW_UP_PRIORITIES.map((p) => (
                   <option key={p} value={p}>
@@ -161,7 +191,10 @@ function FollowUpsPage() {
             </Field>
             {view === 'all' && (
               <Field label="Stage">
-                <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as FollowUpStatus | undefined })}>
+                <Select
+                  value={search.status ?? ''}
+                  onChange={(_, d) => set({ status: (d.value || undefined) as FollowUpStatus | undefined })}
+                >
                   <option value="">Any</option>
                   {FOLLOW_UP_STATUSES.map((s) => (
                     <option key={s} value={s}>
@@ -217,7 +250,12 @@ function FollowUpsPage() {
               priority: 'low',
               render: (f) => (f.attempts === 0 ? '—' : `${f.attempts} of ${MAX_UNREACHABLE_ATTEMPTS}`),
             },
-            { key: 'assignee', header: 'Caller', priority: 'low', render: (f) => (f.assigneeUserId ? <UserName id={f.assigneeUserId} /> : 'Anyone') },
+            {
+              key: 'assignee',
+              header: 'Caller',
+              priority: 'low',
+              render: (f) => (f.assigneeUserId ? <UserName id={f.assigneeUserId} /> : 'Anyone'),
+            },
             {
               key: 'status',
               header: 'Stage',
@@ -225,7 +263,15 @@ function FollowUpsPage() {
                 <span>
                   <StatusBadge
                     status={f.status}
-                    tone={f.status === 'Completed' ? 'success' : f.status === 'Cancelled' ? 'informative' : f.isOverdue ? 'danger' : 'warning'}
+                    tone={
+                      f.status === 'Completed'
+                        ? 'success'
+                        : f.status === 'Cancelled'
+                          ? 'informative'
+                          : f.isOverdue
+                            ? 'danger'
+                            : 'warning'
+                    }
                     label={followUpStatusLabel[f.status]}
                   />
                   {f.outcome && (
@@ -237,8 +283,18 @@ function FollowUpsPage() {
               ),
             },
           ]}
-          emptyTitle={view === 'today' ? 'No calls due today' : view === 'overdue' ? 'Nothing overdue' : 'No follow-up calls match'}
-          emptyDescription={view === 'today' ? 'Well done. Upcoming calls are in the Upcoming tab.' : 'Try another tab or clear the filters.'}
+          emptyTitle={
+            view === 'today'
+              ? 'No calls due today'
+              : view === 'overdue'
+                ? 'Nothing overdue'
+                : 'No follow-up calls match'
+          }
+          emptyDescription={
+            view === 'today'
+              ? 'Well done. Upcoming calls are in the Upcoming tab.'
+              : 'Try another tab or clear the filters.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={followUps.data?.totalCount}

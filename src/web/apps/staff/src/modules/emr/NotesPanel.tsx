@@ -24,17 +24,41 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { DocumentArrowLeftRegular, EditRegular, NoteAddRegular, SaveRegular, SignatureRegular, TextBulletListLtrRegular } from '@fluentui/react-icons';
+import {
+  DocumentArrowLeftRegular,
+  EditRegular,
+  NoteAddRegular,
+  SaveRegular,
+  SignatureRegular,
+  TextBulletListLtrRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useSession } from '@hc360/core';
-import { applyServerErrors, EmptyState, FormGrid, LoadingState, Pagination, SelectField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  EmptyState,
+  FormGrid,
+  LoadingState,
+  Pagination,
+  SelectField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
-import { emrApi, emrKeys, emrQueries, NOTE_TYPES, noteTypeLabel, type ClinicalNoteDto, type ClinicalNoteType } from './api';
+import {
+  emrApi,
+  emrKeys,
+  emrQueries,
+  NOTE_TYPES,
+  noteTypeLabel,
+  type ClinicalNoteDto,
+  type ClinicalNoteType,
+} from './api';
 import { appendText } from './encounterForm';
 import { DictateButton } from './ui';
 
@@ -116,7 +140,13 @@ export function NoteComposer({
 
   const save = useMutation({
     mutationFn: (values: NoteValues) =>
-      emrApi.writeNote(patientId, { encounterId, admissionId, type: values.type, title: values.title.trim() || null, body: values.body.trim() }),
+      emrApi.writeNote(patientId, {
+        encounterId,
+        admissionId,
+        type: values.type,
+        title: values.title.trim() || null,
+        body: values.body.trim(),
+      }),
     onSuccess: (note) => {
       draft.discard();
       form.reset(emptyNote);
@@ -145,7 +175,10 @@ export function NoteComposer({
     <form className={styles.composer} onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
       {draft.saved && draft.saved.value.body.trim() && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>An unsaved note from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            An unsaved note from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore it</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -155,7 +188,12 @@ export function NoteComposer({
         </MessageBar>
       )}
       <FormGrid columns={2}>
-        <SelectField control={form.control} name="type" label="Note type" options={NOTE_TYPES.map((t) => ({ value: t, label: noteTypeLabel[t] }))} />
+        <SelectField
+          control={form.control}
+          name="type"
+          label="Note type"
+          options={NOTE_TYPES.map((t) => ({ value: t, label: noteTypeLabel[t] }))}
+        />
         <TextField control={form.control} name="title" label="Title" maxLength={200} placeholder="Optional" />
       </FormGrid>
       <Controller
@@ -185,15 +223,31 @@ export function NoteComposer({
                 <DictateButton onText={(text) => field.onChange(appendText(field.value, text))} />
               </span>
             </div>
-            <Field label="Note" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-              <Textarea {...field} rows={8} resize="vertical" maxLength={20000} placeholder="Type the note. It is kept on this computer until you save it." />
+            <Field
+              label="Note"
+              required
+              validationMessage={fieldState.error?.message}
+              validationState={fieldState.error ? 'error' : 'none'}
+            >
+              <Textarea
+                {...field}
+                rows={8}
+                resize="vertical"
+                maxLength={20000}
+                placeholder="Type the note. It is kept on this computer until you save it."
+              />
             </Field>
           </div>
         )}
       />
       <div className={styles.actions}>
         <Caption1 className={styles.savedAt}>Drafts are kept on this computer while you type.</Caption1>
-        <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending}>
+        <Button
+          type="submit"
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={save.isPending}
+        >
           Save note
         </Button>
       </div>
@@ -203,10 +257,20 @@ export function NoteComposer({
 
 const editSchema = noteSchema;
 
-function EditNoteDialog({ note, patientId, onClose }: { note: ClinicalNoteDto | null; patientId: string; onClose: () => void }) {
+function EditNoteDialog({
+  note,
+  patientId,
+  onClose,
+}: {
+  note: ClinicalNoteDto | null;
+  patientId: string;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={note !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 760 }}>{note && <EditNoteForm key={note.id} note={note} patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 760 }}>
+        {note && <EditNoteForm key={note.id} note={note} patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -215,10 +279,19 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<NoteValues>({ resolver: zodResolver(editSchema), defaultValues: { type: note.type, title: note.title ?? '', body: note.body } });
+  const form = useForm<NoteValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: { type: note.type, title: note.title ?? '', body: note.body },
+  });
   const draft = useFormDraft(form, `emr-note-edit:${note.id}`);
   const save = useMutation({
-    mutationFn: (values: NoteValues) => emrApi.editNote(note.id, { type: values.type, title: values.title.trim() || null, body: values.body.trim(), version: note.version }),
+    mutationFn: (values: NoteValues) =>
+      emrApi.editNote(note.id, {
+        type: values.type,
+        title: values.title.trim() || null,
+        body: values.body.trim(),
+        version: note.version,
+      }),
     onSuccess: () => {
       draft.discard();
       notify.success('Note updated');
@@ -252,14 +325,24 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
             </MessageBar>
           )}
           <FormGrid columns={2}>
-            <SelectField control={form.control} name="type" label="Note type" options={NOTE_TYPES.map((t) => ({ value: t, label: noteTypeLabel[t] }))} />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Note type"
+              options={NOTE_TYPES.map((t) => ({ value: t, label: noteTypeLabel[t] }))}
+            />
             <TextField control={form.control} name="title" label="Title" maxLength={200} />
           </FormGrid>
           <Controller
             control={form.control}
             name="body"
             render={({ field, fieldState }) => (
-              <Field label="Note" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+              <Field
+                label="Note"
+                required
+                validationMessage={fieldState.error?.message}
+                validationState={fieldState.error ? 'error' : 'none'}
+              >
                 <Textarea {...field} rows={12} resize="vertical" maxLength={20000} autoFocus />
               </Field>
             )}
@@ -269,7 +352,12 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Save changes
           </Button>
         </DialogActions>
@@ -278,10 +366,20 @@ function EditNoteForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
   );
 }
 
-function AddendumDialog({ note, patientId, onClose }: { note: ClinicalNoteDto | null; patientId: string; onClose: () => void }) {
+function AddendumDialog({
+  note,
+  patientId,
+  onClose,
+}: {
+  note: ClinicalNoteDto | null;
+  patientId: string;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={note !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>{note && <AddendumForm note={note} patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
+        {note && <AddendumForm note={note} patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -304,9 +402,18 @@ function AddendumForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
     <DialogBody>
       <DialogTitle>Add an addendum</DialogTitle>
       <DialogContent className={styles.composer}>
-        <Text>Signed notes cannot be changed. An addendum is a new note linked to the original, with your name and the time.</Text>
+        <Text>
+          Signed notes cannot be changed. An addendum is a new note linked to the original, with your name and the time.
+        </Text>
         <Field label="Addendum" required>
-          <Textarea autoFocus value={body} onChange={(_, d) => setBody(d.value)} rows={6} resize="vertical" maxLength={20000} />
+          <Textarea
+            autoFocus
+            value={body}
+            onChange={(_, d) => setBody(d.value)}
+            rows={6}
+            resize="vertical"
+            maxLength={20000}
+          />
         </Field>
       </DialogContent>
       <DialogActions>
@@ -322,7 +429,15 @@ function AddendumForm({ note, patientId, onClose }: { note: ClinicalNoteDto; pat
 }
 
 /** Notes with their signing state. Authors edit and sign their own unsigned notes; signed notes take addenda. */
-export function NotesList({ patientId, encounterId, emptyHint }: { patientId: string; encounterId: string | null; emptyHint?: string }) {
+export function NotesList({
+  patientId,
+  encounterId,
+  emptyHint,
+}: {
+  patientId: string;
+  encounterId: string | null;
+  emptyHint?: string;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -351,7 +466,12 @@ export function NotesList({ patientId, encounterId, emptyHint }: { patientId: st
   }
   const items = notes.data?.items ?? [];
   if (items.length === 0) {
-    return <EmptyState title="No notes yet" description={emptyHint ?? 'Progress, procedure and counselling notes appear here.'} />;
+    return (
+      <EmptyState
+        title="No notes yet"
+        description={emptyHint ?? 'Progress, procedure and counselling notes appear here.'}
+      />
+    );
   }
 
   return (
@@ -359,7 +479,11 @@ export function NotesList({ patientId, encounterId, emptyHint }: { patientId: st
       {items.map((note) => {
         const mine = note.authorUserId === userId;
         return (
-          <article key={note.id} className={mergeClasses(styles.note, note.amendsNoteId ? styles.addendum : undefined)} aria-label={note.title ?? noteTypeLabel[note.type]}>
+          <article
+            key={note.id}
+            className={mergeClasses(styles.note, note.amendsNoteId ? styles.addendum : undefined)}
+            aria-label={note.title ?? noteTypeLabel[note.type]}
+          >
             <div className={styles.noteHeader}>
               <span className={styles.noteTitle}>
                 <Text weight="semibold">{note.title ?? noteTypeLabel[note.type]}</Text>
@@ -383,7 +507,13 @@ export function NotesList({ patientId, encounterId, emptyHint }: { patientId: st
                   </Button>
                 )}
                 {!note.isSigned && mine && canSign && (
-                  <Button size="small" appearance="primary" icon={<SignatureRegular />} disabled={sign.isPending} onClick={() => sign.mutate(note)}>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    icon={<SignatureRegular />}
+                    disabled={sign.isPending}
+                    onClick={() => sign.mutate(note)}
+                  >
                     Sign
                   </Button>
                 )}
@@ -401,7 +531,9 @@ export function NotesList({ patientId, encounterId, emptyHint }: { patientId: st
           </article>
         );
       })}
-      {(notes.data?.totalCount ?? 0) > 20 && <Pagination page={page} pageSize={20} totalCount={notes.data?.totalCount ?? 0} onPageChange={setPage} />}
+      {(notes.data?.totalCount ?? 0) > 20 && (
+        <Pagination page={page} pageSize={20} totalCount={notes.data?.totalCount ?? 0} onPageChange={setPage} />
+      )}
       <EditNoteDialog note={editing} patientId={patientId} onClose={() => setEditing(null)} />
       <AddendumDialog note={addendumFor} patientId={patientId} onClose={() => setAddendumFor(null)} />
     </div>
@@ -426,7 +558,9 @@ export function NotesTab({ patientId }: { patientId: string }) {
         <DialogSurface style={{ maxWidth: 800 }}>
           <DialogBody>
             <DialogTitle>Write note</DialogTitle>
-            <DialogContent>{writing && <NoteComposer patientId={patientId} encounterId={null} onSaved={() => setWriting(false)} />}</DialogContent>
+            <DialogContent>
+              {writing && <NoteComposer patientId={patientId} encounterId={null} onSaved={() => setWriting(false)} />}
+            </DialogContent>
             <DialogActions>
               <Button onClick={() => setWriting(false)}>Close</Button>
             </DialogActions>

@@ -30,7 +30,11 @@ const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '14px' },
   reasons: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' },
   done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center' },
-  barcode: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
+  barcode: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -45,7 +49,15 @@ export interface RejectTarget {
  * Sample rejection with a standard reason (a NABH quality indicator) and, by default, a request for a new sample: the
  * new tube appears on the collection list with the same tests.
  */
-export function RejectSampleDialog({ target, onClose, onDone }: { target: RejectTarget; onClose: () => void; onDone?: (result: SampleRejected) => void }) {
+export function RejectSampleDialog({
+  target,
+  onClose,
+  onDone,
+}: {
+  target: RejectTarget;
+  onClose: () => void;
+  onDone?: (result: SampleRejected) => void;
+}) {
   const styles = useStyles();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState<SampleRejectionReason | ''>('');
@@ -53,7 +65,12 @@ export function RejectSampleDialog({ target, onClose, onDone }: { target: Reject
   const [recollect, setRecollect] = useState(true);
 
   const reject = useMutation({
-    mutationFn: () => labApi.reject(target.sampleId, { reason: reason as SampleRejectionReason, remarks: remarks.trim() || null, recollect }),
+    mutationFn: () =>
+      labApi.reject(target.sampleId, {
+        reason: reason as SampleRejectionReason,
+        remarks: remarks.trim() || null,
+        recollect,
+      }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: labKeys.samples });
       void queryClient.invalidateQueries({ queryKey: labKeys.worklist });
@@ -114,7 +131,11 @@ export function RejectSampleDialog({ target, onClose, onDone }: { target: Reject
                   </MessageBar>
                 )}
                 <Field label="Why is the sample rejected?" required>
-                  <RadioGroup value={reason} onChange={(_, data) => setReason(data.value as SampleRejectionReason)} className={styles.reasons}>
+                  <RadioGroup
+                    value={reason}
+                    onChange={(_, data) => setReason(data.value as SampleRejectionReason)}
+                    className={styles.reasons}
+                  >
                     {REJECTION_REASONS.map((value) => (
                       <Radio key={value} value={value} label={rejectionReasonLabel[value]} />
                     ))}
@@ -123,12 +144,25 @@ export function RejectSampleDialog({ target, onClose, onDone }: { target: Reject
                 <Field
                   label="Remarks"
                   required={reason === 'Other'}
-                  hint={reason === 'Other' ? 'Describe the problem.' : 'Optional, e.g. grossly haemolysed, sample 0.5 mL only'}
+                  hint={
+                    reason === 'Other'
+                      ? 'Describe the problem.'
+                      : 'Optional, e.g. grossly haemolysed, sample 0.5 mL only'
+                  }
                   validationState={needsRemarks && remarks ? 'error' : 'none'}
                 >
-                  <Textarea value={remarks} onChange={(_, data) => setRemarks(data.value.slice(0, 500))} rows={2} resize="vertical" />
+                  <Textarea
+                    value={remarks}
+                    onChange={(_, data) => setRemarks(data.value.slice(0, 500))}
+                    rows={2}
+                    resize="vertical"
+                  />
                 </Field>
-                <Switch checked={recollect} onChange={(_, data) => setRecollect(data.checked)} label="Request a new sample (the tests move to a new tube on the collection list)" />
+                <Switch
+                  checked={recollect}
+                  onChange={(_, data) => setRecollect(data.checked)}
+                  label="Request a new sample (the tests move to a new tube on the collection list)"
+                />
               </DialogContent>
               <DialogActions>
                 <Button onClick={onClose} disabled={reject.isPending}>

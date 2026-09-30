@@ -18,9 +18,26 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AlertUrgentRegular, CheckmarkCircleRegular, DismissCircleRegular, PrintRegular, ShieldKeyholeRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  AlertUrgentRegular,
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  PrintRegular,
+  ShieldKeyholeRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PatientBanner,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -35,10 +52,23 @@ import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { ItemFlags } from '@/modules/inventory/StockBits';
 import { StoreProblem, WorkingStorePicker } from '@/modules/inventory/StorePicker';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { pharmacyApi, pharmacyKeys, pharmacyQueries, type IpIssueCreated, type WardIndentDetail, type WardIndentLineDto } from '@/modules/pharmacy/api';
+import {
+  pharmacyApi,
+  pharmacyKeys,
+  pharmacyQueries,
+  type IpIssueCreated,
+  type WardIndentDetail,
+  type WardIndentLineDto,
+} from '@/modules/pharmacy/api';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
 import { useItemMaster, useLetterhead, usePharmacyBatches } from '@/modules/pharmacy/counter';
-import { controlledItems, itemsFromErrorData, planBatchIssue, suggestedQuantity, type BatchIssuePlan } from '@/modules/pharmacy/dispense';
+import {
+  controlledItems,
+  itemsFromErrorData,
+  planBatchIssue,
+  suggestedQuantity,
+  type BatchIssuePlan,
+} from '@/modules/pharmacy/dispense';
 import { IP_READERS, PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { ipIssueAmount } from '@/modules/pharmacy/pricing';
 import { printIpIssueSlip } from '@/modules/pharmacy/print';
@@ -48,12 +78,30 @@ export const Route = createFileRoute('/_app/pharmacy/ward-indents/$indentId')({
 });
 
 const useStyles = makeStyles({
-  facts: { display: 'flex', gap: '6px 18px', flexWrap: 'wrap', alignItems: 'center', color: tokens.colorNeutralForeground2 },
+  facts: {
+    display: 'flex',
+    gap: '6px 18px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    color: tokens.colorNeutralForeground2,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   problem: { color: tokens.colorPaletteRedForeground1 },
-  footer: { display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', padding: '12px 16px' },
+  footer: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flexWrap: 'wrap',
+    padding: '12px 16px',
+  },
   done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center' },
-  big: { fontSize: tokens.fontSizeHero800, lineHeight: tokens.lineHeightHero800, fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  big: {
+    fontSize: tokens.fontSizeHero800,
+    lineHeight: tokens.lineHeightHero800,
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
 });
 
 function WardIndentPage() {
@@ -74,7 +122,9 @@ function WardIndentPage() {
       </Page>
     );
   }
-  return indent.data ? <IndentScreen key={`${indentId}:${ipStore.storeId ?? 'none'}`} indent={indent.data} working={ipStore} /> : null;
+  return indent.data ? (
+    <IndentScreen key={`${indentId}:${ipStore.storeId ?? 'none'}`} indent={indent.data} working={ipStore} />
+  ) : null;
 }
 
 interface LinePlan {
@@ -119,8 +169,19 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
     const quantity = parseNumber(quantityText) ?? 0;
     const batchId = batchIds[line.id] ?? null;
     const unit = master.items.get(line.itemId)?.baseUnit;
-    const plan = quantity > 0 ? planBatchIssue({ quantity, remaining: line.remainingQuantity, batchId, minimumShelfLifeDays: 0 }, batches, unit) : null;
-    const amount = sumNumbers((plan?.allocation.allocations ?? []).map((a) => ipIssueAmount(a.quantity, batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0)));
+    const plan =
+      quantity > 0
+        ? planBatchIssue(
+            { quantity, remaining: line.remainingQuantity, batchId, minimumShelfLifeDays: 0 },
+            batches,
+            unit,
+          )
+        : null;
+    const amount = sumNumbers(
+      (plan?.allocation.allocations ?? []).map((a) =>
+        ipIssueAmount(a.quantity, batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0),
+      ),
+    );
     return { line, quantityText, quantity, usable, batches, batchId, plan, amount };
   });
   const active = plans.filter((p) => p.quantity > 0);
@@ -163,19 +224,33 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
     },
   });
 
-  const serverControlled = isApiError(issue.error) && issue.error.code === 'pharmacy.controlled_confirmation_required' ? itemsFromErrorData(issue.error.data) : [];
+  const serverControlled =
+    isApiError(issue.error) && issue.error.code === 'pharmacy.controlled_confirmation_required'
+      ? itemsFromErrorData(issue.error.data)
+      : [];
   const controlled = Array.from(
     new Set([
       ...controlledItems(
         active.map((p) => {
           const detail = master.items.get(p.line.itemId);
-          return { name: p.line.itemName, schedule: detail?.schedule ?? null, isControlled: detail?.isControlled ?? false };
+          return {
+            name: p.line.itemName,
+            schedule: detail?.schedule ?? null,
+            isControlled: detail?.isControlled ?? false,
+          };
         }),
       ),
       ...serverControlled,
     ]),
   );
-  const ready = open && canIssue && Boolean(storeId) && active.length > 0 && problems.length === 0 && !pending && (controlled.length === 0 || confirmControlled);
+  const ready =
+    open &&
+    canIssue &&
+    Boolean(storeId) &&
+    active.length > 0 &&
+    problems.length === 0 &&
+    !pending &&
+    (controlled.length === 0 || confirmControlled);
   const submit = () => {
     if (ready && !issue.isPending) {
       issue.mutate();
@@ -241,8 +316,16 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
 
       <Section
         title={open && canIssue ? 'Issue to the ward' : 'Items requested'}
-        description={open && canIssue ? 'Batches are suggested earliest expiry first. Everything issued is charged to the IP account at MRP.' : undefined}
-        actions={open && canIssue && working.stores.length > 1 ? <WorkingStorePicker working={working} label="Issue from" /> : undefined}
+        description={
+          open && canIssue
+            ? 'Batches are suggested earliest expiry first. Everything issued is charged to the IP account at MRP.'
+            : undefined
+        }
+        actions={
+          open && canIssue && working.stores.length > 1 ? (
+            <WorkingStorePicker working={working} label="Issue from" />
+          ) : undefined
+        }
         flush
       >
         {open && canIssue ? (
@@ -260,7 +343,14 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
                   const detail = master.items.get(p.line.itemId);
                   return (
                     <span>
-                      <Text weight="semibold">{p.line.itemName}</Text> {detail && <ItemFlags schedule={detail.schedule} isControlled={detail.isControlled} isColdChain={detail.isColdChain} />}
+                      <Text weight="semibold">{p.line.itemName}</Text>{' '}
+                      {detail && (
+                        <ItemFlags
+                          schedule={detail.schedule}
+                          isControlled={detail.isControlled}
+                          isColdChain={detail.isColdChain}
+                        />
+                      )}
                       {p.line.remarks && <Caption1 block>{p.line.remarks}</Caption1>}
                       {p.quantity > 0 &&
                         (p.plan?.problems ?? []).map((problem) => (
@@ -280,7 +370,11 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
                 render: (p) => (
                   <span>
                     <Text weight="semibold">{formatQty(p.line.remainingQuantity)}</Text>
-                    {p.line.issuedQuantity > 0 && <Caption1 block className={styles.muted}>{formatQty(p.line.issuedQuantity)} issued</Caption1>}
+                    {p.line.issuedQuantity > 0 && (
+                      <Caption1 block className={styles.muted}>
+                        {formatQty(p.line.issuedQuantity)} issued
+                      </Caption1>
+                    )}
                     <Caption1 block className={p.usable === 0 ? styles.problem : styles.muted}>
                       {p.usable === null ? '' : p.usable > 0 ? `${formatQty(p.usable)} in stock` : 'Out of stock'}
                     </Caption1>
@@ -317,7 +411,13 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
                     <Caption1 className={styles.muted}>Not now</Caption1>
                   ),
               },
-              { key: 'amount', header: 'Charge', align: 'end', width: 110, render: (p) => (p.quantity > 0 ? formatInr(p.amount) : '—') },
+              {
+                key: 'amount',
+                header: 'Charge',
+                align: 'end',
+                width: 110,
+                render: (p) => (p.quantity > 0 ? formatInr(p.amount) : '—'),
+              },
             ]}
           />
         ) : (
@@ -350,7 +450,9 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
             )}
             {issue.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(issue.error) ? issue.error.userMessage : 'Nothing was issued. Try again.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(issue.error) ? issue.error.userMessage : 'Nothing was issued. Try again.'}
+                </MessageBarBody>
               </MessageBar>
             )}
             {canCancel && (

@@ -17,7 +17,16 @@ import type {
 export const STUDY_TYPES = ['Ecg', 'Echo', 'Tmt', 'Holter', 'Abpm', 'Other'] as const;
 export type CardiologyStudyType = (typeof STUDY_TYPES)[number];
 
-export const CARDIOLOGY_STATUSES = ['Ordered', 'Scheduled', 'InProgress', 'Acquired', 'Reported', 'Verified', 'Released', 'Cancelled'] as const;
+export const CARDIOLOGY_STATUSES = [
+  'Ordered',
+  'Scheduled',
+  'InProgress',
+  'Acquired',
+  'Reported',
+  'Verified',
+  'Released',
+  'Cancelled',
+] as const;
 export type CardiologyStudyStatus = (typeof CARDIOLOGY_STATUSES)[number];
 
 export const TMT_RESULTS = ['Negative', 'Positive', 'Inconclusive'] as const;
@@ -246,7 +255,11 @@ export const cardiologyQueries = {
   studies: (filters: CardiologyFilters) =>
     queryOptions({
       queryKey: ['cardiology', 'studies', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<CardiologyStudyListItem>>('/api/v1/cardiology/studies', { query: { ...filters, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CardiologyStudyListItem>>('/api/v1/cardiology/studies', {
+          query: { ...filters, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -260,7 +273,10 @@ export const cardiologyQueries = {
     queryOptions({
       queryKey: ['cardiology', 'studies', 'reporting', studyType ?? 'all', page ?? 1],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<CardiologyStudyListItem>>('/api/v1/cardiology/reporting-worklist', { query: { studyType, page, pageSize: PAGE }, signal }),
+        api.get<PagedResult<CardiologyStudyListItem>>('/api/v1/cardiology/reporting-worklist', {
+          query: { studyType, page, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -276,12 +292,15 @@ export const cardiologyQueries = {
 const study = (id: string) => `/api/v1/cardiology/studies/${id}`;
 
 export const cardiologyApi = {
-  schedule: (id: string, scheduledAt: string, room: string | null) => api.post<CardiologyStudyDetail>(`${study(id)}/schedule`, { scheduledAt, room }),
-  start: (id: string, deviceName: string | null) => api.post<CardiologyStudyDetail>(`${study(id)}/start`, { deviceName }),
+  schedule: (id: string, scheduledAt: string, room: string | null) =>
+    api.post<CardiologyStudyDetail>(`${study(id)}/schedule`, { scheduledAt, room }),
+  start: (id: string, deviceName: string | null) =>
+    api.post<CardiologyStudyDetail>(`${study(id)}/start`, { deviceName }),
   attachFiles: (id: string, fileIds: string[]) => api.post<CardiologyStudyDetail>(`${study(id)}/files`, { fileIds }),
   complete: (id: string, notes: string | null) => api.post<CardiologyStudyDetail>(`${study(id)}/complete`, { notes }),
   cancel: (id: string, reason: string) => api.post<CardiologyStudyDetail>(`${study(id)}/cancel`, { reason }),
-  saveReport: (id: string, request: SaveCardiologyReportRequest) => api.put<CardiologyStudyDetail>(`${study(id)}/report`, request),
+  saveReport: (id: string, request: SaveCardiologyReportRequest) =>
+    api.put<CardiologyStudyDetail>(`${study(id)}/report`, request),
   submitReport: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/report/submit`),
   verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
     api.post<CardiologyStudyDetail>(`${study(id)}/report/verify`, { criticalCall, release }),
@@ -296,4 +315,8 @@ export const CARDIOLOGY_PERMISSIONS = {
 } as const;
 
 /** Who may open cardiology studies and resolve a report id to its study (server `CardiologyEndpoints.StudyReaders`). */
-export const CARDIOLOGY_STUDY_READERS = [CARDIOLOGY_PERMISSIONS.read, CARDIOLOGY_PERMISSIONS.manage, CARDIOLOGY_PERMISSIONS.verify] as const;
+export const CARDIOLOGY_STUDY_READERS = [
+  CARDIOLOGY_PERMISSIONS.read,
+  CARDIOLOGY_PERMISSIONS.manage,
+  CARDIOLOGY_PERMISSIONS.verify,
+] as const;

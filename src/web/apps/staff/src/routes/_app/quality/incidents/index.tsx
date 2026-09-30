@@ -1,4 +1,16 @@
-import { Badge, Button, Caption1, Checkbox, Field, Input, SearchBox, Select, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Checkbox,
+  Field,
+  Input,
+  SearchBox,
+  Select,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { EyeOffRegular, ShieldErrorRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatDateTime, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -47,7 +59,9 @@ export const Route = createFileRoute('/_app/quality/incidents/')({
     view: s.view === 'all' ? 'all' : undefined,
     status: INCIDENT_STATUSES.includes(s.status as IncidentStatus) ? (s.status as IncidentStatus) : undefined,
     type: INCIDENT_TYPES.includes(s.type as IncidentType) ? (s.type as IncidentType) : undefined,
-    severity: INCIDENT_SEVERITIES.includes(s.severity as IncidentSeverity) ? (s.severity as IncidentSeverity) : undefined,
+    severity: INCIDENT_SEVERITIES.includes(s.severity as IncidentSeverity)
+      ? (s.severity as IncidentSeverity)
+      : undefined,
     sentinelOnly: s.sentinelOnly === true ? true : undefined,
     departmentId: typeof s.departmentId === 'string' && s.departmentId ? s.departmentId : undefined,
     from: isIsoDate(s.from) ? s.from : undefined,
@@ -92,11 +106,15 @@ function IncidentsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<IncidentSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<IncidentSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -114,13 +132,23 @@ function IncidentsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 220px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Report number or words in the description" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Report number or words in the description"
+              />
             </Field>
             <Field label="Stage">
               <Select
                 value={search.status ?? (search.view === 'all' ? 'all' : 'open')}
                 onChange={(_, d) =>
-                  set(d.value === 'open' ? { status: undefined, view: undefined } : d.value === 'all' ? { status: undefined, view: 'all' } : { status: d.value as IncidentStatus, view: undefined })
+                  set(
+                    d.value === 'open'
+                      ? { status: undefined, view: undefined }
+                      : d.value === 'all'
+                        ? { status: undefined, view: 'all' }
+                        : { status: d.value as IncidentStatus, view: undefined },
+                  )
                 }
               >
                 <option value="open">All open</option>
@@ -133,7 +161,10 @@ function IncidentsPage() {
               </Select>
             </Field>
             <Field label="Kind">
-              <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as IncidentType | undefined })}>
+              <Select
+                value={search.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as IncidentType | undefined })}
+              >
                 <option value="">All</option>
                 {INCIDENT_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -143,7 +174,10 @@ function IncidentsPage() {
               </Select>
             </Field>
             <Field label="Seriousness">
-              <Select value={search.severity ?? ''} onChange={(_, d) => set({ severity: (d.value || undefined) as IncidentSeverity | undefined })}>
+              <Select
+                value={search.severity ?? ''}
+                onChange={(_, d) => set({ severity: (d.value || undefined) as IncidentSeverity | undefined })}
+              >
                 <option value="">All</option>
                 {INCIDENT_SEVERITIES.map((s) => (
                   <option key={s} value={s}>
@@ -153,7 +187,10 @@ function IncidentsPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -168,7 +205,12 @@ function IncidentsPage() {
             <Field label="to">
               <Input type="date" value={search.to ?? ''} onChange={(_, d) => set({ to: d.value || undefined })} />
             </Field>
-            <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.sentinelOnly)} onChange={(_, d) => set({ sentinelOnly: d.checked ? true : undefined })} label="Sentinel events only" />
+            <Checkbox
+              style={{ alignSelf: 'flex-end' }}
+              checked={Boolean(search.sentinelOnly)}
+              onChange={(_, d) => set({ sentinelOnly: d.checked ? true : undefined })}
+              label="Sentinel events only"
+            />
           </FilterBar>
         </FilterPad>
         <DataTable
@@ -180,7 +222,9 @@ function IncidentsPage() {
           getRowId={(i) => i.id}
           onRowClick={(i) => void navigate({ to: '/quality/incidents/$incidentId', params: { incidentId: i.id } })}
           sort={{ key: sort, desc }}
-          onSortChange={(next) => set({ sort: next.key === 'reportedAt' ? undefined : next.key, desc: next.desc ? undefined : false })}
+          onSortChange={(next) =>
+            set({ sort: next.key === 'reportedAt' ? undefined : next.key, desc: next.desc ? undefined : false })
+          }
           columns={[
             {
               key: 'number',
@@ -211,10 +255,33 @@ function IncidentsPage() {
                 </span>
               ),
             },
-            { key: 'severity', header: 'Seriousness', sortable: true, render: (i) => <SeverityBadge severity={i.severity} /> },
-            { key: 'occurredAt', header: 'Happened', sortable: true, priority: 'low', render: (i) => formatDateTime(i.occurredAt) },
-            { key: 'reportedAt', header: 'Reported', sortable: true, priority: 'low', render: (i) => formatDateTime(i.reportedAt) },
-            { key: 'assigned', header: 'With', priority: 'low', render: (i) => (i.assignedToUserId ? <UserName id={i.assignedToUserId} /> : <Caption1>Not assigned</Caption1>) },
+            {
+              key: 'severity',
+              header: 'Seriousness',
+              sortable: true,
+              render: (i) => <SeverityBadge severity={i.severity} />,
+            },
+            {
+              key: 'occurredAt',
+              header: 'Happened',
+              sortable: true,
+              priority: 'low',
+              render: (i) => formatDateTime(i.occurredAt),
+            },
+            {
+              key: 'reportedAt',
+              header: 'Reported',
+              sortable: true,
+              priority: 'low',
+              render: (i) => formatDateTime(i.reportedAt),
+            },
+            {
+              key: 'assigned',
+              header: 'With',
+              priority: 'low',
+              render: (i) =>
+                i.assignedToUserId ? <UserName id={i.assignedToUserId} /> : <Caption1>Not assigned</Caption1>,
+            },
             {
               key: 'status',
               header: 'Stage',
@@ -231,7 +298,11 @@ function IncidentsPage() {
             },
           ]}
           emptyTitle={openOnly ? 'No open incidents' : 'No incidents match'}
-          emptyDescription={openOnly ? 'New reports from staff appear here and in your notifications.' : 'Try a wider date range or clear the filters.'}
+          emptyDescription={
+            openOnly
+              ? 'New reports from staff appear here and in your notifications.'
+              : 'Try a wider date range or clear the filters.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={incidents.data?.totalCount}

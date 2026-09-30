@@ -64,7 +64,11 @@ export function encounterFormSchema(today: string) {
     })
     .superRefine((values, ctx) => {
       if (values.followUpDate && (values.followUpDate < today || values.followUpDate > latest)) {
-        ctx.addIssue({ code: 'custom', path: ['followUpDate'], message: 'Choose a follow-up date between today and two years ahead.' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['followUpDate'],
+          message: 'Choose a follow-up date between today and two years ahead.',
+        });
       }
       if (hasReferral(values) && !values.referralReason.trim()) {
         ctx.addIssue({ code: 'custom', path: ['referralReason'], message: 'Give the reason for the referral.' });
@@ -88,7 +92,9 @@ export const emptyEncounterForm: EncounterFormValues = {
   referralReason: '',
 };
 
-export function hasReferral(values: Pick<EncounterFormValues, 'referralDepartmentId' | 'referralPractitionerId' | 'referralExternal'>): boolean {
+export function hasReferral(
+  values: Pick<EncounterFormValues, 'referralDepartmentId' | 'referralPractitionerId' | 'referralExternal'>,
+): boolean {
   return Boolean(values.referralDepartmentId || values.referralPractitionerId || values.referralExternal.trim());
 }
 
@@ -146,7 +152,14 @@ export interface TemplateContent {
   followUpDays: number | null;
 }
 
-const TEMPLATE_FIELDS = ['chiefComplaint', 'historyOfPresentIllness', 'examination', 'assessment', 'plan', 'followUpAdvice'] as const;
+const TEMPLATE_FIELDS = [
+  'chiefComplaint',
+  'historyOfPresentIllness',
+  'examination',
+  'assessment',
+  'plan',
+  'followUpAdvice',
+] as const;
 
 /** Fields the template would overwrite (non-empty in the note and different in the template). */
 export function templateConflicts(values: EncounterFormValues, template: TemplateContent): string[] {
@@ -161,7 +174,12 @@ export function templateConflicts(values: EncounterFormValues, template: Templat
  * Applies a speciality template. `fill-empty` keeps everything the doctor already typed; `replace` overwrites the
  * fields the template defines. The follow-up date is set from the template's interval only when none is chosen.
  */
-export function applyTemplate(values: EncounterFormValues, template: TemplateContent, mode: 'fill-empty' | 'replace', today: string): EncounterFormValues {
+export function applyTemplate(
+  values: EncounterFormValues,
+  template: TemplateContent,
+  mode: 'fill-empty' | 'replace',
+  today: string,
+): EncounterFormValues {
   const next = { ...values };
   for (const field of TEMPLATE_FIELDS) {
     const incoming = template[field]?.trim();

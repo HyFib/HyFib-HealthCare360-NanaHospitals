@@ -1,5 +1,12 @@
 import { escapeHtml, formatDate, formatDateOnly, formatDateTime } from '@hc360/core';
-import type { DiagnosisDto, DischargeSummaryPrint, EncounterDetail, FacilityLetterhead, PrescriberInfo, VitalsDto } from './api';
+import type {
+  DiagnosisDto,
+  DischargeSummaryPrint,
+  EncounterDetail,
+  FacilityLetterhead,
+  PrescriberInfo,
+  VitalsDto,
+} from './api';
 import { directionsText, durationText } from './dosing';
 import type { OrderDto } from './ordersApi';
 import type { PrescriptionDto, PrescriptionPrintModel } from './prescriptionsApi';
@@ -38,8 +45,14 @@ export const CLINICAL_PRINT_STYLES = `
 `;
 
 function letterheadHtml(letterhead: FacilityLetterhead | null, fallbackName: string, right: string): string {
-  const contact = [letterhead?.phone, letterhead?.email, letterhead?.website].filter(Boolean).map(escapeHtml).join(' · ');
-  const registration = [letterhead?.registrationNumber && `Reg. ${letterhead.registrationNumber}`, letterhead?.nabhNumber && `NABH ${letterhead.nabhNumber}`]
+  const contact = [letterhead?.phone, letterhead?.email, letterhead?.website]
+    .filter(Boolean)
+    .map(escapeHtml)
+    .join(' · ');
+  const registration = [
+    letterhead?.registrationNumber && `Reg. ${letterhead.registrationNumber}`,
+    letterhead?.nabhNumber && `NABH ${letterhead.nabhNumber}`,
+  ]
     .filter(Boolean)
     .map((part) => escapeHtml(part as string))
     .join(' · ');
@@ -86,7 +99,10 @@ function genderShortOf(gender: string): string {
 }
 
 /** A5 e-prescription (ERX-04): letterhead, prescriber registration, bilingual directions and the QR verification code. */
-export function prescriptionHtml(model: PrescriptionPrintModel, options: { facilityName: string; qrSvg: string | null; verifyUrl: string | null }): string {
+export function prescriptionHtml(
+  model: PrescriptionPrintModel,
+  options: { facilityName: string; qrSvg: string | null; verifyUrl: string | null },
+): string {
   const lines = model.lines
     .map(
       (line) => `
@@ -160,7 +176,9 @@ export interface EncounterPrintData {
 }
 
 function textSection(title: string, value: string | null | undefined): string {
-  return value && value.trim() ? `<div class="section"><h3>${escapeHtml(title)}</h3><div class="pre">${escapeHtml(value)}</div></div>` : '';
+  return value && value.trim()
+    ? `<div class="section"><h3>${escapeHtml(title)}</h3><div class="pre">${escapeHtml(value)}</div></div>`
+    : '';
 }
 
 /** A4 consultation summary for the patient file or the patient. */
@@ -168,21 +186,35 @@ export function encounterSummaryHtml(data: EncounterPrintData): string {
   const e = data.encounter;
   const vitals = data.vitals
     ? [
-        data.vitals.systolicBp || data.vitals.diastolicBp ? `BP ${formatBp(data.vitals.systolicBp, data.vitals.diastolicBp)}` : null,
+        data.vitals.systolicBp || data.vitals.diastolicBp
+          ? `BP ${formatBp(data.vitals.systolicBp, data.vitals.diastolicBp)}`
+          : null,
         data.vitals.pulse ? `Pulse ${data.vitals.pulse}/min` : null,
         data.vitals.spO2 ? `SpO₂ ${data.vitals.spO2}%` : null,
         data.vitals.temperatureCelsius ? `Temp ${formatTemperature(data.vitals.temperatureCelsius)}` : null,
         data.vitals.respiratoryRate ? `RR ${data.vitals.respiratoryRate}/min` : null,
-        data.vitals.weightKg ? `Weight ${data.vitals.weightKg} kg${data.vitals.bmi ? ` (BMI ${data.vitals.bmi})` : ''}` : null,
+        data.vitals.weightKg
+          ? `Weight ${data.vitals.weightKg} kg${data.vitals.bmi ? ` (BMI ${data.vitals.bmi})` : ''}`
+          : null,
         data.vitals.bloodGlucose ? `Glucose ${data.vitals.bloodGlucose} mg/dL` : null,
       ].filter(Boolean)
     : [];
   const diagnoses = data.diagnoses
     .filter((d) => d.type !== 'Differential')
-    .map((d) => `<li>${escapeHtml(d.title)}${d.icdCode ? ` (${escapeHtml(d.icdCode)})` : ''}${d.isPrimary ? ' — primary' : ''}${d.type === 'Provisional' ? ' — provisional' : ''}</li>`)
+    .map(
+      (d) =>
+        `<li>${escapeHtml(d.title)}${d.icdCode ? ` (${escapeHtml(d.icdCode)})` : ''}${d.isPrimary ? ' — primary' : ''}${d.type === 'Provisional' ? ' — provisional' : ''}</li>`,
+    )
     .join('');
   const orders = data.orders
-    .flatMap((o) => o.items.filter((i) => i.status !== 'Cancelled').map((i) => `<li>${escapeHtml(i.serviceName)}${o.priority !== 'Routine' ? ` (${escapeHtml(o.priority)})` : ''}</li>`))
+    .flatMap((o) =>
+      o.items
+        .filter((i) => i.status !== 'Cancelled')
+        .map(
+          (i) =>
+            `<li>${escapeHtml(i.serviceName)}${o.priority !== 'Routine' ? ` (${escapeHtml(o.priority)})` : ''}</li>`,
+        ),
+    )
     .join('');
   const medicines = data.prescriptions
     .filter((p) => p.status === 'Signed')
@@ -190,7 +222,14 @@ export function encounterSummaryHtml(data: EncounterPrintData): string {
       p.items.map(
         (i) =>
           `<li><b>${escapeHtml(i.drugName)}</b>${i.strength ? ` ${escapeHtml(i.strength)}` : ''} — ${escapeHtml(
-            directionsText({ dose: i.dose, frequency: i.frequency, customFrequency: i.customFrequency, durationDays: i.durationDays, route: i.route, instructions: i.instructions }),
+            directionsText({
+              dose: i.dose,
+              frequency: i.frequency,
+              customFrequency: i.customFrequency,
+              durationDays: i.durationDays,
+              route: i.route,
+              instructions: i.instructions,
+            }),
           )}</li>`,
       ),
     )

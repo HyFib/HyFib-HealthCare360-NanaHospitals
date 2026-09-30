@@ -11,7 +11,11 @@ import { Amount, RevealButton, Stack, Toolbar } from '@/modules/hr/shared/layout
 
 export const Route = createFileRoute('/_app/hr/me/payslips')({
   component: () => (
-    <SelfServicePage title="My payslips" subtitle="Salary slips of approved months. Open one to view or print it." icon={<DocumentTextRegular />}>
+    <SelfServicePage
+      title="My payslips"
+      subtitle="Salary slips of approved months. Open one to view or print it."
+      icon={<DocumentTextRegular />}
+    >
       {() => <MyPayslips />}
     </SelfServicePage>
   ),
@@ -39,10 +43,39 @@ function MyPayslips() {
           onRowClick={(p) => setOpen(p.id)}
           columns={[
             { key: 'month', header: 'Month', render: (p) => monthLabel(p.year, p.month) },
-            { key: 'status', header: 'Salary', render: (p) => <StatusBadge status={p.status} label={p.status === 'Approved' ? 'Approved, not yet paid' : p.status === 'Locked' ? 'Paid' : undefined} tone={p.status === 'Locked' ? 'success' : undefined} /> },
-            { key: 'gross', header: 'Gross', align: 'end', priority: 'low', render: (p) => <Amount value={p.grossEarnings} hidden={!revealed} /> },
-            { key: 'deductions', header: 'Deductions', align: 'end', priority: 'low', render: (p) => <Amount value={p.totalDeductions} hidden={!revealed} /> },
-            { key: 'net', header: 'Net pay', align: 'end', render: (p) => <Amount value={p.netPay} hidden={!revealed} /> },
+            {
+              key: 'status',
+              header: 'Salary',
+              render: (p) => (
+                <StatusBadge
+                  status={p.status}
+                  label={
+                    p.status === 'Approved' ? 'Approved, not yet paid' : p.status === 'Locked' ? 'Paid' : undefined
+                  }
+                  tone={p.status === 'Locked' ? 'success' : undefined}
+                />
+              ),
+            },
+            {
+              key: 'gross',
+              header: 'Gross',
+              align: 'end',
+              priority: 'low',
+              render: (p) => <Amount value={p.grossEarnings} hidden={!revealed} />,
+            },
+            {
+              key: 'deductions',
+              header: 'Deductions',
+              align: 'end',
+              priority: 'low',
+              render: (p) => <Amount value={p.totalDeductions} hidden={!revealed} />,
+            },
+            {
+              key: 'net',
+              header: 'Net pay',
+              align: 'end',
+              render: (p) => <Amount value={p.netPay} hidden={!revealed} />,
+            },
           ]}
           emptyTitle="No payslips yet"
           emptyDescription="Payslips appear here once the month's payroll is approved."

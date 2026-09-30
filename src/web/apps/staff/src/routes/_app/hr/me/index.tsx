@@ -20,7 +20,13 @@ export const Route = createFileRoute('/_app/hr/me/')({
 });
 
 const useStyles = makeStyles({
-  day: { display: 'flex', alignItems: 'center', gap: '12px', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
+  day: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '6px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+  },
   dayLabel: { width: '110px', flexShrink: 0 },
   today: { color: tokens.colorBrandForeground1, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -39,7 +45,11 @@ function MyHrPage() {
           <Button icon={<CalendarEditRegular />} onClick={() => setCorrecting(true)}>
             Correct my attendance
           </Button>
-          <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/hr/me/apply-leave' })}>
+          <Button
+            appearance="primary"
+            icon={<CalendarAddRegular />}
+            onClick={() => void navigate({ to: '/hr/me/apply-leave' })}
+          >
             Apply for leave
           </Button>
         </>
@@ -50,7 +60,15 @@ function MyHrPage() {
   );
 }
 
-function Overview({ profile, correcting, onCorrectingChange }: { profile: MyProfileDto; correcting: boolean; onCorrectingChange: (open: boolean) => void }) {
+function Overview({
+  profile,
+  correcting,
+  onCorrectingChange,
+}: {
+  profile: MyProfileDto;
+  correcting: boolean;
+  onCorrectingChange: (open: boolean) => void;
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -79,23 +97,54 @@ function Overview({ profile, correcting, onCorrectingChange }: { profile: MyProf
             ) : (
               <span style={{ display: 'inline-flex', gap: 6 }}>
                 {todayShifts.map((r) => (
-                  <ShiftChip key={r.id} shift={{ code: r.shiftCode, name: r.shiftName, color: r.color, startTime: r.startTime, endTime: r.endTime }} isWeekOff={r.isWeekOff} />
+                  <ShiftChip
+                    key={r.id}
+                    shift={{
+                      code: r.shiftCode,
+                      name: r.shiftName,
+                      color: r.color,
+                      startTime: r.startTime,
+                      endTime: r.endTime,
+                    }}
+                    isWeekOff={r.isWeekOff}
+                  />
                 ))}
               </span>
             )
           }
-          hint={todayShifts[0]?.startTime ? `${formatTimeOfDay(todayShifts[0].startTime)} to ${formatTimeOfDay(todayShifts[0].endTime)}` : undefined}
+          hint={
+            todayShifts[0]?.startTime
+              ? `${formatTimeOfDay(todayShifts[0].startTime)} to ${formatTimeOfDay(todayShifts[0].endTime)}`
+              : undefined
+          }
         />
         <KpiCard
           label={`Present in ${monthLabel(year, month, true)}`}
           value={attendance.data ? formatDays(totals.present) : '…'}
-          hint={totals.missing > 0 ? `${totals.missing} missed punch(es): ask for a correction` : `${formatDays(totals.paidLeave)} day(s) on leave`}
+          hint={
+            totals.missing > 0
+              ? `${totals.missing} missed punch(es): ask for a correction`
+              : `${formatDays(totals.paidLeave)} day(s) on leave`
+          }
           onClick={() => void navigate({ to: '/hr/me/attendance' })}
         />
         {mainBalances.slice(0, 3).map((b) => (
-          <KpiCard key={b.leaveTypeId} label={`${b.leaveTypeName} left`} value={formatDays(b.available)} hint={`${formatDays(b.availed)} taken this year`} onClick={() => void navigate({ to: '/hr/me/leave' })} />
+          <KpiCard
+            key={b.leaveTypeId}
+            label={`${b.leaveTypeName} left`}
+            value={formatDays(b.available)}
+            hint={`${formatDays(b.availed)} taken this year`}
+            onClick={() => void navigate({ to: '/hr/me/leave' })}
+          />
         ))}
-        {pending > 0 && <KpiCard label="Waiting for approval" value={pending} hint="Your leave requests" onClick={() => void navigate({ to: '/hr/me/leave' })} />}
+        {pending > 0 && (
+          <KpiCard
+            label="Waiting for approval"
+            value={pending}
+            hint="Your leave requests"
+            onClick={() => void navigate({ to: '/hr/me/leave' })}
+          />
+        )}
       </KpiGrid>
 
       <Columns>
@@ -118,7 +167,16 @@ function Overview({ profile, correcting, onCorrectingChange }: { profile: MyProf
                       <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                         {entries.map((r) => (
                           <span key={r.id} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                            <ShiftChip shift={{ code: r.shiftCode, name: r.shiftName, color: r.color, startTime: r.startTime, endTime: r.endTime }} isWeekOff={r.isWeekOff} />
+                            <ShiftChip
+                              shift={{
+                                code: r.shiftCode,
+                                name: r.shiftName,
+                                color: r.color,
+                                startTime: r.startTime,
+                                endTime: r.endTime,
+                              }}
+                              isWeekOff={r.isWeekOff}
+                            />
                             {!r.isWeekOff && r.startTime && (
                               <Caption1 className={styles.muted}>
                                 {formatTimeOfDay(r.startTime)} to {formatTimeOfDay(r.endTime)}

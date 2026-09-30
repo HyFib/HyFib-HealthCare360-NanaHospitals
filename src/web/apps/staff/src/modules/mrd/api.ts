@@ -227,10 +227,25 @@ export interface AddDeficiencyRequest {
 }
 
 export type RecordRequestStatus = 'Requested' | 'Issued' | 'Returned' | 'Overdue' | 'Cancelled';
-export type RecordRequestPurpose = 'PatientCare' | 'Legal' | 'Insurance' | 'Research' | 'Audit' | 'PatientCopy' | 'Other';
+export type RecordRequestPurpose =
+  'PatientCare' | 'Legal' | 'Insurance' | 'Research' | 'Audit' | 'PatientCopy' | 'Other';
 
-export const RECORD_REQUEST_STATUSES: readonly RecordRequestStatus[] = ['Requested', 'Issued', 'Overdue', 'Returned', 'Cancelled'];
-export const RECORD_REQUEST_PURPOSES: readonly RecordRequestPurpose[] = ['PatientCare', 'Legal', 'Insurance', 'Research', 'Audit', 'PatientCopy', 'Other'];
+export const RECORD_REQUEST_STATUSES: readonly RecordRequestStatus[] = [
+  'Requested',
+  'Issued',
+  'Overdue',
+  'Returned',
+  'Cancelled',
+];
+export const RECORD_REQUEST_PURPOSES: readonly RecordRequestPurpose[] = [
+  'PatientCare',
+  'Legal',
+  'Insurance',
+  'Research',
+  'Audit',
+  'PatientCopy',
+  'Other',
+];
 export const purposeLabel: Record<RecordRequestPurpose, string> = {
   PatientCare: 'Patient care',
   Legal: 'Legal / court',
@@ -301,7 +316,8 @@ export interface MorbidityParams {
 
 export const mrdKeys = {
   all: ['mrd'] as const,
-  icd: (search: string, chapter: string | null, billableOnly: boolean, limit: number) => ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit] as const,
+  icd: (search: string, chapter: string | null, billableOnly: boolean, limit: number) =>
+    ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit] as const,
   icdOnline: (search: string) => ['mrd', 'icd-online', search] as const,
   classification: () => ['mrd', 'icd-classification'] as const,
   procedures: (search: string) => ['mrd', 'procedures', search] as const,
@@ -314,15 +330,26 @@ export const mrdKeys = {
   morbidity: (params: MorbidityParams) => ['mrd', 'morbidity', params] as const,
 };
 
-export function searchIcd(search: string, options: { chapter?: string | null; billableOnly?: boolean; limit?: number; signal?: AbortSignal } = {}): Promise<IcdCodeDto[]> {
+export function searchIcd(
+  search: string,
+  options: { chapter?: string | null; billableOnly?: boolean; limit?: number; signal?: AbortSignal } = {},
+): Promise<IcdCodeDto[]> {
   return api.get<IcdCodeDto[]>('/api/v1/mrd/icd-codes', {
-    query: { search: search || undefined, chapter: options.chapter ?? undefined, billableOnly: options.billableOnly || undefined, limit: options.limit ?? 20 },
+    query: {
+      search: search || undefined,
+      chapter: options.chapter ?? undefined,
+      billableOnly: options.billableOnly || undefined,
+      limit: options.limit ?? 20,
+    },
     signal: options.signal,
   });
 }
 
 export function searchProcedures(search: string, signal?: AbortSignal): Promise<ProcedureCodeDto[]> {
-  return api.get<ProcedureCodeDto[]>('/api/v1/mrd/procedure-codes', { query: { search: search || undefined, limit: 20 }, signal });
+  return api.get<ProcedureCodeDto[]>('/api/v1/mrd/procedure-codes', {
+    query: { search: search || undefined, limit: 20 },
+    signal,
+  });
 }
 
 export const mrdQueries = {
@@ -336,7 +363,8 @@ export const mrdQueries = {
   icdOnline: (search: string) =>
     queryOptions({
       queryKey: mrdKeys.icdOnline(search),
-      queryFn: ({ signal }) => api.get<OnlineIcdResult[]>('/api/v1/mrd/icd-codes/online', { query: { search, limit: 20 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<OnlineIcdResult[]>('/api/v1/mrd/icd-codes/online', { query: { search, limit: 20 }, signal }),
       staleTime: 10 * 60_000,
       retry: false,
     }),
@@ -355,7 +383,8 @@ export const mrdQueries = {
   codings: (params: CodingListParams) =>
     queryOptions({
       queryKey: mrdKeys.codings(params),
-      queryFn: ({ signal }) => api.get<PagedResult<CodingDto>>('/api/v1/mrd/codings', { query: { ...params, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CodingDto>>('/api/v1/mrd/codings', { query: { ...params, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   coding: (id: string) =>
@@ -373,7 +402,14 @@ export const mrdQueries = {
       queryKey: mrdKeys.records(params),
       queryFn: ({ signal }) =>
         api.get<PagedResult<MedicalRecordDto>>('/api/v1/mrd/records', {
-          query: { status: params.status, overdue: params.overdue || undefined, retentionDue: params.retentionDue || undefined, search: params.search, page: params.page, pageSize: 25 },
+          query: {
+            status: params.status,
+            overdue: params.overdue || undefined,
+            retentionDue: params.retentionDue || undefined,
+            search: params.search,
+            page: params.page,
+            pageSize: 25,
+          },
           signal,
         }),
       placeholderData: keepPreviousData,
@@ -386,13 +422,18 @@ export const mrdQueries = {
   requests: (params: RequestListParams) =>
     queryOptions({
       queryKey: mrdKeys.requests(params),
-      queryFn: ({ signal }) => api.get<PagedResult<RecordRequestDto>>('/api/v1/mrd/record-requests', { query: { ...params, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RecordRequestDto>>('/api/v1/mrd/record-requests', {
+          query: { ...params, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   morbidity: (params: MorbidityParams) =>
     queryOptions({
       queryKey: mrdKeys.morbidity(params),
-      queryFn: ({ signal }) => api.get<MorbidityReport>('/api/v1/mrd/reports/morbidity', { query: { ...params }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<MorbidityReport>('/api/v1/mrd/reports/morbidity', { query: { ...params }, signal }),
       placeholderData: keepPreviousData,
     }),
 };
@@ -401,19 +442,26 @@ export const mrdQueries = {
 
 export const mrdApi = {
   saveIcd: (id: string | null, request: SaveIcdCodeRequest) =>
-    id ? api.put<IcdCodeDto>(`/api/v1/mrd/icd-codes/${id}`, request) : api.post<IcdCodeDto>('/api/v1/mrd/icd-codes', request),
+    id
+      ? api.put<IcdCodeDto>(`/api/v1/mrd/icd-codes/${id}`, request)
+      : api.post<IcdCodeDto>('/api/v1/mrd/icd-codes', request),
   createCoding: (request: CreateCodingRequest) => api.post<CodingDto>('/api/v1/mrd/codings', request),
   saveCoding: (id: string, entries: CodingLineRequest[], notes: string | null, version: number) =>
     api.put<CodingDto>(`/api/v1/mrd/codings/${id}`, { entries, notes, version }),
   verifyCoding: (id: string, version: number) => api.post<CodingDto>(`/api/v1/mrd/codings/${id}/verify`, { version }),
-  addDeficiency: (recordId: string, request: AddDeficiencyRequest) => api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/deficiencies`, request),
+  addDeficiency: (recordId: string, request: AddDeficiencyRequest) =>
+    api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/deficiencies`, request),
   resolveDeficiency: (deficiencyId: string, note: string | null) =>
     api.post<MedicalRecordDto>(`/api/v1/mrd/records/deficiencies/${deficiencyId}/resolve`, { note }),
   scan: (recordId: string) => api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/scan`),
   complete: (recordId: string) => api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/complete`),
-  archive: (recordId: string, location: string) => api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/archive`, { location }),
-  createRequest: (request: CreateRecordRequestRequest) => api.post<RecordRequestDto>('/api/v1/mrd/record-requests', request),
-  issueRequest: (id: string, dueBackOn: string | null) => api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/issue`, { dueBackOn }),
+  archive: (recordId: string, location: string) =>
+    api.post<MedicalRecordDto>(`/api/v1/mrd/records/${recordId}/archive`, { location }),
+  createRequest: (request: CreateRecordRequestRequest) =>
+    api.post<RecordRequestDto>('/api/v1/mrd/record-requests', request),
+  issueRequest: (id: string, dueBackOn: string | null) =>
+    api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/issue`, { dueBackOn }),
   returnRequest: (id: string) => api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/return`),
-  cancelRequest: (id: string, reason: string) => api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/cancel`, { reason }),
+  cancelRequest: (id: string, reason: string) =>
+    api.post<RecordRequestDto>(`/api/v1/mrd/record-requests/${id}/cancel`, { reason }),
 };

@@ -79,11 +79,20 @@ export function billDocument(bill: PortalBillDetail, ctx: BillPrintContext): Pri
     t('bills.gst'),
   )}</th><th class="right">${escapeHtml(t('common.total'))}</th></tr></thead><tbody>${rows}</tbody></table>
 <h2>${escapeHtml(t('bills.summary'))}</h2><table class="totals"><tbody>${totals}</tbody></table>${receipts}${footer(ctx, t('bills.help'))}`;
-  return { title: `${t('bills.print.title')} ${number}`, body, styles: STYLES, fileName: safeFileName(`bill-${number}`) };
+  return {
+    title: `${t('bills.print.title')} ${number}`,
+    body,
+    styles: STYLES,
+    fileName: safeFileName(`bill-${number}`),
+  };
 }
 
 /** A copy of one payment receipt. */
-export function receiptDocument(receipt: ReceiptSummary, bill: PortalBillDetail, ctx: BillPrintContext): PrintableDocument {
+export function receiptDocument(
+  receipt: ReceiptSummary,
+  bill: PortalBillDetail,
+  ctx: BillPrintContext,
+): PrintableDocument {
   const { t, f } = ctx;
   const body = `<div class="receipt">${head(t('bills.receipt.title'), t('bills.receipt', { number: receipt.receiptNumber }), ctx)}
 <p class="amount">${escapeHtml(f.inr(receipt.amount))}</p>
@@ -95,5 +104,10 @@ export function receiptDocument(receipt: ReceiptSummary, bill: PortalBillDetail,
     t('bills.receipt.for', { number: bill.billNumber ?? '' }),
   )}</td></tr>
 </tbody></table>${footer(ctx, t('bills.receipt.note'))}</div>`;
-  return { title: `${t('bills.receipt.title')} ${receipt.receiptNumber}`, body, styles: STYLES, fileName: safeFileName(`receipt-${receipt.receiptNumber}`) };
+  return {
+    title: `${t('bills.receipt.title')} ${receipt.receiptNumber}`,
+    body,
+    styles: STYLES,
+    fileName: safeFileName(`receipt-${receipt.receiptNumber}`),
+  };
 }

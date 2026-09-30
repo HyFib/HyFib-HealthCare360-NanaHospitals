@@ -21,11 +21,21 @@ type Choice = 'updates' | 'marketing';
 
 const CHOICES: { key: Choice; title: MessageKey; hint: MessageKey; changedAt: keyof CommunicationPreferences }[] = [
   { key: 'updates', title: 'preferences.updates', hint: 'preferences.updates.hint', changedAt: 'updatesChangedAt' },
-  { key: 'marketing', title: 'preferences.marketing', hint: 'preferences.marketing.hint', changedAt: 'marketingChangedAt' },
+  {
+    key: 'marketing',
+    title: 'preferences.marketing',
+    hint: 'preferences.marketing.hint',
+    changedAt: 'marketingChangedAt',
+  },
 ];
 
 const useStyles = makeStyles({
-  lead: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
+  lead: {
+    margin: 0,
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
   list: { display: 'flex', flexDirection: 'column', gap: '10px' },
   row: {
     display: 'flex',
@@ -80,7 +90,11 @@ function PreferencesPage() {
   };
 
   return (
-    <PortalPage title={t('preferences.title')} back={<BackLink to="/profile">{t('profile.title')}</BackLink>} width="narrow">
+    <PortalPage
+      title={t('preferences.title')}
+      back={<BackLink to="/profile">{t('profile.title')}</BackLink>}
+      width="narrow"
+    >
       <p className={styles.lead}>{t('preferences.lead', { name: profile.fullName })}</p>
       {preferences.isPending ? (
         <LoadingCards count={2} />
@@ -98,7 +112,9 @@ function PreferencesPage() {
                     {t(choice.title)}
                   </span>
                   <span className={styles.hint}>{t(choice.hint)}</span>
-                  {changedAt && <span className={styles.changed}>{t('preferences.changed', { date: f.date(changedAt) })}</span>}
+                  {changedAt && (
+                    <span className={styles.changed}>{t('preferences.changed', { date: f.date(changedAt) })}</span>
+                  )}
                 </span>
                 <span className={styles.control}>
                   {saving === choice.key && <Spinner size="tiny" />}

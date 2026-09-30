@@ -4,7 +4,15 @@ import { formatInr } from '@hc360/core';
 import { useState } from 'react';
 import { parseNumber } from '@/modules/inventory/format';
 import { PAYMENT_MODES, paymentModeLabel, type PaymentMode } from './api';
-import { changeDue, MAX_PAYMENTS, newPaymentKey, paymentsTotal, type PaymentCheck, type PaymentDraft, type ResolvedPayment } from './payments';
+import {
+  changeDue,
+  MAX_PAYMENTS,
+  newPaymentKey,
+  paymentsTotal,
+  type PaymentCheck,
+  type PaymentDraft,
+  type ResolvedPayment,
+} from './payments';
 
 const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '10px' },
@@ -54,7 +62,8 @@ export function PaymentPanel({
   const change = changeDue(parseNumber(cashReceived), cashTotal);
   const balanceIndex = drafts.map((d) => d.amount === null).lastIndexOf(true);
 
-  const update = (key: string, patch: Partial<PaymentDraft>) => onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+  const update = (key: string, patch: Partial<PaymentDraft>) =>
+    onChange(drafts.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   const remove = (key: string) => onChange(drafts.filter((d) => d.key !== key));
   const add = () => {
     const used = new Set(drafts.map((d) => d.mode));
@@ -73,7 +82,13 @@ export function PaymentPanel({
           <div key={draft.key} className={styles.payment}>
             <div className={styles.modes} role="group" aria-label={`Payment ${index + 1} mode`}>
               {modes.map((mode) => (
-                <ToggleButton key={mode} size="small" checked={draft.mode === mode} disabled={disabled} onClick={() => update(draft.key, { mode })}>
+                <ToggleButton
+                  key={mode}
+                  size="small"
+                  checked={draft.mode === mode}
+                  disabled={disabled}
+                  onClick={() => update(draft.key, { mode })}
+                >
                   {mode === 'Credit' ? 'Credit' : paymentModeLabel[mode]}
                 </ToggleButton>
               ))}
@@ -93,20 +108,40 @@ export function PaymentPanel({
                   contentBefore="₹"
                   disabled={disabled}
                   value={draft.amount === null ? '' : String(draft.amount)}
-                  placeholder={isBalance ? (current ? `${current.amount.toFixed(2)} (balance)` : 'Nothing left') : 'Amount'}
+                  placeholder={
+                    isBalance ? (current ? `${current.amount.toFixed(2)} (balance)` : 'Nothing left') : 'Amount'
+                  }
                   onChange={(_, d) => update(draft.key, { amount: parseNumber(d.value) })}
                 />
               </Field>
               {needsReference && (
-                <Field label={draft.mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'} size="small" required className={styles.reference}>
-                  <Input value={draft.reference} maxLength={64} disabled={disabled} onChange={(_, d) => update(draft.key, { reference: d.value })} />
+                <Field
+                  label={draft.mode === 'Card' ? 'Card slip number' : 'UPI transaction ID'}
+                  size="small"
+                  required
+                  className={styles.reference}
+                >
+                  <Input
+                    value={draft.reference}
+                    maxLength={64}
+                    disabled={disabled}
+                    onChange={(_, d) => update(draft.key, { reference: d.value })}
+                  />
                 </Field>
               )}
               {drafts.length > 1 && (
-                <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove payment ${index + 1}`} disabled={disabled} onClick={() => remove(draft.key)} />
+                <Button
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label={`Remove payment ${index + 1}`}
+                  disabled={disabled}
+                  onClick={() => remove(draft.key)}
+                />
               )}
             </div>
-            {draft.mode === 'Credit' && <Caption1>Put on the patient's account and collected later from Invoices.</Caption1>}
+            {draft.mode === 'Credit' && (
+              <Caption1>Put on the patient's account and collected later from Invoices.</Caption1>
+            )}
           </div>
         );
       })}
@@ -115,13 +150,30 @@ export function PaymentPanel({
         <Button size="small" icon={<AddRegular />} disabled={disabled || drafts.length >= MAX_PAYMENTS} onClick={add}>
           Split payment
         </Button>
-        {bill > 0 && (check.ok ? <Caption1 className={styles.ok}>Payments match the bill</Caption1> : <Caption1 className={styles.warn}>{check.message}</Caption1>)}
+        {bill > 0 &&
+          (check.ok ? (
+            <Caption1 className={styles.ok}>Payments match the bill</Caption1>
+          ) : (
+            <Caption1 className={styles.warn}>{check.message}</Caption1>
+          ))}
       </div>
 
       {cashTotal > 0 && (
         <div className={styles.fields}>
-          <Field label="Cash received (optional)" size="small" hint="Works out the change to return" className={styles.amount}>
-            <Input type="number" min={0} contentBefore="₹" value={cashReceived} onChange={(_, d) => setCashReceived(d.value)} disabled={disabled} />
+          <Field
+            label="Cash received (optional)"
+            size="small"
+            hint="Works out the change to return"
+            className={styles.amount}
+          >
+            <Input
+              type="number"
+              min={0}
+              contentBefore="₹"
+              value={cashReceived}
+              onChange={(_, d) => setCashReceived(d.value)}
+              disabled={disabled}
+            />
           </Field>
           {change > 0 && (
             <Text className={styles.change} aria-live="polite">
@@ -130,7 +182,11 @@ export function PaymentPanel({
           )}
         </div>
       )}
-      {check.ok && check.due > 0 && <Caption1 className={styles.warn}>{formatInr(check.due)} will be left as a balance due on this invoice.</Caption1>}
+      {check.ok && check.due > 0 && (
+        <Caption1 className={styles.warn}>
+          {formatInr(check.due)} will be left as a balance due on this invoice.
+        </Caption1>
+      )}
     </div>
   );
 }
