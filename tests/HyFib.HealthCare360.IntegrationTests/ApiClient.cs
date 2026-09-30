@@ -26,6 +26,13 @@ public sealed class ApiClient(HttpClient http)
         await EnsureSuccessAsync(response, HttpMethod.Post, path);
     }
 
+    /// <summary>A PUT whose answer has no body (204 No Content).</summary>
+    public async Task PutAsync(string path, object? body)
+    {
+        using var response = await SendRawAsync(HttpMethod.Put, path, body);
+        await EnsureSuccessAsync(response, HttpMethod.Put, path);
+    }
+
     /// <summary>The raw response, for asserting on a refusal (the caller disposes it).</summary>
     public Task<HttpResponseMessage> SendRawAsync(HttpMethod method, string path, object? body = null)
     {

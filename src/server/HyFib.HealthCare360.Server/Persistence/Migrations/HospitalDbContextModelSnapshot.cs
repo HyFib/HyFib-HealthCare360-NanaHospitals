@@ -335,6 +335,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("CreatedAt")
                         .HasDatabaseName("ix_usage_records_created_at");
 
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_usage_records_patient_id")
+                        .HasFilter("patient_id IS NOT NULL");
+
                     b.HasIndex("UserId", "CreatedAt")
                         .HasDatabaseName("ix_usage_records_user_id_created_at");
 
@@ -2782,6 +2786,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_insurance_claims_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_insurance_claims_patient_id");
 
                     b.HasIndex("PayerId", "Status")
                         .HasDatabaseName("ix_insurance_claims_payer_id_status");
@@ -12310,6 +12317,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_campaign_recipients_opt_out_token_hash");
 
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_campaign_recipients_patient_id");
+
                     b.HasIndex("CampaignId", "PatientId")
                         .IsUnique()
                         .HasDatabaseName("ix_campaign_recipients_campaign_id_patient_id");
@@ -20391,6 +20401,627 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_ward_return_lines_ward_return_id");
 
                     b.ToTable("ward_return_lines", "pharmacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.Breach", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AwareAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("aware_at");
+
+                    b.Property<DateTimeOffset?>("BoardInformedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("board_informed_at");
+
+                    b.Property<string>("BoardReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("board_reference");
+
+                    b.Property<string>("BreachNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("breach_number");
+
+                    b.Property<string>("Cause")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("cause");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<string>("ClosingNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("closing_note");
+
+                    b.Property<string>("Consequences")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("consequences");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.PrimitiveCollection<List<string>>("DataCategories")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("data_categories");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<int?>("EstimatedAffected")
+                        .HasColumnType("integer")
+                        .HasColumnName("estimated_affected");
+
+                    b.Property<DateTimeOffset?>("ExtendedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("extended_until");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Location")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("location");
+
+                    b.Property<string>("Mitigation")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("mitigation");
+
+                    b.PrimitiveCollection<List<string>>("Nature")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("nature");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notified_at");
+
+                    b.Property<DateTimeOffset?>("OccurredFrom")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_from");
+
+                    b.Property<DateTimeOffset?>("OccurredTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_to");
+
+                    b.Property<string>("PrincipalNotice")
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)")
+                        .HasColumnName("principal_notice");
+
+                    b.Property<string>("PrincipalSteps")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("principal_steps");
+
+                    b.Property<string>("Remediation")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("remediation");
+
+                    b.Property<DateTimeOffset?>("ReportSubmittedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("report_submitted_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_breaches");
+
+                    b.HasIndex("BreachNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_breaches_breach_number");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_breaches_is_deleted");
+
+                    b.HasIndex("Status", "AwareAt")
+                        .HasDatabaseName("ix_breaches_status_aware_at");
+
+                    b.ToTable("breaches", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.BreachAffectedPatient", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("AddedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("added_at");
+
+                    b.Property<Guid?>("AddedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("added_by_user_id");
+
+                    b.Property<Guid>("BreachId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("breach_id");
+
+                    b.Property<string>("NoticeChannels")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("notice_channels");
+
+                    b.Property<DateTimeOffset?>("NotifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("notified_at");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_breach_affected_patients");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_breach_affected_patients_patient_id");
+
+                    b.HasIndex("BreachId", "PatientId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_breach_affected_patients_breach_id_patient_id");
+
+                    b.ToTable("breach_affected_patients", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssignedToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_to_user_id");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("channel");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<Guid?>("ClosedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("closed_by_user_id");
+
+                    b.Property<string>("ContactEmail")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("contact_email");
+
+                    b.Property<string>("ContactPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("contact_phone");
+
+                    b.Property<string>("Corrections")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("corrections");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Details")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("details");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("due_at");
+
+                    b.PrimitiveCollection<List<string>>("ErasedItems")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("erased_items");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("IdentityCheck")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("identity_check");
+
+                    b.Property<string>("IdentityNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("identity_note");
+
+                    b.Property<DateTimeOffset?>("IdentityVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("identity_verified_at");
+
+                    b.Property<Guid?>("IdentityVerifiedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("identity_verified_by_user_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("PrincipalName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("principal_name");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("received_at");
+
+                    b.Property<string>("RequestNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("request_number");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("requested_by");
+
+                    b.Property<Guid?>("RequestedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<string>("RequesterName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("requester_name");
+
+                    b.Property<string>("Response")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("response");
+
+                    b.Property<bool>("RetainedPermanently")
+                        .HasColumnType("boolean")
+                        .HasColumnName("retained_permanently");
+
+                    b.Property<DateOnly?>("RetainedUntil")
+                        .HasColumnType("date")
+                        .HasColumnName("retained_until");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("SummarySnapshot")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("summary_snapshot");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("type");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_data_requests");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_data_requests_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_data_requests_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_data_requests_patient_id")
+                        .HasFilter("patient_id IS NOT NULL");
+
+                    b.HasIndex("RequestNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_data_requests_request_number");
+
+                    b.HasIndex("Status", "DueAt")
+                        .HasDatabaseName("ix_data_requests_status_due_at");
+
+                    b.ToTable("data_requests", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequestEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<Guid>("DataRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("data_request_id");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("text");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_data_request_events");
+
+                    b.HasIndex("DataRequestId", "At")
+                        .HasDatabaseName("ix_data_request_events_data_request_id_at");
+
+                    b.ToTable("data_request_events", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.Nominee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("email");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone");
+
+                    b.Property<string>("RecordedVia")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("recorded_via");
+
+                    b.Property<string>("Relationship")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("relationship");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_nominees");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_nominees_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_nominees_patient_id")
+                        .HasFilter("is_deleted = false");
+
+                    b.ToTable("nominees", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.RetentionChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<Guid?>("ChangedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("changed_by_user_id");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key");
+
+                    b.Property<int?>("PreviousValue")
+                        .HasColumnType("integer")
+                        .HasColumnName("previous_value");
+
+                    b.Property<int>("Value")
+                        .HasColumnType("integer")
+                        .HasColumnName("value");
+
+                    b.HasKey("Id")
+                        .HasName("pk_retention_changes");
+
+                    b.HasIndex("Key", "ChangedAt")
+                        .HasDatabaseName("ix_retention_changes_key_changed_at");
+
+                    b.ToTable("retention_changes", "privacy");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.RetentionRun", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Error")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("error");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("Results")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("results");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<Guid?>("StartedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("started_by_user_id");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("trigger");
+
+                    b.HasKey("Id")
+                        .HasName("pk_retention_runs");
+
+                    b.HasIndex("StartedAt")
+                        .HasDatabaseName("ix_retention_runs_started_at");
+
+                    b.ToTable("retention_runs", "privacy");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Quality.Domain.Capa", b =>
@@ -35203,6 +35834,52 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasConstraintName("fk_ward_return_lines_ward_returns_ward_return_id");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.BreachAffectedPatient", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Privacy.Domain.Breach", null)
+                        .WithMany()
+                        .HasForeignKey("BreachId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_breach_affected_patients_breach_breach_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_breach_affected_patients_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequest", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_data_requests_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequestEvent", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequest", null)
+                        .WithMany("Events")
+                        .HasForeignKey("DataRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_data_request_events_data_requests_data_request_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.Nominee", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_nominees_patients_patient_id");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Quality.Domain.Capa", b =>
                 {
                     b.HasOne("HyFib.HealthCare360.Modules.Quality.Domain.Incident", null)
@@ -36281,6 +36958,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Pharmacy.Domain.WardReturn", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Privacy.Domain.DataRequest", b =>
+                {
+                    b.Navigation("Events");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Quality.Domain.Investigation", b =>

@@ -10,6 +10,7 @@ using HyFib.HealthCare360.Modules.Inpatient;
 using HyFib.HealthCare360.Modules.Interop;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Pharmacy;
+using HyFib.HealthCare360.Modules.Privacy;
 using HyFib.HealthCare360.Modules.Quality;
 using HyFib.HealthCare360.Modules.Scheduling;
 using HyFib.HealthCare360.Modules.SpecialtyCare;
@@ -45,6 +46,7 @@ public static class ServerModules
         new AIModule(),
         new AnalyticsModule(),
         new InteropModule(),
+        new PrivacyModule(),
         new IntegrationsModule(),
     ];
 }

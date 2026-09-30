@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    DPDP Act 2023 duties (layer 8, SRS PRV-01..04): data-principal requests (access, correction, erasure, grievance),
+    nominees, the personal-data breach register, and the retention schedule with its clean-up job. It reads other
+    modules' records to summarise and assess a patient's data; changes to them go through the owning module's services.
+  -->
+  <PropertyGroup>
+    <RootNamespace>HyFib.HealthCare360.Modules.Privacy</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Engagement\HyFib.HealthCare360.Modules.Engagement.csproj" />
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Billing\HyFib.HealthCare360.Modules.Billing.csproj" />
+  </ItemGroup>
+</Project>

@@ -55,6 +55,7 @@ public sealed class EngagementModule : IModule
     {
         services.AddScoped<PublicLinks>();
         services.AddScoped<CommunicationConsentService>();
+        services.AddScoped<PatientFeedbackEraser>();
         services.AddScoped<LeadService>();
         services.AddScoped<FollowUpService>();
         services.AddScoped<ReferralService>();

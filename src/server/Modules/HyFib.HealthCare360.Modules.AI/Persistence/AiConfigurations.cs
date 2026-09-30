@@ -19,5 +19,8 @@ internal sealed class AiUsageConfiguration : IEntityTypeConfiguration<AiUsage>
         b.Property(x => x.Error).HasMaxLength(500);
         b.HasIndex(x => new { x.UserId, x.CreatedAt });
         b.HasIndex(x => x.CreatedAt);
+
+        // The patient's data summary counts their records by patient (DPDP access requests).
+        b.HasIndex(x => x.PatientId).HasFilter("patient_id IS NOT NULL");
     }
 }
