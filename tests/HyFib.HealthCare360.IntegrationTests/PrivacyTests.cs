@@ -39,6 +39,8 @@ public sealed class PrivacyTests(HospitalServer server)
         summary.Person.Uhid.ShouldBe(patient.Uhid);
         summary.Categories.Select(c => c.Key).ShouldContain("registration");
         summary.Consents.ShouldContain(c => c.Type == nameof(ConsentType.SmsWhatsAppUpdates) && c.Granted);
+        summary.Categories.Single(c => c.Key == "registration").RetentionKind.ShouldBe(PersonalDataRetention.MedicalRecords);
+        summary.Periods.ShouldBe(new RetentionPeriods(3, 5, 8, 365, 10));
 
         var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
             patient.Id, DataRequestType.Correction, RequesterRelation.Self, null, null,
@@ -46,6 +48,8 @@ public sealed class PrivacyTests(HospitalServer server)
         created.DueAt.ShouldBeGreaterThan(DateTimeOffset.UtcNow.AddDays(1));
 
         (await portal.GetAsync<List<PortalDataRequestItem>>("/api/v1/portal/privacy/requests")).ShouldContain(r => r.Id == created.Id);
+        (await portal.GetAsync<PortalPrivacyStatus>($"/api/v1/portal/privacy/status?patientId={patient.Id}"))
+            .ShouldBe(new PortalPrivacyStatus(false, null, 1, DataRequestService.MaxOpenPortalRequests, 0));
 
         var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await officer.GetAsync<PrivacyOverview>("/api/v1/privacy/overview")).Open.ShouldBeGreaterThanOrEqualTo(1);
@@ -63,6 +67,7 @@ public sealed class PrivacyTests(HospitalServer server)
 
         var seen = await portal.GetAsync<PortalDataRequestDetail>($"/api/v1/portal/privacy/requests/{created.Id}");
         seen.Status.ShouldBe(DataRequestStatus.Completed);
+        seen.IdentityConfirmed.ShouldBeTrue();
         seen.Response.ShouldBe("We have updated your e-mail address.");
         seen.CanWithdraw.ShouldBeFalse();
         seen.Timeline.ShouldNotContain(e => e.Kind == DataRequestEventKind.Note, "Staff notes stay with the staff.");
@@ -152,7 +157,9 @@ public sealed class PrivacyTests(HospitalServer server)
         (await QueuedTemplatesAsync(phone)).ShouldContain(BreachService.NoticeTemplate);
 
         var notices = await portal.GetAsync<List<PortalBreachNotice>>($"/api/v1/portal/privacy/notices?patientId={patient.Id}");
-        notices.ShouldHaveSingleItem().Description.ShouldBe("A lab report was e-mailed to another patient.");
+        var notice = notices.ShouldHaveSingleItem();
+        notice.Description.ShouldBe("A lab report was e-mailed to another patient.");
+        notice.PatientIds.ShouldBe([patient.Id]);
 
         await officer.PostAsync($"/api/v1/privacy/breaches/{breachId}/board-informed", new BoardInformedRequest(aware.AddMinutes(30), null));
         await officer.PostAsync($"/api/v1/privacy/breaches/{breachId}/report-submitted", new ReportSubmittedRequest(DateTimeOffset.UtcNow, "DPB/TEST/1"));

@@ -88,12 +88,16 @@ The request records what was erased and until when the rest is kept. The retenti
 
 ### Data summary (`DataSummary`)
 
-`{generatedAt, hospital, person, categories[], consents[], sharedWith[], processors[], nominee, contact}`:
+`{generatedAt, hospital, person, categories[], consents[], sharedWith[], processors[], nominee, contact, periods}`:
 
 - **`person`**: the registration details as held: `uhid, fullName, gender, dateOfBirth, phone, alternatePhone, email,
   address, emergencyContact, abhaNumber` (masked), `abhaAddress, aadhaarLast4` (`XXXX-XXXX-1234`), `hasPhoto,
   registeredAt, registeredAtFacility`.
-- **`categories[]`**: `{key, title, description, purpose, basis, retention, items[{label, count, first, last}]}`.
+- **`categories[]`**: `{key, title, description, purpose, basis, retention, retentionKind, items[{key, label, count, first, last}]}`.
+  - `retention` is the English sentence. `retentionKind` (`MedicalRecords, Finance, MessageLog, Audit, WhileInUse,
+    WithRecords`) and `periods {outpatientYears, inpatientYears, financeYears, messageLogDays, auditYears}` let a client
+    say it in another language.
+  - An item's `key` is its table (`clinical.encounters`), stable for translating the label.
   - Only categories with records are included, except `registration`, which is always there.
   - Keys are stable, and the portal translates by key: `registration, visits, clinical, medicines, tests, stays,
     procedures, support, billing, virtual, communication, consents, documents, account, safety, ai, access-log,
@@ -115,13 +119,14 @@ The summary is built from `PersonalDataCatalogue`:
 
 | Method | Path | Body → Response |
 |---|---|---|
+| GET | `/status?patientId=` | → `PortalPrivacyStatus {hasNominee, nomineeName, openRequests, maxOpenRequests, notices}` for the front page. Counts only, so it is not audited as record access |
 | GET | `/summary?patientId=` | → `DataSummary` |
 | GET | `/requests?patientId=` (optional) | → `PortalDataRequestItem[] {id, requestNumber, patientId, type, status, receivedAt, dueAt, closedAt}` (newest first, at most 100) |
-| GET | `/requests/{id}` | → `PortalDataRequestDetail {id, requestNumber, patientId, type, status, requestedBy, details, corrections[{field, currentValue, requestedValue, decision, note}], receivedAt, dueAt, closedAt, response, timeline[{at, kind, text}], canWithdraw, contact}`. Only the public history is shown: received, identity confirmed, started, erased, answered, withdrawn |
+| GET | `/requests/{id}` | → `PortalDataRequestDetail {id, requestNumber, patientId, type, status, requestedBy, requesterName, identityConfirmed, details, corrections[{field, currentValue, requestedValue, decision, note}], receivedAt, dueAt, closedAt, response, erasedItems[], retainedUntil, retainedPermanently, timeline[{at, kind, text}], canWithdraw, contact}`. Only the public history is shown: received, identity confirmed, started, erased, answered, withdrawn. `identityConfirmed` false on a request made for someone else means staff still have to confirm the requester may act for them |
 | POST | `/requests` | `PortalDataRequestCreate {patientId, type: Correction\|Erasure\|Grievance, requestedBy: Self\|ParentOrGuardian\|FamilyMember, requesterName?, details?, corrections?}` → 201 `{id, requestNumber, dueAt}` |
 | POST | `/requests/{id}/withdraw` | → 204 |
 | GET · PUT · DELETE | `/nominee` | GET/DELETE `?patientId=`; PUT `PortalNomineeRequest {patientId, name, relationship, phone?, email?}`; GET → `{nominee}` |
-| GET | `/notices?patientId=` (optional) · `/notices/{id}` | → `PortalBreachNotice {id, reference, title, notifiedAt, awareAt, occurredFrom, occurredTo, description, location, dataCategories[], consequences, mitigation, principalSteps, contact}` |
+| GET | `/notices?patientId=` (optional) · `/notices/{id}` | → `PortalBreachNotice {id, patientIds[], reference, title, notifiedAt, awareAt, occurredFrom, occurredTo, description, location, dataCategories[], consequences, mitigation, principalSteps, contact}`; `patientIds` are the people it concerns among those the user may act for |
 
 Access needs no request: the summary is always there. A patient who wants a formal copy of their medical records uses
 the existing record request (`/portal/records/request`).

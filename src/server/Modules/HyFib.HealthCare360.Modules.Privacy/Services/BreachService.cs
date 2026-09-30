@@ -8,9 +8,13 @@ using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Services;
 
-/// <summary>A breach notice as a patient sees it in the portal: what rule 7(1) of the DPDP Rules 2025 asks each notice to say.</summary>
+/// <summary>
+/// A breach notice as a patient sees it in the portal: what rule 7(1) of the DPDP Rules 2025 asks each notice to say.
+/// <see cref="PatientIds"/> are the people it concerns among those the portal user may act for.
+/// </summary>
 public sealed record PortalBreachNotice(
     Guid Id,
+    IReadOnlyList<Guid> PatientIds,
     string Reference,
     string Title,
     DateTimeOffset NotifiedAt,
@@ -373,9 +377,15 @@ public sealed class BreachService(
             return [];
         }
 
+        var breachIds = breaches.Select(b => b.Id).ToList();
+        var affected = await db.Set<BreachAffectedPatient>().AsNoTracking()
+            .Where(a => breachIds.Contains(a.BreachId) && patientIds.Contains(a.PatientId))
+            .Select(a => new { a.BreachId, a.PatientId })
+            .ToListAsync(ct);
         var contact = await privacy.PublishedContactAsync(ct);
-        return [.. breaches.Select(b => new PortalBreachNotice(b.Id, b.BreachNumber, b.Title, b.NotifiedAt!.Value, b.AwareAt, b.OccurredFrom, b.OccurredTo,
-            b.Description, b.Location, Parse<BreachDataCategory>(b.DataCategories), b.Consequences, b.Mitigation, b.PrincipalSteps, contact))];
+        return [.. breaches.Select(b => new PortalBreachNotice(b.Id, [.. affected.Where(a => a.BreachId == b.Id).Select(a => a.PatientId)],
+            b.BreachNumber, b.Title, b.NotifiedAt!.Value, b.AwareAt, b.OccurredFrom, b.OccurredTo, b.Description, b.Location,
+            Parse<BreachDataCategory>(b.DataCategories), b.Consequences, b.Mitigation, b.PrincipalSteps, contact))];
     }
 
     private async Task<Result> ChangeAsync(Guid id, Func<Breach, Result> change, CancellationToken ct, string? auditAction = null)

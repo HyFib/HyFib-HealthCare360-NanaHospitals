@@ -14,7 +14,10 @@ public sealed record PortalDataRequestItem(
     DateTimeOffset DueAt,
     DateTimeOffset? ClosedAt);
 
-/// <summary>A request as the principal sees it: the public history only, never staff notes.</summary>
+/// <summary>
+/// A request as the principal sees it: the public history only, never staff notes. <see cref="IdentityConfirmed"/>
+/// false on a request made for someone else means the hospital still has to confirm the requester may act for them.
+/// </summary>
 public sealed record PortalDataRequestDetail(
     Guid Id,
     string RequestNumber,
@@ -22,15 +25,26 @@ public sealed record PortalDataRequestDetail(
     DataRequestType Type,
     DataRequestStatus Status,
     RequesterRelation RequestedBy,
+    string? RequesterName,
+    bool IdentityConfirmed,
     string Details,
     IReadOnlyList<PortalCorrectionItem> Corrections,
     DateTimeOffset ReceivedAt,
     DateTimeOffset DueAt,
     DateTimeOffset? ClosedAt,
     string? Response,
+    IReadOnlyList<string> ErasedItems,
+    DateOnly? RetainedUntil,
+    bool RetainedPermanently,
     IReadOnlyList<PortalRequestEvent> Timeline,
     bool CanWithdraw,
     PrivacyContact Contact);
+
+/// <summary>
+/// The privacy centre at a glance, for its front page: whether a nominee is named, how many requests are open and how
+/// many the portal allows, and how many breach notices there are. Counts only, so opening the page is not record access.
+/// </summary>
+public sealed record PortalPrivacyStatus(bool HasNominee, string? NomineeName, int OpenRequests, int MaxOpenRequests, int Notices);
 
 public sealed record PortalCorrectionItem(string Field, string? CurrentValue, string RequestedValue, CorrectionDecision Decision, string? Note);
 

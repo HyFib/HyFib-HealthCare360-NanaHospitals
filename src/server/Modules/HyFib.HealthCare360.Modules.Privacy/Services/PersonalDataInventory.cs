@@ -22,7 +22,11 @@ public sealed record DataSummary(
     IReadOnlyList<SummaryRecipient> SharedWith,
     IReadOnlyList<SummaryRecipient> Processors,
     SummaryNominee? Nominee,
-    PrivacyContact Contact);
+    PrivacyContact Contact,
+    RetentionPeriods Periods);
+
+/// <summary>The retention periods in force, so a client can say "how long we keep it" in the patient's language.</summary>
+public sealed record RetentionPeriods(int OutpatientYears, int InpatientYears, int FinanceYears, int MessageLogDays, int AuditYears);
 
 /// <summary>The registration details as held. National identifiers appear only as the hospital stores them: masked.</summary>
 public sealed record SummaryPerson(
@@ -42,6 +46,10 @@ public sealed record SummaryPerson(
     DateTimeOffset RegisteredAt,
     string? RegisteredAtFacility);
 
+/// <summary>
+/// A group of the summary. <see cref="Retention"/> is the English sentence; <see cref="RetentionKind"/> with the
+/// summary's <see cref="DataSummary.Periods"/> lets a client say it in another language.
+/// </summary>
 public sealed record SummaryCategory(
     string Key,
     string Title,
@@ -49,10 +57,14 @@ public sealed record SummaryCategory(
     string Purpose,
     string Basis,
     string Retention,
+    PersonalDataRetention RetentionKind,
     IReadOnlyList<SummaryItem> Items);
 
-/// <summary>How many records of a kind are held, and the dates of the first and the latest.</summary>
-public sealed record SummaryItem(string Label, int Count, DateTimeOffset? First, DateTimeOffset? Last);
+/// <summary>
+/// How many records of a kind are held, and the dates of the first and the latest. <see cref="Key"/> is stable (the
+/// table, "clinical.encounters"), for a client that translates the label.
+/// </summary>
+public sealed record SummaryItem(string Key, string Label, int Count, DateTimeOffset? First, DateTimeOffset? Last);
 
 public sealed record SummaryConsent(string Type, bool Granted, DateTimeOffset CapturedAt, DateTimeOffset? RevokedAt);
 
@@ -109,14 +121,14 @@ public sealed class PersonalDataInventory(
                 var count = tallies.Sum(t => t.Count);
                 if (count > 0)
                 {
-                    items.Add(new SummaryItem(group.Key, count, tallies.Min(t => t.First), tallies.Max(t => t.Last)));
+                    items.Add(new SummaryItem(group.First().Table, group.Key, count, tallies.Min(t => t.First), tallies.Max(t => t.Last)));
                 }
             }
 
             if (items.Count > 0 || category.Key == "registration")
             {
                 categories.Add(new SummaryCategory(category.Key, category.Title, category.Description, category.Purpose, category.Basis,
-                    retentionText[category.Retention], items));
+                    retentionText[category.Retention], category.Retention, items));
             }
         }
 
@@ -155,7 +167,8 @@ public sealed class PersonalDataInventory(
             await SharedWithAsync(patientId, ct),
             await ProcessorsAsync(ct),
             nominee,
-            await privacy.PublishedContactAsync(ct));
+            await privacy.PublishedContactAsync(ct),
+            await retention.PeriodsAsync(ct));
     }
 
     /// <summary>The counted table <paramref name="source"/> resolves to in the EF model, or null when it is missing.</summary>

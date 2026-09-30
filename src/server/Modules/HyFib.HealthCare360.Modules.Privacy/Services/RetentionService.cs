@@ -257,16 +257,20 @@ public sealed class RetentionService(
                 !h.RetainedPermanently && h.RetainedUntil <= today))]);
     }
 
+    /// <summary>The periods the data summary quotes, as numbers.</summary>
+    public async Task<RetentionPeriods> PeriodsAsync(CancellationToken ct) => new(
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.OutpatientRecords), ct) ?? RecordRetention.MinimumOutpatientYears,
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.InpatientRecords), ct) ?? RecordRetention.MinimumInpatientYears,
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Finance), ct) ?? 8,
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct) ?? 365,
+        await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct) ?? 10);
+
     /// <summary>
     /// "How long we keep it" for each group of the data summary, in words, with the periods in force.
     /// </summary>
     public async Task<IReadOnlyDictionary<PersonalDataRetention, string>> DescribeAsync(CancellationToken ct)
     {
-        var outpatient = await ValueAsync(RetentionSchedule.Get(RetentionSchedule.OutpatientRecords), ct);
-        var inpatient = await ValueAsync(RetentionSchedule.Get(RetentionSchedule.InpatientRecords), ct);
-        var finance = await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Finance), ct);
-        var messages = await ValueAsync(RetentionSchedule.Get(RetentionSchedule.MessageLog), ct);
-        var auditYears = await ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct);
+        var (outpatient, inpatient, finance, messages, auditYears) = await PeriodsAsync(ct);
         return new Dictionary<PersonalDataRetention, string>
         {
             [PersonalDataRetention.MedicalRecords] = string.Create(CultureInfo.InvariantCulture,

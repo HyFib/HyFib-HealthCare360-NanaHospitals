@@ -17,6 +17,7 @@ internal static class PortalPrivacyEndpoints
     {
         var group = app.MapGroup("/api/v1/portal/privacy").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
 
+        group.MapGet("/status", Status);
         group.MapGet("/summary", Summary);
         group.MapGet("/requests", List);
         group.MapGet("/requests/{id:guid}", Get);
@@ -27,6 +28,21 @@ internal static class PortalPrivacyEndpoints
         group.MapDelete("/nominee", RemoveNominee);
         group.MapGet("/notices", Notices);
         group.MapGet("/notices/{id:guid}", Notice);
+    }
+
+    private static async Task<IResult> Status(Guid patientId, PortalPatientScope scope, HospitalDbContext db, BreachService breaches, CancellationToken ct)
+    {
+        var access = await scope.EnsureAccessAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var nominee = await db.Set<Nominee>().AsNoTracking().Where(n => n.PatientId == patientId).Select(n => n.Name).FirstOrDefaultAsync(ct);
+        var open = await db.Set<DataRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .CountAsync(r => r.PatientId == patientId && (r.Status == DataRequestStatus.Submitted || r.Status == DataRequestStatus.InProgress), ct);
+        var notices = (await breaches.NoticesForAsync([patientId], null, ct)).Count;
+        return TypedResults.Ok(new PortalPrivacyStatus(nominee is not null, nominee, open, DataRequestService.MaxOpenPortalRequests, notices));
     }
 
     private static async Task<IResult> Summary(Guid patientId, PortalPatientScope scope, PersonalDataInventory inventory, IAuditLogger audit, CancellationToken ct)
@@ -77,9 +93,10 @@ internal static class PortalPrivacyEndpoints
 
         await audit.PatientRecordAccessedAsync(patientId, $"Portal: viewed privacy request {request.RequestNumber}", ct);
         return TypedResults.Ok(new PortalDataRequestDetail(
-            request.Id, request.RequestNumber, patientId, request.Type, request.Status, request.RequestedBy, request.Details,
+            request.Id, request.RequestNumber, patientId, request.Type, request.Status, request.RequestedBy, request.RequesterName,
+            request.IsIdentityVerified, request.Details,
             [.. request.Corrections.Select(c => new PortalCorrectionItem(c.Field, c.CurrentValue, c.RequestedValue, c.Decision, c.Note))],
-            request.ReceivedAt, request.DueAt, request.ClosedAt, request.Response,
+            request.ReceivedAt, request.DueAt, request.ClosedAt, request.Response, request.ErasedItems, request.RetainedUntil, request.RetainedPermanently,
             [.. request.Events.Where(e => e.IsPublic).OrderBy(e => e.At).Select(e => new PortalRequestEvent(e.At, e.Kind, e.Text))],
             request.IsOpen, await privacy.PublishedContactAsync(ct)));
     }
