@@ -294,7 +294,9 @@ public static class PlatformServiceCollectionExtensions
         SettingsEndpoints.Map(endpoints);
         SystemEndpoints.Map(endpoints);
         BackupEndpoints.Map(endpoints);
-        endpoints.MapHub<EventsHub>("/hubs/events");
+        // A connection lasts only as long as the access token it opened with: the client reconnects with a fresh one,
+        // which a signed-out or revoked session cannot get.
+        endpoints.MapHub<EventsHub>("/hubs/events", hub => hub.CloseOnAuthenticationExpiration = true);
         endpoints.MapHospitalModules();
         return endpoints;
     }
