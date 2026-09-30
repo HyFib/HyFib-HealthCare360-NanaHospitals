@@ -77,4 +77,12 @@ describe('morbidityCsv', () => {
     expect(lines[1]).toBe('J06.9,"Acute upper respiratory infection, unspecified",,1,1,1,0,0,0,1,0,0,0');
     expect(lines[2]).toContain('"Say ""hi"""');
   });
+
+  it('keeps text that a spreadsheet would run as a formula as plain text', () => {
+    const csv = morbidityCsv([row({ key: '=HYPERLINK("https://evil.example")', title: '@SUM(A1:A9)' })], 'ICD-10 code');
+
+    const line = csv.split('\r\n')[1] ?? '';
+    const cells = `"'=HYPERLINK(""https://evil.example"")",'@SUM(A1:A9),`;
+    expect(line.slice(0, cells.length)).toBe(cells);
+  });
 });

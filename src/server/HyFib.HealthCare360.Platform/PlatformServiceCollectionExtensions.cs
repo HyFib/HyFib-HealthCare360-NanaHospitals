@@ -274,8 +274,10 @@ public static class PlatformServiceCollectionExtensions
         app.UseExceptionHandler();
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseRouting();
-        app.UseRateLimiter();
         app.UseAuthentication();
+        // After authentication, so the per-user buckets (the global limit, AI) key on the signed-in user rather than on the
+        // address; sign-in, OTP and public endpoints stay per address.
+        app.UseRateLimiter();
         app.UseAuthorization();
         app.UseMiddleware<IdempotencyMiddleware>();
         return app;

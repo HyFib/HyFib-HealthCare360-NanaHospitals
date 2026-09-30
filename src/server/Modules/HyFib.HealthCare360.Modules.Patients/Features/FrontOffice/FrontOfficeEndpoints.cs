@@ -82,6 +82,14 @@ public sealed class CaptureConsentRequestValidator : AbstractValidator<CaptureCo
     }
 }
 
+public sealed class RevokeConsentRequestValidator : AbstractValidator<RevokeConsentRequest>
+{
+    public RevokeConsentRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().WithMessage("Say why the consent is withdrawn.").SafeText(300);
+    }
+}
+
 public sealed class AttachDocumentRequestValidator : AbstractValidator<AttachDocumentRequest>
 {
     public AttachDocumentRequestValidator()

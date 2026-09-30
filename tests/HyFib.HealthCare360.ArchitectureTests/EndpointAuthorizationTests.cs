@@ -22,7 +22,8 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// </summary>
 public sealed class EndpointAuthorizationTests
 {
-    private static readonly Lazy<WebApplication> App = new(BuildApp);
+    /// <summary>The server's endpoints, composed once for every endpoint test.</summary>
+    internal static readonly Lazy<WebApplication> App = new(BuildApp);
 
     private static readonly Lazy<IReadOnlyList<EndpointAccess>> Endpoints = new(() =>
         [.. ((IEndpointRouteBuilder)App.Value).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>().SelectMany(EndpointAccess.Of)]);
