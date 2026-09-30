@@ -56,6 +56,7 @@ import {
   type PatientDetail,
 } from '@/modules/patients/api';
 import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
+import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'documents';
 
@@ -245,6 +246,8 @@ function PatientProfilePage() {
           {tab === 'documents' && <Documents patientId={patientId} />}
         </div>
       </Section>
+
+      <PatientPrivacyCard patient={p} />
 
       <CheckInDialog
         patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName }}

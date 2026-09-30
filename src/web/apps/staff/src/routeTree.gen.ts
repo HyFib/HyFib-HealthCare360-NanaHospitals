@@ -133,6 +133,9 @@ import { Route as AppPharmacyRegistersRouteImport } from './routes/_app/pharmacy
 import { Route as AppPharmacySaleRouteImport } from './routes/_app/pharmacy/sale'
 import { Route as AppPharmacySalesRouteImport } from './routes/_app/pharmacy/sales'
 import { Route as AppPhysioIndexRouteImport } from './routes/_app/physio/index'
+import { Route as AppPrivacyIndexRouteImport } from './routes/_app/privacy/index'
+import { Route as AppPrivacyRetentionRouteImport } from './routes/_app/privacy/retention'
+import { Route as AppPrivacySettingsRouteImport } from './routes/_app/privacy/settings'
 import { Route as AppPurchaseIndexRouteImport } from './routes/_app/purchase/index'
 import { Route as AppPurchaseVendorsRouteImport } from './routes/_app/purchase/vendors'
 import { Route as AppQualityIndexRouteImport } from './routes/_app/quality/index'
@@ -256,6 +259,11 @@ import { Route as AppPharmacyWardIndentsIndexRouteImport } from './routes/_app/p
 import { Route as AppPharmacyWardIndentsIndentIdRouteImport } from './routes/_app/pharmacy/ward-indents/$indentId'
 import { Route as AppPhysioReferralsIndexRouteImport } from './routes/_app/physio/referrals/index'
 import { Route as AppPhysioReferralsIdRouteImport } from './routes/_app/physio/referrals/$id'
+import { Route as AppPrivacyBreachesIndexRouteImport } from './routes/_app/privacy/breaches/index'
+import { Route as AppPrivacyBreachesNewRouteImport } from './routes/_app/privacy/breaches/new'
+import { Route as AppPrivacyRequestsIndexRouteImport } from './routes/_app/privacy/requests/index'
+import { Route as AppPrivacyRequestsRequestIdRouteImport } from './routes/_app/privacy/requests/$requestId'
+import { Route as AppPrivacyRequestsNewRouteImport } from './routes/_app/privacy/requests/new'
 import { Route as AppPurchaseGrnsIndexRouteImport } from './routes/_app/purchase/grns/index'
 import { Route as AppPurchaseGrnsGrnIdRouteImport } from './routes/_app/purchase/grns/$grnId'
 import { Route as AppPurchaseGrnsNewRouteImport } from './routes/_app/purchase/grns/new'
@@ -281,6 +289,8 @@ import { Route as AppHrEmployeesEmployeeIdEditRouteImport } from './routes/_app/
 import { Route as AppHrPayrollRunsRunIdRouteImport } from './routes/_app/hr/payroll/runs/$runId'
 import { Route as AppLabMastersTestsTestIdRouteImport } from './routes/_app/lab/masters/tests/$testId'
 import { Route as AppLabQcLotsLotIdRouteImport } from './routes/_app/lab/qc/lots/$lotId'
+import { Route as AppPrivacyBreachesBreachIdIndexRouteImport } from './routes/_app/privacy/breaches/$breachId/index'
+import { Route as AppPrivacyBreachesBreachIdEditRouteImport } from './routes/_app/privacy/breaches/$breachId/edit'
 import { Route as AppEmrPatientsPatientIdDischargeAdmissionIdRouteImport } from './routes/_app/emr/patients/$patientId/discharge/$admissionId'
 
 const AppRoute = AppRouteImport.update({
@@ -901,6 +911,21 @@ const AppPharmacySalesRoute = AppPharmacySalesRouteImport.update({
 const AppPhysioIndexRoute = AppPhysioIndexRouteImport.update({
   id: '/physio/',
   path: '/physio/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacyIndexRoute = AppPrivacyIndexRouteImport.update({
+  id: '/privacy/',
+  path: '/privacy/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacyRetentionRoute = AppPrivacyRetentionRouteImport.update({
+  id: '/privacy/retention',
+  path: '/privacy/retention',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacySettingsRoute = AppPrivacySettingsRouteImport.update({
+  id: '/privacy/settings',
+  path: '/privacy/settings',
   getParentRoute: () => AppRoute,
 } as any)
 const AppPurchaseIndexRoute = AppPurchaseIndexRouteImport.update({
@@ -1561,6 +1586,32 @@ const AppPhysioReferralsIdRoute = AppPhysioReferralsIdRouteImport.update({
   path: '/physio/referrals/$id',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPrivacyBreachesIndexRoute = AppPrivacyBreachesIndexRouteImport.update({
+  id: '/privacy/breaches/',
+  path: '/privacy/breaches/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacyBreachesNewRoute = AppPrivacyBreachesNewRouteImport.update({
+  id: '/privacy/breaches/new',
+  path: '/privacy/breaches/new',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacyRequestsIndexRoute = AppPrivacyRequestsIndexRouteImport.update({
+  id: '/privacy/requests/',
+  path: '/privacy/requests/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPrivacyRequestsRequestIdRoute =
+  AppPrivacyRequestsRequestIdRouteImport.update({
+    id: '/privacy/requests/$requestId',
+    path: '/privacy/requests/$requestId',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppPrivacyRequestsNewRoute = AppPrivacyRequestsNewRouteImport.update({
+  id: '/privacy/requests/new',
+  path: '/privacy/requests/new',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPurchaseGrnsIndexRoute = AppPurchaseGrnsIndexRouteImport.update({
   id: '/purchase/grns/',
   path: '/purchase/grns/',
@@ -1701,6 +1752,18 @@ const AppLabQcLotsLotIdRoute = AppLabQcLotsLotIdRouteImport.update({
   path: '/lab/qc/lots/$lotId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPrivacyBreachesBreachIdIndexRoute =
+  AppPrivacyBreachesBreachIdIndexRouteImport.update({
+    id: '/privacy/breaches/$breachId/',
+    path: '/privacy/breaches/$breachId/',
+    getParentRoute: () => AppRoute,
+  } as any)
+const AppPrivacyBreachesBreachIdEditRoute =
+  AppPrivacyBreachesBreachIdEditRouteImport.update({
+    id: '/privacy/breaches/$breachId/edit',
+    path: '/privacy/breaches/$breachId/edit',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppEmrPatientsPatientIdDischargeAdmissionIdRoute =
   AppEmrPatientsPatientIdDischargeAdmissionIdRouteImport.update({
     id: '/emr/patients/$patientId/discharge/$admissionId',
@@ -1806,6 +1869,8 @@ export interface FileRoutesByFullPath {
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
@@ -1847,6 +1912,7 @@ export interface FileRoutesByFullPath {
   '/patients/': typeof AppPatientsIndexRoute
   '/pharmacy/': typeof AppPharmacyIndexRoute
   '/physio/': typeof AppPhysioIndexRoute
+  '/privacy/': typeof AppPrivacyIndexRoute
   '/purchase/': typeof AppPurchaseIndexRoute
   '/quality/': typeof AppQualityIndexRoute
   '/radiology/': typeof AppRadiologyIndexRoute
@@ -1914,6 +1980,9 @@ export interface FileRoutesByFullPath {
   '/pharmacy/queue/$entryId': typeof AppPharmacyQueueEntryIdRoute
   '/pharmacy/ward-indents/$indentId': typeof AppPharmacyWardIndentsIndentIdRoute
   '/physio/referrals/$id': typeof AppPhysioReferralsIdRoute
+  '/privacy/breaches/new': typeof AppPrivacyBreachesNewRoute
+  '/privacy/requests/$requestId': typeof AppPrivacyRequestsRequestIdRoute
+  '/privacy/requests/new': typeof AppPrivacyRequestsNewRoute
   '/purchase/grns/$grnId': typeof AppPurchaseGrnsGrnIdRoute
   '/purchase/grns/new': typeof AppPurchaseGrnsNewRoute
   '/purchase/orders/$orderId': typeof AppPurchaseOrdersOrderIdRoute
@@ -1967,6 +2036,8 @@ export interface FileRoutesByFullPath {
   '/pharmacy/queue/': typeof AppPharmacyQueueIndexRoute
   '/pharmacy/ward-indents/': typeof AppPharmacyWardIndentsIndexRoute
   '/physio/referrals/': typeof AppPhysioReferralsIndexRoute
+  '/privacy/breaches/': typeof AppPrivacyBreachesIndexRoute
+  '/privacy/requests/': typeof AppPrivacyRequestsIndexRoute
   '/purchase/grns/': typeof AppPurchaseGrnsIndexRoute
   '/purchase/orders/': typeof AppPurchaseOrdersIndexRoute
   '/purchase/requisitions/': typeof AppPurchaseRequisitionsIndexRoute
@@ -1978,8 +2049,10 @@ export interface FileRoutesByFullPath {
   '/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
   '/lab/qc/lots/$lotId': typeof AppLabQcLotsLotIdRoute
+  '/privacy/breaches/$breachId/edit': typeof AppPrivacyBreachesBreachIdEditRoute
   '/emr/patients/$patientId/': typeof AppEmrPatientsPatientIdIndexRoute
   '/hr/employees/$employeeId/': typeof AppHrEmployeesEmployeeIdIndexRoute
+  '/privacy/breaches/$breachId/': typeof AppPrivacyBreachesBreachIdIndexRoute
   '/emr/patients/$patientId/discharge/$admissionId': typeof AppEmrPatientsPatientIdDischargeAdmissionIdRoute
 }
 export interface FileRoutesByTo {
@@ -2080,6 +2153,8 @@ export interface FileRoutesByTo {
   '/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/pharmacy/sale': typeof AppPharmacySaleRoute
   '/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/privacy/settings': typeof AppPrivacySettingsRoute
   '/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/quality/my-reports': typeof AppQualityMyReportsRoute
   '/quality/report': typeof AppQualityReportRoute
@@ -2121,6 +2196,7 @@ export interface FileRoutesByTo {
   '/patients': typeof AppPatientsIndexRoute
   '/pharmacy': typeof AppPharmacyIndexRoute
   '/physio': typeof AppPhysioIndexRoute
+  '/privacy': typeof AppPrivacyIndexRoute
   '/purchase': typeof AppPurchaseIndexRoute
   '/quality': typeof AppQualityIndexRoute
   '/radiology': typeof AppRadiologyIndexRoute
@@ -2188,6 +2264,9 @@ export interface FileRoutesByTo {
   '/pharmacy/queue/$entryId': typeof AppPharmacyQueueEntryIdRoute
   '/pharmacy/ward-indents/$indentId': typeof AppPharmacyWardIndentsIndentIdRoute
   '/physio/referrals/$id': typeof AppPhysioReferralsIdRoute
+  '/privacy/breaches/new': typeof AppPrivacyBreachesNewRoute
+  '/privacy/requests/$requestId': typeof AppPrivacyRequestsRequestIdRoute
+  '/privacy/requests/new': typeof AppPrivacyRequestsNewRoute
   '/purchase/grns/$grnId': typeof AppPurchaseGrnsGrnIdRoute
   '/purchase/grns/new': typeof AppPurchaseGrnsNewRoute
   '/purchase/orders/$orderId': typeof AppPurchaseOrdersOrderIdRoute
@@ -2241,6 +2320,8 @@ export interface FileRoutesByTo {
   '/pharmacy/queue': typeof AppPharmacyQueueIndexRoute
   '/pharmacy/ward-indents': typeof AppPharmacyWardIndentsIndexRoute
   '/physio/referrals': typeof AppPhysioReferralsIndexRoute
+  '/privacy/breaches': typeof AppPrivacyBreachesIndexRoute
+  '/privacy/requests': typeof AppPrivacyRequestsIndexRoute
   '/purchase/grns': typeof AppPurchaseGrnsIndexRoute
   '/purchase/orders': typeof AppPurchaseOrdersIndexRoute
   '/purchase/requisitions': typeof AppPurchaseRequisitionsIndexRoute
@@ -2252,8 +2333,10 @@ export interface FileRoutesByTo {
   '/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
   '/lab/qc/lots/$lotId': typeof AppLabQcLotsLotIdRoute
+  '/privacy/breaches/$breachId/edit': typeof AppPrivacyBreachesBreachIdEditRoute
   '/emr/patients/$patientId': typeof AppEmrPatientsPatientIdIndexRoute
   '/hr/employees/$employeeId': typeof AppHrEmployeesEmployeeIdIndexRoute
+  '/privacy/breaches/$breachId': typeof AppPrivacyBreachesBreachIdIndexRoute
   '/emr/patients/$patientId/discharge/$admissionId': typeof AppEmrPatientsPatientIdDischargeAdmissionIdRoute
 }
 export interface FileRoutesById {
@@ -2356,6 +2439,8 @@ export interface FileRoutesById {
   '/_app/pharmacy/registers': typeof AppPharmacyRegistersRoute
   '/_app/pharmacy/sale': typeof AppPharmacySaleRoute
   '/_app/pharmacy/sales': typeof AppPharmacySalesRoute
+  '/_app/privacy/retention': typeof AppPrivacyRetentionRoute
+  '/_app/privacy/settings': typeof AppPrivacySettingsRoute
   '/_app/purchase/vendors': typeof AppPurchaseVendorsRoute
   '/_app/quality/my-reports': typeof AppQualityMyReportsRoute
   '/_app/quality/report': typeof AppQualityReportRoute
@@ -2397,6 +2482,7 @@ export interface FileRoutesById {
   '/_app/patients/': typeof AppPatientsIndexRoute
   '/_app/pharmacy/': typeof AppPharmacyIndexRoute
   '/_app/physio/': typeof AppPhysioIndexRoute
+  '/_app/privacy/': typeof AppPrivacyIndexRoute
   '/_app/purchase/': typeof AppPurchaseIndexRoute
   '/_app/quality/': typeof AppQualityIndexRoute
   '/_app/radiology/': typeof AppRadiologyIndexRoute
@@ -2464,6 +2550,9 @@ export interface FileRoutesById {
   '/_app/pharmacy/queue/$entryId': typeof AppPharmacyQueueEntryIdRoute
   '/_app/pharmacy/ward-indents/$indentId': typeof AppPharmacyWardIndentsIndentIdRoute
   '/_app/physio/referrals/$id': typeof AppPhysioReferralsIdRoute
+  '/_app/privacy/breaches/new': typeof AppPrivacyBreachesNewRoute
+  '/_app/privacy/requests/$requestId': typeof AppPrivacyRequestsRequestIdRoute
+  '/_app/privacy/requests/new': typeof AppPrivacyRequestsNewRoute
   '/_app/purchase/grns/$grnId': typeof AppPurchaseGrnsGrnIdRoute
   '/_app/purchase/grns/new': typeof AppPurchaseGrnsNewRoute
   '/_app/purchase/orders/$orderId': typeof AppPurchaseOrdersOrderIdRoute
@@ -2517,6 +2606,8 @@ export interface FileRoutesById {
   '/_app/pharmacy/queue/': typeof AppPharmacyQueueIndexRoute
   '/_app/pharmacy/ward-indents/': typeof AppPharmacyWardIndentsIndexRoute
   '/_app/physio/referrals/': typeof AppPhysioReferralsIndexRoute
+  '/_app/privacy/breaches/': typeof AppPrivacyBreachesIndexRoute
+  '/_app/privacy/requests/': typeof AppPrivacyRequestsIndexRoute
   '/_app/purchase/grns/': typeof AppPurchaseGrnsIndexRoute
   '/_app/purchase/orders/': typeof AppPurchaseOrdersIndexRoute
   '/_app/purchase/requisitions/': typeof AppPurchaseRequisitionsIndexRoute
@@ -2528,8 +2619,10 @@ export interface FileRoutesById {
   '/_app/hr/payroll/runs/$runId': typeof AppHrPayrollRunsRunIdRoute
   '/_app/lab/masters/tests/$testId': typeof AppLabMastersTestsTestIdRoute
   '/_app/lab/qc/lots/$lotId': typeof AppLabQcLotsLotIdRoute
+  '/_app/privacy/breaches/$breachId/edit': typeof AppPrivacyBreachesBreachIdEditRoute
   '/_app/emr/patients/$patientId/': typeof AppEmrPatientsPatientIdIndexRoute
   '/_app/hr/employees/$employeeId/': typeof AppHrEmployeesEmployeeIdIndexRoute
+  '/_app/privacy/breaches/$breachId/': typeof AppPrivacyBreachesBreachIdIndexRoute
   '/_app/emr/patients/$patientId/discharge/$admissionId': typeof AppEmrPatientsPatientIdDischargeAdmissionIdRoute
 }
 export interface FileRouteTypes {
@@ -2632,6 +2725,8 @@ export interface FileRouteTypes {
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/retention'
+    | '/privacy/settings'
     | '/purchase/vendors'
     | '/quality/my-reports'
     | '/quality/report'
@@ -2673,6 +2768,7 @@ export interface FileRouteTypes {
     | '/patients/'
     | '/pharmacy/'
     | '/physio/'
+    | '/privacy/'
     | '/purchase/'
     | '/quality/'
     | '/radiology/'
@@ -2740,6 +2836,9 @@ export interface FileRouteTypes {
     | '/pharmacy/queue/$entryId'
     | '/pharmacy/ward-indents/$indentId'
     | '/physio/referrals/$id'
+    | '/privacy/breaches/new'
+    | '/privacy/requests/$requestId'
+    | '/privacy/requests/new'
     | '/purchase/grns/$grnId'
     | '/purchase/grns/new'
     | '/purchase/orders/$orderId'
@@ -2793,6 +2892,8 @@ export interface FileRouteTypes {
     | '/pharmacy/queue/'
     | '/pharmacy/ward-indents/'
     | '/physio/referrals/'
+    | '/privacy/breaches/'
+    | '/privacy/requests/'
     | '/purchase/grns/'
     | '/purchase/orders/'
     | '/purchase/requisitions/'
@@ -2804,8 +2905,10 @@ export interface FileRouteTypes {
     | '/hr/payroll/runs/$runId'
     | '/lab/masters/tests/$testId'
     | '/lab/qc/lots/$lotId'
+    | '/privacy/breaches/$breachId/edit'
     | '/emr/patients/$patientId/'
     | '/hr/employees/$employeeId/'
+    | '/privacy/breaches/$breachId/'
     | '/emr/patients/$patientId/discharge/$admissionId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -2906,6 +3009,8 @@ export interface FileRouteTypes {
     | '/pharmacy/registers'
     | '/pharmacy/sale'
     | '/pharmacy/sales'
+    | '/privacy/retention'
+    | '/privacy/settings'
     | '/purchase/vendors'
     | '/quality/my-reports'
     | '/quality/report'
@@ -2947,6 +3052,7 @@ export interface FileRouteTypes {
     | '/patients'
     | '/pharmacy'
     | '/physio'
+    | '/privacy'
     | '/purchase'
     | '/quality'
     | '/radiology'
@@ -3014,6 +3120,9 @@ export interface FileRouteTypes {
     | '/pharmacy/queue/$entryId'
     | '/pharmacy/ward-indents/$indentId'
     | '/physio/referrals/$id'
+    | '/privacy/breaches/new'
+    | '/privacy/requests/$requestId'
+    | '/privacy/requests/new'
     | '/purchase/grns/$grnId'
     | '/purchase/grns/new'
     | '/purchase/orders/$orderId'
@@ -3067,6 +3176,8 @@ export interface FileRouteTypes {
     | '/pharmacy/queue'
     | '/pharmacy/ward-indents'
     | '/physio/referrals'
+    | '/privacy/breaches'
+    | '/privacy/requests'
     | '/purchase/grns'
     | '/purchase/orders'
     | '/purchase/requisitions'
@@ -3078,8 +3189,10 @@ export interface FileRouteTypes {
     | '/hr/payroll/runs/$runId'
     | '/lab/masters/tests/$testId'
     | '/lab/qc/lots/$lotId'
+    | '/privacy/breaches/$breachId/edit'
     | '/emr/patients/$patientId'
     | '/hr/employees/$employeeId'
+    | '/privacy/breaches/$breachId'
     | '/emr/patients/$patientId/discharge/$admissionId'
   id:
     | '__root__'
@@ -3181,6 +3294,8 @@ export interface FileRouteTypes {
     | '/_app/pharmacy/registers'
     | '/_app/pharmacy/sale'
     | '/_app/pharmacy/sales'
+    | '/_app/privacy/retention'
+    | '/_app/privacy/settings'
     | '/_app/purchase/vendors'
     | '/_app/quality/my-reports'
     | '/_app/quality/report'
@@ -3222,6 +3337,7 @@ export interface FileRouteTypes {
     | '/_app/patients/'
     | '/_app/pharmacy/'
     | '/_app/physio/'
+    | '/_app/privacy/'
     | '/_app/purchase/'
     | '/_app/quality/'
     | '/_app/radiology/'
@@ -3289,6 +3405,9 @@ export interface FileRouteTypes {
     | '/_app/pharmacy/queue/$entryId'
     | '/_app/pharmacy/ward-indents/$indentId'
     | '/_app/physio/referrals/$id'
+    | '/_app/privacy/breaches/new'
+    | '/_app/privacy/requests/$requestId'
+    | '/_app/privacy/requests/new'
     | '/_app/purchase/grns/$grnId'
     | '/_app/purchase/grns/new'
     | '/_app/purchase/orders/$orderId'
@@ -3342,6 +3461,8 @@ export interface FileRouteTypes {
     | '/_app/pharmacy/queue/'
     | '/_app/pharmacy/ward-indents/'
     | '/_app/physio/referrals/'
+    | '/_app/privacy/breaches/'
+    | '/_app/privacy/requests/'
     | '/_app/purchase/grns/'
     | '/_app/purchase/orders/'
     | '/_app/purchase/requisitions/'
@@ -3353,8 +3474,10 @@ export interface FileRouteTypes {
     | '/_app/hr/payroll/runs/$runId'
     | '/_app/lab/masters/tests/$testId'
     | '/_app/lab/qc/lots/$lotId'
+    | '/_app/privacy/breaches/$breachId/edit'
     | '/_app/emr/patients/$patientId/'
     | '/_app/hr/employees/$employeeId/'
+    | '/_app/privacy/breaches/$breachId/'
     | '/_app/emr/patients/$patientId/discharge/$admissionId'
   fileRoutesById: FileRoutesById
 }
@@ -4234,6 +4357,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPhysioIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/privacy/': {
+      id: '/_app/privacy/'
+      path: '/privacy'
+      fullPath: '/privacy/'
+      preLoaderRoute: typeof AppPrivacyIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/retention': {
+      id: '/_app/privacy/retention'
+      path: '/privacy/retention'
+      fullPath: '/privacy/retention'
+      preLoaderRoute: typeof AppPrivacyRetentionRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/settings': {
+      id: '/_app/privacy/settings'
+      path: '/privacy/settings'
+      fullPath: '/privacy/settings'
+      preLoaderRoute: typeof AppPrivacySettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/purchase/': {
       id: '/_app/purchase/'
       path: '/purchase'
@@ -5095,6 +5239,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPhysioReferralsIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/privacy/breaches/': {
+      id: '/_app/privacy/breaches/'
+      path: '/privacy/breaches'
+      fullPath: '/privacy/breaches/'
+      preLoaderRoute: typeof AppPrivacyBreachesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/breaches/new': {
+      id: '/_app/privacy/breaches/new'
+      path: '/privacy/breaches/new'
+      fullPath: '/privacy/breaches/new'
+      preLoaderRoute: typeof AppPrivacyBreachesNewRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/requests/': {
+      id: '/_app/privacy/requests/'
+      path: '/privacy/requests'
+      fullPath: '/privacy/requests/'
+      preLoaderRoute: typeof AppPrivacyRequestsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/requests/$requestId': {
+      id: '/_app/privacy/requests/$requestId'
+      path: '/privacy/requests/$requestId'
+      fullPath: '/privacy/requests/$requestId'
+      preLoaderRoute: typeof AppPrivacyRequestsRequestIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/requests/new': {
+      id: '/_app/privacy/requests/new'
+      path: '/privacy/requests/new'
+      fullPath: '/privacy/requests/new'
+      preLoaderRoute: typeof AppPrivacyRequestsNewRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/purchase/grns/': {
       id: '/_app/purchase/grns/'
       path: '/purchase/grns'
@@ -5270,6 +5449,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLabQcLotsLotIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/privacy/breaches/$breachId/': {
+      id: '/_app/privacy/breaches/$breachId/'
+      path: '/privacy/breaches/$breachId'
+      fullPath: '/privacy/breaches/$breachId/'
+      preLoaderRoute: typeof AppPrivacyBreachesBreachIdIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/privacy/breaches/$breachId/edit': {
+      id: '/_app/privacy/breaches/$breachId/edit'
+      path: '/privacy/breaches/$breachId/edit'
+      fullPath: '/privacy/breaches/$breachId/edit'
+      preLoaderRoute: typeof AppPrivacyBreachesBreachIdEditRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/emr/patients/$patientId/discharge/$admissionId': {
       id: '/_app/emr/patients/$patientId/discharge/$admissionId'
       path: '/emr/patients/$patientId/discharge/$admissionId'
@@ -5376,6 +5569,8 @@ interface AppRouteChildren {
   AppPharmacyRegistersRoute: typeof AppPharmacyRegistersRoute
   AppPharmacySaleRoute: typeof AppPharmacySaleRoute
   AppPharmacySalesRoute: typeof AppPharmacySalesRoute
+  AppPrivacyRetentionRoute: typeof AppPrivacyRetentionRoute
+  AppPrivacySettingsRoute: typeof AppPrivacySettingsRoute
   AppPurchaseVendorsRoute: typeof AppPurchaseVendorsRoute
   AppQualityMyReportsRoute: typeof AppQualityMyReportsRoute
   AppQualityReportRoute: typeof AppQualityReportRoute
@@ -5417,6 +5612,7 @@ interface AppRouteChildren {
   AppPatientsIndexRoute: typeof AppPatientsIndexRoute
   AppPharmacyIndexRoute: typeof AppPharmacyIndexRoute
   AppPhysioIndexRoute: typeof AppPhysioIndexRoute
+  AppPrivacyIndexRoute: typeof AppPrivacyIndexRoute
   AppPurchaseIndexRoute: typeof AppPurchaseIndexRoute
   AppQualityIndexRoute: typeof AppQualityIndexRoute
   AppRadiologyIndexRoute: typeof AppRadiologyIndexRoute
@@ -5484,6 +5680,9 @@ interface AppRouteChildren {
   AppPharmacyQueueEntryIdRoute: typeof AppPharmacyQueueEntryIdRoute
   AppPharmacyWardIndentsIndentIdRoute: typeof AppPharmacyWardIndentsIndentIdRoute
   AppPhysioReferralsIdRoute: typeof AppPhysioReferralsIdRoute
+  AppPrivacyBreachesNewRoute: typeof AppPrivacyBreachesNewRoute
+  AppPrivacyRequestsRequestIdRoute: typeof AppPrivacyRequestsRequestIdRoute
+  AppPrivacyRequestsNewRoute: typeof AppPrivacyRequestsNewRoute
   AppPurchaseGrnsGrnIdRoute: typeof AppPurchaseGrnsGrnIdRoute
   AppPurchaseGrnsNewRoute: typeof AppPurchaseGrnsNewRoute
   AppPurchaseOrdersOrderIdRoute: typeof AppPurchaseOrdersOrderIdRoute
@@ -5537,6 +5736,8 @@ interface AppRouteChildren {
   AppPharmacyQueueIndexRoute: typeof AppPharmacyQueueIndexRoute
   AppPharmacyWardIndentsIndexRoute: typeof AppPharmacyWardIndentsIndexRoute
   AppPhysioReferralsIndexRoute: typeof AppPhysioReferralsIndexRoute
+  AppPrivacyBreachesIndexRoute: typeof AppPrivacyBreachesIndexRoute
+  AppPrivacyRequestsIndexRoute: typeof AppPrivacyRequestsIndexRoute
   AppPurchaseGrnsIndexRoute: typeof AppPurchaseGrnsIndexRoute
   AppPurchaseOrdersIndexRoute: typeof AppPurchaseOrdersIndexRoute
   AppPurchaseRequisitionsIndexRoute: typeof AppPurchaseRequisitionsIndexRoute
@@ -5548,8 +5749,10 @@ interface AppRouteChildren {
   AppHrPayrollRunsRunIdRoute: typeof AppHrPayrollRunsRunIdRoute
   AppLabMastersTestsTestIdRoute: typeof AppLabMastersTestsTestIdRoute
   AppLabQcLotsLotIdRoute: typeof AppLabQcLotsLotIdRoute
+  AppPrivacyBreachesBreachIdEditRoute: typeof AppPrivacyBreachesBreachIdEditRoute
   AppEmrPatientsPatientIdIndexRoute: typeof AppEmrPatientsPatientIdIndexRoute
   AppHrEmployeesEmployeeIdIndexRoute: typeof AppHrEmployeesEmployeeIdIndexRoute
+  AppPrivacyBreachesBreachIdIndexRoute: typeof AppPrivacyBreachesBreachIdIndexRoute
   AppEmrPatientsPatientIdDischargeAdmissionIdRoute: typeof AppEmrPatientsPatientIdDischargeAdmissionIdRoute
 }
 
@@ -5649,6 +5852,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppPharmacyRegistersRoute: AppPharmacyRegistersRoute,
   AppPharmacySaleRoute: AppPharmacySaleRoute,
   AppPharmacySalesRoute: AppPharmacySalesRoute,
+  AppPrivacyRetentionRoute: AppPrivacyRetentionRoute,
+  AppPrivacySettingsRoute: AppPrivacySettingsRoute,
   AppPurchaseVendorsRoute: AppPurchaseVendorsRoute,
   AppQualityMyReportsRoute: AppQualityMyReportsRoute,
   AppQualityReportRoute: AppQualityReportRoute,
@@ -5690,6 +5895,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPatientsIndexRoute: AppPatientsIndexRoute,
   AppPharmacyIndexRoute: AppPharmacyIndexRoute,
   AppPhysioIndexRoute: AppPhysioIndexRoute,
+  AppPrivacyIndexRoute: AppPrivacyIndexRoute,
   AppPurchaseIndexRoute: AppPurchaseIndexRoute,
   AppQualityIndexRoute: AppQualityIndexRoute,
   AppRadiologyIndexRoute: AppRadiologyIndexRoute,
@@ -5764,6 +5970,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppPharmacyQueueEntryIdRoute: AppPharmacyQueueEntryIdRoute,
   AppPharmacyWardIndentsIndentIdRoute: AppPharmacyWardIndentsIndentIdRoute,
   AppPhysioReferralsIdRoute: AppPhysioReferralsIdRoute,
+  AppPrivacyBreachesNewRoute: AppPrivacyBreachesNewRoute,
+  AppPrivacyRequestsRequestIdRoute: AppPrivacyRequestsRequestIdRoute,
+  AppPrivacyRequestsNewRoute: AppPrivacyRequestsNewRoute,
   AppPurchaseGrnsGrnIdRoute: AppPurchaseGrnsGrnIdRoute,
   AppPurchaseGrnsNewRoute: AppPurchaseGrnsNewRoute,
   AppPurchaseOrdersOrderIdRoute: AppPurchaseOrdersOrderIdRoute,
@@ -5818,6 +6027,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppPharmacyQueueIndexRoute: AppPharmacyQueueIndexRoute,
   AppPharmacyWardIndentsIndexRoute: AppPharmacyWardIndentsIndexRoute,
   AppPhysioReferralsIndexRoute: AppPhysioReferralsIndexRoute,
+  AppPrivacyBreachesIndexRoute: AppPrivacyBreachesIndexRoute,
+  AppPrivacyRequestsIndexRoute: AppPrivacyRequestsIndexRoute,
   AppPurchaseGrnsIndexRoute: AppPurchaseGrnsIndexRoute,
   AppPurchaseOrdersIndexRoute: AppPurchaseOrdersIndexRoute,
   AppPurchaseRequisitionsIndexRoute: AppPurchaseRequisitionsIndexRoute,
@@ -5830,8 +6041,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppHrPayrollRunsRunIdRoute: AppHrPayrollRunsRunIdRoute,
   AppLabMastersTestsTestIdRoute: AppLabMastersTestsTestIdRoute,
   AppLabQcLotsLotIdRoute: AppLabQcLotsLotIdRoute,
+  AppPrivacyBreachesBreachIdEditRoute: AppPrivacyBreachesBreachIdEditRoute,
   AppEmrPatientsPatientIdIndexRoute: AppEmrPatientsPatientIdIndexRoute,
   AppHrEmployeesEmployeeIdIndexRoute: AppHrEmployeesEmployeeIdIndexRoute,
+  AppPrivacyBreachesBreachIdIndexRoute: AppPrivacyBreachesBreachIdIndexRoute,
   AppEmrPatientsPatientIdDischargeAdmissionIdRoute:
     AppEmrPatientsPatientIdDischargeAdmissionIdRoute,
 }
