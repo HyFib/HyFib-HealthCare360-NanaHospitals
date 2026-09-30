@@ -3,13 +3,19 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -123,9 +129,42 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// A new sign-in of a seeded staff account, with a session of its own: the refresh cookie the server set, as
+    /// <c>name=value</c>, for tests of the refresh flow. It does not disturb the account's cached client.
+    /// </summary>
+    public async Task<string> SignInForRefreshCookieAsync(string userName)
+    {
+        using var http = CreateHttpClient();
+        using var response = await PostLoginAsync(http, userName, _password);
+        await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        return RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie.");
+    }
+
+    /// <summary>A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it.</summary>
+    public async Task<HttpResponseMessage> RefreshAsync(string refreshCookie)
+    {
+        using var http = CreateHttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/refresh");
+        request.Headers.Add("Cookie", refreshCookie);
+        return await http.SendAsync(request, TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>The staff refresh cookie a response set, as <c>name=value</c>; null when it set none (or cleared it).</summary>
+    public static string? RefreshCookieOf(HttpResponseMessage response) =>
+        response.Headers.TryGetValues("Set-Cookie", out var cookies)
+            ? cookies.Select(c => c.Split(';')[0]).FirstOrDefault(c => c.StartsWith("hc360_rt=", StringComparison.Ordinal) && c.Length > "hc360_rt=".Length)
+            : null;
+
+    private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
+    {
+        using var response = await PostLoginAsync(http, userName, password);
+        return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+    }
+
     // Sign-in allows 10 attempts a minute per address, and every test-server request has the same one: past that, wait for
     // the next minute rather than fail the run.
-    private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
+    private static async Task<HttpResponseMessage> PostLoginAsync(HttpClient http, string userName, string password)
     {
         var ct = TestContext.Current.CancellationToken;
         var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
@@ -137,10 +176,7 @@ public sealed class HospitalServer : IAsyncLifetime
             response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, ct);
         }
 
-        using (response)
-        {
-            return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
-        }
+        return response;
     }
 
     private static string FullAccess(string userName, SignInResult result) =>
@@ -174,6 +210,40 @@ public sealed class HospitalServer : IAsyncLifetime
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", restricted);
         using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
         return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
+    }
+
+    /// <summary>
+    /// A patient signed in to the portal with a one-time code, as a new portal account for a number seen for the first
+    /// time. The test server sends no SMS: the code is read from the delivery waiting in the outbox.
+    /// </summary>
+    public async Task<ApiClient> SignInToPortalAsync(string phone)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var http = CreateHttpClient();
+        OtpChallengeResponse challenge;
+        using (var requested = await http.PostAsJsonAsync("/api/v1/auth/otp/request", new OtpRequest(phone), ApiClient.Json, ct))
+        {
+            challenge = await ApiClient.ReadAsync<OtpChallengeResponse>(requested, HttpMethod.Post, "/api/v1/auth/otp/request");
+        }
+
+        using var verified = await http.PostAsJsonAsync("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await ReadOtpAsync(phone, ct)), ApiClient.Json, ct);
+        var result = await ApiClient.ReadAsync<SignInResult>(verified, HttpMethod.Post, "/api/v1/auth/otp/verify");
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", FullAccess(phone, result));
+        return new ApiClient(http);
+    }
+
+    private async Task<string> ReadOtpAsync(string phone, CancellationToken ct)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var deliveries = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == NotificationService.SmsType)
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(50)
+            .ToListAsync(ct);
+        return deliveries.Select(m => m.Read<NotificationDelivery>())
+            .First(d => d.TemplateKey == "auth.otp" && d.To == Phone.Normalize(phone))
+            .Values["code"];
     }
 
     private HttpClient CreateHttpClient()

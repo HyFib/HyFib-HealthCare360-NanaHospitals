@@ -92,6 +92,18 @@ public sealed class RealtimeTopicAuthorizer
         return allowed ? $"{prefix}:{id:D}" : null;
     }
 
+    /// <summary>
+    /// The facility whose events a connection joins without asking: only a staff session with full access, not a patient
+    /// and not a token restricted to a password change or MFA enrolment. Facility events carry patient and record ids.
+    /// </summary>
+    public static Guid? FacilityToJoin(ClaimsPrincipal? user) =>
+        user?.Identity?.IsAuthenticated == true
+        && !user.HasClaim(c => c.Type == HcClaims.Restriction)
+        && string.Equals(user.FindFirst(HcClaims.UserType)?.Value, HcClaims.StaffType, StringComparison.Ordinal)
+        && Guid.TryParse(user.FindFirst(HcClaims.Facility)?.Value, out var facilityId)
+            ? facilityId
+            : null;
+
     internal static bool TryParse(string? topic, out string prefix, out Guid id)
     {
         prefix = string.Empty;

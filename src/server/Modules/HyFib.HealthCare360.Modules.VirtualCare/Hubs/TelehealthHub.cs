@@ -48,7 +48,7 @@ public sealed class TelehealthHub(
     public async Task<TelehealthJoinResult> JoinAsClinician(Guid sessionId)
     {
         var caller = new HubCallerUser(Context.User);
-        if (caller.UserId is not { } userId || caller.IsPatient
+        if (caller.UserId is not { } userId || caller.IsPatient || caller.IsRestricted
             || !await permissions.HasPermissionAsync(userId, VirtualCarePermissions.TelehealthConsult, Aborted))
         {
             throw new HubException("You are not allowed to run video consultations.");
@@ -103,7 +103,7 @@ public sealed class TelehealthHub(
     public async Task<TelehealthJoinResult> JoinAsPatient(Guid sessionId)
     {
         var caller = new HubCallerUser(Context.User);
-        if (caller.UserId is not { } userId || !caller.IsPatient
+        if (caller.UserId is not { } userId || !caller.IsPatient || caller.IsRestricted
             || !await permissions.HasPermissionAsync(userId, PatientsPermissions.Portal, Aborted))
         {
             throw new HubException("Please sign in to the patient portal first.");

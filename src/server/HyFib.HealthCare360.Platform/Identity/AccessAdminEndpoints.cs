@@ -240,6 +240,12 @@ internal static class AccessAdminEndpoints
             return Error.Rule("user.self_deactivate", "You cannot deactivate your own account.").ToProblem();
         }
 
+        var mayManage = await EnsureMayManageAsync(user.Id, db, current, permissions, ct);
+        if (mayManage.IsFailure)
+        {
+            return mayManage.Error!.ToProblem();
+        }
+
         var roleCheck = await ValidateRoleAssignmentAsync(request.RoleIds, db, current, permissions, ct);
         if (roleCheck.IsFailure)
         {
@@ -275,12 +281,27 @@ internal static class AccessAdminEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> ResetPassword(Guid id, HospitalDbContext db, PasswordHashing hashing, IAuditLogger audit, ISessionValidator sessions, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> ResetPassword(
+        Guid id,
+        HospitalDbContext db,
+        PasswordHashing hashing,
+        IAuditLogger audit,
+        ISessionValidator sessions,
+        ICurrentUser current,
+        IPermissionService permissions,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var user = await db.Set<User>().FirstOrDefaultAsync(u => u.Id == id && u.Type == UserType.Staff, ct);
         if (user is null)
         {
             return Error.NotFound(nameof(User), id).ToProblem();
+        }
+
+        var mayManage = await EnsureMayManageAsync(user.Id, db, current, permissions, ct);
+        if (mayManage.IsFailure)
+        {
+            return mayManage.Error!.ToProblem();
         }
 
         var password = GenerateTemporaryPassword();
@@ -299,12 +320,18 @@ internal static class AccessAdminEndpoints
         return TypedResults.Ok(new TemporaryPasswordResponse(user.Id, password));
     }
 
-    private static async Task<IResult> UnlockUser(Guid id, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> UnlockUser(Guid id, HospitalDbContext db, IAuditLogger audit, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
     {
         var user = await db.Set<User>().FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null)
         {
             return Error.NotFound(nameof(User), id).ToProblem();
+        }
+
+        var mayManage = await EnsureMayManageAsync(user.Id, db, current, permissions, ct);
+        if (mayManage.IsFailure)
+        {
+            return mayManage.Error!.ToProblem();
         }
 
         user.FailedLoginCount = 0;
@@ -314,7 +341,15 @@ internal static class AccessAdminEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> ResetMfa(Guid id, HospitalDbContext db, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> ResetMfa(
+        Guid id,
+        HospitalDbContext db,
+        IAuditLogger audit,
+        ISessionValidator sessions,
+        ICurrentUser current,
+        IPermissionService permissions,
+        TimeProvider time,
+        CancellationToken ct)
     {
         var user = await db.Set<User>().FirstOrDefaultAsync(u => u.Id == id, ct);
         if (user is null)
@@ -322,9 +357,17 @@ internal static class AccessAdminEndpoints
             return Error.NotFound(nameof(User), id).ToProblem();
         }
 
+        var mayManage = await EnsureMayManageAsync(user.Id, db, current, permissions, ct);
+        if (mayManage.IsFailure)
+        {
+            return mayManage.Error!.ToProblem();
+        }
+
         user.MfaEnabled = false;
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
+        // A lost or stolen authenticator: whoever holds it keeps no session either.
+        await RevokeAllSessionsAsync(db, sessions, user.Id, "mfa_reset", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.mfa_reset", $"Two-step verification reset for {user.UserName}")
         {
             EntityType = nameof(User),
@@ -335,8 +378,22 @@ internal static class AccessAdminEndpoints
         return TypedResults.NoContent();
     }
 
-    private static async Task<IResult> RevokeSessions(Guid id, HospitalDbContext db, IAuditLogger audit, ISessionValidator sessions, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> RevokeSessions(
+        Guid id,
+        HospitalDbContext db,
+        IAuditLogger audit,
+        ISessionValidator sessions,
+        ICurrentUser current,
+        IPermissionService permissions,
+        TimeProvider time,
+        CancellationToken ct)
     {
+        var mayManage = await EnsureMayManageAsync(id, db, current, permissions, ct);
+        if (mayManage.IsFailure)
+        {
+            return mayManage.Error!.ToProblem();
+        }
+
         await RevokeAllSessionsAsync(db, sessions, id, "revoked_by_admin", time.GetUtcNow(), ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.sessions_revoked", "All sessions revoked") { EntityType = nameof(User), EntityId = id.ToString() });
         await db.SaveChangesAsync(ct);
@@ -357,7 +414,14 @@ internal static class AccessAdminEndpoints
             : TypedResults.Ok(new RoleDetail(role.Id, role.Name, role.Description, role.IsSystem, role.Permissions.Select(p => p.Permission).OrderBy(p => p).ToList(), role.Version));
     }
 
-    private static async Task<IResult> CreateRole(SaveRoleRequest request, HospitalDbContext db, PermissionRegistry registry, IAuditLogger audit, CancellationToken ct)
+    private static async Task<IResult> CreateRole(
+        SaveRoleRequest request,
+        HospitalDbContext db,
+        PermissionRegistry registry,
+        IAuditLogger audit,
+        ICurrentUser current,
+        IPermissionService permissions,
+        CancellationToken ct)
     {
         if (await db.Set<Role>().AnyAsync(r => r.Name == request.Name.Trim(), ct))
         {
@@ -368,6 +432,12 @@ internal static class AccessAdminEndpoints
         if (invalid is not null)
         {
             return invalid.ToProblem();
+        }
+
+        var mayGrant = await EnsureMayGrantAsync(request.Permissions, current, permissions, ct);
+        if (mayGrant.IsFailure)
+        {
+            return mayGrant.Error!.ToProblem();
         }
 
         var role = new Role { Name = request.Name.Trim(), Description = request.Description?.Trim() };
@@ -385,6 +455,7 @@ internal static class AccessAdminEndpoints
         PermissionRegistry registry,
         IPermissionService permissions,
         IAuditLogger audit,
+        ICurrentUser current,
         CancellationToken ct)
     {
         var role = await db.Set<Role>().Include(r => r.Permissions).FirstOrDefaultAsync(r => r.Id == id, ct);
@@ -398,10 +469,23 @@ internal static class AccessAdminEndpoints
             return Error.Rule("role.protected", "The Super Administrator role cannot be changed.").ToProblem();
         }
 
+        // Every portal account holds this role: a staff permission added to it would reach every patient.
+        if (role.Name == SystemRoles.Patient)
+        {
+            return Error.Rule("role.protected", "The Patient role cannot be changed.").ToProblem();
+        }
+
         var invalid = InvalidPermissions(request.Permissions, registry);
         if (invalid is not null)
         {
             return invalid.ToProblem();
+        }
+
+        // Adding a permission to a role is granting it to everyone who holds the role, the editor included.
+        var mayGrant = await EnsureMayGrantAsync(request.Permissions.Where(p => role.Permissions.All(x => x.Permission != p)), current, permissions, ct);
+        if (mayGrant.IsFailure)
+        {
+            return mayGrant.Error!.ToProblem();
         }
 
         if (request.Version is { } version)
@@ -469,7 +553,10 @@ internal static class AccessAdminEndpoints
         return unknown.Count == 0 ? null : Error.Field("permissions", $"Unknown permission(s): {string.Join(", ", unknown)}");
     }
 
-    /// <summary>Only a Super Administrator may grant the Super Administrator role (prevents privilege escalation).</summary>
+    /// <summary>
+    /// A role that carries administrative permissions can only be given by someone who holds them (and only a Super
+    /// Administrator grants that role). Clinical and business roles are the user administrators' everyday work.
+    /// </summary>
     private static async Task<Result> ValidateRoleAssignmentAsync(IReadOnlyList<Guid> roleIds, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
     {
         var roles = await db.Set<Role>().Where(r => roleIds.Contains(r.Id)).Select(r => r.Name).ToListAsync(ct);
@@ -478,18 +565,68 @@ internal static class AccessAdminEndpoints
             return Error.Field("roleIds", "One or more roles do not exist.");
         }
 
-        if (roles.Contains(SystemRoles.SuperAdmin) && !(current.UserId is { } uid && await permissions.HasPermissionAsync(uid, PermissionRegistry.Wildcard, ct)))
-        {
-            return Error.Forbidden("role.escalation", "Only a Super Administrator can grant the Super Administrator role.");
-        }
-
         if (roles.Contains(SystemRoles.Patient))
         {
             return Error.Field("roleIds", "The Patient role is reserved for portal accounts.");
         }
 
-        return Result.Success();
+        var granted = await db.Set<RolePermission>().Where(rp => roleIds.Contains(rp.RoleId)).Select(rp => rp.Permission).Distinct().ToListAsync(ct);
+        var mayGrant = await EnsureMayGrantAsync(granted, current, permissions, ct);
+        if (mayGrant.IsFailure && roles.Contains(SystemRoles.SuperAdmin))
+        {
+            return Error.Forbidden("role.escalation", "Only a Super Administrator can grant the Super Administrator role.");
+        }
+
+        return mayGrant;
     }
+
+    /// <summary>Nobody gives out an administrative permission they do not hold themselves.</summary>
+    private static async Task<Result> EnsureMayGrantAsync(IEnumerable<string> permissionsToGrant, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
+    {
+        var held = await CallerPermissionsAsync(current, permissions, ct);
+        if (held.Contains(PermissionRegistry.Wildcard))
+        {
+            return Result.Success();
+        }
+
+        var missing = permissionsToGrant.Where(IsAdministrative).Where(p => !held.Contains(p)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        return missing.Count == 0
+            ? Result.Success()
+            : Error.Forbidden("role.escalation", $"Only an administrator who holds these permissions can give them: {string.Join(", ", missing)}.");
+    }
+
+    /// <summary>
+    /// Changing another account (its roles, status, password, two-step verification or sessions) needs every
+    /// administrative permission that account holds. Otherwise a password reset would hand the administrator control
+    /// they were never given: a hospital administrator could take over a Super Administrator.
+    /// </summary>
+    private static async Task<Result> EnsureMayManageAsync(Guid targetId, HospitalDbContext db, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
+    {
+        var held = await CallerPermissionsAsync(current, permissions, ct);
+        if (held.Contains(PermissionRegistry.Wildcard))
+        {
+            return Result.Success();
+        }
+
+        // From the account's roles, active or not: a deactivated Super Administrator is still one.
+        var target = await (from ur in db.Set<UserRole>()
+                            join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
+                            where ur.UserId == targetId
+                            select rp.Permission).Distinct().ToListAsync(ct);
+        return target.Where(IsAdministrative).All(held.Contains)
+            ? Result.Success()
+            : Error.Forbidden("user.more_privileged", "This account has administrative permissions you do not hold, so only an administrator who holds them can change it.");
+    }
+
+    /// <summary>
+    /// The permissions that control accounts, roles, credentials and the server itself: all-access and the Administration
+    /// ("admin.") permissions. Clinical and business permissions are handed out by user administrators every day.
+    /// </summary>
+    private static bool IsAdministrative(string permission) =>
+        permission == PermissionRegistry.Wildcard || permission.StartsWith("admin.", StringComparison.Ordinal);
+
+    private static async Task<IReadOnlySet<string>> CallerPermissionsAsync(ICurrentUser current, IPermissionService permissions, CancellationToken ct) =>
+        current.UserId is { } callerId ? await permissions.GetPermissionsAsync(callerId, ct) : new HashSet<string>(StringComparer.Ordinal);
 
     private static async Task RevokeAllSessionsAsync(HospitalDbContext db, ISessionValidator validator, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
     {

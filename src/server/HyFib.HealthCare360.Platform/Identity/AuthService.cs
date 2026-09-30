@@ -787,7 +787,7 @@ public sealed class AuthService(
         IReadOnlyCollection<string> granted = restriction is null
             ? (await permissions.GetPermissionsAsync(user.Id, ct)).ToArray()
             : [];
-        var facilities = user.Type == UserType.Patient ? [] : await AllowedFacilitiesAsync(user, roles, ct);
+        var facilities = await AllowedFacilitiesAsync(user, roles, ct);
 
         return new AuthUser(
             user.Id,
@@ -809,6 +809,13 @@ public sealed class AuthService(
 
     private async Task<List<FacilityOption>> AllowedFacilitiesAsync(User user, IReadOnlyList<string> roles, CancellationToken ct)
     {
+        // Patients act only on their own records, never in a facility's name (a facility session would, for one, receive
+        // the facility's live events).
+        if (user.Type == UserType.Patient)
+        {
+            return [];
+        }
+
         var query = db.Set<Facility>().Where(f => f.IsActive);
         if (!roles.Contains(SystemRoles.SuperAdmin) && user.Facilities.Count > 0)
         {
