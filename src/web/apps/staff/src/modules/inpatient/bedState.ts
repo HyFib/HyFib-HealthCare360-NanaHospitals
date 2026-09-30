@@ -6,7 +6,14 @@
 
 export type BedStatus = 'Vacant' | 'Occupied' | 'Reserved' | 'Cleaning' | 'Blocked' | 'Maintenance';
 
-export const BED_STATUSES: readonly BedStatus[] = ['Vacant', 'Occupied', 'Reserved', 'Cleaning', 'Blocked', 'Maintenance'];
+export const BED_STATUSES: readonly BedStatus[] = [
+  'Vacant',
+  'Occupied',
+  'Reserved',
+  'Cleaning',
+  'Blocked',
+  'Maintenance',
+];
 
 /** Colour family of a state. The tile also shows an icon and the state word, so colour is never the only signal. */
 export type BedTone = 'green' | 'blue' | 'marigold' | 'teal' | 'red' | 'grape' | 'neutral';
@@ -24,15 +31,64 @@ export interface BedStateInfo {
 }
 
 export const BED_STATE: Record<BedStatus, BedStateInfo> = {
-  Vacant: { status: 'Vacant', label: 'Vacant', description: 'Clean and ready for a patient', tone: 'green', icon: 'vacant', inService: true },
-  Occupied: { status: 'Occupied', label: 'Occupied', description: 'A patient is in this bed', tone: 'blue', icon: 'occupied', inService: true },
-  Reserved: { status: 'Reserved', label: 'Reserved', description: 'Held for an expected patient', tone: 'marigold', icon: 'reserved', inService: true },
-  Cleaning: { status: 'Cleaning', label: 'Cleaning', description: 'Waiting for or under terminal cleaning', tone: 'teal', icon: 'cleaning', inService: true },
-  Blocked: { status: 'Blocked', label: 'Blocked', description: 'Taken out of use (see reason)', tone: 'red', icon: 'blocked', inService: false },
-  Maintenance: { status: 'Maintenance', label: 'Maintenance', description: 'Under repair; goes to cleaning afterwards', tone: 'grape', icon: 'maintenance', inService: false },
+  Vacant: {
+    status: 'Vacant',
+    label: 'Vacant',
+    description: 'Clean and ready for a patient',
+    tone: 'green',
+    icon: 'vacant',
+    inService: true,
+  },
+  Occupied: {
+    status: 'Occupied',
+    label: 'Occupied',
+    description: 'A patient is in this bed',
+    tone: 'blue',
+    icon: 'occupied',
+    inService: true,
+  },
+  Reserved: {
+    status: 'Reserved',
+    label: 'Reserved',
+    description: 'Held for an expected patient',
+    tone: 'marigold',
+    icon: 'reserved',
+    inService: true,
+  },
+  Cleaning: {
+    status: 'Cleaning',
+    label: 'Cleaning',
+    description: 'Waiting for or under terminal cleaning',
+    tone: 'teal',
+    icon: 'cleaning',
+    inService: true,
+  },
+  Blocked: {
+    status: 'Blocked',
+    label: 'Blocked',
+    description: 'Taken out of use (see reason)',
+    tone: 'red',
+    icon: 'blocked',
+    inService: false,
+  },
+  Maintenance: {
+    status: 'Maintenance',
+    label: 'Maintenance',
+    description: 'Under repair; goes to cleaning afterwards',
+    tone: 'grape',
+    icon: 'maintenance',
+    inService: false,
+  },
 };
 
-const UNKNOWN_STATE: BedStateInfo = { status: 'Unknown', label: 'Unknown', description: 'Status not recognised', tone: 'neutral', icon: 'unknown', inService: false };
+const UNKNOWN_STATE: BedStateInfo = {
+  status: 'Unknown',
+  label: 'Unknown',
+  description: 'Status not recognised',
+  tone: 'neutral',
+  icon: 'unknown',
+  inService: false,
+};
 
 export function bedStateInfo(status: string | null | undefined): BedStateInfo {
   return status && status in BED_STATE ? BED_STATE[status as BedStatus] : UNKNOWN_STATE;
@@ -152,25 +208,53 @@ export interface BedAlertInfo {
 export const BED_ALERT: Record<BedAlert, BedAlertInfo> = {
   Mlc: { label: 'MLC', description: 'Medico-legal case', severity: 'warning' },
   Restricted: { label: 'Restricted', description: 'Restricted record: access is audited', severity: 'informative' },
-  HighFallRisk: { label: 'Fall risk', description: 'High fall risk (Morse 45 or more): fall precautions', severity: 'danger' },
-  PressureInjuryRisk: { label: 'Pressure risk', description: 'Pressure-injury risk (Braden 12 or less): turn two-hourly', severity: 'danger' },
+  HighFallRisk: {
+    label: 'Fall risk',
+    description: 'High fall risk (Morse 45 or more): fall precautions',
+    severity: 'danger',
+  },
+  PressureInjuryRisk: {
+    label: 'Pressure risk',
+    description: 'Pressure-injury risk (Braden 12 or less): turn two-hourly',
+    severity: 'danger',
+  },
   SeverePain: { label: 'Severe pain', description: 'Last pain score 7 or more: reassess', severity: 'danger' },
   MedicationOverdue: { label: 'Medicine overdue', description: 'A scheduled dose is overdue', severity: 'danger' },
-  DischargeInitiated: { label: 'Discharging', description: 'Discharge started, waiting for billing clearance', severity: 'informative' },
-  DischargeDueToday: { label: 'Discharge due', description: 'Expected discharge date is today or earlier', severity: 'warning' },
-  ReservationExpired: { label: 'Reservation lapsed', description: 'The reservation time has passed; the bed can be given to anyone', severity: 'warning' },
-  CleaningDelayed: { label: 'Cleaning delayed', description: 'Waiting more than 60 minutes for cleaning', severity: 'warning' },
+  DischargeInitiated: {
+    label: 'Discharging',
+    description: 'Discharge started, waiting for billing clearance',
+    severity: 'informative',
+  },
+  DischargeDueToday: {
+    label: 'Discharge due',
+    description: 'Expected discharge date is today or earlier',
+    severity: 'warning',
+  },
+  ReservationExpired: {
+    label: 'Reservation lapsed',
+    description: 'The reservation time has passed; the bed can be given to anyone',
+    severity: 'warning',
+  },
+  CleaningDelayed: {
+    label: 'Cleaning delayed',
+    description: 'Waiting more than 60 minutes for cleaning',
+    severity: 'warning',
+  },
 };
 
 const SEVERITY_ORDER: Record<AlertSeverity, number> = { danger: 0, warning: 1, informative: 2 };
 
 export function bedAlertInfo(alert: string): BedAlertInfo {
-  return alert in BED_ALERT ? BED_ALERT[alert as BedAlert] : { label: alert, description: alert, severity: 'informative' };
+  return alert in BED_ALERT
+    ? BED_ALERT[alert as BedAlert]
+    : { label: alert, description: alert, severity: 'informative' };
 }
 
 /** Alerts ordered most serious first (tiles show the first few). */
 export function sortAlerts(alerts: readonly string[]): string[] {
-  return [...alerts].sort((a, b) => SEVERITY_ORDER[bedAlertInfo(a).severity] - SEVERITY_ORDER[bedAlertInfo(b).severity]);
+  return [...alerts].sort(
+    (a, b) => SEVERITY_ORDER[bedAlertInfo(a).severity] - SEVERITY_ORDER[bedAlertInfo(b).severity],
+  );
 }
 
 export interface BedCountsLike {
@@ -220,7 +304,13 @@ export function matchesBedSearch(bed: SearchableBed, term: string): boolean {
   if (!needle) {
     return true;
   }
-  const haystack = [bed.label, bed.roomNumber, bed.occupant?.patientName, bed.occupant?.uhid, bed.occupant?.admissionNumber];
+  const haystack = [
+    bed.label,
+    bed.roomNumber,
+    bed.occupant?.patientName,
+    bed.occupant?.uhid,
+    bed.occupant?.admissionNumber,
+  ];
   return haystack.some((value) => value?.toLowerCase().includes(needle));
 }
 

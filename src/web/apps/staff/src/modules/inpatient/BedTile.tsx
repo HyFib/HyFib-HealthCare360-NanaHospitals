@@ -73,16 +73,27 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px' },
     '@media (prefers-reduced-motion: reduce)': { transitionDuration: '0s', ':hover': { transform: 'none' } },
   },
-  green: { backgroundColor: tokens.colorPaletteGreenBackground1, borderLeftColor: tokens.colorPaletteGreenBorderActive },
+  green: {
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+    borderLeftColor: tokens.colorPaletteGreenBorderActive,
+  },
   blue: { backgroundColor: tokens.colorNeutralBackground1, borderLeftColor: tokens.colorPaletteBlueBorderActive },
-  marigold: { backgroundColor: tokens.colorPaletteMarigoldBackground1, borderLeftColor: tokens.colorPaletteMarigoldBorderActive },
+  marigold: {
+    backgroundColor: tokens.colorPaletteMarigoldBackground1,
+    borderLeftColor: tokens.colorPaletteMarigoldBorderActive,
+  },
   teal: { backgroundColor: tokens.colorNeutralBackground1, borderLeftColor: tokens.colorPaletteLightTealBorderActive },
   red: { backgroundColor: tokens.colorPaletteRedBackground1, borderLeftColor: tokens.colorPaletteRedBorderActive },
   grape: { backgroundColor: tokens.colorNeutralBackground1, borderLeftColor: tokens.colorPaletteGrapeBorderActive },
   neutral: { backgroundColor: tokens.colorNeutralBackground1, borderLeftColor: tokens.colorNeutralStroke1 },
   selected: { outline: `3px solid ${tokens.colorBrandStroke1}`, outlineOffset: '1px' },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' },
-  label: { fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightBold, fontFamily: tokens.fontFamilyNumeric, letterSpacing: '0.3px' },
+  label: {
+    fontSize: tokens.fontSizeBase400,
+    fontWeight: tokens.fontWeightBold,
+    fontFamily: tokens.fontFamilyNumeric,
+    letterSpacing: '0.3px',
+  },
   chip: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -96,8 +107,14 @@ const useStyles = makeStyles({
   },
   chipGreen: { backgroundColor: tokens.colorPaletteGreenBackground2, color: tokens.colorPaletteGreenForeground2 },
   chipBlue: { backgroundColor: tokens.colorPaletteBlueBackground2, color: tokens.colorPaletteBlueForeground2 },
-  chipMarigold: { backgroundColor: tokens.colorPaletteMarigoldBackground2, color: tokens.colorPaletteMarigoldForeground2 },
-  chipTeal: { backgroundColor: tokens.colorPaletteLightTealBackground2, color: tokens.colorPaletteLightTealForeground2 },
+  chipMarigold: {
+    backgroundColor: tokens.colorPaletteMarigoldBackground2,
+    color: tokens.colorPaletteMarigoldForeground2,
+  },
+  chipTeal: {
+    backgroundColor: tokens.colorPaletteLightTealBackground2,
+    color: tokens.colorPaletteLightTealForeground2,
+  },
   chipRed: { backgroundColor: tokens.colorPaletteRedBackground2, color: tokens.colorPaletteRedForeground2 },
   chipGrape: { backgroundColor: tokens.colorPaletteGrapeBackground2, color: tokens.colorPaletteGrapeForeground2 },
   chipNeutral: { backgroundColor: tokens.colorNeutralBackground3, color: tokens.colorNeutralForeground2 },
@@ -196,8 +213,17 @@ export function BedLegend({
         }
         const pressed = active === state.status;
         return (
-          <Tooltip key={state.status} content={`${state.description}. ${pressed ? 'Show all beds' : `Show only ${state.label.toLowerCase()} beds`}`} relationship="description">
-            <button type="button" className={mergeClasses(styles.legendButton, pressed && styles.legendActive)} aria-pressed={pressed} onClick={() => onToggle(state.status)}>
+          <Tooltip
+            key={state.status}
+            content={`${state.description}. ${pressed ? 'Show all beds' : `Show only ${state.label.toLowerCase()} beds`}`}
+            relationship="description"
+          >
+            <button
+              type="button"
+              className={mergeClasses(styles.legendButton, pressed && styles.legendActive)}
+              aria-pressed={pressed}
+              onClick={() => onToggle(state.status)}
+            >
               <BedStateChip status={state.status} count={count} />
             </button>
           </Tooltip>
@@ -222,7 +248,12 @@ export function BedAlertBadges({ alerts, max = 3 }: { alerts: readonly string[];
         const info = bedAlertInfo(alert);
         return (
           <Tooltip key={alert} content={info.description} relationship="description">
-            <Badge size="small" appearance="tint" color={info.severity === 'danger' ? 'danger' : info.severity === 'warning' ? 'warning' : 'informative'} icon={ALERT_ICONS[alert]}>
+            <Badge
+              size="small"
+              appearance="tint"
+              color={info.severity === 'danger' ? 'danger' : info.severity === 'warning' ? 'warning' : 'informative'}
+              icon={ALERT_ICONS[alert]}
+            >
               {info.label}
             </Badge>
           </Tooltip>
@@ -240,7 +271,15 @@ export function BedAlertBadges({ alerts, max = 3 }: { alerts: readonly string[];
 }
 
 /** Oxygen / ventilator / monitor points of a bed as short labelled chips. */
-export function BedFeatures({ oxygen, ventilator, monitor }: { oxygen: boolean; ventilator: boolean; monitor: boolean }) {
+export function BedFeatures({
+  oxygen,
+  ventilator,
+  monitor,
+}: {
+  oxygen: boolean;
+  ventilator: boolean;
+  monitor: boolean;
+}) {
   const styles = useStyles();
   if (!oxygen && !ventilator && !monitor) {
     return null;
@@ -273,7 +312,9 @@ function statusLine(bed: BedBoardItem, now: number): string | null {
     case 'Reserved':
       return bed.reservedUntil ? `Held until ${formatTime(bed.reservedUntil)}` : 'Reserved';
     case 'Cleaning':
-      return bed.statusChangedAt ? `Waiting ${formatDuration(minutesSince(bed.statusChangedAt, now))}` : 'Waiting for cleaning';
+      return bed.statusChangedAt
+        ? `Waiting ${formatDuration(minutesSince(bed.statusChangedAt, now))}`
+        : 'Waiting for cleaning';
     case 'Blocked':
     case 'Maintenance':
       return bed.statusReason ?? null;
@@ -284,13 +325,25 @@ function statusLine(bed: BedBoardItem, now: number): string | null {
 
 function describe(bed: BedBoardItem): string {
   const state = bedStateInfo(bed.status).label.toLowerCase();
-  const who = bed.occupant ? `, ${bed.occupant.patientName}, ${bed.occupant.age ?? 'age not known'} ${bed.occupant.gender}, day ${bed.occupant.lengthOfStayDays}` : '';
+  const who = bed.occupant
+    ? `, ${bed.occupant.patientName}, ${bed.occupant.age ?? 'age not known'} ${bed.occupant.gender}, day ${bed.occupant.lengthOfStayDays}`
+    : '';
   const alerts = bed.alerts.length ? `. Alerts: ${bed.alerts.map((a) => bedAlertInfo(a).label).join(', ')}` : '';
   return `Bed ${bed.label}, ${state}${who}${alerts}`;
 }
 
 /** One bed on the board. A real button: Tab reaches it, Enter or a tap opens its actions. */
-export function BedTile({ bed, now, selected, onOpen }: { bed: BedBoardItem; now: number; selected?: boolean; onOpen: (bed: BedBoardItem) => void }) {
+export function BedTile({
+  bed,
+  now,
+  selected,
+  onOpen,
+}: {
+  bed: BedBoardItem;
+  now: number;
+  selected?: boolean;
+  onOpen: (bed: BedBoardItem) => void;
+}) {
   const styles = useStyles();
   const info = bedStateInfo(bed.status);
   const line = statusLine(bed, now);
@@ -313,7 +366,8 @@ export function BedTile({ bed, now, selected, onOpen }: { bed: BedBoardItem; now
         <>
           <Text className={styles.name}>{occupant.patientName}</Text>
           <Caption1 className={styles.muted}>
-            {occupant.age ?? '—'} / {genderShort[occupant.gender] ?? occupant.gender.charAt(0)} · Day {occupant.lengthOfStayDays}
+            {occupant.age ?? '—'} / {genderShort[occupant.gender] ?? occupant.gender.charAt(0)} · Day{' '}
+            {occupant.lengthOfStayDays}
             {occupant.consultantName ? ` · ${occupant.consultantName}` : ''}
           </Caption1>
         </>

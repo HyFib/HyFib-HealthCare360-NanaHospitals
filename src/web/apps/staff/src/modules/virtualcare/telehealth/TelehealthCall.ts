@@ -9,7 +9,15 @@ import {
   type TelehealthStatus,
   type WaitingParticipant,
 } from './api';
-import { computeQuality, decodeCandidate, decodeDescription, encodeCandidate, snapshotFromStats, type QualityReading, type StatsSnapshot } from './webrtc';
+import {
+  computeQuality,
+  decodeCandidate,
+  decodeDescription,
+  encodeCandidate,
+  snapshotFromStats,
+  type QualityReading,
+  type StatsSnapshot,
+} from './webrtc';
 
 /**
  * The doctor's side of a 1:1 video consultation (TEL-02/03/05): signalling through /hubs/telehealth, a peer-to-peer
@@ -98,11 +106,17 @@ const INITIAL_STATE: CallState = {
 };
 
 const AUDIO: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-const VIDEO: MediaTrackConstraints = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 }, facingMode: 'user' };
+const VIDEO: MediaTrackConstraints = {
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 24, max: 30 },
+  facingMode: 'user',
+};
 
 const MEDIA_DENIED =
   'Camera and microphone access is blocked for HealthCare360. Allow it (in HC360 Desktop or the browser site settings) and select Try again. You can still see and hear the patient and use chat.';
-const MEDIA_MISSING = 'No microphone or camera was found. Connect a headset or webcam and select Try again. You can still see and hear the patient and use chat.';
+const MEDIA_MISSING =
+  'No microphone or camera was found. Connect a headset or webcam and select Try again. You can still see and hear the patient and use chat.';
 const MEDIA_UNSUPPORTED =
   'This window cannot use a camera. Open HealthCare360 through its secure (https) address or in HC360 Desktop. You can still use chat.';
 
@@ -264,7 +278,11 @@ export class TelehealthCall {
     } catch {
       if (generation === this.generation) {
         this.disconnectHub(false);
-        this.update({ phase: 'failed', hub: 'disconnected', joinError: 'Could not connect to the video service. Check the network connection and try again.' });
+        this.update({
+          phase: 'failed',
+          hub: 'disconnected',
+          joinError: 'Could not connect to the video service. Check the network connection and try again.',
+        });
       }
       return;
     }
@@ -330,7 +348,9 @@ export class TelehealthCall {
         if (!live()) {
           return;
         }
-        this.update({ waiting: [...this.state.waiting.filter((w) => w.participantId !== participant.participantId), participant] });
+        this.update({
+          waiting: [...this.state.waiting.filter((w) => w.participantId !== participant.participantId), participant],
+        });
         notifyDesktop();
       }),
       hub.on<{ participantId: string }>('waitingRoomLeft', (participant) => {
@@ -343,17 +363,37 @@ export class TelehealthCall {
           return;
         }
         this.update({ waiting: this.state.waiting.filter((w) => w.participantId !== participant.participantId) });
-        this.startPeerAsOfferer({ participantId: participant.participantId, name: participant.name, role: participant.role });
+        this.startPeerAsOfferer({
+          participantId: participant.participantId,
+          name: participant.name,
+          role: participant.role,
+        });
       }),
       hub.on<{ participantId: string }>('participantLeft', (participant) => {
         if (live() && participant.participantId === this.remoteId) {
           this.closePeer();
-          this.update({ remote: null, remoteStream: null, remoteAudioOnly: false, peer: 'idle', quality: null, poorStreak: 0 });
+          this.update({
+            remote: null,
+            remoteStream: null,
+            remoteAudioOnly: false,
+            peer: 'idle',
+            quality: null,
+            poorStreak: 0,
+          });
         }
       }),
-      hub.on<SignalPayload>('offer', (message) => live() && this.enqueue(() => this.handleOffer(message.from, message.data))),
-      hub.on<SignalPayload>('answer', (message) => live() && this.enqueue(() => this.handleAnswer(message.from, message.data))),
-      hub.on<SignalPayload>('iceCandidate', (message) => live() && this.enqueue(() => this.handleCandidate(message.from, message.data))),
+      hub.on<SignalPayload>(
+        'offer',
+        (message) => live() && this.enqueue(() => this.handleOffer(message.from, message.data)),
+      ),
+      hub.on<SignalPayload>(
+        'answer',
+        (message) => live() && this.enqueue(() => this.handleAnswer(message.from, message.data)),
+      ),
+      hub.on<SignalPayload>(
+        'iceCandidate',
+        (message) => live() && this.enqueue(() => this.handleCandidate(message.from, message.data)),
+      ),
       hub.on<TelehealthMessageDto>('chatMessage', (message) => {
         if (live()) {
           this.update({ messages: mergeMessages(this.state.messages, [message]) });
@@ -423,7 +463,9 @@ export class TelehealthCall {
 
   /** Signalling steps run strictly one after another, in the order they arrived. */
   private enqueue(step: () => Promise<void>): void {
-    this.signalling = this.signalling.then(step).catch((error: unknown) => console.warn('Video call signalling step failed', error));
+    this.signalling = this.signalling
+      .then(step)
+      .catch((error: unknown) => console.warn('Video call signalling step failed', error));
   }
 
   // ------------------------------------------------------------------ peer connection
@@ -435,11 +477,20 @@ export class TelehealthCall {
     this.remoteId = remote.participantId;
     this.previousStats = null;
     this.iceRestarts = 0;
-    this.update({ remote, remoteStream: null, remoteAudioOnly: false, peer: 'connecting', quality: null, poorStreak: 0 });
+    this.update({
+      remote,
+      remoteStream: null,
+      remoteAudioOnly: false,
+      peer: 'connecting',
+      quality: null,
+      poorStreak: 0,
+    });
 
     pc.onicecandidate = (event) => {
       if (event.candidate && pc === this.pc) {
-        void this.hub?.send('SendIceCandidate', this.options.sessionId, encodeCandidate(event.candidate.toJSON())).catch(noop);
+        void this.hub
+          ?.send('SendIceCandidate', this.options.sessionId, encodeCandidate(event.candidate.toJSON()))
+          .catch(noop);
       }
     };
     pc.ontrack = (event) => {
@@ -463,7 +514,10 @@ export class TelehealthCall {
     const { stream, audio, video } = this.localTracks();
     const streams = stream ? [stream] : [];
     this.audioTx = pc.addTransceiver(audio ?? 'audio', { direction: audio ? 'sendrecv' : 'recvonly', streams });
-    this.videoTx = pc.addTransceiver(video && !this.state.audioOnly ? video : 'video', { direction: video ? 'sendrecv' : 'recvonly', streams });
+    this.videoTx = pc.addTransceiver(video && !this.state.audioOnly ? video : 'video', {
+      direction: video ? 'sendrecv' : 'recvonly',
+      streams,
+    });
   }
 
   private async makeOffer(pc: RTCPeerConnection): Promise<void> {
@@ -486,7 +540,9 @@ export class TelehealthCall {
     if (!pc || this.remoteId !== from) {
       const known = this.state.remote?.participantId === from ? this.state.remote : null;
       const waiting = this.state.waiting.find((w) => w.participantId === from);
-      pc = this.createPeer(known ?? { participantId: from, name: waiting?.displayName ?? 'Patient', role: waiting?.role ?? 'Guest' });
+      pc = this.createPeer(
+        known ?? { participantId: from, name: waiting?.displayName ?? 'Patient', role: waiting?.role ?? 'Guest' },
+      );
       fresh = true;
     }
     if (pc.signalingState !== 'stable') {
@@ -624,7 +680,9 @@ export class TelehealthCall {
           stream = await devices.getUserMedia({ audio: AUDIO });
           note = 'No camera was found, or another program is using it. The patient hears you but cannot see you.';
         } catch (audioError) {
-          failure = isPermissionError(audioError) ? { status: 'denied', message: MEDIA_DENIED } : { status: 'no-device', message: MEDIA_MISSING };
+          failure = isPermissionError(audioError)
+            ? { status: 'denied', message: MEDIA_DENIED }
+            : { status: 'no-device', message: MEDIA_MISSING };
         }
       }
     }
@@ -637,7 +695,9 @@ export class TelehealthCall {
     const hasVideo = Boolean(stream?.getVideoTracks().length);
     this.update({
       localStream: stream,
-      media: failure ? { status: failure.status, message: failure.message, hasAudio: false, hasVideo: false } : { status: 'ready', message: note, hasAudio, hasVideo },
+      media: failure
+        ? { status: failure.status, message: failure.message, hasAudio: false, hasVideo: false }
+        : { status: 'ready', message: note, hasAudio, hasVideo },
       micOn: hasAudio,
       cameraOn: hasVideo && !this.state.audioOnly,
     });
@@ -657,14 +717,23 @@ export class TelehealthCall {
     }
   }
 
-  private localTracks(): { stream: MediaStream | null; audio: MediaStreamTrack | null; video: MediaStreamTrack | null } {
+  private localTracks(): {
+    stream: MediaStream | null;
+    audio: MediaStreamTrack | null;
+    video: MediaStreamTrack | null;
+  } {
     const stream = this.state.localStream;
     return { stream, audio: stream?.getAudioTracks()[0] ?? null, video: stream?.getVideoTracks()[0] ?? null };
   }
 
   private stopLocalMedia(): void {
     this.state.localStream?.getTracks().forEach((track) => track.stop());
-    this.update({ localStream: null, micOn: false, cameraOn: false, media: { status: 'idle', message: null, hasAudio: false, hasVideo: false } });
+    this.update({
+      localStream: null,
+      micOn: false,
+      cameraOn: false,
+      media: { status: 'idle', message: null, hasAudio: false, hasVideo: false },
+    });
   }
 
   // ------------------------------------------------------------------ connection quality (TEL-05)
@@ -730,7 +799,10 @@ function toRtcIceServers(servers: IceServerDto[]): RTCIceServer[] {
 }
 
 /** Messages in time order without duplicates (the server echoes the doctor's own messages). */
-export function mergeMessages(current: readonly TelehealthMessageDto[], incoming: readonly TelehealthMessageDto[]): TelehealthMessageDto[] {
+export function mergeMessages(
+  current: readonly TelehealthMessageDto[],
+  incoming: readonly TelehealthMessageDto[],
+): TelehealthMessageDto[] {
   const byId = new Map(current.map((m) => [m.id, m]));
   incoming.forEach((m) => byId.set(m.id, m));
   return [...byId.values()].sort((a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt));

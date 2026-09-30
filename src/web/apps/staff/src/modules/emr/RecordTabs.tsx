@@ -21,7 +21,19 @@ import {
 import { AddRegular, DeleteRegular, DocumentTextRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDate, formatDateOnly, formatDateTime, humanize, todayIso } from '@hc360/core';
-import { applyServerErrors, DataTable, DateField, EmptyState, FormGrid, NumberField, StatusBadge, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  DateField,
+  EmptyState,
+  FormGrid,
+  NumberField,
+  StatusBadge,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -62,12 +74,21 @@ export function EncountersTab({ patientId }: { patientId: string }) {
         { key: 'type', header: 'Type', render: (e) => encounterTypeLabel[e.type] },
         { key: 'dept', header: 'Department', priority: 'low', render: (e) => e.departmentName ?? '—' },
         { key: 'doctor', header: 'Doctor', render: (e) => e.practitionerName ?? '—' },
-        { key: 'complaint', header: 'Complaint / diagnosis', render: (e) => (e.diagnoses.length > 0 ? e.diagnoses.join('; ') : (e.chiefComplaint ?? '—')) },
+        {
+          key: 'complaint',
+          header: 'Complaint / diagnosis',
+          render: (e) => (e.diagnoses.length > 0 ? e.diagnoses.join('; ') : (e.chiefComplaint ?? '—')),
+        },
         {
           key: 'status',
           header: 'Status',
           width: 120,
-          render: (e) => <StatusBadge status={e.status === 'InProgress' ? 'Draft' : e.status} label={e.status === 'InProgress' ? 'Unsigned' : undefined} />,
+          render: (e) => (
+            <StatusBadge
+              status={e.status === 'InProgress' ? 'Draft' : e.status}
+              label={e.status === 'InProgress' ? 'Unsigned' : undefined}
+            />
+          ),
         },
       ]}
       emptyTitle="No encounters yet"
@@ -106,7 +127,11 @@ const immunizationSchema = z
       ctx.addIssue({ code: 'custom', path: ['expiryDate'], message: 'Record the expiry date of the batch.' });
     }
     if (!v.isExternal && v.expiryDate && v.administeredOn && v.expiryDate < v.administeredOn) {
-      ctx.addIssue({ code: 'custom', path: ['expiryDate'], message: 'This batch had expired on the day it was given. Report it as an incident instead.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expiryDate'],
+        message: 'This batch had expired on the day it was given. Report it as an incident instead.',
+      });
     }
     if (v.nextDueOn && v.administeredOn && v.nextDueOn <= v.administeredOn) {
       ctx.addIssue({ code: 'custom', path: ['nextDueOn'], message: 'The next dose must be due after this dose.' });
@@ -115,10 +140,20 @@ const immunizationSchema = z
 
 type ImmunizationValues = z.infer<typeof immunizationSchema>;
 
-function RecordImmunizationDialog({ patientId, open, onClose }: { patientId: string; open: boolean; onClose: () => void }) {
+function RecordImmunizationDialog({
+  patientId,
+  open,
+  onClose,
+}: {
+  patientId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 720 }}>{open && <RecordImmunizationForm patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 720 }}>
+        {open && <RecordImmunizationForm patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -182,15 +217,30 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
       <DialogBody>
         <DialogTitle>Record immunisation</DialogTitle>
         <DialogContent className={styles.form}>
-          <SwitchField control={form.control} name="isExternal" label="Given elsewhere (copied from a vaccination card)" hint="Doses given here need the batch and expiry for adverse-event tracing." />
+          <SwitchField
+            control={form.control}
+            name="isExternal"
+            label="Given elsewhere (copied from a vaccination card)"
+            hint="Doses given here need the batch and expiry for adverse-event tracing."
+          />
           <FormGrid columns={3}>
-            <TextField control={form.control} name="vaccineName" label="Vaccine" required autoFocus maxLength={200} placeholder="e.g. Hepatitis B, Tdap" />
+            <TextField
+              control={form.control}
+              name="vaccineName"
+              label="Vaccine"
+              required
+              autoFocus
+              maxLength={200}
+              placeholder="e.g. Hepatitis B, Tdap"
+            />
             <NumberField control={form.control} name="doseNumber" label="Dose number" min={1} max={10} />
             <DateField control={form.control} name="administeredOn" label="Given on" required max={today} />
             <TextField control={form.control} name="vaccineCode" label="Code" maxLength={32} />
             <TextField control={form.control} name="route" label="Route" maxLength={32} />
             <TextField control={form.control} name="site" label="Site" maxLength={64} placeholder="e.g. left deltoid" />
-            {!isExternal && <TextField control={form.control} name="batchNumber" label="Batch number" required maxLength={64} />}
+            {!isExternal && (
+              <TextField control={form.control} name="batchNumber" label="Batch number" required maxLength={64} />
+            )}
             {!isExternal && <DateField control={form.control} name="expiryDate" label="Batch expiry" required />}
             <TextField control={form.control} name="manufacturer" label="Manufacturer" maxLength={128} />
             <TextField control={form.control} name="administeredBy" label="Given by" maxLength={200} />
@@ -202,7 +252,12 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Record
           </Button>
         </DialogActions>
@@ -238,7 +293,11 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
             Record immunisation
           </Button>
         )}
-        <Switch checked={showErrors} onChange={(_, d) => setShowErrors(d.checked)} label="Show entries marked in error" />
+        <Switch
+          checked={showErrors}
+          onChange={(_, d) => setShowErrors(d.checked)}
+          label="Show entries marked in error"
+        />
       </div>
       <DataTable
         ariaLabel="Immunisations"
@@ -262,10 +321,22 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
               </span>
             ),
           },
-          { key: 'batch', header: 'Batch / expiry', priority: 'low', render: (i) => (i.batchNumber ? `${i.batchNumber}${i.expiryDate ? ` · exp ${formatDateOnly(i.expiryDate)}` : ''}` : '—') },
+          {
+            key: 'batch',
+            header: 'Batch / expiry',
+            priority: 'low',
+            render: (i) =>
+              i.batchNumber ? `${i.batchNumber}${i.expiryDate ? ` · exp ${formatDateOnly(i.expiryDate)}` : ''}` : '—',
+          },
           { key: 'where', header: 'Where', render: (i) => (i.isExternal ? 'Elsewhere (card)' : 'This hospital') },
           { key: 'next', header: 'Next due', render: (i) => (i.nextDueOn ? formatDateOnly(i.nextDueOn) : '—') },
-          { key: 'status', header: 'Status', priority: 'low', render: (i) => (i.isEnteredInError ? <StatusBadge status="Voided" tone="danger" label="Entered in error" /> : null) },
+          {
+            key: 'status',
+            header: 'Status',
+            priority: 'low',
+            render: (i) =>
+              i.isEnteredInError ? <StatusBadge status="Voided" tone="danger" label="Entered in error" /> : null,
+          },
         ]}
         rowActions={
           canRecord
@@ -273,7 +344,12 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
                 i.isEnteredInError ? null : (
                   <Menu>
                     <MenuTrigger disableButtonEnhancement>
-                      <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${i.vaccineName}`} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<MoreHorizontalRegular />}
+                        aria-label={`Actions for ${i.vaccineName}`}
+                      />
                     </MenuTrigger>
                     <MenuPopover>
                       <MenuList>
@@ -334,7 +410,12 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
   };
 
   if (!canRead) {
-    return <EmptyState title="Documents are not available to you" description="Ask the medical records department for access." />;
+    return (
+      <EmptyState
+        title="Documents are not available to you"
+        description="Ask the medical records department for access."
+      />
+    );
   }
 
   return (
@@ -351,7 +432,12 @@ export function DocumentsTab({ patientId }: { patientId: string }) {
         columns={[
           { key: 'title', header: 'Title', render: (d) => d.title },
           { key: 'type', header: 'Type', render: (d) => humanize(d.type) },
-          { key: 'date', header: 'Document date', priority: 'low', render: (d) => (d.documentDate ? formatDateOnly(d.documentDate) : '—') },
+          {
+            key: 'date',
+            header: 'Document date',
+            priority: 'low',
+            render: (d) => (d.documentDate ? formatDateOnly(d.documentDate) : '—'),
+          },
           { key: 'added', header: 'Added', render: (d) => formatDate(d.createdAt) },
           { key: 'source', header: 'Source', priority: 'low', render: (d) => d.source ?? '—' },
         ]}
@@ -386,7 +472,12 @@ export function AdmissionsTab({ patientId }: { patientId: string }) {
   const canRead = usePermission('inpatient.admissions.read');
   const admissions = useQuery({ ...emrQueries.admissions(patientId), enabled: canRead });
   if (!canRead) {
-    return <EmptyState title="Admissions are not available to you" description="Your role cannot view in-patient admissions." />;
+    return (
+      <EmptyState
+        title="Admissions are not available to you"
+        description="Your role cannot view in-patient admissions."
+      />
+    );
   }
   return (
     <DataTable
@@ -396,19 +487,42 @@ export function AdmissionsTab({ patientId }: { patientId: string }) {
       error={admissions.error}
       onRetry={() => void admissions.refetch()}
       getRowId={(a) => a.id}
-      onRowClick={(a) => void navigate({ to: '/emr/patients/$patientId/discharge/$admissionId', params: { patientId, admissionId: a.id } })}
+      onRowClick={(a) =>
+        void navigate({
+          to: '/emr/patients/$patientId/discharge/$admissionId',
+          params: { patientId, admissionId: a.id },
+        })
+      }
       size="small"
       columns={[
-        { key: 'number', header: 'Admission', width: 150, render: (a) => <Text font="monospace">{a.admissionNumber}</Text> },
+        {
+          key: 'number',
+          header: 'Admission',
+          width: 150,
+          render: (a) => <Text font="monospace">{a.admissionNumber}</Text>,
+        },
         { key: 'admitted', header: 'Admitted', render: (a) => formatDateTime(a.admittedAt) },
-        { key: 'discharged', header: 'Discharged', render: (a) => (a.dischargedAt ? formatDateTime(a.dischargedAt) : '—') },
+        {
+          key: 'discharged',
+          header: 'Discharged',
+          render: (a) => (a.dischargedAt ? formatDateTime(a.dischargedAt) : '—'),
+        },
         { key: 'ward', header: 'Ward', priority: 'low', render: (a) => a.wardName ?? '—' },
         { key: 'consultant', header: 'Consultant', priority: 'low', render: (a) => a.consultantName ?? '—' },
         { key: 'los', header: 'Stay', width: 80, priority: 'low', render: (a) => `${a.lengthOfStayDays} d` },
         { key: 'status', header: 'Status', render: (a) => <StatusBadge status={a.status} /> },
       ]}
       rowActions={(a) => (
-        <Button size="small" icon={<DocumentTextRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId/discharge/$admissionId', params: { patientId, admissionId: a.id } })}>
+        <Button
+          size="small"
+          icon={<DocumentTextRegular />}
+          onClick={() =>
+            void navigate({
+              to: '/emr/patients/$patientId/discharge/$admissionId',
+              params: { patientId, admissionId: a.id },
+            })
+          }
+        >
           Discharge summary
         </Button>
       )}

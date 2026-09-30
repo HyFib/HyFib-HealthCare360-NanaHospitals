@@ -11,7 +11,15 @@ import { AttendanceTable } from '@/modules/hr/AttendanceTable';
 import { regularisationKindLabel } from '@/modules/hr/labels';
 import { RegularisationDialog } from '@/modules/hr/RegularisationDialog';
 import { SelfServicePage } from '@/modules/hr/SelfServicePage';
-import { currentMonth, formatTimeOfDay, monthEnd, monthLabel, monthStart, MONTH_NAMES, yearOptions } from '@/modules/hr/shared/dates';
+import {
+  currentMonth,
+  formatTimeOfDay,
+  monthEnd,
+  monthLabel,
+  monthStart,
+  MONTH_NAMES,
+  yearOptions,
+} from '@/modules/hr/shared/dates';
 import { KpiGrid, Stack, Toolbar } from '@/modules/hr/shared/layout';
 
 export const Route = createFileRoute('/_app/hr/me/attendance')({
@@ -36,7 +44,13 @@ function MyAttendancePage() {
   );
 }
 
-function MyAttendance({ correcting, onCorrect }: { correcting: string | null | undefined; onCorrect: (date: string | null | undefined) => void }) {
+function MyAttendance({
+  correcting,
+  onCorrect,
+}: {
+  correcting: string | null | undefined;
+  onCorrect: (date: string | null | undefined) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const now = currentMonth();
@@ -87,9 +101,17 @@ function MyAttendance({ correcting, onCorrect }: { correcting: string | null | u
         <KpiGrid>
           <KpiCard label="Present" value={formatDays(totals.present)} hint={monthLabel(year, month)} />
           <KpiCard label="On leave" value={formatDays(totals.paidLeave + totals.unpaidLeave)} />
-          <KpiCard label="Absent" value={formatDays(totals.absent)} hint={totals.absent > 0 ? 'Counts as loss of pay unless corrected' : undefined} />
+          <KpiCard
+            label="Absent"
+            value={formatDays(totals.absent)}
+            hint={totals.absent > 0 ? 'Counts as loss of pay unless corrected' : undefined}
+          />
           <KpiCard label="Late arrivals" value={totals.lateDays} />
-          <KpiCard label="Missed punches" value={totals.missing} hint={totals.missing > 0 ? 'Use "Correct" on those days' : 'None'} />
+          <KpiCard
+            label="Missed punches"
+            value={totals.missing}
+            hint={totals.missing > 0 ? 'Use "Correct" on those days' : 'None'}
+          />
         </KpiGrid>
       )}
       <Section title={monthLabel(year, month)} flush>
@@ -117,7 +139,13 @@ function MyAttendance({ correcting, onCorrect }: { correcting: string | null | u
             {
               key: 'times',
               header: 'Times',
-              render: (r) => [r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '', r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : ''].filter(Boolean).join(' · ') || '—',
+              render: (r) =>
+                [
+                  r.requestedIn ? `in ${formatTimeOfDay(r.requestedIn)}` : '',
+                  r.requestedOut ? `out ${formatTimeOfDay(r.requestedOut)}` : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || '—',
             },
             { key: 'asked', header: 'Asked', priority: 'low', render: (r) => formatDateTime(r.createdAt) },
             {

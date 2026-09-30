@@ -22,7 +22,13 @@ export const Route = createFileRoute('/_auth/profile/')({
 
 const useStyles = makeStyles({
   person: { display: 'flex', alignItems: 'center', gap: '14px' },
-  personName: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold, overflowWrap: 'anywhere' },
+  personName: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    overflowWrap: 'anywhere',
+  },
   personUhid: { margin: 0, color: tokens.colorNeutralForeground2 },
   hint: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   links: { display: 'flex', flexDirection: 'column', gap: '10px' },
@@ -53,8 +59,16 @@ function ProfilePage() {
         <InfoList
           items={[
             { label: t('profile.age'), value: ageText(profile.age, t), hideEmpty: true },
-            { label: t('profile.gender'), value: profile.gender === 'Unknown' ? null : t(GENDER_KEY[profile.gender]), hideEmpty: true },
-            { label: t('profile.dob'), value: profile.dateOfBirth ? f.calendarDate(profile.dateOfBirth) : null, hideEmpty: true },
+            {
+              label: t('profile.gender'),
+              value: profile.gender === 'Unknown' ? null : t(GENDER_KEY[profile.gender]),
+              hideEmpty: true,
+            },
+            {
+              label: t('profile.dob'),
+              value: profile.dateOfBirth ? f.calendarDate(profile.dateOfBirth) : null,
+              hideEmpty: true,
+            },
             { label: t('profile.bloodGroup'), value: bloodGroup, hideEmpty: true },
             { label: t('profile.phone'), value: profile.phone, hideEmpty: true },
           ]}
@@ -75,7 +89,11 @@ function ProfilePage() {
       <ReportCard title={t('profile.more')}>
         <div className={styles.links}>
           <CardLink to="/profile/preferences">
-            <ListRow icon={<MegaphoneRegular />} title={t('feedback.preferences')} subtitle={t('feedback.preferences.hint')} />
+            <ListRow
+              icon={<MegaphoneRegular />}
+              title={t('feedback.preferences')}
+              subtitle={t('feedback.preferences.hint')}
+            />
           </CardLink>
           <CardLink to="/privacy">
             <ListRow icon={<ShieldLockRegular />} title={t('nav.privacy')} subtitle={t('profile.privacy.hint')} />

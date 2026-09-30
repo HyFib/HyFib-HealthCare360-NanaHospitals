@@ -799,7 +799,8 @@ export const hrQueries = {
   employees: (filters: EmployeeFilters, pageSize = 25) =>
     queryOptions({
       queryKey: ['hr', 'employees', 'list', filters, pageSize],
-      queryFn: ({ signal }) => api.get<PagedResult<EmployeeListItem>>('/api/v1/hr/employees', { query: { ...filters, pageSize }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<EmployeeListItem>>('/api/v1/hr/employees', { query: { ...filters, pageSize }, signal }),
       placeholderData: keepPreviousData,
     }),
   employee: (id: string) =>
@@ -810,13 +811,15 @@ export const hrQueries = {
   designations: (includeInactive = false) =>
     queryOptions({
       queryKey: ['hr', 'masters', 'designations', includeInactive],
-      queryFn: ({ signal }) => api.get<DesignationDto[]>('/api/v1/hr/designations', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DesignationDto[]>('/api/v1/hr/designations', { query: { includeInactive }, signal }),
       staleTime: MASTER_STALE,
     }),
   credentials: (filters: CredentialFilters) =>
     queryOptions({
       queryKey: ['hr', 'credentials', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<CredentialDto>>('/api/v1/hr/credentials', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CredentialDto>>('/api/v1/hr/credentials', { query: { ...filters, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   employeeCredentials: (employeeId: string) =>
@@ -833,7 +836,8 @@ export const hrQueries = {
   roster: (from: string, to: string, departmentId?: string | null, employeeId?: string | null) =>
     queryOptions({
       queryKey: ['hr', 'roster', from, to, departmentId ?? 'all', employeeId ?? 'all'],
-      queryFn: ({ signal }) => api.get<RosterEntryDto[]>('/api/v1/hr/roster', { query: { from, to, departmentId, employeeId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<RosterEntryDto[]>('/api/v1/hr/roster', { query: { from, to, departmentId, employeeId }, signal }),
     }),
   devices: () =>
     queryOptions({
@@ -845,18 +849,26 @@ export const hrQueries = {
     queryOptions({
       queryKey: ['hr', 'attendance', 'days', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<AttendanceDayDto>>('/api/v1/hr/attendance', { query: { ...filters, pageSize: filters.pageSize ?? 50 }, signal }),
+        api.get<PagedResult<AttendanceDayDto>>('/api/v1/hr/attendance', {
+          query: { ...filters, pageSize: filters.pageSize ?? 50 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   attendanceSummary: (year: number, month: number, departmentId?: string | null) =>
     queryOptions({
       queryKey: ['hr', 'attendance', 'summary', year, month, departmentId ?? 'all'],
-      queryFn: ({ signal }) => api.get<AttendanceSummaryRow[]>('/api/v1/hr/attendance/summary', { query: { year, month, departmentId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<AttendanceSummaryRow[]>('/api/v1/hr/attendance/summary', {
+          query: { year, month, departmentId },
+          signal,
+        }),
     }),
   punches: (from: string, to: string, employeeId?: string | null) =>
     queryOptions({
       queryKey: ['hr', 'attendance', 'punches', from, to, employeeId ?? 'all'],
-      queryFn: ({ signal }) => api.get<PunchDto[]>('/api/v1/hr/attendance/punches', { query: { from, to, employeeId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PunchDto[]>('/api/v1/hr/attendance/punches', { query: { from, to, employeeId }, signal }),
     }),
   unmatchedPins: () =>
     queryOptions({
@@ -867,13 +879,17 @@ export const hrQueries = {
     queryOptions({
       queryKey: ['hr', 'attendance', 'regularisations', status ?? 'all', page, pageSize],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<RegularisationDto>>('/api/v1/hr/attendance/regularisations', { query: { status, page, pageSize }, signal }),
+        api.get<PagedResult<RegularisationDto>>('/api/v1/hr/attendance/regularisations', {
+          query: { status, page, pageSize },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   leaveTypes: (includeInactive = false) =>
     queryOptions({
       queryKey: ['hr', 'masters', 'leave-types', includeInactive],
-      queryFn: ({ signal }) => api.get<LeaveTypeDto[]>('/api/v1/hr/leave/types', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<LeaveTypeDto[]>('/api/v1/hr/leave/types', { query: { includeInactive }, signal }),
       staleTime: MASTER_STALE,
     }),
   holidays: (year: number) =>
@@ -885,13 +901,17 @@ export const hrQueries = {
   leaveBalances: (employeeId: string, year: number) =>
     queryOptions({
       queryKey: ['hr', 'leave', 'balances', employeeId, year],
-      queryFn: ({ signal }) => api.get<LeaveBalanceDto[]>('/api/v1/hr/leave/balances', { query: { employeeId, year }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<LeaveBalanceDto[]>('/api/v1/hr/leave/balances', { query: { employeeId, year }, signal }),
     }),
   leaveRequests: (filters: LeaveRequestFilters) =>
     queryOptions({
       queryKey: ['hr', 'leave', 'requests', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<LeaveRequestDto>>('/api/v1/hr/leave/requests', { query: { ...filters, pageSize: filters.pageSize ?? 25 }, signal }),
+        api.get<PagedResult<LeaveRequestDto>>('/api/v1/hr/leave/requests', {
+          query: { ...filters, pageSize: filters.pageSize ?? 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   components: () =>
@@ -909,12 +929,14 @@ export const hrQueries = {
   salaryStructures: (employeeId: string) =>
     queryOptions({
       queryKey: ['hr', 'payroll', 'structures', employeeId],
-      queryFn: ({ signal }) => api.get<SalaryStructureDto[]>(`/api/v1/hr/employees/${employeeId}/salary-structures`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<SalaryStructureDto[]>(`/api/v1/hr/employees/${employeeId}/salary-structures`, { signal }),
     }),
   payrollRuns: (year: number | undefined, page = 1, pageSize = 25) =>
     queryOptions({
       queryKey: ['hr', 'payroll', 'runs', year ?? 'all', page, pageSize],
-      queryFn: ({ signal }) => api.get<PagedResult<PayrollRunDto>>('/api/v1/hr/payroll/runs', { query: { year, page, pageSize }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<PayrollRunDto>>('/api/v1/hr/payroll/runs', { query: { year, page, pageSize }, signal }),
       placeholderData: keepPreviousData,
     }),
   payrollRun: (id: string) =>
@@ -992,12 +1014,14 @@ export const hrQueries = {
   teamLeave: (status?: ApprovalStatus) =>
     queryOptions({
       queryKey: ['hr', 'me', 'team-leave', status ?? 'all'],
-      queryFn: ({ signal }) => api.get<LeaveRequestDto[]>('/api/v1/hr/me/team/leave-requests', { query: { status }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<LeaveRequestDto[]>('/api/v1/hr/me/team/leave-requests', { query: { status }, signal }),
     }),
   teamRegularisations: (status?: ApprovalStatus) =>
     queryOptions({
       queryKey: ['hr', 'me', 'team-regularisations', status ?? 'all'],
-      queryFn: ({ signal }) => api.get<RegularisationDto[]>('/api/v1/hr/me/team/regularisations', { query: { status }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<RegularisationDto[]>('/api/v1/hr/me/team/regularisations', { query: { status }, signal }),
     }),
 };
 
@@ -1006,24 +1030,33 @@ export const hrQueries = {
 export const hrApi = {
   createEmployee: (request: SaveEmployeeRequest) => api.post<EmployeeCreated>('/api/v1/hr/employees', request),
   updateEmployee: (id: string, request: SaveEmployeeRequest) => api.put<void>(`/api/v1/hr/employees/${id}`, request),
-  updateBankDetails: (id: string, request: UpdateBankDetailsRequest) => api.put<void>(`/api/v1/hr/employees/${id}/bank-details`, request),
-  separate: (id: string, request: SeparateEmployeeRequest) => api.post<void>(`/api/v1/hr/employees/${id}/separate`, request),
+  updateBankDetails: (id: string, request: UpdateBankDetailsRequest) =>
+    api.put<void>(`/api/v1/hr/employees/${id}/bank-details`, request),
+  separate: (id: string, request: SeparateEmployeeRequest) =>
+    api.post<void>(`/api/v1/hr/employees/${id}/separate`, request),
   saveDesignation: (id: string | null, request: SaveDesignationRequest) =>
-    id ? api.put<void>(`/api/v1/hr/designations/${id}`, request) : api.post<unknown>('/api/v1/hr/designations', request),
+    id
+      ? api.put<void>(`/api/v1/hr/designations/${id}`, request)
+      : api.post<unknown>('/api/v1/hr/designations', request),
 
   saveCredential: (employeeId: string, id: string | null, request: SaveCredentialRequest) =>
-    id ? api.put<void>(`/api/v1/hr/credentials/${id}`, request) : api.post<unknown>(`/api/v1/hr/employees/${employeeId}/credentials`, request),
+    id
+      ? api.put<void>(`/api/v1/hr/credentials/${id}`, request)
+      : api.post<unknown>(`/api/v1/hr/employees/${employeeId}/credentials`, request),
   deleteCredential: (id: string) => api.delete<void>(`/api/v1/hr/credentials/${id}`),
 
   saveShift: (id: string | null, request: SaveShiftRequest) =>
     id ? api.put<void>(`/api/v1/hr/shifts/${id}`, request) : api.post<unknown>('/api/v1/hr/shifts', request),
   checkRoster: (request: SaveRosterRequest) => api.post<RosterCheckResult>('/api/v1/hr/roster/check', request),
   saveRoster: (request: SaveRosterRequest) => api.put<RosterSaveResult>('/api/v1/hr/roster', request),
-  copyRosterWeek: (request: CopyRosterWeekRequest) => api.post<RosterSaveResult>('/api/v1/hr/roster/copy-week', request),
+  copyRosterWeek: (request: CopyRosterWeekRequest) =>
+    api.post<RosterSaveResult>('/api/v1/hr/roster/copy-week', request),
   deleteRosterEntry: (id: string) => api.delete<void>(`/api/v1/hr/roster/${id}`),
 
-  registerDevice: (request: SaveBiometricDeviceRequest) => api.post<DeviceKeyIssued>('/api/v1/hr/biometric-devices', request),
-  updateDevice: (id: string, request: SaveBiometricDeviceRequest) => api.put<void>(`/api/v1/hr/biometric-devices/${id}`, request),
+  registerDevice: (request: SaveBiometricDeviceRequest) =>
+    api.post<DeviceKeyIssued>('/api/v1/hr/biometric-devices', request),
+  updateDevice: (id: string, request: SaveBiometricDeviceRequest) =>
+    api.put<void>(`/api/v1/hr/biometric-devices/${id}`, request),
   rotateDeviceKey: (id: string) => api.post<DeviceKeyIssued>(`/api/v1/hr/biometric-devices/${id}/rotate-key`),
 
   computeAttendance: (from: string, to: string, employeeId?: string | null) =>
@@ -1035,37 +1068,47 @@ export const hrApi = {
 
   saveLeaveType: (id: string | null, request: SaveLeaveTypeRequest) =>
     id ? api.put<void>(`/api/v1/hr/leave/types/${id}`, request) : api.post<unknown>('/api/v1/hr/leave/types', request),
-  addHoliday: (request: { date: string; name: string; kind: HolidayKind }) => api.post<unknown>('/api/v1/hr/holidays', request),
+  addHoliday: (request: { date: string; name: string; kind: HolidayKind }) =>
+    api.post<unknown>('/api/v1/hr/holidays', request),
   deleteHoliday: (id: string) => api.delete<void>(`/api/v1/hr/holidays/${id}`),
   creditLeave: (year: number) => api.post<CreditLeaveResult>('/api/v1/hr/leave/balances/credit', { year }),
   adjustLeave: (request: AdjustLeaveBalanceRequest) => api.post<void>('/api/v1/hr/leave/balances/adjust', request),
-  applyLeave: (employeeId: string, request: ApplyLeaveRequest) => api.post<string>(`/api/v1/hr/employees/${employeeId}/leave-requests`, request),
+  applyLeave: (employeeId: string, request: ApplyLeaveRequest) =>
+    api.post<string>(`/api/v1/hr/employees/${employeeId}/leave-requests`, request),
   decideLeave: (id: string, approve: boolean, note: string | null) =>
     api.post<void>(`/api/v1/hr/leave/requests/${id}/${approve ? 'approve' : 'reject'}`, { note }),
   cancelLeave: (id: string, reason: string) => api.post<void>(`/api/v1/hr/leave/requests/${id}/cancel`, { reason }),
 
   saveComponent: (id: string | null, request: SaveSalaryComponentRequest) =>
-    id ? api.put<void>(`/api/v1/hr/payroll/components/${id}`, request) : api.post<unknown>('/api/v1/hr/payroll/components', request),
+    id
+      ? api.put<void>(`/api/v1/hr/payroll/components/${id}`, request)
+      : api.post<unknown>('/api/v1/hr/payroll/components', request),
   saveProfessionalTax: (stateCode: string, request: SaveProfessionalTaxRequest) =>
     api.put<void>(`/api/v1/hr/payroll/professional-tax/${encodeURIComponent(stateCode)}`, request),
   createSalaryStructure: (employeeId: string, request: SaveSalaryStructureRequest) =>
     api.post<unknown>(`/api/v1/hr/employees/${employeeId}/salary-structures`, request),
 
-  createRun: (request: { year: number; month: number; notes: string | null }) => api.post<string>('/api/v1/hr/payroll/runs', request),
+  createRun: (request: { year: number; month: number; notes: string | null }) =>
+    api.post<string>('/api/v1/hr/payroll/runs', request),
   deleteRun: (id: string) => api.delete<void>(`/api/v1/hr/payroll/runs/${id}`),
   processRun: (id: string) => api.post<PayrollProcessResult>(`/api/v1/hr/payroll/runs/${id}/process`),
   approveRun: (id: string) => api.post<void>(`/api/v1/hr/payroll/runs/${id}/approve`),
   reopenRun: (id: string, reason: string) => api.post<void>(`/api/v1/hr/payroll/runs/${id}/reopen`, { reason }),
-  markRunPaid: (id: string, paidOn: string, reference: string) => api.post<void>(`/api/v1/hr/payroll/runs/${id}/mark-paid`, { paidOn, reference }),
+  markRunPaid: (id: string, paidOn: string, reference: string) =>
+    api.post<void>(`/api/v1/hr/payroll/runs/${id}/mark-paid`, { paidOn, reference }),
   lockRun: (id: string) => api.post<void>(`/api/v1/hr/payroll/runs/${id}/lock`),
   bankTransferFile: (id: string) => api.blob(`/api/v1/hr/payroll/runs/${id}/bank-transfer.csv`, { timeoutMs: 120_000 }),
-  addInput: (runId: string, request: SavePayrollInputRequest) => api.post<string>(`/api/v1/hr/payroll/runs/${runId}/inputs`, request),
-  importInputs: (runId: string, csv: string) => api.post<{ imported: number }>(`/api/v1/hr/payroll/runs/${runId}/inputs/import`, { csv }),
+  addInput: (runId: string, request: SavePayrollInputRequest) =>
+    api.post<string>(`/api/v1/hr/payroll/runs/${runId}/inputs`, request),
+  importInputs: (runId: string, csv: string) =>
+    api.post<{ imported: number }>(`/api/v1/hr/payroll/runs/${runId}/inputs/import`, { csv }),
   deleteInput: (inputId: string) => api.delete<void>(`/api/v1/hr/payroll/inputs/${inputId}`),
 
   myApplyLeave: (request: ApplyLeaveRequest) => api.post<string>('/api/v1/hr/me/leave/requests', request),
-  myCancelLeave: (id: string, reason: string) => api.post<void>(`/api/v1/hr/me/leave/requests/${id}/cancel`, { reason }),
-  myRequestRegularisation: (request: RequestRegularisationRequest) => api.post<string>('/api/v1/hr/me/attendance/regularisations', request),
+  myCancelLeave: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/hr/me/leave/requests/${id}/cancel`, { reason }),
+  myRequestRegularisation: (request: RequestRegularisationRequest) =>
+    api.post<string>('/api/v1/hr/me/attendance/regularisations', request),
   myCancelRegularisation: (id: string) => api.post<void>(`/api/v1/hr/me/attendance/regularisations/${id}/cancel`),
   teamDecideLeave: (id: string, approve: boolean, note: string | null) =>
     api.post<void>(`/api/v1/hr/me/team/leave-requests/${id}/${approve ? 'approve' : 'reject'}`, { note }),

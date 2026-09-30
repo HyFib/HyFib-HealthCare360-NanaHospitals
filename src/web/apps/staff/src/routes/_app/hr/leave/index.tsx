@@ -1,5 +1,10 @@
 import { Button, Caption1, Field, Input, Select, Text, Tooltip } from '@fluentui/react-components';
-import { ArrowDownloadRegular, CalendarAddRegular, CalendarCancelRegular, CalendarPersonRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownloadRegular,
+  CalendarAddRegular,
+  CalendarCancelRegular,
+  CalendarPersonRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, todayIso } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -32,7 +37,10 @@ interface LeaveSearch {
 
 export const Route = createFileRoute('/_app/hr/leave/')({
   validateSearch: (s: Record<string, unknown>): LeaveSearch => ({
-    status: s.status === 'all' || APPROVAL_STATUSES.includes(s.status as ApprovalStatus) ? (s.status as ApprovalStatus | 'all') : undefined,
+    status:
+      s.status === 'all' || APPROVAL_STATUSES.includes(s.status as ApprovalStatus)
+        ? (s.status as ApprovalStatus | 'all')
+        : undefined,
     employeeId: typeof s.employeeId === 'string' && s.employeeId ? s.employeeId : undefined,
     employeeName: typeof s.employeeName === 'string' && s.employeeName ? s.employeeName : undefined,
     from: isIsoDate(s.from) ? s.from : undefined,
@@ -65,9 +73,17 @@ function LeaveRequestsPage() {
   const status = search.status ?? 'Pending';
   const today = todayIso();
   const requests = useQuery(
-    hrQueries.leaveRequests({ status: status === 'all' ? undefined : status, employeeId: search.employeeId, from: search.from, to: search.to, page: search.page }),
+    hrQueries.leaveRequests({
+      status: status === 'all' ? undefined : status,
+      employeeId: search.employeeId,
+      from: search.from,
+      to: search.to,
+      page: search.page,
+    }),
   );
-  const picked: PickedEmployee | null = search.employeeId ? { id: search.employeeId, code: '', name: search.employeeName ?? 'Selected employee' } : null;
+  const picked: PickedEmployee | null = search.employeeId
+    ? { id: search.employeeId, code: '', name: search.employeeName ?? 'Selected employee' }
+    : null;
 
   const cancel = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => hrApi.cancelLeave(id, reason),
@@ -79,7 +95,8 @@ function LeaveRequestsPage() {
     onError: (error) => notify.error(error, 'Could not cancel the leave'),
   });
 
-  const set = (patch: Partial<LeaveSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<LeaveSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -98,7 +115,12 @@ function LeaveRequestsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Status">
-              <Select value={status} onChange={(_, d) => set({ status: d.value === 'Pending' ? undefined : (d.value as ApprovalStatus | 'all') })}>
+              <Select
+                value={status}
+                onChange={(_, d) =>
+                  set({ status: d.value === 'Pending' ? undefined : (d.value as ApprovalStatus | 'all') })
+                }
+              >
                 <option value="Pending">Waiting for approval</option>
                 <option value="Approved">Approved</option>
                 <option value="Rejected">Rejected</option>
@@ -128,7 +150,13 @@ function LeaveRequestsPage() {
           error={requests.error}
           onRetry={() => void requests.refetch()}
           getRowId={(r) => r.id}
-          onRowClick={(r) => void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: r.employeeId }, search: { tab: 'leave' } })}
+          onRowClick={(r) =>
+            void navigate({
+              to: '/hr/employees/$employeeId',
+              params: { employeeId: r.employeeId },
+              search: { tab: 'leave' },
+            })
+          }
           columns={[
             {
               key: 'employee',
@@ -163,7 +191,11 @@ function LeaveRequestsPage() {
                     size="small"
                     appearance="subtle"
                     icon={<ArrowDownloadRegular />}
-                    onClick={() => void downloadStoredFile(r.attachmentFileId!).catch((error: unknown) => notify.error(error, 'Could not open the document'))}
+                    onClick={() =>
+                      void downloadStoredFile(r.attachmentFileId!).catch((error: unknown) =>
+                        notify.error(error, 'Could not open the document'),
+                      )
+                    }
                   />
                 </Tooltip>
               )}
@@ -178,7 +210,12 @@ function LeaveRequestsPage() {
               )}
               {r.status === 'Approved' && canCancelLeave(r, today, true) && (
                 <Tooltip content="Cancel this leave" relationship="label">
-                  <Button size="small" appearance="subtle" icon={<CalendarCancelRegular />} onClick={() => setCancelling(r)} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<CalendarCancelRegular />}
+                    onClick={() => setCancelling(r)}
+                  />
                 </Tooltip>
               )}
             </span>
@@ -195,7 +232,11 @@ function LeaveRequestsPage() {
       <ReasonDialog
         open={cancelling !== null}
         title="Cancel this leave?"
-        description={cancelling ? `${cancelling.employeeName}: ${leavePeriodText(cancelling)}. The days go back to the balance and past days are recomputed.` : undefined}
+        description={
+          cancelling
+            ? `${cancelling.employeeName}: ${leavePeriodText(cancelling)}. The days go back to the balance and past days are recomputed.`
+            : undefined
+        }
         label="Reason (shown to the employee)"
         confirmLabel="Cancel leave"
         destructive

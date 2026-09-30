@@ -39,9 +39,19 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     borderRadius: tokens.borderRadiusMedium,
   },
-  count: { fontSize: tokens.fontSizeHero800, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero800 },
+  count: {
+    fontSize: tokens.fontSizeHero800,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero800,
+  },
   row: { display: 'flex', gap: '12px', flexWrap: 'wrap' },
-  preview: { whiteSpace: 'pre-wrap', padding: '10px 12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground3, fontSize: tokens.fontSizeBase200 },
+  preview: {
+    whiteSpace: 'pre-wrap',
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground3,
+    fontSize: tokens.fontSizeBase200,
+  },
 });
 
 interface Draft {
@@ -89,14 +99,16 @@ function problems(d: Draft): Record<string, string> {
   const p: Record<string, string> = {};
   if (!d.name.trim()) p.name = 'Give the campaign a name.';
   if (!d.message.trim()) p.message = 'Write the message.';
-  if (d.channel === 'Sms' && d.message.length > SMS_CAMPAIGN_MAX) p.message = `Keep SMS text within ${SMS_CAMPAIGN_MAX} characters (3 parts).`;
+  if (d.channel === 'Sms' && d.message.length > SMS_CAMPAIGN_MAX)
+    p.message = `Keep SMS text within ${SMS_CAMPAIGN_MAX} characters (3 parts).`;
   if (d.message.length > 1000) p.message = 'Keep the message within 1,000 characters.';
   const min = d.minAge === '' ? null : Number(d.minAge);
   const max = d.maxAge === '' ? null : Number(d.maxAge);
   if (min !== null && (min < 0 || min > 120)) p.minAge = 'Ages are 0 to 120.';
   if (max !== null && (max < 0 || max > 120)) p.maxAge = 'Ages are 0 to 120.';
   if (min !== null && max !== null && min > max) p.maxAge = 'Maximum age is below the minimum age.';
-  if (d.lastVisitFrom && d.lastVisitTo && d.lastVisitFrom > d.lastVisitTo) p.lastVisitTo = 'The visit range ends before it starts.';
+  if (d.lastVisitFrom && d.lastVisitTo && d.lastVisitFrom > d.lastVisitTo)
+    p.lastVisitTo = 'The visit range ends before it starts.';
   return p;
 }
 
@@ -104,7 +116,13 @@ function problems(d: Draft): Record<string, string> {
  * Campaign draft: the message and the audience. Only patients with an active marketing consent are ever counted or
  * messaged (checked again at send time), and every message carries a personal opt-out link.
  */
-export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail | null; onSaved: (id: string) => void }) {
+export function CampaignEditor({
+  campaign,
+  onSaved,
+}: {
+  campaign: CampaignDetail | null;
+  onSaved: (id: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -133,7 +151,14 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
       return;
     }
     setBusy(true);
-    const request = { name: draft.name.trim(), channel: draft.channel, templateKey: campaign?.templateKey ?? CAMPAIGN_TEMPLATE_KEY, message: draft.message.trim(), segment: toSegment(draft), version: campaign?.version ?? null };
+    const request = {
+      name: draft.name.trim(),
+      channel: draft.channel,
+      templateKey: campaign?.templateKey ?? CAMPAIGN_TEMPLATE_KEY,
+      message: draft.message.trim(),
+      segment: toSegment(draft),
+      version: campaign?.version ?? null,
+    };
     try {
       if (campaign) {
         await crmApi.updateCampaign(campaign.id, request);
@@ -165,20 +190,49 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
       <Stack gap={16}>
         <Section title="Message">
           <Stack gap={12}>
-            <Field label="Campaign name" required validationMessage={errors.name} validationState={errors.name ? 'error' : 'none'} hint="Only staff see this.">
-              <Input value={draft.name} onChange={(_, d) => set('name', d.value)} maxLength={150} autoFocus={!campaign} placeholder="For example: Diabetes camp, October" />
+            <Field
+              label="Campaign name"
+              required
+              validationMessage={errors.name}
+              validationState={errors.name ? 'error' : 'none'}
+              hint="Only staff see this."
+            >
+              <Input
+                value={draft.name}
+                onChange={(_, d) => set('name', d.value)}
+                maxLength={150}
+                autoFocus={!campaign}
+                placeholder="For example: Diabetes camp, October"
+              />
             </Field>
             <Field label="Send by">
-              <RadioGroup layout="horizontal" value={draft.channel} onChange={(_, d) => set('channel', d.value as CampaignChannel)}>
+              <RadioGroup
+                layout="horizontal"
+                value={draft.channel}
+                onChange={(_, d) => set('channel', d.value as CampaignChannel)}
+              >
                 <Radio value="Sms" label="SMS" />
                 <Radio value="WhatsApp" label="WhatsApp" />
               </RadioGroup>
             </Field>
-            <Field label="Message" required validationMessage={errors.message} validationState={errors.message ? 'error' : 'none'}>
-              <Textarea value={draft.message} onChange={(_, d) => set('message', d.value)} rows={6} maxLength={1000} resize="vertical" />
+            <Field
+              label="Message"
+              required
+              validationMessage={errors.message}
+              validationState={errors.message ? 'error' : 'none'}
+            >
+              <Textarea
+                value={draft.message}
+                onChange={(_, d) => set('message', d.value)}
+                rows={6}
+                maxLength={1000}
+                resize="vertical"
+              />
             </Field>
             <div className={styles.counter} aria-live="polite">
-              <span className={draft.channel === 'Sms' && draft.message.length > SMS_CAMPAIGN_MAX ? styles.over : undefined}>
+              <span
+                className={draft.channel === 'Sms' && draft.message.length > SMS_CAMPAIGN_MAX ? styles.over : undefined}
+              >
                 {draft.message.length} characters{draft.channel === 'Sms' ? ` of ${SMS_CAMPAIGN_MAX}` : ''}
               </span>
               {draft.channel === 'Sms' && length.parts > 0 && (
@@ -188,17 +242,41 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
                 </span>
               )}
             </div>
-            <Caption1>The hospital name and a personal opt-out link are added to every message by the approved template.</Caption1>
+            <Caption1>
+              The hospital name and a personal opt-out link are added to every message by the approved template.
+            </Caption1>
           </Stack>
         </Section>
         <Section title="Who receives it" description="Leave a filter empty to include everyone.">
           <Stack gap={12}>
             <div className={styles.row}>
-              <Field label="Age from" validationMessage={errors.minAge} validationState={errors.minAge ? 'error' : 'none'}>
-                <Input type="number" min={0} max={120} value={draft.minAge} onChange={(_, d) => set('minAge', d.value)} style={{ width: 110 }} />
+              <Field
+                label="Age from"
+                validationMessage={errors.minAge}
+                validationState={errors.minAge ? 'error' : 'none'}
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={draft.minAge}
+                  onChange={(_, d) => set('minAge', d.value)}
+                  style={{ width: 110 }}
+                />
               </Field>
-              <Field label="Age to" validationMessage={errors.maxAge} validationState={errors.maxAge ? 'error' : 'none'}>
-                <Input type="number" min={0} max={120} value={draft.maxAge} onChange={(_, d) => set('maxAge', d.value)} style={{ width: 110 }} />
+              <Field
+                label="Age to"
+                validationMessage={errors.maxAge}
+                validationState={errors.maxAge ? 'error' : 'none'}
+              >
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
+                  value={draft.maxAge}
+                  onChange={(_, d) => set('maxAge', d.value)}
+                  style={{ width: 110 }}
+                />
               </Field>
               <Field label="Gender">
                 <Select value={draft.gender} onChange={(_, d) => set('gender', d.value as Gender | '')}>
@@ -216,11 +294,18 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
               <Field label="Last visit from">
                 <Input type="date" value={draft.lastVisitFrom} onChange={(_, d) => set('lastVisitFrom', d.value)} />
               </Field>
-              <Field label="Last visit to" validationMessage={errors.lastVisitTo} validationState={errors.lastVisitTo ? 'error' : 'none'}>
+              <Field
+                label="Last visit to"
+                validationMessage={errors.lastVisitTo}
+                validationState={errors.lastVisitTo ? 'error' : 'none'}
+              >
                 <Input type="date" value={draft.lastVisitTo} onChange={(_, d) => set('lastVisitTo', d.value)} />
               </Field>
             </div>
-            <Field label={`Visited these departments${draft.departmentIds.length ? ` (${draft.departmentIds.length} chosen)` : ''}`} hint="Any visit to a chosen department counts.">
+            <Field
+              label={`Visited these departments${draft.departmentIds.length ? ` (${draft.departmentIds.length} chosen)` : ''}`}
+              hint="Any visit to a chosen department counts."
+            >
               <div className={styles.departments}>
                 {(departments.data ?? []).map((dept) => (
                   <Checkbox
@@ -228,7 +313,12 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
                     label={dept.name}
                     checked={draft.departmentIds.includes(dept.id)}
                     onChange={(_, d) =>
-                      set('departmentIds', d.checked ? [...draft.departmentIds, dept.id].slice(0, 50) : draft.departmentIds.filter((id) => id !== dept.id))
+                      set(
+                        'departmentIds',
+                        d.checked
+                          ? [...draft.departmentIds, dept.id].slice(0, 50)
+                          : draft.departmentIds.filter((id) => id !== dept.id),
+                      )
                     }
                   />
                 ))}
@@ -238,7 +328,13 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
         </Section>
         {canManage && (
           <div>
-            <Button appearance="primary" size="large" icon={busy ? <Spinner size="tiny" /> : <SaveRegular />} disabled={busy} onClick={() => void save()}>
+            <Button
+              appearance="primary"
+              size="large"
+              icon={busy ? <Spinner size="tiny" /> : <SaveRegular />}
+              disabled={busy}
+              onClick={() => void save()}
+            >
               Save draft (Ctrl+S)
             </Button>
           </div>
@@ -251,7 +347,9 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
               <Spinner size="tiny" label="Counting…" labelPosition="after" />
             ) : preview.error ? (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(preview.error) ? preview.error.userMessage : 'Could not count the audience.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(preview.error) ? preview.error.userMessage : 'Could not count the audience.'}
+                </MessageBarBody>
               </MessageBar>
             ) : preview.data ? (
               <>
@@ -265,8 +363,8 @@ export function CampaignEditor({ campaign, onSaved }: { campaign: CampaignDetail
             )}
             <MessageBar intent="info" icon={<ShieldCheckmarkRegular />} layout="multiline">
               <MessageBarBody>
-                Only patients who agreed to marketing messages, have a mobile number and are active are counted (DPDP Act). Consent is checked again when each
-                message is sent.
+                Only patients who agreed to marketing messages, have a mobile number and are active are counted (DPDP
+                Act). Consent is checked again when each message is sent.
               </MessageBarBody>
             </MessageBar>
           </Stack>

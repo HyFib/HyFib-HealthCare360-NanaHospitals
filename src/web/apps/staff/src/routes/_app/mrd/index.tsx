@@ -13,7 +13,12 @@ export const Route = createFileRoute('/_app/mrd/')({
 });
 
 const useStyles = makeStyles({
-  grid: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', alignItems: 'start' },
+  grid: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
+    alignItems: 'start',
+  },
   list: { display: 'flex', flexDirection: 'column', gap: '2px', margin: 0, padding: 0, listStyle: 'none' },
   item: {
     display: 'grid',
@@ -69,7 +74,11 @@ function MrdOverviewPage() {
             ) : (
               <ul className={styles.list}>
                 {coding.data?.items.slice(0, 8).map((c) => (
-                  <li key={c.id} className={styles.item} {...open(() => void navigate({ to: '/mrd/coding/$codingId', params: { codingId: c.id } }))}>
+                  <li
+                    key={c.id}
+                    className={styles.item}
+                    {...open(() => void navigate({ to: '/mrd/coding/$codingId', params: { codingId: c.id } }))}
+                  >
                     <Text weight="semibold">{c.patientName ?? 'Patient'}</Text>
                     <StatusBadge status={c.status} />
                     <Caption1 className={styles.muted}>
@@ -87,7 +96,11 @@ function MrdOverviewPage() {
             title="Overdue charts"
             description="Incomplete or deficient past the completion date"
             actions={
-              <Button size="small" appearance="subtle" onClick={() => void navigate({ to: '/mrd/records', search: { overdue: true } })}>
+              <Button
+                size="small"
+                appearance="subtle"
+                onClick={() => void navigate({ to: '/mrd/records', search: { overdue: true } })}
+              >
                 All charts
               </Button>
             }
@@ -97,7 +110,11 @@ function MrdOverviewPage() {
             ) : (
               <ul className={styles.list}>
                 {overdue.data?.items.slice(0, 8).map((r) => (
-                  <li key={r.id} className={styles.item} {...open(() => void navigate({ to: '/mrd/records/$recordId', params: { recordId: r.id } }))}>
+                  <li
+                    key={r.id}
+                    className={styles.item}
+                    {...open(() => void navigate({ to: '/mrd/records/$recordId', params: { recordId: r.id } }))}
+                  >
                     <Text weight="semibold">{r.patientName ?? 'Patient'}</Text>
                     <StatusBadge status={r.status} />
                     <Caption1 className={styles.muted}>

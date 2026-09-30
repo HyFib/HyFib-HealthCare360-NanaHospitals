@@ -42,7 +42,10 @@ function SurgeriesPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -56,7 +59,8 @@ function SurgeriesPage() {
     );
   }
 
-  const set = (patch: Partial<BookingFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<BookingFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -66,7 +70,11 @@ function SurgeriesPage() {
         breadcrumbs={[{ label: 'OT calendar', onClick: () => void navigate({ to: '/ot' }) }, { label: 'Surgeries' }]}
         actions={
           canBook && (
-            <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/ot/book' })}>
+            <Button
+              appearance="primary"
+              icon={<CalendarAddRegular />}
+              onClick={() => void navigate({ to: '/ot/book' })}
+            >
               Book surgery
             </Button>
           )
@@ -76,16 +84,28 @@ function SurgeriesPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, UHID, mobile or booking number" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, UHID, mobile or booking number"
+              />
             </Field>
             <Field label="From">
               <Input type="date" value={filters.from ?? ''} onChange={(_, d) => set({ from: d.value || undefined })} />
             </Field>
             <Field label="To">
-              <Input type="date" value={filters.to ?? ''} min={filters.from} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={filters.to ?? ''}
+                min={filters.from}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as SurgeryStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as SurgeryStatus | undefined })}
+              >
                 <option value="">All</option>
                 {SURGERY_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -122,14 +142,22 @@ function SurgeriesPage() {
               header: 'When',
               sortable: true,
               width: 170,
-              render: (b) => (b.scheduledStart ? formatDateTime(b.scheduledStart) : b.preferredDate ? `Prefers ${formatDateOnly(b.preferredDate)}` : 'No slot yet'),
+              render: (b) =>
+                b.scheduledStart
+                  ? formatDateTime(b.scheduledStart)
+                  : b.preferredDate
+                    ? `Prefers ${formatDateOnly(b.preferredDate)}`
+                    : 'No slot yet',
             },
             {
               key: 'patient',
               header: 'Patient',
               render: (b) => (
                 <span>
-                  <Text weight="semibold">{b.patientName}</Text> <Text size={200}>({b.age ?? '—'} / {b.gender.charAt(0)})</Text>
+                  <Text weight="semibold">{b.patientName}</Text>{' '}
+                  <Text size={200}>
+                    ({b.age ?? '—'} / {b.gender.charAt(0)})
+                  </Text>
                 </span>
               ),
             },
@@ -144,16 +172,45 @@ function SurgeriesPage() {
             },
             { key: 'theatre', header: 'Theatre', width: 90, priority: 'low', render: (b) => b.theatreCode ?? '—' },
             { key: 'surgeon', header: 'Surgeon', priority: 'low', render: (b) => b.surgeonName ?? '—' },
-            { key: 'priority', header: 'Priority', sortable: true, width: 110, render: (b) => <PriorityBadge priority={b.priority} showElective /> },
+            {
+              key: 'priority',
+              header: 'Priority',
+              sortable: true,
+              width: 110,
+              render: (b) => <PriorityBadge priority={b.priority} showElective />,
+            },
             {
               key: 'who',
               header: 'WHO checklist',
               priority: 'low',
-              render: (b) => <WhoProgress signInDone={b.signInDone} timeOutDone={b.timeOutDone} signOutDone={b.signOutDone} compact />,
+              render: (b) => (
+                <WhoProgress
+                  signInDone={b.signInDone}
+                  timeOutDone={b.timeOutDone}
+                  signOutDone={b.signOutDone}
+                  compact
+                />
+              ),
             },
-            { key: 'status', header: 'Status', sortable: true, render: (b) => <SurgeryStatusBadge status={b.status} /> },
-            { key: 'bookingNumber', header: 'Booking', sortable: true, priority: 'low', render: (b) => <Text font="monospace">{b.bookingNumber}</Text> },
-            { key: 'billing', header: 'Billing', priority: 'low', render: (b) => <ChargeBadge status={b.chargeStatus} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              sortable: true,
+              render: (b) => <SurgeryStatusBadge status={b.status} />,
+            },
+            {
+              key: 'bookingNumber',
+              header: 'Booking',
+              sortable: true,
+              priority: 'low',
+              render: (b) => <Text font="monospace">{b.bookingNumber}</Text>,
+            },
+            {
+              key: 'billing',
+              header: 'Billing',
+              priority: 'low',
+              render: (b) => <ChargeBadge status={b.chargeStatus} />,
+            },
           ]}
           emptyTitle={filters.search ? 'No surgery matches your search' : 'No surgeries match these filters'}
           emptyDescription="Clear the dates or status to see more."

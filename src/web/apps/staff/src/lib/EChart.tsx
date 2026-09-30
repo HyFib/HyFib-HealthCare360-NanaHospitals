@@ -1,17 +1,38 @@
 import { tokens } from '@fluentui/react-components';
 import { useResolvedTheme } from '@hc360/ui';
 import { BarChart, LineChart, PieChart } from 'echarts/charts';
-import { GridComponent, LegendComponent, MarkAreaComponent, MarkLineComponent, TooltipComponent } from 'echarts/components';
+import {
+  GridComponent,
+  LegendComponent,
+  MarkAreaComponent,
+  MarkLineComponent,
+  TooltipComponent,
+} from 'echarts/components';
 import { init, use as registerChartParts, type ComposeOption, type ECharts } from 'echarts/core';
 import type { BarSeriesOption, LineSeriesOption, PieSeriesOption } from 'echarts/charts';
 import type { GridComponentOption, LegendComponentOption, TooltipComponentOption } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import { useEffect, useEffectEvent, useRef } from 'react';
 
-registerChartParts([LineChart, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent, MarkAreaComponent, CanvasRenderer]);
+registerChartParts([
+  LineChart,
+  BarChart,
+  PieChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+  MarkAreaComponent,
+  CanvasRenderer,
+]);
 
 export type ChartOption = ComposeOption<
-  BarSeriesOption | LineSeriesOption | PieSeriesOption | GridComponentOption | TooltipComponentOption | LegendComponentOption
+  | BarSeriesOption
+  | LineSeriesOption
+  | PieSeriesOption
+  | GridComponentOption
+  | TooltipComponentOption
+  | LegendComponentOption
 >;
 
 /** The data point a user clicked (for drill-down from a chart to the rows behind it). */
@@ -62,8 +83,18 @@ export function EChart({
   }, [isDark]);
 
   useEffect(() => {
-    chart.current?.setOption({ backgroundColor: 'transparent', textStyle: { fontFamily: 'Segoe UI, sans-serif' }, ...option }, true);
+    chart.current?.setOption(
+      { backgroundColor: 'transparent', textStyle: { fontFamily: 'Segoe UI, sans-serif' }, ...option },
+      true,
+    );
   }, [option, isDark]);
 
-  return <div ref={ref} role="img" aria-label={ariaLabel} style={{ width: '100%', height, color: tokens.colorNeutralForeground1 }} />;
+  return (
+    <div
+      ref={ref}
+      role="img"
+      aria-label={ariaLabel}
+      style={{ width: '100%', height, color: tokens.colorNeutralForeground1 }}
+    />
+  );
 }

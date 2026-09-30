@@ -36,7 +36,10 @@ export function predictedMaxHeartRate(ageYears: number | null | undefined): numb
 }
 
 /** Share of the age-predicted maximum heart rate reached on the treadmill (85 % is the usual target). */
-export function targetHeartRatePercent(maxHeartRate: number | null | undefined, ageYears: number | null | undefined): number | null {
+export function targetHeartRatePercent(
+  maxHeartRate: number | null | undefined,
+  ageYears: number | null | undefined,
+): number | null {
   const predicted = predictedMaxHeartRate(ageYears);
   if (!valid(maxHeartRate) || predicted === null || maxHeartRate <= 0) {
     return null;
@@ -50,12 +53,16 @@ export interface Dipping {
 }
 
 /** Nocturnal dip of systolic pressure: (day − night) ÷ day × 100 and its usual name. */
-export function dippingPattern(daySystolic: number | null | undefined, nightSystolic: number | null | undefined): Dipping | null {
+export function dippingPattern(
+  daySystolic: number | null | undefined,
+  nightSystolic: number | null | undefined,
+): Dipping | null {
   if (!valid(daySystolic) || !valid(nightSystolic) || daySystolic <= 0) {
     return null;
   }
   const percent = Math.round(((daySystolic - nightSystolic) / daySystolic) * 1000) / 10;
-  const pattern = percent < 0 ? 'Reverse dipper' : percent < 10 ? 'Non-dipper' : percent <= 20 ? 'Dipper' : 'Extreme dipper';
+  const pattern =
+    percent < 0 ? 'Reverse dipper' : percent < 10 ? 'Non-dipper' : percent <= 20 ? 'Dipper' : 'Extreme dipper';
   return { percent, pattern };
 }
 
@@ -109,5 +116,9 @@ export function heartRateHint(heartRate: number | null | undefined): string | nu
   if (!valid(heartRate)) {
     return null;
   }
-  return heartRate < 60 ? 'Bradycardia (below 60/min)' : heartRate > 100 ? 'Tachycardia (above 100/min)' : 'Normal rate';
+  return heartRate < 60
+    ? 'Bradycardia (below 60/min)'
+    : heartRate > 100
+      ? 'Tachycardia (above 100/min)'
+      : 'Normal rate';
 }

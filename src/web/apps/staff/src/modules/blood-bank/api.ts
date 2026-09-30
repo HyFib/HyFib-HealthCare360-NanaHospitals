@@ -501,7 +501,8 @@ export const bloodKeys = {
   requests: (filters: RequestFilters) => ['blood-bank', 'requests', filters] as const,
   request: (id: string) => ['blood-bank', 'request', id] as const,
   compatible: (requestId: string) => ['blood-bank', 'request', requestId, 'compatible-units'] as const,
-  reactions: (status: ReactionStatus | undefined, page: number) => ['blood-bank', 'reactions', status ?? 'all', page] as const,
+  reactions: (status: ReactionStatus | undefined, page: number) =>
+    ['blood-bank', 'reactions', status ?? 'all', page] as const,
 };
 
 export const bloodQueries = {
@@ -514,13 +515,15 @@ export const bloodQueries = {
   units: (filters: UnitFilters) =>
     queryOptions({
       queryKey: bloodKeys.units(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<BloodUnitDto>>('/api/v1/blood-bank/units', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<BloodUnitDto>>('/api/v1/blood-bank/units', { query: { ...filters, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   unitByNumber: (number: string) =>
     queryOptions({
       queryKey: bloodKeys.unitByNumber(number),
-      queryFn: ({ signal }) => api.get<BloodUnitDto>(`/api/v1/blood-bank/units/by-number/${encodeURIComponent(number)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<BloodUnitDto>(`/api/v1/blood-bank/units/by-number/${encodeURIComponent(number)}`, { signal }),
       enabled: number.length > 0,
       retry: false,
       staleTime: 0,
@@ -534,7 +537,11 @@ export const bloodQueries = {
   donors: (filters: DonorFilters) =>
     queryOptions({
       queryKey: bloodKeys.donors(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<DonorListItem>>('/api/v1/blood-bank/donors', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<DonorListItem>>('/api/v1/blood-bank/donors', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   donor: (id: string) =>
@@ -545,7 +552,11 @@ export const bloodQueries = {
   donations: (filters: DonationFilters) =>
     queryOptions({
       queryKey: bloodKeys.donations(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<DonationListItem>>('/api/v1/blood-bank/donations', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<DonationListItem>>('/api/v1/blood-bank/donations', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   donation: (id: string) =>
@@ -558,7 +569,13 @@ export const bloodQueries = {
       queryKey: bloodKeys.requests(filters),
       queryFn: ({ signal }) =>
         api.get<PagedResult<BloodRequestListItem>>('/api/v1/blood-bank/requests', {
-          query: { status: filters.status, openOnly: filters.closed ? false : undefined, search: filters.search, page: filters.page, pageSize: 25 },
+          query: {
+            status: filters.status,
+            openOnly: filters.closed ? false : undefined,
+            search: filters.search,
+            page: filters.page,
+            pageSize: 25,
+          },
           signal,
         }),
       placeholderData: keepPreviousData,
@@ -572,12 +589,17 @@ export const bloodQueries = {
   compatibleUnits: (requestId: string) =>
     queryOptions({
       queryKey: bloodKeys.compatible(requestId),
-      queryFn: ({ signal }) => api.get<CompatibleUnitDto[]>(`/api/v1/blood-bank/requests/${requestId}/compatible-units`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<CompatibleUnitDto[]>(`/api/v1/blood-bank/requests/${requestId}/compatible-units`, { signal }),
     }),
   reactions: (status: ReactionStatus | undefined, page: number) =>
     queryOptions({
       queryKey: bloodKeys.reactions(status, page),
-      queryFn: ({ signal }) => api.get<PagedResult<TransfusionReactionDto>>('/api/v1/blood-bank/reactions', { query: { status, page, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<TransfusionReactionDto>>('/api/v1/blood-bank/reactions', {
+          query: { status, page, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
 };
@@ -591,22 +613,40 @@ export const bloodApi = {
     const created = await api.post<{ id: string }>('/api/v1/blood-bank/donors', request);
     return created.id;
   },
-  deferDonor: (id: string, until: string | null, permanent: boolean, reason: string) => api.post<void>(`/api/v1/blood-bank/donors/${id}/defer`, { until, permanent, reason }),
-  screenDonor: (id: string, request: ScreenDonorRequest) => api.post<DonorScreeningDto>(`/api/v1/blood-bank/donors/${id}/screenings`, request),
-  collect: (donorId: string, request: CollectDonationRequest) => api.post<{ id: string }>(`/api/v1/blood-bank/donors/${donorId}/donations`, request),
-  separate: (donationId: string, components: ComponentPlan[]) => api.post<BloodUnitDto[]>(`/api/v1/blood-bank/donations/${donationId}/components`, { components }),
-  recordLabResults: (donationId: string, request: RecordLabResultsRequest) => api.put<void>(`/api/v1/blood-bank/donations/${donationId}/lab-results`, request),
-  discardUnit: (unitId: string, reason: string) => api.post<void>(`/api/v1/blood-bank/units/${unitId}/discard`, { reason }),
-  createRequest: (request: CreateBloodRequestRequest) => api.post<{ id: string; requestNumber: string }>('/api/v1/blood-bank/requests', request),
+  deferDonor: (id: string, until: string | null, permanent: boolean, reason: string) =>
+    api.post<void>(`/api/v1/blood-bank/donors/${id}/defer`, { until, permanent, reason }),
+  screenDonor: (id: string, request: ScreenDonorRequest) =>
+    api.post<DonorScreeningDto>(`/api/v1/blood-bank/donors/${id}/screenings`, request),
+  collect: (donorId: string, request: CollectDonationRequest) =>
+    api.post<{ id: string }>(`/api/v1/blood-bank/donors/${donorId}/donations`, request),
+  separate: (donationId: string, components: ComponentPlan[]) =>
+    api.post<BloodUnitDto[]>(`/api/v1/blood-bank/donations/${donationId}/components`, { components }),
+  recordLabResults: (donationId: string, request: RecordLabResultsRequest) =>
+    api.put<void>(`/api/v1/blood-bank/donations/${donationId}/lab-results`, request),
+  discardUnit: (unitId: string, reason: string) =>
+    api.post<void>(`/api/v1/blood-bank/units/${unitId}/discard`, { reason }),
+  createRequest: (request: CreateBloodRequestRequest) =>
+    api.post<{ id: string; requestNumber: string }>('/api/v1/blood-bank/requests', request),
   cancelRequest: (id: string, reason: string) => api.post<void>(`/api/v1/blood-bank/requests/${id}/cancel`, { reason }),
-  groupPatient: (id: string, bloodGroup: BloodGroup) => api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, { bloodGroup }),
-  emergencyRelease: (id: string, authorisedBy: string, reason: string) => api.post<void>(`/api/v1/blood-bank/requests/${id}/emergency-release`, { authorisedBy, reason }),
-  crossMatch: (id: string, componentId: string, method: CrossmatchMethod, result: CrossmatchResult, remarks: string | null) =>
+  groupPatient: (id: string, bloodGroup: BloodGroup) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, { bloodGroup }),
+  emergencyRelease: (id: string, authorisedBy: string, reason: string) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/emergency-release`, { authorisedBy, reason }),
+  crossMatch: (
+    id: string,
+    componentId: string,
+    method: CrossmatchMethod,
+    result: CrossmatchResult,
+    remarks: string | null,
+  ) =>
     api.post<CrossMatchDto>(`/api/v1/blood-bank/requests/${id}/crossmatches`, { componentId, method, result, remarks }),
-  issue: (id: string, componentId: string, issuedToName: string) => api.post<BloodIssueDto>(`/api/v1/blood-bank/requests/${id}/issues`, { componentId, issuedToName }),
+  issue: (id: string, componentId: string, issuedToName: string) =>
+    api.post<BloodIssueDto>(`/api/v1/blood-bank/requests/${id}/issues`, { componentId, issuedToName }),
   returnIssue: (issueId: string, temperatureMaintained: boolean, notes: string | null) =>
     api.post<BloodIssueDto>(`/api/v1/blood-bank/issues/${issueId}/return`, { temperatureMaintained, notes }),
-  reportReaction: (issueId: string, request: ReportReactionRequest) => api.post<{ id: string }>(`/api/v1/blood-bank/issues/${issueId}/reactions`, request),
+  reportReaction: (issueId: string, request: ReportReactionRequest) =>
+    api.post<{ id: string }>(`/api/v1/blood-bank/issues/${issueId}/reactions`, request),
   investigateReaction: (id: string) => api.post<void>(`/api/v1/blood-bank/reactions/${id}/investigate`),
-  closeReaction: (id: string, request: CloseReactionRequest) => api.post<void>(`/api/v1/blood-bank/reactions/${id}/close`, request),
+  closeReaction: (id: string, request: CloseReactionRequest) =>
+    api.post<void>(`/api/v1/blood-bank/reactions/${id}/close`, request),
 };

@@ -62,7 +62,16 @@ internal static class PatientEndpoints
         var result = await ordered
             .Select(p => new
             {
-                p.Id, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, p.Phone, p.Category, p.IsVip, p.IsDeceased, p.RegisteredAt,
+                p.Id,
+                p.Uhid,
+                p.FullName,
+                p.Gender,
+                p.DateOfBirth,
+                p.Phone,
+                p.Category,
+                p.IsVip,
+                p.IsDeceased,
+                p.RegisteredAt,
                 LastVisitAt = db.Set<Visit>().Where(v => v.PatientId == p.Id).Max(v => (DateTimeOffset?)v.VisitedAt),
             })
             .ToPagedResultAsync(page, ct);

@@ -31,15 +31,26 @@ const useStyles = makeStyles({
     padding: '16px',
     borderRadius: tokens.borderRadiusXLarge,
   },
-  genuine: { backgroundColor: tokens.colorStatusSuccessBackground1, border: `2px solid ${tokens.colorStatusSuccessBorder1}` },
+  genuine: {
+    backgroundColor: tokens.colorStatusSuccessBackground1,
+    border: `2px solid ${tokens.colorStatusSuccessBorder1}`,
+  },
   bad: { backgroundColor: tokens.colorStatusDangerBackground1, border: `2px solid ${tokens.colorStatusDangerBorder1}` },
-  unknown: { backgroundColor: tokens.colorStatusWarningBackground1, border: `2px solid ${tokens.colorStatusWarningBorder1}` },
+  unknown: {
+    backgroundColor: tokens.colorStatusWarningBackground1,
+    border: `2px solid ${tokens.colorStatusWarningBorder1}`,
+  },
   verdictIcon: { fontSize: '40px', flexShrink: 0 },
   genuineIcon: { color: tokens.colorStatusSuccessForeground1 },
   badIcon: { color: tokens.colorStatusDangerForeground1 },
   unknownIcon: { color: tokens.colorStatusWarningForeground3 },
   verdictText: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  verdictTitle: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold },
+  verdictTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   verdictBody: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
   details: {
     padding: '16px',
@@ -133,7 +144,11 @@ function PrescriptionAnswer({ result }: { result: PrescriptionVerification }) {
             { label: t('verify.qualification'), value: result.qualification, hideEmpty: true },
             { label: t('verify.registration'), value: result.registrationNumber, hideEmpty: true },
             { label: t('verify.facility'), value: result.facility, hideEmpty: true },
-            { label: t('verify.issuedOn'), value: result.issuedOn ? f.calendarDate(result.issuedOn) : null, hideEmpty: true },
+            {
+              label: t('verify.issuedOn'),
+              value: result.issuedOn ? f.calendarDate(result.issuedOn) : null,
+              hideEmpty: true,
+            },
             { label: t('verify.itemCount'), value: f.number(result.itemCount) },
           ]}
         />
@@ -159,7 +174,11 @@ function ReportAnswer({ result }: { result: ReportAuthenticity }) {
             { label: t('verify.reportNumber'), value: result.reportNumber },
             { label: t('verify.facility'), value: result.facilityName, hideEmpty: true },
             { label: t('verify.patient'), value: result.patientInitials, hideEmpty: true },
-            { label: t('verify.released'), value: result.releasedAt ? f.dateTime(result.releasedAt) : null, hideEmpty: true },
+            {
+              label: t('verify.released'),
+              value: result.releasedAt ? f.dateTime(result.releasedAt) : null,
+              hideEmpty: true,
+            },
             {
               label: t('verify.tests'),
               value: result.tests.length ? (

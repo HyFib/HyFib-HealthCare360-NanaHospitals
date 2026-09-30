@@ -29,11 +29,16 @@ function Patient360Search() {
         <Stack gap={12}>
           <PatientPicker
             value={null}
-            onChange={(patient) => patient && void navigate({ to: '/crm/patients/$patientId', params: { patientId: patient.id } })}
+            onChange={(patient) =>
+              patient && void navigate({ to: '/crm/patients/$patientId', params: { patientId: patient.id } })
+            }
             label="Find the patient"
             hint="Type at least 3 characters of the UHID, mobile number or name."
           />
-          <Caption1>Opening a patient's 360 view is recorded in the audit log. Restricted (VIP) records open only with emergency access.</Caption1>
+          <Caption1>
+            Opening a patient's 360 view is recorded in the audit log. Restricted (VIP) records open only with emergency
+            access.
+          </Caption1>
         </Stack>
       </Section>
     </Page>

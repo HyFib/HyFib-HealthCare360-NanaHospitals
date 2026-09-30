@@ -107,7 +107,8 @@ function IntegrationLogPage() {
     enabled: allowed,
   });
 
-  const filter = (patch: Partial<LogSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const filter = (patch: Partial<LogSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   if (!allowed) {
     return (
@@ -120,16 +121,26 @@ function IntegrationLogPage() {
 
   return (
     <Page>
-      <PageHeader title="Integrations" subtitle="Every message, payment call and analyser message, newest first. Phone numbers, e-mail addresses and credentials are masked." />
+      <PageHeader
+        title="Integrations"
+        subtitle="Every message, payment call and analyser message, newest first. Phone numbers, e-mail addresses and credentials are masked."
+      />
       <IntegrationsTabs selected="logs" />
       <Section flush>
         <div className={styles.toolbar}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 220px' }}>
-              <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Reference, operation or provider" />
+              <SearchBox
+                value={term}
+                onChange={(_, data) => setTerm(data.value)}
+                placeholder="Reference, operation or provider"
+              />
             </Field>
             <Field label="Integration">
-              <Select value={search.integration ?? ''} onChange={(_, data) => filter({ integration: isIntegrationName(data.value) ? data.value : undefined })}>
+              <Select
+                value={search.integration ?? ''}
+                onChange={(_, data) => filter({ integration: isIntegrationName(data.value) ? data.value : undefined })}
+              >
                 <option value="">All</option>
                 {INTEGRATION_NAMES.map((name) => (
                   <option key={name} value={name}>
@@ -139,17 +150,32 @@ function IntegrationLogPage() {
               </Select>
             </Field>
             <Field label="Result">
-              <Select value={search.result ?? ''} onChange={(_, data) => filter({ result: data.value === 'ok' || data.value === 'failed' ? data.value : undefined })}>
+              <Select
+                value={search.result ?? ''}
+                onChange={(_, data) =>
+                  filter({ result: data.value === 'ok' || data.value === 'failed' ? data.value : undefined })
+                }
+              >
                 <option value="">All</option>
                 <option value="ok">Succeeded</option>
                 <option value="failed">Failed</option>
               </Select>
             </Field>
             <Field label="From">
-              <Input type="date" value={search.from ?? ''} max={search.to} onChange={(_, data) => filter({ from: isIsoDay(data.value) ? data.value : undefined })} />
+              <Input
+                type="date"
+                value={search.from ?? ''}
+                max={search.to}
+                onChange={(_, data) => filter({ from: isIsoDay(data.value) ? data.value : undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={search.to ?? ''} min={search.from} onChange={(_, data) => filter({ to: isIsoDay(data.value) ? data.value : undefined })} />
+              <Input
+                type="date"
+                value={search.to ?? ''}
+                min={search.from}
+                onChange={(_, data) => filter({ to: isIsoDay(data.value) ? data.value : undefined })}
+              />
             </Field>
           </FilterBar>
         </div>
@@ -166,15 +192,38 @@ function IntegrationLogPage() {
             { key: 'when', header: 'When', width: 180, render: (row) => formatDateTime(row.createdAt) },
             { key: 'integration', header: 'Integration', render: (row) => integrationLabel(row.integration) },
             { key: 'operation', header: 'Operation', render: (row) => <Text font="monospace">{row.operation}</Text> },
-            { key: 'direction', header: 'Direction', width: 100, priority: 'low', render: (row) => (row.direction === 'Inbound' ? 'Received' : 'Sent') },
+            {
+              key: 'direction',
+              header: 'Direction',
+              width: 100,
+              priority: 'low',
+              render: (row) => (row.direction === 'Inbound' ? 'Received' : 'Sent'),
+            },
             {
               key: 'result',
               header: 'Result',
               width: 110,
-              render: (row) => <StatusBadge status={row.success ? 'Succeeded' : 'Failed'} label={row.success ? 'Succeeded' : 'Failed'} />,
+              render: (row) => (
+                <StatusBadge
+                  status={row.success ? 'Succeeded' : 'Failed'}
+                  label={row.success ? 'Succeeded' : 'Failed'}
+                />
+              ),
             },
-            { key: 'duration', header: 'Took', width: 90, align: 'end', priority: 'low', render: (row) => formatDuration(row.durationMs) },
-            { key: 'reference', header: 'Reference', priority: 'low', render: (row) => (row.reference ? <Text font="monospace">{row.reference}</Text> : '—') },
+            {
+              key: 'duration',
+              header: 'Took',
+              width: 90,
+              align: 'end',
+              priority: 'low',
+              render: (row) => formatDuration(row.durationMs),
+            },
+            {
+              key: 'reference',
+              header: 'Reference',
+              priority: 'low',
+              render: (row) => (row.reference ? <Text font="monospace">{row.reference}</Text> : '—'),
+            },
           ]}
           emptyTitle="Nothing in the log for these filters"
           emptyDescription="Every SMS, WhatsApp message, e-mail, payment call and analyser message appears here. Send a test from the Status tab to add one."
@@ -199,7 +248,9 @@ function IntegrationLogPage() {
                   <Caption1 className={styles.muted}>Direction</Caption1>
                   <Text>{detail.direction === 'Inbound' ? 'Received from outside' : 'Sent from HC360'}</Text>
                   <Caption1 className={styles.muted}>Result</Caption1>
-                  <Text className={detail.success ? undefined : styles.error}>{detail.success ? 'Succeeded' : 'Failed'}</Text>
+                  <Text className={detail.success ? undefined : styles.error}>
+                    {detail.success ? 'Succeeded' : 'Failed'}
+                  </Text>
                   <Caption1 className={styles.muted}>Took</Caption1>
                   <Text>{formatDuration(detail.durationMs)}</Text>
                   <Caption1 className={styles.muted}>Reference</Caption1>

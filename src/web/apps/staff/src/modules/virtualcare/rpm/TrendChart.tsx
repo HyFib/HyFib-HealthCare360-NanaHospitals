@@ -26,16 +26,28 @@ export function TrendChart({ trend, height = 220 }: { trend: RpmTrend; height?: 
     const info = readingTypeInfo[trend.type];
     const ecg = trend.type === 'EcgRhythm';
     const limits: Limits | null = trend.threshold
-      ? { min: trend.threshold.min, max: trend.threshold.max, criticalMin: trend.threshold.criticalMin, criticalMax: trend.threshold.criticalMax }
+      ? {
+          min: trend.threshold.min,
+          max: trend.threshold.max,
+          criticalMin: trend.threshold.criticalMin,
+          criticalMax: trend.threshold.criticalMax,
+        }
       : null;
-    const axis = ecg ? { min: -0.5, max: 2.5 } : axisRange(trend.points.map((p) => p.value), limits, info.plausible);
+    const axis = ecg
+      ? { min: -0.5, max: 2.5 }
+      : axisRange(
+          trend.points.map((p) => p.value),
+          limits,
+          info.plausible,
+        );
     const bands = limits ? thresholdBands(limits, axis) : [];
 
     return {
       grid: { left: 52, right: 16, top: 20, bottom: 32 },
       tooltip: {
         trigger: 'axis',
-        valueFormatter: (value) => (ecg ? (ecgRhythmLabel[Math.round(Number(value))] ?? String(value)) : `${String(value)} ${trend.unit}`),
+        valueFormatter: (value) =>
+          ecg ? (ecgRhythmLabel[Math.round(Number(value))] ?? String(value)) : `${String(value)} ${trend.unit}`,
       },
       xAxis: { type: 'time' },
       yAxis: {
@@ -45,7 +57,11 @@ export function TrendChart({ trend, height = 220 }: { trend: RpmTrend; height?: 
         name: ecg ? undefined : trend.unit,
         nameTextStyle: { align: 'right' },
         interval: ecg ? 1 : undefined,
-        axisLabel: ecg ? { formatter: (value: number) => (value === 0 ? 'Normal' : value === 1 ? 'Review' : value === 2 ? 'AF' : '') } : undefined,
+        axisLabel: ecg
+          ? {
+              formatter: (value: number) => (value === 0 ? 'Normal' : value === 1 ? 'Review' : value === 2 ? 'AF' : ''),
+            }
+          : undefined,
         splitLine: { show: !ecg },
       },
       series: [
@@ -64,7 +80,10 @@ export function TrendChart({ trend, height = 220 }: { trend: RpmTrend; height?: 
           })),
           markArea: {
             silent: true,
-            data: bands.map((band) => [{ yAxis: band.from, itemStyle: { color: BAND_COLOUR[band.severity] } }, { yAxis: band.to }]),
+            data: bands.map((band) => [
+              { yAxis: band.from, itemStyle: { color: BAND_COLOUR[band.severity] } },
+              { yAxis: band.to },
+            ]),
           },
         },
       ],
@@ -82,7 +101,15 @@ export function TrendChart({ trend, height = 220 }: { trend: RpmTrend; height?: 
 }
 
 /** Readings per day for the adherence window; days short of the expected count are amber, missing days show a gap. */
-export function AdherenceChart({ adherence, today, height = 160 }: { adherence: RpmAdherenceDto; today: IsoDate; height?: number }) {
+export function AdherenceChart({
+  adherence,
+  today,
+  height = 160,
+}: {
+  adherence: RpmAdherenceDto;
+  today: IsoDate;
+  height?: number;
+}) {
   const option = useMemo<ChartOption>(() => {
     const days = dateRange(addDays(today, -(adherence.windowDays - 1)), adherence.windowDays);
     const counts = new Map(adherence.readingsPerDay.map((d) => [d.date, d.readings]));
@@ -104,7 +131,10 @@ export function AdherenceChart({ adherence, today, height = 160 }: { adherence: 
           name: 'Readings',
           data: days.map((d) => {
             const count = counts.get(d) ?? 0;
-            return { value: count, itemStyle: { color: count >= adherence.expectedReadingsPerDay ? '#107C10' : '#C77700' } };
+            return {
+              value: count,
+              itemStyle: { color: count >= adherence.expectedReadingsPerDay ? '#107C10' : '#C77700' },
+            };
           }),
           markLine: {
             silent: true,

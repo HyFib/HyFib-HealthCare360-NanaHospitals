@@ -33,7 +33,15 @@ type Values = z.infer<typeof schema>;
  * Separation (resignation, retirement…). The record is kept for statutory retention; pending leave is cancelled, the
  * future roster is removed and the user administrators are asked to disable the sign-in.
  */
-export function SeparateDialog({ open, onClose, employee }: { open: boolean; onClose: () => void; employee: EmployeeDetail }) {
+export function SeparateDialog({
+  open,
+  onClose,
+  employee,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee: EmployeeDetail;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()} modalType="alert">
       <DialogSurface style={{ maxWidth: 600 }}>{open && <Body onClose={onClose} employee={employee} />}</DialogSurface>
@@ -45,12 +53,20 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { lastWorkingDay: todayIso(), reason: 'Resignation', note: '' } });
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { lastWorkingDay: todayIso(), reason: 'Resignation', note: '' },
+  });
 
   const onValid = async (values: Values) => {
     setBusy(true);
     try {
-      await hrApi.separate(employee.id, { lastWorkingDay: values.lastWorkingDay, reason: values.reason, note: values.note.trim() || null, version: employee.version });
+      await hrApi.separate(employee.id, {
+        lastWorkingDay: values.lastWorkingDay,
+        reason: values.reason,
+        note: values.note.trim() || null,
+        version: employee.version,
+      });
       notify.success('Employee separated', `${employee.fullName}'s record is kept for statutory retention.`);
       void queryClient.invalidateQueries({ queryKey: hrKeys.all });
       onClose();
@@ -70,13 +86,26 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
-              This cannot be undone from this screen. Pending leave is cancelled, shifts after the last working day are removed, and the administrators are asked to disable
-              the sign-in. The final salary is paid in the month's payroll.
+              This cannot be undone from this screen. Pending leave is cancelled, shifts after the last working day are
+              removed, and the administrators are asked to disable the sign-in. The final salary is paid in the month's
+              payroll.
             </MessageBarBody>
           </MessageBar>
           <FormGrid columns={2} minColumnWidth={200}>
-            <DateField control={form.control} name="lastWorkingDay" label="Last working day" required min={employee.joiningDate} />
-            <SelectField control={form.control} name="reason" label="Reason" required options={SEPARATION_REASONS.map((r) => ({ value: r, label: humanize(r) }))} />
+            <DateField
+              control={form.control}
+              name="lastWorkingDay"
+              label="Last working day"
+              required
+              min={employee.joiningDate}
+            />
+            <SelectField
+              control={form.control}
+              name="reason"
+              label="Reason"
+              required
+              options={SEPARATION_REASONS.map((r) => ({ value: r, label: humanize(r) }))}
+            />
           </FormGrid>
           <TextAreaField control={form.control} name="note" label="Note" rows={2} maxLength={500} />
         </DialogContent>

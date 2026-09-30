@@ -1,0 +1,57 @@
+# Dependabot version updates: each week, a pull request per ecosystem with the new versions, which CI then builds, tests
+# and audits like any other change. Minor and patch updates come grouped in one pull request; a major update comes on
+# its own. A new release waits a week first (cooldown), long enough for a hijacked release to be caught and pulled
+# before it reaches us. Microsoft's own .NET packages and the SDK are exempt: their monthly releases carry the security
+# fixes. Dependabot security updates, a repository setting, are never delayed.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+      exclude: ["Microsoft.*", "System.*"]
+    groups:
+      nuget:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /src/web
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        update-types: [minor, patch]
+
+  # The SDK in global.json. The server and HC360 Desktop are published self-contained, so the .NET runtime they ship,
+  # and its security fixes, come from this SDK.
+  - package-ecosystem: dotnet-sdk
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+
+  # The actions in .github/workflows, which are pinned to commits.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Asia/Kolkata
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]

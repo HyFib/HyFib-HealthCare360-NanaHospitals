@@ -4,7 +4,12 @@ const useStyles = makeStyles({
   root: { display: 'inline-flex', alignItems: 'center', gap: '10px', minWidth: 0 },
   text: { display: 'flex', flexDirection: 'column', lineHeight: 1.1, minWidth: 0 },
   product: { fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' },
-  facility: { color: tokens.colorNeutralForeground3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  facility: {
+    color: tokens.colorNeutralForeground3,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
 });
 
 export function LogoMark({ size = 28 }: { size?: number }) {

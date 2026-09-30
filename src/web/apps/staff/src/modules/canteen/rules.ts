@@ -33,7 +33,9 @@ export function monthLabel(period: string): string {
   if (!year || !month) {
     return period;
   }
-  return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(Date.UTC(year, month - 1, 1));
+  return new Intl.DateTimeFormat('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    Date.UTC(year, month - 1, 1),
+  );
 }
 
 /** The last `count` months ending with `current` ("yyyy-MM"), newest first. */

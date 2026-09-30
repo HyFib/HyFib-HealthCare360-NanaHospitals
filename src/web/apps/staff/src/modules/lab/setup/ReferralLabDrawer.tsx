@@ -1,8 +1,26 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, makeStyles, OverlayDrawer, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  makeStyles,
+  OverlayDrawer,
+  Spinner,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { normalizePhone } from '@hc360/core';
-import { applyServerErrors, FormGrid, FullRow, NumberField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  FullRow,
+  NumberField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -86,7 +104,9 @@ export function ReferralLabDrawer({ lab, onClose }: { lab: ReferralLabDto | null
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {lab ? lab.name : 'Add reference laboratory'}
           </DrawerHeaderTitle>
         </DrawerHeader>
@@ -96,7 +116,14 @@ export function ReferralLabDrawer({ lab, onClose }: { lab: ReferralLabDto | null
               <TextField control={form.control} name="code" label="Code" required disabled={Boolean(lab)} />
               <TextField control={form.control} name="name" label="Name" required />
               <TextField control={form.control} name="accreditationNumber" label="NABL accreditation number" />
-              <NumberField control={form.control} name="tatDays" label="Agreed turnaround (days)" required min={1} max={60} />
+              <NumberField
+                control={form.control}
+                name="tatDays"
+                label="Agreed turnaround (days)"
+                required
+                min={1}
+                max={60}
+              />
               <TextField control={form.control} name="contactPerson" label="Contact person" />
               <TextField control={form.control} name="phone" label="Phone" type="tel" />
               <FullRow>
@@ -110,7 +137,12 @@ export function ReferralLabDrawer({ lab, onClose }: { lab: ReferralLabDto | null
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {lab ? 'Save' : 'Add laboratory'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

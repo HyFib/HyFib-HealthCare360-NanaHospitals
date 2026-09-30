@@ -51,7 +51,9 @@ function PrescriptionsPage() {
                   title={t('rx.number', { number: request.prescriptionNumber })}
                   subtitle={[
                     t('rx.refill.requested', { date: f.date(request.requestedAt) }),
-                    request.preferredPickupDate ? t('rx.refill.pickupOn', { date: f.calendarDate(request.preferredPickupDate) }) : null,
+                    request.preferredPickupDate
+                      ? t('rx.refill.pickupOn', { date: f.calendarDate(request.preferredPickupDate) })
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
@@ -81,19 +83,24 @@ function PrescriptionsPage() {
           <>
             {rows.map((rx) => {
               const status = RX_STATUS[rx.status];
-              const names = rx.medicines.slice(0, 3).join(', ') + (rx.medicines.length > 3 ? ` +${rx.medicines.length - 3}` : '');
+              const names =
+                rx.medicines.slice(0, 3).join(', ') + (rx.medicines.length > 3 ? ` +${rx.medicines.length - 3}` : '');
               return (
                 <CardLink key={rx.id} to="/prescriptions/$prescriptionId" params={{ prescriptionId: rx.id }}>
                   <ListRow
                     icon={<PillRegular />}
                     tone={rx.status === 'Signed' ? 'brand' : 'neutral'}
                     title={names || t('rx.medicineCount', { count: rx.medicines.length })}
-                    subtitle={[rx.doctor ? t('rx.by', { doctor: rx.doctor }) : null, f.date(rx.signedAt)].filter(Boolean).join(' · ')}
+                    subtitle={[rx.doctor ? t('rx.by', { doctor: rx.doctor }) : null, f.date(rx.signedAt)]
+                      .filter(Boolean)
+                      .join(' · ')}
                     meta={t('rx.number', { number: rx.prescriptionNumber })}
                     trailing={
                       <>
                         <StatusPill tone={status.tone}>{t(status.key)}</StatusPill>
-                        {rx.status === 'Signed' && rx.refillsRemaining > 0 && <StatusPill tone="brand">{t('rx.refillsLeft', { count: rx.refillsRemaining })}</StatusPill>}
+                        {rx.status === 'Signed' && rx.refillsRemaining > 0 && (
+                          <StatusPill tone="brand">{t('rx.refillsLeft', { count: rx.refillsRemaining })}</StatusPill>
+                        )}
                       </>
                     }
                   />
@@ -101,7 +108,12 @@ function PrescriptionsPage() {
               );
             })}
             {list.hasNextPage && (
-              <Button className={styles.more} size="large" onClick={() => void list.fetchNextPage()} disabled={list.isFetchingNextPage}>
+              <Button
+                className={styles.more}
+                size="large"
+                onClick={() => void list.fetchNextPage()}
+                disabled={list.isFetchingNextPage}
+              >
                 {t('common.showMore')}
               </Button>
             )}

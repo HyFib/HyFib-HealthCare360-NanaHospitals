@@ -15,7 +15,20 @@ import {
 import { AddRegular, CalendarStarRegular, DeleteRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, isApiError } from '@hc360/core';
-import { applyServerErrors, ConfirmDialog, DataTable, DateField, FilterBar, Page, PageHeader, Section, SelectField, StatusBadge, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ConfirmDialog,
+  DataTable,
+  DateField,
+  FilterBar,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -105,7 +118,13 @@ function HolidaysPage() {
             {
               key: 'kind',
               header: 'Kind',
-              render: (h) => <StatusBadge status={h.kind} tone={h.kind === 'Restricted' ? 'informative' : 'brand'} label={holidayKindLabel[h.kind]} />,
+              render: (h) => (
+                <StatusBadge
+                  status={h.kind}
+                  tone={h.kind === 'Restricted' ? 'informative' : 'brand'}
+                  label={holidayKindLabel[h.kind]}
+                />
+              ),
             },
           ]}
           rowActions={
@@ -118,7 +137,9 @@ function HolidaysPage() {
               : undefined
           }
           emptyTitle={`No holidays for ${year}`}
-          emptyDescription={canManage ? 'Add national and festival holidays so attendance and leave count them correctly.' : undefined}
+          emptyDescription={
+            canManage ? 'Add national and festival holidays so attendance and leave count them correctly.' : undefined
+          }
           size="small"
         />
       </Section>
@@ -149,7 +170,10 @@ type Values = z.infer<typeof schema>;
 function HolidayDialog({ open, onClose, year }: { open: boolean; onClose: () => void; year: number }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { date: `${year}-01-01`, name: '', kind: 'Festival' } });
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { date: `${year}-01-01`, name: '', kind: 'Festival' },
+  });
   const save = useMutation({
     mutationFn: (v: Values) => hrApi.addHoliday({ date: v.date, name: v.name.trim(), kind: v.kind }),
     onSuccess: (_, v) => {
@@ -175,14 +199,32 @@ function HolidayDialog({ open, onClose, year }: { open: boolean; onClose: () => 
             <DialogTitle>Add holiday</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <DateField control={form.control} name="date" label="Date" required />
-              <TextField control={form.control} name="name" label="Holiday" required autoFocus placeholder="For example: Pongal" />
-              <SelectField control={form.control} name="kind" label="Kind" required options={HOLIDAY_KINDS.map((k) => ({ value: k, label: holidayKindLabel[k] }))} />
+              <TextField
+                control={form.control}
+                name="name"
+                label="Holiday"
+                required
+                autoFocus
+                placeholder="For example: Pongal"
+              />
+              <SelectField
+                control={form.control}
+                name="kind"
+                label="Kind"
+                required
+                options={HOLIDAY_KINDS.map((k) => ({ value: k, label: holidayKindLabel[k] }))}
+              />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={save.isPending}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Add holiday
               </Button>
             </DialogActions>

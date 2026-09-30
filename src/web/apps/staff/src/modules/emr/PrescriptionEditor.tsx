@@ -42,7 +42,17 @@ import { Controller, useFieldArray, useForm, useWatch, type Control, type UseFor
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { emrApi, emrKeys, emrQueries, type CurrentMedication } from './api';
-import { DOSAGE_FORMS, DOSE_FREQUENCIES, DURATION_PRESETS, directionsText, frequencyOptionLabel, INSTRUCTION_PRESETS, quantityUnit, ROUTES, type DoseFrequency } from './dosing';
+import {
+  DOSAGE_FORMS,
+  DOSE_FREQUENCIES,
+  DURATION_PRESETS,
+  directionsText,
+  frequencyOptionLabel,
+  INSTRUCTION_PRESETS,
+  quantityUnit,
+  ROUTES,
+  type DoseFrequency,
+} from './dosing';
 import { DrugPicker } from './DrugPicker';
 import { printPrescription } from './print';
 import {
@@ -66,7 +76,16 @@ import {
 } from './prescriptionForm';
 import { prescriptionQueries, prescriptionsApi, type PrescriptionDto } from './prescriptionsApi';
 import { SafetyReview } from './SafetyReview';
-import { alertsFromProblem, emptyDecision, groupAlerts, signBlockers, signRequirements, toSignRequest, type SafetyCheckResponse, type SignDecision } from './safety';
+import {
+  alertsFromProblem,
+  emptyDecision,
+  groupAlerts,
+  signBlockers,
+  signRequirements,
+  toSignRequest,
+  type SafetyCheckResponse,
+  type SignDecision,
+} from './safety';
 
 const useStyles = makeStyles({
   root: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -101,18 +120,43 @@ const useStyles = makeStyles({
   drug: { '@media (max-width: 1200px)': { gridColumn: '2 / -1' } },
   narrowLabel: { display: 'none', '@media (max-width: 1200px)': { display: 'block' } },
   actions: { display: 'flex', gap: '2px', justifyContent: 'flex-end' },
-  details: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '8px', paddingLeft: '36px' },
+  details: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+    gap: '8px',
+    paddingLeft: '36px',
+  },
   preview: { paddingLeft: '36px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
-  bottom: { display: 'grid', gridTemplateColumns: '1fr 1fr 150px', gap: '12px', '@media (max-width: 900px)': { gridTemplateColumns: '1fr' } },
+  bottom: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 150px',
+    gap: '12px',
+    '@media (max-width: 900px)': { gridTemplateColumns: '1fr' },
+  },
   buttons: { display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' },
   blockers: { color: tokens.colorNeutralForeground3, textAlign: 'right' },
 });
 
-function RowField({ label, error, children, className }: { label: string; error?: string; children: ReactElement; className?: string }) {
+function RowField({
+  label,
+  error,
+  children,
+  className,
+}: {
+  label: string;
+  error?: string;
+  children: ReactElement;
+  className?: string;
+}) {
   const styles = useStyles();
   return (
-    <Field className={className} label={{ children: label, className: styles.narrowLabel }} validationMessage={error} validationState={error ? 'error' : 'none'}>
+    <Field
+      className={className}
+      label={{ children: label, className: styles.narrowLabel }}
+      validationMessage={error}
+      validationState={error ? 'error' : 'none'}
+    >
       {children}
     </Field>
   );
@@ -152,7 +196,10 @@ function LineRow({
   };
 
   return (
-    <li className={mergeClasses(styles.row, line.isControlledDrug ? styles.rowControlled : undefined)} aria-label={name}>
+    <li
+      className={mergeClasses(styles.row, line.isControlledDrug ? styles.rowControlled : undefined)}
+      aria-label={name}
+    >
       <div className={styles.grid}>
         <span className={styles.number}>{index + 1}.</span>
         <Controller
@@ -187,7 +234,12 @@ function LineRow({
             name={`lines.${index}.frequency`}
             render={({ field }) => (
               <RowField label="Frequency" error={errors?.frequency?.message}>
-                <Select value={field.value} onChange={(_, d) => field.onChange(d.value as DoseFrequency)} onBlur={field.onBlur} aria-label={`${name} frequency`}>
+                <Select
+                  value={field.value}
+                  onChange={(_, d) => field.onChange(d.value as DoseFrequency)}
+                  onBlur={field.onBlur}
+                  aria-label={`${name} frequency`}
+                >
                   {DOSE_FREQUENCIES.map((f) => (
                     <option key={f} value={f}>
                       {frequencyOptionLabel(f)}
@@ -202,8 +254,16 @@ function LineRow({
               control={control}
               name={`lines.${index}.customFrequency`}
               render={({ field }) => (
-                <Field validationMessage={errors?.customFrequency?.message} validationState={errors?.customFrequency ? 'error' : 'none'}>
-                  <Input {...field} aria-label={`${name} custom frequency`} placeholder="1-0-1 or 8 hourly" maxLength={64} />
+                <Field
+                  validationMessage={errors?.customFrequency?.message}
+                  validationState={errors?.customFrequency ? 'error' : 'none'}
+                >
+                  <Input
+                    {...field}
+                    aria-label={`${name} custom frequency`}
+                    placeholder="1-0-1 or 8 hourly"
+                    maxLength={64}
+                  />
                 </Field>
               )}
             />
@@ -242,7 +302,14 @@ function LineRow({
           name={`lines.${index}.quantity`}
           render={({ field }) => (
             <RowField label="Quantity" error={errors?.quantity?.message}>
-              <Tooltip content={auto !== null ? `Calculated: ${auto} ${quantityUnit(line.dosageForm, line.dose)}. Type to override.` : 'Enter the quantity to dispense (it cannot be calculated for this dose).'} relationship="description">
+              <Tooltip
+                content={
+                  auto !== null
+                    ? `Calculated: ${auto} ${quantityUnit(line.dosageForm, line.dose)}. Type to override.`
+                    : 'Enter the quantity to dispense (it cannot be calculated for this dose).'
+                }
+                relationship="description"
+              >
                 <Input
                   type="number"
                   min={0}
@@ -280,8 +347,17 @@ function LineRow({
           )}
         />
         <span className={styles.actions}>
-          <Tooltip content={open ? 'Hide details' : 'Generic, strength, form, route, Schedule H1/X'} relationship="label">
-            <Button size="small" appearance="subtle" icon={open ? <ChevronUpRegular /> : <ChevronDownRegular />} onClick={() => setOpen((v) => !v)} aria-expanded={open} />
+          <Tooltip
+            content={open ? 'Hide details' : 'Generic, strength, form, route, Schedule H1/X'}
+            relationship="label"
+          >
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={open ? <ChevronUpRegular /> : <ChevronDownRegular />}
+              onClick={() => setOpen((v) => !v)}
+              aria-expanded={open}
+            />
           </Tooltip>
           {canRemove && (
             <Tooltip content="Remove this medicine" relationship="label">
@@ -292,8 +368,24 @@ function LineRow({
       </div>
       {open && (
         <div className={styles.details}>
-          <Controller control={control} name={`lines.${index}.genericName`} render={({ field }) => <Field label="Generic / composition"><Input {...field} maxLength={300} placeholder="Paracetamol" /></Field>} />
-          <Controller control={control} name={`lines.${index}.strength`} render={({ field }) => <Field label="Strength"><Input {...field} maxLength={64} placeholder="500 mg" /></Field>} />
+          <Controller
+            control={control}
+            name={`lines.${index}.genericName`}
+            render={({ field }) => (
+              <Field label="Generic / composition">
+                <Input {...field} maxLength={300} placeholder="Paracetamol" />
+              </Field>
+            )}
+          />
+          <Controller
+            control={control}
+            name={`lines.${index}.strength`}
+            render={({ field }) => (
+              <Field label="Strength">
+                <Input {...field} maxLength={64} placeholder="500 mg" />
+              </Field>
+            )}
+          />
           <Controller
             control={control}
             name={`lines.${index}.dosageForm`}
@@ -365,7 +457,14 @@ function LineRow({
           <Caption1>
             {[line.genericName, line.strength].filter((v) => v.trim()).join(' ')}
             {line.genericName.trim() || line.strength.trim() ? ' — ' : ''}
-            {directionsText({ dose: line.dose, frequency: line.frequency, customFrequency: line.customFrequency, durationDays: line.durationDays, route: line.route, instructions: line.instructions })}
+            {directionsText({
+              dose: line.dose,
+              frequency: line.frequency,
+              customFrequency: line.customFrequency,
+              durationDays: line.durationDays,
+              route: line.route,
+              instructions: line.instructions,
+            })}
           </Caption1>
           {line.isControlledDrug && (
             <Badge size="small" color="danger" appearance="outline">
@@ -439,7 +538,10 @@ export function PrescriptionEditor({
   const validValues = async (): Promise<RxFormValues | null> => {
     const ok = await form.trigger();
     if (!ok) {
-      notify.warning('Check the highlighted fields', 'Every medicine needs a name, dose, frequency, days and a quantity when it cannot be calculated.');
+      notify.warning(
+        'Check the highlighted fields',
+        'Every medicine needs a name, dose, frequency, days and a quantity when it cannot be calculated.',
+      );
       return null;
     }
     return form.getValues();
@@ -449,7 +551,15 @@ export function PrescriptionEditor({
     const body = toRequestBody(values);
     const saved = current
       ? await prescriptionsApi.update(current.id, { ...body, version: current.version })
-      : await prescriptionsApi.create({ patientId, encounterId, visitId, admissionId, isInpatient, practitionerId: null, ...body });
+      : await prescriptionsApi.create({
+          patientId,
+          encounterId,
+          visitId,
+          admissionId,
+          isInpatient,
+          practitionerId: null,
+          ...body,
+        });
     setCurrent(saved);
     form.reset(values);
     draft.discard();
@@ -465,7 +575,10 @@ export function PrescriptionEditor({
         .then((fresh) => {
           setCurrent(fresh);
           setCheck(null);
-          notify.warning('This draft was changed in another window', 'Your version is kept on this screen. Save again to replace the other one.');
+          notify.warning(
+            'This draft was changed in another window',
+            'Your version is kept on this screen. Save again to replace the other one.',
+          );
         })
         .catch((reloadError: unknown) => notify.error(reloadError, 'Could not reload the prescription'));
     } else {
@@ -478,7 +591,8 @@ export function PrescriptionEditor({
       const values = await validValues();
       return values ? saveDraft(values) : null;
     },
-    onSuccess: (saved) => saved && notify.success('Draft saved', `${saved.prescriptionNumber} · not yet sent to the pharmacy`),
+    onSuccess: (saved) =>
+      saved && notify.success('Draft saved', `${saved.prescriptionNumber} · not yet sent to the pharmacy`),
     onError: (error) => handleError(error, 'Could not save the prescription'),
   });
 
@@ -528,7 +642,10 @@ export function PrescriptionEditor({
       draft.discard();
       form.reset(emptyRxForm());
       invalidate();
-      notify.success(`Prescription ${result.prescription.prescriptionNumber} signed`, 'It is now in the pharmacy queue.');
+      notify.success(
+        `Prescription ${result.prescription.prescriptionNumber} signed`,
+        'It is now in the pharmacy queue.',
+      );
       onSigned?.(result.prescription);
     },
     onError: (error) => {
@@ -548,7 +665,9 @@ export function PrescriptionEditor({
           version: current.version,
         });
         setDecision((d) => ({ ...d, acknowledgeWarnings: false, confirmControlledDrugs: false }));
-        setSignError('The safety check found something new since you reviewed it. Review the alerts below and sign again.');
+        setSignError(
+          'The safety check found something new since you reviewed it. Review the alerts below and sign again.',
+        );
       } else if (error.code === 'prescription.not_prescriber' || error.isForbidden) {
         setSignError(error.userMessage);
       } else if (error.isConflict) {
@@ -561,7 +680,13 @@ export function PrescriptionEditor({
   });
 
   const saveFavourite = useMutation({
-    mutationFn: (line: RxLineValues) => emrApi.addFavourite({ ...favouriteFromLine(line), kind: 'Drug', serviceItemId: null, displayOrder: (favourites.data?.length ?? 0) + 1 }),
+    mutationFn: (line: RxLineValues) =>
+      emrApi.addFavourite({
+        ...favouriteFromLine(line),
+        kind: 'Drug',
+        serviceItemId: null,
+        displayOrder: (favourites.data?.length ?? 0) + 1,
+      }),
     onSuccess: (favourite) => {
       notify.success('Added to your favourites', favourite.label);
       void queryClient.invalidateQueries({ queryKey: emrKeys.favourites('Drug') });
@@ -598,10 +723,15 @@ export function PrescriptionEditor({
         <MessageBar intent="success" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Prescription {signed.prescriptionNumber} signed</MessageBarTitle>
-            It is in the pharmacy queue{signed.isInpatient ? '' : ' and on the patient portal'}. Print it for the patient if needed.
+            It is in the pharmacy queue{signed.isInpatient ? '' : ' and on the patient portal'}. Print it for the
+            patient if needed.
           </MessageBarBody>
           <MessageBarActions>
-            <Button icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />} disabled={print.isPending} onClick={() => print.mutate(signed.id)}>
+            <Button
+              icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+              disabled={print.isPending}
+              onClick={() => print.mutate(signed.id)}
+            >
               Print (A5)
             </Button>
             <Button appearance="subtle" onClick={() => setSigned(null)}>
@@ -615,7 +745,10 @@ export function PrescriptionEditor({
         <>
           {draft.saved && hasRxContent(draft.saved.value) && !sameRxContent(draft.saved.value, defaults) && (
             <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-              <MessageBarBody>Unsaved prescription changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+              <MessageBarBody>
+                Unsaved prescription changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were
+                found on this computer.
+              </MessageBarBody>
               <MessageBarActions>
                 <Button onClick={draft.restore}>Restore them</Button>
                 <Button appearance="subtle" onClick={draft.discard}>
@@ -628,18 +761,37 @@ export function PrescriptionEditor({
           {(favouritesList.length > 0 || templateMedicines.length > 0 || currentMedications.length > 0) && (
             <div className={styles.quick}>
               {templateMedicines.length > 0 && (
-                <Button size="small" appearance="primary" icon={<AddRegular />} onClick={() => addLines(templateMedicines.map((m) => applyDefaults(emptyLine(), m)))}>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  icon={<AddRegular />}
+                  onClick={() => addLines(templateMedicines.map((m) => applyDefaults(emptyLine(), m)))}
+                >
                   Template medicines ({templateMedicines.length})
                 </Button>
               )}
               {favouritesList.slice(0, 12).map((f) => (
-                <Button key={f.id} size="small" icon={<StarRegular />} onClick={() => addLines([applyDefaults(emptyLine(), favouriteDefaults(f))])}>
+                <Button
+                  key={f.id}
+                  size="small"
+                  icon={<StarRegular />}
+                  onClick={() => addLines([applyDefaults(emptyLine(), favouriteDefaults(f))])}
+                >
                   {f.label}
                 </Button>
               ))}
               {currentMedications.slice(0, 6).map((m) => (
-                <Tooltip key={m.itemId} content={`Continue ${m.drugName}: ${m.dose} ${m.frequency} (prescribed by ${m.prescriberName ?? 'a doctor'})`} relationship="description">
-                  <Button size="small" appearance="outline" icon={<AddRegular />} onClick={() => addLines([fromCurrentMedication(m)])}>
+                <Tooltip
+                  key={m.itemId}
+                  content={`Continue ${m.drugName}: ${m.dose} ${m.frequency} (prescribed by ${m.prescriberName ?? 'a doctor'})`}
+                  relationship="description"
+                >
+                  <Button
+                    size="small"
+                    appearance="outline"
+                    icon={<AddRegular />}
+                    onClick={() => addLines([fromCurrentMedication(m)])}
+                  >
                     Continue {m.drugName}
                   </Button>
                 </Tooltip>
@@ -657,7 +809,10 @@ export function PrescriptionEditor({
             <span>Instructions</span>
             <span />
           </div>
-          <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }} aria-label="Medicines">
+          <ol
+            style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}
+            aria-label="Medicines"
+          >
             {fields.map((field, index) => (
               <LineRow
                 key={field.id}
@@ -669,7 +824,11 @@ export function PrescriptionEditor({
                 canRemove={fields.length > 1}
                 suggestions={templateMedicines}
                 onSaveFavourite={(line) => saveFavourite.mutate(line)}
-                canFavourite={!favouritesList.some((f) => f.label.toLowerCase() === (lines?.[index]?.drugName ?? '').trim().toLowerCase())}
+                canFavourite={
+                  !favouritesList.some(
+                    (f) => f.label.toLowerCase() === (lines?.[index]?.drugName ?? '').trim().toLowerCase(),
+                  )
+                }
                 autoFocus={focusRow === index}
               />
             ))}
@@ -679,10 +838,14 @@ export function PrescriptionEditor({
               Add medicine
             </Button>
           </div>
-          {form.formState.errors.lines?.root?.message && <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{form.formState.errors.lines.root.message}</Text>}
+          {form.formState.errors.lines?.root?.message && (
+            <Text style={{ color: tokens.colorPaletteRedForeground1 }}>{form.formState.errors.lines.root.message}</Text>
+          )}
           {duplicates.length > 0 && (
             <MessageBar intent="warning">
-              <MessageBarBody>The same medicine appears more than once: {duplicates.join(', ')}. Check before signing.</MessageBarBody>
+              <MessageBarBody>
+                The same medicine appears more than once: {duplicates.join(', ')}. Check before signing.
+              </MessageBarBody>
             </MessageBar>
           )}
 
@@ -691,7 +854,12 @@ export function PrescriptionEditor({
               control={form.control}
               name="advice"
               render={({ field, fieldState }) => (
-                <Field label="Advice for the patient" hint="Printed on the prescription (diet, rest, warning signs)" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                <Field
+                  label="Advice for the patient"
+                  hint="Printed on the prescription (diet, rest, warning signs)"
+                  validationMessage={fieldState.error?.message}
+                  validationState={fieldState.error ? 'error' : 'none'}
+                >
                   <Textarea {...field} rows={3} resize="vertical" maxLength={2000} />
                 </Field>
               )}
@@ -700,7 +868,11 @@ export function PrescriptionEditor({
               control={form.control}
               name="notes"
               render={({ field, fieldState }) => (
-                <Field label="Note for the pharmacist or nurse" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                <Field
+                  label="Note for the pharmacist or nurse"
+                  validationMessage={fieldState.error?.message}
+                  validationState={fieldState.error ? 'error' : 'none'}
+                >
                   <Textarea {...field} rows={3} resize="vertical" maxLength={1000} />
                 </Field>
               )}
@@ -710,7 +882,14 @@ export function PrescriptionEditor({
               name="refillsAllowed"
               render={({ field }) => (
                 <Field label="Refills allowed" hint="0 for none">
-                  <SpinButton min={0} max={12} value={field.value} onChange={(_, d) => field.onChange(Math.min(12, Math.max(0, d.value ?? (Number(d.displayValue) || 0))))} />
+                  <SpinButton
+                    min={0}
+                    max={12}
+                    value={field.value}
+                    onChange={(_, d) =>
+                      field.onChange(Math.min(12, Math.max(0, d.value ?? (Number(d.displayValue) || 0))))
+                    }
+                  />
                 </Field>
               )}
             />
@@ -718,7 +897,9 @@ export function PrescriptionEditor({
 
           {stale && (
             <MessageBar intent="warning">
-              <MessageBarBody>The prescription changed after the safety check. Check it again before signing.</MessageBarBody>
+              <MessageBarBody>
+                The prescription changed after the safety check. Check it again before signing.
+              </MessageBarBody>
             </MessageBar>
           )}
           {grouped && requirements && (
@@ -742,7 +923,10 @@ export function PrescriptionEditor({
           )}
           {notPrescriber && (
             <MessageBar intent="info">
-              <MessageBarBody>Only the prescribing doctor ({current?.practitionerName ?? 'another doctor'}) can sign this prescription.</MessageBarBody>
+              <MessageBarBody>
+                Only the prescribing doctor ({current?.practitionerName ?? 'another doctor'}) can sign this
+                prescription.
+              </MessageBarBody>
             </MessageBar>
           )}
 
@@ -753,7 +937,11 @@ export function PrescriptionEditor({
                 {isDirty ? ' · unsaved changes' : ' · saved'}
               </Caption1>
             )}
-            <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending || runCheck.isPending || sign.isPending} onClick={() => save.mutate()}>
+            <Button
+              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              disabled={save.isPending || runCheck.isPending || sign.isPending}
+              onClick={() => save.mutate()}
+            >
               Save draft
             </Button>
             <Button
@@ -765,7 +953,16 @@ export function PrescriptionEditor({
               {liveCheck ? 'Check again' : 'Check safety'}
             </Button>
             {canSign && (
-              <Tooltip content={!liveCheck ? 'Run the safety check first' : blockers.length > 0 ? blockers.join(' ') : 'Sign and send to the pharmacy'} relationship="description">
+              <Tooltip
+                content={
+                  !liveCheck
+                    ? 'Run the safety check first'
+                    : blockers.length > 0
+                      ? blockers.join(' ')
+                      : 'Sign and send to the pharmacy'
+                }
+                relationship="description"
+              >
                 <Button
                   appearance="primary"
                   icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}

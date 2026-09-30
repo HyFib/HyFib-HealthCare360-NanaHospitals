@@ -139,10 +139,20 @@ export interface VideoStageProps {
 }
 
 /** The patient's video with the doctor's own camera picture-in-picture, and a plain-language status overlay. */
-export function VideoStage({ state, patientName, earlyJoinMinutes, admitting, onAdmit, onRetryJoin, onReconnectVideo }: VideoStageProps) {
+export function VideoStage({
+  state,
+  patientName,
+  earlyJoinMinutes,
+  admitting,
+  onAdmit,
+  onRetryJoin,
+  onReconnectVideo,
+}: VideoStageProps) {
   const styles = useStyles();
   const remoteName = state.remote?.name ?? patientName;
-  const remoteHasVideo = Boolean(state.remoteStream?.getVideoTracks().some((track) => track.readyState === 'live')) && !state.remoteAudioOnly;
+  const remoteHasVideo =
+    Boolean(state.remoteStream?.getVideoTracks().some((track) => track.readyState === 'live')) &&
+    !state.remoteAudioOnly;
   const firstWaiting = state.waiting[0];
 
   let overlay: ReactNode = null;
@@ -169,7 +179,13 @@ export function VideoStage({ state, patientName, earlyJoinMinutes, admitting, on
         <Text className={styles.overlayText} size={500} weight="semibold">
           {firstWaiting.displayName} is in the waiting room
         </Text>
-        <Button appearance="primary" size="large" icon={<PersonAvailableRegular />} disabled={admitting} onClick={() => onAdmit(firstWaiting.participantId)}>
+        <Button
+          appearance="primary"
+          size="large"
+          icon={<PersonAvailableRegular />}
+          disabled={admitting}
+          onClick={() => onAdmit(firstWaiting.participantId)}
+        >
           Admit and start
         </Button>
       </>
@@ -182,22 +198,26 @@ export function VideoStage({ state, patientName, earlyJoinMinutes, admitting, on
           Waiting for {patientName} to join
         </Text>
         <Text className={styles.overlayText}>
-          The patient joins from the link sent by SMS/WhatsApp or from the patient portal, from {earlyJoinMinutes} minutes before the time. You are told here when
-          they arrive.
+          The patient joins from the link sent by SMS/WhatsApp or from the patient portal, from {earlyJoinMinutes}{' '}
+          minutes before the time. You are told here when they arrive.
         </Text>
       </>
     );
   } else if (state.peer === 'connecting') {
     overlay = <Spinner appearance="inverted" label={`Connecting video with ${remoteName}…`} labelPosition="below" />;
   } else if (state.peer === 'reconnecting') {
-    overlay = <Spinner appearance="inverted" label="The connection was interrupted. Reconnecting…" labelPosition="below" />;
+    overlay = (
+      <Spinner appearance="inverted" label="The connection was interrupted. Reconnecting…" labelPosition="below" />
+    );
   } else if (state.peer === 'failed') {
     overlay = (
       <>
         <Text className={styles.overlayText} weight="semibold">
           The video could not connect
         </Text>
-        <Text className={styles.overlayText}>The network may be blocking it. Try again, or continue by chat and phone.</Text>
+        <Text className={styles.overlayText}>
+          The network may be blocking it. Try again, or continue by chat and phone.
+        </Text>
         <Button appearance="primary" icon={<ArrowClockwiseRegular />} onClick={onReconnectVideo}>
           Try again
         </Button>
@@ -227,14 +247,21 @@ export function VideoStage({ state, patientName, earlyJoinMinutes, admitting, on
       {overlay && <div className={styles.overlay}>{overlay}</div>}
       {state.remote && state.peer === 'connected' && <span className={styles.name}>{remoteName}</span>}
       {state.localStream && (
-        <StreamVideo stream={state.localStream} className={mergeClasses(styles.local, !state.cameraOn && styles.hidden)} label="Your camera" muted />
+        <StreamVideo
+          stream={state.localStream}
+          className={mergeClasses(styles.local, !state.cameraOn && styles.hidden)}
+          label="Your camera"
+          muted
+        />
       )}
       {state.phase === 'joined' && (!state.localStream || !state.cameraOn) && (
         <div className={mergeClasses(styles.local, styles.localOff)} role="img" aria-label="Your camera is off">
           <VideoOffRegular fontSize={28} />
         </div>
       )}
-      {state.hub === 'reconnecting' && <span className={styles.banner}>Connection to the server lost. Reconnecting… the call may continue.</span>}
+      {state.hub === 'reconnecting' && (
+        <span className={styles.banner}>Connection to the server lost. Reconnecting… the call may continue.</span>
+      )}
     </div>
   );
 }

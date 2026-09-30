@@ -90,10 +90,17 @@ function applies(range: ReferenceRangeDto, gender: Gender, ageDays: number | nul
  * The reference interval for a patient: a sex-specific interval beats a sex-neutral one, then the narrowest age band
  * wins. With an unknown age only all-age intervals apply.
  */
-export function selectRange(ranges: readonly ReferenceRangeDto[], gender: Gender, ageDays: number | null): ReferenceRangeDto | null {
+export function selectRange(
+  ranges: readonly ReferenceRangeDto[],
+  gender: Gender,
+  ageDays: number | null,
+): ReferenceRangeDto | null {
   const width = (r: ReferenceRangeDto) => (r.ageToDays ?? Number.MAX_SAFE_INTEGER) - r.ageFromDays;
   const candidates = ranges.filter((r) => applies(r, gender, ageDays));
-  candidates.sort((a, b) => Number(isSexSpecific(b)) - Number(isSexSpecific(a)) || width(a) - width(b) || b.ageFromDays - a.ageFromDays);
+  candidates.sort(
+    (a, b) =>
+      Number(isSexSpecific(b)) - Number(isSexSpecific(a)) || width(a) - width(b) || b.ageFromDays - a.ageFromDays,
+  );
   return candidates[0] ?? null;
 }
 
@@ -166,7 +173,11 @@ export function classifyText(range: ReferenceRangeDto | null, value: string): Re
 }
 
 /** Cultures: an isolated organism is always abnormal; listed organisms (e.g. in a blood culture) are critical. */
-export function classifyCulture(range: ReferenceRangeDto | null, value: string, organism: string | null | undefined): ResultFlag | null {
+export function classifyCulture(
+  range: ReferenceRangeDto | null,
+  value: string,
+  organism: string | null | undefined,
+): ResultFlag | null {
   const hasOrganism = Boolean(organism?.trim());
   if (range && hasOrganism && includesIgnoreCase(range.criticalValues, organism!)) {
     return 'Critical';
@@ -193,7 +204,10 @@ export function limitsFromReferenceText(text: string | null | undefined): Numeri
   if (upTo?.[1]) {
     return { low: null, high: toNumber(upTo[1]), criticalLow: null, criticalHigh: null };
   }
-  const above = new RegExp(`^(?:(${number})\\s*(?:and above|or more|\\+)|(?:>=?|≥|more than)\\s*(${number}))$`, 'i').exec(value);
+  const above = new RegExp(
+    `^(?:(${number})\\s*(?:and above|or more|\\+)|(?:>=?|≥|more than)\\s*(${number}))$`,
+    'i',
+  ).exec(value);
   const bound = above?.[1] ?? above?.[2];
   if (bound) {
     return { low: toNumber(bound), high: null, criticalLow: null, criticalHigh: null };
@@ -214,7 +228,11 @@ export interface DeltaOutcome {
  * Delta check against the patient's previous verified result: |current − previous| ÷ |previous| × 100, one decimal.
  * A change away from zero has no percentage but counts as exceeded; a threshold of zero disables the check.
  */
-export function deltaCheck(current: number | null, previous: number | null | undefined, thresholdPercent: number): DeltaOutcome {
+export function deltaCheck(
+  current: number | null,
+  previous: number | null | undefined,
+  thresholdPercent: number,
+): DeltaOutcome {
   if (current === null || previous === null || previous === undefined) {
     return { percent: null, exceeded: false };
   }
@@ -263,11 +281,24 @@ function sameValue(a: string | null | undefined, b: string | null | undefined): 
 
 /** Flag, validity and delta for one result line, from the saved line and what is being typed. */
 export function interpretLine(
-  line: Pick<ResultSheetLine, 'resultType' | 'value' | 'flag' | 'referenceText' | 'previousValue' | 'deltaPercent' | 'deltaExceeded' | 'organism' | 'options'>,
+  line: Pick<
+    ResultSheetLine,
+    | 'resultType'
+    | 'value'
+    | 'flag'
+    | 'referenceText'
+    | 'previousValue'
+    | 'deltaPercent'
+    | 'deltaExceeded'
+    | 'organism'
+    | 'options'
+  >,
   edit: LineEdit | undefined,
   context: InterpretationContext,
 ): LineInterpretation {
-  const dirty = edit !== undefined && (!sameValue(edit.value, line.value) || (edit.organism !== undefined && !sameValue(edit.organism, line.organism)));
+  const dirty =
+    edit !== undefined &&
+    (!sameValue(edit.value, line.value) || (edit.organism !== undefined && !sameValue(edit.organism, line.organism)));
   if (!dirty) {
     return {
       flag: line.flag,
@@ -280,7 +311,14 @@ export function interpretLine(
   }
 
   const value = edit.value.trim();
-  const base: LineInterpretation = { flag: null, source: 'preview', invalid: null, deltaPercent: null, deltaExceeded: false, dirty: true };
+  const base: LineInterpretation = {
+    flag: null,
+    source: 'preview',
+    invalid: null,
+    deltaPercent: null,
+    deltaExceeded: false,
+    dirty: true,
+  };
   if (!value) {
     return base;
   }
@@ -298,7 +336,9 @@ export function interpretLine(
         ? null
         : limitsFromReferenceText(line.referenceText);
     const flag = limits ? classifyNumeric(limits, parsed) : null;
-    const delta = parsed.comparator ? { percent: null, exceeded: false } : deltaCheck(parsed.value, line.previousValue, context.deltaThresholdPercent ?? DEFAULT_DELTA_PERCENT);
+    const delta = parsed.comparator
+      ? { percent: null, exceeded: false }
+      : deltaCheck(parsed.value, line.previousValue, context.deltaThresholdPercent ?? DEFAULT_DELTA_PERCENT);
     return { ...base, flag, deltaPercent: delta.percent, deltaExceeded: delta.exceeded };
   }
   if (type === 'Options') {
@@ -327,7 +367,9 @@ export function reviewHints(
     hints.push(interpretation.invalid);
   }
   if (isCriticalFlag(interpretation.flag)) {
-    hints.push(line.hasCriticalCall ? 'Critical value (call documented)' : 'Critical value: document the call to the doctor');
+    hints.push(
+      line.hasCriticalCall ? 'Critical value (call documented)' : 'Critical value: document the call to the doctor',
+    );
   } else if (interpretation.flag && interpretation.flag !== 'Normal') {
     hints.push(`Flagged ${flagDisplay(interpretation.flag)?.label.toLowerCase() ?? interpretation.flag}`);
   } else if (interpretation.flag === null && line.resultType === 'Numeric') {
@@ -350,11 +392,20 @@ export function isReadyForBulkVerify(
   line: Pick<ResultSheetLine, 'status' | 'resultType' | 'autoValidated' | 'hasCriticalCall' | 'remarks'>,
   interpretation: Pick<LineInterpretation, 'flag' | 'deltaExceeded' | 'invalid' | 'dirty'>,
 ): boolean {
-  return line.status === 'Entered' && !interpretation.dirty && reviewHints(line, interpretation).length === 0 && interpretation.flag === 'Normal';
+  return (
+    line.status === 'Entered' &&
+    !interpretation.dirty &&
+    reviewHints(line, interpretation).length === 0 &&
+    interpretation.flag === 'Normal'
+  );
 }
 
 /** "+12.5 %" / "−40 %" with the direction of the change, for the previous-result column. */
-export function formatDelta(current: number | null, previous: number | null | undefined, percent: number | null): string | null {
+export function formatDelta(
+  current: number | null,
+  previous: number | null | undefined,
+  percent: number | null,
+): string | null {
   if (current === null || previous === null || previous === undefined) {
     return null;
   }

@@ -22,7 +22,8 @@ import { PortalFrame } from '@/shell/PortalFrame';
  */
 export const Route = createFileRoute('/feedback/form/$token')({
   validateSearch: (search: Record<string, unknown>): { kiosk?: true } => ({
-    kiosk: search.kiosk === true || search.kiosk === 'true' || search.kiosk === '1' || search.kiosk === 1 ? true : undefined,
+    kiosk:
+      search.kiosk === true || search.kiosk === 'true' || search.kiosk === '1' || search.kiosk === 1 ? true : undefined,
   }),
   component: FeedbackPosterPage,
 });
@@ -57,12 +58,15 @@ function FeedbackPosterPage() {
     if (resetAt === null) {
       return;
     }
-    const timer = setTimeout(() => {
-      setReceipt(null);
-      setResetAt(null);
-      setRound((value) => value + 1);
-      window.scrollTo({ top: 0 });
-    }, Math.max(0, resetAt - Date.now()));
+    const timer = setTimeout(
+      () => {
+        setReceipt(null);
+        setResetAt(null);
+        setRound((value) => value + 1);
+        window.scrollTo({ top: 0 });
+      },
+      Math.max(0, resetAt - Date.now()),
+    );
     return () => clearTimeout(timer);
   }, [resetAt]);
 

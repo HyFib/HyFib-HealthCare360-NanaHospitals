@@ -35,7 +35,13 @@ import { emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/
 import { LatestVitals } from '@/modules/emr/ChartSummary';
 import { BannerSkeleton, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
 import { EncounterDiagnoses } from '@/modules/emr/DiagnosisPanel';
-import { AmendDialog, AmendmentHistory, ComplaintSection, ExaminationSection, FollowUpSection } from '@/modules/emr/EncounterNote';
+import {
+  AmendDialog,
+  AmendmentHistory,
+  ComplaintSection,
+  ExaminationSection,
+  FollowUpSection,
+} from '@/modules/emr/EncounterNote';
 import { useClinicalSummary } from '@/modules/emr/hooks';
 import { NoteComposer, NotesList } from '@/modules/emr/NotesPanel';
 import { OrderComposer, OrdersList } from '@/modules/emr/OrdersPanel';
@@ -84,10 +90,22 @@ const useStyles = makeStyles({
     '@media (max-width: 1200px)': { display: 'none' },
   },
   railLink: { justifyContent: 'flex-start', width: '100%' },
-  railKey: { color: tokens.colorNeutralForeground3, marginLeft: 'auto', paddingLeft: '8px', fontFamily: tokens.fontFamilyMonospace },
+  railKey: {
+    color: tokens.colorNeutralForeground3,
+    marginLeft: 'auto',
+    paddingLeft: '8px',
+    fontFamily: tokens.fontFamilyMonospace,
+  },
   meta: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
-  checklist: { display: 'flex', flexDirection: 'column', gap: '8px', margin: '12px 0 0', padding: 0, listStyle: 'none' },
+  checklist: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    margin: '12px 0 0',
+    padding: 0,
+    listStyle: 'none',
+  },
   checkItem: { display: 'flex', gap: '8px', alignItems: 'flex-start' },
   ok: { color: tokens.colorPaletteGreenForeground1, display: 'flex', fontSize: '18px' },
   warn: { color: tokens.colorPaletteMarigoldForeground1, display: 'flex', fontSize: '18px' },
@@ -113,7 +131,19 @@ function EncounterPage() {
   return <EncounterWorkspace key={encounterId} encounter={encounter.data} />;
 }
 
-function WorkspaceSection({ id, title, description, actions, children }: { id: SectionId; title: string; description?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+function WorkspaceSection({
+  id,
+  title,
+  description,
+  actions,
+  children,
+}: {
+  id: SectionId;
+  title: string;
+  description?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+}) {
   const styles = useStyles();
   return (
     <div id={`enc-${id}`} className={styles.section}>
@@ -156,7 +186,9 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const diagnoses = useQuery(emrQueries.diagnoses(patientId, encounter.id));
   const notes = useQuery(emrQueries.notes(patientId, encounter.id));
   const rxList = useQuery(prescriptionQueries.list(patientId, { encounterId: encounter.id }));
-  const draftItem = rxList.data?.items.find((p) => p.status === 'Draft' && (!userPractitionerId || p.practitionerId === userPractitionerId));
+  const draftItem = rxList.data?.items.find(
+    (p) => p.status === 'Draft' && (!userPractitionerId || p.practitionerId === userPractitionerId),
+  );
   const draftDetail = useQuery({ ...prescriptionQueries.detail(draftItem?.id ?? ''), enabled: Boolean(draftItem) });
   const [signOpen, setSignOpen] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
@@ -178,7 +210,11 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const blocker = useBlocker({ shouldBlockFn: () => note.form.formState.isDirty, enableBeforeUnload: () => note.form.formState.isDirty, withResolver: true });
+  const blocker = useBlocker({
+    shouldBlockFn: () => note.form.formState.isDirty,
+    enableBeforeUnload: () => note.form.formState.isDirty,
+    withResolver: true,
+  });
 
   const printSummary = useMutation({
     mutationFn: async () => {
@@ -187,11 +223,18 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
         queryClient.fetchQuery(emrQueries.vitals(patientId, encounter.id, 1, 1)),
       ]);
       const signedRx = (rxList.data?.items ?? []).filter((p) => p.status === 'Signed');
-      const prescriptions = await Promise.all(signedRx.map((p) => queryClient.fetchQuery(prescriptionQueries.detail(p.id))));
+      const prescriptions = await Promise.all(
+        signedRx.map((p) => queryClient.fetchQuery(prescriptionQueries.detail(p.id))),
+      );
       const s = summary.data;
       await printEncounterSummary({
         facilityName,
-        patient: { fullName: s?.patient.fullName ?? '', uhid: s?.patient.uhid ?? '', age: s?.patient.age ?? null, gender: s?.patient.gender ?? 'Unknown' },
+        patient: {
+          fullName: s?.patient.fullName ?? '',
+          uhid: s?.patient.uhid ?? '',
+          age: s?.patient.age ?? null,
+          gender: s?.patient.gender ?? 'Unknown',
+        },
         encounter,
         diagnoses: diagnoses.data ?? [],
         vitals: vitals.items[0] ?? null,
@@ -209,7 +252,15 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   });
 
   if (!summary.data) {
-    return <Page>{summary.error ? <ErrorState error={summary.error} onRetry={() => void summary.refetch()} /> : <BannerSkeleton />}</Page>;
+    return (
+      <Page>
+        {summary.error ? (
+          <ErrorState error={summary.error} onRetry={() => void summary.refetch()} />
+        ) : (
+          <BannerSkeleton />
+        )}
+      </Page>
+    );
   }
 
   const s = summary.data;
@@ -218,7 +269,8 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const unsignedNotes = (notes.data?.items ?? []).filter((n) => !n.isSigned).length;
   const templateMedicines = (template.data?.medications ?? []).map(templateMedicineDefaults);
   const rxReady = rxList.isSuccess && (!draftItem || draftDetail.isSuccess);
-  const restorable = note.draft.saved !== null && JSON.stringify(note.draft.saved.value) !== JSON.stringify(note.defaults);
+  const restorable =
+    note.draft.saved !== null && JSON.stringify(note.draft.saved.value) !== JSON.stringify(note.defaults);
 
   const askToSign = () => {
     if (!note.canSign()) {
@@ -237,13 +289,22 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
           <>
             {!signed && canWrite && (
               <Tooltip content="Save the note (Ctrl+S)" relationship="description">
-                <Button icon={note.save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={note.save.isPending || !isDirty} onClick={() => note.save.mutate()}>
+                <Button
+                  icon={note.save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  disabled={note.save.isPending || !isDirty}
+                  onClick={() => note.save.mutate()}
+                >
                   {isDirty ? 'Save' : 'Saved'}
                 </Button>
               </Tooltip>
             )}
             {!signed && canSign && (
-              <Button appearance="primary" icon={<SignatureRegular />} disabled={note.sign.isPending} onClick={askToSign}>
+              <Button
+                appearance="primary"
+                icon={<SignatureRegular />}
+                disabled={note.sign.isPending}
+                onClick={askToSign}
+              >
                 Sign encounter
               </Button>
             )}
@@ -255,7 +316,12 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             {note.amending && (
               <>
                 <Button onClick={note.cancelAmendment}>Cancel amendment</Button>
-                <Button appearance="primary" icon={<SignatureRegular />} disabled={!isDirty || note.amend.isPending} onClick={() => setAmendOpen(true)}>
+                <Button
+                  appearance="primary"
+                  icon={<SignatureRegular />}
+                  disabled={!isDirty || note.amend.isPending}
+                  onClick={() => setAmendOpen(true)}
+                >
                   Record amendment
                 </Button>
               </>
@@ -288,17 +354,29 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
           {formatDateTime(encounter.startedAt)} · {encounter.practitionerName ?? 'Doctor'}
           {encounter.departmentName ? ` · ${encounter.departmentName}` : ''}
         </Caption1>
-        <StatusBadge status={signed ? 'Signed' : 'Draft'} label={signed ? (encounter.status === 'Amended' ? 'Signed, amended' : 'Signed') : 'Not signed'} />
-        {signed && encounter.signedAt && <Caption1 className={styles.muted}>Signed {formatDateTime(encounter.signedAt)}</Caption1>}
+        <StatusBadge
+          status={signed ? 'Signed' : 'Draft'}
+          label={signed ? (encounter.status === 'Amended' ? 'Signed, amended' : 'Signed') : 'Not signed'}
+        />
+        {signed && encounter.signedAt && (
+          <Caption1 className={styles.muted}>Signed {formatDateTime(encounter.signedAt)}</Caption1>
+        )}
         {!signed && isDirty && <Caption1 className={styles.muted}>Unsaved changes are kept on this computer</Caption1>}
-        <Button size="small" appearance="transparent" onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId } })}>
+        <Button
+          size="small"
+          appearance="transparent"
+          onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId } })}
+        >
           Open full chart
         </Button>
       </div>
 
       {restorable && note.draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>Unsaved changes to this note from {formatRelative(new Date(note.draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            Unsaved changes to this note from {formatRelative(new Date(note.draft.saved.savedAt).toISOString())} were
+            found on this computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={note.draft.restore}>Restore them</Button>
             <Button appearance="subtle" onClick={note.draft.discard}>
@@ -311,10 +389,19 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
       <div className={styles.layout}>
         <div className={styles.main}>
           <WorkspaceSection id="complaint" title="Complaint and history">
-            <ComplaintSection note={note} today={today} activeTemplate={template.data ?? null} onTemplateLoaded={(t) => setTemplateId(t.id)} />
+            <ComplaintSection
+              note={note}
+              today={today}
+              activeTemplate={template.data ?? null}
+              onTemplateLoaded={(t) => setTemplateId(t.id)}
+            />
           </WorkspaceSection>
 
-          <WorkspaceSection id="vitals" title="Vitals" description="Values outside the usual range for the patient's age are flagged as you type.">
+          <WorkspaceSection
+            id="vitals"
+            title="Vitals"
+            description="Values outside the usual range for the patient's age are flagged as you type."
+          >
             {canVitals ? (
               <>
                 <VitalsForm patientId={patientId} encounterId={encounter.id} autoFocus={false} />
@@ -330,11 +417,19 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             <ExaminationSection note={note} />
           </WorkspaceSection>
 
-          <WorkspaceSection id="diagnoses" title={`Diagnoses (${diagnosisCount})`} description="ICD-10 coded; the first primary diagnosis prints on the prescription.">
+          <WorkspaceSection
+            id="diagnoses"
+            title={`Diagnoses (${diagnosisCount})`}
+            description="ICD-10 coded; the first primary diagnosis prints on the prescription."
+          >
             <EncounterDiagnoses patientId={patientId} encounterId={encounter.id} problems={s.activeProblems} />
           </WorkspaceSection>
 
-          <WorkspaceSection id="orders" title="Orders" description="Lab, imaging and procedures go straight to the departments and billing.">
+          <WorkspaceSection
+            id="orders"
+            title="Orders"
+            description="Lab, imaging and procedures go straight to the departments and billing."
+          >
             {canOrder && (
               <OrderComposer
                 patientId={patientId}
@@ -348,7 +443,11 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             <OrdersList patientId={patientId} encounterId={encounter.id} />
           </WorkspaceSection>
 
-          <WorkspaceSection id="prescription" title="Prescription" description="Safety checks run against allergies, current medicines, interactions and maximum doses before signing.">
+          <WorkspaceSection
+            id="prescription"
+            title="Prescription"
+            description="Safety checks run against allergies, current medicines, interactions and maximum doses before signing."
+          >
             {canPrescribe &&
               (rxReady ? (
                 <PrescriptionEditor
@@ -370,10 +469,20 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             <PrescriptionsList patientId={patientId} encounterId={encounter.id} excludeDrafts />
           </WorkspaceSection>
 
-          <WorkspaceSection id="notes" title="Clinical notes" description="Procedure, counselling and progress notes of this encounter.">
-            {canWrite && <NoteComposer patientId={patientId} encounterId={encounter.id} admissionId={encounter.admissionId} />}
+          <WorkspaceSection
+            id="notes"
+            title="Clinical notes"
+            description="Procedure, counselling and progress notes of this encounter."
+          >
+            {canWrite && (
+              <NoteComposer patientId={patientId} encounterId={encounter.id} admissionId={encounter.admissionId} />
+            )}
             <div style={{ height: 12 }} />
-            <NotesList patientId={patientId} encounterId={encounter.id} emptyHint="Notes written in this encounter appear here." />
+            <NotesList
+              patientId={patientId}
+              encounterId={encounter.id}
+              emptyHint="Notes written in this encounter appear here."
+            />
           </WorkspaceSection>
 
           <WorkspaceSection id="followup" title="Follow-up and referral">
@@ -381,7 +490,10 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
           </WorkspaceSection>
 
           {encounter.amendments.length > 0 && (
-            <Section title={`Amendment history (${encounter.amendments.length})`} description="The text before each amendment, kept word for word.">
+            <Section
+              title={`Amendment history (${encounter.amendments.length})`}
+              description="The text before each amendment, kept word for word."
+            >
               <AmendmentHistory encounter={encounter} />
             </Section>
           )}
@@ -389,7 +501,13 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
 
         <nav className={styles.rail} aria-label="Encounter sections">
           {SECTIONS.map((section, index) => (
-            <Button key={section.id} className={styles.railLink} appearance="subtle" onClick={() => jumpTo(section.id)} aria-keyshortcuts={`Alt+${index + 1}`}>
+            <Button
+              key={section.id}
+              className={styles.railLink}
+              appearance="subtle"
+              onClick={() => jumpTo(section.id)}
+              aria-keyshortcuts={`Alt+${index + 1}`}
+            >
               {section.label}
               <span className={styles.railKey}>Alt+{index + 1}</span>
             </Button>
@@ -419,7 +537,8 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
       >
-        Your unsaved text is kept on this computer and offered again when you reopen this encounter. Save it with Ctrl+S to store it on the server.
+        Your unsaved text is kept on this computer and offered again when you reopen this encounter. Save it with Ctrl+S
+        to store it on the server.
       </ConfirmDialog>
     </Page>
   );
@@ -463,9 +582,24 @@ function SignDialog({
     >
       <Text>Signing saves and locks the note. Later corrections are recorded as amendments with a reason.</Text>
       <ul className={styles.checklist}>
-        {item(diagnosisCount > 0, diagnosisCount > 0 ? `${diagnosisCount} diagnosis${diagnosisCount === 1 ? '' : 'es'} recorded` : 'No diagnosis recorded (medical records will flag the chart)')}
-        {item(!hasDraftPrescription, hasDraftPrescription ? 'A prescription draft is not signed and has not reached the pharmacy' : 'No unsigned prescription')}
-        {item(unsignedNotes === 0, unsignedNotes === 0 ? 'All notes are signed' : `${unsignedNotes} note${unsignedNotes === 1 ? ' is' : 's are'} not signed`)}
+        {item(
+          diagnosisCount > 0,
+          diagnosisCount > 0
+            ? `${diagnosisCount} diagnosis${diagnosisCount === 1 ? '' : 'es'} recorded`
+            : 'No diagnosis recorded (medical records will flag the chart)',
+        )}
+        {item(
+          !hasDraftPrescription,
+          hasDraftPrescription
+            ? 'A prescription draft is not signed and has not reached the pharmacy'
+            : 'No unsigned prescription',
+        )}
+        {item(
+          unsignedNotes === 0,
+          unsignedNotes === 0
+            ? 'All notes are signed'
+            : `${unsignedNotes} note${unsignedNotes === 1 ? ' is' : 's are'} not signed`,
+        )}
         {item(true, followUp ? `Follow-up on ${formatDateOnly(followUp)}` : 'No follow-up date')}
       </ul>
       {errorCount > 0 && (

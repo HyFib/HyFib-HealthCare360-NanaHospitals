@@ -71,7 +71,12 @@ const useStyles = makeStyles({
     '@media (max-width: 900px)': { display: 'none' },
   },
   brandTitle: { fontSize: '40px', lineHeight: '48px', fontWeight: tokens.fontWeightSemibold, margin: 0 },
-  brandText: { color: 'rgba(255,255,255,0.85)', fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400, maxWidth: '520px' },
+  brandText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+    maxWidth: '520px',
+  },
   bullets: { display: 'grid', gap: '14px', margin: 0, padding: 0, listStyle: 'none' },
   bullet: { display: 'flex', gap: '10px', alignItems: 'center', fontSize: tokens.fontSizeBase400 },
   footer: { color: 'rgba(255,255,255,0.7)', fontSize: tokens.fontSizeBase200 },
@@ -195,7 +200,8 @@ function LoginPage() {
               <ShieldCheckmarkRegular fontSize={22} /> Encrypted connection and audited access to every record
             </li>
             <li className={styles.bullet}>
-              <CheckmarkCircleRegular fontSize={22} /> Work is never lost if the WiFi drops. It saves and retries on its own.
+              <CheckmarkCircleRegular fontSize={22} /> Work is never lost if the WiFi drops. It saves and retries on its
+              own.
             </li>
             <li className={styles.bullet}>
               <PersonRegular fontSize={22} /> Each role sees only the screens it needs
@@ -263,7 +269,13 @@ function LoginPage() {
                     <MessageBarBody>{error}</MessageBarBody>
                   </MessageBar>
                 )}
-                <Button type="submit" appearance="primary" size="large" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  size="large"
+                  disabled={busy}
+                  icon={busy ? <Spinner size="tiny" /> : undefined}
+                >
                   {busy ? 'Signing in…' : 'Sign in'}
                 </Button>
                 <Caption1 className={styles.muted}>Forgot your password? Ask the IT help desk to reset it.</Caption1>

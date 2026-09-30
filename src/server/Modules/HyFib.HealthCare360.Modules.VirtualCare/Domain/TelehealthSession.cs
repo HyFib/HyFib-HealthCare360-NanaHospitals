@@ -79,17 +79,17 @@ public sealed class TelehealthSession : AuditableEntity, IFacilityScoped
         DateTimeOffset endsAt,
         Guid? appointmentId = null,
         string? appointmentNumber = null) => new()
-    {
-        FacilityId = facilityId,
-        PatientId = patientId,
-        PractitionerId = practitionerId,
-        DepartmentId = departmentId,
-        ScheduledStartAt = startsAt,
-        ScheduledEndAt = endsAt > startsAt ? endsAt : startsAt.AddMinutes(15),
-        AppointmentId = appointmentId,
-        AppointmentNumber = appointmentNumber,
-        Status = TelehealthStatus.Scheduled,
-    };
+        {
+            FacilityId = facilityId,
+            PatientId = patientId,
+            PractitionerId = practitionerId,
+            DepartmentId = departmentId,
+            ScheduledStartAt = startsAt,
+            ScheduledEndAt = endsAt > startsAt ? endsAt : startsAt.AddMinutes(15),
+            AppointmentId = appointmentId,
+            AppointmentNumber = appointmentNumber,
+            Status = TelehealthStatus.Scheduled,
+        };
 
     /// <summary>Issues a new join token (invalidating any earlier link). The token is returned once and never stored.</summary>
     public Result<string> IssueJoinToken()

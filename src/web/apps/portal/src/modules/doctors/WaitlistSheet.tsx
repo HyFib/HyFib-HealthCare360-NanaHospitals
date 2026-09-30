@@ -35,15 +35,34 @@ function waitlistSchema(t: Translate, today: string) {
       preferredSession: z.enum(PREFERRED_SESSIONS),
       notes: z.string().trim().max(500),
     })
-    .refine((value) => daysBetween(today, value.preferredFrom) >= 0, { path: ['preferredFrom'], error: t('waitlist.dateRequired') })
-    .refine((value) => daysBetween(value.preferredFrom, value.preferredTo) >= 0, { path: ['preferredTo'], error: t('waitlist.datesInvalid') })
-    .refine((value) => daysBetween(value.preferredFrom, value.preferredTo) <= MAX_DAYS, { path: ['preferredTo'], error: t('waitlist.rangeTooLong') });
+    .refine((value) => daysBetween(today, value.preferredFrom) >= 0, {
+      path: ['preferredFrom'],
+      error: t('waitlist.dateRequired'),
+    })
+    .refine((value) => daysBetween(value.preferredFrom, value.preferredTo) >= 0, {
+      path: ['preferredTo'],
+      error: t('waitlist.datesInvalid'),
+    })
+    .refine((value) => daysBetween(value.preferredFrom, value.preferredTo) <= MAX_DAYS, {
+      path: ['preferredTo'],
+      error: t('waitlist.rangeTooLong'),
+    });
 }
 
 type WaitlistForm = z.infer<ReturnType<typeof waitlistSchema>>;
 
 /** "Tell me when a time opens up" for a doctor whose times are full; the hospital offers freed times by SMS/WhatsApp. */
-export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean; onClose: () => void; doctor: PublicDoctor; video: boolean }) {
+export function WaitlistSheet({
+  open,
+  onClose,
+  doctor,
+  video,
+}: {
+  open: boolean;
+  onClose: () => void;
+  doctor: PublicDoctor;
+  video: boolean;
+}) {
   const styles = useStyles();
   const t = useT();
   const toast = useToast();
@@ -120,7 +139,13 @@ export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean;
       dismissible={!busy}
       footer={
         <>
-          <Button appearance="primary" size="large" onClick={() => void submit()} disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            appearance="primary"
+            size="large"
+            onClick={() => void submit()}
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             {t('waitlist.submit')}
           </Button>
           <Button size="large" onClick={close} disabled={busy}>
@@ -145,7 +170,12 @@ export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean;
             name="patientId"
             render={({ field }) => (
               <Field label={t('booking.confirm.patient')} required>
-                <Select size="large" value={field.value} onChange={(_, data) => field.onChange(data.value)} disabled={busy}>
+                <Select
+                  size="large"
+                  value={field.value}
+                  onChange={(_, data) => field.onChange(data.value)}
+                  disabled={busy}
+                >
                   {profiles.map((person) => (
                     <option key={person.id} value={person.id}>
                       {person.fullName}
@@ -161,8 +191,20 @@ export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean;
             control={form.control}
             name="preferredFrom"
             render={({ field, fieldState }) => (
-              <Field label={t('waitlist.from')} required validationState={fieldState.error ? 'error' : 'none'} validationMessage={fieldState.error?.message}>
-                <Input type="date" size="large" value={field.value} min={today} onChange={(_, data) => field.onChange(data.value)} disabled={busy} />
+              <Field
+                label={t('waitlist.from')}
+                required
+                validationState={fieldState.error ? 'error' : 'none'}
+                validationMessage={fieldState.error?.message}
+              >
+                <Input
+                  type="date"
+                  size="large"
+                  value={field.value}
+                  min={today}
+                  onChange={(_, data) => field.onChange(data.value)}
+                  disabled={busy}
+                />
               </Field>
             )}
           />
@@ -170,8 +212,21 @@ export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean;
             control={form.control}
             name="preferredTo"
             render={({ field, fieldState }) => (
-              <Field label={t('waitlist.to')} required validationState={fieldState.error ? 'error' : 'none'} validationMessage={fieldState.error?.message}>
-                <Input type="date" size="large" value={field.value} min={today} max={addDays(today, MAX_DAYS)} onChange={(_, data) => field.onChange(data.value)} disabled={busy} />
+              <Field
+                label={t('waitlist.to')}
+                required
+                validationState={fieldState.error ? 'error' : 'none'}
+                validationMessage={fieldState.error?.message}
+              >
+                <Input
+                  type="date"
+                  size="large"
+                  value={field.value}
+                  min={today}
+                  max={addDays(today, MAX_DAYS)}
+                  onChange={(_, data) => field.onChange(data.value)}
+                  disabled={busy}
+                />
               </Field>
             )}
           />
@@ -194,7 +249,14 @@ export function WaitlistSheet({ open, onClose, doctor, video }: { open: boolean;
           name="notes"
           render={({ field }) => (
             <Field label={t('waitlist.notes')}>
-              <Textarea {...field} value={field.value ?? ''} rows={2} maxLength={500} resize="vertical" disabled={busy} />
+              <Textarea
+                {...field}
+                value={field.value ?? ''}
+                rows={2}
+                maxLength={500}
+                resize="vertical"
+                disabled={busy}
+              />
             </Field>
           )}
         />

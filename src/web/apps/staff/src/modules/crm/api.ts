@@ -112,7 +112,12 @@ export interface AddLeadActivityRequest {
 
 export interface ConvertLeadRequest {
   patientId: string | null;
-  registerPatient: { gender: Gender; dateOfBirth: string | null; ageYears: number | null; confirmedNotDuplicate: boolean } | null;
+  registerPatient: {
+    gender: Gender;
+    dateOfBirth: string | null;
+    ageYears: number | null;
+    confirmedNotDuplicate: boolean;
+  } | null;
   appointmentId: string | null;
 }
 
@@ -353,10 +358,37 @@ export interface Patient360View {
     byType: CountByLabel[];
     topDepartments: CountByLabel[];
   };
-  spend: { totalBilled: number; totalPaid: number; billedLastTwelveMonths: number; bills: number; lastBilledAt: string | null };
-  feedback: { responses: number; averageRating: number | null; lastNps: number | null; lastSentiment: Sentiment | null; lowScores: number; lastSubmittedAt: string | null };
-  recentComplaints: { id: string; complaintNumber: string; status: ComplaintStatus; priority: ComplaintPriority; category: string | null; raisedAt: string }[];
-  openFollowUps: { id: string; type: FollowUpType; dueDate: string; status: FollowUpStatus; priority: FollowUpPriority; isOverdue: boolean }[];
+  spend: {
+    totalBilled: number;
+    totalPaid: number;
+    billedLastTwelveMonths: number;
+    bills: number;
+    lastBilledAt: string | null;
+  };
+  feedback: {
+    responses: number;
+    averageRating: number | null;
+    lastNps: number | null;
+    lastSentiment: Sentiment | null;
+    lowScores: number;
+    lastSubmittedAt: string | null;
+  };
+  recentComplaints: {
+    id: string;
+    complaintNumber: string;
+    status: ComplaintStatus;
+    priority: ComplaintPriority;
+    category: string | null;
+    raisedAt: string;
+  }[];
+  openFollowUps: {
+    id: string;
+    type: FollowUpType;
+    dueDate: string;
+    status: FollowUpStatus;
+    priority: FollowUpPriority;
+    isOverdue: boolean;
+  }[];
   communication: {
     marketingConsent: boolean;
     updatesConsent: boolean;
@@ -365,7 +397,14 @@ export interface Patient360View {
     lastCampaignAt: string | null;
     optedOutByLink: boolean;
   };
-  sourceLead: { id: string; leadNumber: string; source: LeadSource; sourceDetail: string | null; createdAt: string; convertedAt: string | null } | null;
+  sourceLead: {
+    id: string;
+    leadNumber: string;
+    source: LeadSource;
+    sourceDetail: string | null;
+    createdAt: string;
+    convertedAt: string | null;
+  } | null;
 }
 
 // ------------------------------------------------------------------ queries
@@ -383,7 +422,11 @@ export const crmQueries = {
   leads: (filters: LeadFilters) =>
     queryOptions({
       queryKey: ['crm', 'leads', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<LeadListItem>>('/api/v1/crm/leads', { query: { ...filters, pageSize: filters.pageSize ?? 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<LeadListItem>>('/api/v1/crm/leads', {
+          query: { ...filters, pageSize: filters.pageSize ?? 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   lead: (id: string) =>
@@ -394,7 +437,11 @@ export const crmQueries = {
   followUps: (filters: FollowUpFilters) =>
     queryOptions({
       queryKey: ['crm', 'follow-ups', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<FollowUpListItem>>('/api/v1/crm/follow-ups', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<FollowUpListItem>>('/api/v1/crm/follow-ups', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 120_000,
     }),
@@ -409,7 +456,11 @@ export const crmQueries = {
   referringDoctors: (filters: { search?: string; activeOnly?: boolean; from?: string; to?: string; page?: number }) =>
     queryOptions({
       queryKey: ['crm', 'referrals', 'doctors', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ReferringDoctorListItem>>('/api/v1/crm/referring-doctors', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ReferringDoctorListItem>>('/api/v1/crm/referring-doctors', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   referringDoctor: (id: string) =>
@@ -420,17 +471,23 @@ export const crmQueries = {
   referralStats: (id: string, from?: string, to?: string) =>
     queryOptions({
       queryKey: ['crm', 'referrals', 'stats', id, from ?? '', to ?? ''],
-      queryFn: ({ signal }) => api.get<ReferralStats>(`/api/v1/crm/referring-doctors/${id}/stats`, { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ReferralStats>(`/api/v1/crm/referring-doctors/${id}/stats`, { query: { from, to }, signal }),
     }),
   unmatchedReferrals: (from?: string, to?: string) =>
     queryOptions({
       queryKey: ['crm', 'referrals', 'unmatched', from ?? '', to ?? ''],
-      queryFn: ({ signal }) => api.get<ReferrerText[]>('/api/v1/crm/referrals/unmatched', { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ReferrerText[]>('/api/v1/crm/referrals/unmatched', { query: { from, to }, signal }),
     }),
   campaigns: (filters: { status?: CampaignStatus; channel?: CampaignChannel; search?: string; page?: number }) =>
     queryOptions({
       queryKey: ['crm', 'campaigns', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<CampaignListItem>>('/api/v1/crm/campaigns', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CampaignListItem>>('/api/v1/crm/campaigns', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   campaign: (id: string) =>
@@ -460,27 +517,45 @@ export const crmQueries = {
 export const crmApi = {
   createLead: (request: SaveLeadRequest) => api.post<LeadCreated>('/api/v1/crm/leads', request),
   updateLead: (id: string, request: SaveLeadRequest) => api.put<void>(`/api/v1/crm/leads/${id}`, request),
-  addActivity: (id: string, request: AddLeadActivityRequest) => api.post<string>(`/api/v1/crm/leads/${id}/activities`, request),
-  changeLeadStatus: (id: string, status: LeadStatus, lostReason: string | null) => api.post<void>(`/api/v1/crm/leads/${id}/status`, { status, lostReason }),
-  convertLead: (id: string, request: ConvertLeadRequest) => api.post<LeadConversion>(`/api/v1/crm/leads/${id}/convert`, request),
+  addActivity: (id: string, request: AddLeadActivityRequest) =>
+    api.post<string>(`/api/v1/crm/leads/${id}/activities`, request),
+  changeLeadStatus: (id: string, status: LeadStatus, lostReason: string | null) =>
+    api.post<void>(`/api/v1/crm/leads/${id}/status`, { status, lostReason }),
+  convertLead: (id: string, request: ConvertLeadRequest) =>
+    api.post<LeadConversion>(`/api/v1/crm/leads/${id}/convert`, request),
 
   createFollowUp: (request: CreateFollowUpRequest) => api.post<string>('/api/v1/crm/follow-ups', request),
-  updateFollowUp: (id: string, request: { dueDate: string; assigneeUserId: string | null; priority: FollowUpPriority; notes: string | null; version: number }) =>
-    api.put<void>(`/api/v1/crm/follow-ups/${id}`, request),
-  recordAttempt: (id: string, request: { outcome: FollowUpOutcome; notes: string | null; nextDueDate: string | null }) =>
-    api.post<void>(`/api/v1/crm/follow-ups/${id}/attempts`, request),
+  updateFollowUp: (
+    id: string,
+    request: {
+      dueDate: string;
+      assigneeUserId: string | null;
+      priority: FollowUpPriority;
+      notes: string | null;
+      version: number;
+    },
+  ) => api.put<void>(`/api/v1/crm/follow-ups/${id}`, request),
+  recordAttempt: (
+    id: string,
+    request: { outcome: FollowUpOutcome; notes: string | null; nextDueDate: string | null },
+  ) => api.post<void>(`/api/v1/crm/follow-ups/${id}/attempts`, request),
   cancelFollowUp: (id: string, reason: string) => api.post<void>(`/api/v1/crm/follow-ups/${id}/cancel`, { reason }),
   remindFollowUp: (id: string) => api.post<void>(`/api/v1/crm/follow-ups/${id}/remind`),
 
   saveReferringDoctor: (id: string | null, request: SaveReferringDoctorRequest) =>
-    id ? api.put<void>(`/api/v1/crm/referring-doctors/${id}`, request) : api.post<string>('/api/v1/crm/referring-doctors', request),
+    id
+      ? api.put<void>(`/api/v1/crm/referring-doctors/${id}`, request)
+      : api.post<string>('/api/v1/crm/referring-doctors', request),
 
-  previewAudience: (segment: SegmentInput) => api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment),
+  previewAudience: (segment: SegmentInput) =>
+    api.post<AudiencePreview>('/api/v1/crm/campaigns/audience-preview', segment),
   createCampaign: (request: SaveCampaignRequest) => api.post<string>('/api/v1/crm/campaigns', request),
   updateCampaign: (id: string, request: SaveCampaignRequest) => api.put<void>(`/api/v1/crm/campaigns/${id}`, request),
-  scheduleCampaign: (id: string, scheduledAt: string) => api.post<void>(`/api/v1/crm/campaigns/${id}/schedule`, { scheduledAt }),
+  scheduleCampaign: (id: string, scheduledAt: string) =>
+    api.post<void>(`/api/v1/crm/campaigns/${id}/schedule`, { scheduledAt }),
   unscheduleCampaign: (id: string) => api.post<void>(`/api/v1/crm/campaigns/${id}/unschedule`),
   cancelCampaign: (id: string, reason: string) => api.post<void>(`/api/v1/crm/campaigns/${id}/cancel`, { reason }),
 
-  marketingOptOut: (patientId: string, reason: string) => api.post<void>(`/api/v1/crm/patients/${patientId}/marketing-opt-out`, { reason }),
+  marketingOptOut: (patientId: string, reason: string) =>
+    api.post<void>(`/api/v1/crm/patients/${patientId}/marketing-opt-out`, { reason }),
 };

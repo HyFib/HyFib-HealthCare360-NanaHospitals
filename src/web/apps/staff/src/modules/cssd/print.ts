@@ -29,10 +29,13 @@ export async function printPackLabels(load: LoadDto, packIds?: readonly string[]
     .code svg { width: 100%; height: 9mm; display: block; }
     .number { font-family: Consolas, monospace; font-size: 7pt; text-align: center; letter-spacing: 0.5px; }
     .meta { font-size: 6pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }`;
-  await printHtml(printDocument(labels.join(''), { title: `Pack labels ${load.cycleNumber}`, pageSize: 'Label50x25', styles }), {
-    pageSize: 'Label50x25',
-    silent: true,
-  });
+  await printHtml(
+    printDocument(labels.join(''), { title: `Pack labels ${load.cycleNumber}`, pageSize: 'Label50x25', styles }),
+    {
+      pageSize: 'Label50x25',
+      silent: true,
+    },
+  );
 }
 
 /** A5 issue slip that travels with the packs to the department (signed on receipt). */
@@ -43,9 +46,10 @@ export async function printIssueSlip(issues: readonly SetIssueDto[], facilityNam
   }
   const rows = issues
     .map(
-      (i) => `<tr><td>${escapeHtml(i.setName ?? '')}</td><td class="mono">${escapeHtml(i.packNumber ?? '')}</td><td class="mono">${escapeHtml(i.cycleNumber ?? '')}</td><td>${escapeHtml(
-        i.sterileUntil ? formatDateOnly(i.sterileUntil) : '—',
-      )}</td></tr>`,
+      (i) =>
+        `<tr><td>${escapeHtml(i.setName ?? '')}</td><td class="mono">${escapeHtml(i.packNumber ?? '')}</td><td class="mono">${escapeHtml(i.cycleNumber ?? '')}</td><td>${escapeHtml(
+          i.sterileUntil ? formatDateOnly(i.sterileUntil) : '—',
+        )}</td></tr>`,
     )
     .join('');
   const body = `

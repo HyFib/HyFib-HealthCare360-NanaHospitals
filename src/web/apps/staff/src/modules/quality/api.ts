@@ -453,10 +453,33 @@ export interface QualityDashboard {
   openByStatus: CountByKey[];
   byMonth: { month: string; total: number; sentinel: number }[];
   capas: { open: number; inProgress: number; awaitingVerification: number; overdue: number; verifiedInPeriod: number };
-  overdueCapas: { id: string; capaNumber: string; action: string; ownerName: string | null; dueDate: string; daysOverdue: number }[];
-  topRisks: { id: string; riskNumber: string; title: string; score: number; rating: RiskRating; residualScore: number | null; reviewDate: string }[];
+  overdueCapas: {
+    id: string;
+    capaNumber: string;
+    action: string;
+    ownerName: string | null;
+    dueDate: string;
+    daysOverdue: number;
+  }[];
+  topRisks: {
+    id: string;
+    riskNumber: string;
+    title: string;
+    score: number;
+    rating: RiskRating;
+    residualScore: number | null;
+    reviewDate: string;
+  }[];
   risksDueForReview: number;
-  indicatorsOffTarget: { id: string; code: string; name: string; periodLabel: string; value: number; target: number | null; direction: IndicatorDirection }[];
+  indicatorsOffTarget: {
+    id: string;
+    code: string;
+    name: string;
+    periodLabel: string;
+    value: number;
+    target: number | null;
+    direction: IndicatorDirection;
+  }[];
 }
 
 // ------------------------------------------------------------------ queries
@@ -474,7 +497,11 @@ export const qualityQueries = {
   incidents: (filters: IncidentFilters) =>
     queryOptions({
       queryKey: ['quality', 'incidents', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<IncidentListItem>>('/api/v1/quality/incidents', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<IncidentListItem>>('/api/v1/quality/incidents', {
+          query: { ...filters, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   myIncidents: () =>
@@ -490,19 +517,22 @@ export const qualityQueries = {
   investigation: (incidentId: string) =>
     queryOptions({
       queryKey: ['quality', 'incidents', 'investigation', incidentId],
-      queryFn: ({ signal }) => api.get<InvestigationDto>(`/api/v1/quality/incidents/${incidentId}/investigation`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<InvestigationDto>(`/api/v1/quality/incidents/${incidentId}/investigation`, { signal }),
       retry: false,
     }),
   capas: (filters: CapaFilters) =>
     queryOptions({
       queryKey: ['quality', 'capas', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<CapaListItem>>('/api/v1/quality/capas', { query: { ...filters, pageSize: 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CapaListItem>>('/api/v1/quality/capas', { query: { ...filters, pageSize: 25 }, signal }),
       placeholderData: keepPreviousData,
     }),
   myCapas: (includeClosed: boolean) =>
     queryOptions({
       queryKey: ['quality', 'capas', 'mine', includeClosed],
-      queryFn: ({ signal }) => api.get<CapaListItem[]>('/api/v1/quality/capas/mine', { query: { includeClosed }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<CapaListItem[]>('/api/v1/quality/capas/mine', { query: { includeClosed }, signal }),
     }),
   capa: (id: string) =>
     queryOptions({
@@ -512,13 +542,18 @@ export const qualityQueries = {
   risks: (filters: RiskFilters) =>
     queryOptions({
       queryKey: ['quality', 'risks', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<RiskListItem>>('/api/v1/quality/risks', { query: { ...filters, pageSize: filters.pageSize ?? 25 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RiskListItem>>('/api/v1/quality/risks', {
+          query: { ...filters, pageSize: filters.pageSize ?? 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   riskMatrix: (residual: boolean) =>
     queryOptions({
       queryKey: ['quality', 'risks', 'matrix', residual],
-      queryFn: ({ signal }) => api.get<RiskMatrixCell[]>('/api/v1/quality/risks/matrix', { query: { residual }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<RiskMatrixCell[]>('/api/v1/quality/risks/matrix', { query: { residual }, signal }),
     }),
   risk: (id: string) =>
     queryOptions({
@@ -528,22 +563,26 @@ export const qualityQueries = {
   indicators: (includeInactive = false, category?: string) =>
     queryOptions({
       queryKey: ['quality', 'indicators', 'list', includeInactive, category ?? 'all'],
-      queryFn: ({ signal }) => api.get<IndicatorDto[]>('/api/v1/quality/indicators', { query: { includeInactive, category }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<IndicatorDto[]>('/api/v1/quality/indicators', { query: { includeInactive, category }, signal }),
     }),
   indicatorValues: (id: string, from?: string, to?: string) =>
     queryOptions({
       queryKey: ['quality', 'indicators', 'values', id, from ?? '', to ?? ''],
-      queryFn: ({ signal }) => api.get<IndicatorValueDto[]>(`/api/v1/quality/indicators/${id}/values`, { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<IndicatorValueDto[]>(`/api/v1/quality/indicators/${id}/values`, { query: { from, to }, signal }),
     }),
   indicatorTrend: (id: string, from?: string, to?: string) =>
     queryOptions({
       queryKey: ['quality', 'indicators', 'trend', id, from ?? '', to ?? ''],
-      queryFn: ({ signal }) => api.get<IndicatorTrendDto>(`/api/v1/quality/indicators/${id}/trend`, { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<IndicatorTrendDto>(`/api/v1/quality/indicators/${id}/trend`, { query: { from, to }, signal }),
     }),
   scorecard: (period?: string) =>
     queryOptions({
       queryKey: ['quality', 'indicators', 'scorecard', period ?? 'last'],
-      queryFn: ({ signal }) => api.get<ScorecardRow[]>('/api/v1/quality/indicators/scorecard', { query: { period }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ScorecardRow[]>('/api/v1/quality/indicators/scorecard', { query: { period }, signal }),
     }),
   dashboard: (from?: string, to?: string) =>
     queryOptions({
@@ -557,27 +596,38 @@ export const qualityQueries = {
 
 export const qualityApi = {
   report: (request: ReportIncidentRequest) => api.post<IncidentReceipt>('/api/v1/quality/incidents', request),
-  updateIncident: (id: string, request: UpdateIncidentRequest) => api.put<void>(`/api/v1/quality/incidents/${id}`, request),
-  transition: (id: string, status: IncidentStatus, note: string | null) => api.post<void>(`/api/v1/quality/incidents/${id}/transition`, { status, note }),
+  updateIncident: (id: string, request: UpdateIncidentRequest) =>
+    api.put<void>(`/api/v1/quality/incidents/${id}`, request),
+  transition: (id: string, status: IncidentStatus, note: string | null) =>
+    api.post<void>(`/api/v1/quality/incidents/${id}/transition`, { status, note }),
   assign: (id: string, userId: string) => api.post<void>(`/api/v1/quality/incidents/${id}/assign`, { userId }),
-  saveInvestigation: (incidentId: string, request: SaveInvestigationRequest) => api.put<string>(`/api/v1/quality/incidents/${incidentId}/investigation`, request),
-  completeInvestigation: (incidentId: string) => api.post<void>(`/api/v1/quality/incidents/${incidentId}/investigation/complete`),
-  reopenInvestigation: (incidentId: string) => api.post<void>(`/api/v1/quality/incidents/${incidentId}/investigation/reopen`),
+  saveInvestigation: (incidentId: string, request: SaveInvestigationRequest) =>
+    api.put<string>(`/api/v1/quality/incidents/${incidentId}/investigation`, request),
+  completeInvestigation: (incidentId: string) =>
+    api.post<void>(`/api/v1/quality/incidents/${incidentId}/investigation/complete`),
+  reopenInvestigation: (incidentId: string) =>
+    api.post<void>(`/api/v1/quality/incidents/${incidentId}/investigation/reopen`),
 
   createCapa: (request: CreateCapaRequest) => api.post<string>('/api/v1/quality/capas', request),
   updateCapa: (id: string, request: UpdateCapaRequest) => api.put<void>(`/api/v1/quality/capas/${id}`, request),
   startCapa: (id: string) => api.post<void>(`/api/v1/quality/capas/${id}/start`),
   completeCapa: (id: string, note: string) => api.post<void>(`/api/v1/quality/capas/${id}/complete`, { note }),
-  verifyCapa: (id: string, effective: boolean, note: string) => api.post<void>(`/api/v1/quality/capas/${id}/verify`, { effective, note }),
+  verifyCapa: (id: string, effective: boolean, note: string) =>
+    api.post<void>(`/api/v1/quality/capas/${id}/verify`, { effective, note }),
   cancelCapa: (id: string, reason: string) => api.post<void>(`/api/v1/quality/capas/${id}/cancel`, { reason }),
 
-  createRisk: (request: SaveRiskRequest) => api.post<{ id: string; riskNumber: string; score: number; rating: RiskRating }>('/api/v1/quality/risks', request),
+  createRisk: (request: SaveRiskRequest) =>
+    api.post<{ id: string; riskNumber: string; score: number; rating: RiskRating }>('/api/v1/quality/risks', request),
   updateRisk: (id: string, request: SaveRiskRequest) => api.put<void>(`/api/v1/quality/risks/${id}`, request),
   reviewRisk: (id: string, request: ReviewRiskRequest) => api.post<void>(`/api/v1/quality/risks/${id}/review`, request),
 
   saveIndicator: (id: string | null, request: SaveIndicatorRequest) =>
-    id ? api.put<void>(`/api/v1/quality/indicators/${id}`, request) : api.post<unknown>('/api/v1/quality/indicators', request),
-  recordValue: (id: string, request: { periodStart: string; numerator: number; denominator: number; notes: string | null }) =>
-    api.put<IndicatorValueDto>(`/api/v1/quality/indicators/${id}/values`, request),
+    id
+      ? api.put<void>(`/api/v1/quality/indicators/${id}`, request)
+      : api.post<unknown>('/api/v1/quality/indicators', request),
+  recordValue: (
+    id: string,
+    request: { periodStart: string; numerator: number; denominator: number; notes: string | null },
+  ) => api.put<IndicatorValueDto>(`/api/v1/quality/indicators/${id}/values`, request),
   deleteValue: (valueId: string) => api.delete<void>(`/api/v1/quality/indicators/values/${valueId}`),
 };

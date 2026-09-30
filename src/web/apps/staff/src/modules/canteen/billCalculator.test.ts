@@ -2,7 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { calculateBill, calculateLine, changeDue, mergeCart, type BillLineInput } from './billCalculator';
 
 let id = 0;
-const line = (itemName: string, quantity: number, unitPrice: number, gstRate = 5, priceIncludesGst = true): BillLineInput => ({
+const line = (
+  itemName: string,
+  quantity: number,
+  unitPrice: number,
+  gstRate = 5,
+  priceIncludesGst = true,
+): BillLineInput => ({
   menuItemId: `item-${++id}`,
   itemName,
   quantity,

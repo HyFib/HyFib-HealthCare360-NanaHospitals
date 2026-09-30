@@ -1,12 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import type { RosterEntryDto } from './api';
-import { cellKey, cellsFromEntries, conflictsByCell, coverage, diffRoster, entryIdsByCell, paint, sameItems, type CellItem } from './roster';
+import {
+  cellKey,
+  cellsFromEntries,
+  conflictsByCell,
+  coverage,
+  diffRoster,
+  entryIdsByCell,
+  paint,
+  sameItems,
+  type CellItem,
+} from './roster';
 
 const MOR: CellItem = { shiftId: 'mor', isWeekOff: false, notes: null };
 const EVE: CellItem = { shiftId: 'eve', isWeekOff: false, notes: null };
 const OFF: CellItem = { shiftId: null, isWeekOff: true, notes: null };
 
-function entry(id: string, employeeId: string, date: string, shiftId: string | null, startTime: string | null): RosterEntryDto {
+function entry(
+  id: string,
+  employeeId: string,
+  date: string,
+  shiftId: string | null,
+  startTime: string | null,
+): RosterEntryDto {
   return {
     id,
     employeeId,
@@ -26,7 +42,11 @@ function entry(id: string, employeeId: string, date: string, shiftId: string | n
 
 describe('roster cells', () => {
   it('groups saved entries by employee and day in shift order', () => {
-    const entries = [entry('2', 'a', '2026-09-21', 'eve', '14:00:00'), entry('1', 'a', '2026-09-21', 'mor', '07:00:00'), entry('3', 'b', '2026-09-21', null, null)];
+    const entries = [
+      entry('2', 'a', '2026-09-21', 'eve', '14:00:00'),
+      entry('1', 'a', '2026-09-21', 'mor', '07:00:00'),
+      entry('3', 'b', '2026-09-21', null, null),
+    ];
     const cells = cellsFromEntries(entries);
     expect(cells[cellKey('a', '2026-09-21')]?.map((c) => c.shiftId)).toEqual(['mor', 'eve']);
     expect(cells[cellKey('b', '2026-09-21')]?.[0]?.isWeekOff).toBe(true);
@@ -70,13 +90,24 @@ describe('saving the roster', () => {
 
   it('maps conflicts to cells and counts coverage per day', () => {
     const byCell = conflictsByCell([
-      { employeeId: 'a', employeeName: 'A', date: '2026-09-21', kind: 'OnLeave', severity: 'Warning', message: 'On leave' },
+      {
+        employeeId: 'a',
+        employeeName: 'A',
+        date: '2026-09-21',
+        kind: 'OnLeave',
+        severity: 'Warning',
+        message: 'On leave',
+      },
     ]);
     expect(byCell[cellKey('a', '2026-09-21')]).toHaveLength(1);
-    const counts = coverage({ [cellKey('a', '2026-09-21')]: [MOR], [cellKey('b', '2026-09-21')]: [MOR, EVE], [cellKey('c', '2026-09-21')]: [OFF] }, [
-      '2026-09-21',
-      '2026-09-22',
-    ]);
+    const counts = coverage(
+      {
+        [cellKey('a', '2026-09-21')]: [MOR],
+        [cellKey('b', '2026-09-21')]: [MOR, EVE],
+        [cellKey('c', '2026-09-21')]: [OFF],
+      },
+      ['2026-09-21', '2026-09-22'],
+    );
     expect(counts['2026-09-21']).toEqual({ mor: 2, eve: 1, off: 1 });
     expect(counts['2026-09-22']).toEqual({});
   });

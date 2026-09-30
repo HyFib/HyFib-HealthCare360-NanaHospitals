@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { currentSlot, describeSlots, maskToSlots, MEAL_SLOTS, normalizeRestrictions, parseSlots, slotsToMask, STANDARD_SLOTS } from './rules';
+import {
+  currentSlot,
+  describeSlots,
+  maskToSlots,
+  MEAL_SLOTS,
+  normalizeRestrictions,
+  parseSlots,
+  slotsToMask,
+  STANDARD_SLOTS,
+} from './rules';
 
 describe('meal slots (server flags enum)', () => {
   it('uses the server bit values', () => {
@@ -42,7 +51,11 @@ describe('meal slots (server flags enum)', () => {
 
 describe('diet restrictions', () => {
   it('cleans, splits and de-duplicates', () => {
-    expect(normalizeRestrictions([' Low salt ', 'low SALT', 'Low sugar, soft', '', ' , '])).toEqual(['Low salt', 'Low sugar', 'soft']);
+    expect(normalizeRestrictions([' Low salt ', 'low SALT', 'Low sugar, soft', '', ' , '])).toEqual([
+      'Low salt',
+      'Low sugar',
+      'soft',
+    ]);
   });
 
   it('keeps at most 10 restrictions of 50 characters', () => {

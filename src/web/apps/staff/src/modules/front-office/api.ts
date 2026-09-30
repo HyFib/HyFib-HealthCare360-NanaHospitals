@@ -1,7 +1,14 @@
 import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { QueueTokenDto, TokenPriority, TokenStatus, VisitListItem, VisitStatus, VisitType } from '@/modules/patients/api';
+import type {
+  QueueTokenDto,
+  TokenPriority,
+  TokenStatus,
+  VisitListItem,
+  VisitStatus,
+  VisitType,
+} from '@/modules/patients/api';
 
 export interface DepartmentQueueStat {
   departmentId: string;
@@ -52,7 +59,16 @@ export interface DisplayDepartment {
   waiting: number;
 }
 
-export type EnquiryType = 'General' | 'Appointment' | 'DoctorAvailability' | 'Billing' | 'Insurance' | 'HealthPackage' | 'Admission' | 'Complaint' | 'Other';
+export type EnquiryType =
+  | 'General'
+  | 'Appointment'
+  | 'DoctorAvailability'
+  | 'Billing'
+  | 'Insurance'
+  | 'HealthPackage'
+  | 'Admission'
+  | 'Complaint'
+  | 'Other';
 export type EnquiryChannel = 'WalkIn' | 'Phone' | 'WhatsApp' | 'Email' | 'Website';
 export type EnquiryStatus = 'Open' | 'InProgress' | 'Resolved' | 'Converted';
 
@@ -155,20 +171,31 @@ export const frontOfficeQueries = {
   display: (departmentIds: string[]) =>
     queryOptions({
       queryKey: ['front-office', 'display', departmentIds],
-      queryFn: ({ signal }) => api.get<DisplayDepartment[]>('/api/v1/queue/display', { query: { departmentIds: departmentIds.join(',') }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DisplayDepartment[]>('/api/v1/queue/display', {
+          query: { departmentIds: departmentIds.join(',') },
+          signal,
+        }),
       refetchInterval: 20_000,
     }),
   enquiries: (status: EnquiryStatus | undefined, page: number, search?: string) =>
     queryOptions({
       queryKey: ['front-office', 'enquiries', status ?? 'all', page, search ?? ''],
-      queryFn: ({ signal }) => api.get<PagedResult<EnquiryDto>>('/api/v1/front-office/enquiries', { query: { status, page, pageSize: 25, search }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<EnquiryDto>>('/api/v1/front-office/enquiries', {
+          query: { status, page, pageSize: 25, search },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   visitorPasses: (activeOnly: boolean, page: number, search?: string) =>
     queryOptions({
       queryKey: ['front-office', 'visitor-passes', activeOnly, page, search ?? ''],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<VisitorPassDto>>('/api/v1/front-office/visitor-passes', { query: { activeOnly, page, pageSize: 25, search }, signal }),
+        api.get<PagedResult<VisitorPassDto>>('/api/v1/front-office/visitor-passes', {
+          query: { activeOnly, page, pageSize: 25, search },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
 };

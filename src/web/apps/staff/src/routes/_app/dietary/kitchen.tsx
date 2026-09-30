@@ -12,7 +12,9 @@ import { formatTimeOfDay } from '@/modules/inpatient/time';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export const Route = createFileRoute('/_app/dietary/kitchen')({
-  validateSearch: (s: Record<string, unknown>): { date?: string } => ({ date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined }),
+  validateSearch: (s: Record<string, unknown>): { date?: string } => ({
+    date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined,
+  }),
   component: KitchenPage,
 });
 
@@ -43,7 +45,16 @@ function KitchenPage() {
         icon={<FoodRegular />}
         subtitle={`${formatDateOnly(date)} · counts include every planned meal not cancelled`}
         actions={
-          <Button icon={<PrintRegular />} disabled={!p} onClick={() => p && void printProductionSheet(p, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+          <Button
+            icon={<PrintRegular />}
+            disabled={!p}
+            onClick={() =>
+              p &&
+              void printProductionSheet(p, facilityName).catch((error: unknown) =>
+                notify.error(error, 'Printing failed'),
+              )
+            }
+          >
             Print cooking list
           </Button>
         }
@@ -51,7 +62,13 @@ function KitchenPage() {
       <Section>
         <FilterBar>
           <Field label="Date">
-            <Input type="date" value={date} onChange={(_, d) => d.value && void navigate({ search: { date: d.value === today ? undefined : d.value }, replace: true })} />
+            <Input
+              type="date"
+              value={date}
+              onChange={(_, d) =>
+                d.value && void navigate({ search: { date: d.value === today ? undefined : d.value }, replace: true })
+              }
+            />
           </Field>
         </FilterBar>
       </Section>
@@ -67,7 +84,11 @@ function KitchenPage() {
             <KpiCard label="Jain" value={p ? sum((l) => l.jain) : '…'} />
           </div>
           {p && lines.length === 0 ? (
-            <EmptyState icon={<FoodRegular />} title="Nothing to cook" description="No meals are planned for this day yet." />
+            <EmptyState
+              icon={<FoodRegular />}
+              title="Nothing to cook"
+              description="No meals are planned for this day yet."
+            />
           ) : (
             <div className={styles.rounds}>
               {MEAL_SLOTS.map((slot) => {
@@ -89,12 +110,28 @@ function KitchenPage() {
                       getRowId={(l) => `${l.slot}-${l.dietCode}`}
                       size="small"
                       columns={[
-                        { key: 'diet', header: 'Diet', render: (l) => <Text weight="semibold">{l.dietName ?? l.dietCode}</Text> },
+                        {
+                          key: 'diet',
+                          header: 'Diet',
+                          render: (l) => <Text weight="semibold">{l.dietName ?? l.dietCode}</Text>,
+                        },
                         { key: 'veg', header: 'Veg', width: 80, align: 'end', render: (l) => l.vegetarian || '—' },
-                        { key: 'nonveg', header: 'Non-veg', width: 90, align: 'end', render: (l) => l.nonVegetarian || '—' },
+                        {
+                          key: 'nonveg',
+                          header: 'Non-veg',
+                          width: 90,
+                          align: 'end',
+                          render: (l) => l.nonVegetarian || '—',
+                        },
                         { key: 'egg', header: 'Egg', width: 70, align: 'end', render: (l) => l.eggetarian || '—' },
                         { key: 'jain', header: 'Jain', width: 70, align: 'end', render: (l) => l.jain || '—' },
-                        { key: 'total', header: 'Total', width: 80, align: 'end', render: (l) => <Text weight="bold">{l.total}</Text> },
+                        {
+                          key: 'total',
+                          header: 'Total',
+                          width: 80,
+                          align: 'end',
+                          render: (l) => <Text weight="bold">{l.total}</Text>,
+                        },
                         {
                           key: 'notes',
                           header: 'Special notes',

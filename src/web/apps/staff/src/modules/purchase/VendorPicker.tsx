@@ -31,9 +31,17 @@ export function VendorPicker({
       disabled={disabled}
       placeholder="Vendor name, code or GSTIN"
       queryKey={['purchase', 'vendors', 'picker']}
-      fetch={(search, signal) => api.get<PagedResult<VendorListItem>>('/api/v1/purchase/vendors', { query: { search, pageSize: 10 }, signal }).then((r) => r.items)}
+      fetch={(search, signal) =>
+        api
+          .get<PagedResult<VendorListItem>>('/api/v1/purchase/vendors', { query: { search, pageSize: 10 }, signal })
+          .then((r) => r.items)
+      }
       getKey={(v) => v.id}
-      bestMatch={(items, typed) => items.find((v) => v.code.toUpperCase() === typed.trim().toUpperCase() || v.gstin === typed.trim().toUpperCase()) ?? items[0]}
+      bestMatch={(items, typed) =>
+        items.find(
+          (v) => v.code.toUpperCase() === typed.trim().toUpperCase() || v.gstin === typed.trim().toUpperCase(),
+        ) ?? items[0]
+      }
       selectedText={value ? (value.code ? `${value.name} (${value.code})` : value.name) : null}
       onPick={onPick}
       minLength={2}

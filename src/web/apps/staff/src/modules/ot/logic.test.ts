@@ -62,14 +62,18 @@ describe('WHO checklist phase gating (mirrors SurgeryBooking.ConfirmSafety)', ()
   it('keeps the phases in order', () => {
     expect(phaseGate(booking(), 'TimeOut').reason).toBe('Complete the WHO Sign-in first.');
     expect(phaseGate(booking({ safetyChecklist: phases(true) }), 'TimeOut').allowed).toBe(true);
-    expect(phaseGate(booking({ safetyChecklist: phases(true), status: 'InProgress' }), 'SignOut').reason).toBe('Complete the WHO Time-out first.');
+    expect(phaseGate(booking({ safetyChecklist: phases(true), status: 'InProgress' }), 'SignOut').reason).toBe(
+      'Complete the WHO Time-out first.',
+    );
   });
 
   it('does the Sign-out only once surgery has started', () => {
     const beforeIncision = phaseGate(booking({ safetyChecklist: phases(true, true) }), 'SignOut');
     expect(beforeIncision.allowed).toBe(false);
     expect(beforeIncision.reason).toMatch(/after it has started/);
-    expect(phaseGate(booking({ safetyChecklist: phases(true, true), status: 'InProgress' }), 'SignOut').allowed).toBe(true);
+    expect(phaseGate(booking({ safetyChecklist: phases(true, true), status: 'InProgress' }), 'SignOut').allowed).toBe(
+      true,
+    );
   });
 
   it('locks a completed phase', () => {
@@ -86,16 +90,26 @@ describe('WHO checklist phase gating (mirrors SurgeryBooking.ConfirmSafety)', ()
 
 describe('surgery start and completion gates', () => {
   it('never allows the incision before the Sign-in and Time-out', () => {
-    expect(startGate(booking()).reason).toBe('Surgery cannot start until the WHO Sign-in and WHO Time-out are complete.');
-    expect(startGate(booking({ safetyChecklist: phases(true) })).reason).toBe('Surgery cannot start until the WHO Time-out is complete.');
+    expect(startGate(booking()).reason).toBe(
+      'Surgery cannot start until the WHO Sign-in and WHO Time-out are complete.',
+    );
+    expect(startGate(booking({ safetyChecklist: phases(true) })).reason).toBe(
+      'Surgery cannot start until the WHO Time-out is complete.',
+    );
     expect(startGate(booking({ safetyChecklist: phases(true, true) })).allowed).toBe(true);
-    expect(startGate(booking({ safetyChecklist: phases(true, true), status: 'InProgress' })).reason).toBe('Surgery has already started.');
+    expect(startGate(booking({ safetyChecklist: phases(true, true), status: 'InProgress' })).reason).toBe(
+      'Surgery has already started.',
+    );
   });
 
   it('never allows completion before the Sign-out', () => {
     expect(completeGate(booking({ status: 'InProgress', safetyChecklist: phases(true, true) })).allowed).toBe(false);
-    expect(completeGate(booking({ status: 'InProgress', safetyChecklist: phases(true, true, true) })).allowed).toBe(true);
-    expect(completeGate(booking({ safetyChecklist: phases(true, true, true) })).reason).toBe('Only a surgery in progress can be completed.');
+    expect(completeGate(booking({ status: 'InProgress', safetyChecklist: phases(true, true, true) })).allowed).toBe(
+      true,
+    );
+    expect(completeGate(booking({ safetyChecklist: phases(true, true, true) })).reason).toBe(
+      'Only a surgery in progress can be completed.',
+    );
   });
 
   it('locks the pre-op checklist after the Sign-in', () => {
@@ -114,8 +128,12 @@ describe('surgery start and completion gates', () => {
 describe('day-of-surgery steps', () => {
   it('points at the next thing to do', () => {
     expect(currentStepId(booking())).toBe('receive');
-    expect(currentStepId(booking({ status: 'Requested', scheduledStart: null, preOpComplete: false }))).toBe('schedule');
-    expect(currentStepId(booking({ status: 'InPreOp', receivedInPreOpAt: T, safetyChecklist: phases(true) }))).toBe('time-out');
+    expect(currentStepId(booking({ status: 'Requested', scheduledStart: null, preOpComplete: false }))).toBe(
+      'schedule',
+    );
+    expect(currentStepId(booking({ status: 'InPreOp', receivedInPreOpAt: T, safetyChecklist: phases(true) }))).toBe(
+      'time-out',
+    );
   });
 
   it('shows the optional pre-op reception as skipped when the team went straight to the Sign-in', () => {
@@ -132,11 +150,25 @@ describe('day-of-surgery steps', () => {
 
   it('marks everything done after completion and stops a cancelled case', () => {
     const done = surgerySteps(
-      booking({ status: 'Completed', receivedInPreOpAt: T, startedAt: T, completedAt: T, safetyChecklist: phases(true, true, true) }),
+      booking({
+        status: 'Completed',
+        receivedInPreOpAt: T,
+        startedAt: T,
+        completedAt: T,
+        safetyChecklist: phases(true, true, true),
+      }),
     );
     expect(done.every((s) => s.state === 'done')).toBe(true);
     const cancelled = surgerySteps(booking({ status: 'Cancelled' }));
-    expect(cancelled.filter((s) => s.state === 'stopped').map((s) => s.id)).toEqual(['schedule', 'receive', 'sign-in', 'time-out', 'start', 'sign-out', 'complete']);
+    expect(cancelled.filter((s) => s.state === 'stopped').map((s) => s.id)).toEqual([
+      'schedule',
+      'receive',
+      'sign-in',
+      'time-out',
+      'start',
+      'sign-out',
+      'complete',
+    ]);
   });
 
   it('counts WHO phases done', () => {
@@ -144,7 +176,12 @@ describe('day-of-surgery steps', () => {
   });
 });
 
-function calendarBooking(id: string, start: string, end: string, status: SurgeryStatus = 'Scheduled'): OtCalendarBooking {
+function calendarBooking(
+  id: string,
+  start: string,
+  end: string,
+  status: SurgeryStatus = 'Scheduled',
+): OtCalendarBooking {
   return {
     id,
     bookingNumber: id,
@@ -172,8 +209,12 @@ function calendarBooking(id: string, start: string, end: string, status: Surgery
 
 describe('double-booking hints (half-open intervals like the server)', () => {
   it('allows back-to-back cases and flags overlaps', () => {
-    expect(overlaps('2026-09-26T03:30:00Z', '2026-09-26T04:30:00Z', '2026-09-26T04:30:00Z', '2026-09-26T05:30:00Z')).toBe(false);
-    expect(overlaps('2026-09-26T03:30:00Z', '2026-09-26T04:31:00Z', '2026-09-26T04:30:00Z', '2026-09-26T05:30:00Z')).toBe(true);
+    expect(
+      overlaps('2026-09-26T03:30:00Z', '2026-09-26T04:30:00Z', '2026-09-26T04:30:00Z', '2026-09-26T05:30:00Z'),
+    ).toBe(false);
+    expect(
+      overlaps('2026-09-26T03:30:00Z', '2026-09-26T04:31:00Z', '2026-09-26T04:30:00Z', '2026-09-26T05:30:00Z'),
+    ).toBe(true);
   });
 
   it('ignores finished or cancelled cases and the booking being moved', () => {
@@ -210,7 +251,10 @@ describe('day board layout', () => {
     const late = { start: '2026-09-26T15:30:00Z', end: '2026-09-26T16:40:00Z' };
     expect(dayWindow([early, late], date)).toEqual({ start: 360, end: 1380 });
     // A case on another day does not stretch the window.
-    expect(dayWindow([{ start: '2026-09-27T01:00:00Z', end: '2026-09-27T02:00:00Z' }], date)).toEqual({ start: 480, end: 1200 });
+    expect(dayWindow([{ start: '2026-09-27T01:00:00Z', end: '2026-09-27T02:00:00Z' }], date)).toEqual({
+      start: 480,
+      end: 1200,
+    });
   });
 
   it('places overlapping cases side by side and back-to-back cases in one lane', () => {
@@ -231,7 +275,10 @@ describe('day board layout', () => {
   });
 
   it('clips cases that run past the window', () => {
-    const [block] = placeBlocks([{ start: '2026-09-26T13:30:00Z', end: '2026-09-26T15:30:00Z' }], date, { start: 480, end: 1200 });
+    const [block] = placeBlocks([{ start: '2026-09-26T13:30:00Z', end: '2026-09-26T15:30:00Z' }], date, {
+      start: 480,
+      end: 1200,
+    });
     expect(block).toMatchObject({ startMinute: 1140, endMinute: 1200, clippedEnd: true, clippedStart: false });
   });
 });
@@ -249,7 +296,14 @@ describe('utilisation totals', () => {
       firstCasesOnTime: onTime,
     });
     const totals = utilisationTotals([{ metrics: metrics(240, 480, 1, 1) }, { metrics: metrics(120, 480, 1, 0) }]);
-    expect(totals).toMatchObject({ casesCompleted: 4, casesCancelled: 2, actualMinutes: 360, availableMinutes: 960, utilisationPercent: 37.5, firstCaseOnTimePercent: 50 });
+    expect(totals).toMatchObject({
+      casesCompleted: 4,
+      casesCancelled: 2,
+      actualMinutes: 360,
+      availableMinutes: 960,
+      utilisationPercent: 37.5,
+      firstCaseOnTimePercent: 50,
+    });
     expect(utilisationTotals([]).utilisationPercent).toBeNull();
   });
 });
@@ -274,9 +328,17 @@ describe('OT store materials', () => {
   const firstBatch = item.batches[0]!;
 
   it('reads a missing or ambiguous OT store from the 422 codes only', () => {
-    expect(otStoreProblem(new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.no_store' }))).toBe('no-store');
-    expect(otStoreProblem(new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.store_ambiguous' }))).toBe('ambiguous');
-    expect(otStoreProblem(new ApiError({ status: 0, title: 'Cannot reach the HealthCare360 server', code: 'network' }))).toBeNull();
+    expect(
+      otStoreProblem(new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.no_store' })),
+    ).toBe('no-store');
+    expect(
+      otStoreProblem(
+        new ApiError({ status: 422, title: 'Cannot complete this action', code: 'stock.store_ambiguous' }),
+      ),
+    ).toBe('ambiguous');
+    expect(
+      otStoreProblem(new ApiError({ status: 0, title: 'Cannot reach the HealthCare360 server', code: 'network' })),
+    ).toBeNull();
     expect(otStoreProblem(null)).toBeNull();
   });
 
@@ -300,7 +362,9 @@ describe('OT store materials', () => {
   });
 
   it('describes a batch in words', () => {
-    expect(batchLabel(firstBatch, 'Nos')).toBe(`Lot LOT-A · expires ${formatDateOnly('2027-03-31')} · 2 Nos available · MRP ${formatInr(125000)}`);
+    expect(batchLabel(firstBatch, 'Nos')).toBe(
+      `Lot LOT-A · expires ${formatDateOnly('2027-03-31')} · 2 Nos available · MRP ${formatInr(125000)}`,
+    );
     expect(batchLabel({ ...firstBatch, expiryDate: null }, 'Nos')).toContain('no expiry date');
   });
 });

@@ -72,7 +72,8 @@ export const common = defineMessages({
     'errors.title': 'Could not load',
     'errors.saveTitle': 'Could not save',
     'errors.network.title': 'No connection',
-    'errors.network': 'We could not reach the hospital. Check your internet connection and try again. Nothing is booked or paid twice when you retry.',
+    'errors.network':
+      'We could not reach the hospital. Check your internet connection and try again. Nothing is booked or paid twice when you retry.',
     'errors.tooMany': 'Too many attempts. Please wait a few minutes and try again.',
     'errors.sessionEnded': 'Your session has ended. Please sign in again.',
     'errors.notFound': 'We could not find this. It may have been removed, or the link may be old.',
@@ -107,7 +108,8 @@ export const common = defineMessages({
     'shell.offline.title': 'You are offline',
     'shell.offline.body': 'Check your mobile data or WiFi. We will reconnect by ourselves.',
     'shell.server.title': 'Cannot reach the hospital',
-    'shell.server.body': 'Your internet may be slow. What you typed stays on this screen, and nothing will be booked or paid twice when you try again.',
+    'shell.server.body':
+      'Your internet may be slow. What you typed stays on this screen, and nothing will be booked or paid twice when you try again.',
     'shell.checkAgain': 'Check again',
     'shell.idleSignedOut': 'You were signed out after {minutes} minutes without activity, to protect your privacy.',
     'shell.signedOut': 'You have signed out.',
@@ -120,7 +122,8 @@ export const common = defineMessages({
     'shell.noProfiles.body':
       'Your mobile number is verified, but it is not on any patient registration yet. At your next visit, ask the front desk to add this number to your registration, then sign in again.',
     'shell.chooser.title': 'Whose records do you want to see?',
-    'shell.chooser.body': 'These family members are registered with your mobile number. You can switch at any time from the top of the screen.',
+    'shell.chooser.body':
+      'These family members are registered with your mobile number. You can switch at any time from the top of the screen.',
     'shell.otherOwner.title': 'This belongs to {name}',
     'shell.otherOwner.body': 'You are viewing the records of {current}. Switch to {name} to see this.',
     'shell.otherOwner.switch': 'Switch to {name}',
@@ -197,7 +200,8 @@ export const common = defineMessages({
     'errors.title': 'लोड नहीं हो सका',
     'errors.saveTitle': 'सहेजा नहीं जा सका',
     'errors.network.title': 'कनेक्शन नहीं है',
-    'errors.network': 'अस्पताल से संपर्क नहीं हो सका। अपना इंटरनेट कनेक्शन जाँचें और फिर से कोशिश करें। दोबारा कोशिश करने पर कुछ भी दो बार बुक या भुगतान नहीं होगा।',
+    'errors.network':
+      'अस्पताल से संपर्क नहीं हो सका। अपना इंटरनेट कनेक्शन जाँचें और फिर से कोशिश करें। दोबारा कोशिश करने पर कुछ भी दो बार बुक या भुगतान नहीं होगा।',
     'errors.tooMany': 'बहुत ज़्यादा कोशिशें हो गईं। कुछ मिनट रुककर फिर से कोशिश करें।',
     'errors.sessionEnded': 'आपका सत्र समाप्त हो गया है। कृपया फिर से साइन इन करें।',
     'errors.notFound': 'यह नहीं मिला। हो सकता है इसे हटा दिया गया हो या लिंक पुराना हो।',
@@ -232,9 +236,11 @@ export const common = defineMessages({
     'shell.offline.title': 'आप ऑफ़लाइन हैं',
     'shell.offline.body': 'अपना मोबाइल डेटा या वाई-फ़ाई जाँचें। कनेक्शन लौटते ही हम अपने आप जुड़ जाएँगे।',
     'shell.server.title': 'अस्पताल से संपर्क नहीं हो पा रहा',
-    'shell.server.body': 'आपका इंटरनेट धीमा हो सकता है। आपने जो लिखा है वह इसी स्क्रीन पर रहेगा, और दोबारा कोशिश करने पर कुछ भी दो बार बुक या भुगतान नहीं होगा।',
+    'shell.server.body':
+      'आपका इंटरनेट धीमा हो सकता है। आपने जो लिखा है वह इसी स्क्रीन पर रहेगा, और दोबारा कोशिश करने पर कुछ भी दो बार बुक या भुगतान नहीं होगा।',
     'shell.checkAgain': 'फिर से जाँचें',
-    'shell.idleSignedOut': 'आपकी गोपनीयता की सुरक्षा के लिए {minutes} मिनट तक कोई गतिविधि न होने पर आपको साइन आउट कर दिया गया।',
+    'shell.idleSignedOut':
+      'आपकी गोपनीयता की सुरक्षा के लिए {minutes} मिनट तक कोई गतिविधि न होने पर आपको साइन आउट कर दिया गया।',
     'shell.signedOut': 'आपने साइन आउट कर लिया है।',
     'shell.help': 'मदद चाहिए? अस्पताल के फ़्रंट डेस्क पर कॉल करें।',
     'shell.emergency': 'आपातकाल में 108 पर कॉल करें या नज़दीकी इमरजेंसी विभाग में जाएँ। इस पोर्टल का उपयोग न करें।',
@@ -245,7 +251,8 @@ export const common = defineMessages({
     'shell.noProfiles.body':
       'आपका मोबाइल नंबर सत्यापित है, पर यह अभी किसी मरीज़ के पंजीकरण में नहीं है। अगली बार अस्पताल आने पर फ़्रंट डेस्क से यह नंबर अपने पंजीकरण में जुड़वाएँ, फिर से साइन इन करें।',
     'shell.chooser.title': 'आप किसके रिकॉर्ड देखना चाहते हैं?',
-    'shell.chooser.body': 'ये परिवार के सदस्य आपके मोबाइल नंबर से पंजीकृत हैं। आप स्क्रीन के ऊपर से कभी भी बदल सकते हैं।',
+    'shell.chooser.body':
+      'ये परिवार के सदस्य आपके मोबाइल नंबर से पंजीकृत हैं। आप स्क्रीन के ऊपर से कभी भी बदल सकते हैं।',
     'shell.otherOwner.title': 'यह {name} का है',
     'shell.otherOwner.body': 'आप {current} के रिकॉर्ड देख रहे हैं। इसे देखने के लिए {name} पर जाएँ।',
     'shell.otherOwner.switch': '{name} पर जाएँ',

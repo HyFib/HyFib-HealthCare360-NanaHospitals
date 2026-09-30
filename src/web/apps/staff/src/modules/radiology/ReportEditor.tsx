@@ -27,7 +27,17 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, EmptyState, ErrorState, LoadingState, Section, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Section,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -82,7 +92,13 @@ const useStyles = makeStyles({
   text: { whiteSpace: 'pre-wrap' },
   impression: { whiteSpace: 'pre-wrap', fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
-  addendum: { borderLeft: `3px solid ${tokens.colorNeutralStroke1}`, paddingLeft: '10px', display: 'flex', flexDirection: 'column', gap: '4px' },
+  addendum: {
+    borderLeft: `3px solid ${tokens.colorNeutralStroke1}`,
+    paddingLeft: '10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
 });
 
 const schema = z
@@ -98,7 +114,11 @@ const schema = z
   })
   .superRefine((values, ctx) => {
     if (values.isCriticalFinding && !values.criticalFindingNote.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['criticalFindingNote'], message: 'Describe the critical finding in one line.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['criticalFindingNote'],
+        message: 'Describe the critical finding in one line.',
+      });
     }
   });
 
@@ -143,7 +163,14 @@ export function RadiologyReportPanel({ study }: { study: ImagingStudyDetail }) {
   if (!isReportable(study.status)) {
     return (
       <Section title="Report">
-        <EmptyState title="No report yet" description={study.status === 'Cancelled' ? 'The study was cancelled.' : 'The report is written after the scan is completed.'} />
+        <EmptyState
+          title="No report yet"
+          description={
+            study.status === 'Cancelled'
+              ? 'The study was cancelled.'
+              : 'The report is written after the scan is completed.'
+          }
+        />
       </Section>
     );
   }
@@ -173,7 +200,9 @@ export function RadiologyReportPanel({ study }: { study: ImagingStudyDetail }) {
     <Section title="Report">
       <EmptyState
         title="Report not available yet"
-        description={reporter ? 'A radiologist has not signed the report yet.' : 'The report appears here once it is released.'}
+        description={
+          reporter ? 'A radiologist has not signed the report yet.' : 'The report appears here once it is released.'
+        }
       />
     </Section>
   );
@@ -190,7 +219,15 @@ function ReportLayout({ main, side }: { main: ReactNode; side: ReactNode }) {
   );
 }
 
-function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; report: RadiologyReportDto | null; canVerify: boolean }) {
+function ReportForm({
+  study,
+  report,
+  canVerify,
+}: {
+  study: ImagingStudyDetail;
+  report: RadiologyReportDto | null;
+  canVerify: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -219,7 +256,10 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
 
   const handleError = (error: unknown, fallback: string) => {
     if (isApiError(error) && error.isConflict) {
-      notify.warning('The report was changed by someone else', 'It has been reloaded. Check it and make your changes again.');
+      notify.warning(
+        'The report was changed by someone else',
+        'It has been reloaded. Check it and make your changes again.',
+      );
       void queryClient.invalidateQueries({ queryKey: reportKey });
       return;
     }
@@ -255,7 +295,10 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
     },
     onSuccess: (signed) => {
       setCalling(false);
-      notify.success(signed.status === 'Released' ? 'Report signed and released' : 'Report signed', signed.status === 'Released' ? 'The doctor and the patient are informed.' : undefined);
+      notify.success(
+        signed.status === 'Released' ? 'Report signed and released' : 'Report signed',
+        signed.status === 'Released' ? 'The doctor and the patient are informed.' : undefined,
+      );
       invalidate();
     },
     onError: (error) => {
@@ -282,7 +325,10 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
   };
 
   const busy = save.isPending || submit.isPending || sign.isPending;
-  useHotkey('mod+s', () => void form.handleSubmit((values) => save.mutate(values))(), { allowInInputs: true, enabled: !busy });
+  useHotkey('mod+s', () => void form.handleSubmit((values) => save.mutate(values))(), {
+    allowInInputs: true,
+    enabled: !busy,
+  });
 
   const applyChosenTemplate = () => {
     const template = templates.data?.find((t) => t.id === templateId);
@@ -304,13 +350,20 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
       main={
         <Section
           title="Report"
-          description={status ? `${reportStatusLabel[status]}${latest()?.reportedBy ? ` · reported by ${latest()?.reportedBy}` : ''}` : 'Not started. Choose a template or type the findings.'}
+          description={
+            status
+              ? `${reportStatusLabel[status]}${latest()?.reportedBy ? ` · reported by ${latest()?.reportedBy}` : ''}`
+              : 'Not started. Choose a template or type the findings.'
+          }
           actions={status && <Badge appearance="tint">{reportStatusLabel[status]}</Badge>}
         >
           <form onSubmit={(event) => event.preventDefault()} noValidate className={styles.form}>
             {draft.saved && (
               <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-                <MessageBarBody>Unsaved report text from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+                <MessageBarBody>
+                  Unsaved report text from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on
+                  this computer.
+                </MessageBarBody>
                 <MessageBarActions>
                   <Button onClick={draft.restore}>Restore it</Button>
                   <Button appearance="subtle" onClick={draft.discard}>
@@ -323,7 +376,13 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
             <div className={styles.templateRow}>
               <Field label="Template" style={{ flex: '1 1 260px' }}>
                 <Select value={templateId} onChange={(_, data) => setTemplateId(data.value)}>
-                  <option value="">{templates.isLoading ? 'Loading…' : templates.data?.length ? 'Choose a template' : 'No templates for this modality'}</option>
+                  <option value="">
+                    {templates.isLoading
+                      ? 'Loading…'
+                      : templates.data?.length
+                        ? 'Choose a template'
+                        : 'No templates for this modality'}
+                  </option>
                   {templates.data?.map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.name}
@@ -337,18 +396,50 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
               </Button>
             </div>
 
-            <TextAreaField control={form.control} name="clinicalHistory" label="Clinical history" rows={2} maxLength={1000} />
+            <TextAreaField
+              control={form.control}
+              name="clinicalHistory"
+              label="Clinical history"
+              rows={2}
+              maxLength={1000}
+            />
             <TextAreaField control={form.control} name="technique" label="Technique" rows={2} maxLength={2000} />
-            <TextField control={form.control} name="comparison" label="Comparison" maxLength={500} placeholder="e.g. Compared with CT of 12 Aug 2026" />
+            <TextField
+              control={form.control}
+              name="comparison"
+              label="Comparison"
+              maxLength={500}
+              placeholder="e.g. Compared with CT of 12 Aug 2026"
+            />
             <TextAreaField control={form.control} name="findings" label="Findings" rows={10} maxLength={8000} />
             <TextAreaField control={form.control} name="impression" label="Impression" rows={4} maxLength={4000} />
-            <SwitchField control={form.control} name="isCriticalFinding" label="Critical finding (the treating doctor must be called before sign-off)" />
-            {isCritical && <TextField control={form.control} name="criticalFindingNote" label="Critical finding in one line" required maxLength={500} placeholder="e.g. Acute left MCA infarct" />}
+            <SwitchField
+              control={form.control}
+              name="isCriticalFinding"
+              label="Critical finding (the treating doctor must be called before sign-off)"
+            />
+            {isCritical && (
+              <TextField
+                control={form.control}
+                name="criticalFindingNote"
+                label="Critical finding in one line"
+                required
+                maxLength={500}
+                placeholder="e.g. Acute left MCA infarct"
+              />
+            )}
 
             <div className={styles.footer}>
-              <Caption1 className={styles.muted}>{form.formState.isDirty ? 'Unsaved changes are kept on this computer · Ctrl+S saves' : 'Saved'}</Caption1>
+              <Caption1 className={styles.muted}>
+                {form.formState.isDirty ? 'Unsaved changes are kept on this computer · Ctrl+S saves' : 'Saved'}
+              </Caption1>
               <div className={styles.actions}>
-                <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={busy} onClick={() => void form.handleSubmit((values) => save.mutate(values))()} aria-keyshortcuts="Control+S">
+                <Button
+                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  disabled={busy}
+                  onClick={() => void form.handleSubmit((values) => save.mutate(values))()}
+                  aria-keyshortcuts="Control+S"
+                >
                   Save draft
                 </Button>
                 {status !== 'Reported' && (
@@ -356,7 +447,9 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
                     icon={submit.isPending ? <Spinner size="tiny" /> : <SendRegular />}
                     appearance={canVerify ? 'secondary' : 'primary'}
                     disabled={busy}
-                    onClick={() => void form.handleSubmit((values) => requireComplete(values) && submit.mutate(values))()}
+                    onClick={() =>
+                      void form.handleSubmit((values) => requireComplete(values) && submit.mutate(values))()
+                    }
                   >
                     Submit for sign-off
                   </Button>
@@ -368,7 +461,11 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
                       appearance="primary"
                       icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
                       disabled={busy}
-                      onClick={() => void form.handleSubmit((values) => requireComplete(values) && sign.mutate({ values, call: null }))()}
+                      onClick={() =>
+                        void form.handleSubmit(
+                          (values) => requireComplete(values) && sign.mutate({ values, call: null }),
+                        )()
+                      }
                     >
                       {release ? 'Sign and release' : 'Sign'}
                     </Button>
@@ -382,7 +479,12 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
             <CriticalCallDialog
               open
               title="Inform the doctor about the critical finding"
-              findings={[{ id: study.id, label: `${study.studyName}: ${form.getValues('criticalFindingNote') || 'critical finding'}` }]}
+              findings={[
+                {
+                  id: study.id,
+                  label: `${study.studyName}: ${form.getValues('criticalFindingNote') || 'critical finding'}`,
+                },
+              ]}
               submitLabel={release ? 'Save call, sign and release' : 'Save call and sign'}
               busy={sign.isPending}
               onCancel={() => setCalling(false)}
@@ -391,12 +493,28 @@ function ReportForm({ study, report, canVerify }: { study: ImagingStudyDetail; r
           )}
         </Section>
       }
-      side={<AiFindingsPanel studyId={study.id} canReview onInsert={(text) => form.setValue('findings', appendFinding(form.getValues('findings'), text), { shouldDirty: true })} />}
+      side={
+        <AiFindingsPanel
+          studyId={study.id}
+          canReview
+          onInsert={(text) =>
+            form.setValue('findings', appendFinding(form.getValues('findings'), text), { shouldDirty: true })
+          }
+        />
+      }
     />
   );
 }
 
-function SignedReport({ study, report, canVerify }: { study: ImagingStudyDetail; report: RadiologyReportDto; canVerify: boolean }) {
+function SignedReport({
+  study,
+  report,
+  canVerify,
+}: {
+  study: ImagingStudyDetail;
+  report: RadiologyReportDto;
+  canVerify: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -454,7 +572,9 @@ function SignedReport({ study, report, canVerify }: { study: ImagingStudyDetail;
 
   const signedLine = [
     report.reportedBy ? `Reported by ${report.reportedBy}` : null,
-    report.verifiedBy ? `signed by ${report.verifiedBy}${report.verifiedAt ? ` on ${formatDateTime(report.verifiedAt)}` : ''}` : null,
+    report.verifiedBy
+      ? `signed by ${report.verifiedBy}${report.verifiedAt ? ` on ${formatDateTime(report.verifiedAt)}` : ''}`
+      : null,
     report.releasedAt ? `released ${formatDateTime(report.releasedAt)}` : null,
   ]
     .filter(Boolean)
@@ -467,16 +587,30 @@ function SignedReport({ study, report, canVerify }: { study: ImagingStudyDetail;
       actions={
         <>
           {canVerify && unsigned && (
-            <Button appearance="primary" icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />} disabled={sign.isPending} onClick={() => sign.mutate(null)}>
+            <Button
+              appearance="primary"
+              icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+              disabled={sign.isPending}
+              onClick={() => sign.mutate(null)}
+            >
               Sign and release
             </Button>
           )}
           {canVerify && report.status === 'Verified' && (
-            <Button appearance="primary" icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} disabled={release.isPending} onClick={() => release.mutate()}>
+            <Button
+              appearance="primary"
+              icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              disabled={release.isPending}
+              onClick={() => release.mutate()}
+            >
               Release
             </Button>
           )}
-          <Button icon={printing ? <Spinner size="tiny" /> : <PrintRegular />} disabled={printing} onClick={() => void print()}>
+          <Button
+            icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
+            disabled={printing}
+            onClick={() => void print()}
+          >
             Print
           </Button>
           {canVerify && (report.status === 'Verified' || report.status === 'Released') && (
@@ -523,7 +657,9 @@ function SignedReport({ study, report, canVerify }: { study: ImagingStudyDetail;
         <CriticalCallDialog
           open
           title="Inform the doctor about the critical finding"
-          findings={[{ id: study.id, label: `${study.studyName}: ${report.criticalFindingNote ?? 'critical finding'}` }]}
+          findings={[
+            { id: study.id, label: `${study.studyName}: ${report.criticalFindingNote ?? 'critical finding'}` },
+          ]}
           submitLabel="Save call, sign and release"
           busy={sign.isPending}
           onCancel={() => setCalling(false)}

@@ -1,4 +1,17 @@
-import { Badge, Button, Caption1, makeStyles, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  makeStyles,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { MoneyRegular } from '@fluentui/react-icons';
 import { formatDateOnly } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, LoadingState, Section } from '@hc360/ui';
@@ -20,7 +33,15 @@ const useStyles = makeStyles({
  * Salary structures of one employee (payroll staff only). Amounts stay hidden until "Show amounts" is pressed, so a
  * profile open on a shared screen does not reveal pay.
  */
-export function EmployeeSalary({ employeeId, employeeName, separated }: { employeeId: string; employeeName: string; separated: boolean }) {
+export function EmployeeSalary({
+  employeeId,
+  employeeName,
+  separated,
+}: {
+  employeeId: string;
+  employeeName: string;
+  separated: boolean;
+}) {
   const styles = useStyles();
   const canRevise = usePermission(HR_PERMISSIONS.payrollProcess) && !separated;
   const [revealed, setRevealed] = useState(false);
@@ -53,7 +74,11 @@ export function EmployeeSalary({ employeeId, employeeName, separated }: { employ
         <EmptyState
           icon={<MoneyRegular />}
           title="No salary structure yet"
-          description={canRevise ? 'Set the salary so the employee is included in payroll.' : 'Payroll staff set the salary structure.'}
+          description={
+            canRevise
+              ? 'Set the salary so the employee is included in payroll.'
+              : 'Payroll staff set the salary structure.'
+          }
         />
       ) : (
         <Section title={`Current salary · from ${formatDateOnly(current.effectiveFrom)}`}>
@@ -62,7 +87,9 @@ export function EmployeeSalary({ employeeId, employeeName, separated }: { employ
               <Detail label="Gross per month">
                 <Amount value={current.monthlyGross} hidden={hidden} />
               </Detail>
-              <Detail label="Annual CTC">{current.annualCtc === null ? null : <Amount value={current.annualCtc} hidden={hidden} whole />}</Detail>
+              <Detail label="Annual CTC">
+                {current.annualCtc === null ? null : <Amount value={current.annualCtc} hidden={hidden} whole />}
+              </Detail>
               <Detail label="Monthly TDS">
                 <Amount value={current.monthlyTds} hidden={hidden} />
               </Detail>
@@ -93,7 +120,12 @@ export function EmployeeSalary({ employeeId, employeeName, separated }: { employ
             columns={[
               { key: 'from', header: 'From', render: (s) => formatDateOnly(s.effectiveFrom) },
               { key: 'to', header: 'To', render: (s) => formatDateOnly(s.effectiveTo) },
-              { key: 'gross', header: 'Gross per month', align: 'end', render: (s) => <Amount value={s.monthlyGross} hidden={hidden} /> },
+              {
+                key: 'gross',
+                header: 'Gross per month',
+                align: 'end',
+                render: (s) => <Amount value={s.monthlyGross} hidden={hidden} />,
+              },
               { key: 'notes', header: 'Notes', priority: 'low', render: (s) => s.notes ?? '—' },
             ]}
             size="small"
@@ -101,9 +133,17 @@ export function EmployeeSalary({ employeeId, employeeName, separated }: { employ
         </Section>
       )}
 
-      <Caption1 className={styles.muted}>PF, ESI, professional tax and TDS are calculated by payroll every month from these figures and the attendance.</Caption1>
+      <Caption1 className={styles.muted}>
+        PF, ESI, professional tax and TDS are calculated by payroll every month from these figures and the attendance.
+      </Caption1>
 
-      <SalaryStructureDialog open={revising} onClose={() => setRevising(false)} employeeId={employeeId} employeeName={employeeName} current={current} />
+      <SalaryStructureDialog
+        open={revising}
+        onClose={() => setRevising(false)}
+        employeeId={employeeId}
+        employeeName={employeeName}
+        current={current}
+      />
     </Stack>
   );
 }

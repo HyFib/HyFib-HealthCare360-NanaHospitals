@@ -92,7 +92,9 @@ function CapaPage() {
           <Detail label="What was done" wide>
             {c.completionNote}
           </Detail>
-          <Detail label="Effectiveness check due">{c.effectivenessCheckDue ? formatDateOnly(c.effectivenessCheckDue) : null}</Detail>
+          <Detail label="Effectiveness check due">
+            {c.effectivenessCheckDue ? formatDateOnly(c.effectivenessCheckDue) : null}
+          </Detail>
           <Detail label="Effective?">{c.isEffective === null ? null : c.isEffective ? 'Yes' : 'No'}</Detail>
           <Detail label="Checked">{c.verifiedAt ? formatDateTime(c.verifiedAt) : null}</Detail>
           <Detail label="Evidence" wide>
@@ -105,7 +107,9 @@ function CapaPage() {
           )}
           {c.reworkCount > 0 && <Detail label="Reworked">{c.reworkCount} time(s)</Detail>}
         </DetailGrid>
-        {c.status === 'Completed' && !isManager && <Caption1>The quality team will check that the action worked.</Caption1>}
+        {c.status === 'Completed' && !isManager && (
+          <Caption1>The quality team will check that the action worked.</Caption1>
+        )}
       </Section>
       {isManager && <CapaDialog open={editing} onClose={() => setEditing(false)} capa={c} />}
     </Page>

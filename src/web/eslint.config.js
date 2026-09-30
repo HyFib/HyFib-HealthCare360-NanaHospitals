@@ -1,5 +1,6 @@
 // Flat ESLint config for all HC360 web packages.
 import js from '@eslint/js';
+import noUnsanitized from 'eslint-plugin-no-unsanitized';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
@@ -20,7 +21,24 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
       'no-console': ['warn', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'smart'],
+      // Code built from strings would run with the signed-in user's access to patient records.
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+      'no-new-func': 'error',
+      'no-script-url': 'error',
     },
+  },
+  {
+    // HTML written straight into the page (innerHTML, outerHTML, insertAdjacentHTML, document.write …) is where XSS
+    // gets in: React escapes what it renders, these do not. Each use is reviewed and carries an eslint-disable comment
+    // saying why its markup is safe.
+    ...noUnsanitized.configs.recommended,
+    files: ['**/*.{ts,tsx}'],
+  },
+  {
+    // The tests hand javascript: links to the code that must refuse them.
+    files: ['**/*.test.{ts,tsx}'],
+    rules: { 'no-script-url': 'off' },
   },
   {
     // Shared packages are libraries, not hot-reload boundaries: exporting hooks and helpers next to components is fine.

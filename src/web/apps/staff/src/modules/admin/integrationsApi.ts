@@ -10,7 +10,18 @@ import { api } from '@/lib/api';
  */
 
 /** IntegrationNames.All on the server. */
-export const INTEGRATION_NAMES = ['sms', 'whatsapp', 'email', 'payment', 'pos', 'tally', 'pacs', 'lab', 'labels', 'icd'] as const;
+export const INTEGRATION_NAMES = [
+  'sms',
+  'whatsapp',
+  'email',
+  'payment',
+  'pos',
+  'tally',
+  'pacs',
+  'lab',
+  'labels',
+  'icd',
+] as const;
 export type IntegrationName = (typeof INTEGRATION_NAMES)[number];
 
 export const INTEGRATION_LABELS: Record<IntegrationName, string> = {
@@ -111,7 +122,8 @@ export interface SimulatorMessageDto {
 
 export const SIMULATOR_TRANSACTION_KINDS = ['PaymentOrder', 'PaymentLink', 'PosSale'] as const;
 export type SimulatorTransactionKind = (typeof SIMULATOR_TRANSACTION_KINDS)[number];
-export type SimulatorTransactionStatus = 'Created' | 'AwaitingCustomer' | 'Captured' | 'Approved' | 'Cancelled' | 'Refunded';
+export type SimulatorTransactionStatus =
+  'Created' | 'AwaitingCustomer' | 'Captured' | 'Approved' | 'Cancelled' | 'Refunded';
 
 export interface SimulatorTransactionDto {
   id: string;
@@ -248,7 +260,10 @@ export const integrationQueries = {
     }),
 };
 
-export function runIntegrationTest(name: IntegrationName, request: TestIntegrationRequest): Promise<IntegrationTestResult> {
+export function runIntegrationTest(
+  name: IntegrationName,
+  request: TestIntegrationRequest,
+): Promise<IntegrationTestResult> {
   return api.post<IntegrationTestResult>(`/api/v1/admin/integrations/${name}/test`, request, { timeoutMs: 90_000 });
 }
 
@@ -262,11 +277,23 @@ export function healthDisplay(health: string): { label: string; tone: Tone; hint
     case 'healthy':
       return { label: 'Working', tone: 'success', hint: 'The latest calls succeeded.' };
     case 'degraded':
-      return { label: 'Some failures', tone: 'warning', hint: 'It works now, but some calls failed in the last 24 hours. Check the log.' };
+      return {
+        label: 'Some failures',
+        tone: 'warning',
+        hint: 'It works now, but some calls failed in the last 24 hours. Check the log.',
+      };
     case 'failing':
-      return { label: 'Failing', tone: 'danger', hint: 'The latest call failed. Check the settings and the log, then send a test.' };
+      return {
+        label: 'Failing',
+        tone: 'danger',
+        hint: 'The latest call failed. Check the settings and the log, then send a test.',
+      };
     case 'idle':
-      return { label: 'No activity yet', tone: 'informative', hint: 'Turned on, but nothing has been sent or received yet. Send a test.' };
+      return {
+        label: 'No activity yet',
+        tone: 'informative',
+        hint: 'Turned on, but nothing has been sent or received yet. Send a test.',
+      };
     case 'disabled':
       return { label: 'Turned off', tone: 'subtle', hint: 'Set up but switched off.' };
     case 'not_configured':
@@ -324,24 +351,43 @@ export function keywordActionDisplay(
       return {
         label: 'Messages resumed',
         tone: 'success',
-        detail: 'WhatsApp messages to this number have resumed. Offers resume only for patients whose consent a STOP had withdrawn.',
+        detail:
+          'WhatsApp messages to this number have resumed. Offers resume only for patients whose consent a STOP had withdrawn.',
       };
     case 'Superseded':
-      return { label: 'No change', tone: 'subtle', detail: 'A later STOP or START from this number had already arrived, so this one changed nothing.' };
+      return {
+        label: 'No change',
+        tone: 'subtle',
+        detail: 'A later STOP or START from this number had already arrived, so this one changed nothing.',
+      };
     case 'None':
-      return { label: 'Not applied', tone: 'warning', detail: 'The sender’s number could not be read, so nothing was changed.' };
+      return {
+        label: 'Not applied',
+        tone: 'warning',
+        detail: 'The sender’s number could not be read, so nothing was changed.',
+      };
     default:
       return {
         label: 'Waiting',
         tone: 'warning',
-        detail: 'This reply arrived before HC360 acted on STOP and START. It is applied the next time the server starts.',
+        detail:
+          'This reply arrived before HC360 acted on STOP and START. It is applied the next time the server starts.',
       };
   }
 }
 
-export const SIMULATOR_CHANNEL_LABELS: Record<SimulatorChannel, string> = { Sms: 'SMS', WhatsApp: 'WhatsApp', Email: 'E-mail', Accounting: 'Tally' };
+export const SIMULATOR_CHANNEL_LABELS: Record<SimulatorChannel, string> = {
+  Sms: 'SMS',
+  WhatsApp: 'WhatsApp',
+  Email: 'E-mail',
+  Accounting: 'Tally',
+};
 
-export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> = { PaymentOrder: 'Payment order', PaymentLink: 'Payment link', PosSale: 'POS sale' };
+export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> = {
+  PaymentOrder: 'Payment order',
+  PaymentLink: 'Payment link',
+  PosSale: 'POS sale',
+};
 
 export function transactionStatusDisplay(status: SimulatorTransactionStatus): { label: string; tone: Tone } {
   switch (status) {
@@ -377,7 +423,8 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   sms: 'Sends a real SMS to the mobile number you enter. Indian routes need the DLT template id of an approved template.',
   whatsapp: 'Sends the test template to the mobile number you enter. The number must have WhatsApp.',
   email: 'Sends a short test e-mail to the address you enter.',
-  payment: 'Creates a ₹1 test order with the payment gateway. No money moves unless someone pays it, and it expires unpaid.',
+  payment:
+    'Creates a ₹1 test order with the payment gateway. No money moves unless someone pays it, and it expires unpaid.',
   pos: 'Checks the POS settings. Real terminals are not prompted, so no customer sees a charge; the simulator runs a ₹1 practice sale.',
   tally: 'Asks Tally whether it is running and the company is open. Nothing is posted.',
   pacs: 'Runs a study search against the PACS. Nothing is changed.',
@@ -402,7 +449,10 @@ export const testFormSchema = z.object({
   templateName: z
     .string()
     .trim()
-    .refine((value) => !value || /^[a-z0-9_]{1,512}$/.test(value), 'Template names use lower-case letters, digits and underscores.'),
+    .refine(
+      (value) => !value || /^[a-z0-9_]{1,512}$/.test(value),
+      'Template names use lower-case letters, digits and underscores.',
+    ),
   languageCode: z
     .string()
     .trim()
@@ -411,10 +461,19 @@ export const testFormSchema = z.object({
 
 export type TestFormValues = z.infer<typeof testFormSchema>;
 
-export const EMPTY_TEST_FORM: TestFormValues = { to: '', message: '', dltTemplateId: '', templateName: '', languageCode: '' };
+export const EMPTY_TEST_FORM: TestFormValues = {
+  to: '',
+  message: '',
+  dltTemplateId: '',
+  templateName: '',
+  languageCode: '',
+};
 
 /** Field problems for the chosen integration (the recipient is required for messages). */
-export function testFormProblems(name: IntegrationName, values: TestFormValues): Partial<Record<keyof TestFormValues, string>> {
+export function testFormProblems(
+  name: IntegrationName,
+  values: TestFormValues,
+): Partial<Record<keyof TestFormValues, string>> {
   const input = testInputFor(name);
   if (input === 'mobile' && !normalizePhone(values.to)) {
     return { to: 'Enter the mobile number to send the test to, for example 98765 43210.' };

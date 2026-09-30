@@ -112,13 +112,20 @@ function SessionCard({ session }: { session: PortalTelehealthSession }) {
           tone={session.canJoinNow ? 'success' : closed ? 'neutral' : 'brand'}
           title={session.practitionerName}
           subtitle={describeWhen(session.scheduledStartAt, f, t, now)}
-          meta={session.appointmentNumber ? t('appointment.shortNumber', { number: session.appointmentNumber }) : undefined}
+          meta={
+            session.appointmentNumber ? t('appointment.shortNumber', { number: session.appointmentNumber }) : undefined
+          }
           trailing={<StatusPill tone={status.tone}>{t(status.key)}</StatusPill>}
           chevron={false}
         />
       </div>
       {session.canJoinNow ? (
-        <ButtonLink appearance="primary" icon={<VideoRegular />} to="/video/$sessionId" params={{ sessionId: session.id }}>
+        <ButtonLink
+          appearance="primary"
+          icon={<VideoRegular />}
+          to="/video/$sessionId"
+          params={{ sessionId: session.id }}
+        >
           {t('video.join')}
         </ButtonLink>
       ) : (

@@ -3,7 +3,13 @@ import { api } from '@/lib/api';
 import type { FoodPreference, MealSlot } from './rules';
 
 export type DietCategory = 'Regular' | 'Therapeutic' | 'ModifiedConsistency' | 'Enteral' | 'NilByMouth';
-export const DIET_CATEGORIES: readonly DietCategory[] = ['Regular', 'Therapeutic', 'ModifiedConsistency', 'Enteral', 'NilByMouth'];
+export const DIET_CATEGORIES: readonly DietCategory[] = [
+  'Regular',
+  'Therapeutic',
+  'ModifiedConsistency',
+  'Enteral',
+  'NilByMouth',
+];
 export const DIET_CATEGORY_LABEL: Record<DietCategory, string> = {
   Regular: 'Regular',
   Therapeutic: 'Therapeutic (diabetic, renal, cardiac…)',
@@ -16,7 +22,12 @@ export type DietOrderStatus = 'Active' | 'Stopped' | 'Completed';
 export type DietOrderSource = 'Doctor' | 'Dietitian' | 'Nurse' | 'ClinicalOrder';
 export type MealDeliveryStatus = 'Planned' | 'Delivered' | 'NotTaken' | 'Returned' | 'Cancelled';
 
-export const DIET_SOURCE_LABEL: Record<DietOrderSource, string> = { Doctor: 'Doctor', Dietitian: 'Dietitian', Nurse: 'Nurse', ClinicalOrder: 'Clinical order' };
+export const DIET_SOURCE_LABEL: Record<DietOrderSource, string> = {
+  Doctor: 'Doctor',
+  Dietitian: 'Dietitian',
+  Nurse: 'Nurse',
+  ClinicalOrder: 'Clinical order',
+};
 export const DELIVERY_LABEL: Record<MealDeliveryStatus, string> = {
   Planned: 'To deliver',
   Delivered: 'Delivered',
@@ -161,9 +172,11 @@ export interface ProductionSummary {
 export const dietaryKeys = {
   all: ['dietary'] as const,
   dietTypes: (includeInactive: boolean) => ['dietary', 'diet-types', includeInactive] as const,
-  orders: (filters: { status?: DietOrderStatus; wardId?: string; needsReview?: boolean }) => ['dietary', 'orders', filters] as const,
+  orders: (filters: { status?: DietOrderStatus; wardId?: string; needsReview?: boolean }) =>
+    ['dietary', 'orders', filters] as const,
   admissionOrders: (admissionId: string) => ['dietary', 'admission', admissionId] as const,
-  mealPlans: (date: string, wardId: string | null, slot: MealSlot | null) => ['dietary', 'meal-plans', date, wardId ?? 'all', slot ?? 'all'] as const,
+  mealPlans: (date: string, wardId: string | null, slot: MealSlot | null) =>
+    ['dietary', 'meal-plans', date, wardId ?? 'all', slot ?? 'all'] as const,
   production: (date: string) => ['dietary', 'production', date] as const,
 };
 
@@ -171,7 +184,11 @@ export const dietaryQueries = {
   dietTypes: (includeInactive = false) =>
     queryOptions({
       queryKey: dietaryKeys.dietTypes(includeInactive),
-      queryFn: ({ signal }) => api.get<DietTypeDto[]>('/api/v1/dietary/diet-types', { query: { includeInactive: includeInactive || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<DietTypeDto[]>('/api/v1/dietary/diet-types', {
+          query: { includeInactive: includeInactive || undefined },
+          signal,
+        }),
       staleTime: 5 * 60_000,
     }),
   orders: (filters: { status?: DietOrderStatus; wardId?: string; needsReview?: boolean }) =>
@@ -188,20 +205,25 @@ export const dietaryQueries = {
   mealPlans: (date: string, wardId: string | null, slot: MealSlot | null) =>
     queryOptions({
       queryKey: dietaryKeys.mealPlans(date, wardId, slot),
-      queryFn: ({ signal }) => api.get<WardMealPlan[]>('/api/v1/dietary/meal-plans', { query: { date, wardId, slot }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<WardMealPlan[]>('/api/v1/dietary/meal-plans', { query: { date, wardId, slot }, signal }),
       refetchInterval: 60_000,
     }),
   production: (date: string) =>
     queryOptions({
       queryKey: dietaryKeys.production(date),
-      queryFn: ({ signal }) => api.get<ProductionSummary>('/api/v1/dietary/meal-plans/production', { query: { date }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ProductionSummary>('/api/v1/dietary/meal-plans/production', { query: { date }, signal }),
       refetchInterval: 120_000,
     }),
   dietServices: () =>
     queryOptions({
       queryKey: ['dietary', 'diet-services'],
       queryFn: ({ signal }) =>
-        api.get<{ id: string; code: string; name: string; basePrice: number }[]>('/api/v1/masters/lookups/services', { query: { category: 'Dietary' }, signal }),
+        api.get<{ id: string; code: string; name: string; basePrice: number }[]>('/api/v1/masters/lookups/services', {
+          query: { category: 'Dietary' },
+          signal,
+        }),
       staleTime: 10 * 60_000,
     }),
 };
@@ -213,7 +235,10 @@ export const dietaryApi = {
   stopOrder: (id: string, reason: string) => api.post<DietOrderDto>(`/api/v1/dietary/orders/${id}/stop`, { reason }),
   reviewOrder: (id: string) => api.post<DietOrderDto>(`/api/v1/dietary/orders/${id}/review`),
   generatePlan: (date: string) => api.post<MealPlanResult>('/api/v1/dietary/meal-plans/generate', { date }),
-  recordDelivery: (mealId: string, body: { status: 'Delivered' | 'NotTaken' | 'Returned'; remarks: string | null; version: number }) =>
-    api.post<PlannedMealDto>(`/api/v1/dietary/meals/${mealId}/delivery`, body),
-  deliverRound: (body: { date: string; slot: MealSlot; wardId: string; status: 'Delivered' }) => api.post<{ updated: number }>('/api/v1/dietary/meal-plans/deliveries', body),
+  recordDelivery: (
+    mealId: string,
+    body: { status: 'Delivered' | 'NotTaken' | 'Returned'; remarks: string | null; version: number },
+  ) => api.post<PlannedMealDto>(`/api/v1/dietary/meals/${mealId}/delivery`, body),
+  deliverRound: (body: { date: string; slot: MealSlot; wardId: string; status: 'Delivered' }) =>
+    api.post<{ updated: number }>('/api/v1/dietary/meal-plans/deliveries', body),
 };

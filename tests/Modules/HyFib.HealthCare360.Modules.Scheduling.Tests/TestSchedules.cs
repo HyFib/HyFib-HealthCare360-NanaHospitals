@@ -26,19 +26,19 @@ internal static class TestSchedules
         int capacity = 1,
         ConsultationMode mode = ConsultationMode.InPerson,
         Guid? facility = null) => new()
-    {
-        FacilityId = facility ?? Facility,
-        PractitionerId = Doctor,
-        DepartmentId = Department,
-        Weekday = day,
-        StartTime = start,
-        EndTime = end,
-        SlotMinutes = slotMinutes,
-        CapacityPerSlot = capacity,
-        Mode = mode,
-        Room = "OPD-01",
-        EffectiveFrom = new DateOnly(2026, 1, 1),
-    };
+        {
+            FacilityId = facility ?? Facility,
+            PractitionerId = Doctor,
+            DepartmentId = Department,
+            Weekday = day,
+            StartTime = start,
+            EndTime = end,
+            SlotMinutes = slotMinutes,
+            CapacityPerSlot = capacity,
+            Mode = mode,
+            Room = "OPD-01",
+            EffectiveFrom = new DateOnly(2026, 1, 1),
+        };
 
     /// <summary>Monday 09:00–13:00, 15-minute slots, one patient per slot (16 slots).</summary>
     public static DoctorSchedule MondayMorning(int capacity = 1, ConsultationMode mode = ConsultationMode.InPerson) =>
@@ -51,16 +51,16 @@ internal static class TestSchedules
         TimeOnly? start = null,
         TimeOnly? end = null,
         Guid? facility = null) => new()
-    {
-        PractitionerId = Doctor,
-        FacilityId = facility,
-        Type = type,
-        FromDate = from,
-        ToDate = to,
-        StartTime = start,
-        EndTime = end,
-        Reason = type == ScheduleExceptionType.Leave ? "Medical conference" : "Surgery list",
-    };
+        {
+            PractitionerId = Doctor,
+            FacilityId = facility,
+            Type = type,
+            FromDate = from,
+            ToDate = to,
+            StartTime = start,
+            EndTime = end,
+            Reason = type == ScheduleExceptionType.Leave ? "Medical conference" : "Surgery list",
+        };
 
     public static ScheduleException ExtraSession(DateOnly date, TimeOnly start, TimeOnly end, int slotMinutes = 30, ConsultationMode mode = ConsultationMode.Both) => new()
     {

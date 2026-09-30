@@ -25,7 +25,10 @@ export function EmployeeAttendance({ employee }: { employee: PickedEmployee }) {
   const lastDay = monthEnd(year, month);
   const to = lastDay > today ? today : lastDay;
   const future = from > today;
-  const days = useQuery({ ...hrQueries.attendance({ employeeId: employee.id, from, to, pageSize: 62 }), enabled: !future });
+  const days = useQuery({
+    ...hrQueries.attendance({ employeeId: employee.id, from, to, pageSize: 62 }),
+    enabled: !future,
+  });
   const totals = attendanceTotals(days.data?.items ?? []);
 
   const compute = useMutation({
@@ -77,7 +80,11 @@ export function EmployeeAttendance({ employee }: { employee: PickedEmployee }) {
           <KpiCard label="Paid leave" value={formatDays(totals.paidLeave)} />
           <KpiCard label="Absent / loss of pay" value={formatDays(totals.absent + totals.unpaidLeave)} />
           <KpiCard label="Late arrivals" value={totals.lateDays} />
-          <KpiCard label="Missed punches" value={totals.missing} hint={totals.missing > 0 ? 'Ask for a correction before payroll' : undefined} />
+          <KpiCard
+            label="Missed punches"
+            value={totals.missing}
+            hint={totals.missing > 0 ? 'Ask for a correction before payroll' : undefined}
+          />
         </KpiGrid>
       )}
 

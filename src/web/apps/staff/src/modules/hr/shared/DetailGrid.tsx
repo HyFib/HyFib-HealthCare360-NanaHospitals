@@ -14,14 +14,27 @@ const useStyles = makeStyles({
 export function DetailGrid({ children, minColumnWidth = 220 }: { children: ReactNode; minColumnWidth?: number }) {
   const styles = useStyles();
   return (
-    <div className={styles.grid} style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${minColumnWidth}px), 1fr))` }}>
+    <div
+      className={styles.grid}
+      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${minColumnWidth}px), 1fr))` }}
+    >
       {children}
     </div>
   );
 }
 
 /** One labelled value; empty values show an em dash so blanks never look like missing data. */
-export function Detail({ label, children, mono, wide }: { label: string; children?: ReactNode; mono?: boolean; wide?: boolean }) {
+export function Detail({
+  label,
+  children,
+  mono,
+  wide,
+}: {
+  label: string;
+  children?: ReactNode;
+  mono?: boolean;
+  wide?: boolean;
+}) {
   const styles = useStyles();
   const empty = children === null || children === undefined || children === '' || children === false;
   return (

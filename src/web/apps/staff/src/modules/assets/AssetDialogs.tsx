@@ -81,7 +81,12 @@ function FormDialog({
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 {submitLabel}
               </Button>
             </DialogActions>
@@ -95,7 +100,15 @@ function FormDialog({
 const grid2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } as const;
 
 /** Preventive maintenance schedule for one asset. */
-export function PmPlanDialog({ assetId, plan, onClose }: { assetId: string; plan: PmPlanDto | null; onClose: () => void }) {
+export function PmPlanDialog({
+  assetId,
+  plan,
+  onClose,
+}: {
+  assetId: string;
+  plan: PmPlanDto | null;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState(plan?.title ?? 'Preventive maintenance');
@@ -125,7 +138,15 @@ export function PmPlanDialog({ assetId, plan, onClose }: { assetId: string; plan
     },
   });
   return (
-    <FormDialog title={plan ? 'Edit maintenance plan' : 'Add a maintenance plan'} submitLabel="Save" valid={valid} busy={save.isPending} error={save.error} onSubmit={() => save.mutate()} onClose={onClose}>
+    <FormDialog
+      title={plan ? 'Edit maintenance plan' : 'Add a maintenance plan'}
+      submitLabel="Save"
+      valid={valid}
+      busy={save.isPending}
+      error={save.error}
+      onSubmit={() => save.mutate()}
+      onClose={onClose}
+    >
       <Field label="What is done" required>
         <Input value={title} maxLength={200} onChange={(_, d) => setTitle(d.value)} autoFocus />
       </Field>
@@ -141,7 +162,13 @@ export function PmPlanDialog({ assetId, plan, onClose }: { assetId: string; plan
         <Input value={assignedTo} maxLength={120} onChange={(_, d) => setAssignedTo(d.value)} />
       </Field>
       <Field label="Checklist">
-        <Textarea value={checklist} rows={4} maxLength={4000} onChange={(_, d) => setChecklist(d.value)} placeholder="One check per line, e.g. Test alarms, Clean filters, Electrical safety test" />
+        <Textarea
+          value={checklist}
+          rows={4}
+          maxLength={4000}
+          onChange={(_, d) => setChecklist(d.value)}
+          placeholder="One check per line, e.g. Test alarms, Clean filters, Electrical safety test"
+        />
       </Field>
       <Switch checked={active} onChange={(_, d) => setActive(d.checked)} label="Plan is active" />
     </FormDialog>
@@ -149,7 +176,13 @@ export function PmPlanDialog({ assetId, plan, onClose }: { assetId: string; plan
 }
 
 /** A completed (or missed) preventive maintenance visit; the next due date moves on from it. */
-export function PmVisitDialog({ plan, onClose }: { plan: Pick<PmPlanDto, 'id' | 'title' | 'assetName' | 'assetTag' | 'frequencyDays' | 'nextDueDate'>; onClose: () => void }) {
+export function PmVisitDialog({
+  plan,
+  onClose,
+}: {
+  plan: Pick<PmPlanDto, 'id' | 'title' | 'assetName' | 'assetTag' | 'frequencyDays' | 'nextDueDate'>;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const today = todayIso();
@@ -173,7 +206,12 @@ export function PmVisitDialog({ plan, onClose }: { plan: Pick<PmPlanDto, 'id' | 
         serviceReportFileId: null,
       }),
     onSuccess: () => {
-      notify.success('Visit recorded', outcome === 'NotDone' ? 'The plan stays due.' : `Next visit due about ${formatDateOnly(addDays(visitDate, plan.frequencyDays))}.`);
+      notify.success(
+        'Visit recorded',
+        outcome === 'NotDone'
+          ? 'The plan stays due.'
+          : `Next visit due about ${formatDateOnly(addDays(visitDate, plan.frequencyDays))}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
       onClose();
     },
@@ -213,16 +251,32 @@ export function PmVisitDialog({ plan, onClose }: { plan: Pick<PmPlanDto, 'id' | 
           <Input type="number" min={0} value={cost} onChange={(_, d) => setCost(d.value)} placeholder="0" />
         </Field>
       </div>
-      <VendorPicker label="Service vendor (optional)" value={vendor} onPick={(v) => setVendor({ id: v.id, name: v.name })} />
+      <VendorPicker
+        label="Service vendor (optional)"
+        value={vendor}
+        onPick={(v) => setVendor({ id: v.id, name: v.name })}
+      />
       <Field label="Findings">
-        <Textarea value={findings} rows={3} maxLength={2000} onChange={(_, d) => setFindings(d.value)} placeholder="What was checked, replaced or found" />
+        <Textarea
+          value={findings}
+          rows={3}
+          maxLength={2000}
+          onChange={(_, d) => setFindings(d.value)}
+          placeholder="What was checked, replaced or found"
+        />
       </Field>
     </FormDialog>
   );
 }
 
 /** Calibration certificate (AST-05). */
-export function CalibrationDialog({ asset, onClose }: { asset: { id: string; name: string; assetTag: string }; onClose: () => void }) {
+export function CalibrationDialog({
+  asset,
+  onClose,
+}: {
+  asset: { id: string; name: string; assetTag: string };
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const today = todayIso();
@@ -232,7 +286,12 @@ export function CalibrationDialog({ asset, onClose }: { asset: { id: string; nam
   const [nextDue, setNextDue] = useState(addDays(today, 365));
   const [outcome, setOutcome] = useState<CalibrationResult>('Pass');
   const [remarks, setRemarks] = useState('');
-  const valid = Boolean(calibratedOn) && calibratedOn <= today && agency.trim().length > 0 && Boolean(nextDue) && nextDue > calibratedOn;
+  const valid =
+    Boolean(calibratedOn) &&
+    calibratedOn <= today &&
+    agency.trim().length > 0 &&
+    Boolean(nextDue) &&
+    nextDue > calibratedOn;
   const save = useMutation({
     mutationFn: () =>
       assetApi.recordCalibration(asset.id, {
@@ -245,13 +304,26 @@ export function CalibrationDialog({ asset, onClose }: { asset: { id: string; nam
         remarks: remarks.trim() || null,
       }),
     onSuccess: () => {
-      notify.success('Calibration recorded', outcome === 'Fail' ? 'The equipment failed calibration: take it out of use until it is fixed.' : `Next due ${formatDateOnly(nextDue)}.`);
+      notify.success(
+        'Calibration recorded',
+        outcome === 'Fail'
+          ? 'The equipment failed calibration: take it out of use until it is fixed.'
+          : `Next due ${formatDateOnly(nextDue)}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
       onClose();
     },
   });
   return (
-    <FormDialog title={`Record calibration: ${asset.name}`} submitLabel="Record" valid={valid} busy={save.isPending} error={save.error} onSubmit={() => save.mutate()} onClose={onClose}>
+    <FormDialog
+      title={`Record calibration: ${asset.name}`}
+      submitLabel="Record"
+      valid={valid}
+      busy={save.isPending}
+      error={save.error}
+      onSubmit={() => save.mutate()}
+      onClose={onClose}
+    >
       <Caption1>{asset.assetTag}</Caption1>
       <div style={grid2}>
         <Field label="Calibrated on" required>
@@ -275,8 +347,19 @@ export function CalibrationDialog({ asset, onClose }: { asset: { id: string; nam
           <Input value={certificate} maxLength={64} onChange={(_, d) => setCertificate(d.value)} />
         </Field>
       </div>
-      <Field label="Next due" required validationMessage={nextDue && calibratedOn && nextDue <= calibratedOn ? 'Must be after the calibration date' : undefined}>
-        <Input type="date" min={addDays(calibratedOn || today, 1)} value={nextDue} onChange={(_, d) => setNextDue(d.value)} />
+      <Field
+        label="Next due"
+        required
+        validationMessage={
+          nextDue && calibratedOn && nextDue <= calibratedOn ? 'Must be after the calibration date' : undefined
+        }
+      >
+        <Input
+          type="date"
+          min={addDays(calibratedOn || today, 1)}
+          value={nextDue}
+          onChange={(_, d) => setNextDue(d.value)}
+        />
       </Field>
       <Field label="Remarks">
         <Textarea value={remarks} rows={2} maxLength={1000} onChange={(_, d) => setRemarks(d.value)} />
@@ -286,12 +369,22 @@ export function CalibrationDialog({ asset, onClose }: { asset: { id: string; nam
 }
 
 /** AMC (labour and visits) or CMC (includes parts) contract; warranty is recorded on the asset itself. */
-export function ContractDialog({ assetId, contract, onClose }: { assetId: string; contract: AssetContractDto | null; onClose: () => void }) {
+export function ContractDialog({
+  assetId,
+  contract,
+  onClose,
+}: {
+  assetId: string;
+  contract: AssetContractDto | null;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const today = todayIso();
   const [type, setType] = useState<MaintenanceContractType>(contract?.type ?? 'Amc');
-  const [vendor, setVendor] = useState<{ id: string; name: string } | null>(contract?.vendorId ? { id: contract.vendorId, name: contract.vendorName ?? 'Vendor' } : null);
+  const [vendor, setVendor] = useState<{ id: string; name: string } | null>(
+    contract?.vendorId ? { id: contract.vendorId, name: contract.vendorName ?? 'Vendor' } : null,
+  );
   const [number, setNumber] = useState(contract?.contractNumber ?? '');
   const [start, setStart] = useState(contract?.startDate ?? today);
   const [end, setEnd] = useState(contract?.endDate ?? addDays(today, 364));
@@ -312,13 +405,24 @@ export function ContractDialog({ assetId, contract, onClose }: { assetId: string
         version: contract?.version ?? null,
       }),
     onSuccess: () => {
-      notify.success(contract ? 'Contract saved' : 'Contract added', `${contractTypeLabel[type]} until ${formatDateOnly(end)} · ${formatInr(costValue)}`);
+      notify.success(
+        contract ? 'Contract saved' : 'Contract added',
+        `${contractTypeLabel[type]} until ${formatDateOnly(end)} · ${formatInr(costValue)}`,
+      );
       void queryClient.invalidateQueries({ queryKey: assetKeys.all });
       onClose();
     },
   });
   return (
-    <FormDialog title={contract ? 'Edit maintenance contract' : 'Add maintenance contract'} submitLabel="Save" valid={valid} busy={save.isPending} error={save.error} onSubmit={() => save.mutate()} onClose={onClose}>
+    <FormDialog
+      title={contract ? 'Edit maintenance contract' : 'Add maintenance contract'}
+      submitLabel="Save"
+      valid={valid}
+      busy={save.isPending}
+      error={save.error}
+      onSubmit={() => save.mutate()}
+      onClose={onClose}
+    >
       <Field label="Type">
         <Select value={type} onChange={(_, d) => setType(d.value as MaintenanceContractType)}>
           {CONTRACT_TYPES.map((t) => (
@@ -339,19 +443,35 @@ export function ContractDialog({ assetId, contract, onClose }: { assetId: string
         <Field label="Starts" required>
           <Input type="date" value={start} onChange={(_, d) => setStart(d.value)} />
         </Field>
-        <Field label="Ends" required validationMessage={end && start && end <= start ? 'Must end after it starts' : undefined}>
+        <Field
+          label="Ends"
+          required
+          validationMessage={end && start && end <= start ? 'Must end after it starts' : undefined}
+        >
           <Input type="date" min={addDays(start || today, 1)} value={end} onChange={(_, d) => setEnd(d.value)} />
         </Field>
       </div>
       <Field label="What it covers">
-        <Textarea value={coverage} rows={3} maxLength={1000} onChange={(_, d) => setCoverage(d.value)} placeholder="e.g. 4 PM visits a year, breakdown calls within 24 hours, parts excluded" />
+        <Textarea
+          value={coverage}
+          rows={3}
+          maxLength={1000}
+          onChange={(_, d) => setCoverage(d.value)}
+          placeholder="e.g. 4 PM visits a year, breakdown calls within 24 hours, parts excluded"
+        />
       </Field>
     </FormDialog>
   );
 }
 
 /** Disposal of a condemned asset (auction, buy-back, e-waste recycler). */
-export function DisposeDialog({ asset, onClose }: { asset: { id: string; name: string; assetTag: string; bookValue?: number | null }; onClose: () => void }) {
+export function DisposeDialog({
+  asset,
+  onClose,
+}: {
+  asset: { id: string; name: string; assetTag: string; bookValue?: number | null };
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const today = todayIso();
@@ -369,10 +489,19 @@ export function DisposeDialog({ asset, onClose }: { asset: { id: string; name: s
     },
   });
   return (
-    <FormDialog title={`Dispose of ${asset.name}?`} submitLabel="Record disposal" valid={valid} busy={dispose.isPending} error={dispose.error} onSubmit={() => dispose.mutate()} onClose={onClose}>
+    <FormDialog
+      title={`Dispose of ${asset.name}?`}
+      submitLabel="Record disposal"
+      valid={valid}
+      busy={dispose.isPending}
+      error={dispose.error}
+      onSubmit={() => dispose.mutate()}
+      onClose={onClose}
+    >
       <Caption1>
         {asset.assetTag}
-        {asset.bookValue !== undefined && asset.bookValue !== null ? ` · book value ${formatInr(asset.bookValue)}` : ''}. Only condemned assets can be disposed of.
+        {asset.bookValue !== undefined && asset.bookValue !== null ? ` · book value ${formatInr(asset.bookValue)}` : ''}
+        . Only condemned assets can be disposed of.
       </Caption1>
       <div style={grid2}>
         <Field label="Disposed on" required>
@@ -383,7 +512,12 @@ export function DisposeDialog({ asset, onClose }: { asset: { id: string; name: s
         </Field>
       </div>
       <Field label="How" required>
-        <Input value={method} maxLength={100} onChange={(_, d) => setMethod(d.value)} placeholder="e.g. Auction, buy-back, authorised e-waste recycler" />
+        <Input
+          value={method}
+          maxLength={100}
+          onChange={(_, d) => setMethod(d.value)}
+          placeholder="e.g. Auction, buy-back, authorised e-waste recycler"
+        />
       </Field>
     </FormDialog>
   );

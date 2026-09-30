@@ -16,12 +16,29 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatInr, formatTime, todayIso, useDebouncedValue, type LookupItem } from '@hc360/core';
-import { ChoiceField, DateField, FormGrid, FullRow, LookupField, NumberField, SelectField, TextAreaField, TextField } from '@hc360/ui';
+import {
+  ChoiceField,
+  DateField,
+  FormGrid,
+  FullRow,
+  LookupField,
+  NumberField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useWatch, type UseFormReturn } from 'react-hook-form';
 import { searchPractitioners } from '@/lib/lookups';
-import { ANAESTHESIA_TYPES, LATERALITIES, otQueries, searchProcedures, SURGERY_PRIORITIES, type OtCalendarBooking } from './api';
+import {
+  ANAESTHESIA_TYPES,
+  LATERALITIES,
+  otQueries,
+  searchProcedures,
+  SURGERY_PRIORITIES,
+  type OtCalendarBooking,
+} from './api';
 import { anaesthesiaLabel, lateralityLabel, priorityLabel, sideShort, surgeryStatusLabel } from './labels';
 import { DURATION_PRESETS, localClashes } from './logic';
 import { formatDuration } from './shared/datetime';
@@ -131,7 +148,12 @@ export function AssistantsPicker({ form, knownNames }: { form: Form; knownNames?
         const selected = field.value;
         const options = (results.data ?? []).filter((p: LookupItem) => p.id !== surgeonId);
         return (
-          <Field label="Assistant surgeons" hint="Optional" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+          <Field
+            label="Assistant surgeons"
+            hint="Optional"
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
             <Combobox
               multiselect
               placeholder={selected.length ? `${selected.length} chosen · type to add` : 'Type a name to add'}
@@ -216,7 +238,8 @@ export function PlanFields({
           hint={
             side ? (
               <span>
-                Side <span className={styles.sideHint}>{side}</span> is read back at the WHO Time-out. Mark the site before surgery.
+                Side <span className={styles.sideHint}>{side}</span> is read back at the WHO Time-out. Mark the site
+                before surgery.
               </span>
             ) : (
               'Checked again at the WHO Time-out to prevent wrong-site surgery.'
@@ -228,7 +251,14 @@ export function PlanFields({
       <FullRow>
         <TextField control={control} name="diagnosis" label="Diagnosis" maxLength={500} />
       </FullRow>
-      <LookupField control={control} name="surgeonId" label="Operating surgeon" load={searchPractitioners} initialItems={surgeonItems} placeholder="Type a name" />
+      <LookupField
+        control={control}
+        name="surgeonId"
+        label="Operating surgeon"
+        load={searchPractitioners}
+        initialItems={surgeonItems}
+        placeholder="Type a name"
+      />
       <SelectField
         control={control}
         name="anaesthesiaType"
@@ -242,7 +272,11 @@ export function PlanFields({
         load={searchPractitioners}
         initialItems={anaesthetistItems}
         placeholder="Type a name"
-        hint={anaesthesiaType === 'Local' ? 'Not needed for local anaesthesia given by the surgeon.' : 'Must be a different doctor from the surgeon.'}
+        hint={
+          anaesthesiaType === 'Local'
+            ? 'Not needed for local anaesthesia given by the surgeon.'
+            : 'Must be a different doctor from the surgeon.'
+        }
       />
       <AssistantsPicker form={form} knownNames={assistantNames} />
       <ChoiceField
@@ -252,9 +286,24 @@ export function PlanFields({
         options={SURGERY_PRIORITIES.map((value) => ({ value, label: priorityLabel[value] }))}
         hint="Emergency cases are listed first everywhere."
       />
-      {showPreferredDate && <DateField control={control} name="preferredDate" label="Preferred date" min={todayIso()} hint="The OT coordinator gives the slot." />}
+      {showPreferredDate && (
+        <DateField
+          control={control}
+          name="preferredDate"
+          label="Preferred date"
+          min={todayIso()}
+          hint="The OT coordinator gives the slot."
+        />
+      )}
       <FullRow>
-        <TextAreaField control={control} name="notes" label="Notes for the OT team" rows={2} maxLength={2000} placeholder="Special equipment, implants to arrange, isolation, blood to reserve…" />
+        <TextAreaField
+          control={control}
+          name="notes"
+          label="Notes for the OT team"
+          rows={2}
+          maxLength={2000}
+          placeholder="Special equipment, implants to arrange, isolation, blood to reserve…"
+        />
       </FullRow>
     </FormGrid>
   );
@@ -287,7 +336,15 @@ export function SlotFields({ form, bookingId }: { form: Form; bookingId?: string
       <DateField control={control} name="date" label="Date" required min={todayIso()} />
       <TimeField control={control} name="time" label="Start time" required hint="Hospital time (IST)" />
       <div>
-        <NumberField control={control} name="durationMinutes" label="Expected duration (minutes)" required min={15} max={1440} step={15} />
+        <NumberField
+          control={control}
+          name="durationMinutes"
+          label="Expected duration (minutes)"
+          required
+          min={15}
+          max={1440}
+          step={15}
+        />
         <div className={styles.presets} role="group" aria-label="Common durations">
           {DURATION_PRESETS.map((minutes) => (
             <Button
@@ -303,12 +360,21 @@ export function SlotFields({ form, bookingId }: { form: Form; bookingId?: string
       </div>
       <FullRow>
         <Caption1 className={styles.muted}>
-          {slot ? `From ${formatTime(slot.start)} to ${formatTime(slot.end)} (${formatDuration(durationMinutes)}).` : 'Choose the date, start time and duration.'}
+          {slot
+            ? `From ${formatTime(slot.start)} to ${formatTime(slot.end)} (${formatDuration(durationMinutes)}).`
+            : 'Choose the date, start time and duration.'}
         </Caption1>
       </FullRow>
       {date && (
         <FullRow>
-          <DayPreview date={date} theatreId={theatreId} surgeonId={surgeonId} patientId={patient?.id ?? null} slot={slot} bookingId={bookingId ?? null} />
+          <DayPreview
+            date={date}
+            theatreId={theatreId}
+            surgeonId={surgeonId}
+            patientId={patient?.id ?? null}
+            slot={slot}
+            bookingId={bookingId ?? null}
+          />
         </FullRow>
       )}
     </FormGrid>
@@ -335,16 +401,29 @@ function DayPreview({
   if (calendar.isLoading) {
     return <Spinner size="tiny" label="Checking what is booked that day…" labelPosition="after" />;
   }
-  const all = calendar.data?.theatres.flatMap((t) => t.bookings.map((b) => ({ booking: b, theatreCode: t.code }))) ?? [];
+  const all =
+    calendar.data?.theatres.flatMap((t) => t.bookings.map((b) => ({ booking: b, theatreCode: t.code }))) ?? [];
   const relevant = all.filter(
-    ({ booking }) => booking.id !== bookingId && (booking.theatreId === theatreId || (surgeonId && booking.surgeonId === surgeonId) || (patientId && booking.patientId === patientId)),
+    ({ booking }) =>
+      booking.id !== bookingId &&
+      (booking.theatreId === theatreId ||
+        (surgeonId && booking.surgeonId === surgeonId) ||
+        (patientId && booking.patientId === patientId)),
   );
-  const clashing = new Set(slot ? localClashes({ ...slot, bookingId }, relevant.map((r) => r.booking)).map((b) => b.id) : []);
+  const clashing = new Set(
+    slot
+      ? localClashes(
+          { ...slot, bookingId },
+          relevant.map((r) => r.booking),
+        ).map((b) => b.id)
+      : [],
+  );
 
   if (relevant.length === 0) {
     return (
       <Caption1 className={styles.muted}>
-        <CheckmarkCircleRegular className={styles.okIcon} /> Nothing else is booked that day for this theatre{surgeonId ? ', surgeon' : ''}
+        <CheckmarkCircleRegular className={styles.okIcon} /> Nothing else is booked that day for this theatre
+        {surgeonId ? ', surgeon' : ''}
         {patientId ? ' or patient' : ''}.
       </Caption1>
     );
@@ -355,14 +434,24 @@ function DayPreview({
       {clashing.size > 0 && (
         <MessageBar intent="warning" layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>The chosen time overlaps {clashing.size === 1 ? 'a booking' : `${clashing.size} bookings`}</MessageBarTitle>
+            <MessageBarTitle>
+              The chosen time overlaps {clashing.size === 1 ? 'a booking' : `${clashing.size} bookings`}
+            </MessageBarTitle>
             The same theatre, surgeon or patient cannot be booked twice at once. Change the time or the theatre.
           </MessageBarBody>
         </MessageBar>
       )}
       <Text weight="semibold">Already booked that day</Text>
       {relevant.map(({ booking, theatreCode }) => (
-        <PreviewRow key={booking.id} booking={booking} theatreCode={theatreCode} clash={clashing.has(booking.id)} theatreId={theatreId} surgeonId={surgeonId} patientId={patientId} />
+        <PreviewRow
+          key={booking.id}
+          booking={booking}
+          theatreCode={theatreCode}
+          clash={clashing.has(booking.id)}
+          theatreId={theatreId}
+          surgeonId={surgeonId}
+          patientId={patientId}
+        />
       ))}
     </div>
   );
@@ -393,7 +482,11 @@ function PreviewRow({
     .join(', ');
   return (
     <div className={clash ? `${styles.row} ${styles.clash}` : styles.row}>
-      {clash ? <WarningRegular className={styles.clashIcon} aria-label="Clashes with the chosen time" /> : <CheckmarkCircleRegular className={styles.okIcon} aria-label="No clash" />}
+      {clash ? (
+        <WarningRegular className={styles.clashIcon} aria-label="Clashes with the chosen time" />
+      ) : (
+        <CheckmarkCircleRegular className={styles.okIcon} aria-label="No clash" />
+      )}
       <Text>
         <Text weight="semibold">
           {formatTime(booking.start)}–{formatTime(booking.end)}

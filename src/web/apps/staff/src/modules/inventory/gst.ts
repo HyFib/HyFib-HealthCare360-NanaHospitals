@@ -84,19 +84,40 @@ function fromInclusiveExact(inclusive: Dec, rate: Dec, interState: boolean): Exa
 }
 
 /** Purchase line: quantity × rate, less trade discount, plus GST on the discounted value. */
-export function priceExclusive(quantity: number, rate: number, discountPercent: number, gstRate: number, interState: boolean): PricedLine {
+export function priceExclusive(
+  quantity: number,
+  rate: number,
+  discountPercent: number,
+  gstRate: number,
+  interState: boolean,
+): PricedLine {
   const gross = round2(mul(dec(quantity), dec(rate)));
   const discount = percentOf(gross, dec(discountPercent));
   const tax = split(round2(gross - discount), percentOf(round2(gross - discount), dec(gstRate)), interState);
-  return { gross: toNumber(gross), discount: toNumber(discount), tax: toBreakup(tax), net: toNumber(tax.taxable + tax.gst) };
+  return {
+    gross: toNumber(gross),
+    discount: toNumber(discount),
+    tax: toBreakup(tax),
+    net: toNumber(tax.taxable + tax.gst),
+  };
 }
 
 /** Retail line at MRP: quantity × unit MRP, less discount; GST is carved out of what remains. */
-export function priceInclusive(quantity: number, unitMrp: number, discountPercent: number, gstRate: number): PricedLine {
+export function priceInclusive(
+  quantity: number,
+  unitMrp: number,
+  discountPercent: number,
+  gstRate: number,
+): PricedLine {
   const gross = round2(mul(dec(quantity), dec(unitMrp)));
   const discount = percentOf(gross, dec(discountPercent));
   const tax = fromInclusiveExact(gross - discount, dec(gstRate), false);
-  return { gross: toNumber(gross), discount: toNumber(discount), tax: toBreakup(tax), net: toNumber(tax.taxable + tax.gst) };
+  return {
+    gross: toNumber(gross),
+    discount: toNumber(discount),
+    tax: toBreakup(tax),
+    net: toNumber(tax.taxable + tax.gst),
+  };
 }
 
 /** Rounds an invoice total to the nearest rupee; Indian invoices print the difference as "round off". */
@@ -149,7 +170,10 @@ export function gstStateCode(gstin: string | null | undefined): string | null {
  * Inter-state supply (IGST) when both GSTINs are known and their state codes differ — exactly the server's
  * `Vendor.IsInterState`. Unknown on either side means intra-state (CGST + SGST).
  */
-export function isInterState(vendorGstin: string | null | undefined, facilityGstin: string | null | undefined): boolean {
+export function isInterState(
+  vendorGstin: string | null | undefined,
+  facilityGstin: string | null | undefined,
+): boolean {
   const vendor = gstStateCode(vendorGstin);
   const facility = gstStateCode(facilityGstin);
   return vendor !== null && facility !== null && vendor !== facility;

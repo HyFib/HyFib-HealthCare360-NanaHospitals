@@ -23,15 +23,34 @@ import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { useFormDraft } from '@/lib/useFormDraft';
-import { NOTE_CATEGORIES, NOTE_CATEGORY_LABEL, nursingApi, nursingKeys, nursingQueries, type NursingNoteCategory } from '../nursingApi';
+import {
+  NOTE_CATEGORIES,
+  NOTE_CATEGORY_LABEL,
+  nursingApi,
+  nursingKeys,
+  nursingQueries,
+  type NursingNoteCategory,
+} from '../nursingApi';
 import { dutyDate, fromIstInput, SHIFT_LABEL, toIstInput } from '../time';
 
 const useStyles = makeStyles({
-  form: { display: 'flex', flexDirection: 'column', gap: '10px', padding: '12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2 },
+  form: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    padding: '12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   categories: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   row: { display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap', justifyContent: 'space-between' },
   list: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' },
-  note: { padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1 },
+  note: {
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    backgroundColor: tokens.colorNeutralBackground1,
+  },
   incident: { borderLeft: `4px solid ${tokens.colorPaletteRedBorderActive}` },
   noteHead: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px' },
   text: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
@@ -72,7 +91,12 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
   const earlier = useWatch({ control: form.control, name: 'earlier' });
 
   const add = useMutation({
-    mutationFn: (v: NoteValues) => nursingApi.addNote(admissionId, { category: v.category, note: v.note, noteFor: v.earlier ? fromIstInput(v.noteFor) : null }),
+    mutationFn: (v: NoteValues) =>
+      nursingApi.addNote(admissionId, {
+        category: v.category,
+        note: v.note,
+        noteFor: v.earlier ? fromIstInput(v.noteFor) : null,
+      }),
     onSuccess: (note) => {
       draft.clear();
       form.reset({ category: 'General', note: '', earlier: false, noteFor: toIstInput(new Date()) });
@@ -94,7 +118,10 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
         <form onSubmit={submit} noValidate className={styles.form}>
           {draft.saved && (
             <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-              <MessageBarBody>An unsaved note from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was kept on this computer.</MessageBarBody>
+              <MessageBarBody>
+                An unsaved note from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was kept on this
+                computer.
+              </MessageBarBody>
               <MessageBarActions>
                 <Button size="small" onClick={draft.restore}>
                   Restore
@@ -126,27 +153,55 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
               </div>
             )}
           />
-          <TextAreaField control={form.control} name="note" label="Nursing note" rows={4} maxLength={4000} placeholder="Observation, care given, response, plan…" />
+          <TextAreaField
+            control={form.control}
+            name="note"
+            label="Nursing note"
+            rows={4}
+            maxLength={4000}
+            placeholder="Observation, care given, response, plan…"
+          />
           <div className={styles.row}>
             <div>
               <Controller
                 control={form.control}
                 name="earlier"
-                render={({ field }) => <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="About an earlier time (last 24 hours)" />}
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="About an earlier time (last 24 hours)"
+                  />
+                )}
               />
               {earlier && (
                 <Controller
                   control={form.control}
                   name="noteFor"
                   render={({ field, fieldState }) => (
-                    <Field label="The note is about" validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                      <Input type="datetime-local" value={field.value} max={limits.now} onChange={(_, d) => field.onChange(d.value)} />
+                    <Field
+                      label="The note is about"
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
+                      <Input
+                        type="datetime-local"
+                        value={field.value}
+                        max={limits.now}
+                        onChange={(_, d) => field.onChange(d.value)}
+                      />
                     </Field>
                   )}
                 />
               )}
             </div>
-            <Button type="submit" appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <SendRegular />} disabled={add.isPending} aria-keyshortcuts="Control+Enter">
+            <Button
+              type="submit"
+              appearance="primary"
+              icon={add.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+              disabled={add.isPending}
+              aria-keyshortcuts="Control+Enter"
+            >
               Save note (Ctrl+Enter)
             </Button>
           </div>
@@ -154,7 +209,9 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
       )}
 
       <div className={styles.row} style={{ marginTop: 16 }}>
-        <Text weight="semibold">{scope === 'shift' ? `Notes for duty date ${formatDateOnly(limits.duty)}` : 'All notes'}</Text>
+        <Text weight="semibold">
+          {scope === 'shift' ? `Notes for duty date ${formatDateOnly(limits.duty)}` : 'All notes'}
+        </Text>
         <Select value={scope} onChange={(_, d) => setScope(d.value as 'shift' | 'all')} aria-label="Which notes">
           <option value="shift">This duty date</option>
           <option value="all">Whole stay</option>
@@ -165,11 +222,18 @@ export function NursingNotes({ admissionId, canWrite }: { admissionId: string; c
       ) : notes.isLoading ? (
         <Spinner size="small" label="Loading notes…" />
       ) : !notes.data || notes.data.length === 0 ? (
-        <EmptyState icon={<NoteRegular />} title="No notes yet" description={canWrite ? 'Write the first note of the shift above.' : undefined} />
+        <EmptyState
+          icon={<NoteRegular />}
+          title="No notes yet"
+          description={canWrite ? 'Write the first note of the shift above.' : undefined}
+        />
       ) : (
         <div className={styles.list}>
           {notes.data.map((n) => (
-            <article key={n.id} className={n.category === 'Incident' ? `${styles.note} ${styles.incident}` : styles.note}>
+            <article
+              key={n.id}
+              className={n.category === 'Incident' ? `${styles.note} ${styles.incident}` : styles.note}
+            >
               <div className={styles.noteHead}>
                 <Badge appearance="tint" color={n.category === 'Incident' ? 'danger' : 'brand'}>
                   {NOTE_CATEGORY_LABEL[n.category] ?? n.category}

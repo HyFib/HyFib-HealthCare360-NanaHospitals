@@ -1,7 +1,17 @@
 import { Field, Input } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -35,7 +45,15 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 
 /** Define (or tune) a quality indicator: definitions, unit, target and direction. */
-export function IndicatorDrawer({ indicator, categories, onClose }: { indicator: IndicatorDto | null; categories: string[]; onClose: () => void }) {
+export function IndicatorDrawer({
+  indicator,
+  categories,
+  onClose,
+}: {
+  indicator: IndicatorDto | null;
+  categories: string[];
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const listId = useId();
@@ -97,8 +115,19 @@ export function IndicatorDrawer({ indicator, categories, onClose }: { indicator:
         control={form.control}
         name="category"
         render={({ field, fieldState }) => (
-          <Field label="Category" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-            <Input value={field.value} onChange={(_, d) => field.onChange(d.value)} onBlur={field.onBlur} list={listId} maxLength={64} />
+          <Field
+            label="Category"
+            required
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
+            <Input
+              value={field.value}
+              onChange={(_, d) => field.onChange(d.value)}
+              onBlur={field.onBlur}
+              list={listId}
+              maxLength={64}
+            />
             <datalist id={listId}>
               {categories.map((c) => (
                 <option key={c} value={c} />
@@ -107,11 +136,37 @@ export function IndicatorDrawer({ indicator, categories, onClose }: { indicator:
           </Field>
         )}
       />
-      <TextAreaField control={form.control} name="numeratorDefinition" label="Numerator (what is counted)" required rows={2} maxLength={500} />
-      <TextAreaField control={form.control} name="denominatorDefinition" label="Denominator (divided by)" required rows={2} maxLength={500} />
+      <TextAreaField
+        control={form.control}
+        name="numeratorDefinition"
+        label="Numerator (what is counted)"
+        required
+        rows={2}
+        maxLength={500}
+      />
+      <TextAreaField
+        control={form.control}
+        name="denominatorDefinition"
+        label="Denominator (divided by)"
+        required
+        rows={2}
+        maxLength={500}
+      />
       <FormGrid columns={2} minColumnWidth={160}>
-        <SelectField control={form.control} name="unit" label="Unit" required options={INDICATOR_UNITS.map((u) => ({ value: u, label: indicatorUnitLabel[u] }))} />
-        <NumberField control={form.control} name="multiplier" label="Multiplier" min={0} hint={`Blank uses ${defaultMultiplier(unit).toLocaleString('en-IN')}`} />
+        <SelectField
+          control={form.control}
+          name="unit"
+          label="Unit"
+          required
+          options={INDICATOR_UNITS.map((u) => ({ value: u, label: indicatorUnitLabel[u] }))}
+        />
+        <NumberField
+          control={form.control}
+          name="multiplier"
+          label="Multiplier"
+          min={0}
+          hint={`Blank uses ${defaultMultiplier(unit).toLocaleString('en-IN')}`}
+        />
         <NumberField control={form.control} name="target" label="Target" hint="Blank: no target" />
         <SelectField
           control={form.control}

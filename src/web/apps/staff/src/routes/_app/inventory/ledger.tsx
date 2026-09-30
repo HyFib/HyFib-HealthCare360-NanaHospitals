@@ -1,4 +1,15 @@
-import { Button, Caption1, Field, Input, SearchBox, Select, Switch, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  SearchBox,
+  Select,
+  Switch,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -9,7 +20,12 @@ import { usePermission } from '@/lib/permissions';
 import { inventoryQueries, type LedgerRow } from '@/modules/inventory/api';
 import { addDays, formatQty } from '@/modules/inventory/format';
 import { ItemPicker } from '@/modules/inventory/ItemPicker';
-import { MOVEMENT_TYPES, movementLabel, referenceModuleLabel, type StockMovementType } from '@/modules/inventory/labels';
+import {
+  MOVEMENT_TYPES,
+  movementLabel,
+  referenceModuleLabel,
+  type StockMovementType,
+} from '@/modules/inventory/labels';
 import { CATALOG_READERS } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { ExpiryText } from '@/modules/inventory/StockBits';
@@ -64,30 +80,58 @@ function LedgerPage() {
   }, [debounced, search.q, navigate]);
 
   const ledger = useQuery(
-    inventoryQueries.ledger({ storeId: search.storeId, itemId: search.itemId, from, to, movement: search.movement, search: search.q, page: search.page, desc: search.newest }),
+    inventoryQueries.ledger({
+      storeId: search.storeId,
+      itemId: search.itemId,
+      from,
+      to,
+      movement: search.movement,
+      search: search.q,
+      page: search.page,
+      desc: search.newest,
+    }),
   );
-  const set = (patch: Partial<LedgerSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<LedgerSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Stock ledger"
-        subtitle={search.itemName ? `Stock card of ${search.itemName}` : 'Every stock movement with the balance after it. Pick an item to read it as a stock card.'}
+        subtitle={
+          search.itemName
+            ? `Stock card of ${search.itemName}`
+            : 'Every stock movement with the balance after it. Pick an item to read it as a stock card.'
+        }
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             {search.itemId ? (
               <Field label="Item">
-                <Button icon={<DismissRegular />} iconPosition="after" onClick={() => set({ itemId: undefined, itemName: undefined })}>
+                <Button
+                  icon={<DismissRegular />}
+                  iconPosition="after"
+                  onClick={() => set({ itemId: undefined, itemName: undefined })}
+                >
                   {search.itemName ?? 'Selected item'}
                 </Button>
               </Field>
             ) : (
               canPickItem && (
                 <div style={{ minWidth: 260 }}>
-                  <ItemPicker label="Item" placeholder="All items, or search one" showStock={false} onPick={(item) => set({ itemId: item.id, itemName: item.name })} />
+                  <ItemPicker
+                    label="Item"
+                    placeholder="All items, or search one"
+                    showStock={false}
+                    onPick={(item) => set({ itemId: item.id, itemName: item.name })}
+                  />
                 </div>
               )
             )}
@@ -95,10 +139,19 @@ function LedgerPage() {
               <Input type="date" value={from} max={to} onChange={(_, d) => set({ from: d.value || undefined })} />
             </Field>
             <Field label="To">
-              <Input type="date" value={to} min={from} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={to}
+                min={from}
+                max={today}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Field label="Movement">
-              <Select value={search.movement ?? ''} onChange={(_, d) => set({ movement: (d.value || undefined) as StockMovementType | undefined })}>
+              <Select
+                value={search.movement ?? ''}
+                onChange={(_, d) => set({ movement: (d.value || undefined) as StockMovementType | undefined })}
+              >
                 <option value="">All</option>
                 {MOVEMENT_TYPES.map((m) => (
                   <option key={m} value={m}>
@@ -110,7 +163,11 @@ function LedgerPage() {
             <Field label="Document or batch" style={{ flex: '1 1 200px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <Switch checked={search.newest === true} onChange={(_, d) => set({ newest: d.checked || undefined })} label="Newest first" />
+            <Switch
+              checked={search.newest === true}
+              onChange={(_, d) => set({ newest: d.checked || undefined })}
+              label="Newest first"
+            />
           </FilterBar>
         </div>
         <DataTable<LedgerRow>
@@ -153,13 +210,23 @@ function LedgerPage() {
               key: 'in',
               header: 'In',
               align: 'end',
-              render: (r) => (r.quantityIn ? <Text style={{ color: tokens.colorPaletteGreenForeground1 }}>+{formatQty(r.quantityIn)}</Text> : ''),
+              render: (r) =>
+                r.quantityIn ? (
+                  <Text style={{ color: tokens.colorPaletteGreenForeground1 }}>+{formatQty(r.quantityIn)}</Text>
+                ) : (
+                  ''
+                ),
             },
             {
               key: 'out',
               header: 'Out',
               align: 'end',
-              render: (r) => (r.quantityOut ? <Text style={{ color: tokens.colorPaletteRedForeground1 }}>−{formatQty(r.quantityOut)}</Text> : ''),
+              render: (r) =>
+                r.quantityOut ? (
+                  <Text style={{ color: tokens.colorPaletteRedForeground1 }}>−{formatQty(r.quantityOut)}</Text>
+                ) : (
+                  ''
+                ),
             },
             {
               key: 'balance',

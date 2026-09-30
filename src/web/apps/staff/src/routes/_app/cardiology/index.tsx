@@ -87,30 +87,52 @@ function CardiologyStudiesPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
   const studies = useQuery(
-    cardiologyQueries.studies({ studyType: search.type, status: search.status, from: search.from, to: search.to, search: search.search, page: search.page }),
+    cardiologyQueries.studies({
+      studyType: search.type,
+      status: search.status,
+      from: search.from,
+      to: search.to,
+      search: search.search,
+      page: search.page,
+    }),
   );
-  const set = (patch: Partial<CardiologySearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<CardiologySearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
 
   return (
     <Page>
       <PageHeader
         title="Cardiology studies"
-        subtitle={search.from && search.from !== today ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}` : "Today's ECG, echo and stress tests"}
+        subtitle={
+          search.from && search.from !== today
+            ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}`
+            : "Today's ECG, echo and stress tests"
+        }
         actions={
           <Can permission={CARDIOLOGY_PERMISSIONS.verify}>
-            <Button appearance="primary" icon={<DocumentEditRegular />} onClick={() => void navigate({ to: '/cardiology/reporting' })}>
+            <Button
+              appearance="primary"
+              icon={<DocumentEditRegular />}
+              onClick={() => void navigate({ to: '/cardiology/reporting' })}
+            >
               Reporting worklist
             </Button>
           </Can>
         }
       />
-      <TabList selectedValue={search.type ?? 'all'} onTabSelect={(_, data) => set({ type: data.value === 'all' ? undefined : (data.value as CardiologyStudyType) })}>
+      <TabList
+        selectedValue={search.type ?? 'all'}
+        onTabSelect={(_, data) => set({ type: data.value === 'all' ? undefined : (data.value as CardiologyStudyType) })}
+      >
         <Tab value="all">All</Tab>
         {STUDY_TYPES.map((type) => (
           <Tab key={type} value={type}>
@@ -122,11 +144,23 @@ function CardiologyStudiesPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 240px' }}>
-              <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Accession, UHID, name or mobile" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, data) => setTerm(data.value)}
+                placeholder="Accession, UHID, name or mobile"
+                autoFocus
+              />
             </Field>
-            <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => set(range)} allowFuture />
+            <DateRangeFields
+              value={{ from: search.from, to: search.to }}
+              onChange={(range) => set(range)}
+              allowFuture
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, data) => set({ status: (data.value || undefined) as CardiologyStudyStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, data) => set({ status: (data.value || undefined) as CardiologyStudyStatus | undefined })}
+              >
                 <option value="">All</option>
                 {CARDIOLOGY_STATUSES.map((value) => (
                   <option key={value} value={value}>
@@ -186,14 +220,36 @@ function CardiologyStudiesPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', width: 160, render: (study: CardiologyStudyListItem) => <CardiologyStatusBadge status={study.status} /> },
-            { key: 'report', header: 'Report', width: 150, priority: 'low', render: (study: CardiologyStudyListItem) => <DiagnosticReportBadge status={study.reportStatus} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 160,
+              render: (study: CardiologyStudyListItem) => <CardiologyStatusBadge status={study.status} />,
+            },
+            {
+              key: 'report',
+              header: 'Report',
+              width: 150,
+              priority: 'low',
+              render: (study: CardiologyStudyListItem) => <DiagnosticReportBadge status={study.reportStatus} />,
+            },
           ]}
           rowActions={(study: CardiologyStudyListItem) => {
             // The list does not carry the file count, so completion is offered on the study page, which checks the tracing.
             const next = canManage ? nextCardiologyAction(study.status, 0) : null;
-            const ref = { id: study.id, patientId: study.patientId, studyName: study.studyName, studyType: study.studyType, patientName: study.patientName, status: study.status, scheduledAt: study.scheduledAt, fileCount: 0 };
-            const others = canManage ? cardiologyActions(study.status).filter((action) => action !== next && action !== 'complete') : [];
+            const ref = {
+              id: study.id,
+              patientId: study.patientId,
+              studyName: study.studyName,
+              studyType: study.studyType,
+              patientName: study.patientName,
+              status: study.status,
+              scheduledAt: study.scheduledAt,
+              fileCount: 0,
+            };
+            const others = canManage
+              ? cardiologyActions(study.status).filter((action) => action !== next && action !== 'complete')
+              : [];
             return (
               <span className={styles.actions}>
                 {next && (
@@ -203,11 +259,21 @@ function CardiologyStudiesPage() {
                 )}
                 <Menu>
                   <MenuTrigger disableButtonEnhancement>
-                    <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More for ${study.studyName}, ${study.patientName}`} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<MoreHorizontalRegular />}
+                      aria-label={`More for ${study.studyName}, ${study.patientName}`}
+                    />
                   </MenuTrigger>
                   <MenuPopover>
                     <MenuList>
-                      <MenuItem icon={<DocumentEditRegular />} onClick={() => void navigate({ to: '/cardiology/studies/$studyId', params: { studyId: study.id } })}>
+                      <MenuItem
+                        icon={<DocumentEditRegular />}
+                        onClick={() =>
+                          void navigate({ to: '/cardiology/studies/$studyId', params: { studyId: study.id } })
+                        }
+                      >
                         Open study and report
                       </MenuItem>
                       {others.map((action) => (

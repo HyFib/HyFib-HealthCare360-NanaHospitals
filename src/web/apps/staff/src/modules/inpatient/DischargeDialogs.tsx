@@ -50,7 +50,9 @@ export function ClearanceStatus({ admissionId }: { admissionId: string }) {
   if (clearance.error || !clearance.data) {
     return (
       <MessageBar intent="warning">
-        <MessageBarBody>Billing clearance could not be checked. {isApiError(clearance.error) ? clearance.error.userMessage : ''}</MessageBarBody>
+        <MessageBarBody>
+          Billing clearance could not be checked. {isApiError(clearance.error) ? clearance.error.userMessage : ''}
+        </MessageBarBody>
         <MessageBarActions>
           <Button size="small" icon={<ArrowClockwiseRegular />} onClick={() => void clearance.refetch()}>
             Check again
@@ -71,10 +73,16 @@ export function ClearanceStatus({ admissionId }: { admissionId: string }) {
     <MessageBar intent="warning" layout="multiline">
       <MessageBarBody>
         <MessageBarTitle>Waiting for billing clearance</MessageBarTitle>
-        {c.reason ?? `Outstanding amount ${formatInr(c.outstanding)}.`} Ask the patient's family to visit the IP billing counter.
+        {c.reason ?? `Outstanding amount ${formatInr(c.outstanding)}.`} Ask the patient's family to visit the IP billing
+        counter.
       </MessageBarBody>
       <MessageBarActions>
-        <Button size="small" icon={<ArrowClockwiseRegular />} onClick={() => void clearance.refetch()} disabled={clearance.isFetching}>
+        <Button
+          size="small"
+          icon={<ArrowClockwiseRegular />}
+          onClick={() => void clearance.refetch()}
+          disabled={clearance.isFetching}
+        >
           Check again
         </Button>
       </MessageBarActions>
@@ -90,7 +98,15 @@ const initiateSchema = z.object({
 type InitiateValues = z.infer<typeof initiateSchema>;
 
 /** Start the discharge: Billing prepares the final bill (all bed days up to now are posted first). */
-export function InitiateDischargeDialog({ admission, open, onClose }: { admission: AdmissionDetail; open: boolean; onClose: () => void }) {
+export function InitiateDischargeDialog({
+  admission,
+  open,
+  onClose,
+}: {
+  admission: AdmissionDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<InitiateValues>({
@@ -100,11 +116,16 @@ export function InitiateDischargeDialog({ admission, open, onClose }: { admissio
 
   const initiate = useMutation({
     mutationFn: (values: InitiateValues) =>
-      admissionApi.initiateDischarge(admission.id, { expectedDischargeDate: values.expectedDischargeDate, notes: values.notes || null }),
+      admissionApi.initiateDischarge(admission.id, {
+        expectedDischargeDate: values.expectedDischargeDate,
+        notes: values.notes || null,
+      }),
     onSuccess: (result) => {
       notify.success(
         'Discharge started',
-        result.chargesPosted > 0 ? `${result.chargesPosted} pending bed and nursing day charges were posted for the final bill.` : 'Billing will prepare the final bill.',
+        result.chargesPosted > 0
+          ? `${result.chargesPosted} pending bed and nursing day charges were posted for the final bill.`
+          : 'Billing will prepare the final bill.',
       );
       void queryClient.invalidateQueries({ queryKey: inpatientKeys.all });
       form.reset();
@@ -125,10 +146,15 @@ export function InitiateDischargeDialog({ admission, open, onClose }: { admissio
             <DialogTitle>Start discharge of {admission.patientName}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Text>
-                Billing is told to prepare the final bill, and every bed and nursing day up to now is charged. The patient stays in the bed until the
-                discharge is completed.
+                Billing is told to prepare the final bill, and every bed and nursing day up to now is charged. The
+                patient stays in the bed until the discharge is completed.
               </Text>
-              <DateField control={form.control} name="expectedDischargeDate" label="Expected discharge date" min={todayIso()} />
+              <DateField
+                control={form.control}
+                name="expectedDischargeDate"
+                label="Expected discharge date"
+                min={todayIso()}
+              />
               <TextAreaField
                 control={form.control}
                 name="notes"
@@ -142,7 +168,12 @@ export function InitiateDischargeDialog({ admission, open, onClose }: { admissio
               <Button onClick={onClose} disabled={initiate.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" icon={initiate.isPending ? <Spinner size="tiny" /> : <ArrowExitRegular />} disabled={initiate.isPending}>
+              <Button
+                type="submit"
+                appearance="primary"
+                icon={initiate.isPending ? <Spinner size="tiny" /> : <ArrowExitRegular />}
+                disabled={initiate.isPending}
+              >
                 Start discharge
               </Button>
             </DialogActions>
@@ -185,14 +216,28 @@ type CompleteValues = z.infer<typeof completeSchema>;
  * Complete the discharge. Routine types need the discharge started and Billing's clearance; death and abscondence are
  * recorded immediately. A billing refusal is shown in the dialog with the outstanding amount, not as a passing toast.
  */
-export function CompleteDischargeDialog({ admission, open, onClose }: { admission: AdmissionDetail; open: boolean; onClose: () => void }) {
+export function CompleteDischargeDialog({
+  admission,
+  open,
+  onClose,
+}: {
+  admission: AdmissionDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const initiated = admission.status === 'DischargeInitiated';
   const [nowInput] = useState(() => toIstInput(new Date()));
   const form = useForm<CompleteValues>({
     resolver: zodResolver(completeSchema),
-    defaultValues: { dischargeType: initiated ? 'Normal' : 'Expired', earlier: false, dischargedAt: nowInput, notes: '', notifyPatient: true },
+    defaultValues: {
+      dischargeType: initiated ? 'Normal' : 'Expired',
+      earlier: false,
+      dischargedAt: nowInput,
+      notes: '',
+      notifyPatient: true,
+    },
   });
   const [type, earlier] = useWatch({ control: form.control, name: ['dischargeType', 'earlier'] });
   const routine = dischargeNeedsClearance(type);
@@ -206,7 +251,10 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
         notifyPatient: dischargeNeedsClearance(values.dischargeType) && values.notifyPatient,
       }),
     onSuccess: () => {
-      notify.success(type === 'Expired' ? 'Death recorded' : 'Discharge completed', 'The bed has been sent for cleaning.');
+      notify.success(
+        type === 'Expired' ? 'Death recorded' : 'Discharge completed',
+        'The bed has been sent for cleaning.',
+      );
       void queryClient.invalidateQueries({ queryKey: inpatientKeys.all });
       form.reset();
       onClose();
@@ -219,7 +267,9 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
   const error = complete.error;
   const billingPending = isApiError(error) && error.code === 'discharge.billing_pending';
   const outstanding =
-    isApiError(error) && error.code === 'discharge.billing_pending' ? ((error.data as { outstanding?: number } | undefined)?.outstanding ?? null) : null;
+    isApiError(error) && error.code === 'discharge.billing_pending'
+      ? ((error.data as { outstanding?: number } | undefined)?.outstanding ?? null)
+      : null;
   const close = () => {
     complete.reset();
     onClose();
@@ -250,7 +300,9 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
                               <span>
                                 {DISCHARGE_TYPE_LABEL[t]}
                                 <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
-                                  {disabled ? 'Start the discharge first so billing can prepare the final bill.' : TYPE_HINT[t]}
+                                  {disabled
+                                    ? 'Start the discharge first so billing can prepare the final bill.'
+                                    : TYPE_HINT[t]}
                                 </Caption1>
                               </span>
                             }
@@ -272,15 +324,31 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
               <Controller
                 control={form.control}
                 name="earlier"
-                render={({ field }) => <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="The patient left earlier (within the last 48 hours)" />}
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="The patient left earlier (within the last 48 hours)"
+                  />
+                )}
               />
               {earlier && (
                 <Controller
                   control={form.control}
                   name="dischargedAt"
                   render={({ field, fieldState }) => (
-                    <Field label="Left at" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                      <Input type="datetime-local" value={field.value} max={nowInput} onChange={(_, d) => field.onChange(d.value)} />
+                    <Field
+                      label="Left at"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
+                      <Input
+                        type="datetime-local"
+                        value={field.value}
+                        max={nowInput}
+                        onChange={(_, d) => field.onChange(d.value)}
+                      />
                     </Field>
                   )}
                 />
@@ -289,7 +357,13 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
                 <Controller
                   control={form.control}
                   name="notifyPatient"
-                  render={({ field }) => <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="Send the discharge SMS to the patient" />}
+                  render={({ field }) => (
+                    <Switch
+                      checked={field.value}
+                      onChange={(_, d) => field.onChange(d.checked)}
+                      label="Send the discharge SMS to the patient"
+                    />
+                  )}
                 />
               )}
               {billingPending && (
@@ -304,7 +378,9 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
               {error && !billingPending && !(isApiError(error) && error.isValidation) && (
                 <MessageBar intent="error" layout="multiline">
                   <MessageBarBody>
-                    <MessageBarTitle>{isApiError(error) ? error.title : 'Could not complete the discharge'}</MessageBarTitle>
+                    <MessageBarTitle>
+                      {isApiError(error) ? error.title : 'Could not complete the discharge'}
+                    </MessageBarTitle>
                     {isApiError(error) ? error.userMessage : 'Please try again.'}
                   </MessageBarBody>
                 </MessageBar>
@@ -321,7 +397,11 @@ export function CompleteDischargeDialog({ admission, open, onClose }: { admissio
                 disabled={complete.isPending}
                 style={type === 'Expired' ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >
-                {type === 'Expired' ? 'Record death' : type === 'Absconded' ? 'Record abscondence' : 'Complete discharge'}
+                {type === 'Expired'
+                  ? 'Record death'
+                  : type === 'Absconded'
+                    ? 'Record abscondence'
+                    : 'Complete discharge'}
               </Button>
             </DialogActions>
           </DialogBody>

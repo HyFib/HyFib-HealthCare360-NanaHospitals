@@ -1,4 +1,15 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Select, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Select,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import {
   AlertUrgentRegular,
   ArrowForwardRegular,
@@ -7,14 +18,29 @@ import {
   PlayRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatRelative, formatTime, todayIso, useHotkey, useRealtimeEvent, useSession } from '@hc360/core';
+import {
+  formatDateOnly,
+  formatRelative,
+  formatTime,
+  todayIso,
+  useHotkey,
+  useRealtimeEvent,
+  useSession,
+} from '@hc360/core';
 import { DataTable, ErrorState, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
-import { emrKeys, emrQueries, noteTypeLabel, type WorklistParams, type WorklistQueueEntry, type WorklistResult } from '@/modules/emr/api';
+import {
+  emrKeys,
+  emrQueries,
+  noteTypeLabel,
+  type WorklistParams,
+  type WorklistQueueEntry,
+  type WorklistResult,
+} from '@/modules/emr/api';
 import { ResultReviewDialog } from '@/modules/emr/ResultReviewDialog';
 import { useStartEncounter } from '@/modules/emr/useStartEncounter';
 import { queueApi } from '@/modules/front-office/api';
@@ -90,7 +116,11 @@ function WorklistPage() {
   const canQueue = usePermission('queue.manage');
   const canWrite = usePermission('clinical.emr.write');
   const today = todayIso();
-  const params: WorklistParams = { date: search.date, practitionerId: search.practitionerId, departmentId: search.departmentId };
+  const params: WorklistParams = {
+    date: search.date,
+    practitionerId: search.practitionerId,
+    departmentId: search.departmentId,
+  };
   const worklist = useQuery(emrQueries.worklist(params));
   const departments = useDepartments('Clinical');
   const departmentId = search.departmentId ?? worklist.data?.departmentId ?? undefined;
@@ -102,7 +132,8 @@ function WorklistPage() {
     void queryClient.invalidateQueries({ queryKey: ['emr', 'worklist'] });
   });
 
-  const set = (patch: Partial<WorklistParams>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<WorklistParams>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['emr', 'worklist'] });
 
   const queueAction = useMutation({
@@ -162,7 +193,13 @@ function WorklistPage() {
         actions={
           canQueue &&
           isToday && (
-            <Button appearance="primary" icon={<ArrowForwardRegular />} disabled={!departmentId || callNext.isPending} onClick={() => callNext.mutate()} aria-keyshortcuts="F2">
+            <Button
+              appearance="primary"
+              icon={<ArrowForwardRegular />}
+              disabled={!departmentId || callNext.isPending}
+              onClick={() => callNext.mutate()}
+              aria-keyshortcuts="F2"
+            >
               Call next patient (F2)
             </Button>
           )
@@ -174,10 +211,18 @@ function WorklistPage() {
             <PatientPicker label="Open a patient's chart" value={null} onChange={(p) => p && openChart(p.id)} />
           </div>
           <Field label="Date">
-            <Input type="date" value={search.date ?? today} max={today} onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })} />
+            <Input
+              type="date"
+              value={search.date ?? today}
+              max={today}
+              onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })}
+            />
           </Field>
           <Field label="Department">
-            <Select value={departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}>
+            <Select
+              value={departmentId ?? ''}
+              onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}
+            >
               <option value="">My department</option>
               {toOptions(departments.data).map((o) => (
                 <option key={o.value} value={o.value}>
@@ -187,7 +232,10 @@ function WorklistPage() {
             </Select>
           </Field>
           <Field label="Doctor">
-            <Select value={search.practitionerId ?? userPractitionerId ?? ''} onChange={(_, d) => set({ practitionerId: d.value || undefined })}>
+            <Select
+              value={search.practitionerId ?? userPractitionerId ?? ''}
+              onChange={(_, d) => set({ practitionerId: d.value || undefined })}
+            >
               <option value="">{userPractitionerId ? 'Me' : 'All doctors'}</option>
               {toOptions(practitioners.data)
                 .filter((o) => o.value !== userPractitionerId)
@@ -205,7 +253,11 @@ function WorklistPage() {
         <ErrorState error={worklist.error} onRetry={() => void worklist.refetch()} />
       ) : (
         <div className={styles.layout}>
-          <Section title={`Queue (${queue.length})`} description="In service first, then called, then waiting by priority." flush>
+          <Section
+            title={`Queue (${queue.length})`}
+            description="In service first, then called, then waiting by priority."
+            flush
+          >
             <DataTable
               ariaLabel="Today's queue"
               rows={w?.queue}
@@ -214,7 +266,12 @@ function WorklistPage() {
               onRowClick={(e) => openChart(e.patientId)}
               size="small"
               columns={[
-                { key: 'token', header: 'Token', width: 80, render: (e) => <Text weight="semibold">{e.tokenLabel}</Text> },
+                {
+                  key: 'token',
+                  header: 'Token',
+                  width: 80,
+                  render: (e) => <Text weight="semibold">{e.tokenLabel}</Text>,
+                },
                 {
                   key: 'patient',
                   header: 'Patient',
@@ -259,7 +316,14 @@ function WorklistPage() {
                   header: 'Waiting',
                   width: 90,
                   priority: 'low',
-                  render: (e) => (e.tokenStatus === 'Waiting' ? <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>{e.waitingMinutes} min</span> : formatTime(e.issuedAt)),
+                  render: (e) =>
+                    e.tokenStatus === 'Waiting' ? (
+                      <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>
+                        {e.waitingMinutes} min
+                      </span>
+                    ) : (
+                      formatTime(e.issuedAt)
+                    ),
                 },
                 {
                   key: 'status',
@@ -267,7 +331,10 @@ function WorklistPage() {
                   width: 120,
                   render: (e) =>
                     e.encounterStatus ? (
-                      <StatusBadge status={e.encounterStatus === 'InProgress' ? 'InProgress' : 'Completed'} label={e.encounterStatus === 'InProgress' ? 'Note open' : 'Note signed'} />
+                      <StatusBadge
+                        status={e.encounterStatus === 'InProgress' ? 'InProgress' : 'Completed'}
+                        label={e.encounterStatus === 'InProgress' ? 'Note open' : 'Note signed'}
+                      />
                     ) : (
                       <StatusBadge status={e.tokenStatus} />
                     ),
@@ -277,13 +344,24 @@ function WorklistPage() {
                 <span style={{ display: 'inline-flex', gap: 4 }}>
                   {canQueue && e.tokenStatus === 'Waiting' && (
                     <Tooltip content="Call to the room" relationship="label">
-                      <Button size="small" icon={<MegaphoneLoudRegular />} onClick={() => queueAction.mutate({ action: 'call', entry: e })} disabled={queueAction.isPending}>
+                      <Button
+                        size="small"
+                        icon={<MegaphoneLoudRegular />}
+                        onClick={() => queueAction.mutate({ action: 'call', entry: e })}
+                        disabled={queueAction.isPending}
+                      >
                         Call
                       </Button>
                     </Tooltip>
                   )}
                   {canWrite && !['Completed', 'Cancelled', 'NoShow'].includes(e.tokenStatus) && (
-                    <Button size="small" appearance="primary" icon={<PlayRegular />} onClick={() => consult(e)} disabled={start.isPending}>
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      icon={<PlayRegular />}
+                      onClick={() => consult(e)}
+                      disabled={start.isPending}
+                    >
                       {e.encounterId ? 'Continue' : 'Start'}
                     </Button>
                   )}
@@ -294,7 +372,12 @@ function WorklistPage() {
                   )}
                   {canQueue && e.tokenStatus === 'InService' && (
                     <Tooltip content="Consultation over: free the queue for the next patient" relationship="label">
-                      <Button size="small" icon={<CheckmarkRegular />} onClick={() => queueAction.mutate({ action: 'complete', entry: e })} disabled={queueAction.isPending}>
+                      <Button
+                        size="small"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => queueAction.mutate({ action: 'complete', entry: e })}
+                        disabled={queueAction.isPending}
+                      >
                         Finish
                       </Button>
                     </Tooltip>
@@ -307,7 +390,10 @@ function WorklistPage() {
           </Section>
 
           <div className={styles.side}>
-            <Section title={`Results to review (${w?.resultsToReview.length ?? 0})`} description="Critical first. Acknowledge after reading.">
+            <Section
+              title={`Results to review (${w?.resultsToReview.length ?? 0})`}
+              description="Critical first. Acknowledge after reading."
+            >
               {(w?.resultsToReview.length ?? 0) === 0 ? (
                 <Text className={styles.muted}>{worklist.isLoading ? 'Loading…' : 'Nothing to review.'}</Text>
               ) : (
@@ -337,7 +423,12 @@ function WorklistPage() {
               ) : (
                 <ul className={styles.list}>
                   {w?.openEncounters.map((e) => (
-                    <ClickItem key={e.id} onOpen={() => void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: e.id } })}>
+                    <ClickItem
+                      key={e.id}
+                      onOpen={() =>
+                        void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: e.id } })
+                      }
+                    >
                       <Text weight="semibold">{e.patientName}</Text>
                       <Caption1 className={styles.muted}>
                         {e.uhid} · started {formatRelative(e.startedAt)}
@@ -350,13 +441,22 @@ function WorklistPage() {
             </Section>
 
             {(w?.draftPrescriptions.length ?? 0) > 0 && (
-              <Section title={`Draft prescriptions (${w?.draftPrescriptions.length ?? 0})`} description="Not yet sent to the pharmacy">
+              <Section
+                title={`Draft prescriptions (${w?.draftPrescriptions.length ?? 0})`}
+                description="Not yet sent to the pharmacy"
+              >
                 <ul className={styles.list}>
                   {w?.draftPrescriptions.map((p) => (
-                    <ClickItem key={p.id} onOpen={() => void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: p.id } })}>
+                    <ClickItem
+                      key={p.id}
+                      onOpen={() =>
+                        void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: p.id } })
+                      }
+                    >
                       <Text weight="semibold">{p.patientName}</Text>
                       <Caption1 className={styles.muted}>
-                        {p.prescriptionNumber} · {p.itemCount} {p.itemCount === 1 ? 'medicine' : 'medicines'} · {formatRelative(p.prescribedAt)}
+                        {p.prescriptionNumber} · {p.itemCount} {p.itemCount === 1 ? 'medicine' : 'medicines'} ·{' '}
+                        {formatRelative(p.prescribedAt)}
                       </Caption1>
                     </ClickItem>
                   ))}
@@ -368,7 +468,16 @@ function WorklistPage() {
               <Section title={`Unsigned notes (${w?.unsignedNotes.length ?? 0})`}>
                 <ul className={styles.list}>
                   {w?.unsignedNotes.map((n) => (
-                    <ClickItem key={n.id} onOpen={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: n.patientId }, search: { tab: 'notes' } })}>
+                    <ClickItem
+                      key={n.id}
+                      onOpen={() =>
+                        void navigate({
+                          to: '/emr/patients/$patientId',
+                          params: { patientId: n.patientId },
+                          search: { tab: 'notes' },
+                        })
+                      }
+                    >
                       <Text weight="semibold">{n.patientName}</Text>
                       <Caption1 className={styles.muted}>
                         {n.title ?? noteTypeLabel[n.type]} · {formatRelative(n.createdAt)}
@@ -380,14 +489,23 @@ function WorklistPage() {
             )}
 
             {(w?.chartDeficiencies.length ?? 0) > 0 && (
-              <Section title={`Chart deficiencies (${w?.chartDeficiencies.length ?? 0})`} description="Raised by medical records; complete them in the chart">
+              <Section
+                title={`Chart deficiencies (${w?.chartDeficiencies.length ?? 0})`}
+                description="Raised by medical records; complete them in the chart"
+              >
                 <ul className={styles.list}>
                   {w?.chartDeficiencies.map((d) => (
                     <li key={d.id} className={styles.item}>
                       <span className={styles.itemRow}>
                         <Text weight="semibold">{d.patientName}</Text>
                         {canWrite && (
-                          <Button size="small" appearance="subtle" icon={<CheckmarkRegular />} disabled={resolveDeficiency.isPending} onClick={() => resolveDeficiency.mutate(d.id)}>
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<CheckmarkRegular />}
+                            disabled={resolveDeficiency.isPending}
+                            onClick={() => resolveDeficiency.mutate(d.id)}
+                          >
                             Done
                           </Button>
                         )}

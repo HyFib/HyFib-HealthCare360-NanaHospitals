@@ -14,7 +14,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowLeftRegular, BedRegular, ClipboardPulseRegular, OpenRegular, PeopleRegular, PillRegular } from '@fluentui/react-icons';
+import {
+  ArrowLeftRegular,
+  BedRegular,
+  ClipboardPulseRegular,
+  OpenRegular,
+  PeopleRegular,
+  PillRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, genderShort } from '@hc360/core';
 import { EmptyState, ErrorState, Page, PageHeader, PatientBanner, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -63,7 +70,16 @@ const useStyles = makeStyles({
     alignItems: 'start',
     '@media (max-width: 1000px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
   },
-  list: { display: 'flex', flexDirection: 'column', gap: '6px', position: 'sticky', top: '12px', maxHeight: 'calc(100vh - 140px)', overflowY: 'auto', padding: '2px' },
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    position: 'sticky',
+    top: '12px',
+    maxHeight: 'calc(100vh - 140px)',
+    overflowY: 'auto',
+    padding: '2px',
+  },
   hideOnNarrow: { '@media (max-width: 1000px)': { display: 'none' } },
   backButton: { display: 'none', '@media (max-width: 1000px)': { display: 'inline-flex' } },
   patient: {
@@ -85,10 +101,21 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '1px' },
   },
   selected: { border: `2px solid ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
-  bed: { fontWeight: tokens.fontWeightBold, fontFamily: tokens.fontFamilyNumeric, gridRow: 'span 2', alignSelf: 'center' },
+  bed: {
+    fontWeight: tokens.fontWeightBold,
+    fontFamily: tokens.fontFamilyNumeric,
+    gridRow: 'span 2',
+    alignSelf: 'center',
+  },
   name: { fontWeight: tokens.fontWeightSemibold, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   meta: { display: 'flex', gap: '4px', flexWrap: 'wrap', alignItems: 'center' },
-  wardView: { display: 'grid', gap: '16px', gridTemplateColumns: 'minmax(0, 1fr)', alignItems: 'start', '@media (min-width: 1500px)': { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' } },
+  wardView: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'minmax(0, 1fr)',
+    alignItems: 'start',
+    '@media (min-width: 1500px)': { gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)' },
+  },
   chart: { display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -115,7 +142,9 @@ function NursingStationPage() {
 
   const wards = useQuery(inpatientQueries.wards());
   const wardList = wards.data ?? [];
-  const wardId = search.wardId ?? (wardList.some((w) => w.id === storedWard) ? storedWard : wardList.length === 1 ? (wardList[0]?.id ?? '') : '');
+  const wardId =
+    search.wardId ??
+    (wardList.some((w) => w.id === storedWard) ? storedWard : wardList.length === 1 ? (wardList[0]?.id ?? '') : '');
   const ward = wardList.find((w) => w.id === wardId) ?? null;
   useWardRealtime(wardId || null);
 
@@ -134,7 +163,9 @@ function NursingStationPage() {
     .map((bed) => ({ bed, occupant: bed.occupant }));
   const needle = term.trim().toLowerCase();
   const shown = needle
-    ? patients.filter((p) => [p.bed.label, p.occupant.patientName, p.occupant.uhid].some((v) => v.toLowerCase().includes(needle)))
+    ? patients.filter((p) =>
+        [p.bed.label, p.occupant.patientName, p.occupant.uhid].some((v) => v.toLowerCase().includes(needle)),
+      )
     : patients;
   const selected = patients.find((p) => p.occupant.admissionId === search.admissionId) ?? null;
 
@@ -142,7 +173,8 @@ function NursingStationPage() {
     setStoredWard(id);
     void navigate({ search: { wardId: id || undefined }, replace: true });
   };
-  const openPatient = (admissionId: string | undefined) => void navigate({ search: (prev) => ({ ...prev, wardId: wardId || undefined, admissionId, tab: undefined }) });
+  const openPatient = (admissionId: string | undefined) =>
+    void navigate({ search: (prev) => ({ ...prev, wardId: wardId || undefined, admissionId, tab: undefined }) });
 
   const shift = shiftAt(now);
   const totalDue = due.data?.length ?? 0;
@@ -166,7 +198,10 @@ function NursingStationPage() {
               </Select>
             </Field>
             {wardId && (
-              <Button icon={<BedRegular />} onClick={() => void navigate({ to: '/inpatient/beds', search: { wardId } })}>
+              <Button
+                icon={<BedRegular />}
+                onClick={() => void navigate({ to: '/inpatient/beds', search: { wardId } })}
+              >
                 Bed board
               </Button>
             )}
@@ -181,11 +216,22 @@ function NursingStationPage() {
           description="Your choice is remembered on this tablet or computer. The ward's patients, medication round and handovers appear here."
         />
       ) : !canReadAdmissions ? (
-        <EmptyState title="You cannot see the ward's patient list" description="Ask the administrator for in-patient read access." />
+        <EmptyState
+          title="You cannot see the ward's patient list"
+          description="Ask the administrator for in-patient read access."
+        />
       ) : (
         <div className={styles.layout}>
-          <nav aria-label="Patients on the ward" className={mergeClasses(styles.list, selected ? styles.hideOnNarrow : undefined)}>
-            <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Bed, name or UHID" aria-label="Find a patient on the ward" />
+          <nav
+            aria-label="Patients on the ward"
+            className={mergeClasses(styles.list, selected ? styles.hideOnNarrow : undefined)}
+          >
+            <SearchBox
+              value={term}
+              onChange={(_, d) => setTerm(d.value)}
+              placeholder="Bed, name or UHID"
+              aria-label="Find a patient on the ward"
+            />
             <Button
               appearance={selected ? 'secondary' : 'primary'}
               icon={canMar ? <PillRegular /> : <PeopleRegular />}
@@ -203,7 +249,9 @@ function NursingStationPage() {
                 ))}
               </Skeleton>
             ) : shown.length === 0 ? (
-              <Caption1 className={styles.muted}>{patients.length === 0 ? 'No patients on this ward.' : 'No patient matches.'}</Caption1>
+              <Caption1 className={styles.muted}>
+                {patients.length === 0 ? 'No patients on this ward.' : 'No patient matches.'}
+              </Caption1>
             ) : (
               shown.map(({ bed, occupant }) => {
                 const meds = dueByAdmission.get(occupant.admissionId);
@@ -223,10 +271,16 @@ function NursingStationPage() {
                     <span className={styles.name}>{occupant.patientName}</span>
                     <span className={styles.meta}>
                       <Caption1>
-                        {occupant.age ?? '—'}/{genderShort[occupant.gender] ?? occupant.gender.charAt(0)} · Day {occupant.lengthOfStayDays}
+                        {occupant.age ?? '—'}/{genderShort[occupant.gender] ?? occupant.gender.charAt(0)} · Day{' '}
+                        {occupant.lengthOfStayDays}
                       </Caption1>
                       {meds && (
-                        <Badge size="small" appearance="tint" color={meds.overdue ? 'danger' : 'warning'} icon={<PillRegular />}>
+                        <Badge
+                          size="small"
+                          appearance="tint"
+                          color={meds.overdue ? 'danger' : 'warning'}
+                          icon={<PillRegular />}
+                        >
                           {meds.due}
                         </Badge>
                       )}
@@ -246,7 +300,12 @@ function NursingStationPage() {
               canMar={canMar}
               onTab={(tab) => void navigate({ search: (prev) => ({ ...prev, tab }), replace: true })}
               onBack={() => openPatient(undefined)}
-              onOpenAdmission={() => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: selected.occupant.admissionId } })}
+              onOpenAdmission={() =>
+                void navigate({
+                  to: '/inpatient/admissions/$admissionId',
+                  params: { admissionId: selected.occupant.admissionId },
+                })
+              }
             />
           ) : search.admissionId && board.data ? (
             <EmptyState

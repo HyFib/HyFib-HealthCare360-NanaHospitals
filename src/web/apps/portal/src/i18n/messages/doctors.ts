@@ -68,7 +68,8 @@ export const doctorMessages = defineMessages({
     'booking.reason.tooLong': 'Please keep it under 300 characters.',
     'booking.payment.label': 'How would you like to pay?',
     'booking.payment.online': 'Pay online now',
-    'booking.payment.onlineHint': 'UPI, card or net banking. Your time is kept even if the payment does not go through.',
+    'booking.payment.onlineHint':
+      'UPI, card or net banking. Your time is kept even if the payment does not go through.',
     'booking.payment.hospital': 'Pay at the hospital',
     'booking.payment.hospitalHint': 'Pay at the billing counter before you see the doctor.',
     'booking.fee': 'Consultation fee',
@@ -76,8 +77,10 @@ export const doctorMessages = defineMessages({
     'booking.booking': 'Booking…',
     'booking.slotGone': 'That time was just taken. Please choose another time.',
     'booking.done.title': 'Appointment booked',
-    'booking.done.body': 'We have sent the details by SMS. Please arrive 15 minutes early and bring earlier reports and medicines.',
-    'booking.done.videoBody': 'We have sent the joining link by SMS. You can also join from "Video consultations" in this portal.',
+    'booking.done.body':
+      'We have sent the details by SMS. Please arrive 15 minutes early and bring earlier reports and medicines.',
+    'booking.done.videoBody':
+      'We have sent the joining link by SMS. You can also join from "Video consultations" in this portal.',
     'booking.done.paid': 'Payment received. Thank you.',
     'booking.done.payLater': 'You can pay online later from your appointment, or at the hospital.',
     'booking.done.view': 'View appointment',
@@ -92,7 +95,8 @@ export const doctorMessages = defineMessages({
 
     'waitlist.join': 'Join the waiting list',
     'waitlist.title': 'Join the waiting list',
-    'waitlist.body': 'Tell us when you can come. If a time opens up, we will send you an SMS or WhatsApp message with a link to book it.',
+    'waitlist.body':
+      'Tell us when you can come. If a time opens up, we will send you an SMS or WhatsApp message with a link to book it.',
     'waitlist.from': 'From',
     'waitlist.to': 'To',
     'waitlist.session': 'Time of day',
@@ -181,8 +185,10 @@ export const doctorMessages = defineMessages({
     'booking.booking': 'बुक हो रहा है…',
     'booking.slotGone': 'यह समय अभी-अभी किसी और ने ले लिया। कृपया दूसरा समय चुनें।',
     'booking.done.title': 'अपॉइंटमेंट बुक हो गया',
-    'booking.done.body': 'हमने विवरण SMS से भेज दिया है। कृपया 15 मिनट पहले पहुँचें और पुरानी रिपोर्ट व दवाइयाँ साथ लाएँ।',
-    'booking.done.videoBody': 'जुड़ने का लिंक SMS से भेज दिया गया है। आप इस पोर्टल के "वीडियो परामर्श" से भी जुड़ सकते हैं।',
+    'booking.done.body':
+      'हमने विवरण SMS से भेज दिया है। कृपया 15 मिनट पहले पहुँचें और पुरानी रिपोर्ट व दवाइयाँ साथ लाएँ।',
+    'booking.done.videoBody':
+      'जुड़ने का लिंक SMS से भेज दिया गया है। आप इस पोर्टल के "वीडियो परामर्श" से भी जुड़ सकते हैं।',
     'booking.done.paid': 'भुगतान मिल गया। धन्यवाद।',
     'booking.done.payLater': 'आप बाद में अपने अपॉइंटमेंट से ऑनलाइन या अस्पताल में भुगतान कर सकते हैं।',
     'booking.done.view': 'अपॉइंटमेंट देखें',

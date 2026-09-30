@@ -45,14 +45,22 @@ function BalancesPage() {
   const year = search.year ?? currentMonth().year;
   const [crediting, setCrediting] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
-  const employee: PickedEmployee | null = search.employeeId ? { id: search.employeeId, code: search.employeeCode ?? '', name: search.employeeName ?? 'Selected employee' } : null;
-  const balances = useQuery({ ...hrQueries.leaveBalances(search.employeeId ?? '', year), enabled: Boolean(search.employeeId) });
+  const employee: PickedEmployee | null = search.employeeId
+    ? { id: search.employeeId, code: search.employeeCode ?? '', name: search.employeeName ?? 'Selected employee' }
+    : null;
+  const balances = useQuery({
+    ...hrQueries.leaveBalances(search.employeeId ?? '', year),
+    enabled: Boolean(search.employeeId),
+  });
 
   const credit = useMutation({
     mutationFn: () => hrApi.creditLeave(year),
     onSuccess: (result) => {
       setCrediting(false);
-      notify.success(`Leave credited for ${year}`, `${result.employees} employee(s); ${result.balancesCreated} new balance(s).`);
+      notify.success(
+        `Leave credited for ${year}`,
+        `${result.employees} employee(s); ${result.balancesCreated} new balance(s).`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.leave });
       void queryClient.invalidateQueries({ queryKey: hrKeys.me });
     },
@@ -80,12 +88,24 @@ function BalancesPage() {
             <div style={{ minWidth: 300 }}>
               <EmployeePicker
                 value={employee}
-                onChange={(value) => void navigate({ search: (prev) => ({ ...prev, employeeId: value?.id, employeeName: value?.name, employeeCode: value?.code }) })}
+                onChange={(value) =>
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      employeeId: value?.id,
+                      employeeName: value?.name,
+                      employeeCode: value?.code,
+                    }),
+                  })
+                }
                 autoFocus={!employee}
               />
             </div>
             <Field label="Year">
-              <Select value={String(year)} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, year: Number(d.value) }) })}>
+              <Select
+                value={String(year)}
+                onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, year: Number(d.value) }) })}
+              >
                 {yearOptions().map((y) => (
                   <option key={y} value={y}>
                     {y}
@@ -101,9 +121,18 @@ function BalancesPage() {
           </FilterBar>
         </FilterPad>
         {employee ? (
-          <BalancesTable balances={balances.data} loading={balances.isLoading} error={balances.error} onRetry={() => void balances.refetch()} />
+          <BalancesTable
+            balances={balances.data}
+            loading={balances.isLoading}
+            error={balances.error}
+            onRetry={() => void balances.refetch()}
+          />
         ) : (
-          <EmptyState title="Choose an employee" description="Type the name or employee code to see their leave balance." icon={<CalendarPersonRegular />} />
+          <EmptyState
+            title="Choose an employee"
+            description="Type the name or employee code to see their leave balance."
+            icon={<CalendarPersonRegular />}
+          />
         )}
       </Section>
       <ConfirmDialog
@@ -114,10 +143,13 @@ function BalancesPage() {
         onConfirm={() => credit.mutate()}
         onCancel={() => setCrediting(false)}
       >
-        Every current employee gets the yearly quota (pro-rated for people who joined during the year) plus the carry-forward from {year - 1}, capped per leave type. It is
-        safe to run again: balances already credited are not doubled.
+        Every current employee gets the yearly quota (pro-rated for people who joined during the year) plus the
+        carry-forward from {year - 1}, capped per leave type. It is safe to run again: balances already credited are not
+        doubled.
       </ConfirmDialog>
-      {employee && <AdjustBalanceDialog open={adjusting} onClose={() => setAdjusting(false)} employee={employee} year={year} />}
+      {employee && (
+        <AdjustBalanceDialog open={adjusting} onClose={() => setAdjusting(false)} employee={employee} year={year} />
+      )}
     </Page>
   );
 }

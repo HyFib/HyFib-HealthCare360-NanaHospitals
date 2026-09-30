@@ -22,9 +22,24 @@ export type FluidRoute =
   | 'BloodLoss'
   | 'Other';
 
-export const INTAKE_ROUTES: readonly FluidRoute[] = ['Oral', 'IntravenousFluid', 'IntravenousMedication', 'BloodProduct', 'TubeFeed', 'Other'];
+export const INTAKE_ROUTES: readonly FluidRoute[] = [
+  'Oral',
+  'IntravenousFluid',
+  'IntravenousMedication',
+  'BloodProduct',
+  'TubeFeed',
+  'Other',
+];
 
-export const OUTPUT_ROUTES: readonly FluidRoute[] = ['Urine', 'Drain', 'Vomitus', 'Stool', 'NasogastricAspirate', 'BloodLoss', 'Other'];
+export const OUTPUT_ROUTES: readonly FluidRoute[] = [
+  'Urine',
+  'Drain',
+  'Vomitus',
+  'Stool',
+  'NasogastricAspirate',
+  'BloodLoss',
+  'Other',
+];
 
 export const ROUTE_LABEL: Record<FluidRoute, string> = {
   Oral: 'Oral',
@@ -105,7 +120,10 @@ export function summarizeFluids(entries: readonly FluidEntryInput[], dutyDate?: 
     });
   }
 
-  const byShift = NURSING_SHIFTS.map((shift) => ({ shift, ...totals(inWindow.filter((e) => shiftAt(e.recordedAt) === shift)) }));
+  const byShift = NURSING_SHIFTS.map((shift) => ({
+    shift,
+    ...totals(inWindow.filter((e) => shiftAt(e.recordedAt) === shift)),
+  }));
   const routeMap = new Map<string, RouteTotal>();
   for (const entry of inWindow) {
     const key = `${entry.direction}:${entry.route}`;
@@ -114,7 +132,11 @@ export function summarizeFluids(entries: readonly FluidEntryInput[], dutyDate?: 
     routeMap.set(key, current);
   }
   const byRoute = [...routeMap.values()].sort((a, b) =>
-    a.direction === b.direction ? Object.keys(ROUTE_LABEL).indexOf(a.route) - Object.keys(ROUTE_LABEL).indexOf(b.route) : a.direction === 'Intake' ? -1 : 1,
+    a.direction === b.direction
+      ? Object.keys(ROUTE_LABEL).indexOf(a.route) - Object.keys(ROUTE_LABEL).indexOf(b.route)
+      : a.direction === 'Intake'
+        ? -1
+        : 1,
   );
   return { ...totals(inWindow), byShift, byRoute };
 }

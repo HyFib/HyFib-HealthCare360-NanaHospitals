@@ -1,4 +1,14 @@
-import { Badge, Button, Caption1, Link, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Link,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import {
   CallRegular,
   ChatMultipleRegular,
@@ -17,10 +27,21 @@ import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { crmApi, crmKeys, crmQueries, type Patient360View } from '@/modules/crm/api';
 import { FollowUpCreateDialog } from '@/modules/crm/FollowUpCreateDialog';
-import { CRM_PERMISSIONS as C, followUpStatusLabel, followUpTypeLabel, leadSourceLabel, OPT_OUT_RECORDERS } from '@/modules/crm/labels';
+import {
+  CRM_PERMISSIONS as C,
+  followUpStatusLabel,
+  followUpTypeLabel,
+  leadSourceLabel,
+  OPT_OUT_RECORDERS,
+} from '@/modules/crm/labels';
 import { SentimentBadge, StarsValue } from '@/modules/feedback/badges';
 import { ComplaintDialog } from '@/modules/feedback/ComplaintDialog';
-import { categoryLabel, complaintStatusLabel, FEEDBACK_CAPTURERS, FEEDBACK_PERMISSIONS as F } from '@/modules/feedback/labels';
+import {
+  categoryLabel,
+  complaintStatusLabel,
+  FEEDBACK_CAPTURERS,
+  FEEDBACK_PERMISSIONS as F,
+} from '@/modules/feedback/labels';
 import { StaffFeedbackDialog } from '@/modules/feedback/StaffFeedbackDialog';
 import { Detail, DetailGrid } from '@/modules/hr/shared/DetailGrid';
 import { Columns, KpiGrid } from '@/modules/hr/shared/layout';
@@ -45,7 +66,8 @@ function Patient360Page() {
   ];
 
   if (!view.data) {
-    const restricted = isApiError(view.error) && (view.error.code === 'patient.restricted' || view.error.status === 403);
+    const restricted =
+      isApiError(view.error) && (view.error.code === 'patient.restricted' || view.error.status === 403);
     return (
       <Page>
         <PageHeader title="Patient 360" icon={<PersonHeartRegular />} breadcrumbs={crumbs} />
@@ -53,8 +75,8 @@ function Patient360Page() {
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
               <MessageBarTitle>This record is restricted</MessageBarTitle>
-              The patient's record is protected (for example a VIP). The CRM view is not available without emergency access, which only clinical staff
-              should request from the patient record.
+              The patient's record is protected (for example a VIP). The CRM view is not available without emergency
+              access, which only clinical staff should request from the patient record.
             </MessageBarBody>
           </MessageBar>
         ) : view.error ? (
@@ -88,7 +110,10 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
     setBusy(true);
     try {
       await crmApi.marketingOptOut(p.id, reason);
-      notify.success('Marketing messages stopped', `${p.fullName} will not receive campaigns. Service messages (appointments, reports) continue.`);
+      notify.success(
+        'Marketing messages stopped',
+        `${p.fullName} will not receive campaigns. Service messages (appointments, reports) continue.`,
+      );
       setOptingOut(false);
       void queryClient.invalidateQueries({ queryKey: crmKeys.patient360 });
     } catch (error) {
@@ -116,7 +141,15 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             )}
           </span>
         }
-        subtitle={[p.uhid, [humanize(p.gender), p.age].filter(Boolean).join(', '), humanize(p.category), p.city, p.phoneMasked].filter(Boolean).join(' · ')}
+        subtitle={[
+          p.uhid,
+          [humanize(p.gender), p.age].filter(Boolean).join(', '),
+          humanize(p.category),
+          p.city,
+          p.phoneMasked,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         icon={<PersonHeartRegular />}
         breadcrumbs={crumbs}
         actions={
@@ -137,7 +170,10 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
               </Button>
             )}
             {canPatientRecord && (
-              <Button icon={<DocumentRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: p.id } })}>
+              <Button
+                icon={<DocumentRegular />}
+                onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: p.id } })}
+              >
                 Patient record
               </Button>
             )}
@@ -152,7 +188,12 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
           hint={`${v.visits.lastTwelveMonths} in the last 12 months`}
           icon={<StethoscopeRegular />}
         />
-        <KpiCard label="Billed" value={formatInr(v.spend.totalBilled, { whole: true })} hint={`${formatInr(v.spend.billedLastTwelveMonths, { whole: true })} in the last 12 months`} icon={<MoneyRegular />} />
+        <KpiCard
+          label="Billed"
+          value={formatInr(v.spend.totalBilled, { whole: true })}
+          hint={`${formatInr(v.spend.billedLastTwelveMonths, { whole: true })} in the last 12 months`}
+          icon={<MoneyRegular />}
+        />
         <KpiCard
           label="Feedback"
           value={v.feedback.averageRating === null ? '—' : `${v.feedback.averageRating.toFixed(1)} / 5`}
@@ -175,10 +216,14 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             <Detail label="Last visit">{v.visits.lastVisitAt ? formatDate(v.visits.lastVisitAt) : null}</Detail>
             <Detail label="Last referred by">{v.visits.lastReferredBy}</Detail>
             <Detail label="Kinds of visit" wide>
-              {v.visits.byType.length > 0 ? v.visits.byType.map((t) => `${humanize(t.label)} ${t.count}`).join(' · ') : null}
+              {v.visits.byType.length > 0
+                ? v.visits.byType.map((t) => `${humanize(t.label)} ${t.count}`).join(' · ')
+                : null}
             </Detail>
             <Detail label="Departments seen most" wide>
-              {v.visits.topDepartments.length > 0 ? v.visits.topDepartments.map((d) => `${d.label} (${d.count})`).join(', ') : null}
+              {v.visits.topDepartments.length > 0
+                ? v.visits.topDepartments.map((d) => `${d.label} (${d.count})`).join(', ')
+                : null}
             </Detail>
           </DetailGrid>
         </Section>
@@ -199,12 +244,22 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             <Detail label="Average rating">
               <StarsValue value={v.feedback.averageRating} />
             </Detail>
-            <Detail label="Last recommendation score">{v.feedback.lastNps === null ? null : `${v.feedback.lastNps} of 10`}</Detail>
-            <Detail label="Last sentiment">{v.feedback.lastSentiment ? <SentimentBadge sentiment={v.feedback.lastSentiment} /> : null}</Detail>
+            <Detail label="Last recommendation score">
+              {v.feedback.lastNps === null ? null : `${v.feedback.lastNps} of 10`}
+            </Detail>
+            <Detail label="Last sentiment">
+              {v.feedback.lastSentiment ? <SentimentBadge sentiment={v.feedback.lastSentiment} /> : null}
+            </Detail>
             <Detail label="Low scores">{v.feedback.lowScores.toLocaleString('en-IN')}</Detail>
-            <Detail label="Last feedback">{v.feedback.lastSubmittedAt ? formatDate(v.feedback.lastSubmittedAt) : null}</Detail>
+            <Detail label="Last feedback">
+              {v.feedback.lastSubmittedAt ? formatDate(v.feedback.lastSubmittedAt) : null}
+            </Detail>
           </DetailGrid>
-          {v.feedback.responses > 0 && <Caption1 block style={{ marginTop: 8 }}>Anonymous QR and kiosk answers are never linked to a patient.</Caption1>}
+          {v.feedback.responses > 0 && (
+            <Caption1 block style={{ marginTop: 8 }}>
+              Anonymous QR and kiosk answers are never linked to a patient.
+            </Caption1>
+          )}
         </Section>
         <Section
           title="Communication"
@@ -219,15 +274,28 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
         >
           <DetailGrid minColumnWidth={170}>
             <Detail label="Marketing messages">
-              <Text weight="semibold" style={{ color: v.communication.marketingConsent ? tokens.colorPaletteGreenForeground1 : tokens.colorNeutralForeground3 }}>
+              <Text
+                weight="semibold"
+                style={{
+                  color: v.communication.marketingConsent
+                    ? tokens.colorPaletteGreenForeground1
+                    : tokens.colorNeutralForeground3,
+                }}
+              >
                 {v.communication.marketingConsent ? 'Agreed' : 'Not agreed'}
               </Text>
               {v.communication.optedOutByLink && <Caption1 block>Opted out using the link in a message</Caption1>}
             </Detail>
-            <Detail label="Service messages (SMS updates)">{v.communication.updatesConsent ? 'Agreed' : 'Not agreed'}</Detail>
-            <Detail label="Marketing choice changed">{v.communication.marketingChangedAt ? formatDate(v.communication.marketingChangedAt) : null}</Detail>
+            <Detail label="Service messages (SMS updates)">
+              {v.communication.updatesConsent ? 'Agreed' : 'Not agreed'}
+            </Detail>
+            <Detail label="Marketing choice changed">
+              {v.communication.marketingChangedAt ? formatDate(v.communication.marketingChangedAt) : null}
+            </Detail>
             <Detail label="Campaigns received">{v.communication.campaignsReceived.toLocaleString('en-IN')}</Detail>
-            <Detail label="Last campaign">{v.communication.lastCampaignAt ? formatDate(v.communication.lastCampaignAt) : null}</Detail>
+            <Detail label="Last campaign">
+              {v.communication.lastCampaignAt ? formatDate(v.communication.lastCampaignAt) : null}
+            </Detail>
           </DetailGrid>
         </Section>
       </Columns>
@@ -238,12 +306,20 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             ariaLabel="Recent complaints"
             rows={v.recentComplaints}
             getRowId={(c) => c.id}
-            onRowClick={canComplaints ? (c) => void navigate({ to: '/feedback/complaints/$complaintId', params: { complaintId: c.id } }) : undefined}
+            onRowClick={
+              canComplaints
+                ? (c) => void navigate({ to: '/feedback/complaints/$complaintId', params: { complaintId: c.id } })
+                : undefined
+            }
             columns={[
               { key: 'number', header: 'Complaint', render: (c) => <Text font="monospace">{c.complaintNumber}</Text> },
               { key: 'about', header: 'About', render: (c) => categoryLabel(c.category) },
               { key: 'raised', header: 'Raised', render: (c) => formatDate(c.raisedAt) },
-              { key: 'status', header: 'Stage', render: (c) => `${complaintStatusLabel[c.status]}${c.priority === 'High' ? ' · high' : ''}` },
+              {
+                key: 'status',
+                header: 'Stage',
+                render: (c) => `${complaintStatusLabel[c.status]}${c.priority === 'High' ? ' · high' : ''}`,
+              },
             ]}
             emptyTitle="No complaints"
             emptyDescription="Complaints and low feedback scores linked to this patient appear here."
@@ -254,15 +330,27 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             ariaLabel="Open follow-up calls"
             rows={v.openFollowUps}
             getRowId={(f) => f.id}
-            onRowClick={canFollowUps ? () => void navigate({ to: '/crm/follow-ups', search: { view: 'all', search: p.uhid } }) : undefined}
+            onRowClick={
+              canFollowUps
+                ? () => void navigate({ to: '/crm/follow-ups', search: { view: 'all', search: p.uhid } })
+                : undefined
+            }
             columns={[
               { key: 'type', header: 'Reason', render: (f) => followUpTypeLabel[f.type] },
               {
                 key: 'due',
                 header: 'Call on',
-                render: (f) => <Text style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}>{formatDateOnly(f.dueDate)}</Text>,
+                render: (f) => (
+                  <Text style={{ color: f.isOverdue ? tokens.colorPaletteRedForeground1 : undefined }}>
+                    {formatDateOnly(f.dueDate)}
+                  </Text>
+                ),
               },
-              { key: 'status', header: 'Stage', render: (f) => `${followUpStatusLabel[f.status]}${f.priority === 'High' ? ' · high' : ''}` },
+              {
+                key: 'status',
+                header: 'Stage',
+                render: (f) => `${followUpStatusLabel[f.status]}${f.priority === 'High' ? ' · high' : ''}`,
+              },
             ]}
             emptyTitle="No open calls"
             emptyDescription="Calls after discharge are added automatically."
@@ -276,7 +364,13 @@ function View({ v, crumbs }: { v: Patient360View; crumbs: { label: string; onCli
             {leadSourceLabel[v.sourceLead.source]}
             {v.sourceLead.sourceDetail ? ` (${v.sourceLead.sourceDetail})` : ''} · lead{' '}
             {canLeads ? (
-              <Link onClick={() => v.sourceLead && void navigate({ to: '/crm/leads/$leadId', params: { leadId: v.sourceLead.id } })}>{v.sourceLead.leadNumber}</Link>
+              <Link
+                onClick={() =>
+                  v.sourceLead && void navigate({ to: '/crm/leads/$leadId', params: { leadId: v.sourceLead.id } })
+                }
+              >
+                {v.sourceLead.leadNumber}
+              </Link>
             ) : (
               v.sourceLead.leadNumber
             )}{' '}

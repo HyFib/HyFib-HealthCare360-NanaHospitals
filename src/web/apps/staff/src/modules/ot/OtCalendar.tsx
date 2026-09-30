@@ -43,7 +43,13 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
     borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  hour: { position: 'absolute', right: '6px', transform: 'translateY(-50%)', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase100 },
+  hour: {
+    position: 'absolute',
+    right: '6px',
+    transform: 'translateY(-50%)',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase100,
+  },
   column: {
     position: 'relative',
     borderRight: `1px solid ${tokens.colorNeutralStroke3}`,
@@ -82,7 +88,15 @@ const useStyles = makeStyles({
   strong: { fontWeight: tokens.fontWeightSemibold },
   truncate: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 },
   emergencyText: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightBold },
-  now: { position: 'absolute', left: 0, right: 0, height: '2px', backgroundColor: tokens.colorPaletteRedBackground3, zIndex: 2, pointerEvents: 'none' },
+  now: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: '2px',
+    backgroundColor: tokens.colorPaletteRedBackground3,
+    zIndex: 2,
+    pointerEvents: 'none',
+  },
   nowLabel: {
     position: 'absolute',
     left: '2px',
@@ -165,7 +179,12 @@ function BookingContent({ booking, compact }: { booking: OtCalendarBooking; comp
             {booking.surgeonName ?? 'Surgeon not set'} · {anaesthesiaShort[booking.anaesthesiaType]}
           </span>
           <span>
-            <WhoProgress signInDone={booking.signInDone} timeOutDone={booking.timeOutDone} signOutDone={booking.signOutDone} compact />
+            <WhoProgress
+              signInDone={booking.signInDone}
+              timeOutDone={booking.timeOutDone}
+              signOutDone={booking.signOutDone}
+              compact
+            />
           </span>
         </>
       )}
@@ -206,7 +225,12 @@ export function DayBoard({ calendar, date, now, canBook, onOpen, onBookSlot }: D
   const styles = useStyles();
   const theatres = calendar.theatres;
   if (theatres.length === 0) {
-    return <EmptyState title="No operation theatres are set up" description="Add theatres under OT → Theatres to start booking surgeries." />;
+    return (
+      <EmptyState
+        title="No operation theatres are set up"
+        description="Add theatres under OT → Theatres to start booking surgeries."
+      />
+    );
   }
   const range = dayWindow(
     theatres.flatMap((t) => t.bookings),
@@ -224,7 +248,8 @@ export function DayBoard({ calendar, date, now, canBook, onOpen, onBookSlot }: D
       return;
     }
     const rect = event.currentTarget.getBoundingClientRect();
-    const minute = range.start + Math.floor(((event.clientY - rect.top) / HOUR_HEIGHT) * (60 / SNAP_MINUTES)) * SNAP_MINUTES;
+    const minute =
+      range.start + Math.floor(((event.clientY - rect.top) / HOUR_HEIGHT) * (60 / SNAP_MINUTES)) * SNAP_MINUTES;
     const hh = String(Math.floor(minute / 60)).padStart(2, '0');
     const mm = String(minute % 60).padStart(2, '0');
     onBookSlot(theatre, `${date}T${hh}:${mm}`);
@@ -241,12 +266,18 @@ export function DayBoard({ calendar, date, now, canBook, onOpen, onBookSlot }: D
                 {theatre.code} · {theatre.name}
               </Text>
               <Caption1 className={styles.muted}>
-                {theatreTypeLabel[theatre.type]} · {theatre.bookings.length} case{theatre.bookings.length === 1 ? '' : 's'}
+                {theatreTypeLabel[theatre.type]} · {theatre.bookings.length} case
+                {theatre.bookings.length === 1 ? '' : 's'}
               </Caption1>
             </div>
             {canBook && (
               <Tooltip content={`Book ${theatre.code} on this day`} relationship="label">
-                <Button size="small" appearance="subtle" icon={<AddRegular />} onClick={() => onBookSlot(theatre, `${date}T${formatHourInput(range.start)}`)} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<AddRegular />}
+                  onClick={() => onBookSlot(theatre, `${date}T${formatHourInput(range.start)}`)}
+                />
               </Tooltip>
             )}
           </div>
@@ -279,7 +310,9 @@ export function DayBoard({ calendar, date, now, canBook, onOpen, onBookSlot }: D
               role="group"
               aria-label={`${theatre.code} ${theatre.name}: ${theatre.bookings.length} cases`}
             >
-              {showNow && <div className={styles.now} style={{ top: (((nowMinute ?? 0) - range.start) / 60) * HOUR_HEIGHT }} />}
+              {showNow && (
+                <div className={styles.now} style={{ top: (((nowMinute ?? 0) - range.start) / 60) * HOUR_HEIGHT }} />
+              )}
               {placed.map((block) => {
                 const top = ((block.startMinute - range.start) / 60) * HOUR_HEIGHT;
                 const blockHeight = Math.max(26, ((block.endMinute - block.startMinute) / 60) * HOUR_HEIGHT - 2);
@@ -289,7 +322,12 @@ export function DayBoard({ calendar, date, now, canBook, onOpen, onBookSlot }: D
                     key={block.item.id}
                     type="button"
                     className={mergeClasses(styles.block, statusClass(styles, block.item), styles[block.item.priority])}
-                    style={{ top, height: blockHeight, left: `calc(${block.lane * width}% + 3px)`, width: `calc(${width}% - 6px)` }}
+                    style={{
+                      top,
+                      height: blockHeight,
+                      left: `calc(${block.lane * width}% + 3px)`,
+                      width: `calc(${width}% - 6px)`,
+                    }}
                     aria-label={blockLabel(block.item)}
                     onClick={() => onOpen(block.item)}
                   >
@@ -320,7 +358,12 @@ export interface WeekBoardProps {
 export function WeekBoard({ calendar, today, onOpen, onOpenDay }: WeekBoardProps) {
   const styles = useStyles();
   if (calendar.theatres.length === 0) {
-    return <EmptyState title="No operation theatres are set up" description="Add theatres under OT → Theatres to start booking surgeries." />;
+    return (
+      <EmptyState
+        title="No operation theatres are set up"
+        description="Add theatres under OT → Theatres to start booking surgeries."
+      />
+    );
   }
   const days = Array.from({ length: 7 }, (_, i) => addDays(calendar.from, i));
   return (
@@ -331,7 +374,12 @@ export function WeekBoard({ calendar, today, onOpen, onOpenDay }: WeekBoardProps
         </div>
         {days.map((day) => (
           <div key={day} className={mergeClasses(styles.headCell, day === today && styles.today)}>
-            <Button appearance="transparent" className={styles.dayButton} onClick={() => onOpenDay(day)} aria-label={`Open ${dayLabel(day)}`}>
+            <Button
+              appearance="transparent"
+              className={styles.dayButton}
+              onClick={() => onOpenDay(day)}
+              aria-label={`Open ${dayLabel(day)}`}
+            >
               <Text weight={day === today ? 'bold' : 'semibold'}>
                 {dayLabel(day)}
                 {day === today ? ' · Today' : ''}
@@ -347,7 +395,17 @@ export function WeekBoard({ calendar, today, onOpen, onOpenDay }: WeekBoardProps
   );
 }
 
-function WeekRow({ theatre, days, today, onOpen }: { theatre: OtCalendarTheatre; days: string[]; today: string; onOpen: (booking: OtCalendarBooking) => void }) {
+function WeekRow({
+  theatre,
+  days,
+  today,
+  onOpen,
+}: {
+  theatre: OtCalendarTheatre;
+  days: string[];
+  today: string;
+  onOpen: (booking: OtCalendarBooking) => void;
+}) {
   const styles = useStyles();
   return (
     <>
@@ -362,21 +420,35 @@ function WeekRow({ theatre, days, today, onOpen }: { theatre: OtCalendarTheatre;
       {days.map((day) => {
         const cases = theatre.bookings.filter((b) => b.start !== null && istDate(b.start) === day);
         return (
-          <div key={day} className={mergeClasses(styles.weekCell, day === today && styles.today)} role="group" aria-label={`${theatre.code}, ${dayLabel(day)}: ${cases.length} cases`}>
+          <div
+            key={day}
+            className={mergeClasses(styles.weekCell, day === today && styles.today)}
+            role="group"
+            aria-label={`${theatre.code}, ${dayLabel(day)}: ${cases.length} cases`}
+          >
             {cases.length === 0 && <Caption1 className={styles.muted}>—</Caption1>}
             {cases.map((booking) => (
               <button
                 key={booking.id}
                 type="button"
-                className={mergeClasses(styles.block, styles.chip, statusClass(styles, booking), styles[booking.priority])}
+                className={mergeClasses(
+                  styles.block,
+                  styles.chip,
+                  statusClass(styles, booking),
+                  styles[booking.priority],
+                )}
                 style={{ position: 'relative' }}
                 aria-label={blockLabel(booking)}
                 onClick={() => onOpen(booking)}
               >
                 <span className={styles.line}>
                   <span className={styles.strong}>{formatTime(booking.start)}</span>
-                  {booking.priority === 'Emergency' && <WarningRegular aria-hidden color={tokens.colorPaletteRedForeground1} />}
-                  <span className={mergeClasses(styles.truncate, styles.muted)}>{surgeryStatusLabel[booking.status]}</span>
+                  {booking.priority === 'Emergency' && (
+                    <WarningRegular aria-hidden color={tokens.colorPaletteRedForeground1} />
+                  )}
+                  <span className={mergeClasses(styles.truncate, styles.muted)}>
+                    {surgeryStatusLabel[booking.status]}
+                  </span>
                 </span>
                 <span className={mergeClasses(styles.truncate, styles.strong)}>{booking.patientName}</span>
                 <span className={styles.truncate}>

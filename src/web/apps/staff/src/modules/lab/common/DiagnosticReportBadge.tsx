@@ -13,6 +13,13 @@ export function DiagnosticReportBadge({ status }: { status: DiagnosticReportStat
   if (!status) {
     return null;
   }
-  const tone = status === 'Released' ? 'success' : status === 'Verified' ? 'warning' : status === 'Reported' ? 'important' : 'informative';
+  const tone =
+    status === 'Released'
+      ? 'success'
+      : status === 'Verified'
+        ? 'warning'
+        : status === 'Reported'
+          ? 'important'
+          : 'informative';
   return <StatusBadge status={status} tone={tone} label={diagnosticReportStatusLabel[status]} />;
 }

@@ -7,7 +7,11 @@ import { useNavigate } from '@tanstack/react-router';
 import { canteenQueries, PAYMENT_LABEL, type CanteenPaymentMode } from './api';
 
 const useStyles = makeStyles({
-  big: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
+  big: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
   rows: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) auto', gap: '4px 12px', marginTop: '8px' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -24,7 +28,12 @@ export function CanteenTodayWidget() {
     <Section
       title="Canteen today"
       actions={
-        <Button size="small" appearance="subtle" icon={<DrinkCoffeeRegular />} onClick={() => void navigate({ to: '/canteen/report' })}>
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<DrinkCoffeeRegular />}
+          onClick={() => void navigate({ to: '/canteen/report' })}
+        >
           Day report
         </Button>
       }
@@ -37,7 +46,8 @@ export function CanteenTodayWidget() {
         <>
           <span className={styles.big}>{formatInr(r.netSales)}</span>
           <Caption1 block className={styles.muted}>
-            {r.bills} bills{r.cancelledBills ? ` · ${r.cancelledBills} cancelled` : ''} · GST {formatInr(r.cgst + r.sgst)}
+            {r.bills} bills{r.cancelledBills ? ` · ${r.cancelledBills} cancelled` : ''} · GST{' '}
+            {formatInr(r.cgst + r.sgst)}
           </Caption1>
           {r.byPaymentMode.length > 0 && (
             <div className={styles.rows}>

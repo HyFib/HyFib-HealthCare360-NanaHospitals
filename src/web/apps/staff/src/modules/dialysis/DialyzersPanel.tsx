@@ -38,7 +38,15 @@ const useStyles = makeStyles({
  * The patient's own dialyzers (DIA-04): uses so far and left, and discarding. A dialyzer is never shared between
  * patients; it is discarded automatically when it reaches its maximum uses.
  */
-export function DialyzersPanel({ patientId, profile, canManage }: { patientId: string; profile: DialysisProfileDto | null; canManage: boolean }) {
+export function DialyzersPanel({
+  patientId,
+  profile,
+  canManage,
+}: {
+  patientId: string;
+  profile: DialysisProfileDto | null;
+  canManage: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -88,7 +96,12 @@ export function DialyzersPanel({ patientId, profile, canManage }: { patientId: s
         size="small"
         columns={[
           { key: 'serial', header: 'Serial', render: (d) => <Text className={styles.mono}>{d.serialNumber}</Text> },
-          { key: 'type', header: 'Dialyzer', render: (d) => [d.brand, d.model, d.surfaceAreaM2 ? `${d.surfaceAreaM2} m²` : null].filter(Boolean).join(' · ') || '—' },
+          {
+            key: 'type',
+            header: 'Dialyzer',
+            render: (d) =>
+              [d.brand, d.model, d.surfaceAreaM2 ? `${d.surfaceAreaM2} m²` : null].filter(Boolean).join(' · ') || '—',
+          },
           {
             key: 'uses',
             header: 'Uses',
@@ -97,11 +110,20 @@ export function DialyzersPanel({ patientId, profile, canManage }: { patientId: s
                 <Text>
                   {d.usesCount} of {d.maxUses} used
                 </Text>
-                <ProgressBar value={d.maxUses ? d.usesCount / d.maxUses : 0} color={d.remainingUses === 0 ? 'error' : 'brand'} aria-label={`${d.usesCount} of ${d.maxUses} uses`} />
+                <ProgressBar
+                  value={d.maxUses ? d.usesCount / d.maxUses : 0}
+                  color={d.remainingUses === 0 ? 'error' : 'brand'}
+                  aria-label={`${d.usesCount} of ${d.maxUses} uses`}
+                />
               </span>
             ),
           },
-          { key: 'last', header: 'Last used', priority: 'low', render: (d) => (d.lastUsedAt ? formatDate(d.lastUsedAt) : 'Not used yet') },
+          {
+            key: 'last',
+            header: 'Last used',
+            priority: 'low',
+            render: (d) => (d.lastUsedAt ? formatDate(d.lastUsedAt) : 'Not used yet'),
+          },
           {
             key: 'status',
             header: 'Status',
@@ -116,7 +138,11 @@ export function DialyzersPanel({ patientId, profile, canManage }: { patientId: s
                   )}
                 </span>
               ) : (
-                <StatusBadge status="Active" tone="success" label={`${d.remainingUses} use${d.remainingUses === 1 ? '' : 's'} left`} />
+                <StatusBadge
+                  status="Active"
+                  tone="success"
+                  label={`${d.remainingUses} use${d.remainingUses === 1 ? '' : 's'} left`}
+                />
               ),
           },
         ]}
@@ -124,7 +150,13 @@ export function DialyzersPanel({ patientId, profile, canManage }: { patientId: s
           canManage
             ? (d) =>
                 d.isDiscarded ? null : (
-                  <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Discard dialyzer ${d.serialNumber}`} onClick={() => setDiscarding(d)} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Discard dialyzer ${d.serialNumber}`}
+                    onClick={() => setDiscarding(d)}
+                  />
                 )
             : undefined
         }
@@ -170,12 +202,23 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<RegisterValues>({ resolver: zodResolver(registerSchema), defaultValues: { serialNumber: '', brand: '', model: '', surfaceAreaM2: null } });
+  const form = useForm<RegisterValues>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: { serialNumber: '', brand: '', model: '', surfaceAreaM2: null },
+  });
   const register = useMutation({
     mutationFn: (v: RegisterValues) =>
-      dialysisApi.registerDialyzer(patientId, { serialNumber: v.serialNumber.toUpperCase(), brand: v.brand || null, model: v.model || null, surfaceAreaM2: v.surfaceAreaM2 }),
+      dialysisApi.registerDialyzer(patientId, {
+        serialNumber: v.serialNumber.toUpperCase(),
+        brand: v.brand || null,
+        model: v.model || null,
+        surfaceAreaM2: v.surfaceAreaM2,
+      }),
     onSuccess: (dialyzer) => {
-      notify.success(`Dialyzer ${dialyzer.serialNumber} registered`, `Up to ${dialyzer.maxUses} use${dialyzer.maxUses === 1 ? '' : 's'} for this patient.`);
+      notify.success(
+        `Dialyzer ${dialyzer.serialNumber} registered`,
+        `Up to ${dialyzer.maxUses} use${dialyzer.maxUses === 1 ? '' : 's'} for this patient.`,
+      );
       void queryClient.invalidateQueries({ queryKey: ['dialysis', 'dialyzers', patientId] });
       void queryClient.invalidateQueries({ queryKey: dialysisKeys.profile(patientId) });
       onClose();
@@ -194,8 +237,22 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
             <DialogContent className={styles.body}>
               <Text>The dialyzer is labelled with the patient&apos;s name and used for this patient only.</Text>
               <FormGrid columns={2}>
-                <TextField control={form.control} name="serialNumber" label="Serial number" required autoFocus maxLength={64} />
-                <NumberField control={form.control} name="surfaceAreaM2" label="Surface area (m²)" min={0.1} max={3} step={0.1} />
+                <TextField
+                  control={form.control}
+                  name="serialNumber"
+                  label="Serial number"
+                  required
+                  autoFocus
+                  maxLength={64}
+                />
+                <NumberField
+                  control={form.control}
+                  name="surfaceAreaM2"
+                  label="Surface area (m²)"
+                  min={0.1}
+                  max={3}
+                  step={0.1}
+                />
                 <TextField control={form.control} name="brand" label="Brand" maxLength={100} />
                 <TextField control={form.control} name="model" label="Model" maxLength={100} />
               </FormGrid>
@@ -205,7 +262,12 @@ function RegisterDialyzerDialog({ patientId, onClose }: { patientId: string; onC
               <Button onClick={onClose} disabled={register.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={register.isPending} icon={register.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={register.isPending}
+                icon={register.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Register
               </Button>
             </DialogActions>

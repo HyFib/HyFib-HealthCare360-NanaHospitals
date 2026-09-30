@@ -21,9 +21,23 @@ export const ANALYTICS_PERMISSIONS = {
 } as const;
 
 /** Any analytics reader: the server filters the catalogue per report. */
-export const ANY_ANALYTICS: readonly string[] = [ANALYTICS_PERMISSIONS.misRead, ANALYTICS_PERMISSIONS.financeRead, ANALYTICS_PERMISSIONS.clinicalRead];
+export const ANY_ANALYTICS: readonly string[] = [
+  ANALYTICS_PERMISSIONS.misRead,
+  ANALYTICS_PERMISSIONS.financeRead,
+  ANALYTICS_PERMISSIONS.clinicalRead,
+];
 
-export const CATEGORY_ORDER: readonly ReportCategory[] = ['OutPatient', 'InPatient', 'Revenue', 'Diagnostics', 'Pharmacy', 'SpecialtyCare', 'Quality', 'Experience', 'People'];
+export const CATEGORY_ORDER: readonly ReportCategory[] = [
+  'OutPatient',
+  'InPatient',
+  'Revenue',
+  'Diagnostics',
+  'Pharmacy',
+  'SpecialtyCare',
+  'Quality',
+  'Experience',
+  'People',
+];
 
 export const CATEGORY_LABELS: Record<ReportCategory, string> = {
   OutPatient: 'Out-patient',
@@ -70,24 +84,52 @@ export const PERIOD_PRESETS: readonly { value: string; label: string }[] = [
 
 export const DEFAULT_PERIOD = 'thisMonth';
 
-export const WEEKDAYS: readonly Weekday[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+export const WEEKDAYS: readonly Weekday[] = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+];
 
 /** Day-of-month value that means "the last day of the month". */
 export const LAST_DAY_OF_MONTH = 31;
 
 export const FREQUENCIES: readonly ScheduleFrequency[] = ['Daily', 'Weekly', 'Monthly'];
 
-export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = { Daily: 'Every day', Weekly: 'Every week', Monthly: 'Every month' };
+export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
+  Daily: 'Every day',
+  Weekly: 'Every week',
+  Monthly: 'Every month',
+};
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = { Xlsx: 'Excel workbook (.xlsx)', Csv: 'CSV file (.csv)' };
 
-export const RUN_STATUS_LABELS: Record<ScheduleRunStatus, string> = { Succeeded: 'Sent', Failed: 'Failed', Skipped: 'Skipped' };
+export const RUN_STATUS_LABELS: Record<ScheduleRunStatus, string> = {
+  Succeeded: 'Sent',
+  Failed: 'Failed',
+  Skipped: 'Skipped',
+};
 
-export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = { Generating: 'Generating', Ready: 'Ready', Failed: 'Failed', Skipped: 'Skipped' };
+export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
+  Generating: 'Generating',
+  Ready: 'Ready',
+  Failed: 'Failed',
+  Skipped: 'Skipped',
+};
 
-export const DELIVERY_TRIGGER_LABELS: Record<DeliveryTrigger, string> = { Scheduled: 'On schedule', Manual: 'Sent now' };
+export const DELIVERY_TRIGGER_LABELS: Record<DeliveryTrigger, string> = {
+  Scheduled: 'On schedule',
+  Manual: 'Sent now',
+};
 
-export const RECIPIENT_STATUS_LABELS: Record<RecipientStatus, string> = { Pending: 'Waiting to send', Sent: 'Sent', Cancelled: 'Not sent' };
+export const RECIPIENT_STATUS_LABELS: Record<RecipientStatus, string> = {
+  Pending: 'Waiting to send',
+  Sent: 'Sent',
+  Cancelled: 'Not sent',
+};
 
 export const WIDGET_WIDTHS: readonly { value: WidgetWidth; label: string }[] = [
   { value: 1, label: 'Small' },

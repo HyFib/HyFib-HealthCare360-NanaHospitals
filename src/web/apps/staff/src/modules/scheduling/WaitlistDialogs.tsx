@@ -19,7 +19,16 @@ import {
 } from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatTime } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DateField, FormGrid, SelectField, SwitchField, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  DateField,
+  FormGrid,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -87,9 +96,17 @@ function waitlistSchema(today: IsoDate) {
       if (!v.preferredTo || !isIsoDate(v.preferredTo)) {
         ctx.addIssue({ code: 'custom', path: ['preferredTo'], message: 'Choose the last date.' });
       } else if (v.preferredFrom && v.preferredTo < v.preferredFrom) {
-        ctx.addIssue({ code: 'custom', path: ['preferredTo'], message: 'The last date must be on or after the first date.' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['preferredTo'],
+          message: 'The last date must be on or after the first date.',
+        });
       } else if (v.preferredFrom && daysBetween(v.preferredFrom, v.preferredTo) >= MAX_WINDOW_DAYS) {
-        ctx.addIssue({ code: 'custom', path: ['preferredTo'], message: `A waitlist request can cover at most ${MAX_WINDOW_DAYS} days.` });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['preferredTo'],
+          message: `A waitlist request can cover at most ${MAX_WINDOW_DAYS} days.`,
+        });
       }
     });
 }
@@ -97,10 +114,20 @@ function waitlistSchema(today: IsoDate) {
 type WaitlistValues = z.infer<ReturnType<typeof waitlistSchema>>;
 
 /** Puts a patient on a doctor's waitlist; a freed matching slot is offered by SMS/WhatsApp (never booked automatically). */
-export function AddToWaitlistDialog({ open, defaults, onClose }: { open: boolean; defaults?: WaitlistDefaults; onClose: () => void }) {
+export function AddToWaitlistDialog({
+  open,
+  defaults,
+  onClose,
+}: {
+  open: boolean;
+  defaults?: WaitlistDefaults;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 640 }}>{open && <AddToWaitlistContent defaults={defaults} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        {open && <AddToWaitlistContent defaults={defaults} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -143,7 +170,10 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
         notes: v.notes || null,
       }),
     onSuccess: (entry) => {
-      notify.success('Added to the waitlist', `${entry.patientName} will be offered the first matching slot that opens with ${entry.practitionerName}.`);
+      notify.success(
+        'Added to the waitlist',
+        `${entry.patientName} will be offered the first matching slot that opens with ${entry.practitionerName}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: schedulingKeys.waitlist });
       onClose();
     },
@@ -169,7 +199,12 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
               control={form.control}
               name="patient"
               render={({ field, fieldState }) => (
-                <PatientPicker value={field.value ?? null} onChange={field.onChange} required validationMessage={fieldState.error?.message} />
+                <PatientPicker
+                  value={field.value ?? null}
+                  onChange={field.onChange}
+                  required
+                  validationMessage={fieldState.error?.message}
+                />
               )}
             />
             <FormGrid columns={2}>
@@ -180,9 +215,23 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
                 placeholder="All departments"
                 options={toOptions(departments.data)}
               />
-              <SelectField control={form.control} name="practitionerId" label="Doctor" required placeholder="Choose doctor" options={toOptions(doctors.data)} />
+              <SelectField
+                control={form.control}
+                name="practitionerId"
+                label="Doctor"
+                required
+                placeholder="Choose doctor"
+                options={toOptions(doctors.data)}
+              />
               <DateField control={form.control} name="preferredFrom" label="From" required min={today} />
-              <DateField control={form.control} name="preferredTo" label="To" required min={today} max={addDays(today, MAX_WINDOW_DAYS + 30)} />
+              <DateField
+                control={form.control}
+                name="preferredTo"
+                label="To"
+                required
+                min={today}
+                max={addDays(today, MAX_WINDOW_DAYS + 30)}
+              />
             </FormGrid>
             <ChoiceField
               control={form.control}
@@ -191,9 +240,19 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
               options={PREFERRED_SESSIONS.map((s) => ({ value: s, label: preferredSessionLabel[s] }))}
             />
             <FormGrid columns={2}>
-              <SelectField control={form.control} name="channel" label="Request came by" options={STAFF_CHANNELS.map((c) => ({ value: c, label: channelLabel[c] }))} />
+              <SelectField
+                control={form.control}
+                name="channel"
+                label="Request came by"
+                options={STAFF_CHANNELS.map((c) => ({ value: c, label: channelLabel[c] }))}
+              />
             </FormGrid>
-            <SwitchField control={form.control} name="isTelehealth" label="Video consultation" hint="Only for doctors who offer video consultations" />
+            <SwitchField
+              control={form.control}
+              name="isTelehealth"
+              label="Video consultation"
+              hint="Only for doctors who offer video consultations"
+            />
             <TextAreaField control={form.control} name="notes" label="Notes (optional)" rows={2} maxLength={500} />
           </div>
         </DialogContent>
@@ -201,7 +260,12 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
           <Button onClick={onClose} disabled={add.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={add.isPending} icon={add.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={add.isPending}
+            icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Add to waitlist
           </Button>
         </DialogActions>
@@ -224,12 +288,22 @@ export function BookFromWaitlistDialog({
 }) {
   return (
     <Dialog open={entry !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 880, width: '100%' }}>{entry && <BookFromWaitlistContent key={entry.id} entry={entry} onClose={onClose} onBooked={onBooked} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 880, width: '100%' }}>
+        {entry && <BookFromWaitlistContent key={entry.id} entry={entry} onClose={onClose} onBooked={onBooked} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: WaitlistEntryDto; onClose: () => void; onBooked: (appointment: AppointmentDetail) => void }) {
+function BookFromWaitlistContent({
+  entry,
+  onClose,
+  onBooked,
+}: {
+  entry: WaitlistEntryDto;
+  onClose: () => void;
+  onBooked: (appointment: AppointmentDetail) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -244,7 +318,12 @@ function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: Waitlist
 
   const book = useMutation({
     mutationFn: (chosen: SlotDto) =>
-      schedulingApi.bookFromWaitlist(entry.id, { startsAt: chosen.startsAt, visitType, reason: reason.trim() || null, overbook: chosen.available <= 0 }),
+      schedulingApi.bookFromWaitlist(entry.id, {
+        startsAt: chosen.startsAt,
+        visitType,
+        reason: reason.trim() || null,
+        overbook: chosen.available <= 0,
+      }),
     onSuccess: (appointment) => {
       void queryClient.invalidateQueries({ queryKey: schedulingKeys.all });
       onBooked(appointment);
@@ -271,7 +350,8 @@ function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: Waitlist
         <DialogTitle>
           Book for {entry.patientName}
           <Caption1 block className={styles.muted}>
-            {entry.practitionerName} · {preferredSessionLabel[entry.preferredSession].toLowerCase()} · {formatDayMedium(entry.preferredFrom)} to {formatDayMedium(entry.preferredTo)}
+            {entry.practitionerName} · {preferredSessionLabel[entry.preferredSession].toLowerCase()} ·{' '}
+            {formatDayMedium(entry.preferredFrom)} to {formatDayMedium(entry.preferredTo)}
             {entry.isTelehealth ? ' · video consultation' : ''}
           </Caption1>
         </DialogTitle>
@@ -281,13 +361,16 @@ function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: Waitlist
               <MessageBar intent="info">
                 <MessageBarBody>
                   Slot offered to the patient: {formatDateTime(entry.offeredSlotStartsAt)}
-                  {entry.offeredAt ? ` (message sent ${formatTime(entry.offeredAt)})` : ''}. It is selected below if it is still free.
+                  {entry.offeredAt ? ` (message sent ${formatTime(entry.offeredAt)})` : ''}. It is selected below if it
+                  is still free.
                 </MessageBarBody>
               </MessageBar>
             )}
             {expired ? (
               <MessageBar intent="warning">
-                <MessageBarBody>The patient's preferred dates have passed. Book a new appointment for them instead.</MessageBarBody>
+                <MessageBarBody>
+                  The patient's preferred dates have passed. Book a new appointment for them instead.
+                </MessageBarBody>
               </MessageBar>
             ) : (
               <SlotPicker
@@ -308,13 +391,22 @@ function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: Waitlist
               />
             )}
             <Field label="Visit">
-              <RadioGroup layout="horizontal" value={visitType} onChange={(_, d) => setVisitType(d.value as AppointmentVisitType)}>
+              <RadioGroup
+                layout="horizontal"
+                value={visitType}
+                onChange={(_, d) => setVisitType(d.value as AppointmentVisitType)}
+              >
                 <Radio value="New" label="New visit" />
                 <Radio value="FollowUp" label="Follow-up" />
               </RadioGroup>
             </Field>
             <Field label="Reason for visit (optional)">
-              <Textarea value={reason} onChange={(_, d) => setReason(d.value.slice(0, 300))} rows={2} resize="vertical" />
+              <Textarea
+                value={reason}
+                onChange={(_, d) => setReason(d.value.slice(0, 300))}
+                rows={2}
+                resize="vertical"
+              />
             </Field>
           </div>
         </DialogContent>
@@ -322,7 +414,12 @@ function BookFromWaitlistContent({ entry, onClose, onBooked }: { entry: Waitlist
           <Button onClick={onClose} disabled={book.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={!slot || book.isPending || expired} icon={book.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={!slot || book.isPending || expired}
+            icon={book.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {slot ? `Book ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a slot'}
           </Button>
         </DialogActions>

@@ -42,8 +42,11 @@ function VendorsPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const vendors = useQuery(purchaseQueries.vendors({ search: search.q, includeInactive: search.inactive, page: search.page }));
-  const set = (patch: Partial<VendorSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const vendors = useQuery(
+    purchaseQueries.vendors({ search: search.q, includeInactive: search.inactive, page: search.page }),
+  );
+  const set = (patch: Partial<VendorSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -62,9 +65,18 @@ function VendorsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 280px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, code or GSTIN" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, code or GSTIN"
+                autoFocus
+              />
             </Field>
-            <Switch checked={search.inactive === true} onChange={(_, d) => set({ inactive: d.checked || undefined })} label="Show inactive" />
+            <Switch
+              checked={search.inactive === true}
+              onChange={(_, d) => set({ inactive: d.checked || undefined })}
+              label="Show inactive"
+            />
           </FilterBar>
         </div>
         <DataTable<VendorListItem>
@@ -128,7 +140,14 @@ function VendorsPage() {
                 </span>
               ),
             },
-            { key: 'terms', header: 'Credit', align: 'end', width: 80, priority: 'low', render: (v) => (v.paymentTermsDays ? `${v.paymentTermsDays} d` : 'Cash') },
+            {
+              key: 'terms',
+              header: 'Credit',
+              align: 'end',
+              width: 80,
+              priority: 'low',
+              render: (v) => (v.paymentTermsDays ? `${v.paymentTermsDays} d` : 'Cash'),
+            },
             {
               key: 'rating',
               header: 'Rating',
@@ -143,7 +162,17 @@ function VendorsPage() {
                   '—'
                 ),
             },
-            { key: 'status', header: 'Status', width: 100, render: (v) => <StatusBadge status={v.isActive ? 'Active' : 'Inactive'} tone={v.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 100,
+              render: (v) => (
+                <StatusBadge
+                  status={v.isActive ? 'Active' : 'Inactive'}
+                  tone={v.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle={search.q ? 'No vendor matches' : 'No vendors yet'}
           emptyDescription={canManage ? 'Add suppliers with their GSTIN and drug licence before ordering.' : undefined}
@@ -153,7 +182,14 @@ function VendorsPage() {
           onPageChange={(p) => void navigate({ search: (prev) => ({ ...prev, page: p > 1 ? p : undefined }) })}
         />
       </Section>
-      {search.edit && <VendorDrawer key={search.edit} vendorId={search.edit === 'new' ? null : search.edit} canManage={canManage} onClose={() => set({ edit: undefined })} />}
+      {search.edit && (
+        <VendorDrawer
+          key={search.edit}
+          vendorId={search.edit === 'new' ? null : search.edit}
+          canManage={canManage}
+          onClose={() => set({ edit: undefined })}
+        />
+      )}
     </Page>
   );
 }

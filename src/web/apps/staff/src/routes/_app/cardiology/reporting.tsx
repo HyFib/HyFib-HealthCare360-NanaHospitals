@@ -7,7 +7,12 @@ import { PriorityBadge } from '@/modules/lab/badges';
 import { DiagnosticReportBadge } from '@/modules/lab/common/DiagnosticReportBadge';
 import { useDiagnosticsLive } from '@/modules/lab/common/live';
 import { searchOneOf, searchPage } from '@/modules/lab/common/search';
-import { cardiologyQueries, STUDY_TYPES, type CardiologyStudyListItem, type CardiologyStudyType } from '@/modules/cardiology/api';
+import {
+  cardiologyQueries,
+  STUDY_TYPES,
+  type CardiologyStudyListItem,
+  type CardiologyStudyType,
+} from '@/modules/cardiology/api';
 import { StudyTypeBadge } from '@/modules/cardiology/badges';
 import { studyTypeLongLabel } from '@/modules/cardiology/labels';
 
@@ -17,7 +22,10 @@ interface ReportingSearch {
 }
 
 export const Route = createFileRoute('/_app/cardiology/reporting')({
-  validateSearch: (s: Record<string, unknown>): ReportingSearch => ({ type: searchOneOf(s.type, STUDY_TYPES), page: searchPage(s.page) }),
+  validateSearch: (s: Record<string, unknown>): ReportingSearch => ({
+    type: searchOneOf(s.type, STUDY_TYPES),
+    page: searchPage(s.page),
+  }),
   component: CardiologyReportingPage,
 });
 
@@ -41,9 +49,18 @@ function CardiologyReportingPage() {
     <Page>
       <PageHeader
         title="Cardiology reporting"
-        subtitle={worklist.data ? `${worklist.data.totalCount} ${worklist.data.totalCount === 1 ? 'study' : 'studies'} waiting. STAT first, then the longest waiting.` : 'Studies waiting for a report'}
+        subtitle={
+          worklist.data
+            ? `${worklist.data.totalCount} ${worklist.data.totalCount === 1 ? 'study' : 'studies'} waiting. STAT first, then the longest waiting.`
+            : 'Studies waiting for a report'
+        }
       />
-      <TabList selectedValue={search.type ?? 'all'} onTabSelect={(_, data) => void navigate({ search: { type: data.value === 'all' ? undefined : (data.value as CardiologyStudyType) } })}>
+      <TabList
+        selectedValue={search.type ?? 'all'}
+        onTabSelect={(_, data) =>
+          void navigate({ search: { type: data.value === 'all' ? undefined : (data.value as CardiologyStudyType) } })
+        }
+      >
         <Tab value="all">All</Tab>
         {STUDY_TYPES.map((type) => (
           <Tab key={type} value={type}>
@@ -89,13 +106,22 @@ function CardiologyReportingPage() {
                 </span>
               ),
             },
-            { key: 'ordered', header: 'Ordered', priority: 'low', render: (study: CardiologyStudyListItem) => formatDateTime(study.orderedAt) },
+            {
+              key: 'ordered',
+              header: 'Ordered',
+              priority: 'low',
+              render: (study: CardiologyStudyListItem) => formatDateTime(study.orderedAt),
+            },
             {
               key: 'report',
               header: 'Report',
               width: 170,
               render: (study: CardiologyStudyListItem) =>
-                study.reportStatus ? <DiagnosticReportBadge status={study.reportStatus} /> : <Caption1 className={styles.muted}>Not started</Caption1>,
+                study.reportStatus ? (
+                  <DiagnosticReportBadge status={study.reportStatus} />
+                ) : (
+                  <Caption1 className={styles.muted}>Not started</Caption1>
+                ),
             },
           ]}
           emptyTitle="Nothing to report"

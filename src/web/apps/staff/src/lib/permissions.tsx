@@ -8,6 +8,14 @@ export function usePermission(permission: string | readonly string[] | undefined
 }
 
 /** Renders children only for users with the permission — the server enforces it again on every call. */
-export function Can({ permission, children, fallback = null }: { permission: string | readonly string[]; children: ReactNode; fallback?: ReactNode }) {
+export function Can({
+  permission,
+  children,
+  fallback = null,
+}: {
+  permission: string | readonly string[];
+  children: ReactNode;
+  fallback?: ReactNode;
+}) {
   return usePermission(permission) ? children : fallback;
 }

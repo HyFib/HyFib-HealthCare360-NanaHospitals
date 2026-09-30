@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { AttendanceDayDto } from './api';
-import { attendanceFlagTone, attendanceTone, attendanceTotals, canRegularise, formatDays, needsAttention, parseAttendanceFlags } from './attendance';
+import {
+  attendanceFlagTone,
+  attendanceTone,
+  attendanceTotals,
+  canRegularise,
+  formatDays,
+  needsAttention,
+  parseAttendanceFlags,
+} from './attendance';
 import { credentialExpiry } from './labels';
 
 describe('attendance flags', () => {
@@ -91,6 +99,14 @@ describe('attendance totals', () => {
       day({ absentDays: 1, flags: 'MissingPunch' }),
       day({ offDays: 1 }),
     ]);
-    expect(totals).toEqual({ present: 1.5, paidLeave: 0.5, unpaidLeave: 0, absent: 1, off: 1, lateDays: 1, missing: 1 });
+    expect(totals).toEqual({
+      present: 1.5,
+      paidLeave: 0.5,
+      unpaidLeave: 0,
+      absent: 1,
+      off: 1,
+      lateDays: 1,
+      missing: 1,
+    });
   });
 });

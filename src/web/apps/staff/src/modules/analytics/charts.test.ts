@@ -31,14 +31,15 @@ type AnyOption = Record<string, unknown> & { series: Record<string, unknown>[] }
 
 describe('views', () => {
   it('offers views that suit the report', () => {
-    expect(availableViews({ type: 'Line', categoryKey: 'date', seriesKeys: ['a'], timeSeries: true, topN: 15 }, 'report')).toEqual(['Line', 'Area', 'Bar', 'Table']);
-    expect(availableViews({ type: 'Bar', categoryKey: 'd', seriesKeys: ['a', 'b'], timeSeries: false, topN: 15 }, 'dashboard')).toEqual([
-      'Bar',
-      'Pie',
-      'StackedBar',
-      'Table',
-      'Summary',
-    ]);
+    expect(
+      availableViews({ type: 'Line', categoryKey: 'date', seriesKeys: ['a'], timeSeries: true, topN: 15 }, 'report'),
+    ).toEqual(['Line', 'Area', 'Bar', 'Table']);
+    expect(
+      availableViews(
+        { type: 'Bar', categoryKey: 'd', seriesKeys: ['a', 'b'], timeSeries: false, topN: 15 },
+        'dashboard',
+      ),
+    ).toEqual(['Bar', 'Pie', 'StackedBar', 'Table', 'Summary']);
     expect(availableViews(null, 'dashboard')).toEqual(['Table', 'Summary']);
     expect(defaultView(null)).toBe('Table');
     expect(defaultView({ type: 'Pie', categoryKey: 'd', seriesKeys: ['a'], timeSeries: false, topN: 15 })).toBe('Pie');
@@ -57,7 +58,15 @@ describe('report charts', () => {
   it('escapes category names in tooltips', () => {
     const option = reportChartOption(ranking) as unknown as AnyOption;
     const formatter = (option.tooltip as { formatter: (params: unknown) => string }).formatter;
-    const html = formatter([{ axisValueLabel: '<img src=x onerror=alert(1)>', seriesName: 'Revenue', seriesIndex: 0, value: 120_000, marker: '' }]);
+    const html = formatter([
+      {
+        axisValueLabel: '<img src=x onerror=alert(1)>',
+        seriesName: 'Revenue',
+        seriesIndex: 0,
+        value: 120_000,
+        marker: '',
+      },
+    ]);
     expect(html).not.toContain('<img');
     expect(html).toContain('&lt;img');
     expect(html).toMatch(/1,20,000/);
@@ -71,7 +80,11 @@ describe('report charts', () => {
   });
 
   it('stacks bars and areas when asked', () => {
-    const stacked = reportChartOption({ ...ranking, type: 'StackedBar', series: [...ranking.series, { key: 'b', label: 'B', type: 'Money', values: [1, 2, 3] }] }) as unknown as AnyOption;
+    const stacked = reportChartOption({
+      ...ranking,
+      type: 'StackedBar',
+      series: [...ranking.series, { key: 'b', label: 'B', type: 'Money', values: [1, 2, 3] }],
+    }) as unknown as AnyOption;
     expect(stacked.series.every((s) => s.stack === 'total')).toBe(true);
     const area = reportChartOption({ ...trend, type: 'Area', series: [trend.series[0]!] }) as unknown as AnyOption;
     expect(area.series[0]?.areaStyle).toBeDefined();

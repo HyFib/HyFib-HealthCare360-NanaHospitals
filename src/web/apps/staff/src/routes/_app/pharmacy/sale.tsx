@@ -22,7 +22,15 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { CartRegular, CheckmarkCircleRegular, DeleteRegular, DocumentArrowLeftRegular, PrintRegular, ReceiptRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
+import {
+  CartRegular,
+  CheckmarkCircleRegular,
+  DeleteRegular,
+  DocumentArrowLeftRegular,
+  PrintRegular,
+  ReceiptRegular,
+  ShieldKeyholeRegular,
+} from '@fluentui/react-icons';
 import { formatInr, formatRelative, isApiError, isIndianMobile, todayIso, useDraft, useHotkey } from '@hc360/core';
 import { EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,10 +45,22 @@ import { WorkingStorePicker, StoreProblem } from '@/modules/inventory/StorePicke
 import { ItemFlags } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
-import { pharmacyApi, pharmacyKeys, pharmacyQueries, type PharmacySaleCreated, type PharmacyStockRow } from '@/modules/pharmacy/api';
+import {
+  pharmacyApi,
+  pharmacyKeys,
+  pharmacyQueries,
+  type PharmacySaleCreated,
+  type PharmacyStockRow,
+} from '@/modules/pharmacy/api';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
 import { BillSummary } from '@/modules/pharmacy/BillSummary';
-import { DEFAULT_MAX_DISCOUNT_PERCENT, useCounterPrefs, useItemMaster, useLetterhead, usePharmacyBatches } from '@/modules/pharmacy/counter';
+import {
+  DEFAULT_MAX_DISCOUNT_PERCENT,
+  useCounterPrefs,
+  useItemMaster,
+  useLetterhead,
+  usePharmacyBatches,
+} from '@/modules/pharmacy/counter';
 import { controlledItems, itemsFromErrorData, planBatchIssue } from '@/modules/pharmacy/dispense';
 import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
@@ -70,7 +90,12 @@ const useStyles = makeStyles({
   qty: { width: '100px' },
   money: { fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' },
   done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center' },
-  big: { fontSize: tokens.fontSizeHero800, lineHeight: tokens.lineHeightHero800, fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  big: {
+    fontSize: tokens.fontSizeHero800,
+    lineHeight: tokens.lineHeightHero800,
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
   row: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   controlled: { borderLeft: `4px solid ${tokens.colorPaletteRedBorder2}` },
 });
@@ -133,15 +158,23 @@ function CounterSalePage() {
   const lines = cart.map((line) => {
     const quantity = parseNumber(line.quantity) ?? 0;
     const batches = stock.batches.get(line.item.itemId);
-    const plan = planBatchIssue({ quantity, remaining: null, batchId: line.batchId, minimumShelfLifeDays: 0 }, batches, line.item.baseUnit);
+    const plan = planBatchIssue(
+      { quantity, remaining: null, batchId: line.batchId, minimumShelfLifeDays: 0 },
+      batches,
+      line.item.baseUnit,
+    );
     const gstRate = master.items.get(line.item.itemId)?.gstRate ?? null;
-    const priced = plan.allocation.allocations.map((a) => priceSaleLine(batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0, a.quantity, gstRate, discountPercent));
+    const priced = plan.allocation.allocations.map((a) =>
+      priceSaleLine(batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0, a.quantity, gstRate, discountPercent),
+    );
     return { line, quantity, batches, plan, priced, amount: sumNumbers(priced.map((p) => p.net)) };
   });
 
   const totals = saleTotals(lines.flatMap((l) => l.priced));
   const rxItems = cart.filter((l) => l.item.requiresPrescription).map((l) => l.item.name);
-  const registerItems = controlledItems(cart.map((l) => ({ name: l.item.name, schedule: l.item.schedule, isControlled: l.item.isControlled })));
+  const registerItems = controlledItems(
+    cart.map((l) => ({ name: l.item.name, schedule: l.item.schedule, isControlled: l.item.isControlled })),
+  );
   const rxNeeded = rxItems.length > 0;
   const rxShown = rxNeeded || withRx;
   const buyerName = customerKind === 'patient' ? (patient?.fullName ?? '') : customerName.trim();
@@ -161,10 +194,16 @@ function CounterSalePage() {
     }
   }
   if (rxShown && !rx.prescriberName.trim()) {
-    blockers.push(rxNeeded ? `A prescription is required for ${rxItems.join(', ')}: enter the prescriber's name.` : "Enter the prescriber's name or switch off the prescription.");
+    blockers.push(
+      rxNeeded
+        ? `A prescription is required for ${rxItems.join(', ')}: enter the prescriber's name.`
+        : "Enter the prescriber's name or switch off the prescription.",
+    );
   }
   if (buyerNeeded && !buyerName) {
-    blockers.push('Schedule H1/X medicines are recorded in the register: choose the patient or enter the buyer’s name.');
+    blockers.push(
+      'Schedule H1/X medicines are recorded in the register: choose the patient or enter the buyer’s name.',
+    );
   }
   if (customerKind === 'patient' && !patient) {
     blockers.push('Choose the registered patient, or switch to walk-in.');
@@ -194,7 +233,8 @@ function CounterSalePage() {
       setCart([...cart, { item: row, quantity: '1', batchId: null }]);
     }
   };
-  const updateLine = (itemId: string, patch: Partial<CartLine>) => setCart(cart.map((l) => (l.item.itemId === itemId ? { ...l, ...patch } : l)));
+  const updateLine = (itemId: string, patch: Partial<CartLine>) =>
+    setCart(cart.map((l) => (l.item.itemId === itemId ? { ...l, ...patch } : l)));
 
   const reset = () => {
     setCart([]);
@@ -221,11 +261,24 @@ function CounterSalePage() {
         customerName: customerKind === 'walk-in' ? customerName.trim() || null : null,
         customerPhone: customerKind === 'walk-in' ? customerPhone.trim() || null : null,
         prescription: rxShown
-          ? { prescriberName: rx.prescriberName.trim(), prescriberRegistrationNumber: rx.registration.trim() || null, prescriptionDate: rx.date || null, reference: rx.reference.trim() || null }
+          ? {
+              prescriberName: rx.prescriberName.trim(),
+              prescriberRegistrationNumber: rx.registration.trim() || null,
+              prescriptionDate: rx.date || null,
+              reference: rx.reference.trim() || null,
+            }
           : null,
-        lines: lines.flatMap((l) => l.plan.allocation.allocations.map((a) => ({ itemId: l.line.item.itemId, quantity: a.quantity, batchId: a.batchId }))),
+        lines: lines.flatMap((l) =>
+          l.plan.allocation.allocations.map((a) => ({
+            itemId: l.line.item.itemId,
+            quantity: a.quantity,
+            batchId: a.batchId,
+          })),
+        ),
         discountPercent,
-        payments: resolved.filter((p) => p.amount > 0).map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
+        payments: resolved
+          .filter((p) => p.amount > 0)
+          .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
         confirmControlledDrugs: registerItems.length > 0 && confirmControlled,
       }),
     onSuccess: (sale) => {
@@ -242,7 +295,10 @@ function CounterSalePage() {
       }
     },
     onError: (error) => {
-      if (isApiError(error) && (error.code?.startsWith('stock.') || error.code === 'payment.mismatch' || error.isConflict)) {
+      if (
+        isApiError(error) &&
+        (error.code?.startsWith('stock.') || error.code === 'payment.mismatch' || error.isConflict)
+      ) {
         stock.refetch();
       }
       if (isApiError(error) && error.code === 'pharmacy.prescription_required') {
@@ -292,8 +348,8 @@ function CounterSalePage() {
       {savedDraft && cart.length === 0 && savedDraft.value.cart.length > 0 && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
           <MessageBarBody>
-            An unfinished sale of {savedDraft.value.cart.length} item{savedDraft.value.cart.length === 1 ? '' : 's'} from{' '}
-            {formatRelative(new Date(savedDraft.savedAt).toISOString())} was found on this computer.
+            An unfinished sale of {savedDraft.value.cart.length} item{savedDraft.value.cart.length === 1 ? '' : 's'}{' '}
+            from {formatRelative(new Date(savedDraft.savedAt).toISOString())} was found on this computer.
           </MessageBarBody>
           <MessageBarActions>
             <Button
@@ -341,7 +397,13 @@ function CounterSalePage() {
               rows={lines}
               getRowId={(l) => l.line.item.itemId}
               isFlagged={(l) => l.plan.problems.length > 0}
-              empty={<EmptyState icon={<CartRegular />} title="The cart is empty" description="Scan a barcode or search by name above. Scanning the same item again adds one more." />}
+              empty={
+                <EmptyState
+                  icon={<CartRegular />}
+                  title="The cart is empty"
+                  description="Scan a barcode or search by name above. Scanning the same item again adds one more."
+                />
+              }
               columns={[
                 {
                   key: 'item',
@@ -349,10 +411,16 @@ function CounterSalePage() {
                   render: (l) => (
                     <span>
                       <Text weight="semibold">{l.line.item.name}</Text>{' '}
-                      <ItemFlags schedule={l.line.item.schedule} isControlled={l.line.item.isControlled} isColdChain={l.line.item.isColdChain} />
+                      <ItemFlags
+                        schedule={l.line.item.schedule}
+                        isControlled={l.line.item.isControlled}
+                        isColdChain={l.line.item.isColdChain}
+                      />
                       <Caption1 block className={styles.muted}>
                         {[l.line.item.genericName, l.line.item.strength].filter(Boolean).join(' · ')}
-                        {l.line.item.available > 0 ? ` · ${formatQty(l.line.item.available, l.line.item.baseUnit)} in stock` : ''}
+                        {l.line.item.available > 0
+                          ? ` · ${formatQty(l.line.item.available, l.line.item.baseUnit)} in stock`
+                          : ''}
                       </Caption1>
                       {l.plan.problems.map((problem) => (
                         <Caption1 key={problem} block className={styles.problem}>
@@ -391,7 +459,13 @@ function CounterSalePage() {
                     />
                   ),
                 },
-                { key: 'amount', header: 'Amount', align: 'end', width: 110, render: (l) => <span className={styles.money}>{formatInr(l.amount)}</span> },
+                {
+                  key: 'amount',
+                  header: 'Amount',
+                  align: 'end',
+                  width: 110,
+                  render: (l) => <span className={styles.money}>{formatInr(l.amount)}</span>,
+                },
                 {
                   key: 'remove',
                   header: '',
@@ -413,43 +487,92 @@ function CounterSalePage() {
         <aside className={styles.aside}>
           <Section title="Customer">
             <div className={styles.stack}>
-              <RadioGroup layout="horizontal" value={customerKind} onChange={(_, d) => setCustomerKind(d.value as typeof customerKind)}>
+              <RadioGroup
+                layout="horizontal"
+                value={customerKind}
+                onChange={(_, d) => setCustomerKind(d.value as typeof customerKind)}
+              >
                 <Radio value="walk-in" label="Walk-in" />
                 <Radio value="patient" label="Registered patient" />
               </RadioGroup>
               {customerKind === 'patient' ? (
-                <PatientPicker value={patient} onChange={setPatient} hint="Registered patients can pay later (credit) and appear in their medication history." />
+                <PatientPicker
+                  value={patient}
+                  onChange={setPatient}
+                  hint="Registered patients can pay later (credit) and appear in their medication history."
+                />
               ) : (
                 <div className={styles.grid2}>
-                  <Field label="Name" required={buyerNeeded} hint={buyerNeeded ? 'Needed for the H1/X register' : undefined}>
+                  <Field
+                    label="Name"
+                    required={buyerNeeded}
+                    hint={buyerNeeded ? 'Needed for the H1/X register' : undefined}
+                  >
                     <Input value={customerName} maxLength={200} onChange={(_, d) => setCustomerName(d.value)} />
                   </Field>
-                  <Field label="Mobile" validationState={phoneInvalid ? 'error' : 'none'} validationMessage={phoneInvalid ? '10-digit mobile' : undefined}>
-                    <Input type="tel" value={customerPhone} maxLength={14} onChange={(_, d) => setCustomerPhone(d.value)} />
+                  <Field
+                    label="Mobile"
+                    validationState={phoneInvalid ? 'error' : 'none'}
+                    validationMessage={phoneInvalid ? '10-digit mobile' : undefined}
+                  >
+                    <Input
+                      type="tel"
+                      value={customerPhone}
+                      maxLength={14}
+                      onChange={(_, d) => setCustomerPhone(d.value)}
+                    />
                   </Field>
                 </div>
               )}
             </div>
           </Section>
 
-          <Section title="Prescription" description={rxNeeded ? `Required for ${rxItems.join(', ')}` : 'Only for prescription-only medicines'}>
+          <Section
+            title="Prescription"
+            description={rxNeeded ? `Required for ${rxItems.join(', ')}` : 'Only for prescription-only medicines'}
+          >
             <div className={styles.stack}>
-              {!rxNeeded && <Switch checked={withRx} onChange={(_, d) => setWithRx(d.checked)} label="Sold against a prescription" />}
+              {!rxNeeded && (
+                <Switch
+                  checked={withRx}
+                  onChange={(_, d) => setWithRx(d.checked)}
+                  label="Sold against a prescription"
+                />
+              )}
               {rxShown && (
                 <>
                   <Field label="Prescriber" required>
-                    <Input value={rx.prescriberName} maxLength={200} placeholder="Dr. name" onChange={(_, d) => setRx({ ...rx, prescriberName: d.value })} />
+                    <Input
+                      value={rx.prescriberName}
+                      maxLength={200}
+                      placeholder="Dr. name"
+                      onChange={(_, d) => setRx({ ...rx, prescriberName: d.value })}
+                    />
                   </Field>
                   <div className={styles.grid2}>
                     <Field label="Registration no.">
-                      <Input value={rx.registration} maxLength={64} onChange={(_, d) => setRx({ ...rx, registration: d.value })} />
+                      <Input
+                        value={rx.registration}
+                        maxLength={64}
+                        onChange={(_, d) => setRx({ ...rx, registration: d.value })}
+                      />
                     </Field>
                     <Field label="Prescription date">
-                      <Input type="date" max={todayIso()} value={rx.date} onChange={(_, d) => setRx({ ...rx, date: d.value })} />
+                      <Input
+                        type="date"
+                        max={todayIso()}
+                        value={rx.date}
+                        onChange={(_, d) => setRx({ ...rx, date: d.value })}
+                      />
                     </Field>
                   </div>
                   <Field label="Prescription reference">
-                    <Input value={rx.reference} maxLength={64} placeholder="Rx number on the paper, if any" onChange={(_, d) => setRx({ ...rx, reference: d.value })} />
+                    <Input
+                      value={rx.reference}
+                      maxLength={64}
+                      placeholder="Rx number on the paper, if any"
+                      onChange={(_, d) => setRx({ ...rx, reference: d.value })}
+                    />
                   </Field>
                 </>
               )}
@@ -480,7 +603,14 @@ function CounterSalePage() {
                 validationState={discountInvalid ? 'error' : 'none'}
                 validationMessage={discountInvalid ? 'Enter 0 to 100' : undefined}
               >
-                <Input type="number" min={0} max={100} value={discount} placeholder="0" onChange={(_, d) => setDiscount(d.value)} />
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={discount}
+                  placeholder="0"
+                  onChange={(_, d) => setDiscount(d.value)}
+                />
               </Field>
               <BillSummary totals={totals} discountPercent={discountPercent} />
               <PaymentPanel
@@ -531,7 +661,11 @@ function CounterSalePage() {
                 Complete sale {formatInr(totals.net)} (F9)
               </Button>
               <div className={styles.row}>
-                <Switch checked={prefs.autoPrintReceipt} onChange={(_, d) => setPrefs({ autoPrintReceipt: d.checked })} label="Print receipt automatically" />
+                <Switch
+                  checked={prefs.autoPrintReceipt}
+                  onChange={(_, d) => setPrefs({ autoPrintReceipt: d.checked })}
+                  label="Print receipt automatically"
+                />
                 {cart.length > 0 && (
                   <Button appearance="subtle" onClick={reset}>
                     Clear

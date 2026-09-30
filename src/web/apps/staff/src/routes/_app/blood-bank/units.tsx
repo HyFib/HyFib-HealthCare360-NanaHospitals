@@ -28,8 +28,12 @@ import { useFacilityId, useLiveInvalidation, useNow } from '@/modules/ot/shared/
 export const Route = createFileRoute('/_app/blood-bank/units')({
   validateSearch: (s: Record<string, unknown>): UnitFilters => ({
     status: UNIT_STATUSES.includes(s.status as BloodUnitStatus) ? (s.status as BloodUnitStatus) : undefined,
-    component: COMPONENT_TYPES.includes(s.component as BloodComponentType) ? (s.component as BloodComponentType) : undefined,
-    bloodGroup: (KNOWN_GROUPS as readonly string[]).includes(s.bloodGroup as string) ? (s.bloodGroup as BloodGroup) : undefined,
+    component: COMPONENT_TYPES.includes(s.component as BloodComponentType)
+      ? (s.component as BloodComponentType)
+      : undefined,
+    bloodGroup: (KNOWN_GROUPS as readonly string[]).includes(s.bloodGroup as string)
+      ? (s.bloodGroup as BloodGroup)
+      : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
@@ -52,7 +56,10 @@ function BloodUnitsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -66,23 +73,34 @@ function BloodUnitsPage() {
     );
   }
 
-  const set = (patch: Partial<UnitFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<UnitFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Blood units"
         subtitle="Sorted by expiry, soonest first. Scan or type a unit number to find a bag."
-        breadcrumbs={[{ label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) }, { label: 'Units' }]}
+        breadcrumbs={[
+          { label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) },
+          { label: 'Units' },
+        ]}
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Unit number" style={{ flex: '1 1 220px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Scan or type (start of the number)" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Scan or type (start of the number)"
+              />
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as BloodUnitStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as BloodUnitStatus | undefined })}
+              >
                 <option value="">All</option>
                 {UNIT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -92,7 +110,10 @@ function BloodUnitsPage() {
               </Select>
             </Field>
             <Field label="Component">
-              <Select value={filters.component ?? ''} onChange={(_, d) => set({ component: (d.value || undefined) as BloodComponentType | undefined })}>
+              <Select
+                value={filters.component ?? ''}
+                onChange={(_, d) => set({ component: (d.value || undefined) as BloodComponentType | undefined })}
+              >
                 <option value="">All</option>
                 {COMPONENT_TYPES.map((c) => (
                   <option key={c} value={c}>
@@ -102,7 +123,10 @@ function BloodUnitsPage() {
               </Select>
             </Field>
             <Field label="Group">
-              <Select value={filters.bloodGroup ?? ''} onChange={(_, d) => set({ bloodGroup: (d.value || undefined) as BloodGroup | undefined })}>
+              <Select
+                value={filters.bloodGroup ?? ''}
+                onChange={(_, d) => set({ bloodGroup: (d.value || undefined) as BloodGroup | undefined })}
+              >
                 <option value="">All</option>
                 {KNOWN_GROUPS.map((g) => (
                   <option key={g} value={g}>
@@ -121,8 +145,16 @@ function BloodUnitsPage() {
           onRetry={() => void units.refetch()}
           getRowId={(u) => u.id}
           columns={[
-            { key: 'number', header: 'Unit', render: (u) => <Text style={{ fontFamily: tokens.fontFamilyMonospace }}>{u.unitNumber}</Text> },
-            { key: 'component', header: 'Component', render: (u) => `${componentLabel[u.componentType]} · ${u.volumeMl} ml` },
+            {
+              key: 'number',
+              header: 'Unit',
+              render: (u) => <Text style={{ fontFamily: tokens.fontFamilyMonospace }}>{u.unitNumber}</Text>,
+            },
+            {
+              key: 'component',
+              header: 'Component',
+              render: (u) => `${componentLabel[u.componentType]} · ${u.volumeMl} ml`,
+            },
             { key: 'group', header: 'Group', width: 110, render: (u) => groupLabel(u.bloodGroup) },
             { key: 'expiry', header: 'Expiry', render: (u) => <ExpiryText expiresAt={u.expiresAt} now={now} /> },
             { key: 'status', header: 'Status', render: (u) => <UnitStatusBadge status={u.status} /> },
@@ -136,10 +168,18 @@ function BloodUnitsPage() {
                 appearance="subtle"
                 icon={<PrintRegular />}
                 aria-label={`Print label for ${u.unitNumber}`}
-                onClick={() => void printUnitLabels([u]).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+                onClick={() =>
+                  void printUnitLabels([u]).catch((error: unknown) => notify.error(error, 'Printing failed'))
+                }
               />
               {canManage && canDiscardUnit(u.status) && (
-                <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Discard ${u.unitNumber}`} onClick={() => setDiscarding(u)} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DeleteRegular />}
+                  aria-label={`Discard ${u.unitNumber}`}
+                  onClick={() => setDiscarding(u)}
+                />
               )}
             </span>
           )}

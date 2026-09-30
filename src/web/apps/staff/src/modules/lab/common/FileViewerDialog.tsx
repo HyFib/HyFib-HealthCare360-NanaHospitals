@@ -1,4 +1,14 @@
-import { Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, makeStyles, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogBody,
+  DialogContent,
+  DialogSurface,
+  DialogTitle,
+  makeStyles,
+  tokens,
+} from '@fluentui/react-components';
 import { useNotify } from '@hc360/ui';
 import { useEffect, useState, type ReactNode } from 'react';
 import { openFile } from './files';
@@ -18,7 +28,11 @@ interface ViewedFile {
  * Shows a decrypted document (tracing, external report) inside the app. The object URL is released as soon as the
  * viewer closes, so no PHI stays in memory or on disk.
  */
-export function useFileViewer(): { open: (fileId: string, title: string) => Promise<void>; opening: boolean; dialog: ReactNode } {
+export function useFileViewer(): {
+  open: (fileId: string, title: string) => Promise<void>;
+  opening: boolean;
+  dialog: ReactNode;
+} {
   const styles = useStyles();
   const notify = useNotify();
   const [file, setFile] = useState<ViewedFile | null>(null);

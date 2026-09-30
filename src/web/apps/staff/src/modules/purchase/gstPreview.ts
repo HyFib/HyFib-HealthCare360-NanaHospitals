@@ -1,6 +1,13 @@
 import { dec, divRound, mul, toNumber, type Dec } from '@/modules/inventory/decimal';
 import { addDays } from '@/modules/inventory/format';
-import { exclusiveTotals, gstStateName, isInterState, priceExclusive, type DocumentTotals, type PricedLine } from '@/modules/inventory/gst';
+import {
+  exclusiveTotals,
+  gstStateName,
+  isInterState,
+  priceExclusive,
+  type DocumentTotals,
+  type PricedLine,
+} from '@/modules/inventory/gst';
 import type { ItemType } from '@/modules/inventory/labels';
 
 /**
@@ -34,7 +41,10 @@ export interface GstSplit {
 }
 
 /** Plain-language explanation of CGST + SGST versus IGST for a vendor and this hospital. */
-export function explainGstSplit(vendorGstin: string | null | undefined, facilityGstin: string | null | undefined): GstSplit {
+export function explainGstSplit(
+  vendorGstin: string | null | undefined,
+  facilityGstin: string | null | undefined,
+): GstSplit {
   const vendorState = gstStateName(vendorGstin);
   const facilityState = gstStateName(facilityGstin);
   const interState = isInterState(vendorGstin, facilityGstin);
@@ -43,7 +53,8 @@ export function explainGstSplit(vendorGstin: string | null | undefined, facility
       interState: false,
       known: true,
       headline: 'CGST + SGST (same state)',
-      detail: 'The vendor has no GSTIN on record, so GST is treated as a supply within the state: half CGST, half SGST.',
+      detail:
+        'The vendor has no GSTIN on record, so GST is treated as a supply within the state: half CGST, half SGST.',
     };
   }
   if (!facilityState) {
@@ -51,7 +62,8 @@ export function explainGstSplit(vendorGstin: string | null | undefined, facility
       interState: false,
       known: false,
       headline: 'CGST + SGST (assumed)',
-      detail: "The hospital's GSTIN is not visible here, so the preview assumes a supply within the state. The saved document shows the final split.",
+      detail:
+        "The hospital's GSTIN is not visible here, so the preview assumes a supply within the state. The saved document shows the final split.",
     };
   }
   return interState
@@ -141,7 +153,13 @@ export interface GrnUnitEconomics {
 }
 
 /** GoodsReceiptLine.BaseQuantity, UnitCost and UnitMrp (4 decimals, half away from zero). */
-export function grnUnitEconomics(quantity: number, freeQuantity: number, unitsPerPurchaseUnit: number, taxableAmount: number, mrp: number): GrnUnitEconomics {
+export function grnUnitEconomics(
+  quantity: number,
+  freeQuantity: number,
+  unitsPerPurchaseUnit: number,
+  taxableAmount: number,
+  mrp: number,
+): GrnUnitEconomics {
   const factor: Dec = dec(unitsPerPurchaseUnit);
   const base: Dec = mul(dec(quantity) + dec(freeQuantity), factor);
   return {

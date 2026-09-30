@@ -31,9 +31,16 @@ function SterileStockPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canIssue = usePermission('cssd.process');
   const sets = useQuery(cssdQueries.sets());
-  const packs = useQuery(cssdQueries.packs({ setId: search.setId, status: search.status, expiringWithinDays: search.expiring ? 2 : undefined }));
+  const packs = useQuery(
+    cssdQueries.packs({
+      setId: search.setId,
+      status: search.status,
+      expiringWithinDays: search.expiring ? 2 : undefined,
+    }),
+  );
   const today = todayIso();
-  const set = (patch: Partial<PacksSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<PacksSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
   const status = search.status ?? 'Available';
 
   return (
@@ -44,7 +51,11 @@ function SterileStockPage() {
         subtitle={`${PACK_STATUS_LABEL[status]} packs, soonest expiry first`}
         actions={
           canIssue && (
-            <Button appearance="primary" icon={<BoxArrowUpRegular />} onClick={() => void navigate({ to: '/cssd/issue' })}>
+            <Button
+              appearance="primary"
+              icon={<BoxArrowUpRegular />}
+              onClick={() => void navigate({ to: '/cssd/issue' })}
+            >
               Issue packs
             </Button>
           )
@@ -64,7 +75,10 @@ function SterileStockPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={status} onChange={(_, d) => set({ status: d.value === 'Available' ? undefined : (d.value as PackStatus) })}>
+              <Select
+                value={status}
+                onChange={(_, d) => set({ status: d.value === 'Available' ? undefined : (d.value as PackStatus) })}
+              >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {PACK_STATUS_LABEL[s]}
@@ -72,7 +86,11 @@ function SterileStockPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(search.expiring)} onChange={(_, d) => set({ expiring: d.checked || undefined })} label="Expiring within 2 days" />
+            <Switch
+              checked={Boolean(search.expiring)}
+              onChange={(_, d) => set({ expiring: d.checked || undefined })}
+              label="Expiring within 2 days"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -87,7 +105,13 @@ function SterileStockPage() {
           columns={[
             { key: 'number', header: 'Pack', width: 200, render: (p) => <Text font="monospace">{p.packNumber}</Text> },
             { key: 'set', header: 'Set', render: (p) => p.setName ?? '—' },
-            { key: 'cycle', header: 'Cycle', width: 170, priority: 'low', render: (p) => <Text font="monospace">{p.cycleNumber ?? '—'}</Text> },
+            {
+              key: 'cycle',
+              header: 'Cycle',
+              width: 170,
+              priority: 'low',
+              render: (p) => <Text font="monospace">{p.cycleNumber ?? '—'}</Text>,
+            },
             {
               key: 'expiry',
               header: 'Use by',
@@ -113,7 +137,24 @@ function SterileStockPage() {
                 );
               },
             },
-            { key: 'status', header: 'Status', width: 140, render: (p) => <StatusBadge status={p.status} label={PACK_STATUS_LABEL[p.status]} tone={p.status === 'Available' ? 'success' : p.status === 'Recalled' || p.status === 'Reprocess' ? 'danger' : undefined} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 140,
+              render: (p) => (
+                <StatusBadge
+                  status={p.status}
+                  label={PACK_STATUS_LABEL[p.status]}
+                  tone={
+                    p.status === 'Available'
+                      ? 'success'
+                      : p.status === 'Recalled' || p.status === 'Reprocess'
+                        ? 'danger'
+                        : undefined
+                  }
+                />
+              ),
+            },
           ]}
           emptyTitle={search.expiring ? 'No packs expiring soon' : 'No packs'}
           emptyDescription="Packs appear here when a sterilizer load is released."

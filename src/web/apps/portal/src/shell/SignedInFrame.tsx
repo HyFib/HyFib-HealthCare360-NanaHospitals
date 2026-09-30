@@ -99,7 +99,11 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
     );
   }
 
-  return <PortalFrame profileSwitcher={active ? <ProfileSwitcher profiles={list} active={active} /> : undefined}>{content}</PortalFrame>;
+  return (
+    <PortalFrame profileSwitcher={active ? <ProfileSwitcher profiles={list} active={active} /> : undefined}>
+      {content}
+    </PortalFrame>
+  );
 }
 
 function ProfileChooser({ profiles }: { profiles: PortalProfile[] }) {

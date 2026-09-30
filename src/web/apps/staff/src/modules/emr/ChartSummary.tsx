@@ -1,5 +1,21 @@
-import { Badge, Button, Caption1, Link, makeStyles, mergeClasses, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { AlertUrgentRegular, HeartPulseRegular, PillRegular, TaskListLtrRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Link,
+  makeStyles,
+  mergeClasses,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
+import {
+  AlertUrgentRegular,
+  HeartPulseRegular,
+  PillRegular,
+  TaskListLtrRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatRelative } from '@hc360/core';
 import { Section, StatusBadge } from '@hc360/ui';
 import { flagsSummaryNote } from './allergyStatus';
@@ -29,8 +45,14 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground3,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  chipWarning: { backgroundColor: tokens.colorPaletteMarigoldBackground1, border: `1px solid ${tokens.colorPaletteMarigoldBorder2}` },
-  chipDanger: { backgroundColor: tokens.colorPaletteRedBackground1, border: `1px solid ${tokens.colorPaletteRedBorder2}` },
+  chipWarning: {
+    backgroundColor: tokens.colorPaletteMarigoldBackground1,
+    border: `1px solid ${tokens.colorPaletteMarigoldBorder2}`,
+  },
+  chipDanger: {
+    backgroundColor: tokens.colorPaletteRedBackground1,
+    border: `1px solid ${tokens.colorPaletteRedBorder2}`,
+  },
   chipLabel: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   chipValue: { fontWeight: tokens.fontWeightSemibold },
   chipFlag: { fontSize: tokens.fontSizeBase200 },
@@ -55,12 +77,20 @@ export function VitalChipList({ chips }: { chips: VitalChip[] }) {
   return (
     <div className={styles.chips}>
       {chips.map((chip) => {
-        const tone = chip.flag ? (chip.flag.severity === 'Critical' ? styles.chipDanger : styles.chipWarning) : undefined;
+        const tone = chip.flag
+          ? chip.flag.severity === 'Critical'
+            ? styles.chipDanger
+            : styles.chipWarning
+          : undefined;
         const content = (
           <span className={mergeClasses(styles.chip, tone)} key={chip.label}>
             <span className={styles.chipLabel}>{chip.label}</span>
             <span className={styles.chipValue}>{chip.value}</span>
-            {chip.flag && <span className={styles.chipFlag}>{chip.flag.severity === 'Critical' ? '‼' : chip.flag.direction === 'High' ? '↑' : '↓'}</span>}
+            {chip.flag && (
+              <span className={styles.chipFlag}>
+                {chip.flag.severity === 'Critical' ? '‼' : chip.flag.direction === 'High' ? '↑' : '↓'}
+              </span>
+            )}
           </span>
         );
         return chip.flag ? (
@@ -140,7 +170,9 @@ export function ChartSummary({
               <span className={styles.item}>
                 <Text weight="semibold">{alert.title}</Text>
                 {alert.detail && <Caption1>{alert.detail}</Caption1>}
-                {alert.expiresOn && <Caption1 className={styles.muted}>Until {formatDateOnly(alert.expiresOn)}</Caption1>}
+                {alert.expiresOn && (
+                  <Caption1 className={styles.muted}>Until {formatDateOnly(alert.expiresOn)}</Caption1>
+                )}
               </span>
             </li>
           ))}
@@ -151,7 +183,8 @@ export function ChartSummary({
               </span>
               <span className={styles.item}>
                 <Text weight="semibold">
-                  {allergy.allergen} <Caption1 className={styles.muted}>({allergy.type.toLowerCase()} allergy)</Caption1>
+                  {allergy.allergen}{' '}
+                  <Caption1 className={styles.muted}>({allergy.type.toLowerCase()} allergy)</Caption1>
                 </Text>
                 <Caption1>
                   {allergy.severity}
@@ -266,14 +299,21 @@ export function ChartSummary({
                 >
                   <span className={styles.itemRow}>
                     <Text weight="semibold">{formatDateTime(e.startedAt)}</Text>
-                    <StatusBadge status={e.status === 'InProgress' ? 'Draft' : e.status} label={e.status === 'InProgress' ? 'Unsigned' : undefined} />
+                    <StatusBadge
+                      status={e.status === 'InProgress' ? 'Draft' : e.status}
+                      label={e.status === 'InProgress' ? 'Unsigned' : undefined}
+                    />
                   </span>
                   <Caption1>
                     {encounterTypeLabel[e.type]}
                     {e.departmentName ? ` · ${e.departmentName}` : ''}
                     {e.practitionerName ? ` · ${e.practitionerName}` : ''}
                   </Caption1>
-                  {(e.diagnoses.length > 0 || e.chiefComplaint) && <Caption1 className={styles.muted}>{e.diagnoses.length > 0 ? e.diagnoses.join('; ') : e.chiefComplaint}</Caption1>}
+                  {(e.diagnoses.length > 0 || e.chiefComplaint) && (
+                    <Caption1 className={styles.muted}>
+                      {e.diagnoses.length > 0 ? e.diagnoses.join('; ') : e.chiefComplaint}
+                    </Caption1>
+                  )}
                 </div>
               </li>
             ))}

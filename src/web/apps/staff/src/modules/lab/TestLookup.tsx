@@ -43,7 +43,13 @@ export function TestLookup({
   const items = (results.data?.items ?? []).filter((test) => !filter || filter(test));
 
   return (
-    <Field label={label} required={required} hint={hint} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'}>
+    <Field
+      label={label}
+      required={required}
+      hint={hint}
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+    >
       <Combobox
         placeholder={placeholder}
         disabled={disabled}

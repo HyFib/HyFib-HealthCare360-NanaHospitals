@@ -119,9 +119,19 @@ internal static class IncidentEndpoints
         var result = await incidents.OrderByKey(page, SortKeys, i => i.ReportedAt, defaultDescending: true)
             .Select(i => new
             {
-                i.Id, i.IncidentNumber, i.Type, i.Severity, i.IsSentinel, i.Status, i.OccurredAt, i.ReportedAt, i.Location, i.DepartmentId,
+                i.Id,
+                i.IncidentNumber,
+                i.Type,
+                i.Severity,
+                i.IsSentinel,
+                i.Status,
+                i.OccurredAt,
+                i.ReportedAt,
+                i.Location,
+                i.DepartmentId,
                 DepartmentName = db.Set<Department>().Where(d => d.Id == i.DepartmentId).Select(d => d.Name).FirstOrDefault(),
-                i.IsAnonymous, i.AssignedToUserId,
+                i.IsAnonymous,
+                i.AssignedToUserId,
                 OpenCapas = db.Set<Domain.Capa>().Count(c => c.IncidentId == i.Id && (c.Status == CapaStatus.Open || c.Status == CapaStatus.InProgress)),
             })
             .ToPagedResultAsync(page, ct);

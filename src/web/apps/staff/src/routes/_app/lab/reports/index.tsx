@@ -46,30 +46,54 @@ function LabReportsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
   useLabLive();
-  const reports = useQuery(labQueries.reports({ search: search.search, from: search.from, to: search.to, status: search.status, page: search.page }));
-  const set = (patch: Partial<ReportsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const reports = useQuery(
+    labQueries.reports({
+      search: search.search,
+      from: search.from,
+      to: search.to,
+      status: search.status,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<ReportsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
 
   return (
     <Page>
       <PageHeader
         title="Lab reports"
-        subtitle={search.from && search.from !== today ? `Orders from ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}` : "Today's orders"}
+        subtitle={
+          search.from && search.from !== today
+            ? `Orders from ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}`
+            : "Today's orders"
+        }
       />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Report number, UHID, name or mobile" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, data) => setTerm(data.value)}
+                placeholder="Report number, UHID, name or mobile"
+                autoFocus
+              />
             </Field>
             <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => set(range)} />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, data) => set({ status: (data.value || undefined) as LabReportStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, data) => set({ status: (data.value || undefined) as LabReportStatus | undefined })}
+              >
                 <option value="">All</option>
                 {REPORT_STATUSES.map((value) => (
                   <option key={value} value={value}>
@@ -109,9 +133,26 @@ function LabReportsPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', width: 190, render: (report: LabReportListItem) => <ReportStatusBadge status={report.status} partial={report.isPartial} /> },
-            { key: 'ordered', header: 'Ordered', priority: 'low', render: (report: LabReportListItem) => formatDateTime(report.orderedAt) },
-            { key: 'released', header: 'Released', priority: 'low', render: (report: LabReportListItem) => (report.releasedAt ? formatDateTime(report.releasedAt) : '—') },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 190,
+              render: (report: LabReportListItem) => (
+                <ReportStatusBadge status={report.status} partial={report.isPartial} />
+              ),
+            },
+            {
+              key: 'ordered',
+              header: 'Ordered',
+              priority: 'low',
+              render: (report: LabReportListItem) => formatDateTime(report.orderedAt),
+            },
+            {
+              key: 'released',
+              header: 'Released',
+              priority: 'low',
+              render: (report: LabReportListItem) => (report.releasedAt ? formatDateTime(report.releasedAt) : '—'),
+            },
           ]}
           emptyTitle={search.search ? 'No report matches your search' : 'No reports for these dates'}
           emptyDescription="A report is created with each lab order and fills in as results are verified."

@@ -44,10 +44,18 @@ const useStyles = makeStyles({
 });
 
 /** Cancels an open appointment with a coded reason (reported in MIS); the freed slot is offered to the waitlist. */
-export function CancelAppointmentDialog({ appointment, onClose }: { appointment: AppointmentRef | null; onClose: () => void }) {
+export function CancelAppointmentDialog({
+  appointment,
+  onClose,
+}: {
+  appointment: AppointmentRef | null;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()} modalType="alert">
-      <DialogSurface style={{ maxWidth: 520 }}>{appointment && <CancelContent key={appointment.id} appointment={appointment} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        {appointment && <CancelContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -64,7 +72,11 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
 
   const cancel = useMutation({
     mutationFn: (values: CancelValues) =>
-      schedulingApi.cancel(appointment.id, { reasonCode: values.reasonCode, reason: values.reason || null, notifyPatient: values.notifyPatient }),
+      schedulingApi.cancel(appointment.id, {
+        reasonCode: values.reasonCode,
+        reason: values.reason || null,
+        notifyPatient: values.notifyPatient,
+      }),
     onSuccess: () => {
       notify.success('Appointment cancelled', 'The freed slot is offered to patients on the waitlist.');
       void queryClient.invalidateQueries({ queryKey: schedulingKeys.all });

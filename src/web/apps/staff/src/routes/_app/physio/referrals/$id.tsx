@@ -40,7 +40,13 @@ import { ChargeBadge, Detail, DetailGrid, NoAccess, ReasonDialog, RecordLoadErro
 import { useFacilityId } from '@/modules/ot/shared/hooks';
 import { SpecialtyPatientBanner } from '@/modules/ot/shared/SpecialtyPatientBanner';
 import { TrendChart } from '@/modules/ot/shared/TrendChart';
-import { physioApi, physioKeys, physioQueries, type PhysioReferralDetail, type PhysioSessionDto } from '@/modules/physio/api';
+import {
+  physioApi,
+  physioKeys,
+  physioQueries,
+  type PhysioReferralDetail,
+  type PhysioSessionDto,
+} from '@/modules/physio/api';
 import {
   assessmentTypeLabel,
   modalityLabel,
@@ -53,7 +59,13 @@ import {
   referralStatusTone,
 } from '@/modules/physio/labels';
 import { canCancelReferral, nextStep, painChange, planProgress } from '@/modules/physio/logic';
-import { AssessmentDialog, AttendDialog, RescheduleDialog, ScheduleSessionsDialog, TreatmentPlanDialog } from '@/modules/physio/PhysioDialogs';
+import {
+  AssessmentDialog,
+  AttendDialog,
+  RescheduleDialog,
+  ScheduleSessionsDialog,
+  TreatmentPlanDialog,
+} from '@/modules/physio/PhysioDialogs';
 
 export const Route = createFileRoute('/_app/physio/referrals/$id')({
   component: PhysioReferralPage,
@@ -134,7 +146,8 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
     },
   });
   const close = useMutation({
-    mutationFn: ({ id, reason, missed }: { id: string; reason: string; missed: boolean }) => physioApi.close(id, reason, missed),
+    mutationFn: ({ id, reason, missed }: { id: string; reason: string; missed: boolean }) =>
+      physioApi.close(id, reason, missed),
     onSuccess: (_, { missed }) => {
       setClosing(null);
       notify.success(missed ? 'Recorded as missed' : 'Session cancelled');
@@ -175,7 +188,11 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
 
   return (
     <Page>
-      <SpecialtyPatientBanner summary={r.patient} patientId={r.patientId} fallback={{ uhid: '', fullName: 'Patient' }} />
+      <SpecialtyPatientBanner
+        summary={r.patient}
+        patientId={r.patientId}
+        fallback={{ uhid: '', fullName: 'Patient' }}
+      />
       <PageHeader
         title="Physiotherapy referral"
         subtitle={`Referred ${formatDateTime(r.referredAt)}${r.referredByName ? ` by ${r.referredByName}` : ''}${r.orderNumber ? ` · order ${r.orderNumber}` : ''}${r.assignedTherapistName ? ` · therapist ${r.assignedTherapistName}` : ''}`}
@@ -190,7 +207,11 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
               <Badge appearance="tint" color={orderPriorityTone[r.priority]}>
                 {orderPriorityLabel[r.priority]}
               </Badge>
-              <StatusBadge status={r.status} tone={referralStatusTone[r.status]} label={referralStatusLabel[r.status]} />
+              <StatusBadge
+                status={r.status}
+                tone={referralStatusTone[r.status]}
+                label={referralStatusLabel[r.status]}
+              />
             </span>
             {primary && (
               <Button appearance="primary" icon={primary.icon} onClick={() => setDialog(primary.dialog)}>
@@ -250,7 +271,9 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
           <Detail label="Reason">{r.reason}</Detail>
           <Detail label="Service ordered">{r.serviceName}</Detail>
           <Detail label="Sessions prescribed">{r.sessionsOrdered}</Detail>
-          <Detail label="Encounter">{r.admissionId ? 'In-patient (charges go to the IP bill)' : r.visitId ? 'Out-patient visit' : null}</Detail>
+          <Detail label="Encounter">
+            {r.admissionId ? 'In-patient (charges go to the IP bill)' : r.visitId ? 'Out-patient visit' : null}
+          </Detail>
           {r.dischargeSummary && <Detail label="Discharge summary">{r.dischargeSummary}</Detail>}
           {r.closedAt && <Detail label="Closed">{formatDateTime(r.closedAt)}</Detail>}
         </DetailGrid>
@@ -272,7 +295,11 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
                   <div className={styles.stack}>
                     <DetailGrid>
                       <Detail label="Chief complaint">{a.chiefComplaint}</Detail>
-                      <Detail label="Pain">{a.painScore !== null ? `${a.painScore}/10${a.painLocation ? ` · ${a.painLocation}` : ''}` : a.painLocation}</Detail>
+                      <Detail label="Pain">
+                        {a.painScore !== null
+                          ? `${a.painScore}/10${a.painLocation ? ` · ${a.painLocation}` : ''}`
+                          : a.painLocation}
+                      </Detail>
                       <Detail label="Functional status">{a.functionalStatus}</Detail>
                       <Detail label="Goals">{a.goals}</Detail>
                       <Detail label="Notes">{a.notes}</Detail>
@@ -280,13 +307,21 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
                     {a.rangeOfMotion.length > 0 && (
                       <Detail label="Range of motion">
                         {a.rangeOfMotion
-                          .map((m) => `${m.joint} ${m.movement} (${m.side === 'NotApplicable' ? '—' : m.side}): active ${m.activeDegrees ?? '—'}°, passive ${m.passiveDegrees ?? '—'}°`)
+                          .map(
+                            (m) =>
+                              `${m.joint} ${m.movement} (${m.side === 'NotApplicable' ? '—' : m.side}): active ${m.activeDegrees ?? '—'}°, passive ${m.passiveDegrees ?? '—'}°`,
+                          )
                           .join('; ')}
                       </Detail>
                     )}
                     {a.strength.length > 0 && (
                       <Detail label="Muscle power (MRC)">
-                        {a.strength.map((m) => `${m.muscleGroup} (${m.side === 'NotApplicable' ? '—' : m.side}): ${MRC_GRADES[m.mrcGrade]?.label ?? m.mrcGrade}`).join('; ')}
+                        {a.strength
+                          .map(
+                            (m) =>
+                              `${m.muscleGroup} (${m.side === 'NotApplicable' ? '—' : m.side}): ${MRC_GRADES[m.mrcGrade]?.label ?? m.mrcGrade}`,
+                          )
+                          .join('; ')}
                       </Detail>
                     )}
                   </div>
@@ -299,7 +334,9 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
 
       <Section title="Treatment plan" description={r.plan ? `Revision ${r.plan.revision}` : undefined}>
         {!r.plan ? (
-          <Text className={styles.muted}>{r.assessments.length ? 'No plan yet.' : 'The plan is written after the first assessment.'}</Text>
+          <Text className={styles.muted}>
+            {r.assessments.length ? 'No plan yet.' : 'The plan is written after the first assessment.'}
+          </Text>
         ) : (
           <div className={styles.stack}>
             <DetailGrid>
@@ -316,10 +353,15 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
             )}
             <div>
               <Text>
-                {progress.attended} of {progress.planned} sessions given · {progress.booked - progress.attended - progress.missed} booked ahead · {progress.missed} missed ·{' '}
+                {progress.attended} of {progress.planned} sessions given ·{' '}
+                {progress.booked - progress.attended - progress.missed} booked ahead · {progress.missed} missed ·{' '}
                 {progress.remaining} left to book
               </Text>
-              <ProgressBar value={progress.planned ? progress.attended / progress.planned : 0} thickness="large" aria-label="Sessions given of the plan" />
+              <ProgressBar
+                value={progress.planned ? progress.attended / progress.planned : 0}
+                thickness="large"
+                aria-label="Sessions given of the plan"
+              />
             </div>
           </div>
         )}
@@ -347,34 +389,81 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
           columns={[
             { key: 'n', header: '#', width: 50, render: (s) => s.sessionNumber },
             { key: 'when', header: 'When', render: (s) => formatDateTime(s.scheduledAt) },
-            { key: 'status', header: 'Status', render: (s) => <StatusBadge status={s.status} tone={physioSessionStatusTone[s.status]} label={physioSessionStatusLabel[s.status]} /> },
-            { key: 'given', header: 'Given', priority: 'low', render: (s) => (s.modalitiesGiven.length ? s.modalitiesGiven.map((m) => modalityLabel[m]).join(', ') : s.missedReason ?? '—') },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (s) => (
+                <StatusBadge
+                  status={s.status}
+                  tone={physioSessionStatusTone[s.status]}
+                  label={physioSessionStatusLabel[s.status]}
+                />
+              ),
+            },
+            {
+              key: 'given',
+              header: 'Given',
+              priority: 'low',
+              render: (s) =>
+                s.modalitiesGiven.length
+                  ? s.modalitiesGiven.map((m) => modalityLabel[m]).join(', ')
+                  : (s.missedReason ?? '—'),
+            },
             {
               key: 'pain',
               header: 'Pain',
               priority: 'low',
               render: (s) => {
                 const change = painChange(s.painBefore, s.painAfter);
-                return s.painBefore !== null || s.painAfter !== null ? `${s.painBefore ?? '—'} → ${s.painAfter ?? '—'}${change !== null && change !== 0 ? ` (${change > 0 ? '+' : ''}${change})` : ''}` : '—';
+                return s.painBefore !== null || s.painAfter !== null
+                  ? `${s.painBefore ?? '—'} → ${s.painAfter ?? '—'}${change !== null && change !== 0 ? ` (${change > 0 ? '+' : ''}${change})` : ''}`
+                  : '—';
               },
             },
             { key: 'note', header: 'Progress note', priority: 'low', render: (s) => s.progressNote ?? '' },
             { key: 'by', header: 'Therapist', priority: 'low', render: (s) => s.therapistName ?? '—' },
-            { key: 'bill', header: 'Billing', priority: 'low', render: (s) => (s.status === 'Attended' ? <ChargeBadge status={s.chargeStatus} /> : '—') },
+            {
+              key: 'bill',
+              header: 'Billing',
+              priority: 'low',
+              render: (s) => (s.status === 'Attended' ? <ChargeBadge status={s.chargeStatus} /> : '—'),
+            },
           ]}
           rowActions={
             canTreat
               ? (s) =>
                   s.status === 'Scheduled' && open ? (
                     <span className={styles.actions}>
-                      <Button size="small" appearance="primary" icon={<CheckmarkRegular />} onClick={() => setAttending(s)}>
+                      <Button
+                        size="small"
+                        appearance="primary"
+                        icon={<CheckmarkRegular />}
+                        onClick={() => setAttending(s)}
+                      >
                         Record
                       </Button>
-                      <Button size="small" appearance="subtle" icon={<CalendarArrowRightRegular />} aria-label={`Move session ${s.sessionNumber}`} onClick={() => setMoving(s)} />
-                      <Button size="small" appearance="subtle" icon={<PersonProhibitedRegular />} aria-label={`Close session ${s.sessionNumber}`} onClick={() => setClosing(s)} />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<CalendarArrowRightRegular />}
+                        aria-label={`Move session ${s.sessionNumber}`}
+                        onClick={() => setMoving(s)}
+                      />
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        icon={<PersonProhibitedRegular />}
+                        aria-label={`Close session ${s.sessionNumber}`}
+                        onClick={() => setClosing(s)}
+                      />
                     </span>
                   ) : s.chargeStatus === 'Failed' ? (
-                    <Button size="small" icon={<ArrowClockwiseRegular />} disabled={retry.isPending} onClick={() => retry.mutate(s.id)}>
+                    <Button
+                      size="small"
+                      icon={<ArrowClockwiseRegular />}
+                      disabled={retry.isPending}
+                      onClick={() => retry.mutate(s.id)}
+                    >
                       Retry billing
                     </Button>
                   ) : null
@@ -387,7 +476,14 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
 
       {attended.length > 1 && (
         <Section title="Pain over the course of treatment" description="Numeric rating scale, 0 (no pain) to 10.">
-          <TrendChart series={painSeries} ariaLabel="Pain scores before and after each session" yMin={0} yMax={10} yName="pain" height={220} />
+          <TrendChart
+            series={painSeries}
+            ariaLabel="Pain scores before and after each session"
+            yMin={0}
+            yMax={10}
+            yName="pain"
+            height={220}
+          />
           <Caption1 className={styles.muted}>The values are listed in the sessions table above.</Caption1>
         </Section>
       )}
@@ -395,8 +491,17 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
       {dialog === 'assess' && <AssessmentDialog referral={r} onClose={() => setDialog(null)} />}
       {dialog === 'plan' && <TreatmentPlanDialog referral={r} onClose={() => setDialog(null)} />}
       {dialog === 'schedule' && <ScheduleSessionsDialog referral={r} onClose={() => setDialog(null)} />}
-      {attending && <AttendDialog session={attending} plan={r.plan} patientName={r.patient?.fullName ?? 'Patient'} onClose={() => setAttending(null)} />}
-      {moving && <RescheduleDialog sessionId={moving.id} scheduledAt={moving.scheduledAt} onClose={() => setMoving(null)} />}
+      {attending && (
+        <AttendDialog
+          session={attending}
+          plan={r.plan}
+          patientName={r.patient?.fullName ?? 'Patient'}
+          onClose={() => setAttending(null)}
+        />
+      )}
+      {moving && (
+        <RescheduleDialog sessionId={moving.id} scheduledAt={moving.scheduledAt} onClose={() => setMoving(null)} />
+      )}
       <ReasonDialog
         open={dialog === 'complete'}
         title="Complete this referral?"

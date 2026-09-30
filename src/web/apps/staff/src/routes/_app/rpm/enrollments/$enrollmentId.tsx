@@ -37,7 +37,18 @@ import {
   TextBulletListSquareEditRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatRelative, isApiError } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Page,
+  PatientBanner,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -57,7 +68,15 @@ import {
 import { AlertsTable } from '@/modules/virtualcare/rpm/AlertsTable';
 import { AssignDeviceDialog, DeviceKeyDialog, RegisterDeviceDialog } from '@/modules/virtualcare/rpm/DeviceDialogs';
 import { EditEnrollmentDialog, RecordReadingsDialog } from '@/modules/virtualcare/rpm/EnrollmentDialogs';
-import { deviceTypeLabel, enrollmentStatusText, formatReading, programKindLabel, readingTypeInfo, severityText, sourceLabel } from '@/modules/virtualcare/rpm/labels';
+import {
+  deviceTypeLabel,
+  enrollmentStatusText,
+  formatReading,
+  programKindLabel,
+  readingTypeInfo,
+  severityText,
+  sourceLabel,
+} from '@/modules/virtualcare/rpm/labels';
 import { ThresholdsDialog } from '@/modules/virtualcare/rpm/ThresholdsDialog';
 import { describeLimits } from '@/modules/virtualcare/rpm/thresholds';
 import { AdherenceChart, TrendChart } from '@/modules/virtualcare/rpm/TrendChart';
@@ -77,7 +96,8 @@ interface EnrollmentSearch {
 export const Route = createFileRoute('/_app/rpm/enrollments/$enrollmentId')({
   validateSearch: (s: Record<string, unknown>): EnrollmentSearch => ({
     alert: typeof s.alert === 'string' && s.alert ? s.alert : undefined,
-    days: RANGES.includes(Number(s.days) as RangeDays) && Number(s.days) !== 30 ? (Number(s.days) as RangeDays) : undefined,
+    days:
+      RANGES.includes(Number(s.days) as RangeDays) && Number(s.days) !== 30 ? (Number(s.days) as RangeDays) : undefined,
     type: READING_TYPES.includes(s.type as RpmReadingType) ? (s.type as RpmReadingType) : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
   }),
@@ -97,10 +117,20 @@ const useStyles = makeStyles({
     minWidth: 0,
   },
   label: { color: tokens.colorNeutralForeground3 },
-  charts: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  charts: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+    '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   chart: { display: 'flex', flexDirection: 'column', gap: '4px', minWidth: 0 },
   chartHead: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'baseline', flexWrap: 'wrap' },
-  two: { display: 'grid', gap: '16px', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  two: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   devices: { display: 'flex', flexDirection: 'column', gap: '8px' },
   device: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between', flexWrap: 'wrap' },
   limits: { display: 'grid', gridTemplateColumns: 'minmax(120px, auto) 1fr', gap: '6px 12px' },
@@ -122,7 +152,11 @@ function EnrollmentPage() {
     const restricted = isApiError(enrollment.error) && enrollment.error.code === 'patient.restricted';
     return (
       <Page maxWidth={900}>
-        <ErrorState error={enrollment.error} title={restricted ? 'This patient record is restricted' : undefined} onRetry={restricted ? undefined : () => void enrollment.refetch()} />
+        <ErrorState
+          error={enrollment.error}
+          title={restricted ? 'This patient record is restricted' : undefined}
+          onRetry={restricted ? undefined : () => void enrollment.refetch()}
+        />
         <div>
           <Button onClick={() => void navigate({ to: '/rpm' })}>Back to remote monitoring</Button>
         </div>
@@ -168,12 +202,20 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
   const open = e.status === 'Active' || e.status === 'Paused';
   const status = enrollmentStatusText[e.status];
   const lead = e.careTeam.find((m) => m.isPrimary) ?? e.careTeam[0];
-  const set = (patch: Partial<EnrollmentSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<EnrollmentSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
       <PatientBanner
-        patient={{ id: e.patientId, uhid: e.uhid, fullName: e.patientName, gender: e.gender, age: e.age, phone: e.phoneMasked }}
+        patient={{
+          id: e.patientId,
+          uhid: e.uhid,
+          fullName: e.patientName,
+          gender: e.gender,
+          age: e.age,
+          phone: e.phoneMasked,
+        }}
         actions={
           <>
             {canManage && open && (
@@ -197,7 +239,10 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
                       Status, care team and goals
                     </MenuItem>
                   )}
-                  <MenuItem icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: e.patientId } })}>
+                  <MenuItem
+                    icon={<PersonRegular />}
+                    onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: e.patientId } })}
+                  >
                     Patient profile
                   </MenuItem>
                   {canManage && (
@@ -216,7 +261,8 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
         <MessageBar intent={linkedAlert.severity === 'Critical' ? 'error' : 'warning'} layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{linkedAlert.severity === 'Critical' ? 'Critical alert' : 'Alert'}</MessageBarTitle>
-            {linkedAlert.message} · raised {formatRelative(linkedAlert.raisedAt)}. Use the alert list below to mark it as seen or resolve it.
+            {linkedAlert.message} · raised {formatRelative(linkedAlert.raisedAt)}. Use the alert list below to mark it
+            as seen or resolve it.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -248,13 +294,16 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
           <Text weight="semibold">{e.lastReadingAt ? formatRelative(e.lastReadingAt) : 'No readings yet'}</Text>
           {adherence.data && (
             <Caption1 className={adherence.data.percent < 70 ? styles.warn : undefined}>
-              Readings on {adherence.data.daysWithReadings} of the last {adherence.data.windowDays} days ({Math.round(adherence.data.percent)}%)
+              Readings on {adherence.data.daysWithReadings} of the last {adherence.data.windowDays} days (
+              {Math.round(adherence.data.percent)}%)
             </Caption1>
           )}
         </div>
         <div className={styles.card}>
           <Caption1 className={styles.label}>Devices</Caption1>
-          <Text weight="semibold">{e.devices.length === 0 ? 'None given' : `${e.devices.length} device${e.devices.length === 1 ? '' : 's'}`}</Text>
+          <Text weight="semibold">
+            {e.devices.length === 0 ? 'None given' : `${e.devices.length} device${e.devices.length === 1 ? '' : 's'}`}
+          </Text>
           {e.devices.some((d) => d.silenceAlerted) && (
             <Caption1 className={styles.warn}>
               <PlugDisconnectedRegular aria-hidden /> A device has stopped sending readings
@@ -279,7 +328,11 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
         title="Trends"
         description="Green band: normal range. Amber: out of range. Red: critical."
         actions={
-          <TabList size="small" selectedValue={String(days)} onTabSelect={(_, d) => set({ days: Number(d.value) === 30 ? undefined : (Number(d.value) as RangeDays) })}>
+          <TabList
+            size="small"
+            selectedValue={String(days)}
+            onTabSelect={(_, d) => set({ days: Number(d.value) === 30 ? undefined : (Number(d.value) as RangeDays) })}
+          >
             {RANGES.map((r) => (
               <Tab key={r} value={String(r)}>
                 {r} days
@@ -295,7 +348,11 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
         ) : (trends.data ?? []).length === 0 ? (
           <EmptyState
             title={`No readings in the last ${days} days`}
-            description={e.devices.length === 0 ? 'Give the patient a device, or record readings they report.' : 'Check that the device is switched on and connected.'}
+            description={
+              e.devices.length === 0
+                ? 'Give the patient a device, or record readings they report.'
+                : 'Check that the device is switched on and connected.'
+            }
             icon={<SlideTextRegular />}
           />
         ) : (
@@ -314,7 +371,8 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
                     )}
                   </div>
                   <Caption1 className={styles.label}>
-                    {trend.threshold ? `Limits: ${describeLimits(trend.threshold, trend.unit)}` : 'No limits set'} · {trend.points.length} readings
+                    {trend.threshold ? `Limits: ${describeLimits(trend.threshold, trend.unit)}` : 'No limits set'} ·{' '}
+                    {trend.points.length} readings
                     {outside > 0 ? `, ${outside} outside` : ''}
                   </Caption1>
                   <TrendChart trend={trend} />
@@ -367,7 +425,8 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
               {e.devices.map((d) => (
                 <div key={d.id} className={styles.device}>
                   <span>
-                    <Text weight="semibold">{deviceTypeLabel[d.type]}</Text> <Caption1 className={styles.label}>{d.serialNumber}</Caption1>
+                    <Text weight="semibold">{deviceTypeLabel[d.type]}</Text>{' '}
+                    <Caption1 className={styles.label}>{d.serialNumber}</Caption1>
                     <Caption1 block className={d.silenceAlerted ? styles.warn : styles.label}>
                       {d.lastSeenAt ? `Last reading ${formatRelative(d.lastSeenAt)}` : 'No reading received yet'}
                       {d.silenceAlerted ? ' · silent' : ''}
@@ -388,7 +447,11 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
       <div className={styles.two}>
         <Section
           title="Alert limits"
-          description={e.thresholdsUpdatedAt ? `Last changed ${formatDateTime(e.thresholdsUpdatedAt)}` : 'Standard limits of the programme'}
+          description={
+            e.thresholdsUpdatedAt
+              ? `Last changed ${formatDateTime(e.thresholdsUpdatedAt)}`
+              : 'Standard limits of the programme'
+          }
           actions={
             canManage && (
               <Button size="small" icon={<EditRegular />} onClick={() => setDialog('limits')}>
@@ -420,7 +483,10 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
       <Section title="Readings" flush>
         <div style={{ padding: '0 16px 12px' }}>
           <Field label="Reading" style={{ maxWidth: 260 }}>
-            <Select value={search.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as RpmReadingType | undefined, page: undefined })}>
+            <Select
+              value={search.type ?? ''}
+              onChange={(_, d) => set({ type: (d.value || undefined) as RpmReadingType | undefined, page: undefined })}
+            >
               <option value="">All readings</option>
               {READING_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -440,12 +506,22 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
           columns={[
             { key: 'when', header: 'Measured', width: 180, render: (r) => formatDateTime(r.measuredAt) },
             { key: 'type', header: 'Reading', render: (r) => readingTypeInfo[r.type].label },
-            { key: 'value', header: 'Value', render: (r) => <Text weight="semibold">{formatReading(r.type, r.value, r.textValue)}</Text> },
+            {
+              key: 'value',
+              header: 'Value',
+              render: (r) => <Text weight="semibold">{formatReading(r.type, r.value, r.textValue)}</Text>,
+            },
             {
               key: 'severity',
               header: 'Result',
               width: 130,
-              render: (r) => <StatusBadge status={r.severity} tone={severityText[r.severity].tone} label={severityText[r.severity].label} />,
+              render: (r) => (
+                <StatusBadge
+                  status={r.severity}
+                  tone={severityText[r.severity].tone}
+                  label={severityText[r.severity].label}
+                />
+              ),
             },
             { key: 'source', header: 'Source', priority: 'low', render: (r) => sourceLabel[r.source] },
           ]}
@@ -482,7 +558,8 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
         onConfirm={() => remove.mutate()}
         onCancel={() => setDialog(null)}
       >
-        Only an enrolment made by mistake, with no readings or alerts, can be deleted. To stop monitoring, set it to completed or withdrawn instead.
+        Only an enrolment made by mistake, with no readings or alerts, can be deleted. To stop monitoring, set it to
+        completed or withdrawn instead.
       </ConfirmDialog>
     </Page>
   );
@@ -499,10 +576,20 @@ function Row({ label, children }: { label: string; children: string | null }) {
 }
 
 /** Gives one of the unassigned devices to this patient. */
-function GiveDeviceDialog({ open, enrollment, onClose }: { open: boolean; enrollment: RpmEnrollmentDetail; onClose: () => void }) {
+function GiveDeviceDialog({
+  open,
+  enrollment,
+  onClose,
+}: {
+  open: boolean;
+  enrollment: RpmEnrollmentDetail;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 520 }}>{open && <GiveDeviceContent enrollment={enrollment} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        {open && <GiveDeviceContent enrollment={enrollment} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }

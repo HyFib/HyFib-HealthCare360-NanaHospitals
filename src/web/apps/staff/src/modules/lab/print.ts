@@ -13,10 +13,15 @@ export async function printSampleLabels(labels: readonly SampleLabel[]): Promise
   if (labels.length === 0) {
     return;
   }
-  const barcodes = await Promise.all(labels.map((label) => barcodeSvg(label.barcode, 'code128', { height: 8, scale: 2 })));
+  const barcodes = await Promise.all(
+    labels.map((label) => barcodeSvg(label.barcode, 'code128', { height: 8, scale: 2 })),
+  );
   const body = labels.map((label, index) => sampleLabelHtml(label, barcodes[index] ?? '')).join('');
   const title = labels.length === 1 ? `Label ${labels[0]!.barcode}` : `${labels.length} sample labels`;
-  await printHtml(printDocument(body, { title, pageSize: 'Label50x25', styles: LABEL_STYLES }), { pageSize: 'Label50x25', silent: true });
+  await printHtml(printDocument(body, { title, pageSize: 'Label50x25', styles: LABEL_STYLES }), {
+    pageSize: 'Label50x25',
+    silent: true,
+  });
 }
 
 const LAB_REPORT_STYLES = `

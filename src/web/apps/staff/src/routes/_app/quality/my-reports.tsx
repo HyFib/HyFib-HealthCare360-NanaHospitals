@@ -29,12 +29,20 @@ function MyReportsPage() {
         subtitle="Incidents you reported under your name, and corrective actions you own. Anonymous reports are not listed here by design."
         icon={<ClipboardTaskRegular />}
         actions={
-          <Button appearance="primary" icon={<ShieldErrorRegular />} onClick={() => void navigate({ to: '/quality/report' })}>
+          <Button
+            appearance="primary"
+            icon={<ShieldErrorRegular />}
+            onClick={() => void navigate({ to: '/quality/report' })}
+          >
             Report an incident
           </Button>
         }
       />
-      <Section title="Actions assigned to me" description="Start, then mark done when finished; the quality team checks the effect later." flush>
+      <Section
+        title="Actions assigned to me"
+        description="Start, then mark done when finished; the quality team checks the effect later."
+        flush
+      >
         <MyActionsTable />
       </Section>
       <Section title="Incidents I reported" flush>
@@ -46,7 +54,12 @@ function MyReportsPage() {
           onRetry={() => void incidents.refetch()}
           getRowId={(i) => i.id}
           columns={[
-            { key: 'number', header: 'Report', width: 150, render: (i) => <Text font="monospace">{i.incidentNumber}</Text> },
+            {
+              key: 'number',
+              header: 'Report',
+              width: 150,
+              render: (i) => <Text font="monospace">{i.incidentNumber}</Text>,
+            },
             { key: 'type', header: 'Kind', render: (i) => incidentTypeLabel[i.type] },
             { key: 'severity', header: 'Seriousness', render: (i) => <SeverityBadge severity={i.severity} /> },
             { key: 'reported', header: 'Reported', priority: 'low', render: (i) => formatDateTime(i.reportedAt) },

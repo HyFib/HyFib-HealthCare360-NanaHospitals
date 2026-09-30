@@ -66,5 +66,8 @@ export async function printTokenSlip(data: TokenSlipData): Promise<void> {
     .small { font-size: 8pt; color: #333; }
     .note { margin-top: 6px; font-size: 8pt; }
     hr { border: none; border-top: 1px dashed #666; margin: 6px 0; }`;
-  await printHtml(printDocument(body, { title: `Token ${data.tokenLabel}`, pageSize: 'Receipt80', styles }), { pageSize: 'Receipt80', silent: true });
+  await printHtml(printDocument(body, { title: `Token ${data.tokenLabel}`, pageSize: 'Receipt80', styles }), {
+    pageSize: 'Receipt80',
+    silent: true,
+  });
 }

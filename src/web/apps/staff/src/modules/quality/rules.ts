@@ -18,7 +18,14 @@ type Tone = 'danger' | 'warning' | 'success' | 'brand' | 'informative' | 'import
 
 // ------------------------------------------------------------------ incidents
 
-const SEVERITY_RANK: Record<IncidentSeverity, number> = { NearMiss: 0, NoHarm: 1, Mild: 2, Moderate: 3, Severe: 4, Death: 5 };
+const SEVERITY_RANK: Record<IncidentSeverity, number> = {
+  NearMiss: 0,
+  NoHarm: 1,
+  Mild: 2,
+  Moderate: 3,
+  Severe: 4,
+  Death: 5,
+};
 
 export function severityRank(severity: IncidentSeverity): number {
   return SEVERITY_RANK[severity];
@@ -39,7 +46,11 @@ export function severityTone(severity: IncidentSeverity): Tone {
 }
 
 /** Sentinel event: death or severe harm, a never event, or flagged by a person (SentinelRules.IsSentinel). */
-export function isSentinel(severity: IncidentSeverity, kind: SentinelEventKind | null | undefined, flagged: boolean): boolean {
+export function isSentinel(
+  severity: IncidentSeverity,
+  kind: SentinelEventKind | null | undefined,
+  flagged: boolean,
+): boolean {
   return flagged || Boolean(kind) || severity === 'Severe' || severity === 'Death';
 }
 
@@ -206,11 +217,20 @@ export function ratingTone(rating: RiskRating): Tone {
 }
 
 /** Residual risk is scored as a pair and can never exceed the inherent risk. Returns the problem, or null. */
-export function residualProblem(likelihood: number, impact: number, residualLikelihood: number | null, residualImpact: number | null): string | null {
+export function residualProblem(
+  likelihood: number,
+  impact: number,
+  residualLikelihood: number | null,
+  residualImpact: number | null,
+): string | null {
   if ((residualLikelihood === null) !== (residualImpact === null)) {
     return 'Score the residual risk with both likelihood and impact, or leave both empty.';
   }
-  if (residualLikelihood !== null && residualImpact !== null && riskScore(residualLikelihood, residualImpact) > riskScore(likelihood, impact)) {
+  if (
+    residualLikelihood !== null &&
+    residualImpact !== null &&
+    riskScore(residualLikelihood, residualImpact) > riskScore(likelihood, impact)
+  ) {
     return 'The residual risk (after controls) cannot be higher than the inherent risk.';
   }
   return null;
@@ -223,7 +243,12 @@ export function defaultMultiplier(unit: IndicatorUnit): number {
 }
 
 /** numerator ÷ denominator × multiplier, to 2 decimals (IndicatorMath.Value); null when it cannot be computed. */
-export function indicatorValue(numerator: number | null, denominator: number | null, unit: IndicatorUnit, multiplier?: number | null): number | null {
+export function indicatorValue(
+  numerator: number | null,
+  denominator: number | null,
+  unit: IndicatorUnit,
+  multiplier?: number | null,
+): number | null {
   if (numerator === null || denominator === null || !(denominator > 0) || numerator < 0) {
     return null;
   }
@@ -231,7 +256,11 @@ export function indicatorValue(numerator: number | null, denominator: number | n
   return Math.round(value * 100) / 100;
 }
 
-export function meetsTarget(value: number, target: number | null | undefined, direction: IndicatorDirection): boolean | null {
+export function meetsTarget(
+  value: number,
+  target: number | null | undefined,
+  direction: IndicatorDirection,
+): boolean | null {
   if (target === null || target === undefined) {
     return null;
   }

@@ -66,10 +66,21 @@ export const weekdayShort: Record<Weekday, string> = {
   Sunday: 'Sun',
 };
 
-export const exceptionTypeText: Record<ScheduleExceptionType, { label: string; tone: StatusTone; description: string }> = {
+export const exceptionTypeText: Record<
+  ScheduleExceptionType,
+  { label: string; tone: StatusTone; description: string }
+> = {
   Leave: { label: 'Leave', tone: 'danger', description: 'The doctor is away. No appointments on these days.' },
-  Block: { label: 'Blocked time', tone: 'warning', description: 'Time taken out of OPD, such as a surgery list or a meeting.' },
-  ExtraSession: { label: 'Extra session', tone: 'success', description: 'An additional OPD session, such as a camp or a Sunday clinic.' },
+  Block: {
+    label: 'Blocked time',
+    tone: 'warning',
+    description: 'Time taken out of OPD, such as a surgery list or a meeting.',
+  },
+  ExtraSession: {
+    label: 'Extra session',
+    tone: 'success',
+    description: 'An additional OPD session, such as a camp or a Sunday clinic.',
+  },
 };
 
 export const waitlistStatusText: Record<WaitlistStatus, { label: string; tone: StatusTone }> = {

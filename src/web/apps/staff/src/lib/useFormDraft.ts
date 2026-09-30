@@ -34,7 +34,11 @@ function remove(key: string | null): void {
  * Saves a form locally every few seconds while it changes, so a WiFi drop, a crash or an accidental close never
  * loses a half-typed registration or note (SRS DED-10). Drafts are per user and wiped at sign-out.
  */
-export function useFormDraft<T extends FieldValues>(form: UseFormReturn<T> | null, key: string | null, intervalMs = 4000) {
+export function useFormDraft<T extends FieldValues>(
+  form: UseFormReturn<T> | null,
+  key: string | null,
+  intervalMs = 4000,
+) {
   const userId = useSession((s) => s.user?.id);
   const storageKey = key && userId ? draftStorageKey(userId, key) : null;
   const [saved, setSaved] = useState<SavedDraft<T> | null>(() => read<T>(storageKey));

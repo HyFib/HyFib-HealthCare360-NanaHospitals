@@ -41,7 +41,8 @@ export type SurgeryFormValues = z.infer<typeof baseSchema>;
 
 export function surgeryFormSchema(mode: SurgeryFormMode, options: { requireTeam?: boolean } = {}) {
   return baseSchema.superRefine((v, ctx) => {
-    const issue = (path: keyof SurgeryFormValues, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
+    const issue = (path: keyof SurgeryFormValues, message: string) =>
+      ctx.addIssue({ code: 'custom', path: [path], message });
 
     if (mode === 'create' && !v.patient) {
       issue('patient', 'Choose the patient.');
@@ -127,7 +128,9 @@ export function surgeryFormFromDetail(d: SurgeryDetail): SurgeryFormValues {
 }
 
 /** The slot as instants, or null while incomplete. */
-export function slotOf(v: Pick<SurgeryFormValues, 'date' | 'time' | 'durationMinutes'>): { start: string; end: string } | null {
+export function slotOf(
+  v: Pick<SurgeryFormValues, 'date' | 'time' | 'durationMinutes'>,
+): { start: string; end: string } | null {
   const start = istDateTimeToIso(v.date, v.time);
   if (!start || v.durationMinutes === null || v.durationMinutes <= 0) {
     return null;
@@ -163,7 +166,12 @@ export function toCreateRequest(v: SurgeryFormValues): CreateSurgeryBookingReque
 
 /** The same booking saved as a request without a slot (when no free slot can be found now). */
 export function toRequestOnly(v: SurgeryFormValues): CreateSurgeryBookingRequest {
-  return { ...toCreateRequest({ ...v, scheduleNow: false, preferredDate: v.preferredDate ?? v.date }), theatreId: null, scheduledStart: null, scheduledEnd: null };
+  return {
+    ...toCreateRequest({ ...v, scheduleNow: false, preferredDate: v.preferredDate ?? v.date }),
+    theatreId: null,
+    scheduledStart: null,
+    scheduledEnd: null,
+  };
 }
 
 export function toUpdateRequest(v: SurgeryFormValues, version: number): UpdateSurgeryPlanRequest {

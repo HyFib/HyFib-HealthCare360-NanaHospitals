@@ -56,7 +56,13 @@ describe('the photo in the patient form', () => {
   });
 
   it('sends a new patient the photo that was taken', () => {
-    const values = { ...emptyPatientForm, firstName: 'Asha', gender: 'Female' as const, dateOfBirth: '1990-01-15', photoFileId: 'photo-1' };
+    const values = {
+      ...emptyPatientForm,
+      firstName: 'Asha',
+      gender: 'Female' as const,
+      dateOfBirth: '1990-01-15',
+      photoFileId: 'photo-1',
+    };
 
     expect(toPatientPayload(values).photoFileId).toBe('photo-1');
     expect(toPatientPayload({ ...values, photoFileId: null }).photoFileId).toBeNull();

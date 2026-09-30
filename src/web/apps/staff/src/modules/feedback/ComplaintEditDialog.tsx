@@ -24,13 +24,30 @@ import { feedbackApi, feedbackKeys, type ComplaintDetail } from './api';
 import { ASPECTS, aspectLabel, categoryLabel, type ComplaintPriority } from './labels';
 import { SLA_HOURS } from './rules';
 
-const CATEGORY_SUGGESTIONS = [...ASPECTS.map((a) => aspectLabel[a]), 'Waiting time', 'Staff behaviour', 'Facilities', 'Pharmacy', 'Other'];
+const CATEGORY_SUGGESTIONS = [
+  ...ASPECTS.map((a) => aspectLabel[a]),
+  'Waiting time',
+  'Staff behaviour',
+  'Facilities',
+  'Pharmacy',
+  'Other',
+];
 
 /** Change who handles a complaint, its priority, department and area. Raising the priority can bring the deadline forward. */
-export function ComplaintEditDialog({ open, onClose, complaint }: { open: boolean; onClose: () => void; complaint: ComplaintDetail }) {
+export function ComplaintEditDialog({
+  open,
+  onClose,
+  complaint,
+}: {
+  open: boolean;
+  onClose: () => void;
+  complaint: ComplaintDetail;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{open && <Body onClose={onClose} complaint={complaint} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {open && <Body onClose={onClose} complaint={complaint} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -50,7 +67,11 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
   const [busy, setBusy] = useState(false);
 
   const shownOwner: PickedUser | null =
-    owner !== undefined ? owner : complaint.ownerUserId ? { id: complaint.ownerUserId, name: currentOwnerName ?? '' } : null;
+    owner !== undefined
+      ? owner
+      : complaint.ownerUserId
+        ? { id: complaint.ownerUserId, name: currentOwnerName ?? '' }
+        : null;
 
   const save = async () => {
     setBusy(true);
@@ -63,12 +84,18 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
         category: category.trim() || null,
         version: complaint.version,
       });
-      notify.success('Complaint updated', owner && owner.id !== complaint.ownerUserId ? `${owner.name} has been notified.` : undefined);
+      notify.success(
+        'Complaint updated',
+        owner && owner.id !== complaint.ownerUserId ? `${owner.name} has been notified.` : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: feedbackKeys.complaints });
       onClose();
     } catch (err) {
       if (isApiError(err) && err.code === 'concurrency') {
-        notify.warning('Someone else changed this complaint', 'The latest details have been loaded. Make your change again.');
+        notify.warning(
+          'Someone else changed this complaint',
+          'The latest details have been loaded. Make your change again.',
+        );
         void queryClient.invalidateQueries({ queryKey: feedbackKeys.complaints });
         onClose();
       } else if (isApiError(err) && err.isValidation) {
@@ -92,12 +119,22 @@ function Body({ onClose, complaint }: { onClose: () => void; complaint: Complain
       <DialogBody>
         <DialogTitle>Complaint {complaint.complaintNumber}</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <UserPicker label="Owner" value={shownOwner} onChange={setOwner} hint="A new owner is notified with the deadline." validationMessage={error} />
+          <UserPicker
+            label="Owner"
+            value={shownOwner}
+            onChange={setOwner}
+            hint="A new owner is notified with the deadline."
+            validationMessage={error}
+          />
           <Field
             label="Priority"
             hint={`High: ${SLA_HOURS.High} hours from when it was raised; Normal: ${SLA_HOURS.Normal} hours. Lowering the priority never moves the deadline later.`}
           >
-            <RadioGroup layout="horizontal" value={priority} onChange={(_, d) => setPriority(d.value as ComplaintPriority)}>
+            <RadioGroup
+              layout="horizontal"
+              value={priority}
+              onChange={(_, d) => setPriority(d.value as ComplaintPriority)}
+            >
               <Radio value="Normal" label="Normal" />
               <Radio value="High" label="High" />
             </RadioGroup>

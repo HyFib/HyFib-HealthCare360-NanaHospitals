@@ -50,6 +50,12 @@ export function isCardiologyReportable(status: CardiologyStudyStatus): boolean {
   return status === 'Acquired' || status === 'Reported' || status === 'Verified' || status === 'Released';
 }
 
-export function isCardiologyReportEditable(reportStatus: DiagnosticReportStatus | null | undefined, studyStatus: CardiologyStudyStatus): boolean {
-  return (studyStatus === 'Acquired' || studyStatus === 'Reported') && (!reportStatus || reportStatus === 'Draft' || reportStatus === 'Reported');
+export function isCardiologyReportEditable(
+  reportStatus: DiagnosticReportStatus | null | undefined,
+  studyStatus: CardiologyStudyStatus,
+): boolean {
+  return (
+    (studyStatus === 'Acquired' || studyStatus === 'Reported') &&
+    (!reportStatus || reportStatus === 'Draft' || reportStatus === 'Reported')
+  );
 }

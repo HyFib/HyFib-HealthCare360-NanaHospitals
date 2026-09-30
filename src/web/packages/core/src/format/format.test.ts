@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { formatAge, formatDateOnly, formatInr, formatPhone, humanize, initials, isIndianMobile, normalizePhone } from './format';
+import {
+  formatAge,
+  formatDateOnly,
+  formatInr,
+  formatPhone,
+  humanize,
+  initials,
+  isIndianMobile,
+  normalizePhone,
+} from './format';
 
 describe('format', () => {
   it('formats rupees with Indian digit grouping', () => {

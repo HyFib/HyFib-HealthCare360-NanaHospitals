@@ -28,7 +28,8 @@ export const prescriptionQueries = {
   detail: (patientId: string, prescriptionId: string) =>
     queryOptions({
       queryKey: ['portal', patientId, 'prescriptions', 'detail', prescriptionId],
-      queryFn: ({ signal }) => api.get<PortalPrescriptionDetail>(`/api/v1/portal/prescriptions/${id(prescriptionId)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<PortalPrescriptionDetail>(`/api/v1/portal/prescriptions/${id(prescriptionId)}`, { signal }),
       staleTime: 5 * 60_000,
     }),
 

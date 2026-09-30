@@ -25,7 +25,11 @@ export class RealtimeClient {
   private startPromise: Promise<void> | null = null;
   private stopped = false;
 
-  constructor(url: string, accessTokenFactory: () => string | Promise<string>, private readonly onReconnected: () => void) {
+  constructor(
+    url: string,
+    accessTokenFactory: () => string | Promise<string>,
+    private readonly onReconnected: () => void,
+  ) {
     this.connection = new HubConnectionBuilder()
       .withUrl(url, { accessTokenFactory })
       .withAutomaticReconnect({
@@ -109,7 +113,9 @@ export class RealtimeClient {
   }
 
   private async resubscribe(): Promise<void> {
-    await Promise.all([...this.topics.keys()].map((topic) => this.connection.invoke('Subscribe', topic).catch(() => undefined)));
+    await Promise.all(
+      [...this.topics.keys()].map((topic) => this.connection.invoke('Subscribe', topic).catch(() => undefined)),
+    );
   }
 }
 
@@ -119,9 +125,19 @@ const RealtimeContext = createContext<RealtimeClient | null>(null);
  * `accessTokenFactory` is called on every (re)connect and must return the *current* token (read it from the
  * session store, as the shell does); it is captured once when the provider mounts.
  */
-export function RealtimeProvider({ accessTokenFactory, enabled, children }: { accessTokenFactory: () => string; enabled: boolean; children: ReactNode }) {
+export function RealtimeProvider({
+  accessTokenFactory,
+  enabled,
+  children,
+}: {
+  accessTokenFactory: () => string;
+  enabled: boolean;
+  children: ReactNode;
+}) {
   const queryClient = useQueryClient();
-  const [client] = useState(() => new RealtimeClient('/hubs/events', accessTokenFactory, () => void queryClient.invalidateQueries()));
+  const [client] = useState(
+    () => new RealtimeClient('/hubs/events', accessTokenFactory, () => void queryClient.invalidateQueries()),
+  );
 
   useEffect(() => {
     if (!enabled) {
@@ -135,7 +151,11 @@ export function RealtimeProvider({ accessTokenFactory, enabled, children }: { ac
 }
 
 /** Runs `handler` for events on `topic` (and optionally a specific event name) while the component is mounted. */
-export function useRealtimeEvent<T = unknown>(topic: string | null | undefined, eventName: string | null, handler: (payload: T, envelope: RealtimeEnvelope<T>) => void): void {
+export function useRealtimeEvent<T = unknown>(
+  topic: string | null | undefined,
+  eventName: string | null,
+  handler: (payload: T, envelope: RealtimeEnvelope<T>) => void,
+): void {
   const client = useContext(RealtimeContext);
   const onEnvelope = useEffectEvent(handler);
 
@@ -143,7 +163,8 @@ export function useRealtimeEvent<T = unknown>(topic: string | null | undefined, 
     if (!client || !topic) {
       return;
     }
-    const unsubscribe = topic.startsWith('user:') || topic.startsWith('facility:') ? () => undefined : client.subscribe(topic);
+    const unsubscribe =
+      topic.startsWith('user:') || topic.startsWith('facility:') ? () => undefined : client.subscribe(topic);
     const off = client.onEvent((envelope) => {
       if (envelope.topic === topic && (!eventName || envelope.name === eventName)) {
         onEnvelope(envelope.payload as T, envelope as RealtimeEnvelope<T>);

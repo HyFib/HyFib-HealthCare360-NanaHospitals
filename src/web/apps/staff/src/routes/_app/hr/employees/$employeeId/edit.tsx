@@ -46,7 +46,11 @@ function EditForm({ employee }: { employee: EmployeeDetail }) {
   const back = () => void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: employee.id } });
 
   const save = useMutation({
-    mutationFn: (values: EmployeeFormValues) => hrApi.updateEmployee(employee.id, { ...formToRequest(values, employee.version), photoFileId: employee.photoFileId }),
+    mutationFn: (values: EmployeeFormValues) =>
+      hrApi.updateEmployee(employee.id, {
+        ...formToRequest(values, employee.version),
+        photoFileId: employee.photoFileId,
+      }),
     onSuccess: () => {
       notify.success('Employee saved', employee.fullName);
       void queryClient.invalidateQueries({ queryKey: hrKeys.employees });

@@ -23,12 +23,26 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground1,
   },
   head: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
-  number: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
+  number: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   lookup: { display: 'flex', flexDirection: 'column', gap: '10px' },
 });
 
-export function UnitCard({ unit, now, canManage, onDiscard }: { unit: BloodUnitDto; now: number; canManage: boolean; onDiscard?: (unit: BloodUnitDto) => void }) {
+export function UnitCard({
+  unit,
+  now,
+  canManage,
+  onDiscard,
+}: {
+  unit: BloodUnitDto;
+  now: number;
+  canManage: boolean;
+  onDiscard?: (unit: BloodUnitDto) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -51,11 +65,19 @@ export function UnitCard({ unit, now, canManage, onDiscard }: { unit: BloodUnitD
         {unit.discardReason && <Detail label="Discarded because">{unit.discardReason}</Detail>}
       </DetailGrid>
       <div className={styles.actions}>
-        <Button icon={<PrintRegular />} onClick={() => void printUnitLabels([unit]).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+        <Button
+          icon={<PrintRegular />}
+          onClick={() => void printUnitLabels([unit]).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+        >
           Print label
         </Button>
         {unit.reservedForRequestId && (
-          <Button onClick={() => unit.reservedForRequestId && void navigate({ to: '/blood-bank/requests/$id', params: { id: unit.reservedForRequestId } })}>
+          <Button
+            onClick={() =>
+              unit.reservedForRequestId &&
+              void navigate({ to: '/blood-bank/requests/$id', params: { id: unit.reservedForRequestId } })
+            }
+          >
             {unit.status === 'Issued' ? 'Open the request' : 'Open the reserving request'}
           </Button>
         )}

@@ -1,5 +1,25 @@
-import { Button, Caption1, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody, MessageBarTitle, Text, tokens } from '@fluentui/react-components';
-import { ClipboardHeartRegular, DropRegular, EditRegular, MoreHorizontalRegular, PersonProhibitedRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  ClipboardHeartRegular,
+  DropRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+  PersonProhibitedRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, todayIso } from '@hc360/core';
 import { DataTable, LoadingState, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -83,15 +103,25 @@ function DonorView({ donor }: { donor: DonorDetail }) {
         actions={
           <>
             <span className={styles.badges}>
-              <BloodGroupBadge group={donor.bloodGroup} note={donor.bloodGroupConfirmed ? 'confirmed by the laboratory' : 'not yet confirmed'} />
-              {!donor.bloodGroupConfirmed && donor.bloodGroup !== 'Unknown' && <Caption1 className={styles.muted}>not lab-confirmed</Caption1>}
+              <BloodGroupBadge
+                group={donor.bloodGroup}
+                note={donor.bloodGroupConfirmed ? 'confirmed by the laboratory' : 'not yet confirmed'}
+              />
+              {!donor.bloodGroupConfirmed && donor.bloodGroup !== 'Unknown' && (
+                <Caption1 className={styles.muted}>not lab-confirmed</Caption1>
+              )}
             </span>
             {screening ? (
               <Button appearance="primary" icon={<DropRegular />} onClick={() => setCollecting(screening)}>
                 Collect donation
               </Button>
             ) : (
-              <Button appearance="primary" icon={<ClipboardHeartRegular />} disabled={deferred || !donor.isActive} onClick={() => setDialog('screen')}>
+              <Button
+                appearance="primary"
+                icon={<ClipboardHeartRegular />}
+                disabled={deferred || !donor.isActive}
+                onClick={() => setDialog('screen')}
+              >
                 Screen donor
               </Button>
             )}
@@ -124,20 +154,26 @@ function DonorView({ donor }: { donor: DonorDetail }) {
       {deferred ? (
         <MessageBar intent={donor.isPermanentlyDeferred ? 'error' : 'warning'} layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>{donor.isPermanentlyDeferred ? 'Permanently deferred' : `Deferred until ${formatDateOnly(donor.deferredUntil)}`}</MessageBarTitle>
+            <MessageBarTitle>
+              {donor.isPermanentlyDeferred
+                ? 'Permanently deferred'
+                : `Deferred until ${formatDateOnly(donor.deferredUntil)}`}
+            </MessageBarTitle>
             {donor.deferralReason ?? ''}
           </MessageBarBody>
         </MessageBar>
       ) : waiting ? (
         <MessageBar intent="info">
           <MessageBarBody>
-            Can donate whole blood again from {formatDateOnly(donor.nextEligibleOn)} (minimum interval {donor.gender === 'Female' ? 120 : 90} days).
+            Can donate whole blood again from {formatDateOnly(donor.nextEligibleOn)} (minimum interval{' '}
+            {donor.gender === 'Female' ? 120 : 90} days).
           </MessageBarBody>
         </MessageBar>
       ) : screening ? (
         <MessageBar intent="success">
           <MessageBarBody>
-            Screened eligible at {formatDateTime(screening.screenedAt)}: collect up to {screening.maxBagVolumeMl ?? 350} ml within 12 hours of screening.
+            Screened eligible at {formatDateTime(screening.screenedAt)}: collect up to {screening.maxBagVolumeMl ?? 350}{' '}
+            ml within 12 hours of screening.
           </MessageBarBody>
         </MessageBar>
       ) : null}
@@ -147,7 +183,17 @@ function DonorView({ donor }: { donor: DonorDetail }) {
           <Detail label="Date of birth">{formatDateOnly(donor.dateOfBirth)}</Detail>
           <Detail label="Mobile">{formatPhone(donor.phone)}</Detail>
           <Detail label="Email">{donor.email}</Detail>
-          <Detail label="Address">{[donor.address.line1, donor.address.city, donor.address.district, donor.address.state, donor.address.pinCode].filter(Boolean).join(', ')}</Detail>
+          <Detail label="Address">
+            {[
+              donor.address.line1,
+              donor.address.city,
+              donor.address.district,
+              donor.address.state,
+              donor.address.pinCode,
+            ]
+              .filter(Boolean)
+              .join(', ')}
+          </Detail>
           <Detail label="Occupation">{donor.occupation}</Detail>
           <Detail label="Contact for drives">{donor.consentToNotify ? 'Yes' : 'No'}</Detail>
           <Detail label="Notes">{donor.notes}</Detail>
@@ -162,13 +208,18 @@ function DonorView({ donor }: { donor: DonorDetail }) {
           getRowId={(s) => s.id}
           size="small"
           columns={[
-            { key: 'when', header: 'Screened', render: (s) => `${formatDateTime(s.screenedAt)}${s.screenedByName ? ` · ${s.screenedByName}` : ''}` },
+            {
+              key: 'when',
+              header: 'Screened',
+              render: (s) => `${formatDateTime(s.screenedAt)}${s.screenedByName ? ` · ${s.screenedByName}` : ''}`,
+            },
             { key: 'outcome', header: 'Outcome', render: (s) => <OutcomeBadge outcome={s.outcome} /> },
             {
               key: 'values',
               header: 'Hb · weight · BP · pulse · temp',
               priority: 'low',
-              render: (s) => `${s.haemoglobinGdl} g/dL · ${s.weightKg} kg · ${s.systolic}/${s.diastolic} · ${s.pulse} · ${s.temperatureC} °C`,
+              render: (s) =>
+                `${s.haemoglobinGdl} g/dL · ${s.weightKg} kg · ${s.systolic}/${s.diastolic} · ${s.pulse} · ${s.temperatureC} °C`,
             },
             {
               key: 'reasons',
@@ -201,7 +252,12 @@ function DonorView({ donor }: { donor: DonorDetail }) {
           columns={[
             { key: 'bag', header: 'Bag', render: (d) => <Text className={styles.mono}>{d.bagNumber}</Text> },
             { key: 'when', header: 'Collected', render: (d) => formatDateTime(d.collectedAt) },
-            { key: 'what', header: 'Bag · volume', priority: 'low', render: (d) => `${bagTypeLabel[d.bagType]} · ${d.volumeMl} ml · ${donationTypeLabel[d.type]}` },
+            {
+              key: 'what',
+              header: 'Bag · volume',
+              priority: 'low',
+              render: (d) => `${bagTypeLabel[d.bagType]} · ${d.volumeMl} ml · ${donationTypeLabel[d.type]}`,
+            },
             { key: 'group', header: 'Group', render: (d) => groupLabel(d.bloodGroup) },
             {
               key: 'tti',
@@ -221,7 +277,16 @@ function DonorView({ donor }: { donor: DonorDetail }) {
         />
       </Section>
 
-      {dialog === 'screen' && <ScreeningDialog donor={donor} onClose={() => setDialog(null)} onCollect={(s) => { setDialog(null); setCollecting(s); }} />}
+      {dialog === 'screen' && (
+        <ScreeningDialog
+          donor={donor}
+          onClose={() => setDialog(null)}
+          onCollect={(s) => {
+            setDialog(null);
+            setCollecting(s);
+          }}
+        />
+      )}
       {dialog === 'edit' && <DonorDrawer donor={donor} onClose={() => setDialog(null)} />}
       {dialog === 'defer' && <DeferDialog donor={donor} onClose={() => setDialog(null)} />}
       {collecting && <CollectDialog donor={donor} screening={collecting} onClose={() => setCollecting(null)} />}

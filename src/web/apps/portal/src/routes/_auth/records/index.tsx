@@ -109,7 +109,10 @@ function RecordSummary({ record }: { record: PortalHealthRecord }) {
                     <span className={styles.itemText}>
                       <span className={styles.itemTitle}>{allergy.allergen}</span>
                       <span className={styles.itemMeta}>
-                        {[t(ALLERGY_TYPE[allergy.type]), allergy.reaction ? t('records.allergy.reaction', { reaction: allergy.reaction }) : null]
+                        {[
+                          t(ALLERGY_TYPE[allergy.type]),
+                          allergy.reaction ? t('records.allergy.reaction', { reaction: allergy.reaction }) : null,
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
@@ -134,7 +137,11 @@ function RecordSummary({ record }: { record: PortalHealthRecord }) {
               <CardLink key={summary.id} to="/records/discharge/$summaryId" params={{ summaryId: summary.id }}>
                 <ListRow
                   icon={<DocumentTextRegular />}
-                  title={summary.dischargedAt ? t('records.discharge.item', { date: f.date(summary.dischargedAt) }) : t('records.discharge.itemUndated')}
+                  title={
+                    summary.dischargedAt
+                      ? t('records.discharge.item', { date: f.date(summary.dischargedAt) })
+                      : t('records.discharge.itemUndated')
+                  }
                   subtitle={splitLines(summary.diagnoses).slice(0, 2).join(', ') || undefined}
                 />
               </CardLink>
@@ -152,11 +159,19 @@ function RecordSummary({ record }: { record: PortalHealthRecord }) {
               <li key={problem.id} className={styles.item}>
                 <span className={styles.itemText}>
                   <span className={styles.itemTitle}>{problem.title}</span>
-                  {problem.onsetDate && <span className={styles.itemMeta}>{t('records.problem.since', { date: f.calendarDate(problem.onsetDate) })}</span>}
+                  {problem.onsetDate && (
+                    <span className={styles.itemMeta}>
+                      {t('records.problem.since', { date: f.calendarDate(problem.onsetDate) })}
+                    </span>
+                  )}
                 </span>
                 <span className={styles.pills}>
-                  <StatusPill tone={problem.status === 'Resolved' ? 'success' : 'brand'}>{t(PROBLEM_STATUS[problem.status])}</StatusPill>
-                  {problem.type === 'Provisional' && <StatusPill tone="neutral">{t('records.problem.provisional')}</StatusPill>}
+                  <StatusPill tone={problem.status === 'Resolved' ? 'success' : 'brand'}>
+                    {t(PROBLEM_STATUS[problem.status])}
+                  </StatusPill>
+                  {problem.type === 'Provisional' && (
+                    <StatusPill tone="neutral">{t('records.problem.provisional')}</StatusPill>
+                  )}
                 </span>
               </li>
             ))}
@@ -178,8 +193,12 @@ function RecordSummary({ record }: { record: PortalHealthRecord }) {
                   subtitle={[visit.doctor, visit.department].filter(Boolean).join(' · ') || undefined}
                   meta={
                     [
-                      visit.diagnoses.length ? t('records.visit.diagnoses', { list: visit.diagnoses.join(', ') }) : null,
-                      visit.followUpDate ? t('records.visit.followUp', { date: f.calendarDate(visit.followUpDate) }) : null,
+                      visit.diagnoses.length
+                        ? t('records.visit.diagnoses', { list: visit.diagnoses.join(', ') })
+                        : null,
+                      visit.followUpDate
+                        ? t('records.visit.followUp', { date: f.calendarDate(visit.followUpDate) })
+                        : null,
                     ]
                       .filter(Boolean)
                       .join(' · ') || undefined
@@ -206,8 +225,14 @@ function RecordSummary({ record }: { record: PortalHealthRecord }) {
                       {vaccine.vaccineName}
                       {vaccine.doseNumber ? ` · ${t('records.vaccine.dose', { number: vaccine.doseNumber })}` : ''}
                     </span>
-                    <span className={styles.itemMeta}>{t('records.vaccine.given', { date: f.calendarDate(vaccine.administeredOn) })}</span>
-                    {vaccine.nextDueOn && <span className={styles.itemMeta}>{t('records.vaccine.nextDue', { date: f.calendarDate(vaccine.nextDueOn) })}</span>}
+                    <span className={styles.itemMeta}>
+                      {t('records.vaccine.given', { date: f.calendarDate(vaccine.administeredOn) })}
+                    </span>
+                    {vaccine.nextDueOn && (
+                      <span className={styles.itemMeta}>
+                        {t('records.vaccine.nextDue', { date: f.calendarDate(vaccine.nextDueOn) })}
+                      </span>
+                    )}
                   </span>
                 </span>
               </li>

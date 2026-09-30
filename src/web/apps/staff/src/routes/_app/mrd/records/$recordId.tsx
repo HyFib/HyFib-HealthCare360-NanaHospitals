@@ -20,7 +20,23 @@ import {
 import { AddRegular, ArchiveRegular, CheckmarkCircleRegular, OpenRegular, ScanRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
-import { applyServerErrors, ConfirmDialog, DataTable, DateField, ErrorState, FormGrid, LoadingState, LookupField, Page, PageHeader, Section, SelectField, StatusBadge, TextAreaField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ConfirmDialog,
+  DataTable,
+  DateField,
+  ErrorState,
+  FormGrid,
+  LoadingState,
+  LookupField,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  TextAreaField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
@@ -29,7 +45,15 @@ import { z } from 'zod';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { ReasonDialog } from '@/modules/emr/ui';
-import { DEFICIENCY_TYPES, deficiencyLabel, mrdApi, mrdKeys, mrdQueries, type ChartDeficiencyDto, type MedicalRecordDto } from '@/modules/mrd/api';
+import {
+  DEFICIENCY_TYPES,
+  deficiencyLabel,
+  mrdApi,
+  mrdKeys,
+  mrdQueries,
+  type ChartDeficiencyDto,
+  type MedicalRecordDto,
+} from '@/modules/mrd/api';
 
 export const Route = createFileRoute('/_app/mrd/records/$recordId')({
   component: ChartPage,
@@ -54,7 +78,16 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 const deficiencySchema = z.object({
-  type: z.enum(['MissingDischargeSummary', 'UnsignedEncounter', 'UnsignedNote', 'MissingDiagnosis', 'MissingConsent', 'MissingSignature', 'PendingCoding', 'Other']),
+  type: z.enum([
+    'MissingDischargeSummary',
+    'UnsignedEncounter',
+    'UnsignedNote',
+    'MissingDiagnosis',
+    'MissingConsent',
+    'MissingSignature',
+    'PendingCoding',
+    'Other',
+  ]),
   description: z.string().trim().min(1, 'Describe what is missing.').max(500),
   assignedPractitionerId: z.string().nullable(),
   dueDate: z.string().nullable(),
@@ -62,10 +95,20 @@ const deficiencySchema = z.object({
 
 type DeficiencyValues = z.infer<typeof deficiencySchema>;
 
-function AddDeficiencyDialog({ record, open, onClose }: { record: MedicalRecordDto; open: boolean; onClose: () => void }) {
+function AddDeficiencyDialog({
+  record,
+  open,
+  onClose,
+}: {
+  record: MedicalRecordDto;
+  open: boolean;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 600 }}>{open && <AddDeficiencyForm record={record} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 600 }}>
+        {open && <AddDeficiencyForm record={record} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -76,10 +119,21 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
   const queryClient = useQueryClient();
   const form = useForm<DeficiencyValues>({
     resolver: zodResolver(deficiencySchema),
-    defaultValues: { type: 'MissingSignature', description: '', assignedPractitionerId: record.assignedPractitionerId, dueDate: record.dueDate },
+    defaultValues: {
+      type: 'MissingSignature',
+      description: '',
+      assignedPractitionerId: record.assignedPractitionerId,
+      dueDate: record.dueDate,
+    },
   });
   const save = useMutation({
-    mutationFn: (v: DeficiencyValues) => mrdApi.addDeficiency(record.id, { type: v.type, description: v.description.trim(), assignedPractitionerId: v.assignedPractitionerId, dueDate: v.dueDate }),
+    mutationFn: (v: DeficiencyValues) =>
+      mrdApi.addDeficiency(record.id, {
+        type: v.type,
+        description: v.description.trim(),
+        assignedPractitionerId: v.assignedPractitionerId,
+        dueDate: v.dueDate,
+      }),
     onSuccess: (updated) => {
       queryClient.setQueryData(mrdKeys.record(record.id), updated);
       void queryClient.invalidateQueries({ queryKey: ['mrd', 'records'] });
@@ -97,10 +151,27 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
       <DialogBody>
         <DialogTitle>Add deficiency</DialogTitle>
         <DialogContent className={styles.form}>
-          <SelectField control={form.control} name="type" label="What is missing" options={DEFICIENCY_TYPES.map((t) => ({ value: t, label: deficiencyLabel[t] }))} />
-          <TextAreaField control={form.control} name="description" label="Details for the doctor" required rows={3} maxLength={500} />
+          <SelectField
+            control={form.control}
+            name="type"
+            label="What is missing"
+            options={DEFICIENCY_TYPES.map((t) => ({ value: t, label: deficiencyLabel[t] }))}
+          />
+          <TextAreaField
+            control={form.control}
+            name="description"
+            label="Details for the doctor"
+            required
+            rows={3}
+            maxLength={500}
+          />
           <FormGrid columns={2}>
-            <LookupField control={form.control} name="assignedPractitionerId" label="Assign to doctor" load={searchPractitioners} />
+            <LookupField
+              control={form.control}
+              name="assignedPractitionerId"
+              label="Assign to doctor"
+              load={searchPractitioners}
+            />
             <DateField control={form.control} name="dueDate" label="Due by" min={todayIso()} />
           </FormGrid>
         </DialogContent>
@@ -108,7 +179,12 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Add
           </Button>
         </DialogActions>
@@ -117,7 +193,17 @@ function AddDeficiencyForm({ record, onClose }: { record: MedicalRecordDto; onCl
   );
 }
 
-function ArchiveDialog({ open, busy, onConfirm, onCancel }: { open: boolean; busy: boolean; onConfirm: (location: string) => void; onCancel: () => void }) {
+function ArchiveDialog({
+  open,
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  busy: boolean;
+  onConfirm: (location: string) => void;
+  onCancel: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !busy && onCancel()}>
       <DialogSurface>{open && <ArchiveBody busy={busy} onConfirm={onConfirm} onCancel={onCancel} />}</DialogSurface>
@@ -125,7 +211,15 @@ function ArchiveDialog({ open, busy, onConfirm, onCancel }: { open: boolean; bus
   );
 }
 
-function ArchiveBody({ busy, onConfirm, onCancel }: { busy: boolean; onConfirm: (location: string) => void; onCancel: () => void }) {
+function ArchiveBody({
+  busy,
+  onConfirm,
+  onCancel,
+}: {
+  busy: boolean;
+  onConfirm: (location: string) => void;
+  onCancel: () => void;
+}) {
   const [location, setLocation] = useState('');
   return (
     <DialogBody>
@@ -133,7 +227,12 @@ function ArchiveBody({ busy, onConfirm, onCancel }: { busy: boolean; onConfirm: 
       <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Text>Record where the file is kept so it can be found for audits, claims and court requests.</Text>
         <Field label="Storage location" required hint="Rack and shelf, box number or e-archive reference">
-          <Input autoFocus value={location} onChange={(_, d) => setLocation(d.value.slice(0, 200))} placeholder="e.g. MRD room 2, rack 14, shelf C" />
+          <Input
+            autoFocus
+            value={location}
+            onChange={(_, d) => setLocation(d.value.slice(0, 200))}
+            placeholder="e.g. MRD room 2, rack 14, shelf C"
+          />
         </Field>
       </DialogContent>
       <DialogActions>
@@ -185,7 +284,10 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
     mutationFn: () => mrdApi.scan(r.id),
     onSuccess: (updated) => {
       publish(updated);
-      notify.success('Chart checked', updated.openDeficiencies > 0 ? `${updated.openDeficiencies} open deficiencies.` : 'Nothing is missing.');
+      notify.success(
+        'Chart checked',
+        updated.openDeficiencies > 0 ? `${updated.openDeficiencies} open deficiencies.` : 'Nothing is missing.',
+      );
     },
     onError: (error) => notify.error(error, 'Could not check the chart'),
   });
@@ -194,7 +296,12 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
     onSuccess: (updated) => {
       setConfirmComplete(false);
       publish(updated);
-      notify.success('Chart complete', updated.retainUntil ? `Keep until ${formatDateOnly(updated.retainUntil)}.` : 'Medico-legal chart: keep permanently.');
+      notify.success(
+        'Chart complete',
+        updated.retainUntil
+          ? `Keep until ${formatDateOnly(updated.retainUntil)}.`
+          : 'Medico-legal chart: keep permanently.',
+      );
     },
     onError: (error) => {
       setConfirmComplete(false);
@@ -228,16 +335,26 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
       <PageHeader
         title={`Chart · ${r.patientName ?? 'Patient'}`}
         subtitle={`${r.uhid ?? ''} · ${r.admissionId ? 'In-patient stay' : 'Out-patient encounter'}`}
-        breadcrumbs={[{ label: 'Patient charts', onClick: () => void navigate({ to: '/mrd/records' }) }, { label: r.uhid ?? 'Chart' }]}
+        breadcrumbs={[
+          { label: 'Patient charts', onClick: () => void navigate({ to: '/mrd/records' }) },
+          { label: r.uhid ?? 'Chart' },
+        ]}
         actions={
           <div className={styles.actions}>
             {canReadChart && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: r.patientId } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: r.patientId } })}
+              >
                 Clinical chart
               </Button>
             )}
             {!archived && (
-              <Button icon={scan.isPending ? <Spinner size="tiny" /> : <ScanRegular />} disabled={scan.isPending} onClick={() => scan.mutate()}>
+              <Button
+                icon={scan.isPending ? <Spinner size="tiny" /> : <ScanRegular />}
+                disabled={scan.isPending}
+                onClick={() => scan.mutate()}
+              >
                 Check for gaps
               </Button>
             )}
@@ -247,7 +364,12 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
               </Button>
             )}
             {(r.status === 'Incomplete' || r.status === 'Deficient') && (
-              <Button appearance="primary" icon={<CheckmarkCircleRegular />} disabled={open.length > 0} onClick={() => setConfirmComplete(true)}>
+              <Button
+                appearance="primary"
+                icon={<CheckmarkCircleRegular />}
+                disabled={open.length > 0}
+                onClick={() => setConfirmComplete(true)}
+              >
                 Mark complete
               </Button>
             )}
@@ -274,15 +396,24 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
           <Fact label="Discharged">{r.dischargedAt ? formatDateTime(r.dischargedAt) : '—'}</Fact>
           <Fact label="Complete by">{r.dueDate ? formatDateOnly(r.dueDate) : '—'}</Fact>
           <Fact label="Completed">{r.completedAt ? formatDateTime(r.completedAt) : '—'}</Fact>
-          <Fact label="Keep until">{r.completedAt ? (r.retainUntil ? formatDateOnly(r.retainUntil) : 'Permanently (medico-legal)') : '—'}</Fact>
-          <Fact label="Archived at">{r.archiveLocation ? `${r.archiveLocation}${r.archivedAt ? ` · ${formatDateTime(r.archivedAt)}` : ''}` : '—'}</Fact>
+          <Fact label="Keep until">
+            {r.completedAt ? (r.retainUntil ? formatDateOnly(r.retainUntil) : 'Permanently (medico-legal)') : '—'}
+          </Fact>
+          <Fact label="Archived at">
+            {r.archiveLocation
+              ? `${r.archiveLocation}${r.archivedAt ? ` · ${formatDateTime(r.archivedAt)}` : ''}`
+              : '—'}
+          </Fact>
           <Fact label="Medico-legal case">{r.isMlc ? 'Yes' : 'No'}</Fact>
         </div>
       </Section>
 
       {open.length > 0 && (r.status === 'Incomplete' || r.status === 'Deficient') && (
         <MessageBar intent="warning">
-          <MessageBarBody>Resolve the {open.length} open deficienc{open.length === 1 ? 'y' : 'ies'} before completing the chart. Doctors see theirs on their worklist.</MessageBarBody>
+          <MessageBarBody>
+            Resolve the {open.length} open deficienc{open.length === 1 ? 'y' : 'ies'} before completing the chart.
+            Doctors see theirs on their worklist.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -305,7 +436,12 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
             },
             { key: 'doctor', header: 'Assigned to', render: (d) => d.assignedPractitionerName ?? '—' },
             { key: 'due', header: 'Due', width: 120, render: (d) => (d.dueDate ? formatDateOnly(d.dueDate) : '—') },
-            { key: 'raised', header: 'Raised', priority: 'low', render: (d) => `${formatDateTime(d.raisedAt)}${d.isSystemDetected ? ' · automatic' : ''}` },
+            {
+              key: 'raised',
+              header: 'Raised',
+              priority: 'low',
+              render: (d) => `${formatDateTime(d.raisedAt)}${d.isSystemDetected ? ' · automatic' : ''}`,
+            },
             {
               key: 'status',
               header: 'Status',
@@ -313,7 +449,11 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
                 d.resolvedAt ? (
                   <span>
                     <StatusBadge status="Resolved" />
-                    {d.resolutionNote && <Caption1 block className={styles.muted}>{d.resolutionNote}</Caption1>}
+                    {d.resolutionNote && (
+                      <Caption1 block className={styles.muted}>
+                        {d.resolutionNote}
+                      </Caption1>
+                    )}
                   </span>
                 ) : (
                   <StatusBadge status="Open" />
@@ -345,10 +485,23 @@ function ChartDetail({ record: r }: { record: MedicalRecordDto }) {
         onConfirm={(note) => resolving && resolve.mutate({ id: resolving.id, note })}
         onCancel={() => setResolving(null)}
       />
-      <ConfirmDialog open={confirmComplete} title="Mark the chart complete?" confirmLabel="Mark complete" busy={complete.isPending} onConfirm={() => complete.mutate()} onCancel={() => setConfirmComplete(false)}>
-        The retention period starts now: out-patient charts are kept 3 years, in-patient charts 5 years, medico-legal charts permanently.
+      <ConfirmDialog
+        open={confirmComplete}
+        title="Mark the chart complete?"
+        confirmLabel="Mark complete"
+        busy={complete.isPending}
+        onConfirm={() => complete.mutate()}
+        onCancel={() => setConfirmComplete(false)}
+      >
+        The retention period starts now: out-patient charts are kept 3 years, in-patient charts 5 years, medico-legal
+        charts permanently.
       </ConfirmDialog>
-      <ArchiveDialog open={archiving} busy={archive.isPending} onConfirm={(location) => archive.mutate(location)} onCancel={() => setArchiving(false)} />
+      <ArchiveDialog
+        open={archiving}
+        busy={archive.isPending}
+        onConfirm={(location) => archive.mutate(location)}
+        onCancel={() => setArchiving(false)}
+      />
     </Page>
   );
 }

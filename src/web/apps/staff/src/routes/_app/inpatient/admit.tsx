@@ -19,9 +19,25 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DocumentArrowLeftRegular, PersonAddRegular, PrintRegular, TagRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DocumentArrowLeftRegular,
+  PersonAddRegular,
+  PrintRegular,
+  TagRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatRelative, humanize, isApiError, isIndianMobile, normalizePhone, todayIso, useHotkey, useSession, type PayerType } from '@hc360/core';
+import {
+  formatRelative,
+  humanize,
+  isApiError,
+  isIndianMobile,
+  normalizePhone,
+  todayIso,
+  useHotkey,
+  useSession,
+  type PayerType,
+} from '@hc360/core';
 import {
   applyServerErrors,
   DateField,
@@ -147,8 +163,21 @@ const useStyles = makeStyles({
   summary: { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px' },
   label: { color: tokens.colorNeutralForeground3 },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', padding: '8px 0' },
-  number: { fontFamily: tokens.fontFamilyMonospace, fontSize: '28px', lineHeight: '36px', fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    textAlign: 'center',
+    padding: '8px 0',
+  },
+  number: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: '28px',
+    lineHeight: '36px',
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
   submit: { width: '100%', minHeight: '44px' },
 });
 
@@ -198,13 +227,26 @@ function AdmitPatientPage() {
   const draft = useFormDraft(form, 'inpatient-admit');
   const [patient, departmentId, admittingId, source, payerType, isMlc, earlier, consultantId, bedId] = useWatch({
     control: form.control,
-    name: ['patient', 'departmentId', 'admittingPractitionerId', 'source', 'payerType', 'isMlc', 'earlier', 'consultantPractitionerId', 'bedId'],
+    name: [
+      'patient',
+      'departmentId',
+      'admittingPractitionerId',
+      'source',
+      'payerType',
+      'isMlc',
+      'earlier',
+      'consultantPractitionerId',
+      'bedId',
+    ],
   });
   const departments = useDepartments('Clinical');
   const practitioners = usePractitioners(departmentId);
 
   // Arriving from a patient profile or a reserved bed: pre-select the patient.
-  const linkedPatient = useQuery({ ...patientQueries.detail(search.patientId ?? ''), enabled: Boolean(search.patientId) });
+  const linkedPatient = useQuery({
+    ...patientQueries.detail(search.patientId ?? ''),
+    enabled: Boolean(search.patientId),
+  });
   useEffect(() => {
     const p = linkedPatient.data;
     if (p && !form.getValues('patient')) {
@@ -267,7 +309,10 @@ function AdmitPatientPage() {
       }
     },
     onError: (error) => {
-      if (isApiError(error) && (error.code === 'bed.taken' || error.code === 'bed.unavailable' || error.code === 'bed.reserved')) {
+      if (
+        isApiError(error) &&
+        (error.code === 'bed.taken' || error.code === 'bed.unavailable' || error.code === 'bed.reserved')
+      ) {
         form.setValue('bedId', null);
         void queryClient.invalidateQueries({ queryKey: ['inpatient', 'available'] });
       }
@@ -310,12 +355,18 @@ function AdmitPatientPage() {
         title="Admit patient"
         icon={<PersonAddRegular />}
         subtitle="Choose the patient, the doctors and a vacant bed. Press Ctrl+S to admit."
-        breadcrumbs={[{ label: 'In-patients', onClick: () => void navigate({ to: '/inpatient/admissions' }) }, { label: 'Admit' }]}
+        breadcrumbs={[
+          { label: 'In-patients', onClick: () => void navigate({ to: '/inpatient/admissions' }) },
+          { label: 'Admit' },
+        ]}
       />
 
       {draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>An unfinished admission from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            An unfinished admission from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore it</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -334,12 +385,22 @@ function AdmitPatientPage() {
                   control={form.control}
                   name="patient"
                   render={({ field, fieldState }) => (
-                    <PatientPicker value={field.value} onChange={(p) => field.onChange(p)} required validationMessage={fieldState.error?.message} />
+                    <PatientPicker
+                      value={field.value}
+                      onChange={(p) => field.onChange(p)}
+                      required
+                      validationMessage={fieldState.error?.message}
+                    />
                   )}
                 />
                 {canRegister && (
                   <div>
-                    <Button size="small" appearance="subtle" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/patients/register' })}>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<PersonAddRegular />}
+                      onClick={() => void navigate({ to: '/patients/register' })}
+                    >
                       New patient? Register first
                     </Button>
                   </div>
@@ -348,11 +409,20 @@ function AdmitPatientPage() {
                   <MessageBar intent="warning" layout="multiline">
                     <MessageBarBody>
                       <MessageBarTitle>Already admitted</MessageBarTitle>
-                      {patient?.fullName} is in {activeStay.wardName ?? 'a ward'} under admission {activeStay.admissionNumber}. Transfer the patient instead of
-                      admitting again.
+                      {patient?.fullName} is in {activeStay.wardName ?? 'a ward'} under admission{' '}
+                      {activeStay.admissionNumber}. Transfer the patient instead of admitting again.
                     </MessageBarBody>
                     <MessageBarActions>
-                      <Button onClick={() => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: activeStay.id } })}>Open admission</Button>
+                      <Button
+                        onClick={() =>
+                          void navigate({
+                            to: '/inpatient/admissions/$admissionId',
+                            params: { admissionId: activeStay.id },
+                          })
+                        }
+                      >
+                        Open admission
+                      </Button>
                     </MessageBarActions>
                   </MessageBar>
                 )}
@@ -362,9 +432,21 @@ function AdmitPatientPage() {
             <Section title="Admission">
               <div className={styles.stack}>
                 <FormGrid columns={3}>
-                  <SelectField control={form.control} name="type" label="Admission type" options={enumOptions(ADMISSION_TYPES, ADMISSION_TYPE_LABEL)} />
-                  <SelectField control={form.control} name="source" label="Came from" options={enumOptions(ADMISSION_SOURCES, ADMISSION_SOURCE_LABEL)} />
-                  {source === 'Referral' && <TextField control={form.control} name="referredBy" label="Referred by" required maxLength={200} />}
+                  <SelectField
+                    control={form.control}
+                    name="type"
+                    label="Admission type"
+                    options={enumOptions(ADMISSION_TYPES, ADMISSION_TYPE_LABEL)}
+                  />
+                  <SelectField
+                    control={form.control}
+                    name="source"
+                    label="Came from"
+                    options={enumOptions(ADMISSION_SOURCES, ADMISSION_SOURCE_LABEL)}
+                  />
+                  {source === 'Referral' && (
+                    <TextField control={form.control} name="referredBy" label="Referred by" required maxLength={200} />
+                  )}
                 </FormGrid>
                 <FormGrid columns={3}>
                   <SelectField
@@ -390,12 +472,25 @@ function AdmitPatientPage() {
                     options={toOptions(practitioners.data)}
                   />
                 </FormGrid>
-                <TextAreaField control={form.control} name="provisionalDiagnosis" label="Provisional diagnosis" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="provisionalDiagnosis"
+                  label="Provisional diagnosis"
+                  rows={2}
+                  maxLength={500}
+                />
                 <FormGrid columns={3}>
-                  <DateField control={form.control} name="expectedDischargeDate" label="Expected discharge" min={todayIso()} />
+                  <DateField
+                    control={form.control}
+                    name="expectedDischargeDate"
+                    label="Expected discharge"
+                    min={todayIso()}
+                  />
                   <div>
                     <SwitchField control={form.control} name="isMlc" label="Medico-legal case (MLC)" />
-                    {isMlc && <TextField control={form.control} name="mlcNumber" label="MLC number" required maxLength={64} />}
+                    {isMlc && (
+                      <TextField control={form.control} name="mlcNumber" label="MLC number" required maxLength={64} />
+                    )}
                   </div>
                   <div>
                     <SwitchField control={form.control} name="earlier" label="Admitted earlier (last 3 days)" />
@@ -404,8 +499,18 @@ function AdmitPatientPage() {
                         control={form.control}
                         name="admittedAt"
                         render={({ field, fieldState }) => (
-                          <Field label="Admitted at" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                            <Input type="datetime-local" value={field.value} max={nowInput} onChange={(_, d) => field.onChange(d.value)} />
+                          <Field
+                            label="Admitted at"
+                            required
+                            validationMessage={fieldState.error?.message}
+                            validationState={fieldState.error ? 'error' : 'none'}
+                          >
+                            <Input
+                              type="datetime-local"
+                              value={field.value}
+                              max={nowInput}
+                              onChange={(_, d) => field.onChange(d.value)}
+                            />
                           </Field>
                         )}
                       />
@@ -415,7 +520,10 @@ function AdmitPatientPage() {
               </div>
             </Section>
 
-            <Section title="Bed" description="Vacant beds the patient may use. Ward rules (male/female, NICU, PICU, maternity) are checked for you.">
+            <Section
+              title="Bed"
+              description="Vacant beds the patient may use. Ward rules (male/female, NICU, PICU, maternity) are checked for you."
+            >
               <Controller
                 control={form.control}
                 name="bedId"
@@ -434,9 +542,21 @@ function AdmitPatientPage() {
             <Section title="Payment and attendant">
               <div className={styles.stack}>
                 <FormGrid columns={3}>
-                  <SelectField control={form.control} name="payerType" label="Payment by" options={PAYER_TYPES.map((p) => ({ value: p, label: PAYER_LABEL[p] }))} />
+                  <SelectField
+                    control={form.control}
+                    name="payerType"
+                    label="Payment by"
+                    options={PAYER_TYPES.map((p) => ({ value: p, label: PAYER_LABEL[p] }))}
+                  />
                   {POLICY_PAYERS.includes(payerType) && (
-                    <TextField control={form.control} name="policyNumber" label="Policy / TPA card number" maxLength={64} autoComplete="off" hint="Stored encrypted" />
+                    <TextField
+                      control={form.control}
+                      name="policyNumber"
+                      label="Policy / TPA card number"
+                      maxLength={64}
+                      autoComplete="off"
+                      hint="Stored encrypted"
+                    />
                   )}
                   <TextField
                     control={form.control}
@@ -448,12 +568,35 @@ function AdmitPatientPage() {
                   />
                 </FormGrid>
                 <FormGrid columns={3}>
-                  <TextField control={form.control} name="attendantName" label="Attendant name" maxLength={200} autoComplete="off" />
-                  <TextField control={form.control} name="attendantRelation" label="Relation to patient" maxLength={64} placeholder="e.g. Son, Wife" />
-                  <TextField control={form.control} name="attendantPhone" label="Attendant mobile" type="tel" maxLength={14} autoComplete="off" />
+                  <TextField
+                    control={form.control}
+                    name="attendantName"
+                    label="Attendant name"
+                    maxLength={200}
+                    autoComplete="off"
+                  />
+                  <TextField
+                    control={form.control}
+                    name="attendantRelation"
+                    label="Relation to patient"
+                    maxLength={64}
+                    placeholder="e.g. Son, Wife"
+                  />
+                  <TextField
+                    control={form.control}
+                    name="attendantPhone"
+                    label="Attendant mobile"
+                    type="tel"
+                    maxLength={14}
+                    autoComplete="off"
+                  />
                 </FormGrid>
                 <TextAreaField control={form.control} name="notes" label="Other notes" rows={2} maxLength={600} />
-                <SwitchField control={form.control} name="notifyPatient" label="Send the admission SMS (ward, bed and doctor) to the patient" />
+                <SwitchField
+                  control={form.control}
+                  name="notifyPatient"
+                  label="Send the admission SMS (ward, bed and doctor) to the patient"
+                />
               </div>
             </Section>
           </div>
@@ -474,12 +617,18 @@ function AdmitPatientPage() {
                 {serverError && (
                   <MessageBar intent="error" layout="multiline">
                     <MessageBarBody>
-                      <MessageBarTitle>{isApiError(serverError) ? serverError.title : 'Could not admit'}</MessageBarTitle>
+                      <MessageBarTitle>
+                        {isApiError(serverError) ? serverError.title : 'Could not admit'}
+                      </MessageBarTitle>
                       {isApiError(serverError) ? serverError.userMessage : 'Please try again.'}
                     </MessageBarBody>
                   </MessageBar>
                 )}
-                <Checkbox checked={autoPrint === '1'} onChange={(_, d) => setAutoPrint(d.checked ? '1' : '0')} label="Print the slip and wristband after admitting" />
+                <Checkbox
+                  checked={autoPrint === '1'}
+                  onChange={(_, d) => setAutoPrint(d.checked ? '1' : '0')}
+                  label="Print the slip and wristband after admitting"
+                />
                 <Button
                   type="submit"
                   appearance="primary"
@@ -516,7 +665,11 @@ function AdmitPatientPage() {
                   {detail.data?.wardName ? ` · ${detail.data.wardName}` : ''} · IP visit {created?.visitNumber}
                 </Text>
                 {detail.isLoading && <Spinner size="tiny" label="Preparing the slip…" />}
-                {detail.data && <Caption1 className={styles.label}>{humanize(detail.data.type)} admission under {detail.data.consultantName ?? 'the consultant'}</Caption1>}
+                {detail.data && (
+                  <Caption1 className={styles.label}>
+                    {humanize(detail.data.type)} admission under {detail.data.consultantName ?? 'the consultant'}
+                  </Caption1>
+                )}
               </div>
             </DialogContent>
             <DialogActions fluid>
@@ -526,7 +679,14 @@ function AdmitPatientPage() {
               <Button icon={<TagRegular />} disabled={!detail.data} onClick={() => void print('wristband')}>
                 Print wristband
               </Button>
-              <Button onClick={() => created && void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: created.id } })}>Open admission</Button>
+              <Button
+                onClick={() =>
+                  created &&
+                  void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: created.id } })
+                }
+              >
+                Open admission
+              </Button>
               <Button appearance="primary" onClick={startAnother} autoFocus>
                 Admit another
               </Button>

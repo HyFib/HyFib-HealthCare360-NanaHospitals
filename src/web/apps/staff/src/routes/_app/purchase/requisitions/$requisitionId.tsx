@@ -1,5 +1,11 @@
 import { Button, Text } from '@fluentui/react-components';
-import { CheckmarkRegular, DismissCircleRegular, OpenRegular, ReceiptAddRegular, StopRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkRegular,
+  DismissCircleRegular,
+  OpenRegular,
+  ReceiptAddRegular,
+  StopRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime } from '@hc360/core';
 import { ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -43,7 +49,9 @@ function RequisitionPage() {
   });
   const decide = useMutation({
     mutationFn: ({ kind, reason }: { kind: 'reject' | 'cancel'; reason: string }) =>
-      kind === 'reject' ? purchaseApi.rejectRequisition(requisitionId, reason) : purchaseApi.cancelRequisition(requisitionId, reason),
+      kind === 'reject'
+        ? purchaseApi.rejectRequisition(requisitionId, reason)
+        : purchaseApi.cancelRequisition(requisitionId, reason),
     onSuccess: (_, { kind }) => {
       setDialog(null);
       notify.success(kind === 'reject' ? 'Requisition rejected' : 'Requisition cancelled');
@@ -68,7 +76,10 @@ function RequisitionPage() {
       <PageHeader
         title={`Requisition ${r.number}`}
         subtitle={`For ${r.storeName}`}
-        breadcrumbs={[{ label: 'Requisitions', onClick: () => void navigate({ to: '/purchase/requisitions' }) }, { label: r.number }]}
+        breadcrumbs={[
+          { label: 'Requisitions', onClick: () => void navigate({ to: '/purchase/requisitions' }) },
+          { label: r.number },
+        ]}
         actions={
           <>
             {canManage && (r.status === 'Submitted' || r.status === 'Approved') && (
@@ -87,12 +98,21 @@ function RequisitionPage() {
               </>
             )}
             {canManage && r.status === 'Approved' && (
-              <Button appearance="primary" icon={<ReceiptAddRegular />} onClick={() => void navigate({ to: '/purchase/orders/new', search: { requisitionId: r.id } })}>
+              <Button
+                appearance="primary"
+                icon={<ReceiptAddRegular />}
+                onClick={() => void navigate({ to: '/purchase/orders/new', search: { requisitionId: r.id } })}
+              >
                 Create purchase order
               </Button>
             )}
             {r.purchaseOrderId && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/purchase/orders/$orderId', params: { orderId: r.purchaseOrderId! } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() =>
+                  void navigate({ to: '/purchase/orders/$orderId', params: { orderId: r.purchaseOrderId! } })
+                }
+              >
                 Open the order
               </Button>
             )}
@@ -119,7 +139,12 @@ function RequisitionPage() {
           size="small"
           columns={[
             { key: 'item', header: 'Item', render: (l) => <Text weight="semibold">{l.itemName}</Text> },
-            { key: 'qty', header: 'Quantity', align: 'end', render: (l) => formatQty(l.quantity, master.items.get(l.itemId)?.purchaseUnit) },
+            {
+              key: 'qty',
+              header: 'Quantity',
+              align: 'end',
+              render: (l) => formatQty(l.quantity, master.items.get(l.itemId)?.purchaseUnit),
+            },
             { key: 'remarks', header: 'Note', render: (l) => l.remarks ?? '—' },
           ]}
         />

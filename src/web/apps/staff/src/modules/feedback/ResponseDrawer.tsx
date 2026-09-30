@@ -34,7 +34,12 @@ import { ratingKey } from './rules';
 
 const useStyles = makeStyles({
   badges: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
-  ratings: { display: 'grid', gridTemplateColumns: 'minmax(140px, auto) auto 1fr', gap: '8px 12px', alignItems: 'center' },
+  ratings: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(140px, auto) auto 1fr',
+    gap: '8px 12px',
+    alignItems: 'center',
+  },
   word: { color: tokens.colorNeutralForeground3 },
   comment: {
     margin: 0,
@@ -49,7 +54,12 @@ const useStyles = makeStyles({
 /** One feedback response. Opening a response linked to a patient is recorded in the audit log by the server. */
 export function ResponseDrawer({ responseId, onClose }: { responseId: string | null; onClose: () => void }) {
   return (
-    <OverlayDrawer open={responseId !== null} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
+    <OverlayDrawer
+      open={responseId !== null}
+      position="end"
+      size="medium"
+      onOpenChange={(_, d) => !d.open && onClose()}
+    >
       {responseId && <Content responseId={responseId} onClose={onClose} />}
     </OverlayDrawer>
   );
@@ -60,7 +70,9 @@ function Content({ responseId, onClose }: { responseId: string; onClose: () => v
   return (
     <>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {response.data?.formTitle ?? 'Feedback'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -82,8 +94,12 @@ function Details({ response }: { response: FeedbackResponseDetail }) {
   const navigate = useNavigate();
   const departments = useDepartments();
   const canComplaints = usePermission(FEEDBACK_PERMISSIONS.complaintsManage);
-  const department = response.departmentId ? (departments.data?.find((d) => d.id === response.departmentId)?.name ?? 'Other department') : null;
-  const answered = ASPECTS.filter((aspect) => response.ratings[ratingKey(aspect)] !== null && response.ratings[ratingKey(aspect)] !== undefined);
+  const department = response.departmentId
+    ? (departments.data?.find((d) => d.id === response.departmentId)?.name ?? 'Other department')
+    : null;
+  const answered = ASPECTS.filter(
+    (aspect) => response.ratings[ratingKey(aspect)] !== null && response.ratings[ratingKey(aspect)] !== undefined,
+  );
 
   return (
     <Stack gap={16}>
@@ -91,7 +107,10 @@ function Details({ response }: { response: FeedbackResponseDetail }) {
         <Badge appearance="outline" shape="rounded">
           {channelLabel[response.channel]}
         </Badge>
-        <Tooltip content="Worked out on the server from the comment's words, the ratings and the recommendation score. No AI service is used." relationship="description">
+        <Tooltip
+          content="Worked out on the server from the comment's words, the ratings and the recommendation score. No AI service is used."
+          relationship="description"
+        >
           <span>
             <SentimentBadge sentiment={response.sentiment} />
           </span>
@@ -157,7 +176,10 @@ function Details({ response }: { response: FeedbackResponseDetail }) {
 
       {response.wantsCallback && (
         <MessageBar intent="info" icon={<CallRegular />}>
-          <MessageBarBody>The patient asked for a call back on {response.contactPhone ? formatPhone(response.contactPhone) : 'no number given'}.</MessageBarBody>
+          <MessageBarBody>
+            The patient asked for a call back on{' '}
+            {response.contactPhone ? formatPhone(response.contactPhone) : 'no number given'}.
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -167,7 +189,12 @@ function Details({ response }: { response: FeedbackResponseDetail }) {
             The low score raised complaint{' '}
             {canComplaints && response.complaintId ? (
               <Link
-                onClick={() => void navigate({ to: '/feedback/complaints/$complaintId', params: { complaintId: response.complaintId ?? '' } })}
+                onClick={() =>
+                  void navigate({
+                    to: '/feedback/complaints/$complaintId',
+                    params: { complaintId: response.complaintId ?? '' },
+                  })
+                }
               >
                 {response.complaintNumber}
               </Link>

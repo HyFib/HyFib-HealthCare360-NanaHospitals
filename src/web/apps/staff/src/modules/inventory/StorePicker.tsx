@@ -1,4 +1,13 @@
-import { Button, Field, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Select, type FieldProps } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+  Select,
+  type FieldProps,
+} from '@fluentui/react-components';
 import { ArrowClockwiseRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
 import type { StoreDto } from './api';
@@ -38,9 +47,19 @@ export function StorePicker({
   const types = new Set(stores.map((s) => s.type));
   const options = stores.filter((s) => s.id !== excludeId);
   return (
-    <Field label={label} hint={hint} required={required} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'}>
+    <Field
+      label={label}
+      hint={hint}
+      required={required}
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+    >
       <Select value={value ?? ''} onChange={(_, d) => onChange(d.value || null)} disabled={disabled || loading}>
-        {allowAll ? <option value="">{allLabel}</option> : !value && <option value="">{loading ? 'Loading stores…' : placeholder}</option>}
+        {allowAll ? (
+          <option value="">{allLabel}</option>
+        ) : (
+          !value && <option value="">{loading ? 'Loading stores…' : placeholder}</option>
+        )}
         {options.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
@@ -54,8 +73,25 @@ export function StorePicker({
 }
 
 /** Working-store picker bound to {@link useWorkingStore}. */
-export function WorkingStorePicker({ working, label = 'Working store', hint }: { working: WorkingStore; label?: string; hint?: FieldProps['hint'] }) {
-  return <StorePicker stores={working.stores} value={working.storeId} onChange={working.setStoreId} label={label} loading={working.loading} hint={hint} />;
+export function WorkingStorePicker({
+  working,
+  label = 'Working store',
+  hint,
+}: {
+  working: WorkingStore;
+  label?: string;
+  hint?: FieldProps['hint'];
+}) {
+  return (
+    <StorePicker
+      stores={working.stores}
+      value={working.storeId}
+      onChange={working.setStoreId}
+      label={label}
+      loading={working.loading}
+      hint={hint}
+    />
+  );
 }
 
 /** Why no store can be chosen (no permission, failed to load, or none set up), with the next step. */
@@ -65,7 +101,8 @@ export function StoreProblem({ working, kind = 'store' }: { working: WorkingStor
       <MessageBar intent="warning" layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>Your account cannot see the {kind} list</MessageBarTitle>
-          Ask the administrator to add the permission to view stock or stores to your role. Screens that sell or issue stock need to know which
+          Ask the administrator to add the permission to view stock or stores to your role. Screens that sell or issue
+          stock need to know which
           {` ${kind}`} you work in.
         </MessageBarBody>
       </MessageBar>

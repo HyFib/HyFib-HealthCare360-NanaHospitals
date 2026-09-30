@@ -1,5 +1,25 @@
-import { Badge, Button, Caption1, Field, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Select, Switch, Text, tokens } from '@fluentui/react-components';
-import { DocumentArrowDownRegular, DocumentBulletListRegular, MoreHorizontalRegular, VehicleTruckProfileRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Select,
+  Switch,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  DocumentArrowDownRegular,
+  DocumentBulletListRegular,
+  MoreHorizontalRegular,
+  VehicleTruckProfileRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateTime } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -20,7 +40,11 @@ interface OutsourcingSearch {
 }
 
 export const Route = createFileRoute('/_app/lab/outsourcing')({
-  validateSearch: (s: Record<string, unknown>): OutsourcingSearch => ({ all: searchFlag(s.all), labId: searchId(s.labId), page: searchPage(s.page) }),
+  validateSearch: (s: Record<string, unknown>): OutsourcingSearch => ({
+    all: searchFlag(s.all),
+    labId: searchId(s.labId),
+    page: searchPage(s.page),
+  }),
   component: OutsourcingPage,
 });
 
@@ -46,7 +70,9 @@ function OutsourcingPage() {
   useLabLive();
 
   const labs = useQuery(labQueries.referralLabs(true));
-  const items = useQuery(labQueries.outsourcing({ pendingOnly: !search.all, referralLabId: search.labId, page: search.page }));
+  const items = useQuery(
+    labQueries.outsourcing({ pendingOnly: !search.all, referralLabId: search.labId, page: search.page }),
+  );
   const overdue = items.data?.items.filter((item) => item.isOverdue).length ?? 0;
 
   return (
@@ -65,7 +91,9 @@ function OutsourcingPage() {
             <Field label="Reference laboratory">
               <Select
                 value={search.labId ?? ''}
-                onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, labId: data.value || undefined, page: undefined }) })}
+                onChange={(_, data) =>
+                  void navigate({ search: (prev) => ({ ...prev, labId: data.value || undefined, page: undefined }) })
+                }
               >
                 <option value="">All laboratories</option>
                 {labs.data?.map((lab) => (
@@ -77,7 +105,11 @@ function OutsourcingPage() {
             </Field>
             <Switch
               checked={Boolean(search.all)}
-              onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, all: data.checked ? true : undefined, page: undefined }) })}
+              onChange={(_, data) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, all: data.checked ? true : undefined, page: undefined }),
+                })
+              }
               label="Include received reports"
             />
           </FilterBar>
@@ -111,7 +143,9 @@ function OutsourcingPage() {
               render: (item: OutsourcedItem) => (
                 <span className={styles.cell}>
                   <Text className={styles.mono}>{item.barcode ?? '—'}</Text>
-                  <Caption1 className={styles.muted}>{item.collectedAt ? `Collected ${formatDate(item.collectedAt)}` : 'Not collected'}</Caption1>
+                  <Caption1 className={styles.muted}>
+                    {item.collectedAt ? `Collected ${formatDate(item.collectedAt)}` : 'Not collected'}
+                  </Caption1>
                 </span>
               ),
             },
@@ -123,7 +157,9 @@ function OutsourcingPage() {
                 item.sentOutAt ? (
                   <span className={styles.cell}>
                     <Caption1>{formatDateTime(item.sentOutAt)}</Caption1>
-                    {item.dispatchReference && <Caption1 className={styles.muted}>Docket {item.dispatchReference}</Caption1>}
+                    {item.dispatchReference && (
+                      <Caption1 className={styles.muted}>Docket {item.dispatchReference}</Caption1>
+                    )}
                   </span>
                 ) : (
                   <Badge appearance="tint" color="warning" shape="rounded">
@@ -147,19 +183,38 @@ function OutsourcingPage() {
                   '—'
                 ),
             },
-            { key: 'status', header: 'Status', width: 170, priority: 'low', render: (item: OutsourcedItem) => <ItemStatusBadge status={item.status} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 170,
+              priority: 'low',
+              render: (item: OutsourcedItem) => <ItemStatusBadge status={item.status} />,
+            },
           ]}
           rowActions={(item: OutsourcedItem) => (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${item.testName}`} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<MoreHorizontalRegular />}
+                  aria-label={`Actions for ${item.testName}`}
+                />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
                   {canSend && !item.sentOutAt && (item.status === 'Collected' || item.status === 'InLab') && (
                     <MenuItem
                       icon={<VehicleTruckProfileRegular />}
-                      onClick={() => setSendOut({ itemId: item.itemId, testName: item.testName, patientName: item.patientName, barcode: item.barcode, referralLabId: item.referralLabId })}
+                      onClick={() =>
+                        setSendOut({
+                          itemId: item.itemId,
+                          testName: item.testName,
+                          patientName: item.patientName,
+                          barcode: item.barcode,
+                          referralLabId: item.referralLabId,
+                        })
+                      }
                     >
                       Mark as sent
                     </MenuItem>
@@ -168,13 +223,22 @@ function OutsourcingPage() {
                     <MenuItem
                       icon={<DocumentArrowDownRegular />}
                       onClick={() =>
-                        setReceive({ itemId: item.itemId, testName: item.testName, patientId: item.patientId, patientName: item.patientName, referralLabName: item.referralLabName })
+                        setReceive({
+                          itemId: item.itemId,
+                          testName: item.testName,
+                          patientId: item.patientId,
+                          patientName: item.patientName,
+                          referralLabName: item.referralLabName,
+                        })
                       }
                     >
                       Receive report
                     </MenuItem>
                   )}
-                  <MenuItem icon={<DocumentBulletListRegular />} onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: item.labOrderId } })}>
+                  <MenuItem
+                    icon={<DocumentBulletListRegular />}
+                    onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: item.labOrderId } })}
+                  >
                     Open the order
                   </MenuItem>
                 </MenuList>

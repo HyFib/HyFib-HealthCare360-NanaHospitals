@@ -26,17 +26,24 @@ function ChartsPage() {
   const [term, setTerm] = useState(filters.search ?? '');
   const debounced = useDebouncedValue(term.trim(), 300);
   const records = useQuery(mrdQueries.records(filters));
-  const set = (patch: Partial<RecordListParams>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<RecordListParams>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
   return (
     <Page>
-      <PageHeader title="Patient charts" subtitle="Charts are completed within 7 days of discharge. Deficiencies are assigned to the treating doctor." />
+      <PageHeader
+        title="Patient charts"
+        subtitle="Charts are completed within 7 days of discharge. Deficiencies are assigned to the treating doctor."
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
@@ -44,7 +51,10 @@ function ChartsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="UHID, mobile or name" />
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as MedicalRecordStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as MedicalRecordStatus | undefined })}
+              >
                 <option value="">All</option>
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -53,8 +63,16 @@ function ChartsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={filters.overdue ?? false} onChange={(_, d) => set({ overdue: d.checked || undefined })} label="Overdue only" />
-            <Switch checked={filters.retentionDue ?? false} onChange={(_, d) => set({ retentionDue: d.checked || undefined })} label="Retention period over" />
+            <Switch
+              checked={filters.overdue ?? false}
+              onChange={(_, d) => set({ overdue: d.checked || undefined })}
+              label="Overdue only"
+            />
+            <Switch
+              checked={filters.retentionDue ?? false}
+              onChange={(_, d) => set({ retentionDue: d.checked || undefined })}
+              label="Retention period over"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -81,8 +99,18 @@ function ChartsPage() {
                 </span>
               ),
             },
-            { key: 'episode', header: 'Episode', priority: 'low', render: (r) => (r.admissionId ? 'In-patient' : 'Out-patient') },
-            { key: 'discharged', header: 'Discharged', priority: 'low', render: (r) => (r.dischargedAt ? formatDateTime(r.dischargedAt) : '—') },
+            {
+              key: 'episode',
+              header: 'Episode',
+              priority: 'low',
+              render: (r) => (r.admissionId ? 'In-patient' : 'Out-patient'),
+            },
+            {
+              key: 'discharged',
+              header: 'Discharged',
+              priority: 'low',
+              render: (r) => (r.dischargedAt ? formatDateTime(r.dischargedAt) : '—'),
+            },
             {
               key: 'due',
               header: 'Due',
@@ -101,9 +129,30 @@ function ChartsPage() {
                   '—'
                 ),
             },
-            { key: 'open', header: 'Open deficiencies', width: 140, align: 'end', render: (r) => (r.openDeficiencies > 0 ? <Text weight="semibold">{r.openDeficiencies}</Text> : '0') },
-            { key: 'retain', header: 'Keep until', priority: 'low', render: (r) => (r.status === 'Archived' || r.status === 'Complete' ? (r.retainUntil ? formatDateOnly(r.retainUntil) : 'Permanently') : '—') },
-            { key: 'status', header: 'Status', width: 110, render: (r) => <StatusBadge status={r.status} tone={r.status === 'Deficient' ? 'danger' : undefined} /> },
+            {
+              key: 'open',
+              header: 'Open deficiencies',
+              width: 140,
+              align: 'end',
+              render: (r) => (r.openDeficiencies > 0 ? <Text weight="semibold">{r.openDeficiencies}</Text> : '0'),
+            },
+            {
+              key: 'retain',
+              header: 'Keep until',
+              priority: 'low',
+              render: (r) =>
+                r.status === 'Archived' || r.status === 'Complete'
+                  ? r.retainUntil
+                    ? formatDateOnly(r.retainUntil)
+                    : 'Permanently'
+                  : '—',
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (r) => <StatusBadge status={r.status} tone={r.status === 'Deficient' ? 'danger' : undefined} />,
+            },
           ]}
           emptyTitle="No charts match"
           emptyDescription="Charts are opened automatically when a patient is admitted."

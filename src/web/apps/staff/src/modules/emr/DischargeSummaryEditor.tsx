@@ -13,7 +13,15 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowDownloadRegular, DismissRegular, DocumentArrowLeftRegular, EditRegular, PrintRegular, SaveRegular, SignatureRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownloadRegular,
+  DismissRegular,
+  DocumentArrowLeftRegular,
+  EditRegular,
+  PrintRegular,
+  SaveRegular,
+  SignatureRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useHotkey } from '@hc360/core';
 import { ConfirmDialog, DateField, Section, StatusBadge, useNotify } from '@hc360/ui';
@@ -24,7 +32,14 @@ import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { IcdCodePicker } from '@/modules/mrd/CodePicker';
-import { emrApi, emrKeys, type DischargeContent, type DischargeSummaryDto, type DischargeSummaryPrefill, type PatientAdmissionItem } from './api';
+import {
+  emrApi,
+  emrKeys,
+  type DischargeContent,
+  type DischargeSummaryDto,
+  type DischargeSummaryPrefill,
+  type PatientAdmissionItem,
+} from './api';
 import { AmendDialog } from './EncounterNote';
 import { printDischargeSummary } from './print';
 
@@ -71,11 +86,23 @@ type TextKey = Exclude<keyof DischargeValues, 'diagnosisCodes' | 'followUpDate'>
 const FIELDS: { key: TextKey; label: string; rows: number; max: number; hint?: string }[] = [
   { key: 'diagnoses', label: 'Final diagnosis', rows: 3, max: 4000 },
   { key: 'presentingComplaints', label: 'Presenting complaints', rows: 3, max: 4000 },
-  { key: 'courseInHospital', label: 'Course in hospital', rows: 8, max: 16000, hint: 'Summary of treatment and response, in plain words' },
+  {
+    key: 'courseInHospital',
+    label: 'Course in hospital',
+    rows: 8,
+    max: 16000,
+    hint: 'Summary of treatment and response, in plain words',
+  },
   { key: 'procedures', label: 'Procedures and surgeries', rows: 3, max: 4000 },
   { key: 'investigationsSummary', label: 'Key investigations', rows: 5, max: 8000 },
   { key: 'conditionAtDischarge', label: 'Condition at discharge', rows: 2, max: 2000 },
-  { key: 'medications', label: 'Medicines on discharge', rows: 5, max: 4000, hint: 'Name, dose, how often and for how long' },
+  {
+    key: 'medications',
+    label: 'Medicines on discharge',
+    rows: 5,
+    max: 4000,
+    hint: 'Name, dose, how often and for how long',
+  },
   { key: 'advice', label: 'Advice', rows: 4, max: 4000, hint: 'Diet, activity, wound care and warning signs' },
   { key: 'followUpInstructions', label: 'Follow-up instructions', rows: 2, max: 1000 },
 ];
@@ -129,13 +156,34 @@ function mergePrefill(values: DischargeValues, prefill: DischargeSummaryPrefill)
   };
 }
 
-function TextSection({ control, name, label, rows, max, hint, disabled }: { control: Control<DischargeValues>; name: TextKey; label: string; rows: number; max: number; hint?: string; disabled: boolean }) {
+function TextSection({
+  control,
+  name,
+  label,
+  rows,
+  max,
+  hint,
+  disabled,
+}: {
+  control: Control<DischargeValues>;
+  name: TextKey;
+  label: string;
+  rows: number;
+  max: number;
+  hint?: string;
+  disabled: boolean;
+}) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Textarea {...field} rows={rows} resize="vertical" maxLength={max} disabled={disabled} />
         </Field>
       )}
@@ -186,7 +234,10 @@ export function DischargeSummaryEditor({
 
   const conflict = (error: unknown) => {
     if (isApiError(error) && error.isConflict) {
-      notify.warning('This summary was changed in another window', 'Your text is kept here. Reload the page to see the other version before saving again.');
+      notify.warning(
+        'This summary was changed in another window',
+        'Your text is kept here. Reload the page to see the other version before saving again.',
+      );
       return true;
     }
     return false;
@@ -259,7 +310,10 @@ export function DischargeSummaryEditor({
         return null;
       }
       const values = form.getValues();
-      return { dto: await emrApi.amendDischargeSummary(current.id, reason, toContent(values), current.version), values };
+      return {
+        dto: await emrApi.amendDischargeSummary(current.id, reason, toContent(values), current.version),
+        values,
+      };
     },
     onSuccess: (result) => {
       setAskAmendReason(false);
@@ -284,13 +338,17 @@ export function DischargeSummaryEditor({
 
   useHotkey('mod+s', () => !locked && !signedOrAmended && !save.isPending && save.mutate(), { allowInInputs: true });
 
-  const restorable = draft.saved && JSON.stringify(toContent(draft.saved.value)) !== JSON.stringify(toContent(defaults));
+  const restorable =
+    draft.saved && JSON.stringify(toContent(draft.saved.value)) !== JSON.stringify(toContent(defaults));
 
   return (
     <div className={styles.stack}>
       {restorable && draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore them</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -302,9 +360,13 @@ export function DischargeSummaryEditor({
       {current && signedOrAmended && (
         <MessageBar intent={amending ? 'warning' : 'success'} layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>{amending ? 'Amending a signed summary' : current.status === 'Amended' ? 'Signed and amended' : 'Signed'}</MessageBarTitle>
+            <MessageBarTitle>
+              {amending ? 'Amending a signed summary' : current.status === 'Amended' ? 'Signed and amended' : 'Signed'}
+            </MessageBarTitle>
             Signed {formatDateTime(current.signedAt)}
-            {current.amendedAt ? ` · last amended ${formatDateTime(current.amendedAt)}: ${current.amendmentReason ?? ''}` : ''}
+            {current.amendedAt
+              ? ` · last amended ${formatDateTime(current.amendedAt)}: ${current.amendmentReason ?? ''}`
+              : ''}
             {current.amendmentCount > 1 ? ` (${current.amendmentCount} amendments)` : ''}.
             {amending ? ' Make the corrections, then record the amendment with a reason.' : ''}
           </MessageBarBody>
@@ -315,14 +377,25 @@ export function DischargeSummaryEditor({
         title="Diagnosis"
         actions={
           !locked && (
-            <Button icon={prefill.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />} disabled={prefill.isPending} onClick={() => prefill.mutate()}>
+            <Button
+              icon={prefill.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+              disabled={prefill.isPending}
+              onClick={() => prefill.mutate()}
+            >
               Fill from the record
             </Button>
           )
         }
       >
         <div className={styles.stack}>
-          <TextSection control={form.control} name="diagnoses" label="Final diagnosis" rows={3} max={4000} disabled={locked} />
+          <TextSection
+            control={form.control}
+            name="diagnoses"
+            label="Final diagnosis"
+            rows={3}
+            max={4000}
+            disabled={locked}
+          />
           <div>
             <Caption1 className={styles.muted}>ICD-10 codes</Caption1>
             <div className={styles.codes}>
@@ -336,7 +409,13 @@ export function DischargeSummaryEditor({
                       appearance="transparent"
                       icon={<DismissRegular />}
                       aria-label={`Remove ${code}`}
-                      onClick={() => form.setValue('diagnosisCodes', codes.filter((c) => c !== code), { shouldDirty: true })}
+                      onClick={() =>
+                        form.setValue(
+                          'diagnosisCodes',
+                          codes.filter((c) => c !== code),
+                          { shouldDirty: true },
+                        )
+                      }
                     />
                   )}
                 </Badge>
@@ -359,27 +438,55 @@ export function DischargeSummaryEditor({
       <div className={styles.grid}>
         {FIELDS.filter((f) => f.key !== 'diagnoses').map((f) => (
           <Section key={f.key}>
-            <TextSection control={form.control} name={f.key} label={f.label} rows={f.rows} max={f.max} hint={f.hint} disabled={locked} />
-            {f.key === 'followUpInstructions' && <DateField control={form.control} name="followUpDate" label="Follow-up date" disabled={locked} />}
+            <TextSection
+              control={form.control}
+              name={f.key}
+              label={f.label}
+              rows={f.rows}
+              max={f.max}
+              hint={f.hint}
+              disabled={locked}
+            />
+            {f.key === 'followUpInstructions' && (
+              <DateField control={form.control} name="followUpDate" label="Follow-up date" disabled={locked} />
+            )}
           </Section>
         ))}
       </div>
 
       <div className={styles.bar}>
-        {current && <StatusBadge status={current.status === 'Draft' ? 'Draft' : 'Signed'} label={current.status === 'Amended' ? 'Amended' : undefined} />}
+        {current && (
+          <StatusBadge
+            status={current.status === 'Draft' ? 'Draft' : 'Signed'}
+            label={current.status === 'Amended' ? 'Amended' : undefined}
+          />
+        )}
         {!current && <Caption1 className={styles.muted}>Not saved yet</Caption1>}
         {isDirty && <Caption1 className={styles.muted}>Unsaved changes (kept on this computer)</Caption1>}
         {current && (
-          <Button icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />} disabled={print.isPending || isDirty} onClick={() => print.mutate()}>
+          <Button
+            icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+            disabled={print.isPending || isDirty}
+            onClick={() => print.mutate()}
+          >
             Print (A4)
           </Button>
         )}
         {canWrite && !signedOrAmended && (
           <>
-            <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending || sign.isPending} onClick={() => save.mutate()}>
+            <Button
+              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              disabled={save.isPending || sign.isPending}
+              onClick={() => save.mutate()}
+            >
               Save draft (Ctrl+S)
             </Button>
-            <Button appearance="primary" icon={<SignatureRegular />} disabled={sign.isPending || save.isPending} onClick={() => setConfirmSign(true)}>
+            <Button
+              appearance="primary"
+              icon={<SignatureRegular />}
+              disabled={sign.isPending || save.isPending}
+              onClick={() => setConfirmSign(true)}
+            >
               Sign
             </Button>
           </>
@@ -399,7 +506,12 @@ export function DischargeSummaryEditor({
             >
               Cancel amendment
             </Button>
-            <Button appearance="primary" icon={<SignatureRegular />} disabled={!isDirty || amend.isPending} onClick={() => setAskAmendReason(true)}>
+            <Button
+              appearance="primary"
+              icon={<SignatureRegular />}
+              disabled={!isDirty || amend.isPending}
+              onClick={() => setAskAmendReason(true)}
+            >
               Record amendment
             </Button>
           </>
@@ -414,9 +526,15 @@ export function DischargeSummaryEditor({
         onConfirm={() => sign.mutate()}
         onCancel={() => setConfirmSign(false)}
       >
-        Signing makes this the official summary given to the patient and closes the medical-records deficiency. Later corrections are recorded as amendments with a reason.
+        Signing makes this the official summary given to the patient and closes the medical-records deficiency. Later
+        corrections are recorded as amendments with a reason.
       </ConfirmDialog>
-      <AmendDialog open={askAmendReason} busy={amend.isPending} onConfirm={(reason) => amend.mutate(reason)} onCancel={() => setAskAmendReason(false)} />
+      <AmendDialog
+        open={askAmendReason}
+        busy={amend.isPending}
+        onConfirm={(reason) => amend.mutate(reason)}
+        onCancel={() => setAskAmendReason(false)}
+      />
     </div>
   );
 }

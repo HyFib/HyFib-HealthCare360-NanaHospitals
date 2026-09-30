@@ -93,7 +93,15 @@ export const movementLabel: Record<StockMovementType, string> = {
   Opening: 'Opening balance',
 };
 
-export const INDENT_STATUSES = ['Pending', 'Approved', 'PartiallyIssued', 'Issued', 'Rejected', 'Cancelled', 'Closed'] as const;
+export const INDENT_STATUSES = [
+  'Pending',
+  'Approved',
+  'PartiallyIssued',
+  'Issued',
+  'Rejected',
+  'Cancelled',
+  'Closed',
+] as const;
 export type IndentStatus = (typeof INDENT_STATUSES)[number];
 export const INDENT_PRIORITIES = ['Routine', 'Urgent'] as const;
 export type IndentPriority = (typeof INDENT_PRIORITIES)[number];
@@ -101,7 +109,16 @@ export type IndentPriority = (typeof INDENT_PRIORITIES)[number];
 export const TRANSFER_STATUSES = ['InTransit', 'Received', 'Cancelled'] as const;
 export type TransferStatus = (typeof TRANSFER_STATUSES)[number];
 
-export const ADJUSTMENT_REASONS = ['Damage', 'Breakage', 'Expiry', 'Loss', 'Theft', 'CountVariance', 'DataCorrection', 'Other'] as const;
+export const ADJUSTMENT_REASONS = [
+  'Damage',
+  'Breakage',
+  'Expiry',
+  'Loss',
+  'Theft',
+  'CountVariance',
+  'DataCorrection',
+  'Other',
+] as const;
 export type AdjustmentReason = (typeof ADJUSTMENT_REASONS)[number];
 export const adjustmentReasonLabel: Record<AdjustmentReason, string> = {
   Damage: 'Damaged',
@@ -155,7 +172,10 @@ export function workflowTone(status: string): StatusTone | undefined {
 }
 
 /** enum → { value, label } options for selects. */
-export function labelledOptions<T extends string>(values: readonly T[], labels: Record<T, string>): { value: T; label: string }[] {
+export function labelledOptions<T extends string>(
+  values: readonly T[],
+  labels: Record<T, string>,
+): { value: T; label: string }[] {
   return values.map((value) => ({ value, label: labels[value] }));
 }
 
@@ -179,5 +199,11 @@ export function referenceModuleLabel(module: string | null | undefined): string 
   if (!module) {
     return '—';
   }
-  return REFERENCE_MODULES[module] ?? module.replace(/^[a-z]+\./, '').replace(/[._]/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  return (
+    REFERENCE_MODULES[module] ??
+    module
+      .replace(/^[a-z]+\./, '')
+      .replace(/[._]/g, ' ')
+      .replace(/^./, (c) => c.toUpperCase())
+  );
 }

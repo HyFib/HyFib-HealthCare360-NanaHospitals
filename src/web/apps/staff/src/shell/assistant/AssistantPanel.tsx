@@ -20,17 +20,44 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { DeleteRegular, DismissRegular, ErrorCircleRegular, MicRegular, PersonRegular, RecordStopRegular, SendRegular, SparkleRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  DeleteRegular,
+  DismissRegular,
+  ErrorCircleRegular,
+  MicRegular,
+  PersonRegular,
+  RecordStopRegular,
+  SendRegular,
+  SparkleRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { bridge, draftStorageKey, hasPermission, todayIso, useSession } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type Dispatch, type KeyboardEvent, type ReactNode, type SetStateAction } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type KeyboardEvent,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { patientQueries, type PatientListItem } from '@/modules/patients/api';
 import { aiQueries, sendAssistantCommand } from './api';
 import { assistantErrorMessage } from './errors';
-import { canOpenPath, contextRoute, EXAMPLE_COMMANDS, patientIdFromPath, planAssistantAction, planDictatedNote, type AssistantPlan, type PlanEnvironment } from './intents';
+import {
+  canOpenPath,
+  contextRoute,
+  EXAMPLE_COMMANDS,
+  patientIdFromPath,
+  planAssistantAction,
+  planDictatedNote,
+  type AssistantPlan,
+  type PlanEnvironment,
+} from './intents';
 import { emrNoteDraftName, keepNoteDraft } from './noteDraft';
 import { recorderSupported, voiceAvailability, type VoiceMode } from './recorder';
 import { useVoiceCapture, type VoiceCapture } from './useVoiceCapture';
@@ -63,7 +90,15 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
   headerActions: { display: 'flex', gap: '2px' },
   hints: { display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' },
-  hintList: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '2px' },
+  hintList: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: '2px',
+  },
   hint: { justifyContent: 'flex-start', textAlign: 'start', fontWeight: tokens.fontWeightRegular, minWidth: 0 },
   log: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '14px' },
   exchange: { display: 'flex', flexDirection: 'column', gap: '6px' },
@@ -94,7 +129,14 @@ const useStyles = makeStyles({
   aiBadge: { alignSelf: 'flex-start' },
   confirmButtons: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   matches: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '2px' },
-  match: { width: '100%', justifyContent: 'flex-start', textAlign: 'start', height: 'auto', padding: '6px 8px', fontWeight: tokens.fontWeightRegular },
+  match: {
+    width: '100%',
+    justifyContent: 'flex-start',
+    textAlign: 'start',
+    height: 'auto',
+    padding: '6px 8px',
+    fontWeight: tokens.fontWeightRegular,
+  },
   matchText: { display: 'flex', flexDirection: 'column', minWidth: 0 },
   footer: { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: '8px' },
   row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' },
@@ -153,7 +195,12 @@ export function AssistantPanel({
     openRef.current = open;
   }, [open]);
 
-  const voice = voiceAvailability({ isDesktop: bridge.isDesktop, recorderSupported: canRecord, status: status.data, statusFailed: status.isError });
+  const voice = voiceAvailability({
+    isDesktop: bridge.isDesktop,
+    recorderSupported: canRecord,
+    status: status.data,
+    statusFailed: status.isError,
+  });
   const capture = useVoiceCapture(voice.mode, dictation?.patientId ?? contextPatientId, (heard) => {
     setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard));
     inputRef.current?.focus();
@@ -176,7 +223,8 @@ export function AssistantPanel({
   });
 
   const add = (exchange: AssistantExchange) => onHistoryChange((all) => [...all, exchange].slice(-MAX_HISTORY));
-  const update = (id: string, patch: Partial<AssistantExchange>) => onHistoryChange((all) => all.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  const update = (id: string, patch: Partial<AssistantExchange>) =>
+    onHistoryChange((all) => all.map((item) => (item.id === id ? { ...item, ...patch } : item)));
 
   const close = () => {
     capture.cancel();
@@ -197,7 +245,10 @@ export function AssistantPanel({
   const findPatients = async (id: string, plan: Extract<AssistantPlan, { kind: 'search' }>) => {
     update(id, { searching: true });
     try {
-      const result = await queryClient.fetchQuery({ ...patientQueries.search({ search: plan.term, page: 1, pageSize: 6 }), staleTime: 10_000 });
+      const result = await queryClient.fetchQuery({
+        ...patientQueries.search({ search: plan.term, page: 1, pageSize: 6 }),
+        staleTime: 10_000,
+      });
       const [only] = result.items;
       if (plan.openIfSingleMatch && result.totalCount === 1 && only && openRef.current) {
         update(id, { searching: false, outcome: `Opening ${only.fullName}.` });
@@ -208,7 +259,10 @@ export function AssistantPanel({
         searching: false,
         matches: result.items,
         matchTotal: result.totalCount,
-        outcome: result.totalCount === 0 ? 'No patients match. Check the UHID or mobile number, or try part of the name.' : undefined,
+        outcome:
+          result.totalCount === 0
+            ? 'No patients match. Check the UHID or mobile number, or try part of the name.'
+            : undefined,
       });
     } catch (error) {
       update(id, { searching: false, tone: 'error', outcome: assistantErrorMessage(error) });
@@ -253,7 +307,11 @@ export function AssistantPanel({
       // The dictated text becomes a note for the patient it was started for; never for a different patient.
       const plan: AssistantPlan =
         dictation.patientId && dictation.patientId !== contextPatientId
-          ? { kind: 'message', tone: 'warning', message: 'The patient on screen has changed. Open that patient’s record again, or stop dictating.' }
+          ? {
+              kind: 'message',
+              tone: 'warning',
+              message: 'The patient on screen has changed. Open that patient’s record again, or stop dictating.',
+            }
           : planDictatedNote(said, dictation.patientId ?? contextPatientId, env);
       add({ id: crypto.randomUUID(), said, state: 'answered', reply: plan.message, tone: toneOf(plan), plan });
       if (plan.kind === 'confirm') {
@@ -268,7 +326,10 @@ export function AssistantPanel({
     add({ id, said, state: 'working' });
     setBusy(true);
     try {
-      const answer = await sendAssistantCommand({ text: said, context: { route: contextRoute(pathname), patientId: contextPatientId } });
+      const answer = await sendAssistantCommand({
+        text: said,
+        context: { route: contextRoute(pathname), patientId: contextPatientId },
+      });
       const plan = planAssistantAction(answer, env);
       update(id, { state: 'answered', reply: plan.message, tone: toneOf(plan), source: answer.source, plan });
       await carryOut(id, plan, voice.mode);
@@ -286,12 +347,24 @@ export function AssistantPanel({
       return;
     }
     if (plan.note) {
-      const kept = user ? keepNoteDraft(localStorageOrNull(), draftStorageKey(user.id, emrNoteDraftName(plan.note.patientId)), plan.note.draft) : false;
+      const kept = user
+        ? keepNoteDraft(
+            localStorageOrNull(),
+            draftStorageKey(user.id, emrNoteDraftName(plan.note.patientId)),
+            plan.note.draft,
+          )
+        : false;
       if (!kept) {
-        update(exchange.id, { outcome: 'The note could not be kept on this computer. Copy the text above, then open the patient’s notes.', tone: 'warning' });
+        update(exchange.id, {
+          outcome: 'The note could not be kept on this computer. Copy the text above, then open the patient’s notes.',
+          tone: 'warning',
+        });
         return;
       }
-      notify.info('Your note is ready to review', 'Choose Write note, then Restore it. Nothing is saved until you choose Save note.');
+      notify.info(
+        'Your note is ready to review',
+        'Choose Write note, then Restore it. Nothing is saved until you choose Save note.',
+      );
     }
     update(exchange.id, { outcome: 'Opened for you to review.' });
     go(plan.href);
@@ -317,14 +390,25 @@ export function AssistantPanel({
   };
 
   return (
-    <OverlayDrawer open={open} position="end" size="medium" onOpenChange={(_, data) => !data.open && close()} aria-label="Assistant">
+    <OverlayDrawer
+      open={open}
+      position="end"
+      size="medium"
+      onOpenChange={(_, data) => !data.open && close()}
+      aria-label="Assistant"
+    >
       <DrawerHeader>
         <DrawerHeaderTitle
           action={
             <div className={styles.headerActions}>
               {history.length > 0 && (
                 <Tooltip content="Clear this conversation" relationship="label">
-                  <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Clear this conversation" onClick={() => onHistoryChange([])} />
+                  <Button
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label="Clear this conversation"
+                    onClick={() => onHistoryChange([])}
+                  />
                 </Tooltip>
               )}
               <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close the assistant" onClick={close} />
@@ -333,8 +417,12 @@ export function AssistantPanel({
         >
           Assistant
         </DrawerHeaderTitle>
-        <Caption1 className={styles.muted}>Say or type what you need. The assistant opens screens and fills in details; you check and save.</Caption1>
-        {status.data && !status.data.enabled && <Caption1 className={styles.muted}>AI help is off, so only everyday commands are understood.</Caption1>}
+        <Caption1 className={styles.muted}>
+          Say or type what you need. The assistant opens screens and fills in details; you check and save.
+        </Caption1>
+        {status.data && !status.data.enabled && (
+          <Caption1 className={styles.muted}>AI help is off, so only everyday commands are understood.</Caption1>
+        )}
       </DrawerHeader>
 
       <DrawerBody>
@@ -344,18 +432,31 @@ export function AssistantPanel({
             <ul className={styles.hintList}>
               {EXAMPLE_COMMANDS.map((example) => (
                 <li key={example.label}>
-                  <Button appearance="transparent" size="small" className={styles.hint} onClick={() => pickExample(example.text)}>
+                  <Button
+                    appearance="transparent"
+                    size="small"
+                    className={styles.hint}
+                    onClick={() => pickExample(example.text)}
+                  >
                     “{example.label}”
                   </Button>
                 </li>
               ))}
             </ul>
-            <Caption1 className={styles.muted}>Ctrl+Space opens the assistant on any screen. Enter sends, Esc closes.</Caption1>
+            <Caption1 className={styles.muted}>
+              Ctrl+Space opens the assistant on any screen. Enter sends, Esc closes.
+            </Caption1>
           </section>
         ) : (
           <ol className={styles.log} aria-label="Conversation" aria-live="polite">
             {history.map((exchange) => (
-              <ExchangeItem key={exchange.id} exchange={exchange} onConfirm={confirm} onCancel={cancel} onOpenPatient={(id) => go(`/patients/${id}`)} />
+              <ExchangeItem
+                key={exchange.id}
+                exchange={exchange}
+                onConfirm={confirm}
+                onCancel={cancel}
+                onOpenPatient={(id) => go(`/patients/${id}`)}
+              />
             ))}
           </ol>
         )}
@@ -366,7 +467,10 @@ export function AssistantPanel({
         {dictation && (
           <MessageBar intent="info" layout="multiline">
             <MessageBarBody>
-              {dictation.patientId ? 'Dictating a clinical note for the patient on screen.' : 'Dictating a clinical note.'} Check the text, then choose Create note.
+              {dictation.patientId
+                ? 'Dictating a clinical note for the patient on screen.'
+                : 'Dictating a clinical note.'}{' '}
+              Check the text, then choose Create note.
             </MessageBarBody>
             <MessageBarActions>
               <Button size="small" onClick={() => setDictation(null)}>
@@ -375,7 +479,10 @@ export function AssistantPanel({
             </MessageBarActions>
           </MessageBar>
         )}
-        <Field label={dictation ? 'Note' : 'Command'} hint={dictation ? 'Enter starts a new line; Ctrl+Enter creates the note.' : undefined}>
+        <Field
+          label={dictation ? 'Note' : 'Command'}
+          hint={dictation ? 'Enter starts a new line; Ctrl+Enter creates the note.' : undefined}
+        >
           <Textarea
             ref={inputRef}
             value={text}
@@ -391,8 +498,15 @@ export function AssistantPanel({
         <div className={styles.row}>
           <VoiceLine capture={capture} mode={voice.mode} reason={voice.reason} />
           <div className={styles.buttons}>
-            {voice.mode && <MicButton capture={capture} mode={voice.mode} dictating={Boolean(dictation)} disabled={busy} />}
-            <Button appearance="primary" icon={busy ? <Spinner size="tiny" /> : <SendRegular />} disabled={!text.trim() || busy} onClick={() => void send()}>
+            {voice.mode && (
+              <MicButton capture={capture} mode={voice.mode} dictating={Boolean(dictation)} disabled={busy} />
+            )}
+            <Button
+              appearance="primary"
+              icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+              disabled={!text.trim() || busy}
+              onClick={() => void send()}
+            >
               {dictation ? 'Create note' : 'Send'}
             </Button>
           </div>
@@ -402,7 +516,17 @@ export function AssistantPanel({
   );
 }
 
-function MicButton({ capture, mode, dictating, disabled }: { capture: VoiceCapture; mode: VoiceMode; dictating: boolean; disabled: boolean }) {
+function MicButton({
+  capture,
+  mode,
+  dictating,
+  disabled,
+}: {
+  capture: VoiceCapture;
+  mode: VoiceMode;
+  dictating: boolean;
+  disabled: boolean;
+}) {
   if (capture.phase === 'listening' && mode === 'server') {
     return (
       <Button icon={<RecordStopRegular />} onClick={capture.stop} aria-label="Stop recording">
@@ -423,7 +547,15 @@ function MicButton({ capture, mode, dictating, disabled }: { capture: VoiceCaptu
   );
 }
 
-function VoiceLine({ capture, mode, reason }: { capture: VoiceCapture; mode: VoiceMode | null; reason: string | null }) {
+function VoiceLine({
+  capture,
+  mode,
+  reason,
+}: {
+  capture: VoiceCapture;
+  mode: VoiceMode | null;
+  reason: string | null;
+}) {
   const styles = useStyles();
   let content: ReactNode = null;
   if (capture.phase === 'starting') {
@@ -475,7 +607,13 @@ function ExchangeItem({
       {exchange.state === 'working' ? (
         <Spinner size="extra-tiny" label="Working on it…" labelPosition="after" />
       ) : (
-        <div className={mergeClasses(styles.reply, exchange.tone === 'warning' && styles.replyWarning, exchange.tone === 'error' && styles.replyError)}>
+        <div
+          className={mergeClasses(
+            styles.reply,
+            exchange.tone === 'warning' && styles.replyWarning,
+            exchange.tone === 'error' && styles.replyError,
+          )}
+        >
           {exchange.source === 'ai' && (
             <Badge appearance="tint" color="brand" size="small" icon={<SparkleRegular />} className={styles.aiBadge}>
               Understood by AI
@@ -505,11 +643,22 @@ function ExchangeItem({
               <ul className={styles.matches} aria-label="Matching patients">
                 {exchange.matches.map((patient) => (
                   <li key={patient.id}>
-                    <Button appearance="subtle" className={styles.match} icon={<PersonRegular />} onClick={() => onOpenPatient(patient.id)}>
+                    <Button
+                      appearance="subtle"
+                      className={styles.match}
+                      icon={<PersonRegular />}
+                      onClick={() => onOpenPatient(patient.id)}
+                    >
                       <span className={styles.matchText}>
                         <Text weight="semibold">{patient.fullName}</Text>
                         <Caption1 className={styles.muted}>
-                          {[patient.uhid, patient.age && `${patient.age} ${patient.gender.charAt(0)}`, patient.phoneMasked].filter(Boolean).join(' · ')}
+                          {[
+                            patient.uhid,
+                            patient.age && `${patient.age} ${patient.gender.charAt(0)}`,
+                            patient.phoneMasked,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
                         </Caption1>
                       </span>
                     </Button>
@@ -518,7 +667,8 @@ function ExchangeItem({
               </ul>
               {(exchange.matchTotal ?? 0) > exchange.matches.length && (
                 <Caption1 className={styles.muted}>
-                  Showing {exchange.matches.length} of {exchange.matchTotal}. Say more of the name, or the full mobile number.
+                  Showing {exchange.matches.length} of {exchange.matchTotal}. Say more of the name, or the full mobile
+                  number.
                 </Caption1>
               )}
             </>

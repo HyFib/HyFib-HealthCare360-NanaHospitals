@@ -166,9 +166,11 @@ export interface BookingListParams {
 
 export const checkupKeys = {
   all: ['health-checkups'] as const,
-  packages: (search: string, includeInactive: boolean) => ['health-checkups', 'packages', search, includeInactive] as const,
+  packages: (search: string, includeInactive: boolean) =>
+    ['health-checkups', 'packages', search, includeInactive] as const,
   package: (id: string) => ['health-checkups', 'package', id] as const,
-  eligibility: (packageId: string, patientId: string) => ['health-checkups', 'eligibility', packageId, patientId] as const,
+  eligibility: (packageId: string, patientId: string) =>
+    ['health-checkups', 'eligibility', packageId, patientId] as const,
   bookings: (params: BookingListParams) => ['health-checkups', 'bookings', params] as const,
   booking: (id: string) => ['health-checkups', 'booking', id] as const,
   batches: (search: string, page: number) => ['health-checkups', 'batches', search, page] as const,
@@ -179,7 +181,11 @@ export const checkupQueries = {
   packages: (search = '', includeInactive = false) =>
     queryOptions({
       queryKey: checkupKeys.packages(search, includeInactive),
-      queryFn: ({ signal }) => api.get<PackageDto[]>('/api/v1/health-checkups/packages', { query: { search: search || undefined, includeInactive: includeInactive || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PackageDto[]>('/api/v1/health-checkups/packages', {
+          query: { search: search || undefined, includeInactive: includeInactive || undefined },
+          signal,
+        }),
       staleTime: 60_000,
     }),
   package: (id: string) =>
@@ -190,13 +196,20 @@ export const checkupQueries = {
   eligibility: (packageId: string, patientId: string) =>
     queryOptions({
       queryKey: checkupKeys.eligibility(packageId, patientId),
-      queryFn: ({ signal }) => api.get<PackageEligibility>(`/api/v1/health-checkups/packages/${packageId}/eligibility`, { query: { patientId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PackageEligibility>(`/api/v1/health-checkups/packages/${packageId}/eligibility`, {
+          query: { patientId },
+          signal,
+        }),
     }),
   bookings: (params: BookingListParams) =>
     queryOptions({
       queryKey: checkupKeys.bookings(params),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<BookingDto>>('/api/v1/health-checkups/bookings', { query: { ...params, pageSize: 50 }, signal }),
+        api.get<PagedResult<BookingDto>>('/api/v1/health-checkups/bookings', {
+          query: { ...params, pageSize: 50 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -209,28 +222,39 @@ export const checkupQueries = {
     queryOptions({
       queryKey: checkupKeys.batches(search, page),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<CorporateBatchDto>>('/api/v1/health-checkups/corporate-batches', { query: { search: search || undefined, page, pageSize: 25 }, signal }),
+        api.get<PagedResult<CorporateBatchDto>>('/api/v1/health-checkups/corporate-batches', {
+          query: { search: search || undefined, page, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   batch: (id: string) =>
     queryOptions({
       queryKey: checkupKeys.batch(id),
-      queryFn: ({ signal }) => api.get<CorporateBatchDetail>(`/api/v1/health-checkups/corporate-batches/${id}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<CorporateBatchDetail>(`/api/v1/health-checkups/corporate-batches/${id}`, { signal }),
     }),
 };
 
 export const checkupApi = {
   savePackage: (id: string | null, request: SavePackageRequest) =>
-    id ? api.put<PackageDto>(`/api/v1/health-checkups/packages/${id}`, request) : api.post<PackageDto>('/api/v1/health-checkups/packages', request),
+    id
+      ? api.put<PackageDto>(`/api/v1/health-checkups/packages/${id}`, request)
+      : api.post<PackageDto>('/api/v1/health-checkups/packages', request),
   book: (request: BookCheckupRequest) => api.post<BookingDto>('/api/v1/health-checkups/bookings', request),
-  checkIn: (id: string, visitId: string | null) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/check-in`, { visitId }),
-  completeStop: (id: string, itemId: string, notes: string | null) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/complete`, { notes }),
-  skipStop: (id: string, itemId: string, reason: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/skip`, { reason }),
+  checkIn: (id: string, visitId: string | null) =>
+    api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/check-in`, { visitId }),
+  completeStop: (id: string, itemId: string, notes: string | null) =>
+    api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/complete`, { notes }),
+  skipStop: (id: string, itemId: string, reason: string) =>
+    api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/itinerary/${itemId}/skip`, { reason }),
   saveSummary: (id: string, summary: string, recommendations: string | null) =>
     api.put<BookingDto>(`/api/v1/health-checkups/bookings/${id}/summary`, { summary, recommendations }),
   complete: (id: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/complete`),
-  cancel: (id: string, reason: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/cancel`, { reason }),
+  cancel: (id: string, reason: string) =>
+    api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/cancel`, { reason }),
   noShow: (id: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/no-show`),
   report: (id: string) => api.get<CheckupReport>(`/api/v1/health-checkups/bookings/${id}/report`),
-  bookBatch: (request: CorporateBatchRequest) => api.post<CorporateBatchResult>('/api/v1/health-checkups/corporate-batches', request),
+  bookBatch: (request: CorporateBatchRequest) =>
+    api.post<CorporateBatchResult>('/api/v1/health-checkups/corporate-batches', request),
 };

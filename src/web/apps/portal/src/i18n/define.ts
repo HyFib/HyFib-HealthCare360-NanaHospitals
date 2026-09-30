@@ -37,7 +37,9 @@ export function interpolate(template: string, vars?: MessageVars): string {
   if (!vars) {
     return template;
   }
-  return template.replace(PLACEHOLDER, (match, name: string) => (Object.hasOwn(vars, name) ? String(vars[name]) : match));
+  return template.replace(PLACEHOLDER, (match, name: string) =>
+    Object.hasOwn(vars, name) ? String(vars[name]) : match,
+  );
 }
 
 /** Sorted placeholder names of a template (used by the dictionary tests). */

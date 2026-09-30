@@ -34,7 +34,16 @@ export interface WaitingRoomPanelProps {
 }
 
 /** Who is waiting to be let in (TEL-03), with one-click admit, and the join-link status when nobody is there yet. */
-export function WaitingRoomPanel({ waiting, session, canAdmit, admitting, onAdmit, canResend, resending, onResend }: WaitingRoomPanelProps) {
+export function WaitingRoomPanel({
+  waiting,
+  session,
+  canAdmit,
+  admitting,
+  onAdmit,
+  canResend,
+  resending,
+  onResend,
+}: WaitingRoomPanelProps) {
   const styles = useStyles();
   const now = useNow();
 
@@ -42,10 +51,15 @@ export function WaitingRoomPanel({ waiting, session, canAdmit, admitting, onAdmi
     return (
       <div className={styles.empty}>
         <Text weight="semibold">No one is waiting</Text>
-        <Caption1>Patients join from the link sent by SMS/WhatsApp or from the patient portal. A desktop notification tells you when someone arrives.</Caption1>
+        <Caption1>
+          Patients join from the link sent by SMS/WhatsApp or from the patient portal. A desktop notification tells you
+          when someone arrives.
+        </Caption1>
         {session && (
           <Caption1 className={styles.muted}>
-            {session.linkSentAt ? `Link sent ${session.linkSendCount} time${session.linkSendCount === 1 ? '' : 's'}, last at ${formatDateTime(session.linkSentAt)}.` : 'The link has not been sent yet.'}
+            {session.linkSentAt
+              ? `Link sent ${session.linkSendCount} time${session.linkSendCount === 1 ? '' : 's'}, last at ${formatDateTime(session.linkSentAt)}.`
+              : 'The link has not been sent yet.'}
             {session.joinTokenExpiresAt ? ` It works until ${formatTime(session.joinTokenExpiresAt)}.` : ''}
           </Caption1>
         )}
@@ -76,7 +90,12 @@ export function WaitingRoomPanel({ waiting, session, canAdmit, admitting, onAdmi
               </Caption1>
             </span>
             {canAdmit && (
-              <Button appearance="primary" icon={<PersonAvailableRegular />} disabled={admitting} onClick={() => onAdmit(person.participantId)}>
+              <Button
+                appearance="primary"
+                icon={<PersonAvailableRegular />}
+                disabled={admitting}
+                onClick={() => onAdmit(person.participantId)}
+              >
                 Admit
               </Button>
             )}
@@ -88,7 +107,9 @@ export function WaitingRoomPanel({ waiting, session, canAdmit, admitting, onAdmi
           Admit everyone
         </Button>
       )}
-      <Caption1 className={styles.muted}>Check it is the right patient before admitting. Guests from an SMS link are shown by first name only.</Caption1>
+      <Caption1 className={styles.muted}>
+        Check it is the right patient before admitting. Guests from an SMS link are shown by first name only.
+      </Caption1>
     </div>
   );
 }

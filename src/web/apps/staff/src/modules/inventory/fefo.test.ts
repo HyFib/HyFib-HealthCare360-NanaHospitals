@@ -1,8 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { allocateFefo, allocateFromBatch, batchProblem, batchProblemText, dispensingShelfLifeDays, fefoOrder, usableQuantity, type FefoBatch } from './fefo';
+import {
+  allocateFefo,
+  allocateFromBatch,
+  batchProblem,
+  batchProblemText,
+  dispensingShelfLifeDays,
+  fefoOrder,
+  usableQuantity,
+  type FefoBatch,
+} from './fefo';
 
 function batch(id: string, expiryDate: string | null, available: number, extra: Partial<FefoBatch> = {}): FefoBatch {
-  return { batchId: id, batchNumber: id.toUpperCase(), expiryDate, available, isExpired: false, isBlocked: false, daysToExpiry: expiryDate ? 200 : null, ...extra };
+  return {
+    batchId: id,
+    batchNumber: id.toUpperCase(),
+    expiryDate,
+    available,
+    isExpired: false,
+    isBlocked: false,
+    daysToExpiry: expiryDate ? 200 : null,
+    ...extra,
+  };
 }
 
 const batches: FefoBatch[] = [
@@ -44,7 +62,9 @@ describe('FEFO suggestion', () => {
   });
 
   it('uses the picked batch first', () => {
-    expect(allocateFefo(3, batches, { preferredBatchId: 'a' }).allocations).toEqual([{ batchId: 'a', batchNumber: 'A', expiryDate: '2027-03-31', quantity: 3 }]);
+    expect(allocateFefo(3, batches, { preferredBatchId: 'a' }).allocations).toEqual([
+      { batchId: 'a', batchNumber: 'A', expiryDate: '2027-03-31', quantity: 3 },
+    ]);
   });
 
   it('reports the shortfall when stock runs out', () => {
@@ -62,14 +82,18 @@ describe('FEFO suggestion', () => {
   });
 
   it('issues a chosen batch alone, capped at what it holds', () => {
-    expect(allocateFromBatch(8, batches[0]!).allocations).toEqual([{ batchId: 'a', batchNumber: 'A', expiryDate: '2027-03-31', quantity: 5 }]);
+    expect(allocateFromBatch(8, batches[0]!).allocations).toEqual([
+      { batchId: 'a', batchNumber: 'A', expiryDate: '2027-03-31', quantity: 5 },
+    ]);
     expect(allocateFromBatch(8, batches[0]!).shortfall).toBe(3);
     expect(allocateFromBatch(8, batches[3]!).allocations).toEqual([]);
   });
 
   it('explains unusable batches in plain words', () => {
     expect(batchProblemText('blocked', batches[3]!)).toBe('On hold: Recall notice 14/2026');
-    expect(batchProblemText('short-expiry', batches[1]!, 100)).toBe('Expires in 96 days, before the 100-day course ends');
+    expect(batchProblemText('short-expiry', batches[1]!, 100)).toBe(
+      'Expires in 96 days, before the 100-day course ends',
+    );
     expect(batchProblem(batches[2]!)).toBe('expired');
     expect(batchProblem(batches[4]!)).toBe('empty');
   });

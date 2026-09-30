@@ -39,7 +39,9 @@ export function periodProblem(from: string, to: string): string | null {
 
 /** The most frequent rows (episodes, then patients, then code), for the chart. */
 export function topRows<T extends MorbidityRowLike>(rows: readonly T[], count = 15): T[] {
-  return rows.toSorted((a, b) => b.episodes - a.episodes || b.patients - a.patients || a.key.localeCompare(b.key)).slice(0, count);
+  return rows
+    .toSorted((a, b) => b.episodes - a.episodes || b.patients - a.patients || a.key.localeCompare(b.key))
+    .slice(0, count);
 }
 
 /** Labels for a horizontal bar chart: "E11.9 Type 2 diabetes…" shortened so the axis stays readable. */
@@ -55,9 +57,37 @@ function csvCell(value: string | number | null): string {
 
 /** CSV for spreadsheets and the state health returns (UTF-8, header row, one line per group). */
 export function morbidityCsv(rows: readonly MorbidityRowLike[], groupLabel: string): string {
-  const header = [groupLabel, 'Title', 'Chapter', 'Episodes', 'Patients', 'Male', 'Female', 'Other or unknown', 'Age 0-14', 'Age 15-44', 'Age 45-64', 'Age 65+', 'Age unknown'];
+  const header = [
+    groupLabel,
+    'Title',
+    'Chapter',
+    'Episodes',
+    'Patients',
+    'Male',
+    'Female',
+    'Other or unknown',
+    'Age 0-14',
+    'Age 15-44',
+    'Age 45-64',
+    'Age 65+',
+    'Age unknown',
+  ];
   const lines = rows.map((r) =>
-    [r.key, r.title, r.chapter, r.episodes, r.patients, r.male, r.female, r.otherOrUnknownGender, r.age0To14, r.age15To44, r.age45To64, r.age65Plus, r.ageUnknown]
+    [
+      r.key,
+      r.title,
+      r.chapter,
+      r.episodes,
+      r.patients,
+      r.male,
+      r.female,
+      r.otherOrUnknownGender,
+      r.age0To14,
+      r.age15To44,
+      r.age45To64,
+      r.age65Plus,
+      r.ageUnknown,
+    ]
       .map(csvCell)
       .join(','),
   );

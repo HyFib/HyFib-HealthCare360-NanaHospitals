@@ -76,7 +76,10 @@ export const useSession = create<SessionState>((set) => ({
 }));
 
 /** True when the user holds the permission (the Super Administrator's "*" grants everything). */
-export function hasPermission(user: AuthUser | null | undefined, permission: string | readonly string[] | undefined): boolean {
+export function hasPermission(
+  user: AuthUser | null | undefined,
+  permission: string | readonly string[] | undefined,
+): boolean {
   if (!permission || permission.length === 0) {
     return true;
   }
@@ -86,7 +89,9 @@ export function hasPermission(user: AuthUser | null | undefined, permission: str
   if (user.permissions.includes('*')) {
     return true;
   }
-  return typeof permission === 'string' ? user.permissions.includes(permission) : permission.some((p) => user.permissions.includes(p));
+  return typeof permission === 'string'
+    ? user.permissions.includes(permission)
+    : permission.some((p) => user.permissions.includes(p));
 }
 
 let clientType: ClientType = 'web';
@@ -119,7 +124,11 @@ function accept(result: AuthResult): AuthResult {
 }
 
 export const auth = {
-  async login(userName: string, password: string, device?: { deviceId?: string; deviceSecret?: string; facilityId?: string }) {
+  async login(
+    userName: string,
+    password: string,
+    device?: { deviceId?: string; deviceSecret?: string; facilityId?: string },
+  ) {
     return accept(await authFetch('login', { userName, password, ...device }));
   },
 
@@ -128,7 +137,9 @@ export const auth = {
   },
 
   async requestOtp(phone: string) {
-    return authFetch('otp/request', { phone }) as Promise<AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }>;
+    return authFetch('otp/request', { phone }) as Promise<
+      AuthResult & { challengeId: string; expiresAt: string; maskedPhone: string }
+    >;
   },
 
   async verifyOtp(challengeId: string, code: string) {

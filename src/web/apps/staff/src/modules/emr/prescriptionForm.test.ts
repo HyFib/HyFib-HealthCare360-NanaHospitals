@@ -20,7 +20,15 @@ function line(partial: Partial<RxLineValues>): RxLineValues {
   return { ...emptyLine(), ...partial };
 }
 
-const paracetamol = line({ drugName: 'Dolo 650', genericName: 'Paracetamol', strength: '650 mg', dosageForm: 'Tablet', dose: '1 tab', frequency: 'TDS', durationDays: 3 });
+const paracetamol = line({
+  drugName: 'Dolo 650',
+  genericName: 'Paracetamol',
+  strength: '650 mg',
+  dosageForm: 'Tablet',
+  dose: '1 tab',
+  frequency: 'TDS',
+  durationDays: 3,
+});
 
 describe('quantities', () => {
   it('calculates solid-form quantities and respects an explicit override', () => {
@@ -39,7 +47,10 @@ describe('quantities', () => {
 
 describe('validation', () => {
   it('accepts a complete prescription', () => {
-    expect(rxFormSchema.safeParse({ lines: [paracetamol], advice: 'Plenty of fluids', notes: '', refillsAllowed: 0 }).success).toBe(true);
+    expect(
+      rxFormSchema.safeParse({ lines: [paracetamol], advice: 'Plenty of fluids', notes: '', refillsAllowed: 0 })
+        .success,
+    ).toBe(true);
   });
 
   it('asks for the custom frequency text', () => {
@@ -51,12 +62,30 @@ describe('validation', () => {
 
 describe('mapping', () => {
   it('builds the item request', () => {
-    const request = toItemRequest({ ...paracetamol, instructions: ' After food ', isControlledDrug: true, controlledSchedule: 'h1' });
-    expect(request).toMatchObject({ drugName: 'Dolo 650', genericName: 'Paracetamol', frequency: 'TDS', durationDays: 3, quantity: null, instructions: 'After food', controlledSchedule: 'H1' });
+    const request = toItemRequest({
+      ...paracetamol,
+      instructions: ' After food ',
+      isControlledDrug: true,
+      controlledSchedule: 'h1',
+    });
+    expect(request).toMatchObject({
+      drugName: 'Dolo 650',
+      genericName: 'Paracetamol',
+      frequency: 'TDS',
+      durationDays: 3,
+      quantity: null,
+      instructions: 'After food',
+      controlledSchedule: 'H1',
+    });
   });
 
   it('sends one day for STAT doses and drops blank rows', () => {
-    const body = toRequestBody({ lines: [{ ...paracetamol, frequency: 'STAT', durationDays: null }, emptyLine()], advice: '', notes: '', refillsAllowed: 1 });
+    const body = toRequestBody({
+      lines: [{ ...paracetamol, frequency: 'STAT', durationDays: null }, emptyLine()],
+      advice: '',
+      notes: '',
+      refillsAllowed: 1,
+    });
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.durationDays).toBe(1);
     expect(body.advice).toBeNull();
@@ -69,8 +98,22 @@ describe('mapping', () => {
   });
 
   it('applies favourite defaults and marks controlled medicines', () => {
-    const next = applyDefaults(emptyLine(), { drugName: 'Alprazolam 0.25', genericName: 'Alprazolam', dose: '1 tab', frequency: 'HS', durationDays: 7, isControlledDrug: true });
-    expect(next).toMatchObject({ drugName: 'Alprazolam 0.25', frequency: 'HS', durationDays: 7, isControlledDrug: true, controlledSchedule: 'H1', route: 'Oral' });
+    const next = applyDefaults(emptyLine(), {
+      drugName: 'Alprazolam 0.25',
+      genericName: 'Alprazolam',
+      dose: '1 tab',
+      frequency: 'HS',
+      durationDays: 7,
+      isControlledDrug: true,
+    });
+    expect(next).toMatchObject({
+      drugName: 'Alprazolam 0.25',
+      frequency: 'HS',
+      durationDays: 7,
+      isControlledDrug: true,
+      controlledSchedule: 'H1',
+      route: 'Oral',
+    });
   });
 
   it('replaces a trailing blank row when adding medicines', () => {
@@ -79,7 +122,9 @@ describe('mapping', () => {
   });
 
   it('spots the same generic twice', () => {
-    expect(duplicateGenerics([paracetamol, { ...paracetamol, drugName: 'Crocin 500' }, line({ genericName: 'Ibuprofen' })])).toEqual(['paracetamol']);
+    expect(
+      duplicateGenerics([paracetamol, { ...paracetamol, drugName: 'Crocin 500' }, line({ genericName: 'Ibuprofen' })]),
+    ).toEqual(['paracetamol']);
   });
 });
 
@@ -116,10 +161,23 @@ describe('drug master', () => {
   });
 
   it('keeps the schedule the server gives a controlled medicine', () => {
-    const alprazolam = drug({ name: 'Alprax 0.25', genericName: 'Alprazolam', schedule: 'H1', isControlled: true, controlledSchedule: 'X' });
-    expect(applyDefaults(emptyLine(), drugMasterDefaults(alprazolam))).toMatchObject({ drugItemId: 'd1', isControlledDrug: true, controlledSchedule: 'X' });
+    const alprazolam = drug({
+      name: 'Alprax 0.25',
+      genericName: 'Alprazolam',
+      schedule: 'H1',
+      isControlled: true,
+      controlledSchedule: 'X',
+    });
+    expect(applyDefaults(emptyLine(), drugMasterDefaults(alprazolam))).toMatchObject({
+      drugItemId: 'd1',
+      isControlledDrug: true,
+      controlledSchedule: 'X',
+    });
     // An H1 item the master does not mark as controlled stays an ordinary line: the server decides.
-    expect(applyDefaults(emptyLine(), drugMasterDefaults(drug({ schedule: 'H1' })))).toMatchObject({ isControlledDrug: false, controlledSchedule: '' });
+    expect(applyDefaults(emptyLine(), drugMasterDefaults(drug({ schedule: 'H1' })))).toMatchObject({
+      isControlledDrug: false,
+      controlledSchedule: '',
+    });
   });
 
   it('shows stock, or nothing when the facility has no pharmacy store', () => {

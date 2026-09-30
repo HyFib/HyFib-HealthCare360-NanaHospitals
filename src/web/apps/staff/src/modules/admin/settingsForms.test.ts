@@ -32,7 +32,11 @@ const storedSms = {
     provider: 'msg91',
     senderId: 'NANAHS',
     dltEntityId: '1201159123456789012',
-    msg91: { baseUrl: 'https://control.msg91.com', templateIds: { '1107160000000000001': '64f0c0ffee' }, shortUrl: true },
+    msg91: {
+      baseUrl: 'https://control.msg91.com',
+      templateIds: { '1107160000000000001': '64f0c0ffee' },
+      shortUrl: true,
+    },
     webhookAllowedIps: ['10.0.0.5', '10.0.0.6'],
     somethingNewer: { keep: 'me' },
   },
@@ -42,7 +46,9 @@ describe('form ids', () => {
   it('are flat and unique per setting, secret and replace switch', () => {
     expect(id('integrations.sms', 'msg91.baseUrl')).toBe('integrations_sms_msg91_baseUrl');
     expect(id('ai.enabled')).toBe('ai_enabled');
-    expect(secretFieldId({ key: 'integrations.sms.secret', prop: 'msg91AuthKey' })).toBe('secret__integrations_sms_secret__msg91AuthKey');
+    expect(secretFieldId({ key: 'integrations.sms.secret', prop: 'msg91AuthKey' })).toBe(
+      'secret__integrations_sms_secret__msg91AuthKey',
+    );
     expect(replaceFlagId('integrations.sms.secret')).toBe('replace__integrations_sms_secret');
     for (const spec of [...Object.values(INTEGRATION_SETTINGS), AI_SETTINGS]) {
       const ids = spec!.fields.map(fieldId);
@@ -76,7 +82,9 @@ describe('stored settings → form', () => {
   });
 
   it('matches a provider regardless of case', () => {
-    expect(toFormValues(sms, { 'integrations.sms': { provider: 'MSG91' } })[id('integrations.sms', 'provider')]).toBe('msg91');
+    expect(toFormValues(sms, { 'integrations.sms': { provider: 'MSG91' } })[id('integrations.sms', 'provider')]).toBe(
+      'msg91',
+    );
   });
 });
 
@@ -101,7 +109,11 @@ describe('form → settings to save', () => {
       enabled: true,
       provider: 'twilio',
       dltEntityId: '1201159123456789012',
-      msg91: { baseUrl: 'https://control.msg91.com', templateIds: { '1107160000000000001': '64f0c0ffee' }, shortUrl: true },
+      msg91: {
+        baseUrl: 'https://control.msg91.com',
+        templateIds: { '1107160000000000001': '64f0c0ffee' },
+        shortUrl: true,
+      },
       twilio: { accountSid: 'AC0123456789abcdef0123456789abcdef' },
       webhookAllowedIps: ['10.0.0.5', '10.0.0.6'],
       somethingNewer: { keep: 'me' },
@@ -109,8 +121,14 @@ describe('form → settings to save', () => {
   });
 
   it('writes an explicit change away from a default, but not the default itself', () => {
-    const off = { ...toFormValues(email, {}), [id('integrations.email', 'useStartTls')]: false, [id('integrations.email', 'port')]: 25 };
-    expect(buildSettingChanges(email, off, {})).toEqual([{ key: 'integrations.email', value: { useStartTls: false, port: 25 } }]);
+    const off = {
+      ...toFormValues(email, {}),
+      [id('integrations.email', 'useStartTls')]: false,
+      [id('integrations.email', 'port')]: 25,
+    };
+    expect(buildSettingChanges(email, off, {})).toEqual([
+      { key: 'integrations.email', value: { useStartTls: false, port: 25 } },
+    ]);
   });
 
   it('writes plain AI settings as plain values, and clears them with null', () => {
@@ -154,11 +172,19 @@ describe('checks', () => {
 
     const templates = sms.fields.find((field) => field.path === 'msg91.templateIds')!;
     expect(parseFieldValue(templates, 'a = b\n c=d ')).toEqual({ ok: true, value: { a: 'b', c: 'd' } });
-    expect(parseFieldValue(templates, 'just text')).toMatchObject({ ok: false, error: expect.stringContaining('name = value') });
+    expect(parseFieldValue(templates, 'just text')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('name = value'),
+    });
 
     const instruments = lab.fields.find((field) => field.key === 'integrations.lab.instruments')!;
-    expect(parseFieldValue(instruments, '{"code":"A"}')).toMatchObject({ ok: false, error: expect.stringContaining('square brackets') });
-    expect(parseFieldValue(instruments, '[{"code":"XN550","protocol":"Hl7v2","port":5100}]')).toMatchObject({ ok: true });
+    expect(parseFieldValue(instruments, '{"code":"A"}')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('square brackets'),
+    });
+    expect(parseFieldValue(instruments, '[{"code":"XN550","protocol":"Hl7v2","port":5100}]')).toMatchObject({
+      ok: true,
+    });
   });
 
   it('keeps the space in an API key prefix', () => {
@@ -170,10 +196,20 @@ describe('checks', () => {
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'IPD_2', name: 'IP counter' }])).toBeNull();
     expect(checkTerminals([{ id: 'OPD 1' }])).toContain('Terminal 1');
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'OPD-1' }])).toContain('Two terminals');
-    expect(checkInstruments([{ code: 'XN550', protocol: 'Hl7v2', port: 5100 }, { code: 'C311', protocol: 'astm', port: 5101 }])).toBeNull();
+    expect(
+      checkInstruments([
+        { code: 'XN550', protocol: 'Hl7v2', port: 5100 },
+        { code: 'C311', protocol: 'astm', port: 5101 },
+      ]),
+    ).toBeNull();
     expect(checkInstruments([{ code: 'XN550', port: 0 }])).toContain('port');
     expect(checkInstruments([{ code: 'XN550', port: 5100, protocol: 'FTP' }])).toContain('Hl7v2 or Astm');
-    expect(checkInstruments([{ code: 'A', port: 5100 }, { code: 'B', port: 5100 }])).toContain('port 5100');
+    expect(
+      checkInstruments([
+        { code: 'A', port: 5100 },
+        { code: 'B', port: 5100 },
+      ]),
+    ).toContain('port 5100');
   });
 
   it('checks only the fields on screen, and needs a provider when switched on', () => {
@@ -186,7 +222,11 @@ describe('checks', () => {
     expect(errors[id('integrations.sms', 'provider')]).toBe('Choose one.');
     // Twilio settings are hidden while no Twilio provider is chosen.
     expect(errors[id('integrations.sms', 'twilio.baseUrl')]).toBeUndefined();
-    expect(validateSettings(sms, { ...values, [id('integrations.sms', 'provider')]: 'twilio' })[id('integrations.sms', 'twilio.baseUrl')]).toBeDefined();
+    expect(
+      validateSettings(sms, { ...values, [id('integrations.sms', 'provider')]: 'twilio' })[
+        id('integrations.sms', 'twilio.baseUrl')
+      ],
+    ).toBeDefined();
   });
 });
 
@@ -200,13 +240,17 @@ describe('secrets', () => {
       [secretFieldId({ key, prop: 'msg91AuthKey' })]: '  auth-123  ',
       [secretFieldId({ key, prop: 'webhookToken' })]: 'token-9',
     };
-    expect(buildSecretChanges(sms, values)).toEqual([{ key, value: { msg91AuthKey: 'auth-123', webhookToken: 'token-9' } }]);
+    expect(buildSecretChanges(sms, values)).toEqual([
+      { key, value: { msg91AuthKey: 'auth-123', webhookToken: 'token-9' } },
+    ]);
     expect(buildSecretChanges(sms, { ...values, [replaceFlagId(key)]: false })).toEqual([]);
   });
 
   it('asks for at least one credential when replacing', () => {
     const values = { ...toFormValues(sms, {}), [replaceFlagId(key)]: true };
-    expect(validateSettings(sms, values)[secretFieldId({ key, prop: 'msg91AuthKey' })]).toContain('at least one credential');
+    expect(validateSettings(sms, values)[secretFieldId({ key, prop: 'msg91AuthKey' })]).toContain(
+      'at least one credential',
+    );
   });
 });
 
@@ -229,13 +273,17 @@ describe('scope', () => {
       secretStatus: { 'integrations.sms.secret': 'inherited' },
     });
     expect(scopedSettings(rows, email, 'global', FACILITY).stored).toEqual({});
-    expect(scopedSettings(rows, email, 'facility', FACILITY).secretStatus).toEqual({ 'integrations.email.secret': 'not-set' });
+    expect(scopedSettings(rows, email, 'facility', FACILITY).secretStatus).toEqual({
+      'integrations.email.secret': 'not-set',
+    });
   });
 
   it('opens on the facility only when it has its own settings', () => {
     expect(defaultScope(rows, sms, FACILITY)).toBe('global');
     expect(defaultScope(rows, email, FACILITY)).toBe('facility');
     expect(defaultScope(rows, email, null)).toBe('global');
-    expect(defaultScope([{ key: 'integrations.lab', facilityId: FACILITY, value: {}, hasValue: true }], lab, FACILITY)).toBe('global');
+    expect(
+      defaultScope([{ key: 'integrations.lab', facilityId: FACILITY, value: {}, hasValue: true }], lab, FACILITY),
+    ).toBe('global');
   });
 });

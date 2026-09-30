@@ -72,7 +72,10 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
       note: '',
     },
   });
-  const [l, i, rl, ri] = useWatch({ control: form.control, name: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'] });
+  const [l, i, rl, ri] = useWatch({
+    control: form.control,
+    name: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'],
+  });
 
   const submit = async (v: Values) => {
     setBusy(true);
@@ -103,13 +106,25 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
     }
   };
 
-  const level = (name: keyof Pick<Values, 'likelihood' | 'impact' | 'residualLikelihood' | 'residualImpact'>, label: string, labels: readonly string[], optional?: boolean) => (
+  const level = (
+    name: keyof Pick<Values, 'likelihood' | 'impact' | 'residualLikelihood' | 'residualImpact'>,
+    label: string,
+    labels: readonly string[],
+    optional?: boolean,
+  ) => (
     <Controller
       control={form.control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-          <Select value={field.value === null ? '' : String(field.value)} onChange={(_, d) => field.onChange(d.value === '' ? null : Number(d.value))}>
+        <Field
+          label={label}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
+          <Select
+            value={field.value === null ? '' : String(field.value)}
+            onChange={(_, d) => field.onChange(d.value === '' ? null : Number(d.value))}
+          >
             {optional && <option value="">Not assessed</option>}
             {labels.map((text, index) => (
               <option key={text} value={index + 1}>
@@ -145,11 +160,30 @@ function Body({ onClose, risk }: { onClose: () => void; risk: RiskDetail }) {
             Inherent <RatingBadge rating={riskRating(inherent)} score={inherent} /> · residual{' '}
             {residual !== null ? <RatingBadge rating={riskRating(residual)} score={residual} /> : 'not assessed'}
           </Text>
-          <TextAreaField control={form.control} name="existingControls" label="Controls now in place" rows={2} maxLength={2000} />
+          <TextAreaField
+            control={form.control}
+            name="existingControls"
+            label="Controls now in place"
+            rows={2}
+            maxLength={2000}
+          />
           <FormGrid columns={2} minColumnWidth={200}>
-            <DateField control={form.control} name="nextReviewDate" label="Next review" required min={addDays(todayIso(), 1)} />
+            <DateField
+              control={form.control}
+              name="nextReviewDate"
+              label="Next review"
+              required
+              min={addDays(todayIso(), 1)}
+            />
           </FormGrid>
-          <TextAreaField control={form.control} name="note" label="Review note" rows={2} maxLength={1000} placeholder="What changed since the last review" />
+          <TextAreaField
+            control={form.control}
+            name="note"
+            label="Review note"
+            rows={2}
+            maxLength={1000}
+            placeholder="What changed since the last review"
+          />
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={busy}>

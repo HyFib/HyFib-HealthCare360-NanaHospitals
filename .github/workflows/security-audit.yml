@@ -1,0 +1,52 @@
+name: Security audit
+
+# CI audits the packages on every change. This runs the same audits on main every week, so an advisory published while
+# nobody is changing the code still fails a run. GitHub emails whoever last changed the schedule when a run fails, and
+# the log names each vulnerable package and its advisory.
+on:
+  schedule:
+    - cron: "30 0 * * 1" # Mondays 06:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nuget:
+    name: NuGet packages
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          global-json-file: global.json
+
+      # A package with a known vulnerability, direct or transitive, fails restore (see Directory.Build.props).
+      - name: Restore and audit packages
+        run: dotnet restore HyFib.HealthCare360.slnx
+
+  npm:
+    name: npm packages
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          package_json_file: src/web/package.json
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # Reads the lockfile; nothing is installed.
+      - name: Audit packages
+        run: pnpm audit --audit-level low

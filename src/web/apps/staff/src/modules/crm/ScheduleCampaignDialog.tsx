@@ -31,8 +31,10 @@ function suggestedTime(now: string): string {
 
 /** Plain-words help for the reasons the server refuses to schedule. */
 const REFUSALS: Record<string, string> = {
-  'campaign.empty_audience': 'No patients who agreed to marketing messages match the audience. Widen the audience first.',
-  'campaign.no_portal_url': "The hospital's public portal address is not set, so the opt-out link cannot be built. Ask an administrator to set 'portal.baseUrl'.",
+  'campaign.empty_audience':
+    'No patients who agreed to marketing messages match the audience. Widen the audience first.',
+  'campaign.no_portal_url':
+    "The hospital's public portal address is not set, so the opt-out link cannot be built. Ask an administrator to set 'portal.baseUrl'.",
   'campaign.not_draft': 'Only a draft can be scheduled. Someone may have scheduled or cancelled it already.',
 };
 
@@ -40,7 +42,15 @@ const REFUSALS: Record<string, string> = {
  * Schedules a draft campaign. Messages go out only between 10:00 and 21:00 (TRAI); a time outside the window waits for
  * the next morning. The audience is counted again at send time, so late opt-outs are respected.
  */
-export function ScheduleCampaignDialog({ open, onClose, campaign }: { open: boolean; onClose: () => void; campaign: CampaignDetail }) {
+export function ScheduleCampaignDialog({
+  open,
+  onClose,
+  campaign,
+}: {
+  open: boolean;
+  onClose: () => void;
+  campaign: CampaignDetail;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
       <DialogSurface style={{ maxWidth: 520 }}>{open && <Body onClose={onClose} campaign={campaign} />}</DialogSurface>
@@ -74,7 +84,10 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
     setError(null);
     try {
       await crmApi.scheduleCampaign(campaign.id, at);
-      notify.success('Campaign scheduled', inSendingWindow(value) ? undefined : 'It will start at 10:00, when the sending window opens.');
+      notify.success(
+        'Campaign scheduled',
+        inSendingWindow(value) ? undefined : 'It will start at 10:00, when the sending window opens.',
+      );
       void queryClient.invalidateQueries({ queryKey: crmKeys.campaigns });
       onClose();
     } catch (err) {
@@ -102,7 +115,13 @@ function Body({ onClose, campaign }: { onClose: () => void; campaign: CampaignDe
         <DialogTitle>Schedule “{campaign.name}”</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Field label="Start sending at (hospital time)" required hint="Messages go out between 10:00 and 21:00 only.">
-            <Input type="datetime-local" value={value} min={now} onChange={(_, d) => setValue(d.value)} contentBefore={<CalendarClockRegular />} />
+            <Input
+              type="datetime-local"
+              value={value}
+              min={now}
+              onChange={(_, d) => setValue(d.value)}
+              contentBefore={<CalendarClockRegular />}
+            />
           </Field>
           {value && !inSendingWindow(value) && (
             <MessageBar intent="info">

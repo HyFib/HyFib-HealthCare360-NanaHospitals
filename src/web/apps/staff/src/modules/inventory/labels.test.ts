@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DRUG_SCHEDULES, labelledOptions, requiresPrescription, requiresRegister, scheduleLabel, workflowTone } from './labels';
+import {
+  DRUG_SCHEDULES,
+  labelledOptions,
+  requiresPrescription,
+  requiresRegister,
+  scheduleLabel,
+  workflowTone,
+} from './labels';
 
 describe('drug schedule rules (Item.NeedsPrescription / NeedsRegister)', () => {
   it('needs a prescription for H, H1, X and controlled items only', () => {

@@ -78,7 +78,12 @@ function AssetDashboardPage() {
         <ErrorState error={dashboard.error} onRetry={() => void dashboard.refetch()} />
       ) : (
         <div className={styles.kpis}>
-          <KpiCard label="Assets" value={n(d?.totalAssets)} icon={<GaugeRegular />} onClick={() => void navigate({ to: '/assets/register' })} />
+          <KpiCard
+            label="Assets"
+            value={n(d?.totalAssets)}
+            icon={<GaugeRegular />}
+            onClick={() => void navigate({ to: '/assets/register' })}
+          />
           <KpiCard
             label="Open breakdowns"
             value={n(d?.openTickets)}
@@ -86,18 +91,53 @@ function AssetDashboardPage() {
             hint={d && d.criticalOpenTickets > 0 ? `${d.criticalOpenTickets} critical` : undefined}
             onClick={() => void navigate({ to: '/assets/tickets' })}
           />
-          <KpiCard label="PM overdue" value={n(d?.pmOverdue)} icon={<CalendarErrorRegular />} hint={d ? `${d.pmDueThisWeek} due this week` : undefined} onClick={() => void navigate({ to: '/assets/maintenance' })} />
-          <KpiCard label="Calibration due" value={n(d?.calibrationDue)} icon={<ShieldCheckmarkRegular />} onClick={() => void navigate({ to: '/assets/maintenance' })} />
-          <KpiCard label="Warranties ending" value={n(d?.warrantyExpiring)} icon={<CalendarClockRegular />} hint="In the next 30 days" />
-          <KpiCard label="Contracts ending" value={n(d?.contractsExpiring)} icon={<HandshakeRegular />} hint="AMC / CMC, next 30 days" />
-          <KpiCard label="Downtime this month" value={d ? `${Math.round(d.downtimeHoursThisMonth).toLocaleString('en-IN')} h` : '…'} icon={<ClockRegular />} />
-          <KpiCard label="Book value" value={d ? formatInr(d.bookValue, { whole: true }) : '…'} icon={<MoneyRegular />} />
+          <KpiCard
+            label="PM overdue"
+            value={n(d?.pmOverdue)}
+            icon={<CalendarErrorRegular />}
+            hint={d ? `${d.pmDueThisWeek} due this week` : undefined}
+            onClick={() => void navigate({ to: '/assets/maintenance' })}
+          />
+          <KpiCard
+            label="Calibration due"
+            value={n(d?.calibrationDue)}
+            icon={<ShieldCheckmarkRegular />}
+            onClick={() => void navigate({ to: '/assets/maintenance' })}
+          />
+          <KpiCard
+            label="Warranties ending"
+            value={n(d?.warrantyExpiring)}
+            icon={<CalendarClockRegular />}
+            hint="In the next 30 days"
+          />
+          <KpiCard
+            label="Contracts ending"
+            value={n(d?.contractsExpiring)}
+            icon={<HandshakeRegular />}
+            hint="AMC / CMC, next 30 days"
+          />
+          <KpiCard
+            label="Downtime this month"
+            value={d ? `${Math.round(d.downtimeHoursThisMonth).toLocaleString('en-IN')} h` : '…'}
+            icon={<ClockRegular />}
+          />
+          <KpiCard
+            label="Book value"
+            value={d ? formatInr(d.bookValue, { whole: true }) : '…'}
+            icon={<MoneyRegular />}
+          />
         </div>
       )}
 
       <div className={styles.grid}>
-        <Section title="Fleet status">{d ? <StatusChart dashboard={d} /> : <Text className={styles.muted}>Loading…</Text>}</Section>
-        <Section title="Falling due in 30 days" description="Preventive maintenance, calibration, warranties and AMC/CMC contracts" flush>
+        <Section title="Fleet status">
+          {d ? <StatusChart dashboard={d} /> : <Text className={styles.muted}>Loading…</Text>}
+        </Section>
+        <Section
+          title="Falling due in 30 days"
+          description="Preventive maintenance, calibration, warranties and AMC/CMC contracts"
+          flush
+        >
           <DataTable
             ariaLabel="Falling due"
             rows={due.data?.slice(0, 12)}
@@ -113,7 +153,8 @@ function AssetDashboardPage() {
                 header: 'Equipment',
                 render: (i) => (
                   <span>
-                    <Text weight="semibold">{i.assetName}</Text> <Caption1 className={styles.muted}>{i.assetTag}</Caption1>
+                    <Text weight="semibold">{i.assetName}</Text>{' '}
+                    <Caption1 className={styles.muted}>{i.assetTag}</Caption1>
                   </span>
                 ),
               },
@@ -167,7 +208,8 @@ function AssetDashboardPage() {
               header: 'Equipment',
               render: (t) => (
                 <span>
-                  <Text weight="semibold">{t.assetName}</Text> <Caption1 className={styles.muted}>{t.assetTag}</Caption1>
+                  <Text weight="semibold">{t.assetName}</Text>{' '}
+                  <Caption1 className={styles.muted}>{t.assetTag}</Caption1>
                 </span>
               ),
             },
@@ -181,8 +223,19 @@ function AssetDashboardPage() {
         />
       </Section>
 
-      {reporting && <BreakdownDialog onClose={() => setReporting(false)} onReported={(id) => void navigate({ to: '/assets/tickets', search: { id } })} />}
-      {adding && <AssetDrawer asset={null} onClose={() => setAdding(false)} onCreated={(id) => void navigate({ to: '/assets/$assetId', params: { assetId: id } })} />}
+      {reporting && (
+        <BreakdownDialog
+          onClose={() => setReporting(false)}
+          onReported={(id) => void navigate({ to: '/assets/tickets', search: { id } })}
+        />
+      )}
+      {adding && (
+        <AssetDrawer
+          asset={null}
+          onClose={() => setAdding(false)}
+          onCreated={(id) => void navigate({ to: '/assets/$assetId', params: { assetId: id } })}
+        />
+      )}
     </Page>
   );
 }

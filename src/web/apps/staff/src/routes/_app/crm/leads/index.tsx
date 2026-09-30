@@ -22,7 +22,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowMoveRegular, BoardRegular, ClockAlarmRegular, PersonAddRegular, TableRegular, TargetArrowRegular } from '@fluentui/react-icons';
+import {
+  ArrowMoveRegular,
+  BoardRegular,
+  ClockAlarmRegular,
+  PersonAddRegular,
+  TableRegular,
+  TargetArrowRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, useDebouncedValue } from '@hc360/core';
 import { DataTable, ErrorState, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +37,15 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type DragEvent } from 'react';
 import { useDepartments } from '@/lib/lookups';
 import { crmApi, crmKeys, crmQueries, type LeadListItem } from '@/modules/crm/api';
-import { CRM_PERMISSIONS as C, LEAD_SOURCES, LEAD_STATUSES, leadSourceLabel, leadStatusLabel, type LeadSource, type LeadStatus } from '@/modules/crm/labels';
+import {
+  CRM_PERMISSIONS as C,
+  LEAD_SOURCES,
+  LEAD_STATUSES,
+  leadSourceLabel,
+  leadStatusLabel,
+  type LeadSource,
+  type LeadStatus,
+} from '@/modules/crm/labels';
 import { LeadDrawer } from '@/modules/crm/LeadDrawer';
 import { LEAD_BOARD_COLUMNS, leadMoves, leadTone } from '@/modules/crm/rules';
 import { FilterPad } from '@/modules/hr/shared/layout';
@@ -71,7 +86,13 @@ export const Route = createFileRoute('/_app/crm/leads/')({
 const BOARD_LIMIT = 200;
 
 const useStyles = makeStyles({
-  board: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))', gap: '12px', overflowX: 'auto', paddingBottom: '8px' },
+  board: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(240px, 1fr))',
+    gap: '12px',
+    overflowX: 'auto',
+    paddingBottom: '8px',
+  },
   column: {
     display: 'flex',
     flexDirection: 'column',
@@ -84,7 +105,14 @@ const useStyles = makeStyles({
   },
   dropTarget: { border: `2px dashed ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
   columnHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px 4px' },
-  cards: { display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '68vh', overflowY: 'auto', paddingRight: '2px' },
+  cards: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    maxHeight: '68vh',
+    overflowY: 'auto',
+    paddingRight: '2px',
+  },
   card: { cursor: 'grab', padding: '10px 12px' },
   cardTop: { display: 'flex', justifyContent: 'space-between', gap: '6px', alignItems: 'flex-start' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -105,11 +133,15 @@ function LeadsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<LeadsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<LeadsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   const move = async (lead: LeadListItem, to: LeadStatus, lostReason: string | null = null) => {
     setBusy(true);
@@ -141,7 +173,12 @@ function LeadsPage() {
           </Button>
         }
       />
-      <TabList selectedValue={board ? 'board' : 'list'} onTabSelect={(_, d) => set({ view: d.value === 'list' ? 'list' : undefined, status: undefined, all: undefined })}>
+      <TabList
+        selectedValue={board ? 'board' : 'list'}
+        onTabSelect={(_, d) =>
+          set({ view: d.value === 'list' ? 'list' : undefined, status: undefined, all: undefined })
+        }
+      >
         <Tab value="board" icon={<BoardRegular />}>
           Pipeline
         </Tab>
@@ -153,14 +190,24 @@ function LeadsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 220px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, lead number or last 4+ digits of the mobile" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name, lead number or last 4+ digits of the mobile"
+              />
             </Field>
             {!board && (
               <Field label="Stage">
                 <Select
                   value={search.status ?? (search.all ? 'all' : '')}
                   onChange={(_, d) =>
-                    set(d.value === '' ? { status: undefined, all: undefined } : d.value === 'all' ? { status: undefined, all: true } : { status: d.value as LeadStatus, all: undefined })
+                    set(
+                      d.value === ''
+                        ? { status: undefined, all: undefined }
+                        : d.value === 'all'
+                          ? { status: undefined, all: true }
+                          : { status: d.value as LeadStatus, all: undefined },
+                    )
                   }
                 >
                   <option value="">All open</option>
@@ -174,7 +221,10 @@ function LeadsPage() {
               </Field>
             )}
             <Field label="Source">
-              <Select value={search.source ?? ''} onChange={(_, d) => set({ source: (d.value || undefined) as LeadSource | undefined })}>
+              <Select
+                value={search.source ?? ''}
+                onChange={(_, d) => set({ source: (d.value || undefined) as LeadSource | undefined })}
+              >
                 <option value="">All</option>
                 {LEAD_SOURCES.map((s) => (
                   <option key={s} value={s}>
@@ -183,7 +233,12 @@ function LeadsPage() {
                 ))}
               </Select>
             </Field>
-            <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.mine)} onChange={(_, d) => set({ mine: d.checked ? true : undefined })} label="Mine" />
+            <Checkbox
+              style={{ alignSelf: 'flex-end' }}
+              checked={Boolean(search.mine)}
+              onChange={(_, d) => set({ mine: d.checked ? true : undefined })}
+              label="Mine"
+            />
             <Checkbox
               style={{ alignSelf: 'flex-end' }}
               checked={Boolean(search.dueOnly)}
@@ -213,13 +268,29 @@ function LeadsPage() {
   );
 }
 
-function Board({ search, busy, onMove }: { search: LeadsSearch; busy: boolean; onMove: (lead: LeadListItem, to: LeadStatus) => void }) {
+function Board({
+  search,
+  busy,
+  onMove,
+}: {
+  search: LeadsSearch;
+  busy: boolean;
+  onMove: (lead: LeadListItem, to: LeadStatus) => void;
+}) {
   const styles = useStyles();
   const navigate = useNavigate();
   const departments = useDepartments('Clinical');
   const [dragging, setDragging] = useState<LeadListItem | null>(null);
   const [over, setOver] = useState<LeadStatus | null>(null);
-  const leads = useQuery(crmQueries.leads({ source: search.source, mine: search.mine, dueOnly: search.dueOnly, search: search.search, pageSize: BOARD_LIMIT }));
+  const leads = useQuery(
+    crmQueries.leads({
+      source: search.source,
+      mine: search.mine,
+      dueOnly: search.dueOnly,
+      search: search.search,
+      pageSize: BOARD_LIMIT,
+    }),
+  );
 
   if (leads.error) {
     return <ErrorState error={leads.error} onRetry={() => void leads.refetch()} />;
@@ -244,7 +315,8 @@ function Board({ search, busy, onMove }: { search: LeadsSearch; busy: boolean; o
       {leads.data.totalCount > items.length && (
         <MessageBar intent="info" style={{ marginBottom: 12 }}>
           <MessageBarBody>
-            Showing the first {items.length} of {leads.data.totalCount} open leads. Use the filters or the list to see the rest.
+            Showing the first {items.length} of {leads.data.totalCount} open leads. Use the filters or the list to see
+            the rest.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -323,7 +395,9 @@ function Board({ search, busy, onMove }: { search: LeadsSearch; busy: boolean; o
                     </div>
                     {(lead.interestPackage || lead.interestDepartmentId) && (
                       <Caption1 block>
-                        {lead.interestPackage ?? departmentName.get(lead.interestDepartmentId ?? '') ?? 'Department enquiry'}
+                        {lead.interestPackage ??
+                          departmentName.get(lead.interestDepartmentId ?? '') ??
+                          'Department enquiry'}
                       </Caption1>
                     )}
                     <div className={styles.meta}>
@@ -349,7 +423,9 @@ function Board({ search, busy, onMove }: { search: LeadsSearch; busy: boolean; o
           );
         })}
       </div>
-      <Caption1 className={styles.muted}>Drag a card to another column, or use its move button. Converted and lost leads are in the list.</Caption1>
+      <Caption1 className={styles.muted}>
+        Drag a card to another column, or use its move button. Converted and lost leads are in the list.
+      </Caption1>
     </div>
   );
 }
@@ -398,22 +474,35 @@ function List({ search }: { search: LeadsSearch }) {
           key: 'interest',
           header: 'Interested in',
           priority: 'low',
-          render: (l) => l.interestPackage ?? (l.interestDepartmentId ? (departmentName.get(l.interestDepartmentId) ?? '—') : '—'),
+          render: (l) =>
+            l.interestPackage ?? (l.interestDepartmentId ? (departmentName.get(l.interestDepartmentId) ?? '—') : '—'),
         },
-        { key: 'status', header: 'Stage', render: (l) => <StatusBadge status={l.status} tone={leadTone(l.status)} label={leadStatusLabel[l.status]} /> },
+        {
+          key: 'status',
+          header: 'Stage',
+          render: (l) => <StatusBadge status={l.status} tone={leadTone(l.status)} label={leadStatusLabel[l.status]} />,
+        },
         {
           key: 'next',
           header: 'Next call',
           render: (l) =>
             l.nextFollowUpAt ? (
-              <Text style={{ color: l.isFollowUpDue ? tokens.colorPaletteDarkOrangeForeground1 : undefined }} weight={l.isFollowUpDue ? 'semibold' : 'regular'}>
+              <Text
+                style={{ color: l.isFollowUpDue ? tokens.colorPaletteDarkOrangeForeground1 : undefined }}
+                weight={l.isFollowUpDue ? 'semibold' : 'regular'}
+              >
                 {formatDateTime(l.nextFollowUpAt)}
               </Text>
             ) : (
               '—'
             ),
         },
-        { key: 'owner', header: 'Owner', priority: 'low', render: (l) => (l.ownerUserId ? <UserName id={l.ownerUserId} /> : 'Not assigned') },
+        {
+          key: 'owner',
+          header: 'Owner',
+          priority: 'low',
+          render: (l) => (l.ownerUserId ? <UserName id={l.ownerUserId} /> : 'Not assigned'),
+        },
         { key: 'created', header: 'Added', priority: 'low', render: (l) => formatRelative(l.createdAt) },
       ]}
       emptyTitle="No leads match"

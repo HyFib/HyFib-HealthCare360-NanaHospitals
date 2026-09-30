@@ -76,8 +76,16 @@ function EditForm({ patient }: { patient: PatientDetail }) {
       await navigate({ to: '/patients/$patientId', params: { patientId: patient.id } });
     },
     onError: (error) => {
-      if (isApiError(error) && error.isConflict && error.code !== 'patient.abha_in_use' && error.code !== 'patient.aadhaar_in_use') {
-        notify.warning('Someone else updated this record', 'The latest details have been loaded. Please make your change again.');
+      if (
+        isApiError(error) &&
+        error.isConflict &&
+        error.code !== 'patient.abha_in_use' &&
+        error.code !== 'patient.aadhaar_in_use'
+      ) {
+        notify.warning(
+          'Someone else updated this record',
+          'The latest details have been loaded. Please make your change again.',
+        );
         void queryClient.invalidateQueries({ queryKey: patientKeys.detail(patient.id) });
         return;
       }
@@ -94,7 +102,10 @@ function EditForm({ patient }: { patient: PatientDetail }) {
         subtitle={`UHID ${patient.uhid}`}
         breadcrumbs={[
           { label: 'Patients', onClick: () => void navigate({ to: '/patients' }) },
-          { label: patient.fullName, onClick: () => void navigate({ to: '/patients/$patientId', params: { patientId: patient.id } }) },
+          {
+            label: patient.fullName,
+            onClick: () => void navigate({ to: '/patients/$patientId', params: { patientId: patient.id } }),
+          },
           { label: 'Edit' },
         ]}
       />
@@ -106,7 +117,10 @@ function EditForm({ patient }: { patient: PatientDetail }) {
         onFormReady={setForm}
         identifierHints={{ abha: patient.abhaNumberMasked, aadhaarLast4: patient.aadhaarLast4 }}
         secondaryActions={
-          <Button appearance="subtle" onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: patient.id } })}>
+          <Button
+            appearance="subtle"
+            onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: patient.id } })}
+          >
             Cancel
           </Button>
         }
@@ -114,10 +128,18 @@ function EditForm({ patient }: { patient: PatientDetail }) {
           <Section title="Record status">
             <FormGrid columns={3}>
               {patient.abhaNumberMasked && (
-                <Switch checked={removeAbha} onChange={(_, d) => setRemoveAbha(d.checked)} label={`Remove ABHA ${patient.abhaNumberMasked}`} />
+                <Switch
+                  checked={removeAbha}
+                  onChange={(_, d) => setRemoveAbha(d.checked)}
+                  label={`Remove ABHA ${patient.abhaNumberMasked}`}
+                />
               )}
               {patient.aadhaarLast4 && (
-                <Switch checked={removeAadhaar} onChange={(_, d) => setRemoveAadhaar(d.checked)} label={`Remove Aadhaar ending ${patient.aadhaarLast4}`} />
+                <Switch
+                  checked={removeAadhaar}
+                  onChange={(_, d) => setRemoveAadhaar(d.checked)}
+                  label={`Remove Aadhaar ending ${patient.aadhaarLast4}`}
+                />
               )}
               <Switch checked={isActive} onChange={(_, d) => setIsActive(d.checked)} label="Record is active" />
               <Switch checked={isDeceased} onChange={(_, d) => setIsDeceased(d.checked)} label="Patient has died" />

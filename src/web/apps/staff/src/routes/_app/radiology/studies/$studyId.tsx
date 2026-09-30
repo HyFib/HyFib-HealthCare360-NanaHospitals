@@ -68,7 +68,11 @@ function ImagingStudyPage() {
   if (study.error || !study.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={study.error} onRetry={() => void study.refetch()} title={isApiError(study.error) && study.error.status === 404 ? 'Study not found' : undefined} />
+        <ErrorState
+          error={study.error}
+          onRetry={() => void study.refetch()}
+          title={isApiError(study.error) && study.error.status === 404 ? 'Study not found' : undefined}
+        />
       </Page>
     );
   }
@@ -136,7 +140,10 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
       <PageHeader
         title={study.studyName}
         subtitle={`${study.accessionNumber} · ${modalityLabel[study.modality]}${study.bodyPart ? ` · ${study.bodyPart}` : ''}`}
-        breadcrumbs={[{ label: 'Imaging worklist', onClick: () => void navigate({ to: '/radiology' }) }, { label: study.accessionNumber }]}
+        breadcrumbs={[
+          { label: 'Imaging worklist', onClick: () => void navigate({ to: '/radiology' }) },
+          { label: study.accessionNumber },
+        ]}
       />
 
       {study.status === 'Cancelled' && (
@@ -176,15 +183,25 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
           <Fact label="Room and station">{[study.room, study.stationAeTitle].filter(Boolean).join(' · ')}</Fact>
           <Fact label="Technologist">{study.technician}</Fact>
           <Fact label="Contrast">
-            {study.contrastUsed ? `${study.contrastAgent ?? 'Yes'}${study.contrastVolumeMl ? `, ${study.contrastVolumeMl} mL` : ''}` : study.acquiredAt ? 'None' : null}
+            {study.contrastUsed
+              ? `${study.contrastAgent ?? 'Yes'}${study.contrastVolumeMl ? `, ${study.contrastVolumeMl} mL` : ''}`
+              : study.acquiredAt
+                ? 'None'
+                : null}
           </Fact>
           <Fact label="Radiation dose">{study.doseNote}</Fact>
           <Fact label="Technologist notes">{study.technicianNotes}</Fact>
           <Fact label="Images in PACS">
-            {study.pacsLinkedAt ? `${study.seriesCount ?? '?'} series, ${study.instanceCount ?? '?'} images (linked ${formatDateTime(study.pacsLinkedAt)})` : 'Not linked yet'}
+            {study.pacsLinkedAt
+              ? `${study.seriesCount ?? '?'} series, ${study.instanceCount ?? '?'} images (linked ${formatDateTime(study.pacsLinkedAt)})`
+              : 'Not linked yet'}
           </Fact>
           <Fact label="Repeats">
-            {study.repeats.length > 0 ? study.repeats.map((repeat) => `${repeatReasonLabel[repeat.reason]}${repeat.note ? ` (${repeat.note})` : ''}`).join('; ') : null}
+            {study.repeats.length > 0
+              ? study.repeats
+                  .map((repeat) => `${repeatReasonLabel[repeat.reason]}${repeat.note ? ` (${repeat.note})` : ''}`)
+                  .join('; ')
+              : null}
           </Fact>
           <Fact label="Study instance UID">
             <span className={styles.mono}>{study.studyInstanceUid}</span>

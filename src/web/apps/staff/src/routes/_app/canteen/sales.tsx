@@ -6,7 +6,14 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { canteenQueries, CUSTOMER_LABEL, PAYMENT_LABEL, PAYMENT_MODES, type CanteenPaymentMode, type CanteenSaleStatus } from '@/modules/canteen/api';
+import {
+  canteenQueries,
+  CUSTOMER_LABEL,
+  PAYMENT_LABEL,
+  PAYMENT_MODES,
+  type CanteenPaymentMode,
+  type CanteenSaleStatus,
+} from '@/modules/canteen/api';
 import { SaleDrawer } from '@/modules/canteen/SaleDrawer';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,7 +31,9 @@ export const Route = createFileRoute('/_app/canteen/sales')({
   validateSearch: (s: Record<string, unknown>): SalesSearch => ({
     date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined,
     status: s.status === 'Completed' || s.status === 'Cancelled' ? s.status : undefined,
-    paymentMode: PAYMENT_MODES.includes(s.paymentMode as CanteenPaymentMode) ? (s.paymentMode as CanteenPaymentMode) : undefined,
+    paymentMode: PAYMENT_MODES.includes(s.paymentMode as CanteenPaymentMode)
+      ? (s.paymentMode as CanteenPaymentMode)
+      : undefined,
     employeeCode: typeof s.employeeCode === 'string' && s.employeeCode ? s.employeeCode : undefined,
     q: typeof s.q === 'string' && s.q ? s.q : undefined,
     page: typeof s.page === 'number' && s.page > 1 ? s.page : undefined,
@@ -42,7 +51,16 @@ function CanteenSalesPage() {
   const [openSale, setOpenSale] = useState<string | null>(null);
   const today = todayIso();
   const date = search.date ?? today;
-  const sales = useQuery(canteenQueries.sales({ date, status: search.status, paymentMode: search.paymentMode, employeeCode: search.employeeCode, search: search.q, page: search.page }));
+  const sales = useQuery(
+    canteenQueries.sales({
+      date,
+      status: search.status,
+      paymentMode: search.paymentMode,
+      employeeCode: search.employeeCode,
+      search: search.q,
+      page: search.page,
+    }),
+  );
 
   useEffect(() => {
     if ((debounced || undefined) !== search.q) {
@@ -50,7 +68,8 @@ function CanteenSalesPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const set = (patch: Partial<SalesSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
+  const set = (patch: Partial<SalesSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }), replace: true });
 
   return (
     <Page>
@@ -73,10 +92,18 @@ function CanteenSalesPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Full or last digits" />
             </Field>
             <Field label="Date">
-              <Input type="date" value={date} max={today} onChange={(_, d) => d.value && set({ date: d.value === today ? undefined : d.value })} />
+              <Input
+                type="date"
+                value={date}
+                max={today}
+                onChange={(_, d) => d.value && set({ date: d.value === today ? undefined : d.value })}
+              />
             </Field>
             <Field label="Paid by">
-              <Select value={search.paymentMode ?? ''} onChange={(_, d) => set({ paymentMode: (d.value || undefined) as CanteenPaymentMode | undefined })}>
+              <Select
+                value={search.paymentMode ?? ''}
+                onChange={(_, d) => set({ paymentMode: (d.value || undefined) as CanteenPaymentMode | undefined })}
+              >
                 <option value="">Any</option>
                 {PAYMENT_MODES.map((m) => (
                   <option key={m} value={m}>
@@ -86,7 +113,10 @@ function CanteenSalesPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as CanteenSaleStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as CanteenSaleStatus | undefined })}
+              >
                 <option value="">Any</option>
                 <option value="Completed">Completed</option>
                 <option value="Cancelled">Cancelled</option>
@@ -129,9 +159,20 @@ function CanteenSalesPage() {
               ),
             },
             { key: 'mode', header: 'Paid by', width: 120, render: (s) => PAYMENT_LABEL[s.paymentMode] },
-            { key: 'amount', header: 'Amount', width: 120, align: 'end', render: (s) => <Text weight="semibold">{formatInr(s.netAmount)}</Text> },
+            {
+              key: 'amount',
+              header: 'Amount',
+              width: 120,
+              align: 'end',
+              render: (s) => <Text weight="semibold">{formatInr(s.netAmount)}</Text>,
+            },
             { key: 'cashier', header: 'Cashier', priority: 'low', render: (s) => s.cashierName ?? '—' },
-            { key: 'status', header: 'Status', width: 120, render: (s) => <StatusBadge status={s.status} tone={s.status === 'Completed' ? 'success' : 'danger'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 120,
+              render: (s) => <StatusBadge status={s.status} tone={s.status === 'Completed' ? 'success' : 'danger'} />,
+            },
           ]}
           emptyTitle="No bills"
           emptyDescription={date === today ? 'Bills appear here as soon as they are charged.' : undefined}

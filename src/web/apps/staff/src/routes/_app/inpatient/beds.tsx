@@ -13,7 +13,13 @@ import {
   Tooltip,
   useArrowNavigationGroup,
 } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, BedRegular, BroomRegular, PersonAddRegular, SettingsRegular } from '@fluentui/react-icons';
+import {
+  ArrowClockwiseRegular,
+  BedRegular,
+  BroomRegular,
+  PersonAddRegular,
+  SettingsRegular,
+} from '@fluentui/react-icons';
 import { formatTime, useDebouncedValue } from '@hc360/core';
 import { EmptyState, ErrorState, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -42,7 +48,12 @@ export const Route = createFileRoute('/_app/inpatient/beds')({
 
 const useStyles = makeStyles({
   toolbar: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  grid: { display: 'grid', gap: '10px', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', '@media (max-width: 640px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } },
+  grid: {
+    display: 'grid',
+    gap: '10px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))',
+    '@media (max-width: 640px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+  },
   wardMeta: { display: 'flex', alignItems: 'center', gap: '10px', minWidth: '220px' },
   bar: { width: '120px' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -86,14 +97,20 @@ function BedBoardPage() {
   );
 
   const visible = data
-    .map((ward) => ({ ...ward, beds: ward.beds.filter((bed) => (!search.status || bed.status === search.status) && matchesBedSearch(bed, term)) }))
+    .map((ward) => ({
+      ...ward,
+      beds: ward.beds.filter((bed) => (!search.status || bed.status === search.status) && matchesBedSearch(bed, term)),
+    }))
     .filter((ward) => ward.beds.length > 0);
 
   const selectedWard = selected ? data.find((w) => w.wardId === selected.wardId) : undefined;
   const selectedBed = selectedWard?.beds.find((b) => b.bedId === selected?.bedId);
 
   const setStatus = (status: string) =>
-    void navigate({ search: (prev) => ({ ...prev, status: prev.status === status ? undefined : (status as BedStatus) }), replace: true });
+    void navigate({
+      search: (prev) => ({ ...prev, status: prev.status === status ? undefined : (status as BedStatus) }),
+      replace: true,
+    });
 
   return (
     <Page>
@@ -108,7 +125,12 @@ function BedBoardPage() {
         actions={
           <>
             <Tooltip content="Refresh now (the board also updates by itself)" relationship="label">
-              <Button icon={<ArrowClockwiseRegular />} onClick={() => void board.refetch()} disabled={board.isFetching} aria-label="Refresh" />
+              <Button
+                icon={<ArrowClockwiseRegular />}
+                onClick={() => void board.refetch()}
+                disabled={board.isFetching}
+                aria-label="Refresh"
+              />
             </Tooltip>
             {(permissions.housekeeping || permissions.manageBeds) && (
               <Button icon={<BroomRegular />} onClick={() => void navigate({ to: '/inpatient/housekeeping' })}>
@@ -116,7 +138,11 @@ function BedBoardPage() {
               </Button>
             )}
             {permissions.admit && (
-              <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/inpatient/admit' })}>
+              <Button
+                appearance="primary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/inpatient/admit' })}
+              >
                 Admit patient
               </Button>
             )}
@@ -128,7 +154,10 @@ function BedBoardPage() {
         <div className={styles.toolbar}>
           <FilterBar>
             <Field label="Ward">
-              <Select value={search.wardId ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, wardId: d.value || undefined }) })}>
+              <Select
+                value={search.wardId ?? ''}
+                onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, wardId: d.value || undefined }) })}
+              >
                 <option value="">All wards</option>
                 {wards.data?.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -138,7 +167,12 @@ function BedBoardPage() {
               </Select>
             </Field>
             <Field label="Find" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Bed, room, patient name, UHID or IP number" aria-label="Find a bed or patient" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Bed, room, patient name, UHID or IP number"
+                aria-label="Find a bed or patient"
+              />
             </Field>
           </FilterBar>
           <BedLegend counts={totals} active={search.status ?? null} onToggle={setStatus} />
@@ -188,22 +222,44 @@ function BedBoardPage() {
       ) : (
         <div className={styles.wards}>
           {visible.map((ward) => (
-            <WardSection key={ward.wardId} ward={ward} now={now} selectedBedId={selected?.bedId ?? null} onOpen={(bed) => setSelected({ bedId: bed.bedId, wardId: ward.wardId })} />
+            <WardSection
+              key={ward.wardId}
+              ward={ward}
+              now={now}
+              selectedBedId={selected?.bedId ?? null}
+              onOpen={(bed) => setSelected({ bedId: bed.bedId, wardId: ward.wardId })}
+            />
           ))}
         </div>
       )}
 
-      {selectedBed && selectedWard && <BedDrawer bed={selectedBed} ward={selectedWard} onClose={() => setSelected(null)} />}
+      {selectedBed && selectedWard && (
+        <BedDrawer bed={selectedBed} ward={selectedWard} onClose={() => setSelected(null)} />
+      )}
     </Page>
   );
 }
 
-function WardSection({ ward, now, selectedBedId, onOpen }: { ward: BedBoardWard; now: number; selectedBedId: string | null; onOpen: (bed: BedBoardItem) => void }) {
+function WardSection({
+  ward,
+  now,
+  selectedBedId,
+  onOpen,
+}: {
+  ward: BedBoardWard;
+  now: number;
+  selectedBedId: string | null;
+  onOpen: (bed: BedBoardItem) => void;
+}) {
   const styles = useStyles();
   const navigation = useArrowNavigationGroup({ axis: 'grid-linear', memorizeCurrent: true });
   const percent = ward.counts.occupancyPercent;
   const band = occupancyBand(percent);
-  const details = [WARD_TYPE_LABEL[ward.type] ?? ward.type, ward.floor ? `Floor ${ward.floor}` : null, ward.nurseStation ? `Nurse station ${ward.nurseStation}` : null]
+  const details = [
+    WARD_TYPE_LABEL[ward.type] ?? ward.type,
+    ward.floor ? `Floor ${ward.floor}` : null,
+    ward.nurseStation ? `Nurse station ${ward.nurseStation}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -214,7 +270,8 @@ function WardSection({ ward, now, selectedBedId, onOpen }: { ward: BedBoardWard;
       actions={
         <div className={styles.wardMeta}>
           <Text size={200}>
-            <strong>{ward.counts.vacant}</strong> vacant · {ward.counts.occupied}/{ward.counts.operational} occupied ({percent}%)
+            <strong>{ward.counts.vacant}</strong> vacant · {ward.counts.occupied}/{ward.counts.operational} occupied (
+            {percent}%)
           </Text>
           <ProgressBar
             className={styles.bar}

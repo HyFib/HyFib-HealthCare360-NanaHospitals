@@ -68,19 +68,35 @@ describe('recording guards', () => {
 
 describe('voiceAvailability', () => {
   it('always offers Desktop speech in HC360 Desktop', () => {
-    expect(voiceAvailability({ isDesktop: true, recorderSupported: false, status: undefined, statusFailed: true })).toEqual({ mode: 'desktop', reason: null });
+    expect(
+      voiceAvailability({ isDesktop: true, recorderSupported: false, status: undefined, statusFailed: true }),
+    ).toEqual({ mode: 'desktop', reason: null });
   });
 
   it('offers browser recording only with server speech-to-text', () => {
-    expect(voiceAvailability({ isDesktop: false, recorderSupported: true, status: status(true), statusFailed: false })).toEqual({ mode: 'server', reason: null });
-    const off = voiceAvailability({ isDesktop: false, recorderSupported: true, status: status(false), statusFailed: false });
+    expect(
+      voiceAvailability({ isDesktop: false, recorderSupported: true, status: status(true), statusFailed: false }),
+    ).toEqual({ mode: 'server', reason: null });
+    const off = voiceAvailability({
+      isDesktop: false,
+      recorderSupported: true,
+      status: status(false),
+      statusFailed: false,
+    });
     expect(off.mode).toBeNull();
     expect(off.reason).toContain('server speech-to-text');
   });
 
   it('explains an unsupported browser or a failed check, and says nothing while checking', () => {
-    expect(voiceAvailability({ isDesktop: false, recorderSupported: false, status: status(true), statusFailed: false }).reason).toContain('not supported');
-    expect(voiceAvailability({ isDesktop: false, recorderSupported: true, status: undefined, statusFailed: true }).reason).toContain('could not be checked');
-    expect(voiceAvailability({ isDesktop: false, recorderSupported: true, status: undefined, statusFailed: false })).toEqual({ mode: null, reason: null });
+    expect(
+      voiceAvailability({ isDesktop: false, recorderSupported: false, status: status(true), statusFailed: false })
+        .reason,
+    ).toContain('not supported');
+    expect(
+      voiceAvailability({ isDesktop: false, recorderSupported: true, status: undefined, statusFailed: true }).reason,
+    ).toContain('could not be checked');
+    expect(
+      voiceAvailability({ isDesktop: false, recorderSupported: true, status: undefined, statusFailed: false }),
+    ).toEqual({ mode: null, reason: null });
   });
 });

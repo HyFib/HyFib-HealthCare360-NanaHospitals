@@ -1,5 +1,22 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Spinner, Text, tokens } from '@fluentui/react-components';
-import { AlertUrgentRegular, BotRegular, CheckmarkRegular, DismissRegular, TextBulletListAddRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  AlertUrgentRegular,
+  BotRegular,
+  CheckmarkRegular,
+  DismissRegular,
+  TextBulletListAddRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime } from '@hc360/core';
 import { ErrorState, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -29,12 +46,23 @@ const useStyles = makeStyles({
  * rejects each one, and an accepted finding can be copied into the report. Urgent findings move the study up the
  * reporting worklist.
  */
-export function AiFindingsPanel({ studyId, canReview, onInsert }: { studyId: string; canReview: boolean; onInsert?: (text: string) => void }) {
+export function AiFindingsPanel({
+  studyId,
+  canReview,
+  onInsert,
+}: {
+  studyId: string;
+  canReview: boolean;
+  onInsert?: (text: string) => void;
+}) {
   const styles = useStyles();
   const findings = useQuery(radiologyQueries.aiFindings(studyId));
 
   return (
-    <Section title="AI findings" description="Preliminary suggestions from the AI engine. Review each before relying on it.">
+    <Section
+      title="AI findings"
+      description="Preliminary suggestions from the AI engine. Review each before relying on it."
+    >
       {findings.error ? (
         <ErrorState error={findings.error} onRetry={() => void findings.refetch()} />
       ) : !findings.data ? (
@@ -44,7 +72,13 @@ export function AiFindingsPanel({ studyId, canReview, onInsert }: { studyId: str
       ) : (
         <ul className={styles.list}>
           {findings.data.map((finding) => (
-            <FindingItem key={finding.id} finding={finding} studyId={studyId} canReview={canReview} onInsert={onInsert} />
+            <FindingItem
+              key={finding.id}
+              finding={finding}
+              studyId={studyId}
+              canReview={canReview}
+              onInsert={onInsert}
+            />
           ))}
         </ul>
       )}
@@ -52,7 +86,17 @@ export function AiFindingsPanel({ studyId, canReview, onInsert }: { studyId: str
   );
 }
 
-function FindingItem({ finding, studyId, canReview, onInsert }: { finding: AiFindingDto; studyId: string; canReview: boolean; onInsert?: (text: string) => void }) {
+function FindingItem({
+  finding,
+  studyId,
+  canReview,
+  onInsert,
+}: {
+  finding: AiFindingDto;
+  studyId: string;
+  canReview: boolean;
+  onInsert?: (text: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -81,32 +125,60 @@ function FindingItem({ finding, studyId, canReview, onInsert }: { finding: AiFin
           </Badge>
         )}
         {confidence && <Caption1>Confidence {confidence}</Caption1>}
-        <Badge appearance="tint" shape="rounded" color={finding.status === 'Acknowledged' ? 'success' : finding.status === 'Dismissed' ? 'informative' : 'warning'}>
+        <Badge
+          appearance="tint"
+          shape="rounded"
+          color={
+            finding.status === 'Acknowledged' ? 'success' : finding.status === 'Dismissed' ? 'informative' : 'warning'
+          }
+        >
           {aiStatusLabel[finding.status]}
         </Badge>
       </div>
       <Text>{finding.finding}</Text>
       <Caption1 className={styles.muted}>
         Received {formatDateTime(finding.receivedAt)}
-        {finding.reviewedAt ? ` · reviewed by ${finding.reviewedBy ?? 'staff'} ${formatDateTime(finding.reviewedAt)}` : ''}
+        {finding.reviewedAt
+          ? ` · reviewed by ${finding.reviewedBy ?? 'staff'} ${formatDateTime(finding.reviewedAt)}`
+          : ''}
         {finding.reviewNote ? ` · ${finding.reviewNote}` : ''}
       </Caption1>
       {finding.status === 'Preliminary' && canReview && (
         <div className={styles.actions}>
           <Field label="Note" size="small" style={{ flex: '1 1 160px' }}>
-            <Input size="small" value={note} onChange={(_, data) => setNote(data.value.slice(0, 500))} placeholder="Optional" />
+            <Input
+              size="small"
+              value={note}
+              onChange={(_, data) => setNote(data.value.slice(0, 500))}
+              placeholder="Optional"
+            />
           </Field>
-          <Button size="small" icon={review.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />} disabled={review.isPending} onClick={() => review.mutate(true)}>
+          <Button
+            size="small"
+            icon={review.isPending ? <Spinner size="tiny" /> : <CheckmarkRegular />}
+            disabled={review.isPending}
+            onClick={() => review.mutate(true)}
+          >
             Accept
           </Button>
-          <Button size="small" icon={<DismissRegular />} disabled={review.isPending} onClick={() => review.mutate(false)}>
+          <Button
+            size="small"
+            icon={<DismissRegular />}
+            disabled={review.isPending}
+            onClick={() => review.mutate(false)}
+          >
             Reject
           </Button>
         </div>
       )}
       {finding.status === 'Acknowledged' && onInsert && (
         <div>
-          <Button size="small" appearance="subtle" icon={<TextBulletListAddRegular />} onClick={() => onInsert(finding.finding)}>
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<TextBulletListAddRegular />}
+            onClick={() => onInsert(finding.finding)}
+          >
             Add to findings
           </Button>
         </div>

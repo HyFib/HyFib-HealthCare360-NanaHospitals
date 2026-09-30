@@ -50,7 +50,12 @@ export function seroMismatchReason(machine: MachineLike, patient: SeroStatus): s
  * that no one else holds the machine in that shift); connecting also needs the machine in service, free and
  * disinfected after its last session.
  */
-export function checkMachine(machine: MachineLike, patientSero: SeroStatus | null, use: MachineUse, bookedByOther = false): MachineCheck {
+export function checkMachine(
+  machine: MachineLike,
+  patientSero: SeroStatus | null,
+  use: MachineUse,
+  bookedByOther = false,
+): MachineCheck {
   const blockers: string[] = [];
   const warnings: string[] = [];
   const seroMatch = patientSero !== null && isSeroCompatible(patientSero, machine.seroDedication);
@@ -88,9 +93,16 @@ export function checkMachine(machine: MachineLike, patientSero: SeroStatus | nul
 export const HOLDING_STATUSES: readonly DialysisSessionStatus[] = ['Scheduled', 'InProgress', 'Completed'];
 
 /** True when another session holds this machine in the given shift of the board's day. */
-export function isBookedByOther(board: Pick<DialysisBoard, 'machines'> | undefined, machineId: string, shift: DialysisShift, sessionId?: string | null): boolean {
+export function isBookedByOther(
+  board: Pick<DialysisBoard, 'machines'> | undefined,
+  machineId: string,
+  shift: DialysisShift,
+  sessionId?: string | null,
+): boolean {
   const machine = board?.machines.find((m) => m.id === machineId);
-  return Boolean(machine?.sessions.some((s) => s.id !== sessionId && s.shift === shift && HOLDING_STATUSES.includes(s.status)));
+  return Boolean(
+    machine?.sessions.some((s) => s.id !== sessionId && s.shift === shift && HOLDING_STATUSES.includes(s.status)),
+  );
 }
 
 export interface MachineChoice {
@@ -129,9 +141,14 @@ export function suggestMachine<T extends MachineLike & { id: string }>(
   sessionId?: string | null,
 ): T | null {
   const candidates = machines
-    .map((machine) => ({ machine, check: checkMachine(machine, patientSero, 'assign', isBookedByOther(board, machine.id, shift, sessionId)) }))
+    .map((machine) => ({
+      machine,
+      check: checkMachine(machine, patientSero, 'assign', isBookedByOther(board, machine.id, shift, sessionId)),
+    }))
     .filter((c) => c.check.eligible);
-  candidates.sort((a, b) => a.check.warnings.length - b.check.warnings.length || a.machine.code.localeCompare(b.machine.code));
+  candidates.sort(
+    (a, b) => a.check.warnings.length - b.check.warnings.length || a.machine.code.localeCompare(b.machine.code),
+  );
   return candidates[0]?.machine ?? null;
 }
 
@@ -140,7 +157,10 @@ export function suggestMachine<T extends MachineLike & { id: string }>(
 const round1 = (value: number) => Math.round(value * 10) / 10;
 
 /** Weight gained above dry weight, in kg (null when either is missing). */
-export function weightAboveDry(preWeightKg: number | null | undefined, dryWeightKg: number | null | undefined): number | null {
+export function weightAboveDry(
+  preWeightKg: number | null | undefined,
+  dryWeightKg: number | null | undefined,
+): number | null {
   if (preWeightKg === null || preWeightKg === undefined || dryWeightKg === null || dryWeightKg === undefined) {
     return null;
   }
@@ -148,13 +168,19 @@ export function weightAboveDry(preWeightKg: number | null | undefined, dryWeight
 }
 
 /** A starting point for the ultrafiltration goal: the weight above dry weight (1 kg ≈ 1000 ml). The nurse decides. */
-export function suggestedUfMl(preWeightKg: number | null | undefined, dryWeightKg: number | null | undefined): number | null {
+export function suggestedUfMl(
+  preWeightKg: number | null | undefined,
+  dryWeightKg: number | null | undefined,
+): number | null {
   const gain = weightAboveDry(preWeightKg, dryWeightKg);
   return gain === null ? null : Math.max(0, Math.round(gain * 1000));
 }
 
 /** Weight lost during the session in ml — what the server records as UF achieved when none is entered. */
-export function weightLossMl(preWeightKg: number | null | undefined, postWeightKg: number | null | undefined): number | null {
+export function weightLossMl(
+  preWeightKg: number | null | undefined,
+  postWeightKg: number | null | undefined,
+): number | null {
   if (preWeightKg === null || preWeightKg === undefined || postWeightKg === null || postWeightKg === undefined) {
     return null;
   }
@@ -174,15 +200,24 @@ export interface DialyzerCheck {
 }
 
 /** Same checks as `Dialyzer.EnsureUsableFor`: own patient only, not discarded, uses left. */
-export function checkDialyzer(dialyzer: Pick<DialyzerDto, 'patientId' | 'serialNumber' | 'isDiscarded' | 'usesCount' | 'maxUses'>, patientId: string): DialyzerCheck {
+export function checkDialyzer(
+  dialyzer: Pick<DialyzerDto, 'patientId' | 'serialNumber' | 'isDiscarded' | 'usesCount' | 'maxUses'>,
+  patientId: string,
+): DialyzerCheck {
   if (dialyzer.patientId !== patientId) {
-    return { usable: false, reason: `Dialyzer ${dialyzer.serialNumber} belongs to another patient and must never be used for this patient.` };
+    return {
+      usable: false,
+      reason: `Dialyzer ${dialyzer.serialNumber} belongs to another patient and must never be used for this patient.`,
+    };
   }
   if (dialyzer.isDiscarded) {
     return { usable: false, reason: `Dialyzer ${dialyzer.serialNumber} has been discarded.` };
   }
   if (dialyzer.usesCount >= dialyzer.maxUses) {
-    return { usable: false, reason: `Dialyzer ${dialyzer.serialNumber} has reached its maximum of ${dialyzer.maxUses} use(s).` };
+    return {
+      usable: false,
+      reason: `Dialyzer ${dialyzer.serialNumber} has reached its maximum of ${dialyzer.maxUses} use(s).`,
+    };
   }
   return { usable: true, reason: null };
 }
@@ -197,7 +232,9 @@ export function nextUseLabel(dialyzer: Pick<DialyzerDto, 'usesCount' | 'maxUses'
 export type SessionStage = 'machine' | 'pre-assessment' | 'start' | 'running' | 'completed' | 'closed';
 
 /** Where a session stands: the next thing to do. */
-export function sessionStage(detail: Pick<DialysisSessionDetail, 'status' | 'machineId' | 'preAssessedAt'>): SessionStage {
+export function sessionStage(
+  detail: Pick<DialysisSessionDetail, 'status' | 'machineId' | 'preAssessedAt'>,
+): SessionStage {
   switch (detail.status) {
     case 'InProgress':
       return 'running';

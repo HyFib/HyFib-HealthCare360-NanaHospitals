@@ -39,10 +39,21 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorStatusWarningBackground1,
     border: `1px solid ${tokens.colorStatusWarningBorder1}`,
   },
-  dueAmount: { margin: 0, fontSize: tokens.fontSizeHero700, lineHeight: tokens.lineHeightHero700, fontWeight: tokens.fontWeightSemibold },
+  dueAmount: {
+    margin: 0,
+    fontSize: tokens.fontSizeHero700,
+    lineHeight: tokens.lineHeightHero700,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   secure: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase200 },
   lines: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column' },
-  line: { display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke3}` },
+  line: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '12px',
+    padding: '10px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
+  },
   lineText: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
   lineName: { fontWeight: tokens.fontWeightSemibold, overflowWrap: 'anywhere' },
   lineMeta: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
@@ -50,7 +61,11 @@ const useStyles = makeStyles({
   totals: { width: '100%', borderCollapse: 'collapse' },
   totalLabel: { padding: '6px 0', color: tokens.colorNeutralForeground2, textAlign: 'start', fontWeight: 'inherit' },
   totalValue: { padding: '6px 0', textAlign: 'end', fontVariantNumeric: 'tabular-nums' },
-  grand: { fontWeight: tokens.fontWeightSemibold, borderTop: `1px solid ${tokens.colorNeutralStroke2}`, color: tokens.colorNeutralForeground1 },
+  grand: {
+    fontWeight: tokens.fontWeightSemibold,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: tokens.colorNeutralForeground1,
+  },
   receipts: { display: 'flex', flexDirection: 'column', gap: '8px' },
   muted: { margin: 0, color: tokens.colorNeutralForeground2 },
 });
@@ -182,7 +197,11 @@ function BillDetail({ bill, back }: { bill: PortalBillDetail; back: ReactNode })
           {t('payment.verifying')}
         </Notice>
       )}
-      {!verification.isFetching && paidNow && <Notice intent="success" title={t('payment.success')}>{t('bills.paidNow')}</Notice>}
+      {!verification.isFetching && paidNow && (
+        <Notice intent="success" title={t('payment.success')}>
+          {t('bills.paidNow')}
+        </Notice>
+      )}
       {!verification.isFetching && pending && (
         <Notice
           intent="warning"
@@ -278,7 +297,10 @@ function BillDetail({ bill, back }: { bill: PortalBillDetail; back: ReactNode })
                   meta={t('bills.receipt', { number: receipt.receiptNumber })}
                   chevron={false}
                   trailing={
-                    <Button icon={<PrintRegular />} onClick={() => printPortalDocument(receiptDocument(receipt, bill, printContext()))}>
+                    <Button
+                      icon={<PrintRegular />}
+                      onClick={() => printPortalDocument(receiptDocument(receipt, bill, printContext()))}
+                    >
                       {t('bills.receipt.print')}
                     </Button>
                   }

@@ -1,4 +1,22 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  MessageBar,
+  MessageBarBody,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import {
   AddRegular,
   BinRecycleRegular,
@@ -10,15 +28,48 @@ import {
   ProhibitedRegular,
   WrenchRegular,
 } from '@fluentui/react-icons';
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, formatRelative, printDocument, printHtml, todayIso } from '@hc360/core';
-import { barcodeSvg, ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  formatRelative,
+  printDocument,
+  printHtml,
+  todayIso,
+} from '@hc360/core';
+import {
+  barcodeSvg,
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { usePermission } from '@/lib/permissions';
-import { assetApi, assetKeys, assetQueries, type AssetContractDto, type AssetDetail, type PmPlanDto } from '@/modules/assets/api';
-import { CalibrationDialog, ContractDialog, DisposeDialog, PmPlanDialog, PmVisitDialog } from '@/modules/assets/AssetDialogs';
+import {
+  assetApi,
+  assetKeys,
+  assetQueries,
+  type AssetContractDto,
+  type AssetDetail,
+  type PmPlanDto,
+} from '@/modules/assets/api';
+import {
+  CalibrationDialog,
+  ContractDialog,
+  DisposeDialog,
+  PmPlanDialog,
+  PmVisitDialog,
+} from '@/modules/assets/AssetDialogs';
 import { AssetDrawer } from '@/modules/assets/AssetDrawer';
 import { BreakdownDialog } from '@/modules/assets/BreakdownDialog';
 import {
@@ -42,7 +93,9 @@ type AssetTab = 'overview' | 'contracts' | 'depreciation' | 'maintenance' | 'cal
 const TABS: AssetTab[] = ['overview', 'contracts', 'depreciation', 'maintenance', 'calibration', 'tickets'];
 
 export const Route = createFileRoute('/_app/assets/$assetId')({
-  validateSearch: (s: Record<string, unknown>): { tab?: AssetTab } => ({ tab: TABS.includes(s.tab as AssetTab) ? (s.tab as AssetTab) : undefined }),
+  validateSearch: (s: Record<string, unknown>): { tab?: AssetTab } => ({
+    tab: TABS.includes(s.tab as AssetTab) ? (s.tab as AssetTab) : undefined,
+  }),
   component: AssetPage,
 });
 
@@ -111,7 +164,14 @@ function AssetPage() {
         <div style="font-size:7px;font-weight:700">${escapeHtml(letterhead.name)}</div>
         <div style="font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(a.name)}</div>
         <div>${code}</div><div style="font-family:Consolas,monospace;font-size:9px;letter-spacing:1px">${escapeHtml(a.assetTag)}</div></div>`;
-      await printHtml(printDocument(body, { title: `Asset tag ${a.assetTag}`, pageSize: 'Label50x25', styles: 'svg { width: 100%; height: 9mm; }' }), { pageSize: 'Label50x25', silent: true });
+      await printHtml(
+        printDocument(body, {
+          title: `Asset tag ${a.assetTag}`,
+          pageSize: 'Label50x25',
+          styles: 'svg { width: 100%; height: 9mm; }',
+        }),
+        { pageSize: 'Label50x25', silent: true },
+      );
     } catch (error) {
       notify.error(error, 'The tag did not print');
     }
@@ -121,8 +181,13 @@ function AssetPage() {
     <Page>
       <PageHeader
         title={a.name}
-        subtitle={[a.assetTag, a.make, a.model, a.serialNumber ? `S/N ${a.serialNumber}` : null].filter(Boolean).join(' · ')}
-        breadcrumbs={[{ label: 'Asset register', onClick: () => void navigate({ to: '/assets/register' }) }, { label: a.assetTag }]}
+        subtitle={[a.assetTag, a.make, a.model, a.serialNumber ? `S/N ${a.serialNumber}` : null]
+          .filter(Boolean)
+          .join(' · ')}
+        breadcrumbs={[
+          { label: 'Asset register', onClick: () => void navigate({ to: '/assets/register' }) },
+          { label: a.assetTag },
+        ]}
         actions={
           <>
             {!retired && (
@@ -185,7 +250,9 @@ function AssetPage() {
       </div>
       {a.status === 'Condemned' && (
         <MessageBar intent="warning">
-          <MessageBarBody>Condemned on {formatDateOnly(a.condemnedOn)}. Record the disposal once it leaves the hospital.</MessageBarBody>
+          <MessageBarBody>
+            Condemned on {formatDateOnly(a.condemnedOn)}. Record the disposal once it leaves the hospital.
+          </MessageBarBody>
         </MessageBar>
       )}
       {a.status === 'Disposed' && (
@@ -198,7 +265,15 @@ function AssetPage() {
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as AssetTab) }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: { tab: d.value === 'overview' ? undefined : (d.value as AssetTab) },
+                replace: true,
+              })
+            }
+          >
             <Tab value="overview">Overview</Tab>
             <Tab value="maintenance">Maintenance</Tab>
             <Tab value="calibration">Calibration</Tab>
@@ -220,12 +295,23 @@ function AssetPage() {
       {dialog === 'edit' && <AssetDrawer asset={a} onClose={() => setDialog(null)} />}
       {dialog === 'breakdown' && (
         <BreakdownDialog
-          asset={{ id: a.id, assetTag: a.assetTag, name: a.name, location: a.location ?? a.departmentName, criticality: a.criticality }}
+          asset={{
+            id: a.id,
+            assetTag: a.assetTag,
+            name: a.name,
+            location: a.location ?? a.departmentName,
+            criticality: a.criticality,
+          }}
           onClose={() => setDialog(null)}
           onReported={() => void navigate({ search: { tab: 'tickets' } })}
         />
       )}
-      {dialog === 'dispose' && <DisposeDialog asset={{ id: a.id, name: a.name, assetTag: a.assetTag, bookValue: a.bookValue }} onClose={() => setDialog(null)} />}
+      {dialog === 'dispose' && (
+        <DisposeDialog
+          asset={{ id: a.id, name: a.name, assetTag: a.assetTag, bookValue: a.bookValue }}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === 'condemn' && (
         <ReasonDialog
           title={`Request condemnation of ${a.name}?`}
@@ -242,7 +328,8 @@ function AssetPage() {
             setDialog(null);
           }}
         >
-          The book value today ({formatInr(a.bookValue)}) is recorded with the request. Another asset manager decides it.
+          The book value today ({formatInr(a.bookValue)}) is recorded with the request. Another asset manager decides
+          it.
         </ReasonDialog>
       )}
       <ConfirmDialog
@@ -253,7 +340,9 @@ function AssetPage() {
         onConfirm={() => operational.mutate(dialog === 'inuse')}
         onCancel={() => setDialog(null)}
       >
-        {dialog === 'idle' ? 'Idle equipment is working but not being used (spare or stored).' : 'The equipment is working and available for use again.'}
+        {dialog === 'idle'
+          ? 'Idle equipment is working but not being used (spare or stored).'
+          : 'The equipment is working and available for use again.'}
       </ConfirmDialog>
     </Page>
   );
@@ -270,12 +359,24 @@ function Overview({ asset: a }: { asset: AssetDetail }) {
       <Detail label="Department">{a.departmentName}</Detail>
       <Detail label="Location">{a.location}</Detail>
       <Detail label="Custodian">{a.custodianName}</Detail>
-      <Detail label="Purchased">{a.purchaseDate ? `${formatDateOnly(a.purchaseDate)} for ${formatInr(a.purchaseCost)}` : formatInr(a.purchaseCost)}</Detail>
+      <Detail label="Purchased">
+        {a.purchaseDate
+          ? `${formatDateOnly(a.purchaseDate)} for ${formatInr(a.purchaseCost)}`
+          : formatInr(a.purchaseCost)}
+      </Detail>
       <Detail label="Supplier">{a.vendorName}</Detail>
       <Detail label="PO / invoice">{[a.purchaseOrderNumber, a.invoiceNumber].filter(Boolean).join(' / ')}</Detail>
       <Detail label="Installed">{a.installationDate ? formatDateOnly(a.installationDate) : null}</Detail>
-      <Detail label="Warranty">{a.warrantyExpiry ? `${a.underWarranty ? 'Until' : 'Ended'} ${formatDateOnly(a.warrantyExpiry)}` : null}</Detail>
-      <Detail label="Calibration">{a.requiresCalibration ? (a.nextCalibrationDue ? `Next due ${formatDateOnly(a.nextCalibrationDue)}` : 'Required, not recorded yet') : 'Not required'}</Detail>
+      <Detail label="Warranty">
+        {a.warrantyExpiry ? `${a.underWarranty ? 'Until' : 'Ended'} ${formatDateOnly(a.warrantyExpiry)}` : null}
+      </Detail>
+      <Detail label="Calibration">
+        {a.requiresCalibration
+          ? a.nextCalibrationDue
+            ? `Next due ${formatDateOnly(a.nextCalibrationDue)}`
+            : 'Required, not recorded yet'
+          : 'Not required'}
+      </Detail>
       <Detail label="Depreciation">{`${depreciationLabel[a.depreciationMethod]} · ${a.usefulLifeYears} years · ${formatPercent(a.depreciationRatePercent)} a year`}</Detail>
       <Detail label="Book value today">{formatInr(a.bookValue)}</Detail>
       {a.notes && <Detail label="Notes">{a.notes}</Detail>}
@@ -308,15 +409,34 @@ function Contracts({ asset, canManage }: { asset: AssetDetail; canManage: boolea
           { key: 'type', header: 'Type', render: (c) => contractTypeLabel[c.type] },
           { key: 'vendor', header: 'Vendor', render: (c) => c.vendorName ?? '—' },
           { key: 'no', header: 'Contract', priority: 'low', render: (c) => c.contractNumber ?? '—' },
-          { key: 'period', header: 'Period', render: (c) => `${formatDateOnly(c.startDate)} to ${formatDateOnly(c.endDate)}` },
+          {
+            key: 'period',
+            header: 'Period',
+            render: (c) => `${formatDateOnly(c.startDate)} to ${formatDateOnly(c.endDate)}`,
+          },
           { key: 'cost', header: 'Cost', align: 'end', render: (c) => formatInr(c.cost) },
           { key: 'cover', header: 'Covers', priority: 'low', render: (c) => c.coverageNotes ?? '—' },
-          { key: 'status', header: 'Status', render: (c) => <StatusBadge status={c.isCurrent ? 'Active' : 'Expired'} label={c.isCurrent ? 'Current' : 'Not current'} /> },
+          {
+            key: 'status',
+            header: 'Status',
+            render: (c) => (
+              <StatusBadge
+                status={c.isCurrent ? 'Active' : 'Expired'}
+                label={c.isCurrent ? 'Current' : 'Not current'}
+              />
+            ),
+          },
         ]}
         emptyTitle="No maintenance contracts"
         emptyDescription="Warranty is recorded on the asset; add an AMC or CMC when it ends."
       />
-      {editing && <ContractDialog assetId={asset.id} contract={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <ContractDialog
+          assetId={asset.id}
+          contract={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </>
   );
 }
@@ -353,8 +473,9 @@ function Depreciation({ asset }: { asset: AssetDetail }) {
         </Field>
         {d && (
           <Caption1 className={styles.muted} style={{ alignSelf: 'center' }}>
-            {depreciationLabel[d.method]} at {formatPercent(d.ratePercent)} a year · cost {formatInr(d.cost)} · salvage {formatInr(d.salvageValue)} · depreciated {formatInr(d.accumulatedDepreciation)} · book
-            value {formatInr(d.bookValue)}
+            {depreciationLabel[d.method]} at {formatPercent(d.ratePercent)} a year · cost {formatInr(d.cost)} · salvage{' '}
+            {formatInr(d.salvageValue)} · depreciated {formatInr(d.accumulatedDepreciation)} · book value{' '}
+            {formatInr(d.bookValue)}
           </Caption1>
         )}
       </div>
@@ -372,7 +493,12 @@ function Depreciation({ asset }: { asset: AssetDetail }) {
             { key: 'period', header: 'Period', render: (r) => `${formatDateOnly(r.from)} to ${formatDateOnly(r.to)}` },
             { key: 'opening', header: 'Opening', align: 'end', render: (r) => formatInr(r.opening) },
             { key: 'dep', header: 'Depreciation', align: 'end', render: (r) => formatInr(r.depreciation) },
-            { key: 'closing', header: 'Closing', align: 'end', render: (r) => <Text weight="semibold">{formatInr(r.closing)}</Text> },
+            {
+              key: 'closing',
+              header: 'Closing',
+              align: 'end',
+              render: (r) => <Text weight="semibold">{formatInr(r.closing)}</Text>,
+            },
           ]}
           emptyTitle="No schedule yet"
         />
@@ -419,9 +545,20 @@ function Maintenance({ asset, canMaintain }: { asset: AssetDetail; canMaintain: 
               </span>
             ),
           },
-          { key: 'last', header: 'Last done', priority: 'low', render: (p) => (p.lastDoneOn ? formatDateOnly(p.lastDoneOn) : 'Never') },
+          {
+            key: 'last',
+            header: 'Last done',
+            priority: 'low',
+            render: (p) => (p.lastDoneOn ? formatDateOnly(p.lastDoneOn) : 'Never'),
+          },
           { key: 'who', header: 'Done by', priority: 'low', render: (p) => p.assignedTo ?? '—' },
-          { key: 'active', header: 'Status', render: (p) => <StatusBadge status={p.isActive ? 'Active' : 'Inactive'} tone={p.isActive ? 'success' : 'informative'} /> },
+          {
+            key: 'active',
+            header: 'Status',
+            render: (p) => (
+              <StatusBadge status={p.isActive ? 'Active' : 'Inactive'} tone={p.isActive ? 'success' : 'informative'} />
+            ),
+          },
         ]}
         rowActions={
           canMaintain
@@ -451,7 +588,16 @@ function Maintenance({ asset, canMaintain }: { asset: AssetDetail; canMaintain: 
           columns={[
             { key: 'date', header: 'Date', render: (v) => formatDateOnly(v.visitDate) },
             { key: 'plan', header: 'Plan', render: (v) => planTitle.get(v.planId) ?? '—' },
-            { key: 'outcome', header: 'Outcome', render: (v) => <DocStatus status={v.outcome === 'NotDone' ? 'Skipped' : v.outcome === 'Completed' ? 'Completed' : 'Warning'} label={pmOutcomeLabel[v.outcome]} /> },
+            {
+              key: 'outcome',
+              header: 'Outcome',
+              render: (v) => (
+                <DocStatus
+                  status={v.outcome === 'NotDone' ? 'Skipped' : v.outcome === 'Completed' ? 'Completed' : 'Warning'}
+                  label={pmOutcomeLabel[v.outcome]}
+                />
+              ),
+            },
             { key: 'by', header: 'Done by', priority: 'low', render: (v) => v.performedBy ?? '—' },
             { key: 'findings', header: 'Findings', priority: 'low', render: (v) => v.findings ?? '—' },
             { key: 'cost', header: 'Cost', align: 'end', render: (v) => formatInr(v.cost) },
@@ -459,7 +605,9 @@ function Maintenance({ asset, canMaintain }: { asset: AssetDetail; canMaintain: 
           emptyTitle="No visits recorded yet"
         />
       </div>
-      {editing && <PmPlanDialog assetId={asset.id} plan={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <PmPlanDialog assetId={asset.id} plan={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />
+      )}
       {visiting && <PmVisitDialog plan={visiting} onClose={() => setVisiting(null)} />}
     </div>
   );
@@ -493,7 +641,13 @@ function Calibration({ asset, canMaintain }: { asset: AssetDetail; canMaintain: 
           {
             key: 'result',
             header: 'Result',
-            render: (c) => <StatusBadge status={c.outcome === 'Fail' ? 'Failed' : 'Pass'} tone={c.outcome === 'Fail' ? 'danger' : 'success'} label={calibrationLabel[c.outcome]} />,
+            render: (c) => (
+              <StatusBadge
+                status={c.outcome === 'Fail' ? 'Failed' : 'Pass'}
+                tone={c.outcome === 'Fail' ? 'danger' : 'success'}
+                label={calibrationLabel[c.outcome]}
+              />
+            ),
           },
           { key: 'next', header: 'Next due', render: (c) => formatDateOnly(c.nextDueDate) },
           { key: 'remarks', header: 'Remarks', priority: 'low', render: (c) => c.remarks ?? '—' },
@@ -529,9 +683,18 @@ function Tickets({ asset, onReport }: { asset: AssetDetail; onReport: () => void
         columns={[
           { key: 'no', header: 'Ticket', render: (t) => <Text font="monospace">{t.number}</Text> },
           { key: 'issue', header: 'Problem', render: (t) => t.issue },
-          { key: 'reported', header: 'Reported', render: (t) => `${formatRelative(t.reportedAt)}${t.reportedBy ? ` by ${t.reportedBy}` : ''}` },
+          {
+            key: 'reported',
+            header: 'Reported',
+            render: (t) => `${formatRelative(t.reportedAt)}${t.reportedBy ? ` by ${t.reportedBy}` : ''}`,
+          },
           { key: 'down', header: 'Downtime', priority: 'low', render: (t) => formatDowntime(t.downtimeMinutes) },
-          { key: 'resolved', header: 'Resolved', priority: 'low', render: (t) => (t.resolvedAt ? formatDateTime(t.resolvedAt) : '—') },
+          {
+            key: 'resolved',
+            header: 'Resolved',
+            priority: 'low',
+            render: (t) => (t.resolvedAt ? formatDateTime(t.resolvedAt) : '—'),
+          },
           { key: 'status', header: 'Status', render: (t) => <DocStatus status={t.status} /> },
         ]}
         emptyTitle="No breakdowns reported"

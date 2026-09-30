@@ -29,7 +29,14 @@ import { admissionApi, inpatientKeys, type AdmissionDetail, type AvailableBedDto
 import { BedPicker } from './BedPicker';
 import { fromIstInput, toIstInput } from './time';
 
-const REASONS = ['Needs ICU care', 'Step down from ICU', 'Isolation needed', 'Patient asked for a room change', 'Bed needs maintenance', 'Moved to the right speciality ward'];
+const REASONS = [
+  'Needs ICU care',
+  'Step down from ICU',
+  'Isolation needed',
+  'Patient asked for a room change',
+  'Bed needs maintenance',
+  'Moved to the right speciality ward',
+];
 
 const schema = z
   .object({
@@ -52,7 +59,15 @@ const schema = z
 type TransferValues = z.infer<typeof schema>;
 
 /** Move an admitted patient to another bed or ward (the bed tariff follows the new ward from the next census). */
-export function TransferDialog({ admission, open, onClose }: { admission: AdmissionDetail; open: boolean; onClose: () => void }) {
+export function TransferDialog({
+  admission,
+  open,
+  onClose,
+}: {
+  admission: AdmissionDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<AvailableBedDto | null>(null);
@@ -84,7 +99,10 @@ export function TransferDialog({ admission, open, onClose }: { admission: Admiss
         toBedId: values.toBedId!,
         reason: values.reason,
         departmentId: values.departmentId !== admission.departmentId ? values.departmentId : null,
-        consultantPractitionerId: values.consultantPractitionerId !== admission.consultantPractitionerId ? values.consultantPractitionerId : null,
+        consultantPractitionerId:
+          values.consultantPractitionerId !== admission.consultantPractitionerId
+            ? values.consultantPractitionerId
+            : null,
         transferredAt: values.earlier ? fromIstInput(values.transferredAt) : null,
       }),
     onSuccess: () => {
@@ -107,7 +125,8 @@ export function TransferDialog({ admission, open, onClose }: { admission: Admiss
     finish();
   };
 
-  const serverError = transfer.error && !(isApiError(transfer.error) && transfer.error.isValidation) ? transfer.error : null;
+  const serverError =
+    transfer.error && !(isApiError(transfer.error) && transfer.error.isValidation) ? transfer.error : null;
 
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !transfer.isPending && close()}>
@@ -140,10 +159,27 @@ export function TransferDialog({ admission, open, onClose }: { admission: Admiss
                 )}
               />
               <div>
-                <TextAreaField control={form.control} name="reason" label="Reason for transfer" required rows={2} maxLength={300} />
-                <div role="group" aria-label="Common reasons" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                <TextAreaField
+                  control={form.control}
+                  name="reason"
+                  label="Reason for transfer"
+                  required
+                  rows={2}
+                  maxLength={300}
+                />
+                <div
+                  role="group"
+                  aria-label="Common reasons"
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}
+                >
                   {REASONS.map((reason) => (
-                    <Button key={reason} size="small" shape="circular" appearance="outline" onClick={() => form.setValue('reason', reason, { shouldValidate: true })}>
+                    <Button
+                      key={reason}
+                      size="small"
+                      shape="circular"
+                      appearance="outline"
+                      onClick={() => form.setValue('reason', reason, { shouldValidate: true })}
+                    >
                       {reason}
                     </Button>
                   ))}
@@ -168,15 +204,31 @@ export function TransferDialog({ admission, open, onClose }: { admission: Admiss
               <Controller
                 control={form.control}
                 name="earlier"
-                render={({ field }) => <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="The patient moved earlier (within the last 24 hours)" />}
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="The patient moved earlier (within the last 24 hours)"
+                  />
+                )}
               />
               {earlier && (
                 <Controller
                   control={form.control}
                   name="transferredAt"
                   render={({ field, fieldState }) => (
-                    <Field label="Moved at" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                      <Input type="datetime-local" value={field.value} max={nowInput} onChange={(_, d) => field.onChange(d.value)} />
+                    <Field
+                      label="Moved at"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
+                      <Input
+                        type="datetime-local"
+                        value={field.value}
+                        max={nowInput}
+                        onChange={(_, d) => field.onChange(d.value)}
+                      />
                     </Field>
                   )}
                 />
@@ -184,7 +236,9 @@ export function TransferDialog({ admission, open, onClose }: { admission: Admiss
               {serverError !== null && (
                 <MessageBar intent="error" layout="multiline">
                   <MessageBarBody>
-                    <MessageBarTitle>{isApiError(serverError) ? serverError.title : 'Could not transfer'}</MessageBarTitle>
+                    <MessageBarTitle>
+                      {isApiError(serverError) ? serverError.title : 'Could not transfer'}
+                    </MessageBarTitle>
                     {isApiError(serverError) ? serverError.userMessage : 'Please try again.'}
                   </MessageBarBody>
                 </MessageBar>

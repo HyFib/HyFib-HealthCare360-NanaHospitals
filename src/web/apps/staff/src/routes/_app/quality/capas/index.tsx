@@ -10,7 +10,15 @@ import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { qualityQueries } from '@/modules/quality/api';
 import { CapaStatusBadge } from '@/modules/quality/badges';
 import { CapaDialog } from '@/modules/quality/CapaDialog';
-import { CAPA_SOURCES, CAPA_STATUSES, capaSourceLabel, capaStatusLabel, QUALITY_PERMISSIONS as Q, type CapaSource, type CapaStatus } from '@/modules/quality/labels';
+import {
+  CAPA_SOURCES,
+  CAPA_STATUSES,
+  capaSourceLabel,
+  capaStatusLabel,
+  QUALITY_PERMISSIONS as Q,
+  type CapaSource,
+  type CapaStatus,
+} from '@/modules/quality/labels';
 
 interface CapaSearch {
   status?: CapaStatus;
@@ -45,16 +53,27 @@ function CapasPage() {
   const [planning, setPlanning] = useState(false);
   const openOnly = !search.status && search.view !== 'all';
   const capas = useQuery(
-    qualityQueries.capas({ status: search.status, openOnly: openOnly || undefined, overdueOnly: search.overdueOnly, source: search.source, search: search.search, page: search.page }),
+    qualityQueries.capas({
+      status: search.status,
+      openOnly: openOnly || undefined,
+      overdueOnly: search.overdueOnly,
+      source: search.source,
+      search: search.search,
+      page: search.page,
+    }),
   );
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<CapaSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<CapaSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -78,7 +97,13 @@ function CapasPage() {
               <Select
                 value={search.status ?? (search.view === 'all' ? 'all' : 'open')}
                 onChange={(_, d) =>
-                  set(d.value === 'open' ? { status: undefined, view: undefined } : d.value === 'all' ? { status: undefined, view: 'all' } : { status: d.value as CapaStatus, view: undefined })
+                  set(
+                    d.value === 'open'
+                      ? { status: undefined, view: undefined }
+                      : d.value === 'all'
+                        ? { status: undefined, view: 'all' }
+                        : { status: d.value as CapaStatus, view: undefined },
+                  )
                 }
               >
                 <option value="open">Open and in progress</option>
@@ -91,7 +116,10 @@ function CapasPage() {
               </Select>
             </Field>
             <Field label="Arising from">
-              <Select value={search.source ?? ''} onChange={(_, d) => set({ source: (d.value || undefined) as CapaSource | undefined })}>
+              <Select
+                value={search.source ?? ''}
+                onChange={(_, d) => set({ source: (d.value || undefined) as CapaSource | undefined })}
+              >
                 <option value="">All</option>
                 {CAPA_SOURCES.map((s) => (
                   <option key={s} value={s}>
@@ -100,7 +128,12 @@ function CapasPage() {
                 ))}
               </Select>
             </Field>
-            <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.overdueOnly)} onChange={(_, d) => set({ overdueOnly: d.checked ? true : undefined })} label="Overdue only" />
+            <Checkbox
+              style={{ alignSelf: 'flex-end' }}
+              checked={Boolean(search.overdueOnly)}
+              onChange={(_, d) => set({ overdueOnly: d.checked ? true : undefined })}
+              label="Overdue only"
+            />
           </FilterBar>
         </FilterPad>
         <DataTable
@@ -119,15 +152,25 @@ function CapasPage() {
                 <span>
                   <Text weight="semibold">{c.action}</Text>
                   <Caption1 block>
-                    {c.capaNumber} · {c.type} · {c.incidentNumber ? `incident ${c.incidentNumber}` : capaSourceLabel[c.source]}
+                    {c.capaNumber} · {c.type} ·{' '}
+                    {c.incidentNumber ? `incident ${c.incidentNumber}` : capaSourceLabel[c.source]}
                   </Caption1>
                 </span>
               ),
             },
             { key: 'owner', header: 'Owner', render: (c) => c.ownerName ?? '—' },
             { key: 'due', header: 'Due', width: 120, render: (c) => formatDateOnly(c.dueDate) },
-            { key: 'check', header: 'Effect check', priority: 'low', render: (c) => (c.effectivenessCheckDue ? formatDateOnly(c.effectivenessCheckDue) : '—') },
-            { key: 'status', header: 'Status', render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} /> },
+            {
+              key: 'check',
+              header: 'Effect check',
+              priority: 'low',
+              render: (c) => (c.effectivenessCheckDue ? formatDateOnly(c.effectivenessCheckDue) : '—'),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} />,
+            },
           ]}
           emptyTitle={search.overdueOnly ? 'Nothing overdue' : 'No actions match'}
           emptyDescription="Actions are planned from incidents, risks, audits or complaints."

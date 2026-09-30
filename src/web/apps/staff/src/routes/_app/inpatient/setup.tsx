@@ -4,14 +4,23 @@ import { DataTable, EmptyState, Page, PageHeader, Section, StatusBadge } from '@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { GENDER_POLICY_LABEL, inpatientQueries, WARD_TYPE_LABEL, type BedDto, type RoomDto, type WardDto } from '@/modules/inpatient/api';
+import {
+  GENDER_POLICY_LABEL,
+  inpatientQueries,
+  WARD_TYPE_LABEL,
+  type BedDto,
+  type RoomDto,
+  type WardDto,
+} from '@/modules/inpatient/api';
 import { nextBedNumber } from '@/modules/inpatient/bedState';
 import { BedFeatures, BedStateChip } from '@/modules/inpatient/BedTile';
 import { useInpatientPermissions } from '@/modules/inpatient/hooks';
 import { BedDialog, BulkBedsDialog, RoomDialog, WardDrawer } from '@/modules/inpatient/SetupForms';
 
 export const Route = createFileRoute('/_app/inpatient/setup')({
-  validateSearch: (s: Record<string, unknown>): { wardId?: string } => ({ wardId: typeof s.wardId === 'string' && s.wardId ? s.wardId : undefined }),
+  validateSearch: (s: Record<string, unknown>): { wardId?: string } => ({
+    wardId: typeof s.wardId === 'string' && s.wardId ? s.wardId : undefined,
+  }),
   component: WardSetupPage,
 });
 
@@ -56,7 +65,10 @@ function WardSetupPage() {
   if (!permissions.masters) {
     return (
       <Page maxWidth={720}>
-        <EmptyState title="You cannot change wards and beds" description="Ask the hospital administrator to set up wards, rooms and beds." />
+        <EmptyState
+          title="You cannot change wards and beds"
+          description="Ask the hospital administrator to set up wards, rooms and beds."
+        />
       </Page>
     );
   }
@@ -74,7 +86,11 @@ function WardSetupPage() {
         }
       />
       <div className={styles.columns}>
-        <Section title="Wards" actions={<Switch checked={showClosed} onChange={(_, d) => setShowClosed(d.checked)} label="Show closed" />} flush>
+        <Section
+          title="Wards"
+          actions={<Switch checked={showClosed} onChange={(_, d) => setShowClosed(d.checked)} label="Show closed" />}
+          flush
+        >
           <DataTable
             ariaLabel="Wards"
             rows={wards.data ? list : undefined}
@@ -103,11 +119,33 @@ function WardSetupPage() {
                 ),
               },
               { key: 'beds', header: 'Beds', width: 90, render: (w) => `${w.occupiedBeds}/${w.totalBeds}` },
-              { key: 'tariff', header: 'Tariff', width: 100, priority: 'low', render: (w) => w.bedServiceCode ?? <Caption1>None</Caption1> },
-              { key: 'status', header: 'Status', width: 90, render: (w) => <StatusBadge status={w.isActive ? 'Active' : 'Closed'} tone={w.isActive ? 'success' : 'informative'} /> },
+              {
+                key: 'tariff',
+                header: 'Tariff',
+                width: 100,
+                priority: 'low',
+                render: (w) => w.bedServiceCode ?? <Caption1>None</Caption1>,
+              },
+              {
+                key: 'status',
+                header: 'Status',
+                width: 90,
+                render: (w) => (
+                  <StatusBadge
+                    status={w.isActive ? 'Active' : 'Closed'}
+                    tone={w.isActive ? 'success' : 'informative'}
+                  />
+                ),
+              },
             ]}
             rowActions={(w) => (
-              <Button size="small" appearance="subtle" icon={<EditRegular />} aria-label={`Edit ${w.name}`} onClick={() => setEditing({ kind: 'ward', ward: w })} />
+              <Button
+                size="small"
+                appearance="subtle"
+                icon={<EditRegular />}
+                aria-label={`Edit ${w.name}`}
+                onClick={() => setEditing({ kind: 'ward', ward: w })}
+              />
             )}
             emptyTitle="No wards yet"
             emptyDescription="Add the first ward, then its rooms and beds."
@@ -159,7 +197,12 @@ function WardSetupPage() {
                 onRowClick={(r) => setEditing({ kind: 'room', room: r })}
                 size="small"
                 columns={[
-                  { key: 'number', header: 'Room', width: 100, render: (r) => <Text weight="semibold">{r.number}</Text> },
+                  {
+                    key: 'number',
+                    header: 'Room',
+                    width: 100,
+                    render: (r) => <Text weight="semibold">{r.number}</Text>,
+                  },
                   { key: 'desc', header: 'Description', render: (r) => r.description ?? '—' },
                   { key: 'beds', header: 'Beds', width: 70, render: (r) => r.beds },
                   {
@@ -168,7 +211,11 @@ function WardSetupPage() {
                     width: 140,
                     render: (r) => (
                       <span style={{ display: 'inline-flex', gap: 4 }}>
-                        {r.isIsolation && <Badge appearance="tint" color="warning">Isolation</Badge>}
+                        {r.isIsolation && (
+                          <Badge appearance="tint" color="warning">
+                            Isolation
+                          </Badge>
+                        )}
                         {!r.isActive && <Badge appearance="tint">Not in use</Badge>}
                         {r.isActive && !r.isIsolation && <Caption1>Standard</Caption1>}
                       </span>
@@ -204,14 +251,31 @@ function WardSetupPage() {
                 onRowClick={(b) => setEditing({ kind: 'bed', bed: b })}
                 size="small"
                 columns={[
-                  { key: 'label', header: 'Bed', width: 110, render: (b) => <Text weight="semibold" font="monospace">{b.label}</Text> },
+                  {
+                    key: 'label',
+                    header: 'Bed',
+                    width: 110,
+                    render: (b) => (
+                      <Text weight="semibold" font="monospace">
+                        {b.label}
+                      </Text>
+                    ),
+                  },
                   { key: 'room', header: 'Room', width: 90, render: (b) => b.roomNumber ?? '—' },
-                  { key: 'status', header: 'Status', width: 150, render: (b) => (b.isActive ? <BedStateChip status={b.status} /> : <Badge appearance="tint">Out of service</Badge>) },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    width: 150,
+                    render: (b) =>
+                      b.isActive ? <BedStateChip status={b.status} /> : <Badge appearance="tint">Out of service</Badge>,
+                  },
                   {
                     key: 'equipment',
                     header: 'Equipment',
                     priority: 'low',
-                    render: (b) => <BedFeatures oxygen={b.hasOxygen} ventilator={b.hasVentilator} monitor={b.hasMonitor} />,
+                    render: (b) => (
+                      <BedFeatures oxygen={b.hasOxygen} ventilator={b.hasVentilator} monitor={b.hasMonitor} />
+                    ),
                   },
                   { key: 'order', header: 'Order', width: 70, priority: 'low', render: (b) => b.displayOrder },
                 ]}
@@ -221,20 +285,35 @@ function WardSetupPage() {
             </Section>
           </div>
         ) : (
-          <EmptyState icon={<BuildingRegular />} title="Choose a ward" description="Select a ward to manage its rooms and beds, or add a new ward." />
+          <EmptyState
+            icon={<BuildingRegular />}
+            title="Choose a ward"
+            description="Select a ward to manage its rooms and beds, or add a new ward."
+          />
         )}
       </div>
 
       {editing?.kind === 'ward' && <WardDrawer ward={editing.ward} onClose={() => setEditing(null)} />}
-      {editing?.kind === 'room' && selected && <RoomDialog wardId={selected.id} room={editing.room} onClose={() => setEditing(null)} />}
+      {editing?.kind === 'room' && selected && (
+        <RoomDialog wardId={selected.id} room={editing.room} onClose={() => setEditing(null)} />
+      )}
       {editing?.kind === 'bed' && selected && (
-        <BedDialog wardId={selected.id} bed={editing.bed} rooms={roomList.filter((r) => r.isActive || r.id === editing.bed?.roomId)} nextOrder={nextOrder} onClose={() => setEditing(null)} />
+        <BedDialog
+          wardId={selected.id}
+          bed={editing.bed}
+          rooms={roomList.filter((r) => r.isActive || r.id === editing.bed?.roomId)}
+          nextOrder={nextOrder}
+          onClose={() => setEditing(null)}
+        />
       )}
       {editing?.kind === 'bulk' && selected && (
         <BulkBedsDialog
           ward={selected}
           rooms={roomList.filter((r) => r.isActive)}
-          startNumber={nextBedNumber(selected.code, bedList.map((b) => b.label))}
+          startNumber={nextBedNumber(
+            selected.code,
+            bedList.map((b) => b.label),
+          )}
           onClose={() => setEditing(null)}
         />
       )}

@@ -1,4 +1,15 @@
-import { Button, Caption1, Field, Input, SearchBox, Select, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  SearchBox,
+  Select,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { AddRegular, ChatMultipleRegular } from '@fluentui/react-icons';
 import { formatDateTime, useDebouncedValue, useRealtimeEvent, useSession } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -48,7 +59,9 @@ export const Route = createFileRoute('/_app/feedback/complaints/')({
   validateSearch: (s: Record<string, unknown>): ComplaintsSearch => ({
     view: VIEWS.includes(s.view as View) && s.view !== 'open' ? (s.view as View) : undefined,
     status: COMPLAINT_STATUSES.includes(s.status as ComplaintStatus) ? (s.status as ComplaintStatus) : undefined,
-    priority: COMPLAINT_PRIORITIES.includes(s.priority as ComplaintPriority) ? (s.priority as ComplaintPriority) : undefined,
+    priority: COMPLAINT_PRIORITIES.includes(s.priority as ComplaintPriority)
+      ? (s.priority as ComplaintPriority)
+      : undefined,
     source: COMPLAINT_SOURCES.includes(s.source as ComplaintSource) ? (s.source as ComplaintSource) : undefined,
     departmentId: typeof s.departmentId === 'string' && s.departmentId ? s.departmentId : undefined,
     from: isIsoDate(s.from) ? s.from : undefined,
@@ -115,12 +128,17 @@ function ComplaintsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<ComplaintsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
-  const openNew = (open: boolean) => void navigate({ search: (prev) => ({ ...prev, new: open ? true : undefined }), replace: true });
+  const set = (patch: Partial<ComplaintsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const openNew = (open: boolean) =>
+    void navigate({ search: (prev) => ({ ...prev, new: open ? true : undefined }), replace: true });
 
   return (
     <Page>
@@ -135,7 +153,11 @@ function ComplaintsPage() {
           </Button>
         }
       />
-      <TabList selectedValue={view} onTabSelect={(_, d) => set({ view: d.value === 'open' ? undefined : (d.value as View), status: undefined })} style={{ marginBottom: 8 }}>
+      <TabList
+        selectedValue={view}
+        onTabSelect={(_, d) => set({ view: d.value === 'open' ? undefined : (d.value as View), status: undefined })}
+        style={{ marginBottom: 8 }}
+      >
         <Tab value="open">Open</Tab>
         <Tab value="overdue">Past the deadline</Tab>
         <Tab value="mine">Mine</Tab>
@@ -145,11 +167,18 @@ function ComplaintsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Complaint number" style={{ flex: '1 1 200px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Full number or its last digits" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Full number or its last digits"
+              />
             </Field>
             {view === 'all' && (
               <Field label="Stage">
-                <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as ComplaintStatus | undefined })}>
+                <Select
+                  value={search.status ?? ''}
+                  onChange={(_, d) => set({ status: (d.value || undefined) as ComplaintStatus | undefined })}
+                >
                   <option value="">Any</option>
                   {COMPLAINT_STATUSES.map((s) => (
                     <option key={s} value={s}>
@@ -160,7 +189,10 @@ function ComplaintsPage() {
               </Field>
             )}
             <Field label="Priority">
-              <Select value={search.priority ?? ''} onChange={(_, d) => set({ priority: (d.value || undefined) as ComplaintPriority | undefined })}>
+              <Select
+                value={search.priority ?? ''}
+                onChange={(_, d) => set({ priority: (d.value || undefined) as ComplaintPriority | undefined })}
+              >
                 <option value="">Any</option>
                 {COMPLAINT_PRIORITIES.map((p) => (
                   <option key={p} value={p}>
@@ -170,7 +202,10 @@ function ComplaintsPage() {
               </Select>
             </Field>
             <Field label="Source">
-              <Select value={search.source ?? ''} onChange={(_, d) => set({ source: (d.value || undefined) as ComplaintSource | undefined })}>
+              <Select
+                value={search.source ?? ''}
+                onChange={(_, d) => set({ source: (d.value || undefined) as ComplaintSource | undefined })}
+              >
                 <option value="">Any</option>
                 {COMPLAINT_SOURCES.map((s) => (
                   <option key={s} value={s}>
@@ -180,7 +215,10 @@ function ComplaintsPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -234,11 +272,30 @@ function ComplaintsPage() {
             },
             { key: 'priority', header: 'Priority', render: (c) => <PriorityBadge priority={c.priority} /> },
             { key: 'deadline', header: 'Deadline', render: (c) => <Deadline c={c} now={now} /> },
-            { key: 'owner', header: 'Owner', priority: 'low', render: (c) => (c.ownerUserId ? <UserName id={c.ownerUserId} /> : <Caption1>Not assigned</Caption1>) },
-            { key: 'status', header: 'Stage', render: (c) => <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} /> },
+            {
+              key: 'owner',
+              header: 'Owner',
+              priority: 'low',
+              render: (c) => (c.ownerUserId ? <UserName id={c.ownerUserId} /> : <Caption1>Not assigned</Caption1>),
+            },
+            {
+              key: 'status',
+              header: 'Stage',
+              render: (c) => <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} />,
+            },
           ]}
-          emptyTitle={view === 'overdue' ? 'Nothing past its deadline' : view === 'open' ? 'No open complaints' : 'No complaints match'}
-          emptyDescription={view === 'open' ? 'New complaints, including low feedback scores, appear here straight away.' : 'Try another tab or clear the filters.'}
+          emptyTitle={
+            view === 'overdue'
+              ? 'Nothing past its deadline'
+              : view === 'open'
+                ? 'No open complaints'
+                : 'No complaints match'
+          }
+          emptyDescription={
+            view === 'open'
+              ? 'New complaints, including low feedback scores, appear here straight away.'
+              : 'Try another tab or clear the filters.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={complaints.data?.totalCount}

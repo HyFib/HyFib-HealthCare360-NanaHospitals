@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { inputAmountLabel, previewInputsCsv, previewTotal, runActions, runStepIndex, splitCsvLine, structurePreview, validatePtBands, withUpperLimits } from './payroll';
+import {
+  inputAmountLabel,
+  previewInputsCsv,
+  previewTotal,
+  runActions,
+  runStepIndex,
+  splitCsvLine,
+  structurePreview,
+  validatePtBands,
+  withUpperLimits,
+} from './payroll';
 
 describe('payroll run actions', () => {
   const both = { process: true, approve: true };
@@ -32,14 +42,28 @@ describe('payroll run actions', () => {
 
 describe('payroll inputs CSV preview', () => {
   it('splits quoted fields', () => {
-    expect(splitCsvLine('NHEMP00042,CANTEEN,450.50,"Canteen, September"')).toEqual(['NHEMP00042', 'CANTEEN', '450.50', 'Canteen, September']);
+    expect(splitCsvLine('NHEMP00042,CANTEEN,450.50,"Canteen, September"')).toEqual([
+      'NHEMP00042',
+      'CANTEEN',
+      '450.50',
+      'Canteen, September',
+    ]);
     expect(splitCsvLine('a,"say ""hi""",3')).toEqual(['a', 'say "hi"', '3']);
   });
 
   it('skips the header and blank lines and reports bad lines by number', () => {
-    const csv = ['employeeCode,componentCode,amount,description', 'nhemp00042,canteen,450.5,Canteen', '', 'NHEMP00043,ADVANCE,-5', 'NHEMP00044,OT,12.345', 'BAD CODE,OT,100'].join('\n');
+    const csv = [
+      'employeeCode,componentCode,amount,description',
+      'nhemp00042,canteen,450.5,Canteen',
+      '',
+      'NHEMP00043,ADVANCE,-5',
+      'NHEMP00044,OT,12.345',
+      'BAD CODE,OT,100',
+    ].join('\n');
     const preview = previewInputsCsv(csv);
-    expect(preview.lines).toEqual([{ line: 2, employeeCode: 'NHEMP00042', componentCode: 'CANTEEN', amount: 450.5, description: 'Canteen' }]);
+    expect(preview.lines).toEqual([
+      { line: 2, employeeCode: 'NHEMP00042', componentCode: 'CANTEEN', amount: 450.5, description: 'Canteen' },
+    ]);
     expect(preview.errors.map((e) => e.line)).toEqual([4, 5, 6]);
     expect(previewTotal(preview)).toBe(450.5);
   });
@@ -67,14 +91,18 @@ describe('salary structure preview', () => {
   });
 
   it('is zero without a basic', () => {
-    expect(structurePreview([{ code: 'HRA', kind: 'Earning', calculationType: 'PercentOfBasic', value: 40 }]).gross).toBe(0);
+    expect(
+      structurePreview([{ code: 'HRA', kind: 'Earning', calculationType: 'PercentOfBasic', value: 40 }]).gross,
+    ).toBe(0);
   });
 });
 
 describe('professional tax bands', () => {
   it('checks bands like the server', () => {
     expect(validatePtBands([], 'Monthly', [])).toEqual(['Add at least one income band.']);
-    expect(validatePtBands([{ incomeFrom: 100, amount: 0, februaryAmount: null }], 'Monthly', [])).toEqual(['The first band must start at ₹0.']);
+    expect(validatePtBands([{ incomeFrom: 100, amount: 0, februaryAmount: null }], 'Monthly', [])).toEqual([
+      'The first band must start at ₹0.',
+    ]);
     expect(
       validatePtBands(
         [

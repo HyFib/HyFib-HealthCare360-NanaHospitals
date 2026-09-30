@@ -6,7 +6,15 @@
 
 export type MealSlot = 'EarlyMorning' | 'Breakfast' | 'MidMorning' | 'Lunch' | 'Evening' | 'Dinner' | 'Bedtime';
 
-export const MEAL_SLOTS: readonly MealSlot[] = ['EarlyMorning', 'Breakfast', 'MidMorning', 'Lunch', 'Evening', 'Dinner', 'Bedtime'];
+export const MEAL_SLOTS: readonly MealSlot[] = [
+  'EarlyMorning',
+  'Breakfast',
+  'MidMorning',
+  'Lunch',
+  'Evening',
+  'Dinner',
+  'Bedtime',
+];
 
 export const MEAL_SLOT_BIT: Record<MealSlot, number> = {
   EarlyMorning: 1,
@@ -100,9 +108,24 @@ export const PREFERENCE_LABEL: Record<FoodPreference, string> = {
   Jain: 'Jain (no root vegetables)',
 };
 
-export const PREFERENCE_SHORT: Record<FoodPreference, string> = { Vegetarian: 'Veg', NonVegetarian: 'Non-veg', Eggetarian: 'Egg', Jain: 'Jain' };
+export const PREFERENCE_SHORT: Record<FoodPreference, string> = {
+  Vegetarian: 'Veg',
+  NonVegetarian: 'Non-veg',
+  Eggetarian: 'Egg',
+  Jain: 'Jain',
+};
 
-export const COMMON_RESTRICTIONS = ['Low salt', 'Low sugar', 'Low fat', 'Low potassium', 'Soft', 'No onion or garlic', 'High protein', 'High fibre', 'Pureed'];
+export const COMMON_RESTRICTIONS = [
+  'Low salt',
+  'Low sugar',
+  'Low fat',
+  'Low potassium',
+  'Soft',
+  'No onion or garlic',
+  'High protein',
+  'High fibre',
+  'Pureed',
+];
 
 export const MAX_RESTRICTIONS = 10;
 

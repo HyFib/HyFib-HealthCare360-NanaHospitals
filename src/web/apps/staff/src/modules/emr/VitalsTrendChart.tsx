@@ -3,10 +3,25 @@ import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { TREND_METRICS, trendSeries, type TrendMetric, type VitalsReading } from './vitals';
 
-const LABEL = new Intl.DateTimeFormat('en-IN', { timeZone: HOSPITAL_TIME_ZONE, day: '2-digit', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+const LABEL = new Intl.DateTimeFormat('en-IN', {
+  timeZone: HOSPITAL_TIME_ZONE,
+  day: '2-digit',
+  month: 'short',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
 
 /** Line chart of one vital sign over time, with the usual adult range as dashed guide lines. Loaded lazily (ECharts). */
-export default function VitalsTrendChart({ readings, metric, height = 260 }: { readings: readonly VitalsReading[]; metric: TrendMetric; height?: number }) {
+export default function VitalsTrendChart({
+  readings,
+  metric,
+  height = 260,
+}: {
+  readings: readonly VitalsReading[];
+  metric: TrendMetric;
+  height?: number;
+}) {
   const info = TREND_METRICS.find((m) => m.id === metric) ?? TREND_METRICS[0]!;
   const option = useMemo<ChartOption>(() => {
     const trend = trendSeries(readings, metric);
@@ -36,5 +51,11 @@ export default function VitalsTrendChart({ readings, metric, height = 260 }: { r
     };
   }, [readings, metric, info]);
 
-  return <EChart option={option} height={height} ariaLabel={`${info.label} trend chart. The table below lists the same values.`} />;
+  return (
+    <EChart
+      option={option}
+      height={height}
+      ariaLabel={`${info.label} trend chart. The table below lists the same values.`}
+    />
+  );
 }

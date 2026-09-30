@@ -117,9 +117,15 @@ describe('quantityToDispense', () => {
 
 describe('directions', () => {
   it('builds readable one-line directions', () => {
-    expect(directionsText({ dose: '1 tab', frequency: 'BD', durationDays: 5, instructions: 'After food' })).toBe('1 tab · twice a day (BD) · 5 days · after food');
-    expect(directionsText({ dose: '1 tab', frequency: 'Custom', customFrequency: '1-0-1', durationDays: 28, route: 'Oral' })).toBe('1 tab · 1-0-1 · 4 weeks');
-    expect(directionsText({ dose: '1 g', frequency: 'STAT', durationDays: 1, route: 'IV' })).toBe('1 g · immediately, once (STAT) · IV');
+    expect(directionsText({ dose: '1 tab', frequency: 'BD', durationDays: 5, instructions: 'After food' })).toBe(
+      '1 tab · twice a day (BD) · 5 days · after food',
+    );
+    expect(
+      directionsText({ dose: '1 tab', frequency: 'Custom', customFrequency: '1-0-1', durationDays: 28, route: 'Oral' }),
+    ).toBe('1 tab · 1-0-1 · 4 weeks');
+    expect(directionsText({ dose: '1 g', frequency: 'STAT', durationDays: 1, route: 'IV' })).toBe(
+      '1 g · immediately, once (STAT) · IV',
+    );
   });
 
   it('formats durations', () => {

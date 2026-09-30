@@ -24,8 +24,21 @@ export const Route = createFileRoute('/_auth/records/discharge/$summaryId')({
 });
 
 const useStyles = makeStyles({
-  text: { margin: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
-  lines: { margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: tokens.fontSizeBase400 },
+  text: {
+    margin: 0,
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
+  lines: {
+    margin: 0,
+    paddingLeft: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    fontSize: tokens.fontSizeBase400,
+  },
   meta: { margin: 0, color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase200 },
   followUp: { margin: 0, fontWeight: tokens.fontWeightSemibold, fontSize: tokens.fontSizeBase400 },
 });
@@ -91,7 +104,13 @@ function DischargeSummaryView({ summary, back }: { summary: DischargeSummaryDto;
       actions={
         <DocumentActions
           build={() =>
-            dischargeSummaryDocument(summary, { t, f, hospital, printedAt: new Date().toISOString(), patient: { fullName: profile.fullName, uhid: profile.uhid } })
+            dischargeSummaryDocument(summary, {
+              t,
+              f,
+              hospital,
+              printedAt: new Date().toISOString(),
+              patient: { fullName: profile.fullName, uhid: profile.uhid },
+            })
           }
         />
       }
@@ -103,8 +122,12 @@ function DischargeSummaryView({ summary, back }: { summary: DischargeSummaryDto;
               {t('discharge.doctor')}: {summary.practitionerName}
             </p>
           )}
-          {summary.signedAt && <p className={styles.meta}>{t('discharge.signed', { date: f.dateTime(summary.signedAt) })}</p>}
-          {summary.amendedAt && <p className={styles.meta}>{t('discharge.amended', { date: f.dateTime(summary.amendedAt) })}</p>}
+          {summary.signedAt && (
+            <p className={styles.meta}>{t('discharge.signed', { date: f.dateTime(summary.signedAt) })}</p>
+          )}
+          {summary.amendedAt && (
+            <p className={styles.meta}>{t('discharge.amended', { date: f.dateTime(summary.amendedAt) })}</p>
+          )}
         </div>
       )}
 
@@ -124,7 +147,11 @@ function DischargeSummaryView({ summary, back }: { summary: DischargeSummaryDto;
 
       {(summary.followUpDate || summary.followUpInstructions?.trim()) && (
         <ReportCard title={t('discharge.followUp')}>
-          {summary.followUpDate && <p className={styles.followUp}>{t('discharge.followUpOn', { date: f.calendarDate(summary.followUpDate) })}</p>}
+          {summary.followUpDate && (
+            <p className={styles.followUp}>
+              {t('discharge.followUpOn', { date: f.calendarDate(summary.followUpDate) })}
+            </p>
+          )}
           {summary.followUpInstructions?.trim() && <p className={styles.text}>{summary.followUpInstructions.trim()}</p>}
           <div>
             <ButtonLink to="/doctors" appearance="secondary" icon={<CalendarAddRegular />}>
@@ -134,7 +161,11 @@ function DischargeSummaryView({ summary, back }: { summary: DischargeSummaryDto;
         </ReportCard>
       )}
 
-      {section(t('discharge.medications'), summary.medications, <p className={styles.meta}>{t('discharge.medicationsNote')}</p>)}
+      {section(
+        t('discharge.medications'),
+        summary.medications,
+        <p className={styles.meta}>{t('discharge.medicationsNote')}</p>,
+      )}
       {section(t('discharge.advice'), summary.advice)}
       {section(t('discharge.complaints'), summary.presentingComplaints)}
       {section(t('discharge.course'), summary.courseInHospital)}

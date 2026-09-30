@@ -46,7 +46,10 @@ function BatchPage() {
       <PageHeader
         title={batch.corporateName}
         subtitle={`${batch.batchNumber} · ${formatDateOnly(batch.scheduledDate)}${pkg ? ` · ${pkg.name}` : ''}`}
-        breadcrumbs={[{ label: 'Corporate batches', onClick: () => void navigate({ to: '/health-checkups/corporate' }) }, { label: batch.batchNumber }]}
+        breadcrumbs={[
+          { label: 'Corporate batches', onClick: () => void navigate({ to: '/health-checkups/corporate' }) },
+          { label: batch.batchNumber },
+        ]}
       />
       <Section>
         <div className={styles.facts}>
@@ -71,7 +74,11 @@ function BatchPage() {
             <Text>{formatDateTime(batch.createdAt)}</Text>
           </div>
         </div>
-        {batch.notes && <Text block style={{ marginTop: 12 }}>{batch.notes}</Text>}
+        {batch.notes && (
+          <Text block style={{ marginTop: 12 }}>
+            {batch.notes}
+          </Text>
+        )}
       </Section>
       <div className={styles.counts}>
         {BOOKING_STATUSES.filter((s) => counts[s] > 0).map((s) => (
@@ -113,8 +120,19 @@ function BatchPage() {
                 );
               },
             },
-            { key: 'number', header: 'Booking', width: 140, priority: 'low', render: (b) => <Text font="monospace">{b.bookingNumber}</Text> },
-            { key: 'status', header: 'Status', width: 120, render: (b) => <StatusBadge status={b.status} label={bookingStatusLabel[b.status]} /> },
+            {
+              key: 'number',
+              header: 'Booking',
+              width: 140,
+              priority: 'low',
+              render: (b) => <Text font="monospace">{b.bookingNumber}</Text>,
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 120,
+              render: (b) => <StatusBadge status={b.status} label={bookingStatusLabel[b.status]} />,
+            },
           ]}
           emptyTitle="No employees booked"
         />

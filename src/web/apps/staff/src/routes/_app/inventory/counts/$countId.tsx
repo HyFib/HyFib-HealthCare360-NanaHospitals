@@ -21,7 +21,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type CountDetail, type CountLineDto } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type CountDetail,
+  type CountLineDto,
+} from '@/modules/inventory/api';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { itemTypeLabel } from '@/modules/inventory/labels';
 import { LineTable } from '@/modules/inventory/LineTable';
@@ -36,7 +42,12 @@ export const Route = createFileRoute('/_app/inventory/counts/$countId')({
 });
 
 const useStyles = makeStyles({
-  summary: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))', gap: '12px 24px', alignItems: 'end' },
+  summary: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))',
+    gap: '12px 24px',
+    alignItems: 'end',
+  },
   short: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
   more: { color: tokens.colorPaletteGreenForeground1, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -86,18 +97,32 @@ function CountSheet({ count }: { count: CountDetail }) {
   const changed = count.lines.filter((l) => {
     const now = edits[l.id];
     const before = serverEntry(l);
-    return now !== undefined && (now.counted.trim() !== before.counted.trim() || now.remarks.trim() !== before.remarks.trim());
+    return (
+      now !== undefined &&
+      (now.counted.trim() !== before.counted.trim() || now.remarks.trim() !== before.remarks.trim())
+    );
   });
   const dirty = changed.length > 0;
-  const draft = useDraft<Record<string, Entry>>(editable ? `stock-count:${count.id}` : null, edits, { enabled: editable && dirty });
+  const draft = useDraft<Record<string, Entry>>(editable ? `stock-count:${count.id}` : null, edits, {
+    enabled: editable && dirty,
+  });
   const [savedDraft, setSavedDraft] = useState(() => draft.restore());
 
   const parsed = count.lines.map((l) => ({ line: l, counted: parseNumber(entryOf(l).counted) }));
   const invalid = parsed.filter((p) => p.counted !== null && p.counted < 0);
-  const summary = summarizeCount(parsed.map((p) => ({ lineId: p.line.id, systemQuantity: p.line.systemQuantity, unitCost: p.line.unitCost, counted: p.counted })));
+  const summary = summarizeCount(
+    parsed.map((p) => ({
+      lineId: p.line.id,
+      systemQuantity: p.line.systemQuantity,
+      unitCost: p.line.unitCost,
+      counted: p.counted,
+    })),
+  );
   const term = filter.trim().toLowerCase();
   const visible = parsed.filter(
-    (p) => (!term || p.line.itemName.toLowerCase().includes(term) || p.line.batchNumber.toLowerCase().includes(term)) && (!onlyOpen || p.counted === null),
+    (p) =>
+      (!term || p.line.itemName.toLowerCase().includes(term) || p.line.batchNumber.toLowerCase().includes(term)) &&
+      (!onlyOpen || p.counted === null),
   );
 
   const refresh = () => {
@@ -164,34 +189,59 @@ function CountSheet({ count }: { count: CountDetail }) {
     },
   });
 
-  useHotkey('mod+s', () => editable && dirty && invalid.length === 0 && !save.isPending && save.mutate(), { allowInInputs: true });
+  useHotkey('mod+s', () => editable && dirty && invalid.length === 0 && !save.isPending && save.mutate(), {
+    allowInInputs: true,
+  });
 
-  const setEntry = (line: CountLineDto, patch: Partial<Entry>) => setEdits((prev) => ({ ...prev, [line.id]: { ...(prev[line.id] ?? serverEntry(line)), ...patch } }));
+  const setEntry = (line: CountLineDto, patch: Partial<Entry>) =>
+    setEdits((prev) => ({ ...prev, [line.id]: { ...(prev[line.id] ?? serverEntry(line)), ...patch } }));
 
   return (
     <Page>
       <PageHeader
         title={`Stock count ${count.number}`}
         subtitle={`${count.storeName}${count.itemTypeFilter ? ` · ${itemTypeLabel[count.itemTypeFilter]} only` : ''} · started ${formatDateTime(count.startedAt)}`}
-        breadcrumbs={[{ label: 'Stock counts', onClick: () => void navigate({ to: '/inventory/counts' }) }, { label: count.number }]}
+        breadcrumbs={[
+          { label: 'Stock counts', onClick: () => void navigate({ to: '/inventory/counts' }) },
+          { label: count.number },
+        ]}
         actions={
           <>
-            <Button icon={<PrintRegular />} onClick={() => void printCountSheet(count, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button
+              icon={<PrintRegular />}
+              onClick={() =>
+                void printCountSheet(count, letterhead).catch((error: unknown) =>
+                  notify.error(error, 'Printing failed'),
+                )
+              }
+            >
               Print blank sheet
             </Button>
             {editable && (
               <>
                 <Button onClick={() => setConfirm('cancel')}>Cancel count</Button>
-                <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={!dirty || invalid.length > 0 || save.isPending} onClick={() => save.mutate()}>
+                <Button
+                  icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+                  disabled={!dirty || invalid.length > 0 || save.isPending}
+                  onClick={() => save.mutate()}
+                >
                   Save (Ctrl+S)
                 </Button>
-                <Button appearance="primary" icon={<SendRegular />} disabled={summary.counted === 0 || invalid.length > 0 || submit.isPending} onClick={() => setConfirm('submit')}>
+                <Button
+                  appearance="primary"
+                  icon={<SendRegular />}
+                  disabled={summary.counted === 0 || invalid.length > 0 || submit.isPending}
+                  onClick={() => setConfirm('submit')}
+                >
                   Submit count
                 </Button>
               </>
             )}
             {count.adjustmentId && (
-              <Button appearance="primary" onClick={() => void navigate({ to: '/inventory/adjustments', search: { id: count.adjustmentId! } })}>
+              <Button
+                appearance="primary"
+                onClick={() => void navigate({ to: '/inventory/adjustments', search: { id: count.adjustmentId! } })}
+              >
                 Open the adjustment
               </Button>
             )}
@@ -201,7 +251,10 @@ function CountSheet({ count }: { count: CountDetail }) {
 
       {savedDraft && editable && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>Unsaved counts from {formatRelative(new Date(savedDraft.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            Unsaved counts from {formatRelative(new Date(savedDraft.savedAt).toISOString())} were found on this
+            computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button
               onClick={() => {
@@ -233,14 +286,20 @@ function CountSheet({ count }: { count: CountDetail }) {
             <Caption1 className={styles.muted}>
               Counted {summary.counted} of {summary.total} batches
             </Caption1>
-            <ProgressBar value={summary.total ? summary.counted / summary.total : 0} thickness="large" aria-label="Count progress" />
+            <ProgressBar
+              value={summary.total ? summary.counted / summary.total : 0}
+              thickness="large"
+              aria-label="Count progress"
+            />
           </div>
           <Detail label="Batches with a difference">{summary.withDifference}</Detail>
           <Detail label="Short (at cost)">
             <span className={summary.shortValue > 0 ? styles.short : undefined}>{formatInr(summary.shortValue)}</span>
           </Detail>
           <Detail label="Net difference (at cost)">
-            <span className={summary.netValue < 0 ? styles.short : summary.netValue > 0 ? styles.more : undefined}>{formatInr(summary.netValue)}</span>
+            <span className={summary.netValue < 0 ? styles.short : summary.netValue > 0 ? styles.more : undefined}>
+              {formatInr(summary.netValue)}
+            </span>
           </Detail>
         </div>
         {count.remarks && (
@@ -256,7 +315,11 @@ function CountSheet({ count }: { count: CountDetail }) {
             <SearchBox value={filter} onChange={(_, d) => setFilter(d.value)} placeholder="Item or batch" />
           </Field>
           <Switch checked={onlyOpen} onChange={(_, d) => setOnlyOpen(d.checked)} label="Only batches not counted yet" />
-          {dirty && <Caption1>{changed.length} unsaved change{changed.length === 1 ? '' : 's'}</Caption1>}
+          {dirty && (
+            <Caption1>
+              {changed.length} unsaved change{changed.length === 1 ? '' : 's'}
+            </Caption1>
+          )}
         </div>
         <LineTable
           ariaLabel="Count sheet"
@@ -337,7 +400,8 @@ function CountSheet({ count }: { count: CountDetail }) {
         {summary.counted < summary.total
           ? `${summary.total - summary.counted} batches are not counted and will be left out. `
           : ''}
-        The counts are compared with the books now. Differences become one adjustment that another person must approve; stock does not change until then.
+        The counts are compared with the books now. Differences become one adjustment that another person must approve;
+        stock does not change until then.
       </ConfirmDialog>
       <ConfirmDialog
         open={confirm === 'cancel'}

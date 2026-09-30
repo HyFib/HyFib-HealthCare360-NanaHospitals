@@ -24,14 +24,35 @@ import {
 import { AddRegular, DismissRegular, GlobeSearchRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useDebouncedValue } from '@hc360/core';
-import { applyServerErrors, DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
-import { ICD10_RELEASE, ICD11_RELEASE, mrdApi, mrdQueries, type IcdCodeDto, type OnlineIcdResult } from '@/modules/mrd/api';
+import {
+  ICD10_RELEASE,
+  ICD11_RELEASE,
+  mrdApi,
+  mrdQueries,
+  type IcdCodeDto,
+  type OnlineIcdResult,
+} from '@/modules/mrd/api';
 
 interface IcdSearch {
   search?: string;
@@ -82,7 +103,9 @@ type IcdValues = z.infer<typeof icdSchema>;
 function IcdDrawer({ code, onClose }: { code: IcdCodeDto | 'new' | null; onClose: () => void }) {
   return (
     <OverlayDrawer open={code !== null} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
-      {code !== null && <IcdForm key={code === 'new' ? 'new' : code.id} code={code === 'new' ? null : code} onClose={onClose} />}
+      {code !== null && (
+        <IcdForm key={code === 'new' ? 'new' : code.id} code={code === 'new' ? null : code} onClose={onClose} />
+      )}
     </OverlayDrawer>
   );
 }
@@ -129,11 +152,24 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>{code ? code.code : 'Add ICD code'}</DrawerHeaderTitle>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
+          {code ? code.code : 'Add ICD code'}
+        </DrawerHeaderTitle>
       </DrawerHeader>
       <DrawerBody>
         <div className={styles.form}>
-          <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} placeholder="e.g. A90" disabled={Boolean(code)} />
+          <TextField
+            control={form.control}
+            name="code"
+            label="Code"
+            required
+            autoFocus
+            maxLength={16}
+            placeholder="e.g. A90"
+            disabled={Boolean(code)}
+          />
           <TextField control={form.control} name="title" label="Title" required maxLength={300} />
           <SelectField
             control={form.control}
@@ -144,13 +180,28 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
               { value: ICD11_RELEASE, label: 'ICD-11 MMS' },
             ]}
           />
-          <TextField control={form.control} name="keywords" label="Search words" maxLength={300} hint="Shorthand and synonyms doctors type, e.g. T2DM, sugar, DM2" />
-          <SwitchField control={form.control} name="isBillable" label="Valid for coding and claims (most specific code)" />
+          <TextField
+            control={form.control}
+            name="keywords"
+            label="Search words"
+            maxLength={300}
+            hint="Shorthand and synonyms doctors type, e.g. T2DM, sugar, DM2"
+          />
+          <SwitchField
+            control={form.control}
+            name="isBillable"
+            label="Valid for coding and claims (most specific code)"
+          />
           <SwitchField control={form.control} name="isActive" label="Active (offered in searches)" />
         </div>
       </DrawerBody>
       <DrawerFooter>
-        <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+        <Button
+          type="submit"
+          appearance="primary"
+          disabled={save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+        >
           Save
         </Button>
         <Button onClick={onClose}>Cancel</Button>
@@ -166,7 +217,15 @@ function OnlineResults({ term, canAdd }: { term: string; canAdd: boolean }) {
   const online = useQuery(mrdQueries.icdOnline(term));
   const add = useMutation({
     mutationFn: (result: OnlineIcdResult) =>
-      mrdApi.saveIcd(null, { code: result.code, title: result.title, release: result.release, isBillable: result.isLeaf, keywords: null, fromOnlineLookup: true, isActive: true }),
+      mrdApi.saveIcd(null, {
+        code: result.code,
+        title: result.title,
+        release: result.release,
+        isBillable: result.isLeaf,
+        keywords: null,
+        fromOnlineLookup: true,
+        isActive: true,
+      }),
     onSuccess: (saved) => {
       notify.success(`${saved.code} added to the local catalogue`, 'Doctors and coders can now find it offline.');
       void queryClient.invalidateQueries({ queryKey: ['mrd'] });
@@ -177,7 +236,8 @@ function OnlineResults({ term, canAdd }: { term: string; canAdd: boolean }) {
     return <LoadingState label="Asking the WHO ICD service…" />;
   }
   if (online.error) {
-    return isApiError(online.error) && (online.error.code === 'icd.online_unavailable' || online.error.code === 'icd.online_failed') ? (
+    return isApiError(online.error) &&
+      (online.error.code === 'icd.online_unavailable' || online.error.code === 'icd.online_failed') ? (
       <MessageBar intent="warning">
         <MessageBarBody>{online.error.userMessage}</MessageBarBody>
       </MessageBar>
@@ -253,12 +313,22 @@ function IcdBrowserPage() {
             <LoadingState />
           ) : (
             <div className={styles.chapters}>
-              <Accordion collapsible openItems={search.chapter ? [search.chapter] : []} onToggle={(_, d) => void navigate({ search: (prev) => ({ ...prev, chapter: d.openItems.length > 0 ? String(d.value) : undefined }), replace: true })}>
+              <Accordion
+                collapsible
+                openItems={search.chapter ? [search.chapter] : []}
+                onToggle={(_, d) =>
+                  void navigate({
+                    search: (prev) => ({ ...prev, chapter: d.openItems.length > 0 ? String(d.value) : undefined }),
+                    replace: true,
+                  })
+                }
+              >
                 {(classification.data ?? []).map((c) => (
                   <AccordionItem key={c.number} value={c.number}>
                     <AccordionHeader size="small">
                       <span>
-                        <span className={styles.code}>{c.number}</span> {c.title} <Caption1 className={styles.muted}>({c.range})</Caption1>
+                        <span className={styles.code}>{c.number}</span> {c.title}{' '}
+                        <Caption1 className={styles.muted}>({c.range})</Caption1>
                       </span>
                     </AccordionHeader>
                     <AccordionPanel>
@@ -288,10 +358,25 @@ function IcdBrowserPage() {
           <div style={{ padding: '12px 16px' }}>
             <FilterBar>
               <Field label="Search" style={{ flex: '1 1 280px' }}>
-                <SearchBox autoFocus value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Code, words or shorthand" />
+                <SearchBox
+                  autoFocus
+                  value={term}
+                  onChange={(_, d) => setTerm(d.value)}
+                  placeholder="Code, words or shorthand"
+                />
               </Field>
-              <Switch checked={search.billable ?? false} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, billable: d.checked || undefined }), replace: true })} label="Codable only" />
-              <Button icon={<GlobeSearchRegular />} disabled={term.trim().length < 2} onClick={() => setOnlineTerm(term.trim())}>
+              <Switch
+                checked={search.billable ?? false}
+                onChange={(_, d) =>
+                  void navigate({ search: (prev) => ({ ...prev, billable: d.checked || undefined }), replace: true })
+                }
+                label="Codable only"
+              />
+              <Button
+                icon={<GlobeSearchRegular />}
+                disabled={term.trim().length < 2}
+                onClick={() => setOnlineTerm(term.trim())}
+              >
                 Search WHO online
               </Button>
             </FilterBar>
@@ -318,11 +403,20 @@ function IcdBrowserPage() {
                 render: (c) => (
                   <span>
                     <Text>{c.title}</Text>
-                    {c.keywords && <Caption1 block className={styles.muted}>{c.keywords}</Caption1>}
+                    {c.keywords && (
+                      <Caption1 block className={styles.muted}>
+                        {c.keywords}
+                      </Caption1>
+                    )}
                   </span>
                 ),
               },
-              { key: 'block', header: 'Block', priority: 'low', render: (c) => (c.blockTitle ? `${c.block ?? ''} ${c.blockTitle}` : (c.block ?? '—')) },
+              {
+                key: 'block',
+                header: 'Block',
+                priority: 'low',
+                render: (c) => (c.blockTitle ? `${c.block ?? ''} ${c.blockTitle}` : (c.block ?? '—')),
+              },
               {
                 key: 'billable',
                 header: 'Codable',
@@ -336,17 +430,45 @@ function IcdBrowserPage() {
                     </Badge>
                   ),
               },
-              { key: 'source', header: 'Source', width: 100, priority: 'low', render: (c) => <StatusBadge status={c.source} tone="informative" label={c.source === 'Seed' ? 'WHO list' : c.source === 'Online' ? 'WHO online' : 'Added here'} /> },
+              {
+                key: 'source',
+                header: 'Source',
+                width: 100,
+                priority: 'low',
+                render: (c) => (
+                  <StatusBadge
+                    status={c.source}
+                    tone="informative"
+                    label={c.source === 'Seed' ? 'WHO list' : c.source === 'Online' ? 'WHO online' : 'Added here'}
+                  />
+                ),
+              },
             ]}
             emptyTitle={search.search ? 'No local code matches' : 'Type to search the catalogue'}
-            emptyDescription={search.search ? 'Try other words or the code, or search the WHO service online.' : undefined}
+            emptyDescription={
+              search.search ? 'Try other words or the code, or search the WHO service online.' : undefined
+            }
           />
         </Section>
       </div>
 
-      <OverlayDrawer open={onlineTerm !== null} position="end" size="large" onOpenChange={(_, d) => !d.open && setOnlineTerm(null)}>
+      <OverlayDrawer
+        open={onlineTerm !== null}
+        position="end"
+        size="large"
+        onOpenChange={(_, d) => !d.open && setOnlineTerm(null)}
+      >
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={() => setOnlineTerm(null)} />}>
+          <DrawerHeaderTitle
+            action={
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                aria-label="Close"
+                onClick={() => setOnlineTerm(null)}
+              />
+            }
+          >
             WHO ICD online: “{onlineTerm}”
           </DrawerHeaderTitle>
         </DrawerHeader>

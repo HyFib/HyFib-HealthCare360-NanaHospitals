@@ -101,7 +101,11 @@ export interface AddIntakeOutputRequest {
 // ------------------------------------------------------------------ risk assessments
 
 export type AssessmentType = 'MorseFall' | 'Braden' | 'Pain';
-export const ASSESSMENT_LABEL: Record<AssessmentType, string> = { MorseFall: 'Fall risk (Morse)', Braden: 'Pressure injury (Braden)', Pain: 'Pain' };
+export const ASSESSMENT_LABEL: Record<AssessmentType, string> = {
+  MorseFall: 'Fall risk (Morse)',
+  Braden: 'Pressure injury (Braden)',
+  Pain: 'Pain',
+};
 
 export interface AssessmentDto {
   id: string;
@@ -181,7 +185,18 @@ export const COMMON_FREQUENCIES: { value: string; label: string }[] = [
   { value: 'SOS', label: 'SOS — only when needed' },
 ];
 
-export const COMMON_ROUTES = ['Oral', 'IV', 'IM', 'SC', 'Sublingual', 'Topical', 'Inhalation', 'Nebulisation', 'Rectal', 'Nasogastric'];
+export const COMMON_ROUTES = [
+  'Oral',
+  'IV',
+  'IM',
+  'SC',
+  'Sublingual',
+  'Topical',
+  'Inhalation',
+  'Nebulisation',
+  'Rectal',
+  'Nasogastric',
+];
 
 export interface MedicationOrderDto {
   id: string;
@@ -286,14 +301,18 @@ export interface WardMarItem {
 export const nursingKeys = {
   all: ['nursing'] as const,
   admission: (admissionId: string) => ['nursing', 'admission', admissionId] as const,
-  notes: (admissionId: string, dutyDate: string | null) => ['nursing', 'admission', admissionId, 'notes', dutyDate ?? 'all'] as const,
+  notes: (admissionId: string, dutyDate: string | null) =>
+    ['nursing', 'admission', admissionId, 'notes', dutyDate ?? 'all'] as const,
   handovers: (admissionId: string) => ['nursing', 'admission', admissionId, 'handovers'] as const,
-  intakeOutput: (admissionId: string, dutyDate: string) => ['nursing', 'admission', admissionId, 'io', dutyDate] as const,
+  intakeOutput: (admissionId: string, dutyDate: string) =>
+    ['nursing', 'admission', admissionId, 'io', dutyDate] as const,
   assessments: (admissionId: string) => ['nursing', 'admission', admissionId, 'assessments'] as const,
-  orders: (admissionId: string, activeOnly: boolean) => ['nursing', 'admission', admissionId, 'orders', activeOnly] as const,
+  orders: (admissionId: string, activeOnly: boolean) =>
+    ['nursing', 'admission', admissionId, 'orders', activeOnly] as const,
   mar: (admissionId: string, date: string) => ['nursing', 'admission', admissionId, 'mar', date] as const,
   ward: (wardId: string) => ['nursing', 'ward', wardId] as const,
-  wardHandovers: (wardId: string, dutyDate: string, shift: NursingShift | null) => ['nursing', 'ward', wardId, 'handovers', dutyDate, shift ?? 'all'] as const,
+  wardHandovers: (wardId: string, dutyDate: string, shift: NursingShift | null) =>
+    ['nursing', 'ward', wardId, 'handovers', dutyDate, shift ?? 'all'] as const,
   wardMarDue: (wardId: string, withinMinutes: number) => ['nursing', 'ward', wardId, 'mar-due', withinMinutes] as const,
 };
 
@@ -301,44 +320,60 @@ export const nursingQueries = {
   notes: (admissionId: string, dutyDate: string | null) =>
     queryOptions({
       queryKey: nursingKeys.notes(admissionId, dutyDate),
-      queryFn: ({ signal }) => api.get<NursingNoteDto[]>(`/api/v1/nursing/admissions/${admissionId}/notes`, { query: { dutyDate }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<NursingNoteDto[]>(`/api/v1/nursing/admissions/${admissionId}/notes`, { query: { dutyDate }, signal }),
     }),
   handovers: (admissionId: string) =>
     queryOptions({
       queryKey: nursingKeys.handovers(admissionId),
-      queryFn: ({ signal }) => api.get<HandoverDto[]>(`/api/v1/nursing/admissions/${admissionId}/handovers`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<HandoverDto[]>(`/api/v1/nursing/admissions/${admissionId}/handovers`, { signal }),
     }),
   intakeOutput: (admissionId: string, dutyDate: string) =>
     queryOptions({
       queryKey: nursingKeys.intakeOutput(admissionId, dutyDate),
-      queryFn: ({ signal }) => api.get<IntakeOutputChart>(`/api/v1/nursing/admissions/${admissionId}/intake-output`, { query: { dutyDate }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<IntakeOutputChart>(`/api/v1/nursing/admissions/${admissionId}/intake-output`, {
+          query: { dutyDate },
+          signal,
+        }),
     }),
   assessments: (admissionId: string) =>
     queryOptions({
       queryKey: nursingKeys.assessments(admissionId),
-      queryFn: ({ signal }) => api.get<AssessmentDto[]>(`/api/v1/nursing/admissions/${admissionId}/assessments`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<AssessmentDto[]>(`/api/v1/nursing/admissions/${admissionId}/assessments`, { signal }),
     }),
   orders: (admissionId: string, activeOnly: boolean) =>
     queryOptions({
       queryKey: nursingKeys.orders(admissionId, activeOnly),
       queryFn: ({ signal }) =>
-        api.get<MedicationOrderDto[]>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, { query: { activeOnly: activeOnly || undefined }, signal }),
+        api.get<MedicationOrderDto[]>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, {
+          query: { activeOnly: activeOnly || undefined },
+          signal,
+        }),
     }),
   mar: (admissionId: string, date: string) =>
     queryOptions({
       queryKey: nursingKeys.mar(admissionId, date),
-      queryFn: ({ signal }) => api.get<MarEntryDto[]>(`/api/v1/nursing/admissions/${admissionId}/mar`, { query: { date }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<MarEntryDto[]>(`/api/v1/nursing/admissions/${admissionId}/mar`, { query: { date }, signal }),
       refetchInterval: 60_000,
     }),
   wardHandovers: (wardId: string, dutyDate: string, shift: NursingShift | null) =>
     queryOptions({
       queryKey: nursingKeys.wardHandovers(wardId, dutyDate, shift),
-      queryFn: ({ signal }) => api.get<WardHandoverItem[]>(`/api/v1/nursing/wards/${wardId}/handovers`, { query: { dutyDate, shift }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<WardHandoverItem[]>(`/api/v1/nursing/wards/${wardId}/handovers`, {
+          query: { dutyDate, shift },
+          signal,
+        }),
     }),
   wardMarDue: (wardId: string, withinMinutes = 60) =>
     queryOptions({
       queryKey: nursingKeys.wardMarDue(wardId, withinMinutes),
-      queryFn: ({ signal }) => api.get<WardMarItem[]>(`/api/v1/nursing/wards/${wardId}/mar/due`, { query: { withinMinutes }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<WardMarItem[]>(`/api/v1/nursing/wards/${wardId}/mar/due`, { query: { withinMinutes }, signal }),
       refetchInterval: 60_000,
     }),
 };
@@ -348,18 +383,30 @@ export const nursingQueries = {
 export const nursingApi = {
   addNote: (admissionId: string, body: { category: NursingNoteCategory; note: string; noteFor: string | null }) =>
     api.post<NursingNoteDto>(`/api/v1/nursing/admissions/${admissionId}/notes`, body),
-  addHandover: (admissionId: string, body: AddHandoverRequest) => api.post<HandoverDto>(`/api/v1/nursing/admissions/${admissionId}/handovers`, body),
-  acknowledgeHandover: (handoverId: string) => api.post<HandoverDto>(`/api/v1/nursing/handovers/${handoverId}/acknowledge`),
+  addHandover: (admissionId: string, body: AddHandoverRequest) =>
+    api.post<HandoverDto>(`/api/v1/nursing/admissions/${admissionId}/handovers`, body),
+  acknowledgeHandover: (handoverId: string) =>
+    api.post<HandoverDto>(`/api/v1/nursing/handovers/${handoverId}/acknowledge`),
   addIntakeOutput: (admissionId: string, body: AddIntakeOutputRequest) =>
     api.post<IntakeOutputDto>(`/api/v1/nursing/admissions/${admissionId}/intake-output`, body),
-  voidIntakeOutput: (entryId: string, reason: string) => api.post<void>(`/api/v1/nursing/intake-output/${entryId}/void`, { reason }),
-  addMorse: (admissionId: string, body: MorseAssessmentRequest) => api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/morse`, body),
-  addBraden: (admissionId: string, body: BradenAssessmentRequest) => api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/braden`, body),
-  addPain: (admissionId: string, body: PainAssessmentRequest) => api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/pain`, body),
+  voidIntakeOutput: (entryId: string, reason: string) =>
+    api.post<void>(`/api/v1/nursing/intake-output/${entryId}/void`, { reason }),
+  addMorse: (admissionId: string, body: MorseAssessmentRequest) =>
+    api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/morse`, body),
+  addBraden: (admissionId: string, body: BradenAssessmentRequest) =>
+    api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/braden`, body),
+  addPain: (admissionId: string, body: PainAssessmentRequest) =>
+    api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/pain`, body),
   addOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, body),
-  stopOrder: (orderId: string, reason: string) => api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop`, { reason }),
-  extendSchedule: (orderId: string) => api.post<{ medicationOrderId: string; dosesAdded: number }>(`/api/v1/nursing/medication-orders/${orderId}/schedule`),
-  addAdHocDose: (admissionId: string, body: AddAdHocDoseRequest) => api.post<MarEntryDto>(`/api/v1/nursing/admissions/${admissionId}/mar`, body),
-  recordDose: (entryId: string, body: RecordAdministrationRequest) => api.post<MarEntryDto>(`/api/v1/nursing/mar/${entryId}/record`, body),
+  stopOrder: (orderId: string, reason: string) =>
+    api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop`, { reason }),
+  extendSchedule: (orderId: string) =>
+    api.post<{ medicationOrderId: string; dosesAdded: number }>(
+      `/api/v1/nursing/medication-orders/${orderId}/schedule`,
+    ),
+  addAdHocDose: (admissionId: string, body: AddAdHocDoseRequest) =>
+    api.post<MarEntryDto>(`/api/v1/nursing/admissions/${admissionId}/mar`, body),
+  recordDose: (entryId: string, body: RecordAdministrationRequest) =>
+    api.post<MarEntryDto>(`/api/v1/nursing/mar/${entryId}/record`, body),
 };

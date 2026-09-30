@@ -58,13 +58,24 @@ function DonationView({ donation: d }: { donation: DonationDetail }) {
         ]}
         actions={
           <>
-            <StatusBadge status={d.status} tone={d.status === 'Discarded' ? 'danger' : d.status === 'Separated' ? 'success' : 'warning'} label={donationStatusLabel[d.status]} />
+            <StatusBadge
+              status={d.status}
+              tone={d.status === 'Discarded' ? 'danger' : d.status === 'Separated' ? 'success' : 'warning'}
+              label={donationStatusLabel[d.status]}
+            />
             {d.components.length > 0 && (
-              <Button icon={<PrintRegular />} onClick={() => void printUnitLabels(d.components).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+              <Button
+                icon={<PrintRegular />}
+                onClick={() =>
+                  void printUnitLabels(d.components).catch((error: unknown) => notify.error(error, 'Printing failed'))
+                }
+              >
                 Print all labels
               </Button>
             )}
-            <Button onClick={() => void navigate({ to: '/blood-bank/donors/$id', params: { id: d.donorId } })}>Open donor</Button>
+            <Button onClick={() => void navigate({ to: '/blood-bank/donors/$id', params: { id: d.donorId } })}>
+              Open donor
+            </Button>
           </>
         }
       />
@@ -79,12 +90,18 @@ function DonationView({ donation: d }: { donation: DonationDetail }) {
         </DetailGrid>
       </Section>
 
-      <Section title="Grouping and TTI screening" description="Units stay in quarantine until the group is recorded and all five markers are non-reactive.">
+      <Section
+        title="Grouping and TTI screening"
+        description="Units stay in quarantine until the group is recorded and all five markers are non-reactive."
+      >
         <LabResultsPanel donation={d} canManage={canManage} />
       </Section>
 
       {d.status === 'Collected' && canManage && (
-        <Section title="Separate components" description="Whole blood alone, or packed red cells with plasma, platelets or cryoprecipitate.">
+        <Section
+          title="Separate components"
+          description="Whole blood alone, or packed red cells with plasma, platelets or cryoprecipitate."
+        >
           <SeparationPanel donation={d} now={now} />
         </Section>
       )}

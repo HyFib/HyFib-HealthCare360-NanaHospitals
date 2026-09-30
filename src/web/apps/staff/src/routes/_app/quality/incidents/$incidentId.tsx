@@ -18,7 +18,13 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { AddRegular, EditRegular, EyeOffRegular, PersonArrowRightRegular, ShieldErrorRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  EditRegular,
+  EyeOffRegular,
+  PersonArrowRightRegular,
+  ShieldErrorRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, useSession } from '@hc360/core';
 import { DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,7 +41,13 @@ import { CapaStatusBadge, IncidentStatusBadge, SentinelBadge, SeverityBadge } fr
 import { CapaDialog } from '@/modules/quality/CapaDialog';
 import { IncidentEditDialog } from '@/modules/quality/IncidentEditDialog';
 import { InvestigationEditor } from '@/modules/quality/InvestigationEditor';
-import { incidentStatusLabel, incidentTypeLabel, QUALITY_PERMISSIONS as Q, sentinelKindLabel, type IncidentStatus } from '@/modules/quality/labels';
+import {
+  incidentStatusLabel,
+  incidentTypeLabel,
+  QUALITY_PERMISSIONS as Q,
+  sentinelKindLabel,
+  type IncidentStatus,
+} from '@/modules/quality/labels';
 import { transitionBlocker, transitionLabel, transitionNeedsNote } from '@/modules/quality/rules';
 
 type TabId = 'overview' | 'investigation' | 'actions';
@@ -99,7 +111,9 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
     setBusy(true);
     try {
       await qualityApi.transition(i.id, to, note);
-      notify.success(`Incident ${to === 'Closed' ? 'closed' : i.status === 'Closed' ? 'reopened' : `moved to "${incidentStatusLabel[to]}"`}`);
+      notify.success(
+        `Incident ${to === 'Closed' ? 'closed' : i.status === 'Closed' ? 'reopened' : `moved to "${incidentStatusLabel[to]}"`}`,
+      );
       setMoving(null);
       void queryClient.invalidateQueries({ queryKey: qualityKeys.all });
     } catch (error) {
@@ -115,7 +129,10 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
         title={`${incidentTypeLabel[i.type]} · ${i.incidentNumber}`}
         subtitle={`Happened ${formatDateTime(i.occurredAt)} at ${i.location}${i.departmentName ? `, ${i.departmentName}` : ''}`}
         icon={<ShieldErrorRegular />}
-        breadcrumbs={[{ label: 'Incidents', onClick: () => void navigate({ to: '/quality/incidents' }) }, { label: i.incidentNumber }]}
+        breadcrumbs={[
+          { label: 'Incidents', onClick: () => void navigate({ to: '/quality/incidents' }) },
+          { label: i.incidentNumber },
+        ]}
         actions={
           <>
             {!closed && (
@@ -148,17 +165,26 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
         <MessageBar intent="error" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Sentinel event</MessageBarTitle>
-            {i.sentinelReason ? `${i.sentinelReason}. ` : ''}A completed root-cause analysis is required before it can be closed (NABH: analyse within 30 days).
+            {i.sentinelReason ? `${i.sentinelReason}. ` : ''}A completed root-cause analysis is required before it can
+            be closed (NABH: analyse within 30 days).
           </MessageBarBody>
         </MessageBar>
       )}
 
-      <Section title="Next step" description="Moves allowed from the current stage. Closing needs an outcome summary; reopening needs a reason.">
+      <Section
+        title="Next step"
+        description="Moves allowed from the current stage. Closing needs an outcome summary; reopening needs a reason."
+      >
         <div className={styles.moves}>
           {i.nextStatuses.map((to) => {
             const blocker = transitionBlocker(i.status, to, progress);
             const button = (
-              <Button key={to} appearance={to === 'Closed' ? 'secondary' : 'primary'} disabled={Boolean(blocker) || busy} onClick={() => setMoving(to)}>
+              <Button
+                key={to}
+                appearance={to === 'Closed' ? 'secondary' : 'primary'}
+                disabled={Boolean(blocker) || busy}
+                onClick={() => setMoving(to)}
+              >
                 {transitionLabel(i.status, to)}
               </Button>
             );
@@ -176,7 +202,12 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })
+            }
+          >
             <Tab value="overview">What happened</Tab>
             <Tab value="investigation">Root-cause analysis{i.investigationStatus === 'Completed' ? ' ✓' : ''}</Tab>
             <Tab value="actions">Actions ({i.capas.length})</Tab>
@@ -213,7 +244,11 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
                     ),
                   },
                   { key: 'due', header: 'Due', width: 120, render: (c) => formatDateOnly(c.dueDate) },
-                  { key: 'status', header: 'Status', render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} /> },
+                  {
+                    key: 'status',
+                    header: 'Status',
+                    render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} />,
+                  },
                 ]}
                 emptyTitle="No actions planned"
                 emptyDescription="Plan corrective actions to fix the root cause and preventive actions to stop it happening again."
@@ -225,14 +260,31 @@ function IncidentView({ incident: i }: { incident: IncidentDetail }) {
       </Section>
 
       <IncidentEditDialog open={editing} onClose={() => setEditing(false)} incident={i} />
-      <AssignDialog open={assigning} onClose={() => setAssigning(false)} incident={i} meName={me?.displayName ?? null} />
-      <CapaDialog open={planning} onClose={() => setPlanning(false)} context={{ source: 'Incident', incidentId: i.id, incidentNumber: i.incidentNumber }} />
+      <AssignDialog
+        open={assigning}
+        onClose={() => setAssigning(false)}
+        incident={i}
+        meName={me?.displayName ?? null}
+      />
+      <CapaDialog
+        open={planning}
+        onClose={() => setPlanning(false)}
+        context={{ source: 'Incident', incidentId: i.id, incidentNumber: i.incidentNumber }}
+      />
       {moving && (
         <ReasonDialog
           open
           title={transitionLabel(i.status, moving)}
-          description={moving === 'Closed' ? 'Summarise the outcome: what was found and what changed.' : i.status === 'Closed' ? 'Say why the incident is being reopened.' : `Move to "${incidentStatusLabel[moving]}".`}
-          label={moving === 'Closed' ? 'Outcome summary' : i.status === 'Closed' ? 'Reason for reopening' : 'Note (optional)'}
+          description={
+            moving === 'Closed'
+              ? 'Summarise the outcome: what was found and what changed.'
+              : i.status === 'Closed'
+                ? 'Say why the incident is being reopened.'
+                : `Move to "${incidentStatusLabel[moving]}".`
+          }
+          label={
+            moving === 'Closed' ? 'Outcome summary' : i.status === 'Closed' ? 'Reason for reopening' : 'Note (optional)'
+          }
           required={transitionNeedsNote(i.status, moving)}
           maxLength={2000}
           confirmLabel={transitionLabel(i.status, moving)}
@@ -288,7 +340,17 @@ function Overview({ incident: i }: { incident: IncidentDetail }) {
   );
 }
 
-function AssignDialog({ open, onClose, incident, meName }: { open: boolean; onClose: () => void; incident: IncidentDetail; meName: string | null }) {
+function AssignDialog({
+  open,
+  onClose,
+  incident,
+  meName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  incident: IncidentDetail;
+  meName: string | null;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [user, setUser] = useState<PickedUser | null>(incident.assignedTo);
@@ -325,7 +387,12 @@ function AssignDialog({ open, onClose, incident, meName }: { open: boolean; onCl
             <Button onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={busy || !user} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => void assign()}>
+            <Button
+              appearance="primary"
+              disabled={busy || !user}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+              onClick={() => void assign()}
+            >
               Assign
             </Button>
           </DialogActions>

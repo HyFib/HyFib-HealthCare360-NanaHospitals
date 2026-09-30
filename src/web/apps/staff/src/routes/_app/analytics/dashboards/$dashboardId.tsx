@@ -21,14 +21,28 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { AddRegular, ArrowClockwiseRegular, BoardRegular, CopyRegular, EditRegular, SaveRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  ArrowClockwiseRegular,
+  BoardRegular,
+  CopyRegular,
+  EditRegular,
+  SaveRegular,
+} from '@fluentui/react-icons';
 import { formatRelative, isApiError } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { analyticsApi, analyticsKeys, analyticsQueries, type DashboardDetail, type ReportCatalogue, type WidgetWidth } from '@/modules/analytics/api';
+import {
+  analyticsApi,
+  analyticsKeys,
+  analyticsQueries,
+  type DashboardDetail,
+  type ReportCatalogue,
+  type WidgetWidth,
+} from '@/modules/analytics/api';
 import { ANALYTICS_PERMISSIONS as A, CUSTOM_PERIOD, PERIOD_PRESETS } from '@/modules/analytics/labels';
 import { applyPeriodOverride, moveItem, nextWidgetId } from '@/modules/analytics/params';
 import { WidgetCard, type WidgetConfig } from '@/modules/analytics/WidgetCard';
@@ -44,7 +58,10 @@ const MAX_WIDGETS = 24;
 
 export const Route = createFileRoute('/_app/analytics/dashboards/$dashboardId')({
   validateSearch: (s: Record<string, unknown>): DashboardSearch => ({
-    period: typeof s.period === 'string' && s.period !== CUSTOM_PERIOD && PERIOD_PRESETS.some((p) => p.value === s.period) ? s.period : undefined,
+    period:
+      typeof s.period === 'string' && s.period !== CUSTOM_PERIOD && PERIOD_PRESETS.some((p) => p.value === s.period)
+        ? s.period
+        : undefined,
     edit: s.edit === true ? true : undefined,
   }),
   component: DashboardPage,
@@ -79,7 +96,13 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
   addIcon: { fontSize: '28px', display: 'flex' },
-  details: { display: 'grid', gap: '12px', gridTemplateColumns: 'minmax(200px, 1fr) minmax(240px, 2fr) auto', alignItems: 'end', '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  details: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'minmax(200px, 1fr) minmax(240px, 2fr) auto',
+    alignItems: 'end',
+    '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -98,7 +121,13 @@ function DashboardPage() {
     const notFound = isApiError(dashboard.error) && dashboard.error.status === 404;
     return (
       <Page maxWidth={900}>
-        <PageHeader title={notFound ? 'Dashboard not found' : 'Dashboard'} breadcrumbs={[{ label: 'Dashboards', onClick: () => void navigate({ to: '/analytics/dashboards' }) }, { label: 'Not available' }]} />
+        <PageHeader
+          title={notFound ? 'Dashboard not found' : 'Dashboard'}
+          breadcrumbs={[
+            { label: 'Dashboards', onClick: () => void navigate({ to: '/analytics/dashboards' }) },
+            { label: 'Not available' },
+          ]}
+        />
         {notFound ? (
           <Section>
             <EmptyState
@@ -108,7 +137,10 @@ function DashboardPage() {
             />
           </Section>
         ) : (
-          <ErrorState error={dashboard.error ?? catalogue.error} onRetry={() => void Promise.all([dashboard.refetch(), catalogue.refetch()])} />
+          <ErrorState
+            error={dashboard.error ?? catalogue.error}
+            onRetry={() => void Promise.all([dashboard.refetch(), catalogue.refetch()])}
+          />
         )}
       </Page>
     );
@@ -126,12 +158,28 @@ function spanClass(styles: ReturnType<typeof useStyles>, width: WidgetWidth): st
 }
 
 function toConfig(widget: DashboardDetail['widgets'][number]): WidgetConfig {
-  return { id: widget.id, reportId: widget.reportId, title: widget.title, view: widget.view, width: widget.width, parameters: widget.parameters, canView: widget.canView };
+  return {
+    id: widget.id,
+    reportId: widget.reportId,
+    title: widget.title,
+    view: widget.view,
+    width: widget.width,
+    parameters: widget.parameters,
+    canView: widget.canView,
+  };
 }
 
 // ------------------------------------------------------------------------------------------------ viewer
 
-function DashboardViewer({ dashboard, catalogue, period }: { dashboard: DashboardDetail; catalogue: ReportCatalogue; period: string | undefined }) {
+function DashboardViewer({
+  dashboard,
+  catalogue,
+  period,
+}: {
+  dashboard: DashboardDetail;
+  catalogue: ReportCatalogue;
+  period: string | undefined;
+}) {
   const styles = useStyles();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -144,19 +192,31 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.dashboards });
       notify.success('Copy created', 'Change it as you like; the original stays as it was.');
-      void navigate({ to: '/analytics/dashboards/$dashboardId', params: { dashboardId: created.id }, search: { edit: true } });
+      void navigate({
+        to: '/analytics/dashboards/$dashboardId',
+        params: { dashboardId: created.id },
+        search: { edit: true },
+      });
     },
     onError: (error) => notify.error(error, 'Could not copy the dashboard'),
   });
 
-  const owner = dashboard.isTemplate ? 'Hospital template' : dashboard.isMine ? (dashboard.isShared ? 'Yours, shared with colleagues' : 'Only you can see this') : `Shared by ${dashboard.ownerName ?? 'a colleague'}`;
+  const owner = dashboard.isTemplate
+    ? 'Hospital template'
+    : dashboard.isMine
+      ? dashboard.isShared
+        ? 'Yours, shared with colleagues'
+        : 'Only you can see this'
+      : `Shared by ${dashboard.ownerName ?? 'a colleague'}`;
 
   return (
     <Page>
       <PageHeader
         title={dashboard.name}
         icon={<BoardRegular />}
-        subtitle={[dashboard.description, `${owner} · updated ${formatRelative(dashboard.updatedAt)}`].filter(Boolean).join(' · ')}
+        subtitle={[dashboard.description, `${owner} · updated ${formatRelative(dashboard.updatedAt)}`]
+          .filter(Boolean)
+          .join(' · ')}
         breadcrumbs={[
           { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
           { label: 'Dashboards', onClick: () => void navigate({ to: '/analytics/dashboards' }) },
@@ -167,7 +227,9 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
             <Select
               aria-label="Period for every tile"
               value={period ?? ''}
-              onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, period: data.value || undefined }), replace: true })}
+              onChange={(_, data) =>
+                void navigate({ search: (prev) => ({ ...prev, period: data.value || undefined }), replace: true })
+              }
             >
               <option value="">Saved periods</option>
               {PERIOD_PRESETS.filter((p) => p.value !== CUSTOM_PERIOD).map((p) => (
@@ -177,15 +239,26 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
               ))}
             </Select>
             <Tooltip content="Refresh every tile" relationship="label">
-              <Button icon={<ArrowClockwiseRegular />} onClick={() => void queryClient.invalidateQueries({ queryKey: analyticsKeys.runs })} />
+              <Button
+                icon={<ArrowClockwiseRegular />}
+                onClick={() => void queryClient.invalidateQueries({ queryKey: analyticsKeys.runs })}
+              />
             </Tooltip>
             {canManage && (
-              <Button icon={copy.isPending ? <Spinner size="tiny" /> : <CopyRegular />} disabled={copy.isPending} onClick={() => copy.mutate()}>
+              <Button
+                icon={copy.isPending ? <Spinner size="tiny" /> : <CopyRegular />}
+                disabled={copy.isPending}
+                onClick={() => copy.mutate()}
+              >
                 Make a copy
               </Button>
             )}
             {dashboard.canEdit && (
-              <Button appearance="primary" icon={<EditRegular />} onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: true }) })}>
+              <Button
+                appearance="primary"
+                icon={<EditRegular />}
+                onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: true }) })}
+              >
                 Change
               </Button>
             )}
@@ -197,10 +270,15 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
         <Section>
           <EmptyState
             title="This dashboard has no tiles yet"
-            description={dashboard.canEdit ? 'Add tiles from any report you can open.' : 'The owner has not added any tiles.'}
+            description={
+              dashboard.canEdit ? 'Add tiles from any report you can open.' : 'The owner has not added any tiles.'
+            }
             action={
               dashboard.canEdit ? (
-                <Button icon={<AddRegular />} onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: true }) })}>
+                <Button
+                  icon={<AddRegular />}
+                  onClick={() => void navigate({ search: (prev) => ({ ...prev, edit: true }) })}
+                >
                   Add tiles
                 </Button>
               ) : undefined
@@ -213,7 +291,11 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
             const report = reports.get(widget.reportId);
             return (
               <div key={widget.id} className={spanClass(styles, widget.width)}>
-                <WidgetCard widget={toConfig(widget)} report={report} inputs={applyPeriodOverride(report?.parameters, widget.parameters, period)} />
+                <WidgetCard
+                  widget={toConfig(widget)}
+                  report={report}
+                  inputs={applyPeriodOverride(report?.parameters, widget.parameters, period)}
+                />
               </div>
             );
           })}
@@ -221,7 +303,8 @@ function DashboardViewer({ dashboard, catalogue, period }: { dashboard: Dashboar
       )}
       {period && (
         <Caption1 className={styles.muted}>
-          Showing every tile for {PERIOD_PRESETS.find((p) => p.value === period)?.label.toLowerCase()}. The saved periods are unchanged.
+          Showing every tile for {PERIOD_PRESETS.find((p) => p.value === period)?.label.toLowerCase()}. The saved
+          periods are unchanged.
         </Caption1>
       )}
     </Page>
@@ -244,9 +327,18 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
   const leaving = useRef(false);
   const reports = new Map(catalogue.reports.map((r) => [r.id, r]));
 
-  const initial = JSON.stringify({ name: dashboard.name, description: dashboard.description ?? '', shared: dashboard.isShared, widgets: dashboard.widgets.map(toConfig) });
+  const initial = JSON.stringify({
+    name: dashboard.name,
+    description: dashboard.description ?? '',
+    shared: dashboard.isShared,
+    widgets: dashboard.widgets.map(toConfig),
+  });
   const dirty = JSON.stringify({ name, description, shared, widgets }) !== initial;
-  const blocker = useBlocker({ shouldBlockFn: () => dirty && !leaving.current, enableBeforeUnload: () => dirty && !leaving.current, withResolver: true });
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirty && !leaving.current,
+    enableBeforeUnload: () => dirty && !leaving.current,
+    withResolver: true,
+  });
 
   // Cancel asks first when there are unsaved changes (the blocker below); after a save the editor closes directly.
   const cancel = () => void navigate({ search: (prev) => ({ ...prev, edit: undefined }) });
@@ -261,7 +353,14 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
         name: name.trim(),
         description: description.trim() || null,
         isShared: shared,
-        widgets: widgets.map((w) => ({ id: w.id, reportId: w.reportId, title: w.title, view: w.view, width: w.width, parameters: w.parameters })),
+        widgets: widgets.map((w) => ({
+          id: w.id,
+          reportId: w.reportId,
+          title: w.title,
+          view: w.view,
+          width: w.width,
+          parameters: w.parameters,
+        })),
         version: dashboard.version,
       }),
     onSuccess: (saved) => {
@@ -281,7 +380,11 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
 
   const saveWidget = (draft: WidgetDraft) => {
     const config: WidgetConfig = { ...draft, canView: true };
-    setWidgets((current) => (editing?.index === null || editing === null ? [...current, config] : current.map((w, i) => (i === editing.index ? config : w))));
+    setWidgets((current) =>
+      editing?.index === null || editing === null
+        ? [...current, config]
+        : current.map((w, i) => (i === editing.index ? config : w)),
+    );
     setEditing(null);
   };
 
@@ -317,7 +420,10 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
 
       {conflict && (
         <MessageBar intent="warning" layout="multiline">
-          <MessageBarBody>Someone else saved this dashboard while you were changing it. Reload to see their version (your changes here will be lost).</MessageBarBody>
+          <MessageBarBody>
+            Someone else saved this dashboard while you were changing it. Reload to see their version (your changes here
+            will be lost).
+          </MessageBarBody>
           <MessageBarActions>
             <Button
               onClick={() => {
@@ -333,14 +439,29 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
 
       <Section>
         <div className={styles.details}>
-          <Field label="Name" required validationMessage={name.trim() ? undefined : 'Give the dashboard a name.'} validationState={name.trim() ? 'none' : 'error'}>
+          <Field
+            label="Name"
+            required
+            validationMessage={name.trim() ? undefined : 'Give the dashboard a name.'}
+            validationState={name.trim() ? 'none' : 'error'}
+          >
             <Input value={name} maxLength={100} onChange={(_, data) => setName(data.value)} />
           </Field>
           <Field label="Description">
-            <Input value={description} maxLength={300} placeholder="What this dashboard is for" onChange={(_, data) => setDescription(data.value)} />
+            <Input
+              value={description}
+              maxLength={300}
+              placeholder="What this dashboard is for"
+              onChange={(_, data) => setDescription(data.value)}
+            />
           </Field>
           <Field hint={dashboard.isTemplate ? 'Templates are always visible to everyone.' : undefined}>
-            <Switch checked={dashboard.isTemplate || shared} disabled={dashboard.isTemplate} onChange={(_, data) => setShared(data.checked)} label="Shared with colleagues" />
+            <Switch
+              checked={dashboard.isTemplate || shared}
+              disabled={dashboard.isTemplate}
+              onChange={(_, data) => setShared(data.checked)}
+              label="Shared with colleagues"
+            />
           </Field>
         </div>
       </Section>
@@ -358,7 +479,8 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
                   onEdit: () => setEditing({ index }),
                   onRemove: () => setWidgets((current) => current.filter((_, i) => i !== index)),
                   onMove: (delta) => setWidgets((current) => moveItem(current, index, delta)),
-                  onResize: (width) => setWidgets((current) => current.map((w, i) => (i === index ? { ...w, width } : w))),
+                  onResize: (width) =>
+                    setWidgets((current) => current.map((w, i) => (i === index ? { ...w, width } : w))),
                   isFirst: index === 0,
                   isLast: index === widgets.length - 1,
                 }}
@@ -367,7 +489,11 @@ function DashboardEditor({ dashboard, catalogue }: { dashboard: DashboardDetail;
           );
         })}
         {widgets.length < MAX_WIDGETS ? (
-          <button type="button" className={mergeClasses(styles.add, styles.span1)} onClick={() => setEditing({ index: null })}>
+          <button
+            type="button"
+            className={mergeClasses(styles.add, styles.span1)}
+            onClick={() => setEditing({ index: null })}
+          >
             <span className={styles.addIcon}>
               <AddRegular />
             </span>

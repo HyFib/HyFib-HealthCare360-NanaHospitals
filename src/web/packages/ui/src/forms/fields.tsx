@@ -55,7 +55,13 @@ export function TextField<T extends FieldValues>({
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Input
             {...field}
             value={(field.value as string | undefined) ?? ''}
@@ -73,33 +79,75 @@ export function TextField<T extends FieldValues>({
   );
 }
 
-export function TextAreaField<T extends FieldValues>({ control, name, label, hint, required, disabled, rows = 3, placeholder, maxLength }: BaseProps<T> & { rows?: number; placeholder?: string; maxLength?: number }) {
+export function TextAreaField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  rows = 3,
+  placeholder,
+  maxLength,
+}: BaseProps<T> & { rows?: number; placeholder?: string; maxLength?: number }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-          <Textarea {...field} value={(field.value as string | undefined) ?? ''} rows={rows} placeholder={placeholder} maxLength={maxLength} disabled={disabled} resize="vertical" />
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
+          <Textarea
+            {...field}
+            value={(field.value as string | undefined) ?? ''}
+            rows={rows}
+            placeholder={placeholder}
+            maxLength={maxLength}
+            disabled={disabled}
+            resize="vertical"
+          />
         </Field>
       )}
     />
   );
 }
 
-export function NumberField<T extends FieldValues>({ control, name, label, hint, required, disabled, min, max, step }: BaseProps<T> & { min?: number; max?: number; step?: number }) {
+export function NumberField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  min,
+  max,
+  step,
+}: BaseProps<T> & { min?: number; max?: number; step?: number }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Input
             type="number"
             name={field.name}
             ref={field.ref}
             onBlur={field.onBlur}
-            value={field.value === null || field.value === undefined || Number.isNaN(field.value) ? '' : String(field.value)}
+            value={
+              field.value === null || field.value === undefined || Number.isNaN(field.value) ? '' : String(field.value)
+            }
             onChange={(_, data) => field.onChange(data.value === '' ? null : Number(data.value))}
             min={min}
             max={max}
@@ -113,13 +161,28 @@ export function NumberField<T extends FieldValues>({ control, name, label, hint,
 }
 
 /** Native select styled by Fluent: fast, keyboard friendly and accessible. */
-export function SelectField<T extends FieldValues>({ control, name, label, hint, required, disabled, options, placeholder }: BaseProps<T> & { options: OptionItem[]; placeholder?: string }) {
+export function SelectField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  options,
+  placeholder,
+}: BaseProps<T> & { options: OptionItem[]; placeholder?: string }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Select
             name={field.name}
             ref={field.ref}
@@ -142,13 +205,28 @@ export function SelectField<T extends FieldValues>({ control, name, label, hint,
 }
 
 /** Calendar date as "yyyy-MM-dd" using the native date picker (works with keyboard and touch). */
-export function DateField<T extends FieldValues>({ control, name, label, hint, required, disabled, min, max }: BaseProps<T> & { min?: string; max?: string }) {
+export function DateField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  min,
+  max,
+}: BaseProps<T> & { min?: string; max?: string }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Input
             type="date"
             name={field.name}
@@ -173,7 +251,12 @@ export function SwitchField<T extends FieldValues>({ control, name, label, hint,
       name={name}
       render={({ field }) => (
         <Field hint={hint}>
-          <Switch label={label} checked={Boolean(field.value)} onChange={(_, data) => field.onChange(data.checked)} disabled={disabled} />
+          <Switch
+            label={label}
+            checked={Boolean(field.value)}
+            onChange={(_, data) => field.onChange(data.checked)}
+            disabled={disabled}
+          />
         </Field>
       )}
     />
@@ -181,14 +264,33 @@ export function SwitchField<T extends FieldValues>({ control, name, label, hint,
 }
 
 /** Small set of mutually exclusive choices shown inline (e.g. gender) — one click, no dropdown. */
-export function ChoiceField<T extends FieldValues>({ control, name, label, hint, required, disabled, options }: BaseProps<T> & { options: OptionItem[] }) {
+export function ChoiceField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  hint,
+  required,
+  disabled,
+  options,
+}: BaseProps<T> & { options: OptionItem[] }) {
   return (
     <Controller
       control={control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-          <RadioGroup layout="horizontal" value={(field.value as string | undefined) ?? ''} onChange={(_, data) => field.onChange(data.value)} disabled={disabled}>
+        <Field
+          label={label}
+          hint={hint}
+          required={required}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
+          <RadioGroup
+            layout="horizontal"
+            value={(field.value as string | undefined) ?? ''}
+            onChange={(_, data) => field.onChange(data.value)}
+            disabled={disabled}
+          >
             {options.map((option) => (
               <Radio key={option.value} value={option.value} label={option.label} />
             ))}
@@ -213,7 +315,11 @@ export function LookupField<T extends FieldValues>({
   load,
   placeholder,
   initialItems,
-}: BaseProps<T> & { load: (search: string) => Promise<LookupItem[]>; placeholder?: string; initialItems?: LookupItem[] }) {
+}: BaseProps<T> & {
+  load: (search: string) => Promise<LookupItem[]>;
+  placeholder?: string;
+  initialItems?: LookupItem[];
+}) {
   const [search, setSearch] = useState('');
   const [items, setItems] = useState<LookupItem[]>(initialItems ?? []);
   // Callers often pass an inline function: reading the latest one keeps a new identity from re-running the search.
@@ -222,7 +328,10 @@ export function LookupField<T extends FieldValues>({
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
-      loadItems(search).then((result) => !cancelled && setItems(result), () => undefined);
+      loadItems(search).then(
+        (result) => !cancelled && setItems(result),
+        () => undefined,
+      );
     }, 250);
     return () => {
       cancelled = true;
@@ -237,7 +346,13 @@ export function LookupField<T extends FieldValues>({
       render={({ field, fieldState }) => {
         const selected = items.find((item) => item.id === field.value);
         return (
-          <Field label={label} hint={hint} required={required} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+          <Field
+            label={label}
+            hint={hint}
+            required={required}
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
             <Combobox
               placeholder={placeholder ?? 'Type to search'}
               disabled={disabled}

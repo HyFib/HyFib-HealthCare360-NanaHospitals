@@ -54,10 +54,20 @@ export function ServiceLookup({
     staleTime: 60_000,
   });
   const selected = picked?.id === value ? picked : current.data;
-  const label = selected ? `${selected.name} (${selected.code}) · ${formatInr(selected.basePrice, { whole: true })}` : value ? 'Linked service' : '';
+  const label = selected
+    ? `${selected.name} (${selected.code}) · ${formatInr(selected.basePrice, { whole: true })}`
+    : value
+      ? 'Linked service'
+      : '';
 
   return (
-    <Field label="Billable service" required={required} hint={hint} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'}>
+    <Field
+      label="Billable service"
+      required={required}
+      hint={hint}
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+    >
       <Combobox
         placeholder="Type 2 letters of the service name or code"
         value={term || label}

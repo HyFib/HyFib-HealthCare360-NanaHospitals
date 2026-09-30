@@ -5,7 +5,8 @@ export const authMessages = defineMessages({
   en: {
     'auth.title': 'Sign in',
     'auth.welcome': 'Welcome to {hospital}',
-    'auth.intro': 'See appointments, reports, prescriptions and bills for you and your family, and book or join a consultation.',
+    'auth.intro':
+      'See appointments, reports, prescriptions and bills for you and your family, and book or join a consultation.',
     'auth.noPassword': 'No password needed. We send a one-time code to your mobile.',
     'auth.phone.label': 'Mobile number',
     'auth.phone.hint': 'The number you gave the hospital when you registered.',
@@ -36,7 +37,8 @@ export const authMessages = defineMessages({
   hi: {
     'auth.title': 'साइन इन करें',
     'auth.welcome': '{hospital} में आपका स्वागत है',
-    'auth.intro': 'अपने और अपने परिवार के अपॉइंटमेंट, रिपोर्ट, दवा के पर्चे और बिल देखें, और परामर्श बुक करें या उसमें जुड़ें।',
+    'auth.intro':
+      'अपने और अपने परिवार के अपॉइंटमेंट, रिपोर्ट, दवा के पर्चे और बिल देखें, और परामर्श बुक करें या उसमें जुड़ें।',
     'auth.noPassword': 'किसी पासवर्ड की ज़रूरत नहीं। हम आपके मोबाइल पर एक बार का कोड भेजते हैं।',
     'auth.phone.label': 'मोबाइल नंबर',
     'auth.phone.hint': 'वह नंबर जो आपने पंजीकरण के समय अस्पताल को दिया था।',

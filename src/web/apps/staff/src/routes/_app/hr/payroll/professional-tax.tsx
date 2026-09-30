@@ -80,7 +80,10 @@ function ProfessionalTaxPage() {
       {schedules.error && <ErrorState error={schedules.error} onRetry={() => void schedules.refetch()} />}
       {schedules.data && schedules.data.length === 0 && (
         <Section>
-          <EmptyState title="No professional tax slabs" description="Add the slab table for the state where the hospital is registered." />
+          <EmptyState
+            title="No professional tax slabs"
+            description="Add the slab table for the state where the hospital is registered."
+          />
         </Section>
       )}
       <Columns>
@@ -104,7 +107,9 @@ function ProfessionalTaxPage() {
             <Table size="small" aria-label={`Professional tax slabs for ${schedule.stateName}`}>
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>{schedule.frequency === 'Monthly' ? 'Monthly gross' : 'Half-year gross'}</TableHeaderCell>
+                  <TableHeaderCell>
+                    {schedule.frequency === 'Monthly' ? 'Monthly gross' : 'Half-year gross'}
+                  </TableHeaderCell>
                   <TableHeaderCell className={styles.right}>Tax</TableHeaderCell>
                   <TableHeaderCell className={styles.right}>February</TableHeaderCell>
                 </TableRow>
@@ -113,10 +118,13 @@ function ProfessionalTaxPage() {
                 {schedule.bands.map((band) => (
                   <TableRow key={band.incomeFrom}>
                     <TableCell>
-                      {formatInr(band.incomeFrom, { whole: true })} {band.incomeTo !== null ? `to ${formatInr(band.incomeTo, { whole: true })}` : 'and above'}
+                      {formatInr(band.incomeFrom, { whole: true })}{' '}
+                      {band.incomeTo !== null ? `to ${formatInr(band.incomeTo, { whole: true })}` : 'and above'}
                     </TableCell>
                     <TableCell className={styles.right}>{formatInr(band.amount, { whole: true })}</TableCell>
-                    <TableCell className={styles.right}>{band.februaryAmount !== null ? formatInr(band.februaryAmount, { whole: true }) : '—'}</TableCell>
+                    <TableCell className={styles.right}>
+                      {band.februaryAmount !== null ? formatInr(band.februaryAmount, { whole: true }) : '—'}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -153,20 +161,33 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
     })),
   );
   const [busy, setBusy] = useState(false);
-  const bands = rows.map((row) => ({ incomeFrom: Number(row.incomeFrom) || 0, amount: Number(row.amount) || 0, februaryAmount: row.februaryAmount === '' ? null : Number(row.februaryAmount) }));
+  const bands = rows.map((row) => ({
+    incomeFrom: Number(row.incomeFrom) || 0,
+    amount: Number(row.amount) || 0,
+    februaryAmount: row.februaryAmount === '' ? null : Number(row.februaryAmount),
+  }));
   const errors = [
     ...(/^[A-Z]{2,4}$/.test(stateCode) ? [] : ['Enter the state code, for example TN or KA.']),
     ...(stateName.trim() ? [] : ['Enter the state name.']),
     ...validatePtBands(bands, frequency, months),
   ];
 
-  const update = (key: number, patch: Partial<BandRow>) => setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  const update = (key: number, patch: Partial<BandRow>) =>
+    setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
 
   const save = async () => {
     setBusy(true);
     try {
-      await hrApi.saveProfessionalTax(stateCode, { stateName: stateName.trim(), frequency, deductionMonths: frequency === 'HalfYearly' ? months : [], bands: withUpperLimits(bands) });
-      notify.success('Professional tax saved', `${stateName} (${stateCode}). The change is recorded in the audit trail.`);
+      await hrApi.saveProfessionalTax(stateCode, {
+        stateName: stateName.trim(),
+        frequency,
+        deductionMonths: frequency === 'HalfYearly' ? months : [],
+        bands: withUpperLimits(bands),
+      });
+      notify.success(
+        'Professional tax saved',
+        `${stateName} (${stateCode}). The change is recorded in the audit trail.`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
       onClose();
     } catch (error) {
@@ -183,11 +204,26 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
           <DialogTitle>{schedule ? `Edit ${schedule.stateName} slabs` : 'Add professional tax state'}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <MessageBar intent="warning">
-              <MessageBarBody>The whole table is replaced. Use the rates notified by the state or local body; payroll uses them from the next processing.</MessageBarBody>
+              <MessageBarBody>
+                The whole table is replaced. Use the rates notified by the state or local body; payroll uses them from
+                the next processing.
+              </MessageBarBody>
             </MessageBar>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
               <Field label="State code" required>
-                <Input value={stateCode} onChange={(_, d) => setStateCode(d.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4))} disabled={Boolean(schedule)} autoFocus={!schedule} />
+                <Input
+                  value={stateCode}
+                  onChange={(_, d) =>
+                    setStateCode(
+                      d.value
+                        .toUpperCase()
+                        .replace(/[^A-Z]/g, '')
+                        .slice(0, 4),
+                    )
+                  }
+                  disabled={Boolean(schedule)}
+                  autoFocus={!schedule}
+                />
               </Field>
               <Field label="State name" required>
                 <Input value={stateName} onChange={(_, d) => setStateName(d.value)} maxLength={64} />
@@ -207,7 +243,9 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
                       key={name}
                       label={name.slice(0, 3)}
                       checked={months.includes(index + 1)}
-                      onChange={(_, d) => setMonths((prev) => (d.checked ? [...prev, index + 1] : prev.filter((m) => m !== index + 1)))}
+                      onChange={(_, d) =>
+                        setMonths((prev) => (d.checked ? [...prev, index + 1] : prev.filter((m) => m !== index + 1)))
+                      }
                     />
                   ))}
                 </div>
@@ -216,7 +254,9 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
             <Table size="small" aria-label="Income bands">
               <TableHeader>
                 <TableRow>
-                  <TableHeaderCell>{frequency === 'Monthly' ? 'Monthly gross from (₹)' : 'Half-year gross from (₹)'}</TableHeaderCell>
+                  <TableHeaderCell>
+                    {frequency === 'Monthly' ? 'Monthly gross from (₹)' : 'Half-year gross from (₹)'}
+                  </TableHeaderCell>
                   <TableHeaderCell>Tax (₹)</TableHeaderCell>
                   <TableHeaderCell>February (₹, optional)</TableHeaderCell>
                   <TableHeaderCell style={{ width: 48 }} aria-label="Remove" />
@@ -226,16 +266,43 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
                 {rows.map((row) => (
                   <TableRow key={row.key}>
                     <TableCell>
-                      <Input className={styles.bandInput} type="number" min={0} value={row.incomeFrom} onChange={(_, d) => update(row.key, { incomeFrom: d.value })} aria-label="Income from" />
+                      <Input
+                        className={styles.bandInput}
+                        type="number"
+                        min={0}
+                        value={row.incomeFrom}
+                        onChange={(_, d) => update(row.key, { incomeFrom: d.value })}
+                        aria-label="Income from"
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className={styles.bandInput} type="number" min={0} value={row.amount} onChange={(_, d) => update(row.key, { amount: d.value })} aria-label="Tax" />
+                      <Input
+                        className={styles.bandInput}
+                        type="number"
+                        min={0}
+                        value={row.amount}
+                        onChange={(_, d) => update(row.key, { amount: d.value })}
+                        aria-label="Tax"
+                      />
                     </TableCell>
                     <TableCell>
-                      <Input className={styles.bandInput} type="number" min={0} value={row.februaryAmount} onChange={(_, d) => update(row.key, { februaryAmount: d.value })} aria-label="February tax" />
+                      <Input
+                        className={styles.bandInput}
+                        type="number"
+                        min={0}
+                        value={row.februaryAmount}
+                        onChange={(_, d) => update(row.key, { februaryAmount: d.value })}
+                        aria-label="February tax"
+                      />
                     </TableCell>
                     <TableCell>
-                      <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Remove band" disabled={rows.length === 1} onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))} />
+                      <Button
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        aria-label="Remove band"
+                        disabled={rows.length === 1}
+                        onClick={() => setRows((prev) => prev.filter((r) => r.key !== row.key))}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -245,7 +312,12 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
               <Button
                 icon={<AddRegular />}
                 disabled={rows.length >= 20}
-                onClick={() => setRows((prev) => [...prev, { key: Math.max(0, ...prev.map((r) => r.key)) + 1, incomeFrom: '', amount: '', februaryAmount: '' }])}
+                onClick={() =>
+                  setRows((prev) => [
+                    ...prev,
+                    { key: Math.max(0, ...prev.map((r) => r.key)) + 1, incomeFrom: '', amount: '', februaryAmount: '' },
+                  ])
+                }
               >
                 Add band
               </Button>
@@ -262,14 +334,21 @@ function ScheduleDialog({ schedule, onClose }: { schedule: ProfessionalTaxSchedu
               </MessageBar>
             )}
             <Caption1 className={styles.muted}>
-              <Text size={200}>Each band applies from its income up to one rupee below the next band; the last band has no upper limit.</Text>
+              <Text size={200}>
+                Each band applies from its income up to one rupee below the next band; the last band has no upper limit.
+              </Text>
             </Caption1>
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={busy || errors.length > 0} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => void save()}>
+            <Button
+              appearance="primary"
+              disabled={busy || errors.length > 0}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+              onClick={() => void save()}
+            >
               Save slabs
             </Button>
           </DialogActions>

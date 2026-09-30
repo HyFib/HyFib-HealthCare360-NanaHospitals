@@ -51,7 +51,9 @@ export function TodaysCheckupsWidget() {
             ))}
           </div>
           {active.length === 0 ? (
-            <Text className={styles.muted}>{items.length === 0 ? 'No check-ups booked for today.' : 'Nobody is on the check-up floor right now.'}</Text>
+            <Text className={styles.muted}>
+              {items.length === 0 ? 'No check-ups booked for today.' : 'Nobody is on the check-up floor right now.'}
+            </Text>
           ) : (
             <ul className={styles.list}>
               {active.map((b) => {
@@ -63,7 +65,11 @@ export function TodaysCheckupsWidget() {
                       {p.done + p.skipped}/{p.total} · since {formatTime(b.checkedInAt)}
                     </Caption1>
                     <div style={{ gridColumn: '1 / -1' }}>
-                      <ProgressBar value={p.ratio} thickness="large" aria-label={`${b.patientName}: ${p.done + p.skipped} of ${p.total} stations done`} />
+                      <ProgressBar
+                        value={p.ratio}
+                        thickness="large"
+                        aria-label={`${b.patientName}: ${p.done + p.skipped} of ${p.total} stations done`}
+                      />
                     </div>
                   </li>
                 );

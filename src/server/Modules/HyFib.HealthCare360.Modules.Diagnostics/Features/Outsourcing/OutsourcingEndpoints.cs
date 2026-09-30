@@ -45,9 +45,21 @@ internal static class OutsourcingEndpoints
                 orderby i.SentOutAt == null descending, i.SentOutAt
                 select new
                 {
-                    i.Id, i.LabOrderId, o.AccessionNumber, o.PatientId, i.TestName, i.Status, i.SampleId, Barcode = s != null ? s.Barcode : null,
-                    i.ReferralLabId, LabName = l != null ? l.Name : null, TatDays = l != null ? l.TatDays : 0,
-                    CollectedAt = s != null ? s.CollectedAt : null, i.SentOutAt, i.DispatchReference, i.ExternalReportReceivedAt,
+                    i.Id,
+                    i.LabOrderId,
+                    o.AccessionNumber,
+                    o.PatientId,
+                    i.TestName,
+                    i.Status,
+                    i.SampleId,
+                    Barcode = s != null ? s.Barcode : null,
+                    i.ReferralLabId,
+                    LabName = l != null ? l.Name : null,
+                    TatDays = l != null ? l.TatDays : 0,
+                    CollectedAt = s != null ? s.CollectedAt : null,
+                    i.SentOutAt,
+                    i.DispatchReference,
+                    i.ExternalReportReceivedAt,
                 })
             .ToPagedResultAsync(page, ct);
 

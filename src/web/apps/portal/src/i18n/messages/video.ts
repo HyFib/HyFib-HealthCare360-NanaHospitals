@@ -43,18 +43,23 @@ export const videoMessages = defineMessages({
     'video.check.tip3': 'Use earphones for better sound, and keep your phone charged.',
 
     'video.error.denied.title': 'Camera or microphone is blocked',
-    'video.error.denied.android': 'On Android (Chrome): tap the lock icon next to the address, open Permissions, allow Camera and Microphone, then try again.',
-    'video.error.denied.ios': 'On iPhone (Safari): tap "aA" in the address bar, open Website Settings, allow Camera and Microphone, then try again.',
-    'video.error.denied.desktop': 'On a computer: click the camera icon in the address bar, choose Allow, then try again.',
+    'video.error.denied.android':
+      'On Android (Chrome): tap the lock icon next to the address, open Permissions, allow Camera and Microphone, then try again.',
+    'video.error.denied.ios':
+      'On iPhone (Safari): tap "aA" in the address bar, open Website Settings, allow Camera and Microphone, then try again.',
+    'video.error.denied.desktop':
+      'On a computer: click the camera icon in the address bar, choose Allow, then try again.',
     'video.error.notFound.title': 'No camera or microphone found',
     'video.error.notFound.body': 'Connect earphones with a microphone, or use your phone instead.',
     'video.error.inUse.title': 'Your camera or microphone is busy',
-    'video.error.inUse.body': 'Close other apps that are using them (for example a WhatsApp or Zoom call), then try again.',
+    'video.error.inUse.body':
+      'Close other apps that are using them (for example a WhatsApp or Zoom call), then try again.',
     'video.error.insecure.title': 'This page is not secure',
     'video.error.insecure.body': 'Open the portal with its https:// address to use the camera.',
     'video.error.unsupported.title': 'This browser cannot make video calls',
     'video.error.unsupported.body': 'Open this page in Chrome, Safari, Edge or Firefox.',
-    'video.error.inApp': 'You opened this link inside another app. For a better call, open it in Chrome or Safari (use the ⋮ or share menu, then "Open in browser").',
+    'video.error.inApp':
+      'You opened this link inside another app. For a better call, open it in Chrome or Safari (use the ⋮ or share menu, then "Open in browser").',
     'video.error.unknown.title': 'The camera could not start',
     'video.error.unknown.body': 'Try again. If it keeps failing, close and reopen your browser.',
 
@@ -170,18 +175,23 @@ export const videoMessages = defineMessages({
     'video.check.tip3': 'बेहतर आवाज़ के लिए ईयरफ़ोन लगाएँ, और फ़ोन चार्ज रखें।',
 
     'video.error.denied.title': 'कैमरा या माइक्रोफ़ोन की अनुमति बंद है',
-    'video.error.denied.android': 'Android (Chrome) पर: पते के पास ताले के निशान पर टैप करें, Permissions खोलें, Camera और Microphone की अनुमति दें, फिर से कोशिश करें।',
-    'video.error.denied.ios': 'iPhone (Safari) पर: पते की पट्टी में "aA" पर टैप करें, Website Settings खोलें, Camera और Microphone की अनुमति दें, फिर से कोशिश करें।',
-    'video.error.denied.desktop': 'कंप्यूटर पर: पते की पट्टी में कैमरा के निशान पर क्लिक करें, Allow चुनें, फिर से कोशिश करें।',
+    'video.error.denied.android':
+      'Android (Chrome) पर: पते के पास ताले के निशान पर टैप करें, Permissions खोलें, Camera और Microphone की अनुमति दें, फिर से कोशिश करें।',
+    'video.error.denied.ios':
+      'iPhone (Safari) पर: पते की पट्टी में "aA" पर टैप करें, Website Settings खोलें, Camera और Microphone की अनुमति दें, फिर से कोशिश करें।',
+    'video.error.denied.desktop':
+      'कंप्यूटर पर: पते की पट्टी में कैमरा के निशान पर क्लिक करें, Allow चुनें, फिर से कोशिश करें।',
     'video.error.notFound.title': 'कोई कैमरा या माइक्रोफ़ोन नहीं मिला',
     'video.error.notFound.body': 'माइक्रोफ़ोन वाले ईयरफ़ोन लगाएँ, या इसकी जगह अपने फ़ोन का उपयोग करें।',
     'video.error.inUse.title': 'आपका कैमरा या माइक्रोफ़ोन किसी और ऐप में चल रहा है',
-    'video.error.inUse.body': 'उन्हें इस्तेमाल कर रहे दूसरे ऐप (जैसे WhatsApp या Zoom कॉल) बंद करें, फिर से कोशिश करें।',
+    'video.error.inUse.body':
+      'उन्हें इस्तेमाल कर रहे दूसरे ऐप (जैसे WhatsApp या Zoom कॉल) बंद करें, फिर से कोशिश करें।',
     'video.error.insecure.title': 'यह पेज सुरक्षित नहीं है',
     'video.error.insecure.body': 'कैमरा इस्तेमाल करने के लिए पोर्टल को https:// पते से खोलें।',
     'video.error.unsupported.title': 'इस ब्राउज़र से वीडियो कॉल नहीं हो सकती',
     'video.error.unsupported.body': 'यह पेज Chrome, Safari, Edge या Firefox में खोलें।',
-    'video.error.inApp': 'आपने यह लिंक किसी दूसरे ऐप के अंदर खोला है। बेहतर कॉल के लिए इसे Chrome या Safari में खोलें (⋮ या शेयर मेन्यू में "Open in browser" चुनें)।',
+    'video.error.inApp':
+      'आपने यह लिंक किसी दूसरे ऐप के अंदर खोला है। बेहतर कॉल के लिए इसे Chrome या Safari में खोलें (⋮ या शेयर मेन्यू में "Open in browser" चुनें)।',
     'video.error.unknown.title': 'कैमरा शुरू नहीं हो सका',
     'video.error.unknown.body': 'फिर से कोशिश करें। बार-बार ऐसा हो तो ब्राउज़र बंद करके फिर खोलें।',
 

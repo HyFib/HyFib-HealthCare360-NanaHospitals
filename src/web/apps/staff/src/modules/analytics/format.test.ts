@@ -100,15 +100,25 @@ describe('KPIs', () => {
   });
 
   it('shows rates and scores as a change in points', () => {
-    const occupancy = kpiChange({ value: 82.5, previous: 80, changePercent: 3.1, higherIsBetter: true, unit: 'percent' });
+    const occupancy = kpiChange({
+      value: 82.5,
+      previous: 80,
+      changePercent: 3.1,
+      higherIsBetter: true,
+      unit: 'percent',
+    });
     expect(occupancy).toMatchObject({ text: '+2.5 pts', tone: 'good' });
     const nps = kpiChange({ value: 30, previous: 40, changePercent: -25, higherIsBetter: true, unit: 'score' });
     expect(nps).toMatchObject({ text: '−10 pts', direction: 'down', tone: 'bad' });
   });
 
   it('has no change without a previous value, and a flat change is neutral', () => {
-    expect(kpiChange({ value: 10, previous: null, changePercent: null, higherIsBetter: true, unit: 'count' })).toBeNull();
-    expect(kpiChange({ value: 10, previous: 10, changePercent: 0, higherIsBetter: true, unit: 'count' })).toMatchObject({ tone: 'neutral', direction: 'flat' });
+    expect(
+      kpiChange({ value: 10, previous: null, changePercent: null, higherIsBetter: true, unit: 'count' }),
+    ).toBeNull();
+    expect(kpiChange({ value: 10, previous: 10, changePercent: 0, higherIsBetter: true, unit: 'count' })).toMatchObject(
+      { tone: 'neutral', direction: 'flat' },
+    );
   });
 });
 

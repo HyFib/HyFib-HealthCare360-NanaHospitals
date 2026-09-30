@@ -49,12 +49,42 @@ export function vitalChecks(v: PartialVitals): VitalCheck[] {
   const r = DONOR_RULES;
   const check = (value: number | null, pass: (n: number) => boolean) => (value === null ? null : pass(value));
   return [
-    { key: 'haemoglobinGdl', label: 'Haemoglobin', ok: check(v.haemoglobinGdl, (n) => n >= r.minHaemoglobinGdl), rule: `At least ${r.minHaemoglobinGdl} g/dL` },
-    { key: 'weightKg', label: 'Weight', ok: check(v.weightKg, (n) => n >= r.minWeightKg), rule: `At least ${r.minWeightKg} kg (${r.minWeightFor450Kg} kg for a 450 ml bag)` },
-    { key: 'systolic', label: 'Systolic BP', ok: check(v.systolic, (n) => n >= r.minSystolic && n <= r.maxSystolic), rule: `${r.minSystolic}–${r.maxSystolic} mmHg` },
-    { key: 'diastolic', label: 'Diastolic BP', ok: check(v.diastolic, (n) => n >= r.minDiastolic && n <= r.maxDiastolic), rule: `${r.minDiastolic}–${r.maxDiastolic} mmHg` },
-    { key: 'pulse', label: 'Pulse', ok: check(v.pulse, (n) => n >= r.minPulse && n <= r.maxPulse), rule: `${r.minPulse}–${r.maxPulse} per minute` },
-    { key: 'temperatureC', label: 'Temperature', ok: check(v.temperatureC, (n) => n <= r.maxTemperatureC), rule: `Up to ${r.maxTemperatureC} °C` },
+    {
+      key: 'haemoglobinGdl',
+      label: 'Haemoglobin',
+      ok: check(v.haemoglobinGdl, (n) => n >= r.minHaemoglobinGdl),
+      rule: `At least ${r.minHaemoglobinGdl} g/dL`,
+    },
+    {
+      key: 'weightKg',
+      label: 'Weight',
+      ok: check(v.weightKg, (n) => n >= r.minWeightKg),
+      rule: `At least ${r.minWeightKg} kg (${r.minWeightFor450Kg} kg for a 450 ml bag)`,
+    },
+    {
+      key: 'systolic',
+      label: 'Systolic BP',
+      ok: check(v.systolic, (n) => n >= r.minSystolic && n <= r.maxSystolic),
+      rule: `${r.minSystolic}–${r.maxSystolic} mmHg`,
+    },
+    {
+      key: 'diastolic',
+      label: 'Diastolic BP',
+      ok: check(v.diastolic, (n) => n >= r.minDiastolic && n <= r.maxDiastolic),
+      rule: `${r.minDiastolic}–${r.maxDiastolic} mmHg`,
+    },
+    {
+      key: 'pulse',
+      label: 'Pulse',
+      ok: check(v.pulse, (n) => n >= r.minPulse && n <= r.maxPulse),
+      rule: `${r.minPulse}–${r.maxPulse} per minute`,
+    },
+    {
+      key: 'temperatureC',
+      label: 'Temperature',
+      ok: check(v.temperatureC, (n) => n <= r.maxTemperatureC),
+      rule: `Up to ${r.maxTemperatureC} °C`,
+    },
   ];
 }
 
@@ -84,7 +114,11 @@ export function questionsFor(questions: readonly DonorQuestionDto[], gender: Gen
   return questions.filter((q) => q.onlyFor === null || q.onlyFor === gender);
 }
 
-export function missingAnswers(questions: readonly DonorQuestionDto[], gender: Gender, answers: readonly ScreeningAnswer[]): string[] {
+export function missingAnswers(
+  questions: readonly DonorQuestionDto[],
+  gender: Gender,
+  answers: readonly ScreeningAnswer[],
+): string[] {
   return questionsFor(questions, gender)
     .filter((q) => !answers.some((a) => a.key === q.key))
     .map((q) => q.key);
@@ -126,7 +160,11 @@ export function evaluateDonor(input: EligibilityInput): EligibilityPreview {
     deferUntil(addYears(input.dateOfBirth, r.minAge), `Donors must be at least ${r.minAge} years old.`);
   } else if (age > maxAge) {
     permanent = true;
-    reasons.push(input.isFirstDonation ? `First-time donors must be ${r.maxAgeFirstDonation} years or younger.` : `Donors must be ${r.maxAge} years or younger.`);
+    reasons.push(
+      input.isFirstDonation
+        ? `First-time donors must be ${r.maxAgeFirstDonation} years or younger.`
+        : `Donors must be ${r.maxAge} years or younger.`,
+    );
   }
 
   if (input.lastDonationDate) {
@@ -147,7 +185,12 @@ export function evaluateDonor(input: EligibilityInput): EligibilityPreview {
   if (v.pulse < r.minPulse || v.pulse > r.maxPulse) {
     deferUntil(tomorrow, `Pulse ${v.pulse}/min is outside ${r.minPulse}–${r.maxPulse}/min.`);
   }
-  if (v.systolic < r.minSystolic || v.systolic > r.maxSystolic || v.diastolic < r.minDiastolic || v.diastolic > r.maxDiastolic) {
+  if (
+    v.systolic < r.minSystolic ||
+    v.systolic > r.maxSystolic ||
+    v.diastolic < r.minDiastolic ||
+    v.diastolic > r.maxDiastolic
+  ) {
     deferUntil(
       tomorrow,
       `Blood pressure ${v.systolic}/${v.diastolic} mmHg is outside ${r.minSystolic}–${r.maxSystolic}/${r.minDiastolic}–${r.maxDiastolic} mmHg.`,
@@ -174,5 +217,10 @@ export function evaluateDonor(input: EligibilityInput): EligibilityPreview {
   }
   return reasons.length > 0
     ? { outcome: 'TemporarilyDeferred', reasons, deferredUntil: until, maxBagVolumeMl: null }
-    : { outcome: 'Eligible', reasons, deferredUntil: null, maxBagVolumeMl: v.weightKg >= r.minWeightFor450Kg ? 450 : 350 };
+    : {
+        outcome: 'Eligible',
+        reasons,
+        deferredUntil: null,
+        maxBagVolumeMl: v.weightKg >= r.minWeightFor450Kg ? 450 : 350,
+      };
 }

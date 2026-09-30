@@ -1,4 +1,14 @@
-import { Button, Caption1, Field, Input, makeStyles, Select, Text, ToggleButton, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Select,
+  Text,
+  ToggleButton,
+  tokens,
+} from '@fluentui/react-components';
 import {
   ArrowEnterRegular,
   ArrowExitRegular,
@@ -16,7 +26,14 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { inpatientQueries, WARD_TYPE_LABEL, type CensusReport, type WardCensus } from '@/modules/inpatient/api';
-import { CENSUS_PRESETS, clampRange, matchPreset, presetRange, shortDate, sumTransfers } from '@/modules/inpatient/census';
+import {
+  CENSUS_PRESETS,
+  clampRange,
+  matchPreset,
+  presetRange,
+  shortDate,
+  sumTransfers,
+} from '@/modules/inpatient/census';
 import { useInpatientPermissions, useInpatientRealtime } from '@/modules/inpatient/hooks';
 import { formatDuration } from '@/modules/inpatient/time';
 
@@ -75,7 +92,11 @@ function CensusPage() {
 
   const live = wardId ? occupancy.data?.wards.find((w) => w.wardId === wardId)?.counts : occupancy.data?.total;
   const c = census.data;
-  const summary = c ? (wardId ? (c.wards.find((w) => w.wardId === wardId)?.summary ?? c.hospital) : c.hospital) : undefined;
+  const summary = c
+    ? wardId
+      ? (c.wards.find((w) => w.wardId === wardId)?.summary ?? c.hospital)
+      : c.hospital
+    : undefined;
   const value = (n: number | undefined) => (n === undefined ? '…' : n.toLocaleString('en-IN'));
 
   return (
@@ -86,11 +107,18 @@ function CensusPage() {
         subtitle={`${formatDateOnly(range.from)} to ${formatDateOnly(range.to)} · figures by IST calendar day`}
         actions={
           <>
-            <Button icon={<BedRegular />} onClick={() => void navigate({ to: '/inpatient/beds', search: wardId ? { wardId } : {} })}>
+            <Button
+              icon={<BedRegular />}
+              onClick={() => void navigate({ to: '/inpatient/beds', search: wardId ? { wardId } : {} })}
+            >
               Bed board
             </Button>
             {permissions.admit && (
-              <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/inpatient/admit' })}>
+              <Button
+                appearance="primary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/inpatient/admit' })}
+              >
                 Admit patient
               </Button>
             )}
@@ -115,13 +143,29 @@ function CensusPage() {
             ))}
           </div>
           <Field label="From">
-            <Input type="date" value={range.from} max={range.to} onChange={(_, d) => d.value && setRange(d.value, range.to)} />
+            <Input
+              type="date"
+              value={range.from}
+              max={range.to}
+              onChange={(_, d) => d.value && setRange(d.value, range.to)}
+            />
           </Field>
           <Field label="To">
-            <Input type="date" value={range.to} min={range.from} max={today} onChange={(_, d) => d.value && setRange(range.from, d.value)} />
+            <Input
+              type="date"
+              value={range.to}
+              min={range.from}
+              max={today}
+              onChange={(_, d) => d.value && setRange(range.from, d.value)}
+            />
           </Field>
           <Field label="Ward">
-            <Select value={wardId ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, wardId: d.value || undefined }), replace: true })}>
+            <Select
+              value={wardId ?? ''}
+              onChange={(_, d) =>
+                void navigate({ search: (prev) => ({ ...prev, wardId: d.value || undefined }), replace: true })
+              }
+            >
               <option value="">Whole hospital</option>
               {wards.data?.map((w) => (
                 <option key={w.id} value={w.id}>
@@ -139,16 +183,31 @@ function CensusPage() {
           icon={<BedRegular />}
           value={live ? `${live.occupancyPercent}%` : '…'}
           hint={live ? `${live.occupied} of ${live.operational} beds in service` : 'Live'}
-          onClick={() => void navigate({ to: '/inpatient/beds', search: wardId ? { wardId, status: 'Occupied' } : { status: 'Occupied' } })}
+          onClick={() =>
+            void navigate({
+              to: '/inpatient/beds',
+              search: wardId ? { wardId, status: 'Occupied' } : { status: 'Occupied' },
+            })
+          }
         />
         <KpiCard
           label="Vacant now"
           icon={<BedRegular />}
           value={value(live?.vacant)}
           hint={live ? `${live.cleaning} being cleaned · ${live.reserved} reserved` : 'Live'}
-          onClick={() => void navigate({ to: '/inpatient/beds', search: wardId ? { wardId, status: 'Vacant' } : { status: 'Vacant' } })}
+          onClick={() =>
+            void navigate({
+              to: '/inpatient/beds',
+              search: wardId ? { wardId, status: 'Vacant' } : { status: 'Vacant' },
+            })
+          }
         />
-        <KpiCard label="Admissions" icon={<ArrowEnterRegular />} value={value(summary?.admissions)} hint="In the period" />
+        <KpiCard
+          label="Admissions"
+          icon={<ArrowEnterRegular />}
+          value={value(summary?.admissions)}
+          hint="In the period"
+        />
         <KpiCard
           label="Discharges"
           icon={<ArrowExitRegular />}
@@ -162,7 +221,12 @@ function CensusPage() {
           hint="Waiting for billing clearance"
           onClick={() => document.getElementById('pending-discharges')?.scrollIntoView({ behavior: 'smooth' })}
         />
-        <KpiCard label="Average stay" icon={<CalendarLtrRegular />} value={summary ? `${summary.averageLengthOfStay} d` : '…'} hint="Of patients discharged" />
+        <KpiCard
+          label="Average stay"
+          icon={<CalendarLtrRegular />}
+          value={summary ? `${summary.averageLengthOfStay} d` : '…'}
+          hint="Of patients discharged"
+        />
         <KpiCard
           label="Bed occupancy rate"
           icon={<ChartMultipleRegular />}
@@ -173,9 +237,17 @@ function CensusPage() {
           <KpiCard
             label="Bed turnaround"
             icon={<BroomRegular />}
-            value={c?.averageHousekeepingTurnaroundMinutes != null ? formatDuration(c.averageHousekeepingTurnaroundMinutes) : '—'}
+            value={
+              c?.averageHousekeepingTurnaroundMinutes != null
+                ? formatDuration(c.averageHousekeepingTurnaroundMinutes)
+                : '—'
+            }
             hint={c ? `${c.housekeepingTasksCompleted} beds cleaned` : 'Discharge to clean bed'}
-            onClick={permissions.housekeeping || permissions.manageBeds ? () => void navigate({ to: '/inpatient/housekeeping' }) : undefined}
+            onClick={
+              permissions.housekeeping || permissions.manageBeds
+                ? () => void navigate({ to: '/inpatient/housekeeping' })
+                : undefined
+            }
           />
         )}
       </div>
@@ -184,7 +256,10 @@ function CensusPage() {
         <ErrorState error={census.error} onRetry={() => void census.refetch()} title="Could not load the census" />
       ) : (
         <div className={styles.columns}>
-          <Section title="Daily movement" description="Admissions and discharges each day, with the patients in bed at midnight">
+          <Section
+            title="Daily movement"
+            description="Admissions and discharges each day, with the patients in bed at midnight"
+          >
             {summary ? (
               summary.days.length > 0 ? (
                 <CensusChart days={summary.days} />
@@ -215,7 +290,14 @@ function CensusChart({ days }: { days: CensusReport['hospital']['days'] }) {
       series: [
         { type: 'bar', name: 'Admissions', data: days.map((d) => d.admissions), itemStyle: { color: '#0A7CA7' } },
         { type: 'bar', name: 'Discharges', data: days.map((d) => d.discharges), itemStyle: { color: '#8764B8' } },
-        { type: 'line', name: 'In bed at midnight', data: days.map((d) => d.midnightCensus), smooth: true, symbolSize: 6, itemStyle: { color: '#C19C00' } },
+        {
+          type: 'line',
+          name: 'In bed at midnight',
+          data: days.map((d) => d.midnightCensus),
+          smooth: true,
+          symbolSize: 6,
+          itemStyle: { color: '#C19C00' },
+        },
       ],
     }),
     [days],
@@ -235,7 +317,11 @@ function PendingDischarges({ wardId }: { wardId: string | null }) {
   const pending = useQuery(inpatientQueries.pendingDischarges(wardId));
   return (
     <div id="pending-discharges">
-      <Section title="Pending discharges" description="Oldest first. Ask billing to clear the ones waiting longest." flush>
+      <Section
+        title="Pending discharges"
+        description="Oldest first. Ask billing to clear the ones waiting longest."
+        flush
+      >
         <DataTable
           ariaLabel="Pending discharges"
           rows={pending.data}
@@ -243,7 +329,9 @@ function PendingDischarges({ wardId }: { wardId: string | null }) {
           error={pending.error}
           onRetry={() => void pending.refetch()}
           getRowId={(p) => p.admissionId}
-          onRowClick={(p) => void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: p.admissionId } })}
+          onRowClick={(p) =>
+            void navigate({ to: '/inpatient/admissions/$admissionId', params: { admissionId: p.admissionId } })
+          }
           size="small"
           columns={[
             {
@@ -256,13 +344,22 @@ function PendingDischarges({ wardId }: { wardId: string | null }) {
                 </span>
               ),
             },
-            { key: 'expected', header: 'Expected', width: 110, priority: 'low', render: (p) => (p.expectedDischargeDate ? formatDateOnly(p.expectedDischargeDate) : '—') },
+            {
+              key: 'expected',
+              header: 'Expected',
+              width: 110,
+              priority: 'low',
+              render: (p) => (p.expectedDischargeDate ? formatDateOnly(p.expectedDischargeDate) : '—'),
+            },
             {
               key: 'wait',
               header: 'Waiting',
               width: 100,
               render: (p) => (
-                <Text weight={p.waitingMinutes >= 180 ? 'semibold' : 'regular'} style={p.waitingMinutes >= 180 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
+                <Text
+                  weight={p.waitingMinutes >= 180 ? 'semibold' : 'regular'}
+                  style={p.waitingMinutes >= 180 ? { color: tokens.colorPaletteRedForeground1 } : undefined}
+                >
                   {formatDuration(p.waitingMinutes)}
                 </Text>
               ),
@@ -276,11 +373,24 @@ function PendingDischarges({ wardId }: { wardId: string | null }) {
   );
 }
 
-function WardTable({ report, loading, liveWards }: { report: CensusReport | undefined; loading: boolean; liveWards: { wardId: string; counts: { occupancyPercent: number; occupied: number; operational: number } }[] | undefined }) {
+function WardTable({
+  report,
+  loading,
+  liveWards,
+}: {
+  report: CensusReport | undefined;
+  loading: boolean;
+  liveWards:
+    { wardId: string; counts: { occupancyPercent: number; occupied: number; operational: number } }[] | undefined;
+}) {
   const navigate = useNavigate();
   const live = new Map((liveWards ?? []).map((w) => [w.wardId, w.counts]));
   return (
-    <Section title="By ward" description={report ? `${formatDate(new Date().toISOString())} occupancy and period movements` : undefined} flush>
+    <Section
+      title="By ward"
+      description={report ? `${formatDate(new Date().toISOString())} occupancy and period movements` : undefined}
+      flush
+    >
       <DataTable<WardCensus>
         ariaLabel="Census by ward"
         rows={report?.wards}
@@ -319,9 +429,29 @@ function WardTable({ report, loading, liveWards }: { report: CensusReport | unde
               return `${t.transfersIn} / ${t.transfersOut}`;
             },
           },
-          { key: 'days', header: 'IP days', width: 90, align: 'end', priority: 'low', render: (w) => w.summary.inpatientDays },
-          { key: 'alos', header: 'Avg stay', width: 90, align: 'end', priority: 'low', render: (w) => `${w.summary.averageLengthOfStay} d` },
-          { key: 'bor', header: 'Occupancy rate', width: 120, align: 'end', render: (w) => `${w.summary.bedOccupancyRate}%` },
+          {
+            key: 'days',
+            header: 'IP days',
+            width: 90,
+            align: 'end',
+            priority: 'low',
+            render: (w) => w.summary.inpatientDays,
+          },
+          {
+            key: 'alos',
+            header: 'Avg stay',
+            width: 90,
+            align: 'end',
+            priority: 'low',
+            render: (w) => `${w.summary.averageLengthOfStay} d`,
+          },
+          {
+            key: 'bor',
+            header: 'Occupancy rate',
+            width: 120,
+            align: 'end',
+            render: (w) => `${w.summary.bedOccupancyRate}%`,
+          },
         ]}
         emptyTitle="No wards"
         emptyDescription="Set up wards and beds to see the census."

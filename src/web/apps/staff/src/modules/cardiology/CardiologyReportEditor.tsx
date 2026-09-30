@@ -12,10 +12,31 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { CalculatorRegular, CheckmarkCircleRegular, DocumentArrowLeftRegular, PrintRegular, SaveRegular, SendRegular, SignatureRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  CalculatorRegular,
+  CheckmarkCircleRegular,
+  DocumentArrowLeftRegular,
+  PrintRegular,
+  SaveRegular,
+  SendRegular,
+  SignatureRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, EmptyState, FormGrid, FullRow, NumberField, Section, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  EmptyState,
+  FormGrid,
+  FullRow,
+  NumberField,
+  Section,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { useForm, useWatch, type UseFormReturn } from 'react-hook-form';
@@ -36,13 +57,24 @@ import {
   type SaveCardiologyReportRequest,
 } from './api';
 import { reportStatusLabel, studyTypeLongLabel, tmtResultLabel } from './labels';
-import { bazettQtc, dippingPattern, formatDuration, heartRateHint, lvefCategory, parseDuration, qtcHint, targetHeartRatePercent } from './measurements';
+import {
+  bazettQtc,
+  dippingPattern,
+  formatDuration,
+  heartRateHint,
+  lvefCategory,
+  parseDuration,
+  qtcHint,
+  targetHeartRatePercent,
+} from './measurements';
 import { printCardiologyReport } from './print';
 import { measurementRows } from './reportBody';
 import { isCardiologyReportable, isCardiologyReportEditable } from './workflow';
 
-const int = (min: number, max: number) => z.number().int('Whole numbers only.').min(min, `${min} to ${max}`).max(max, `${min} to ${max}`).nullable();
-const dec = (min: number, max: number) => z.number().min(min, `${min} to ${max}`).max(max, `${min} to ${max}`).nullable();
+const int = (min: number, max: number) =>
+  z.number().int('Whole numbers only.').min(min, `${min} to ${max}`).max(max, `${min} to ${max}`).nullable();
+const dec = (min: number, max: number) =>
+  z.number().min(min, `${min} to ${max}`).max(max, `${min} to ${max}`).nullable();
 const text = (max: number) => z.string().max(max);
 
 const schema = z
@@ -108,7 +140,11 @@ const schema = z
   })
   .superRefine((values, ctx) => {
     if (values.isCriticalFinding && !values.criticalFindingNote.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['criticalFindingNote'], message: 'Describe the critical finding in one line.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['criticalFindingNote'],
+        message: 'Describe the critical finding in one line.',
+      });
     }
   });
 
@@ -181,13 +217,23 @@ function toValues(report: CardiologyReportDto | null): ReportValues {
 }
 
 /** Only the section of the study type is sent; the other measurement sets stay untouched on the server. */
-function toRequest(study: CardiologyStudyDetail, values: ReportValues, version: number | null): SaveCardiologyReportRequest {
+function toRequest(
+  study: CardiologyStudyDetail,
+  values: ReportValues,
+  version: number | null,
+): SaveCardiologyReportRequest {
   const v = values;
   const type = study.studyType;
   return {
     ecg:
       type === 'Ecg'
-        ? { ...v.ecg, rhythm: n(v.ecg.rhythm), axis: n(v.ecg.axis), stTChanges: n(v.ecg.stTChanges), interpretation: n(v.ecg.interpretation) }
+        ? {
+            ...v.ecg,
+            rhythm: n(v.ecg.rhythm),
+            axis: n(v.ecg.axis),
+            stTChanges: n(v.ecg.stTChanges),
+            interpretation: n(v.ecg.interpretation),
+          }
         : null,
     echo:
       type === 'Echo'
@@ -221,7 +267,12 @@ function toRequest(study: CardiologyStudyDetail, values: ReportValues, version: 
         : null,
     holter:
       type === 'Holter'
-        ? { ...v.holter, longestPause: n(v.holter.longestPause), arrhythmias: n(v.holter.arrhythmias), stChanges: n(v.holter.stChanges) }
+        ? {
+            ...v.holter,
+            longestPause: n(v.holter.longestPause),
+            arrhythmias: n(v.holter.arrhythmias),
+            stChanges: n(v.holter.stChanges),
+          }
         : null,
     abpm: type === 'Abpm' ? { ...v.abpm, dippingPattern: n(v.abpm.dippingPattern) } : null,
     conclusion: n(v.conclusion),
@@ -259,18 +310,39 @@ const useStyles = makeStyles({
   strong: { whiteSpace: 'pre-wrap', fontWeight: tokens.fontWeightSemibold },
 });
 
-const RHYTHMS = ['Sinus rhythm', 'Sinus tachycardia', 'Sinus bradycardia', 'Atrial fibrillation', 'Atrial flutter', 'Paced rhythm'];
+const RHYTHMS = [
+  'Sinus rhythm',
+  'Sinus tachycardia',
+  'Sinus bradycardia',
+  'Atrial fibrillation',
+  'Atrial flutter',
+  'Paced rhythm',
+];
 const AXES = ['Normal', 'Left axis deviation', 'Right axis deviation', 'Extreme axis deviation'];
 const PROTOCOLS = ['Bruce', 'Modified Bruce'];
 
 /** Quick-pick buttons that fill a free-text field (typing stays possible). */
-function Suggestions({ form, name, options }: { form: UseFormReturn<ReportValues>; name: 'ecg.rhythm' | 'ecg.axis' | 'tmt.protocol'; options: string[] }) {
+function Suggestions({
+  form,
+  name,
+  options,
+}: {
+  form: UseFormReturn<ReportValues>;
+  name: 'ecg.rhythm' | 'ecg.axis' | 'tmt.protocol';
+  options: string[];
+}) {
   const styles = useStyles();
   const value = useWatch({ control: form.control, name });
   return (
     <div className={styles.suggestions}>
       {options.map((option) => (
-        <Button key={option} size="small" shape="circular" appearance={value === option ? 'primary' : 'outline'} onClick={() => form.setValue(name, option, { shouldDirty: true })}>
+        <Button
+          key={option}
+          size="small"
+          shape="circular"
+          appearance={value === option ? 'primary' : 'outline'}
+          onClick={() => form.setValue(name, option, { shouldDirty: true })}
+        >
           {option}
         </Button>
       ))}
@@ -290,7 +362,11 @@ export function CardiologyReportPanel({ study }: { study: CardiologyStudyDetail 
       <Section title="Report">
         <EmptyState
           title="No report yet"
-          description={study.status === 'Cancelled' ? 'The study was cancelled.' : 'The report is written after the tracing is attached and the study is completed.'}
+          description={
+            study.status === 'Cancelled'
+              ? 'The study was cancelled.'
+              : 'The report is written after the tracing is attached and the study is completed.'
+          }
         />
       </Section>
     );
@@ -303,7 +379,10 @@ export function CardiologyReportPanel({ study }: { study: CardiologyStudyDetail 
   }
   return (
     <Section title="Report">
-      <EmptyState title="Report not available yet" description="The report appears here once the cardiologist releases it." />
+      <EmptyState
+        title="Report not available yet"
+        description="The report appears here once the cardiologist releases it."
+      />
     </Section>
   );
 }
@@ -320,7 +399,8 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   const watched = useWatch({ control: form.control });
   const type = study.studyType;
   const ageYears = parseAgeYears(study.age);
-  const latestVersion = () => queryClient.getQueryData<CardiologyStudyDetail>(studyKey)?.report?.version ?? study.report?.version ?? null;
+  const latestVersion = () =>
+    queryClient.getQueryData<CardiologyStudyDetail>(studyKey)?.report?.version ?? study.report?.version ?? null;
 
   const persist = async (values: ReportValues) => {
     const saved = await cardiologyApi.saveReport(study.id, toRequest(study, values, latestVersion()));
@@ -332,7 +412,10 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
 
   const handleError = (error: unknown, fallback: string) => {
     if (isApiError(error) && error.isConflict) {
-      notify.warning('The report was changed by someone else', 'It has been reloaded. Check it and make your changes again.');
+      notify.warning(
+        'The report was changed by someone else',
+        'It has been reloaded. Check it and make your changes again.',
+      );
       void queryClient.invalidateQueries({ queryKey: studyKey });
       return;
     }
@@ -343,7 +426,11 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
 
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: cardiologyKeys.all });
 
-  const save = useMutation({ mutationFn: persist, onSuccess: () => notify.success('Report saved'), onError: (error) => handleError(error, 'Could not save the report') });
+  const save = useMutation({
+    mutationFn: persist,
+    onSuccess: () => notify.success('Report saved'),
+    onError: (error) => handleError(error, 'Could not save the report'),
+  });
   const submit = useMutation({
     mutationFn: async (values: ReportValues) => {
       await persist(values);
@@ -378,7 +465,10 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   });
 
   const busy = save.isPending || submit.isPending || sign.isPending;
-  useHotkey('mod+s', () => void form.handleSubmit((values) => save.mutate(values))(), { allowInInputs: true, enabled: !busy });
+  useHotkey('mod+s', () => void form.handleSubmit((values) => save.mutate(values))(), {
+    allowInInputs: true,
+    enabled: !busy,
+  });
 
   const status = study.report?.status;
   const ecg = watched.ecg;
@@ -387,11 +477,17 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   const dip = dippingPattern(watched.abpm?.daytimeMeanSystolic, watched.abpm?.nighttimeMeanSystolic);
 
   return (
-    <Section title={`${studyTypeLongLabel[type]} report`} description={status ? reportStatusLabel[status] : 'Not started. Enter the measurements and your conclusion.'}>
+    <Section
+      title={`${studyTypeLongLabel[type]} report`}
+      description={status ? reportStatusLabel[status] : 'Not started. Enter the measurements and your conclusion.'}
+    >
       <form onSubmit={(event) => event.preventDefault()} noValidate className={styles.form}>
         {draft.saved && (
           <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-            <MessageBarBody>Unsaved report values from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+            <MessageBarBody>
+              Unsaved report values from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on
+              this computer.
+            </MessageBarBody>
             <MessageBarActions>
               <Button onClick={draft.restore}>Restore them</Button>
               <Button appearance="subtle" onClick={draft.discard}>
@@ -405,19 +501,35 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
           <section className={styles.group}>
             <Subtitle2>ECG measurements</Subtitle2>
             <FormGrid columns={3}>
-              <NumberField control={form.control} name="ecg.heartRate" label="Heart rate (/min)" hint={heartRateHint(ecg?.heartRate) ?? undefined} min={10} max={350} />
+              <NumberField
+                control={form.control}
+                name="ecg.heartRate"
+                label="Heart rate (/min)"
+                hint={heartRateHint(ecg?.heartRate) ?? undefined}
+                min={10}
+                max={350}
+              />
               <NumberField control={form.control} name="ecg.prInterval" label="PR interval (ms)" min={40} max={600} />
               <NumberField control={form.control} name="ecg.qrsDuration" label="QRS duration (ms)" min={20} max={400} />
               <NumberField control={form.control} name="ecg.qtInterval" label="QT interval (ms)" min={100} max={900} />
               <div className={styles.calc}>
                 <div style={{ flex: 1 }}>
-                  <NumberField control={form.control} name="ecg.qtcInterval" label="QTc (ms)" hint={qtcHint(ecg?.qtcInterval, study.gender) ?? undefined} min={100} max={900} />
+                  <NumberField
+                    control={form.control}
+                    name="ecg.qtcInterval"
+                    label="QTc (ms)"
+                    hint={qtcHint(ecg?.qtcInterval, study.gender) ?? undefined}
+                    min={100}
+                    max={900}
+                  />
                 </div>
                 <Button
                   icon={<CalculatorRegular />}
                   disabled={qtcSuggestion === null}
                   title="Bazett formula from QT and heart rate"
-                  onClick={() => qtcSuggestion !== null && form.setValue('ecg.qtcInterval', qtcSuggestion, { shouldDirty: true })}
+                  onClick={() =>
+                    qtcSuggestion !== null && form.setValue('ecg.qtcInterval', qtcSuggestion, { shouldDirty: true })
+                  }
                 >
                   {qtcSuggestion !== null ? `Bazett ${qtcSuggestion}` : 'Bazett'}
                 </Button>
@@ -431,10 +543,22 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
                 <Suggestions form={form} name="ecg.axis" options={AXES} />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="ecg.stTChanges" label="ST-T changes" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="ecg.stTChanges"
+                  label="ST-T changes"
+                  rows={2}
+                  maxLength={500}
+                />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="ecg.interpretation" label="Interpretation" rows={3} maxLength={2000} />
+                <TextAreaField
+                  control={form.control}
+                  name="ecg.interpretation"
+                  label="Interpretation"
+                  rows={3}
+                  maxLength={2000}
+                />
               </FullRow>
             </FormGrid>
           </section>
@@ -444,23 +568,72 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
           <section className={styles.group}>
             <Subtitle2>Echo findings</Subtitle2>
             <FormGrid columns={3}>
-              <NumberField control={form.control} name="echo.lvef" label="LV ejection fraction (%)" hint={lvefCategory(watched.echo?.lvef) ?? undefined} min={1} max={95} step={1} />
-              <TextField control={form.control} name="echo.diastolicFunction" label="Diastolic function" maxLength={300} />
+              <NumberField
+                control={form.control}
+                name="echo.lvef"
+                label="LV ejection fraction (%)"
+                hint={lvefCategory(watched.echo?.lvef) ?? undefined}
+                min={1}
+                max={95}
+                step={1}
+              />
+              <TextField
+                control={form.control}
+                name="echo.diastolicFunction"
+                label="Diastolic function"
+                maxLength={300}
+              />
               <TextField control={form.control} name="echo.pericardium" label="Pericardium" maxLength={300} />
               <FullRow>
-                <TextAreaField control={form.control} name="echo.leftVentricle" label="Left ventricle" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="echo.leftVentricle"
+                  label="Left ventricle"
+                  rows={2}
+                  maxLength={500}
+                />
               </FullRow>
-              <TextAreaField control={form.control} name="echo.rightVentricle" label="Right ventricle" rows={2} maxLength={500} />
-              <TextAreaField control={form.control} name="echo.leftAtrium" label="Left atrium" rows={2} maxLength={300} />
-              <TextAreaField control={form.control} name="echo.rightAtrium" label="Right atrium" rows={2} maxLength={300} />
+              <TextAreaField
+                control={form.control}
+                name="echo.rightVentricle"
+                label="Right ventricle"
+                rows={2}
+                maxLength={500}
+              />
+              <TextAreaField
+                control={form.control}
+                name="echo.leftAtrium"
+                label="Left atrium"
+                rows={2}
+                maxLength={300}
+              />
+              <TextAreaField
+                control={form.control}
+                name="echo.rightAtrium"
+                label="Right atrium"
+                rows={2}
+                maxLength={300}
+              />
               <FullRow>
                 <TextAreaField control={form.control} name="echo.valves" label="Valves" rows={3} maxLength={1000} />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="echo.rwma" label="Regional wall motion" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="echo.rwma"
+                  label="Regional wall motion"
+                  rows={2}
+                  maxLength={500}
+                />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="echo.conclusion" label="Echo conclusion" rows={2} maxLength={2000} />
+                <TextAreaField
+                  control={form.control}
+                  name="echo.conclusion"
+                  label="Echo conclusion"
+                  rows={2}
+                  maxLength={2000}
+                />
               </FullRow>
             </FormGrid>
           </section>
@@ -474,16 +647,31 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
                 <TextField control={form.control} name="tmt.protocol" label="Protocol" maxLength={64} />
                 <Suggestions form={form} name="tmt.protocol" options={PROTOCOLS} />
               </FullRow>
-              <TextField control={form.control} name="tmt.duration" label="Exercise duration (min:sec)" placeholder="e.g. 9:30" />
+              <TextField
+                control={form.control}
+                name="tmt.duration"
+                label="Exercise duration (min:sec)"
+                placeholder="e.g. 9:30"
+              />
               <NumberField control={form.control} name="tmt.mets" label="Workload (METs)" min={0} max={30} step={0.1} />
-              <NumberField control={form.control} name="tmt.maxHeartRate" label="Maximum heart rate (/min)" min={30} max={250} />
+              <NumberField
+                control={form.control}
+                name="tmt.maxHeartRate"
+                label="Maximum heart rate (/min)"
+                min={30}
+                max={250}
+              />
               <div className={styles.calc}>
                 <div style={{ flex: 1 }}>
                   <NumberField
                     control={form.control}
                     name="tmt.targetHeartRatePercent"
                     label="Target heart rate reached (%)"
-                    hint={ageYears !== null ? `Age-predicted maximum ${220 - ageYears}/min; 85% is the usual target` : undefined}
+                    hint={
+                      ageYears !== null
+                        ? `Age-predicted maximum ${220 - ageYears}/min; 85% is the usual target`
+                        : undefined
+                    }
                     min={0}
                     max={150}
                   />
@@ -492,7 +680,10 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
                   icon={<CalculatorRegular />}
                   disabled={targetSuggestion === null}
                   title="Maximum heart rate ÷ (220 − age)"
-                  onClick={() => targetSuggestion !== null && form.setValue('tmt.targetHeartRatePercent', targetSuggestion, { shouldDirty: true })}
+                  onClick={() =>
+                    targetSuggestion !== null &&
+                    form.setValue('tmt.targetHeartRatePercent', targetSuggestion, { shouldDirty: true })
+                  }
                 >
                   {targetSuggestion !== null ? `${targetSuggestion}%` : 'Calculate'}
                 </Button>
@@ -504,11 +695,29 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
                 placeholder="Choose"
                 options={TMT_RESULTS.map((value) => ({ value, label: tmtResultLabel[value] }))}
               />
-              <TextField control={form.control} name="tmt.bpResponse" label="BP response" maxLength={300} placeholder="e.g. Normal rise to 170/80" />
+              <TextField
+                control={form.control}
+                name="tmt.bpResponse"
+                label="BP response"
+                maxLength={300}
+                placeholder="e.g. Normal rise to 170/80"
+              />
               <TextField control={form.control} name="tmt.symptoms" label="Symptoms" maxLength={300} />
-              <TextField control={form.control} name="tmt.reasonForTermination" label="Reason for stopping" maxLength={300} placeholder="e.g. Target heart rate reached" />
+              <TextField
+                control={form.control}
+                name="tmt.reasonForTermination"
+                label="Reason for stopping"
+                maxLength={300}
+                placeholder="e.g. Target heart rate reached"
+              />
               <FullRow>
-                <TextAreaField control={form.control} name="tmt.stChanges" label="ST changes" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="tmt.stChanges"
+                  label="ST changes"
+                  rows={2}
+                  maxLength={500}
+                />
               </FullRow>
             </FormGrid>
           </section>
@@ -518,19 +727,71 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
           <section className={styles.group}>
             <Subtitle2>Holter monitoring</Subtitle2>
             <FormGrid columns={4}>
-              <NumberField control={form.control} name="holter.durationHours" label="Recording (hours)" min={1} max={336} />
-              <NumberField control={form.control} name="holter.minHeartRate" label="Minimum heart rate" min={10} max={350} />
-              <NumberField control={form.control} name="holter.meanHeartRate" label="Mean heart rate" min={10} max={350} />
-              <NumberField control={form.control} name="holter.maxHeartRate" label="Maximum heart rate" min={10} max={350} />
-              <NumberField control={form.control} name="holter.ventricularEctopics" label="Ventricular ectopics" min={0} />
-              <NumberField control={form.control} name="holter.supraventricularEctopics" label="Supraventricular ectopics" min={0} />
+              <NumberField
+                control={form.control}
+                name="holter.durationHours"
+                label="Recording (hours)"
+                min={1}
+                max={336}
+              />
+              <NumberField
+                control={form.control}
+                name="holter.minHeartRate"
+                label="Minimum heart rate"
+                min={10}
+                max={350}
+              />
+              <NumberField
+                control={form.control}
+                name="holter.meanHeartRate"
+                label="Mean heart rate"
+                min={10}
+                max={350}
+              />
+              <NumberField
+                control={form.control}
+                name="holter.maxHeartRate"
+                label="Maximum heart rate"
+                min={10}
+                max={350}
+              />
+              <NumberField
+                control={form.control}
+                name="holter.ventricularEctopics"
+                label="Ventricular ectopics"
+                min={0}
+              />
+              <NumberField
+                control={form.control}
+                name="holter.supraventricularEctopics"
+                label="Supraventricular ectopics"
+                min={0}
+              />
               <NumberField control={form.control} name="holter.pauses" label="Pauses" min={0} />
-              <TextField control={form.control} name="holter.longestPause" label="Longest pause" maxLength={64} placeholder="e.g. 2.4 s at 03:10" />
+              <TextField
+                control={form.control}
+                name="holter.longestPause"
+                label="Longest pause"
+                maxLength={64}
+                placeholder="e.g. 2.4 s at 03:10"
+              />
               <FullRow>
-                <TextAreaField control={form.control} name="holter.arrhythmias" label="Arrhythmias" rows={2} maxLength={1000} />
+                <TextAreaField
+                  control={form.control}
+                  name="holter.arrhythmias"
+                  label="Arrhythmias"
+                  rows={2}
+                  maxLength={1000}
+                />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="holter.stChanges" label="ST changes" rows={2} maxLength={500} />
+                <TextAreaField
+                  control={form.control}
+                  name="holter.stChanges"
+                  label="ST changes"
+                  rows={2}
+                  maxLength={500}
+                />
               </FullRow>
             </FormGrid>
           </section>
@@ -540,19 +801,53 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
           <section className={styles.group}>
             <Subtitle2>Ambulatory BP monitoring (mmHg)</Subtitle2>
             <FormGrid columns={4}>
-              <NumberField control={form.control} name="abpm.daytimeMeanSystolic" label="Daytime systolic" min={40} max={300} />
-              <NumberField control={form.control} name="abpm.daytimeMeanDiastolic" label="Daytime diastolic" min={20} max={200} />
-              <NumberField control={form.control} name="abpm.nighttimeMeanSystolic" label="Night-time systolic" min={40} max={300} />
-              <NumberField control={form.control} name="abpm.nighttimeMeanDiastolic" label="Night-time diastolic" min={20} max={200} />
+              <NumberField
+                control={form.control}
+                name="abpm.daytimeMeanSystolic"
+                label="Daytime systolic"
+                min={40}
+                max={300}
+              />
+              <NumberField
+                control={form.control}
+                name="abpm.daytimeMeanDiastolic"
+                label="Daytime diastolic"
+                min={20}
+                max={200}
+              />
+              <NumberField
+                control={form.control}
+                name="abpm.nighttimeMeanSystolic"
+                label="Night-time systolic"
+                min={40}
+                max={300}
+              />
+              <NumberField
+                control={form.control}
+                name="abpm.nighttimeMeanDiastolic"
+                label="Night-time diastolic"
+                min={20}
+                max={200}
+              />
               <FullRow>
                 <div className={styles.calc}>
                   <div style={{ flex: 1 }}>
-                    <TextField control={form.control} name="abpm.dippingPattern" label="Dipping pattern" maxLength={64} />
+                    <TextField
+                      control={form.control}
+                      name="abpm.dippingPattern"
+                      label="Dipping pattern"
+                      maxLength={64}
+                    />
                   </div>
                   <Button
                     icon={<CalculatorRegular />}
                     disabled={dip === null}
-                    onClick={() => dip && form.setValue('abpm.dippingPattern', `${dip.pattern} (${dip.percent}% nocturnal fall)`, { shouldDirty: true })}
+                    onClick={() =>
+                      dip &&
+                      form.setValue('abpm.dippingPattern', `${dip.pattern} (${dip.percent}% nocturnal fall)`, {
+                        shouldDirty: true,
+                      })
+                    }
                   >
                     {dip ? `${dip.pattern}, ${dip.percent}%` : 'Calculate'}
                   </Button>
@@ -565,21 +860,49 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
         <section className={styles.group}>
           <Subtitle2>Conclusion</Subtitle2>
           <TextAreaField control={form.control} name="conclusion" label="Conclusion" rows={3} maxLength={2000} />
-          <TextAreaField control={form.control} name="recommendations" label="Recommendations" rows={2} maxLength={1000} />
-          <SwitchField control={form.control} name="isCriticalFinding" label="Critical finding (the treating doctor must be called before sign-off)" />
+          <TextAreaField
+            control={form.control}
+            name="recommendations"
+            label="Recommendations"
+            rows={2}
+            maxLength={1000}
+          />
+          <SwitchField
+            control={form.control}
+            name="isCriticalFinding"
+            label="Critical finding (the treating doctor must be called before sign-off)"
+          />
           {watched.isCriticalFinding && (
-            <TextField control={form.control} name="criticalFindingNote" label="Critical finding in one line" required maxLength={500} placeholder="e.g. Acute anterior STEMI pattern" />
+            <TextField
+              control={form.control}
+              name="criticalFindingNote"
+              label="Critical finding in one line"
+              required
+              maxLength={500}
+              placeholder="e.g. Acute anterior STEMI pattern"
+            />
           )}
         </section>
 
         <div className={styles.footer}>
-          <Caption1 className={styles.muted}>{form.formState.isDirty ? 'Unsaved changes are kept on this computer · Ctrl+S saves' : 'Saved'}</Caption1>
+          <Caption1 className={styles.muted}>
+            {form.formState.isDirty ? 'Unsaved changes are kept on this computer · Ctrl+S saves' : 'Saved'}
+          </Caption1>
           <div className={styles.actions}>
-            <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={busy} onClick={() => void form.handleSubmit((values) => save.mutate(values))()} aria-keyshortcuts="Control+S">
+            <Button
+              icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+              disabled={busy}
+              onClick={() => void form.handleSubmit((values) => save.mutate(values))()}
+              aria-keyshortcuts="Control+S"
+            >
               Save
             </Button>
             {status !== 'Reported' && (
-              <Button icon={submit.isPending ? <Spinner size="tiny" /> : <SendRegular />} disabled={busy} onClick={() => void form.handleSubmit((values) => submit.mutate(values))()}>
+              <Button
+                icon={submit.isPending ? <Spinner size="tiny" /> : <SendRegular />}
+                disabled={busy}
+                onClick={() => void form.handleSubmit((values) => submit.mutate(values))()}
+              >
                 Submit for sign-off
               </Button>
             )}
@@ -603,7 +926,12 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
         <CriticalCallDialog
           open
           title="Inform the doctor about the critical finding"
-          findings={[{ id: study.id, label: `${study.studyName}: ${form.getValues('criticalFindingNote') || 'critical finding'}` }]}
+          findings={[
+            {
+              id: study.id,
+              label: `${study.studyName}: ${form.getValues('criticalFindingNote') || 'critical finding'}`,
+            },
+          ]}
           submitLabel={release ? 'Save call, sign and release' : 'Save call and sign'}
           busy={sign.isPending}
           onCancel={() => setCalling(false)}
@@ -614,7 +942,15 @@ function ReportForm({ study, canVerify }: { study: CardiologyStudyDetail; canVer
   );
 }
 
-function SignedReport({ study, report, canVerify }: { study: CardiologyStudyDetail; report: CardiologyReportDto; canVerify: boolean }) {
+function SignedReport({
+  study,
+  report,
+  canVerify,
+}: {
+  study: CardiologyStudyDetail;
+  report: CardiologyReportDto;
+  canVerify: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -663,7 +999,9 @@ function SignedReport({ study, report, canVerify }: { study: CardiologyStudyDeta
 
   const signedLine = [
     report.reportedBy ? `Reported by ${report.reportedBy}` : null,
-    report.verifiedBy ? `signed by ${report.verifiedBy}${report.verifiedAt ? ` on ${formatDateTime(report.verifiedAt)}` : ''}` : null,
+    report.verifiedBy
+      ? `signed by ${report.verifiedBy}${report.verifiedAt ? ` on ${formatDateTime(report.verifiedAt)}` : ''}`
+      : null,
     report.releasedAt ? `released ${formatDateTime(report.releasedAt)}` : null,
   ]
     .filter(Boolean)
@@ -676,16 +1014,30 @@ function SignedReport({ study, report, canVerify }: { study: CardiologyStudyDeta
       actions={
         <>
           {canVerify && unsigned && (
-            <Button appearance="primary" icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />} disabled={sign.isPending} onClick={() => sign.mutate(null)}>
+            <Button
+              appearance="primary"
+              icon={sign.isPending ? <Spinner size="tiny" /> : <SignatureRegular />}
+              disabled={sign.isPending}
+              onClick={() => sign.mutate(null)}
+            >
               Sign and release
             </Button>
           )}
           {canVerify && report.status === 'Verified' && (
-            <Button appearance="primary" icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} disabled={release.isPending} onClick={() => release.mutate()}>
+            <Button
+              appearance="primary"
+              icon={release.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
+              disabled={release.isPending}
+              onClick={() => release.mutate()}
+            >
               Release
             </Button>
           )}
-          <Button icon={printing ? <Spinner size="tiny" /> : <PrintRegular />} disabled={printing} onClick={() => void print()}>
+          <Button
+            icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
+            disabled={printing}
+            onClick={() => void print()}
+          >
             Print
           </Button>
         </>
@@ -729,7 +1081,9 @@ function SignedReport({ study, report, canVerify }: { study: CardiologyStudyDeta
         <CriticalCallDialog
           open
           title="Inform the doctor about the critical finding"
-          findings={[{ id: study.id, label: `${study.studyName}: ${report.criticalFindingNote ?? 'critical finding'}` }]}
+          findings={[
+            { id: study.id, label: `${study.studyName}: ${report.criticalFindingNote ?? 'critical finding'}` },
+          ]}
           submitLabel="Save call, sign and release"
           busy={sign.isPending}
           onCancel={() => setCalling(false)}

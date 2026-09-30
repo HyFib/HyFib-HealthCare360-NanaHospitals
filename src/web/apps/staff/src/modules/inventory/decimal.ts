@@ -107,7 +107,9 @@ export function max(a: Dec, b: Dec): Dec {
 export function toText(value: Dec, places?: number): string {
   const rounded = places === undefined ? value : roundTo(value, places);
   const negative = rounded < 0n;
-  const digits = abs(rounded).toString().padStart(PLACES + 1, '0');
+  const digits = abs(rounded)
+    .toString()
+    .padStart(PLACES + 1, '0');
   const whole = digits.slice(0, -PLACES);
   let fraction = digits.slice(-PLACES);
   fraction = places === undefined ? fraction.replace(/0+$/, '') : fraction.slice(0, Math.max(places, 0));

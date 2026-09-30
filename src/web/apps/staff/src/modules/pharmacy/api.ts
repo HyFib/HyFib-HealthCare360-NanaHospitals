@@ -13,7 +13,12 @@ export type QueueLineStatus = QueueEntryStatus;
 
 export const PAYMENT_MODES = ['Cash', 'Card', 'Upi', 'Credit'] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
-export const paymentModeLabel: Record<PaymentMode, string> = { Cash: 'Cash', Card: 'Card', Upi: 'UPI', Credit: 'Credit (pay later)' };
+export const paymentModeLabel: Record<PaymentMode, string> = {
+  Cash: 'Cash',
+  Card: 'Card',
+  Upi: 'UPI',
+  Credit: 'Credit (pay later)',
+};
 
 export const SALE_STATUSES = ['Paid', 'PartiallyPaid', 'Credit', 'Cancelled'] as const;
 export type SaleStatus = (typeof SALE_STATUSES)[number];
@@ -276,7 +281,14 @@ export interface SaleReturnDto {
   adjustedAgainstDue: number;
   cashRefund: number;
   refundMode: PaymentMode;
-  items: { saleItemId: string; itemName: string; batchNumber: string; quantity: number; refundAmount: number; restocked: boolean }[];
+  items: {
+    saleItemId: string;
+    itemName: string;
+    batchNumber: string;
+    quantity: number;
+    refundAmount: number;
+    restocked: boolean;
+  }[];
 }
 
 export interface SaleFilters {
@@ -410,7 +422,15 @@ export interface WardReturnDto {
   returnedAt: string;
   reason: string;
   creditAmount: number;
-  lines: { ipIssueLineId: string; itemName: string; batchNumber: string; quantity: number; creditAmount: number; restocked: boolean; chargeReversal: ChargeReversal }[];
+  lines: {
+    ipIssueLineId: string;
+    itemName: string;
+    batchNumber: string;
+    quantity: number;
+    creditAmount: number;
+    restocked: boolean;
+    chargeReversal: ChargeReversal;
+  }[];
 }
 
 export interface IpIssueDetail {
@@ -570,7 +590,8 @@ export const pharmacyQueries = {
   queue: (filters: QueueFilters) =>
     queryOptions({
       queryKey: ['pharmacy', 'queue', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<QueueListItem>>(`${BASE}/queue`, { query: { ...filters, pageSize: 50 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<QueueListItem>>(`${BASE}/queue`, { query: { ...filters, pageSize: 50 }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 30_000,
     }),
@@ -582,7 +603,8 @@ export const pharmacyQueries = {
   stock: (storeId: string, search: string, inStockOnly = false, take = 30) =>
     queryOptions({
       queryKey: ['pharmacy', 'stock', storeId, search, inStockOnly, take],
-      queryFn: ({ signal }) => api.get<PharmacyStockRow[]>(`${BASE}/stock`, { query: { storeId, search, inStockOnly, take }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PharmacyStockRow[]>(`${BASE}/stock`, { query: { storeId, search, inStockOnly, take }, signal }),
       staleTime: 10_000,
     }),
   batches: (storeId: string, itemId: string) =>
@@ -594,7 +616,11 @@ export const pharmacyQueries = {
   sales: (filters: SaleFilters) =>
     queryOptions({
       queryKey: ['pharmacy', 'sales', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<PharmacySaleListItem>>(`${BASE}/sales`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<PharmacySaleListItem>>(`${BASE}/sales`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   sale: (id: string) =>
@@ -607,10 +633,20 @@ export const pharmacyQueries = {
       queryKey: ['pharmacy', 'sales', 'returns', id],
       queryFn: ({ signal }) => api.get<SaleReturnDto[]>(`${BASE}/sales/${id}/returns`, { signal }),
     }),
-  wardIndents: (filters: { status?: WardIndentStatus; admissionId?: string; includeClosed?: boolean; search?: string; page?: number }) =>
+  wardIndents: (filters: {
+    status?: WardIndentStatus;
+    admissionId?: string;
+    includeClosed?: boolean;
+    search?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['pharmacy', 'ward', 'indents', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<WardIndentListItem>>(`${BASE}/ward-indents`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<WardIndentListItem>>(`${BASE}/ward-indents`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 30_000,
     }),
@@ -622,7 +658,11 @@ export const pharmacyQueries = {
   ipIssues: (filters: { admissionId?: string; patientId?: string; search?: string; page?: number }) =>
     queryOptions({
       queryKey: ['pharmacy', 'ward', 'issues', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<IpIssueListItem>>(`${BASE}/ip-issues`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<IpIssueListItem>>(`${BASE}/ip-issues`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   ipIssue: (id: string) =>
@@ -634,7 +674,10 @@ export const pharmacyQueries = {
     queryOptions({
       queryKey: ['pharmacy', 'registers', 'controlled', filters],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ControlledRegisterRow>>(`${BASE}/registers/controlled`, { query: { ...filters, pageSize: 50 }, signal }),
+        api.get<PagedResult<ControlledRegisterRow>>(`${BASE}/registers/controlled`, {
+          query: { ...filters, pageSize: 50 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   scheduleHRegister: (filters: RegisterFilters) =>
@@ -650,14 +693,21 @@ export const pharmacyQueries = {
   refills: (status: RefillStatus | undefined, page: number) =>
     queryOptions({
       queryKey: ['pharmacy', 'refills', status ?? 'all', page],
-      queryFn: ({ signal }) => api.get<PagedResult<RefillRequestDto>>(`${BASE}/refills`, { query: { status, page, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RefillRequestDto>>(`${BASE}/refills`, {
+          query: { status, page, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   admissions: (search: string) =>
     queryOptions({
       queryKey: ['pharmacy', 'admissions', search],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<AdmissionOption>>('/api/v1/inpatient/admissions', { query: { search, activeOnly: true, pageSize: 10 }, signal }),
+        api.get<PagedResult<AdmissionOption>>('/api/v1/inpatient/admissions', {
+          query: { search, activeOnly: true, pageSize: 10 },
+          signal,
+        }),
       staleTime: 30_000,
     }),
 };
@@ -665,24 +715,38 @@ export const pharmacyQueries = {
 // ---------------------------------------------------------------------------------------------- commands
 
 export const pharmacyApi = {
-  dispense: (entryId: string, body: DispenseRequest) => api.post<PharmacySaleCreated>(`${BASE}/queue/${entryId}/dispense`, body),
+  dispense: (entryId: string, body: DispenseRequest) =>
+    api.post<PharmacySaleCreated>(`${BASE}/queue/${entryId}/dispense`, body),
   closeEntry: (entryId: string, reason: string) => api.post<void>(`${BASE}/queue/${entryId}/close`, { reason }),
-  authorizeRefills: (entryId: string, body: { refills: number; validUntil: string; note: string }) => api.post<void>(`${BASE}/queue/${entryId}/refills`, body),
+  authorizeRefills: (entryId: string, body: { refills: number; validUntil: string; note: string }) =>
+    api.post<void>(`${BASE}/queue/${entryId}/refills`, body),
   counterSale: (body: CounterSaleRequest) => api.post<PharmacySaleCreated>(`${BASE}/sales/counter`, body),
   collectPayment: (saleId: string, body: SalePayment) => api.post<void>(`${BASE}/sales/${saleId}/payments`, body),
-  returnSale: (saleId: string, body: SaleReturnRequest) => api.post<SaleReturnCreated>(`${BASE}/sales/${saleId}/returns`, body),
+  returnSale: (saleId: string, body: SaleReturnRequest) =>
+    api.post<SaleReturnCreated>(`${BASE}/sales/${saleId}/returns`, body),
   cancelSale: (saleId: string, reason: string) => api.post<void>(`${BASE}/sales/${saleId}/cancel`, { reason }),
-  raiseWardIndent: (body: RaiseWardIndentRequest) => api.post<{ id: string; number: string }>(`${BASE}/ward-indents`, body),
+  raiseWardIndent: (body: RaiseWardIndentRequest) =>
+    api.post<{ id: string; number: string }>(`${BASE}/ward-indents`, body),
   cancelWardIndent: (id: string, reason: string) => api.post<void>(`${BASE}/ward-indents/${id}/cancel`, { reason }),
   issueToWard: (body: IpIssueRequest) => api.post<IpIssueCreated>(`${BASE}/ip-issues`, body),
-  wardReturn: (issueId: string, body: WardReturnRequest) => api.post<WardReturnCreated>(`${BASE}/ip-issues/${issueId}/returns`, body),
+  wardReturn: (issueId: string, body: WardReturnRequest) =>
+    api.post<WardReturnCreated>(`${BASE}/ip-issues/${issueId}/returns`, body),
   requestRefill: (body: { queueEntryId: string; preferredPickupDate: string | null; notes: string | null }) =>
     api.post<{ id: string; number: string }>(`${BASE}/refills`, body),
   approveRefill: (id: string) => api.post<{ queueEntryId: string }>(`${BASE}/refills/${id}/approve`),
   rejectRefill: (id: string, reason: string) => api.post<void>(`${BASE}/refills/${id}/reject`, { reason }),
   exportRegister: (kind: 'controlled' | 'schedule-h', filters: RegisterFilters) =>
     api.blob(`${BASE}/registers/${kind}/export`, {
-      query: kind === 'controlled' ? { storeId: filters.storeId, itemId: filters.itemId, schedule: filters.schedule, from: filters.from, to: filters.to } : { storeId: filters.storeId, from: filters.from, to: filters.to },
+      query:
+        kind === 'controlled'
+          ? {
+              storeId: filters.storeId,
+              itemId: filters.itemId,
+              schedule: filters.schedule,
+              from: filters.from,
+              to: filters.to,
+            }
+          : { storeId: filters.storeId, from: filters.from, to: filters.to },
       timeoutMs: 120_000,
     }),
 };

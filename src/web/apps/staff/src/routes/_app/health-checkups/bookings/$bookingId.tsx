@@ -29,7 +29,17 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, formatRelative, isApiError, todayIso, useSession } from '@hc360/core';
-import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  LoadingState,
+  Page,
+  PageHeader,
+  PatientBanner,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -40,9 +50,26 @@ import { useFormDraft } from '@/lib/useFormDraft';
 import { emrQueries } from '@/modules/emr/api';
 import { ClinicalBanner } from '@/modules/emr/ClinicalBanner';
 import { ReasonDialog } from '@/modules/emr/ui';
-import { checkupApi, checkupKeys, checkupQueries, type BookingDto, type ItineraryItemDto } from '@/modules/health-checkups/api';
+import {
+  checkupApi,
+  checkupKeys,
+  checkupQueries,
+  type BookingDto,
+  type ItineraryItemDto,
+} from '@/modules/health-checkups/api';
 import { CheckInCheckupDialog } from '@/modules/health-checkups/CheckInCheckupDialog';
-import { bookingStatusLabel, canCancel, canCheckIn, canMarkNoShow, checkupProblem, completionBlockers, isStarted, nextStop, progress, type Wording } from '@/modules/health-checkups/itinerary';
+import {
+  bookingStatusLabel,
+  canCancel,
+  canCheckIn,
+  canMarkNoShow,
+  checkupProblem,
+  completionBlockers,
+  isStarted,
+  nextStop,
+  progress,
+  type Wording,
+} from '@/modules/health-checkups/itinerary';
 import { printCheckupReport } from '@/modules/health-checkups/print';
 import { patientQueries } from '@/modules/patients/api';
 
@@ -111,7 +138,20 @@ function BookingBanner({ patientId }: { patientId: string }) {
   }
   if (patient.data) {
     const p = patient.data;
-    return <PatientBanner patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName, gender: p.gender, age: p.age, bloodGroup: p.bloodGroup, isVip: p.isVip, isDeceased: p.isDeceased }} />;
+    return (
+      <PatientBanner
+        patient={{
+          id: p.id,
+          uhid: p.uhid,
+          fullName: p.fullName,
+          gender: p.gender,
+          age: p.age,
+          bloodGroup: p.bloodGroup,
+          isVip: p.isVip,
+          isDeceased: p.isDeceased,
+        }}
+      />
+    );
   }
   return null;
 }
@@ -119,12 +159,16 @@ function BookingBanner({ patientId }: { patientId: string }) {
 function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b: BookingDto) => void }) {
   const styles = useStyles();
   const notify = useNotify();
-  const [defaults] = useState<SummaryValues>(() => ({ summary: booking.summary ?? '', recommendations: booking.recommendations ?? '' }));
+  const [defaults] = useState<SummaryValues>(() => ({
+    summary: booking.summary ?? '',
+    recommendations: booking.recommendations ?? '',
+  }));
   const form = useForm<SummaryValues>({ resolver: zodResolver(summarySchema), defaultValues: defaults });
   const draft = useFormDraft(form, `hc-summary:${booking.id}`);
   const closed = !['Booked', 'CheckedIn', 'InProgress'].includes(booking.status);
   const save = useMutation({
-    mutationFn: (values: SummaryValues) => checkupApi.saveSummary(booking.id, values.summary.trim(), values.recommendations.trim() || null),
+    mutationFn: (values: SummaryValues) =>
+      checkupApi.saveSummary(booking.id, values.summary.trim(), values.recommendations.trim() || null),
     onSuccess: (updated, values) => {
       form.reset(values);
       draft.discard();
@@ -138,7 +182,9 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
     <form className={styles.stack} onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
       {restorable && draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>Unsaved text from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            Unsaved text from {formatRelative(new Date(draft.saved.savedAt).toISOString())} was found on this computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore it</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -151,8 +197,20 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
         control={form.control}
         name="summary"
         render={({ field, fieldState }) => (
-          <Field label="Consolidated summary" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-            <Textarea {...field} rows={6} resize="vertical" maxLength={8000} disabled={closed} placeholder="Key findings across the tests and consultations" />
+          <Field
+            label="Consolidated summary"
+            required
+            validationMessage={fieldState.error?.message}
+            validationState={fieldState.error ? 'error' : 'none'}
+          >
+            <Textarea
+              {...field}
+              rows={6}
+              resize="vertical"
+              maxLength={8000}
+              disabled={closed}
+              placeholder="Key findings across the tests and consultations"
+            />
           </Field>
         )}
       />
@@ -161,14 +219,28 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
         name="recommendations"
         render={({ field }) => (
           <Field label="Recommendations">
-            <Textarea {...field} rows={4} resize="vertical" maxLength={4000} disabled={closed} placeholder="Lifestyle, follow-up tests, specialist referrals" />
+            <Textarea
+              {...field}
+              rows={4}
+              resize="vertical"
+              maxLength={4000}
+              disabled={closed}
+              placeholder="Lifestyle, follow-up tests, specialist referrals"
+            />
           </Field>
         )}
       />
-      {booking.reviewedAt && <Caption1 className={styles.muted}>Last saved {formatDateTime(booking.reviewedAt)}</Caption1>}
+      {booking.reviewedAt && (
+        <Caption1 className={styles.muted}>Last saved {formatDateTime(booking.reviewedAt)}</Caption1>
+      )}
       {!closed && (
         <div>
-          <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending}>
+          <Button
+            type="submit"
+            appearance="primary"
+            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            disabled={save.isPending}
+          >
             Save summary
           </Button>
         </div>
@@ -217,7 +289,10 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
       setPending(null);
       publish(updated);
       const next = nextStop(updated.itinerary);
-      notify.success(`${stop.description}: ${kind === 'done' ? 'done' : 'skipped'}`, next ? `Next: ${next.departmentName}` : 'All stations are closed. The doctor can now review.');
+      notify.success(
+        `${stop.description}: ${kind === 'done' ? 'done' : 'skipped'}`,
+        next ? `Next: ${next.departmentName}` : 'All stations are closed. The doctor can now review.',
+      );
     },
     onError: (error) => {
       notify.error(error, 'Could not update the station');
@@ -280,7 +355,13 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
       <PageHeader
         title={b.packageName}
         subtitle={`${b.bookingNumber} · ${formatDateOnly(b.scheduledDate)}${b.corporateName ? ` · ${b.corporateName}` : ''}${b.checkedInAt ? ` · checked in ${formatDateTime(b.checkedInAt)}` : ''}`}
-        breadcrumbs={[{ label: 'Health check-ups', onClick: () => void navigate({ to: '/health-checkups', search: isToday ? {} : { date: b.scheduledDate } }) }, { label: b.bookingNumber }]}
+        breadcrumbs={[
+          {
+            label: 'Health check-ups',
+            onClick: () => void navigate({ to: '/health-checkups', search: isToday ? {} : { date: b.scheduledDate } }),
+          },
+          { label: b.bookingNumber },
+        ]}
         actions={
           <div className={styles.actions}>
             <StatusBadge status={b.status} label={bookingStatusLabel[b.status]} />
@@ -290,21 +371,44 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
               </Button>
             )}
             {(canManage || canSummarise) && started && (
-              <Tooltip content={blockers.length > 0 ? blockers.join(' ') : 'All stations closed and the summary written'} relationship="description">
-                <Button appearance="primary" icon={<CheckmarkCircleRegular />} disabled={blockers.length > 0} onClick={() => setConfirmComplete(true)}>
+              <Tooltip
+                content={blockers.length > 0 ? blockers.join(' ') : 'All stations closed and the summary written'}
+                relationship="description"
+              >
+                <Button
+                  appearance="primary"
+                  icon={<CheckmarkCircleRegular />}
+                  disabled={blockers.length > 0}
+                  onClick={() => setConfirmComplete(true)}
+                >
                   Complete check-up
                 </Button>
               </Tooltip>
             )}
-            <Button icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />} disabled={print.isPending} onClick={() => print.mutate()}>
+            <Button
+              icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
+              disabled={print.isPending}
+              onClick={() => print.mutate()}
+            >
               {b.status === 'Completed' ? 'Print report' : 'Print draft report'}
             </Button>
             {canReadEmr && (
-              <Button icon={<OpenRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId: b.patientId }, search: { tab: 'orders' } })}>
+              <Button
+                icon={<OpenRegular />}
+                onClick={() =>
+                  void navigate({
+                    to: '/emr/patients/$patientId',
+                    params: { patientId: b.patientId },
+                    search: { tab: 'orders' },
+                  })
+                }
+              >
                 Results and orders
               </Button>
             )}
-            {canManage && canMarkNoShow(b.status) && <Button onClick={() => setConfirmNoShow(true)}>Did not come</Button>}
+            {canManage && canMarkNoShow(b.status) && (
+              <Button onClick={() => setConfirmNoShow(true)}>Did not come</Button>
+            )}
             {canManage && canCancel(b.status) && (
               <Button icon={<DismissRegular />} onClick={() => setCancelling(true)}>
                 Cancel
@@ -320,7 +424,16 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
             <MessageBarTitle>{problem.title}</MessageBarTitle>
             {problem.message}
           </MessageBarBody>
-          <MessageBarActions containerAction={<Button appearance="transparent" icon={<DismissRegular />} aria-label="Dismiss" onClick={() => setProblem(null)} />} />
+          <MessageBarActions
+            containerAction={
+              <Button
+                appearance="transparent"
+                icon={<DismissRegular />}
+                aria-label="Dismiss"
+                onClick={() => setProblem(null)}
+              />
+            }
+          />
         </MessageBar>
       )}
       {b.status === 'Cancelled' && b.cancelReason && (
@@ -337,14 +450,26 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
       <div className={styles.layout}>
         <Section
           title="Stations"
-          description={started ? (next ? `Next: ${next.departmentName} — ${next.description}` : 'All stations closed') : b.status === 'Booked' ? 'Check the patient in to start' : undefined}
+          description={
+            started
+              ? next
+                ? `Next: ${next.departmentName} — ${next.description}`
+                : 'All stations closed'
+              : b.status === 'Booked'
+                ? 'Check the patient in to start'
+                : undefined
+          }
         >
           <div className={styles.stack}>
             <div>
               <Caption1>
                 {p.done} done · {p.skipped} not done · {p.pending} pending
               </Caption1>
-              <ProgressBar value={p.ratio} thickness="large" aria-label={`${p.done + p.skipped} of ${p.total} stations closed`} />
+              <ProgressBar
+                value={p.ratio}
+                thickness="large"
+                aria-label={`${p.done + p.skipped} of ${p.total} stations closed`}
+              />
             </div>
             <ol className={styles.stops} aria-label="Check-up stations">
               {b.itinerary
@@ -352,7 +477,14 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
                 .map((stop) => {
                   const closed = stop.status !== 'Pending';
                   return (
-                    <li key={stop.id} className={mergeClasses(styles.stop, closed ? styles.stopClosed : undefined, started && next?.id === stop.id ? styles.stopNext : undefined)}>
+                    <li
+                      key={stop.id}
+                      className={mergeClasses(
+                        styles.stop,
+                        closed ? styles.stopClosed : undefined,
+                        started && next?.id === stop.id ? styles.stopNext : undefined,
+                      )}
+                    >
                       {stop.status === 'Done' ? (
                         <span className={styles.done} aria-label="Done">
                           <CheckmarkCircleRegular />
@@ -366,7 +498,9 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
                           {stop.departmentName}
                           {stop.completedAt ? ` · ${formatDateTime(stop.completedAt)}` : ''}
                         </Caption1>
-                        {stop.notes && <Caption1>{stop.status === 'Skipped' ? `Not done: ${stop.notes}` : stop.notes}</Caption1>}
+                        {stop.notes && (
+                          <Caption1>{stop.status === 'Skipped' ? `Not done: ${stop.notes}` : stop.notes}</Caption1>
+                        )}
                       </span>
                       <span className={styles.actions}>
                         {stop.status === 'Skipped' && (
@@ -376,14 +510,30 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
                         )}
                         {!closed && started && canStations && (
                           <>
-                            <Button size="small" appearance="primary" icon={<CheckmarkRegular />} disabled={stopAction.isPending} onClick={() => stopAction.mutate({ stop, kind: 'done', text: null })}>
+                            <Button
+                              size="small"
+                              appearance="primary"
+                              icon={<CheckmarkRegular />}
+                              disabled={stopAction.isPending}
+                              onClick={() => stopAction.mutate({ stop, kind: 'done', text: null })}
+                            >
                               Done
                             </Button>
-                            <Button size="small" disabled={stopAction.isPending} onClick={() => setPending({ kind: 'note', stop })}>
+                            <Button
+                              size="small"
+                              disabled={stopAction.isPending}
+                              onClick={() => setPending({ kind: 'note', stop })}
+                            >
                               Done with note
                             </Button>
                             <Tooltip content="Not done (patient refused, not applicable…)" relationship="label">
-                              <Button size="small" appearance="subtle" icon={<SkipForwardTabRegular />} disabled={stopAction.isPending} onClick={() => setPending({ kind: 'skip', stop })} />
+                              <Button
+                                size="small"
+                                appearance="subtle"
+                                icon={<SkipForwardTabRegular />}
+                                disabled={stopAction.isPending}
+                                onClick={() => setPending({ kind: 'skip', stop })}
+                              />
                             </Tooltip>
                           </>
                         )}
@@ -395,7 +545,14 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
           </div>
         </Section>
 
-        <Section title="Doctor's review" description={canSummarise ? 'Write the consolidated summary once the results are in.' : 'Written by the reviewing doctor.'}>
+        <Section
+          title="Doctor's review"
+          description={
+            canSummarise
+              ? 'Write the consolidated summary once the results are in.'
+              : 'Written by the reviewing doctor.'
+          }
+        >
           {canSummarise ? (
             <SummaryEditor key={b.id} booking={b} onSaved={publish} />
           ) : b.summary ? (
@@ -414,17 +571,32 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
         </Section>
       </div>
 
-      <CheckInCheckupDialog booking={checkingIn ? b : null} onClose={() => setCheckingIn(false)} onCheckedIn={publish} />
+      <CheckInCheckupDialog
+        booking={checkingIn ? b : null}
+        onClose={() => setCheckingIn(false)}
+        onCheckedIn={publish}
+      />
       <ReasonDialog
         open={pending !== null}
-        title={pending?.kind === 'skip' ? `Mark "${pending.stop.description}" as not done?` : `Complete "${pending?.stop.description ?? ''}"`}
-        description={pending?.kind === 'skip' ? 'The station is closed without being done. The reason appears on the report.' : 'Add a note for the doctor (for example a reading or an observation).'}
+        title={
+          pending?.kind === 'skip'
+            ? `Mark "${pending.stop.description}" as not done?`
+            : `Complete "${pending?.stop.description ?? ''}"`
+        }
+        description={
+          pending?.kind === 'skip'
+            ? 'The station is closed without being done. The reason appears on the report.'
+            : 'Add a note for the doctor (for example a reading or an observation).'
+        }
         label={pending?.kind === 'skip' ? 'Reason' : 'Note'}
         optional={pending?.kind === 'note'}
         maxLength={pending?.kind === 'skip' ? 300 : 500}
         confirmLabel={pending?.kind === 'skip' ? 'Not done' : 'Done'}
         busy={stopAction.isPending}
-        onConfirm={(text) => pending && stopAction.mutate({ stop: pending.stop, kind: pending.kind === 'skip' ? 'skip' : 'done', text: text || null })}
+        onConfirm={(text) =>
+          pending &&
+          stopAction.mutate({ stop: pending.stop, kind: pending.kind === 'skip' ? 'skip' : 'done', text: text || null })
+        }
         onCancel={() => setPending(null)}
       />
       <ReasonDialog
@@ -437,10 +609,25 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
         onConfirm={(reason) => cancel.mutate(reason)}
         onCancel={() => setCancelling(false)}
       />
-      <ConfirmDialog open={confirmNoShow} title="Mark as did not come?" confirmLabel="Did not come" destructive busy={noShow.isPending} onConfirm={() => noShow.mutate()} onCancel={() => setConfirmNoShow(false)}>
+      <ConfirmDialog
+        open={confirmNoShow}
+        title="Mark as did not come?"
+        confirmLabel="Did not come"
+        destructive
+        busy={noShow.isPending}
+        onConfirm={() => noShow.mutate()}
+        onCancel={() => setConfirmNoShow(false)}
+      >
         The booked tests are cancelled. Book again if the patient comes on another day.
       </ConfirmDialog>
-      <ConfirmDialog open={confirmComplete} title="Complete the check-up?" confirmLabel="Complete" busy={complete.isPending} onConfirm={() => complete.mutate()} onCancel={() => setConfirmComplete(false)}>
+      <ConfirmDialog
+        open={confirmComplete}
+        title="Complete the check-up?"
+        confirmLabel="Complete"
+        busy={complete.isPending}
+        onConfirm={() => complete.mutate()}
+        onCancel={() => setConfirmComplete(false)}
+      >
         The report becomes final and the patient can be handed the consolidated report.
       </ConfirmDialog>
     </Page>

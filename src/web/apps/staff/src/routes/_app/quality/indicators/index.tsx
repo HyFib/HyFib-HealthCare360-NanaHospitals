@@ -1,7 +1,17 @@
 import { Button, Caption1, Checkbox, Field, Select, Text, Tooltip } from '@fluentui/react-components';
 import { AddRegular, DataTrendingRegular, EditRegular, NotepadRegular, TableRegular } from '@fluentui/react-icons';
 import { humanize } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
@@ -31,9 +41,14 @@ function IndicatorsPage() {
   const [editing, setEditing] = useState<IndicatorDto | 'new' | null>(null);
   const [recording, setRecording] = useState<IndicatorDto | null>(null);
   const indicators = useQuery(qualityQueries.indicators(Boolean(search.inactive)));
-  const categories = useMemo(() => [...new Set((indicators.data ?? []).map((i) => i.category))].sort(), [indicators.data]);
+  const categories = useMemo(
+    () => [...new Set((indicators.data ?? []).map((i) => i.category))].sort(),
+    [indicators.data],
+  );
   const shown = (indicators.data ?? []).filter((i) => !search.category || i.category === search.category);
-  const groups = categories.filter((c) => !search.category || c === search.category).map((category) => ({ category, rows: shown.filter((i) => i.category === category) }));
+  const groups = categories
+    .filter((c) => !search.category || c === search.category)
+    .map((category) => ({ category, rows: shown.filter((i) => i.category === category) }));
   const met = shown.filter((i) => i.latest?.meetsTarget === true).length;
   const missed = shown.filter((i) => i.latest?.meetsTarget === false).length;
 
@@ -41,7 +56,11 @@ function IndicatorsPage() {
     <Page>
       <PageHeader
         title="Quality indicators"
-        subtitle={indicators.data ? `${shown.length} indicators · latest values: ${met} on target, ${missed} off target` : 'NABH quality indicators with targets'}
+        subtitle={
+          indicators.data
+            ? `${shown.length} indicators · latest values: ${met} on target, ${missed} off target`
+            : 'NABH quality indicators with targets'
+        }
         icon={<DataTrendingRegular />}
         actions={
           <>
@@ -58,7 +77,10 @@ function IndicatorsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Category">
-              <Select value={search.category ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, category: d.value || undefined }) })}>
+              <Select
+                value={search.category ?? ''}
+                onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, category: d.value || undefined }) })}
+              >
                 <option value="">All</option>
                 {categories.map((c) => (
                   <option key={c} value={c}>
@@ -70,7 +92,9 @@ function IndicatorsPage() {
             <Checkbox
               style={{ alignSelf: 'flex-end' }}
               checked={Boolean(search.inactive)}
-              onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, inactive: d.checked ? true : undefined }) })}
+              onChange={(_, d) =>
+                void navigate({ search: (prev) => ({ ...prev, inactive: d.checked ? true : undefined }) })
+              }
               label="Include indicators no longer used"
             />
           </FilterBar>
@@ -96,7 +120,9 @@ function IndicatorsPage() {
               ariaLabel={`${group.category} indicators`}
               rows={group.rows}
               getRowId={(i) => i.id}
-              onRowClick={(i) => void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: i.id } })}
+              onRowClick={(i) =>
+                void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: i.id } })
+              }
               columns={[
                 {
                   key: 'name',
@@ -116,7 +142,10 @@ function IndicatorsPage() {
                   key: 'target',
                   header: 'Target',
                   width: 170,
-                  render: (i) => (i.target === null ? '—' : `${i.direction === 'HigherIsBetter' ? '≥' : '≤'} ${formatIndicatorValue(i.target, i.unit)}`),
+                  render: (i) =>
+                    i.target === null
+                      ? '—'
+                      : `${i.direction === 'HigherIsBetter' ? '≥' : '≤'} ${formatIndicatorValue(i.target, i.unit)}`,
                 },
                 {
                   key: 'latest',
@@ -124,7 +153,8 @@ function IndicatorsPage() {
                   render: (i) =>
                     i.latest ? (
                       <span>
-                        <Text weight="semibold">{formatIndicatorValue(i.latest.value, i.unit)}</Text> <Caption1>{i.latest.periodLabel}</Caption1>
+                        <Text weight="semibold">{formatIndicatorValue(i.latest.value, i.unit)}</Text>{' '}
+                        <Caption1>{i.latest.periodLabel}</Caption1>
                       </span>
                     ) : (
                       <Caption1>No value yet</Caption1>
@@ -161,7 +191,13 @@ function IndicatorsPage() {
           </Section>
         ))}
       </Stack>
-      {editing && <IndicatorDrawer indicator={editing === 'new' ? null : editing} categories={categories} onClose={() => setEditing(null)} />}
+      {editing && (
+        <IndicatorDrawer
+          indicator={editing === 'new' ? null : editing}
+          categories={categories}
+          onClose={() => setEditing(null)}
+        />
+      )}
       {recording && <IndicatorValueDialog open onClose={() => setRecording(null)} indicator={recording} />}
     </Page>
   );

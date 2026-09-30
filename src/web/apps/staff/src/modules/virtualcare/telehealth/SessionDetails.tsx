@@ -53,7 +53,16 @@ export interface SessionDetailsProps {
 }
 
 /** When, who, visit, recording consent, link and connection quality of a consultation (TEL-05 metadata). */
-export function SessionDetails({ session: s, canConsult, starting, onStart, onAskConsent, canResend, resending, onResend }: SessionDetailsProps) {
+export function SessionDetails({
+  session: s,
+  canConsult,
+  starting,
+  onStart,
+  onAskConsent,
+  canResend,
+  resending,
+  onResend,
+}: SessionDetailsProps) {
   const styles = useStyles();
   const now = useNow();
   const open = isSessionOpen(s.status);
@@ -75,9 +84,17 @@ export function SessionDetails({ session: s, canConsult, starting, onStart, onAs
         {(liveMinutes !== null || s.durationSeconds !== null) && (
           <Row label="Duration">{formatDuration(liveMinutes ?? (s.durationSeconds ?? 0) / 60)}</Row>
         )}
-        <Row label="Visit">{s.visitId ? 'Created: write notes and the prescription against it' : open ? 'Created when the consultation starts' : 'No visit'}</Row>
+        <Row label="Visit">
+          {s.visitId
+            ? 'Created: write notes and the prescription against it'
+            : open
+              ? 'Created when the consultation starts'
+              : 'No visit'}
+        </Row>
         <Row label="Recording consent">
-          {s.recordingConsentAt ? `${s.recordingConsent ? 'Patient agreed' : 'Patient declined'} at ${formatTime(s.recordingConsentAt)}` : 'Not asked'}
+          {s.recordingConsentAt
+            ? `${s.recordingConsent ? 'Patient agreed' : 'Patient declined'} at ${formatTime(s.recordingConsentAt)}`
+            : 'Not asked'}
         </Row>
         {s.audioOnlyUsed && (
           <Row label="Audio only">
@@ -89,7 +106,9 @@ export function SessionDetails({ session: s, canConsult, starting, onStart, onAs
         {s.qualityNotes && <Row label="Quality notes">{s.qualityNotes}</Row>}
         {s.cancelReason && <Row label="Cancelled because">{s.cancelReason}</Row>}
         <Row label="Join link">
-          {s.linkSentAt ? `Sent ${s.linkSendCount} time${s.linkSendCount === 1 ? '' : 's'}, last ${formatDateTime(s.linkSentAt)}` : 'Not sent'}
+          {s.linkSentAt
+            ? `Sent ${s.linkSendCount} time${s.linkSendCount === 1 ? '' : 's'}, last ${formatDateTime(s.linkSentAt)}`
+            : 'Not sent'}
           {s.joinTokenExpiresAt && open ? ` · works until ${formatTime(s.joinTokenExpiresAt)}` : ''}
         </Row>
         <Row label="Chat messages">{s.messageCount}</Row>

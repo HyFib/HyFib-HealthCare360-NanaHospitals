@@ -23,7 +23,19 @@ import {
 import { CalendarAddRegular, PersonAddRegular, PersonClockRegular, VideoRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatTime, isApiError, useHotkey } from '@hc360/core';
-import { applyServerErrors, ChoiceField, EmptyState, Page, PageHeader, Section, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  EmptyState,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
@@ -113,7 +125,12 @@ const useStyles = makeStyles({
   picker: { flex: '1 1 320px', minWidth: 0 },
   upcoming: { display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px' },
   muted: { color: tokens.colorNeutralForeground3 },
-  doctors: { display: 'grid', gap: '8px', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', marginTop: '12px' },
+  doctors: {
+    display: 'grid',
+    gap: '8px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))',
+    marginTop: '12px',
+  },
   doctor: {
     display: 'flex',
     alignItems: 'center',
@@ -132,7 +149,13 @@ const useStyles = makeStyles({
   doctorSelected: { border: `2px solid ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2 },
   doctorText: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1 },
   free: { color: tokens.colorPaletteGreenForeground1 },
-  summaryList: { display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 12px', alignItems: 'baseline', marginBottom: '12px' },
+  summaryList: {
+    display: 'grid',
+    gridTemplateColumns: 'auto 1fr',
+    gap: '6px 12px',
+    alignItems: 'baseline',
+    marginBottom: '12px',
+  },
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   bookButton: { width: '100%', minHeight: '44px', fontSize: tokens.fontSizeBase400 },
   sectionHeaderExtra: { display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' },
@@ -158,9 +181,16 @@ function BookAppointmentPage() {
 
   // Patient: chosen in the picker, or pre-selected by id from another screen.
   const [picked, setPicked] = useState<PickedPatient | null | undefined>(undefined);
-  const prefill = useQuery({ ...patientQueries.detail(search.patientId ?? ''), enabled: Boolean(search.patientId) && picked === undefined });
+  const prefill = useQuery({
+    ...patientQueries.detail(search.patientId ?? ''),
+    enabled: Boolean(search.patientId) && picked === undefined,
+  });
   const patient: PickedPatient | null =
-    picked !== undefined ? picked : prefill.data ? { id: prefill.data.id, uhid: prefill.data.uhid, fullName: prefill.data.fullName } : null;
+    picked !== undefined
+      ? picked
+      : prefill.data
+        ? { id: prefill.data.id, uhid: prefill.data.uhid, fullName: prefill.data.fullName }
+        : null;
 
   // The chosen doctor's own availability tells us the department when only a doctor was given.
   const chosenDoctor = useQuery({
@@ -168,7 +198,10 @@ function BookAppointmentPage() {
     enabled: Boolean(search.practitionerId) && !search.departmentId,
   });
   const departmentId = search.departmentId ?? chosenDoctor.data?.[0]?.departmentId ?? undefined;
-  const departmentDoctors = useQuery({ ...schedulingQueries.slots({ departmentId: departmentId ?? null, from: date, to: date }), enabled: Boolean(departmentId) });
+  const departmentDoctors = useQuery({
+    ...schedulingQueries.slots({ departmentId: departmentId ?? null, from: date, to: date }),
+    enabled: Boolean(departmentId),
+  });
   const doctors = departmentDoctors.data ?? chosenDoctor.data ?? [];
   // One doctor in the department: choose them straight away.
   const practitionerId = search.practitionerId ?? (doctors.length === 1 ? doctors[0]!.practitionerId : undefined);
@@ -185,7 +218,9 @@ function BookAppointmentPage() {
     ...schedulingQueries.appointments({ patientId: patient?.id, from: today, to: addDays(today, 180), pageSize: 5 }),
     enabled: Boolean(patient),
   });
-  const upcomingOpen = (upcoming.data?.items ?? []).filter((a) => holdsSeat(a.status) && a.status !== 'Completed' && a.status !== 'NoShow');
+  const upcomingOpen = (upcoming.data?.items ?? []).filter(
+    (a) => holdsSeat(a.status) && a.status !== 'Completed' && a.status !== 'NoShow',
+  );
 
   const form = useForm<DetailsValues>({
     resolver: zodResolver(detailsSchema),
@@ -199,7 +234,8 @@ function BookAppointmentPage() {
     }
   }, [search.patientId]);
 
-  const set = (patch: Partial<BookSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: Partial<BookSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   const book = useMutation({
     mutationFn: (values: DetailsValues) =>
@@ -270,7 +306,10 @@ function BookAppointmentPage() {
       <PageHeader
         title="Book appointment"
         subtitle="Find the patient, choose the doctor and a free slot. Ctrl+Enter books."
-        breadcrumbs={[{ label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) }, { label: 'Book appointment' }]}
+        breadcrumbs={[
+          { label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) },
+          { label: 'Book appointment' },
+        ]}
       />
 
       <div className={styles.layout}>
@@ -295,13 +334,20 @@ function BookAppointmentPage() {
                   />
                 )}
               </div>
-              <Button appearance="secondary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/patients/register' })}>
+              <Button
+                appearance="secondary"
+                icon={<PersonAddRegular />}
+                onClick={() => void navigate({ to: '/patients/register' })}
+              >
                 Register new patient
               </Button>
             </div>
             {prefill.error && picked === undefined && (
               <MessageBar intent="warning" style={{ marginTop: 8 }}>
-                <MessageBarBody>{isApiError(prefill.error) ? prefill.error.userMessage : 'The patient could not be loaded.'} Search for the patient instead.</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(prefill.error) ? prefill.error.userMessage : 'The patient could not be loaded.'} Search
+                  for the patient instead.
+                </MessageBarBody>
               </MessageBar>
             )}
             {patient && upcomingOpen.length > 0 && (
@@ -392,7 +438,11 @@ function BookAppointmentPage() {
                 preselectStartsAt={search.startsAt}
               />
             ) : (
-              <EmptyState title="Choose a doctor" description="Their free slots for the next two weeks appear here." icon={<CalendarAddRegular />} />
+              <EmptyState
+                title="Choose a doctor"
+                description="Their free slots for the next two weeks appear here."
+                icon={<CalendarAddRegular />}
+              />
             )}
           </Section>
         </div>
@@ -402,11 +452,19 @@ function BookAppointmentPage() {
             <form onSubmit={(event) => void submit(event)} noValidate className={styles.form}>
               <div className={styles.summaryList}>
                 <Caption1 className={styles.muted}>Patient</Caption1>
-                <Text weight={patient ? 'semibold' : 'regular'}>{patient ? `${patient.fullName} (${patient.uhid})` : 'Not chosen'}</Text>
+                <Text weight={patient ? 'semibold' : 'regular'}>
+                  {patient ? `${patient.fullName} (${patient.uhid})` : 'Not chosen'}
+                </Text>
                 <Caption1 className={styles.muted}>Doctor</Caption1>
-                <Text>{doctor ? `${doctor.practitionerName}${doctor.departmentName ? ` · ${doctor.departmentName}` : ''}` : 'Not chosen'}</Text>
+                <Text>
+                  {doctor
+                    ? `${doctor.practitionerName}${doctor.departmentName ? ` · ${doctor.departmentName}` : ''}`
+                    : 'Not chosen'}
+                </Text>
                 <Caption1 className={styles.muted}>When</Caption1>
-                <Text weight={slot ? 'semibold' : 'regular'}>{slot ? `${formatDayLong(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a slot'}</Text>
+                <Text weight={slot ? 'semibold' : 'regular'}>
+                  {slot ? `${formatDayLong(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a slot'}
+                </Text>
                 <Caption1 className={styles.muted}>Visit</Caption1>
                 <Text>
                   {mode === 'Telehealth' ? (
@@ -434,9 +492,26 @@ function BookAppointmentPage() {
                   { value: 'FollowUp', label: 'Follow-up' },
                 ]}
               />
-              <SelectField control={form.control} name="channel" label="Booked through" options={STAFF_CHANNELS.map((c) => ({ value: c, label: channelLabel[c] }))} />
-              <TextField control={form.control} name="reason" label="Reason for visit (optional)" maxLength={300} placeholder="e.g. fever for 3 days" />
-              <TextAreaField control={form.control} name="notes" label="Note for the desk (optional)" rows={2} maxLength={1000} />
+              <SelectField
+                control={form.control}
+                name="channel"
+                label="Booked through"
+                options={STAFF_CHANNELS.map((c) => ({ value: c, label: channelLabel[c] }))}
+              />
+              <TextField
+                control={form.control}
+                name="reason"
+                label="Reason for visit (optional)"
+                maxLength={300}
+                placeholder="e.g. fever for 3 days"
+              />
+              <TextAreaField
+                control={form.control}
+                name="notes"
+                label="Note for the desk (optional)"
+                rows={2}
+                maxLength={1000}
+              />
               <SwitchField control={form.control} name="notifyPatient" label="Send confirmation by SMS/WhatsApp" />
 
               {problem && (
@@ -447,7 +522,10 @@ function BookAppointmentPage() {
                   </MessageBarBody>
                   {problem.appointmentId && (
                     <MessageBarActions>
-                      <Button size="small" onClick={() => void navigate({ to: '/scheduling', search: { open: problem.appointmentId } })}>
+                      <Button
+                        size="small"
+                        onClick={() => void navigate({ to: '/scheduling', search: { open: problem.appointmentId } })}
+                      >
                         Open that appointment
                       </Button>
                     </MessageBarActions>
@@ -485,7 +563,13 @@ function BookAppointmentPage() {
       />
       <AddToWaitlistDialog
         open={waitlistOpen}
-        defaults={{ patient, departmentId: departmentId ?? null, practitionerId: practitionerId ?? null, isTelehealth: mode === 'Telehealth', from: date }}
+        defaults={{
+          patient,
+          departmentId: departmentId ?? null,
+          practitionerId: practitionerId ?? null,
+          isTelehealth: mode === 'Telehealth',
+          from: date,
+        }}
         onClose={() => setWaitlistOpen(false)}
       />
       {desk.dialogs}
@@ -530,7 +614,11 @@ function DoctorCards({
     );
   }
   if (doctors.length === 0) {
-    return <Caption1 className={styles.muted}>No doctor in this department has OPD sessions set up. Add sessions under Doctor schedules.</Caption1>;
+    return (
+      <Caption1 className={styles.muted}>
+        No doctor in this department has OPD sessions set up. Add sessions under Doctor schedules.
+      </Caption1>
+    );
   }
 
   return (
@@ -553,7 +641,13 @@ function DoctorCards({
               <Text weight="semibold" truncate wrap={false}>
                 {d.practitionerName}
               </Text>
-              <Caption1 className={free > 0 ? styles.free : styles.muted}>{total === 0 ? 'No OPD on this day' : free === 0 ? 'Fully booked on this day' : `${free} free on this day`}</Caption1>
+              <Caption1 className={free > 0 ? styles.free : styles.muted}>
+                {total === 0
+                  ? 'No OPD on this day'
+                  : free === 0
+                    ? 'Fully booked on this day'
+                    : `${free} free on this day`}
+              </Caption1>
             </span>
             {d.offersTelehealth && <VideoRegular aria-label="Offers video consultations" />}
           </button>

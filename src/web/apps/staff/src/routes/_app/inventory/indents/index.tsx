@@ -30,7 +30,13 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type IndentListItem, type ItemLookup } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type IndentListItem,
+  type ItemLookup,
+} from '@/modules/inventory/api';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { ItemPicker } from '@/modules/inventory/ItemPicker';
 import { INDENT_STATUSES, type IndentPriority, type IndentStatus } from '@/modules/inventory/labels';
@@ -88,7 +94,8 @@ function IndentsPage() {
       page: search.page,
     }),
   );
-  const set = (patch: Partial<IndentSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<IndentSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -109,10 +116,25 @@ function IndentsPage() {
             <Field label="Indent number" style={{ flex: '0 1 220px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.fromStoreId ?? null} onChange={(id) => set({ fromStoreId: id ?? undefined })} allowAll label="Issuing store" />
-            <StorePicker stores={working.stores} value={search.toStoreId ?? null} onChange={(id) => set({ toStoreId: id ?? undefined })} allowAll label="Requesting store" />
+            <StorePicker
+              stores={working.stores}
+              value={search.fromStoreId ?? null}
+              onChange={(id) => set({ fromStoreId: id ?? undefined })}
+              allowAll
+              label="Issuing store"
+            />
+            <StorePicker
+              stores={working.stores}
+              value={search.toStoreId ?? null}
+              onChange={(id) => set({ toStoreId: id ?? undefined })}
+              allowAll
+              label="Requesting store"
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as IndentStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as IndentStatus | undefined })}
+              >
                 <option value="">{search.all ? 'All' : 'Open (pending, approved, part issued)'}</option>
                 {INDENT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -121,7 +143,12 @@ function IndentsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.all === true} onChange={(_, d) => set({ all: d.checked || undefined })} label="Include closed" disabled={Boolean(search.status)} />
+            <Switch
+              checked={search.all === true}
+              onChange={(_, d) => set({ all: d.checked || undefined })}
+              label="Include closed"
+              disabled={Boolean(search.status)}
+            />
           </FilterBar>
         </div>
         <DataTable<IndentListItem>
@@ -210,7 +237,8 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
     }
     setLines([...lines, { item, quantity: '', remarks: '' }]);
   };
-  const update = (itemId: string, patch: Partial<IndentLineDraft>) => setLines(lines.map((l) => (l.item.id === itemId ? { ...l, ...patch } : l)));
+  const update = (itemId: string, patch: Partial<IndentLineDraft>) =>
+    setLines(lines.map((l) => (l.item.id === itemId ? { ...l, ...patch } : l)));
   const missingQuantity = lines.some((l) => !((parseNumber(l.quantity) ?? 0) > 0));
   const targetChosen = target === 'store' ? Boolean(toStoreId) && toStoreId !== issuingStoreId : Boolean(departmentId);
   const valid = Boolean(issuingStoreId) && targetChosen && lines.length > 0 && !missingQuantity;
@@ -223,7 +251,11 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
         departmentId: target === 'department' ? departmentId || null : null,
         priority,
         remarks: remarks.trim() || null,
-        lines: lines.map((l) => ({ itemId: l.item.id, quantity: parseNumber(l.quantity) ?? 0, remarks: l.remarks.trim() || null })),
+        lines: lines.map((l) => ({
+          itemId: l.item.id,
+          quantity: parseNumber(l.quantity) ?? 0,
+          remarks: l.remarks.trim() || null,
+        })),
       }),
     onSuccess: (result) => {
       notify.success(`Indent ${result.number} raised`);
@@ -239,7 +271,14 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
           <DialogTitle>Raise indent</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
-              <StorePicker stores={working.stores} value={issuingStoreId} onChange={setFromStoreId} label="Ask from (issuing store)" required loading={working.loading} />
+              <StorePicker
+                stores={working.stores}
+                value={issuingStoreId}
+                onChange={setFromStoreId}
+                label="Ask from (issuing store)"
+                required
+                loading={working.loading}
+              />
               <Field label="For">
                 <RadioGroup layout="horizontal" value={target} onChange={(_, d) => setTarget(d.value as typeof target)}>
                   <Radio value="store" label="A sub-store" />
@@ -269,13 +308,22 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
                 </Field>
               )}
               <Field label="Priority">
-                <RadioGroup layout="horizontal" value={priority} onChange={(_, d) => setPriority(d.value as IndentPriority)}>
+                <RadioGroup
+                  layout="horizontal"
+                  value={priority}
+                  onChange={(_, d) => setPriority(d.value as IndentPriority)}
+                >
                   <Radio value="Routine" label="Routine" />
                   <Radio value="Urgent" label="Urgent" />
                 </RadioGroup>
               </Field>
             </div>
-            <ItemPicker storeId={issuingStoreId} onPick={add} label="Add item" hint="Stock shown is what the issuing store has now" />
+            <ItemPicker
+              storeId={issuingStoreId}
+              onPick={add}
+              label="Add item"
+              hint="Stock shown is what the issuing store has now"
+            />
             <LineTable<IndentLineDraft>
               ariaLabel="Indent lines"
               rows={lines}
@@ -287,9 +335,16 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
                   header: 'Item',
                   render: (l) => (
                     <span>
-                      <Text weight="semibold">{l.item.name}</Text> <ItemFlags schedule={l.item.schedule} isControlled={l.item.isControlled} isColdChain={l.item.isColdChain} />
+                      <Text weight="semibold">{l.item.name}</Text>{' '}
+                      <ItemFlags
+                        schedule={l.item.schedule}
+                        isControlled={l.item.isControlled}
+                        isColdChain={l.item.isColdChain}
+                      />
                       <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
-                        {l.item.available !== null ? `${formatQty(l.item.available, l.item.baseUnit)} in the issuing store` : l.item.code}
+                        {l.item.available !== null
+                          ? `${formatQty(l.item.available, l.item.baseUnit)} in the issuing store`
+                          : l.item.code}
                       </Caption1>
                     </span>
                   ),
@@ -313,13 +368,27 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
                   key: 'remarks',
                   header: 'Note',
                   priority: 'low',
-                  render: (l) => <Input value={l.remarks} maxLength={300} aria-label={`Note for ${l.item.name}`} onChange={(_, d) => update(l.item.id, { remarks: d.value })} />,
+                  render: (l) => (
+                    <Input
+                      value={l.remarks}
+                      maxLength={300}
+                      aria-label={`Note for ${l.item.name}`}
+                      onChange={(_, d) => update(l.item.id, { remarks: d.value })}
+                    />
+                  ),
                 },
                 {
                   key: 'remove',
                   header: '',
                   width: 44,
-                  render: (l) => <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${l.item.name}`} onClick={() => setLines(lines.filter((x) => x.item.id !== l.item.id))} />,
+                  render: (l) => (
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label={`Remove ${l.item.name}`}
+                      onClick={() => setLines(lines.filter((x) => x.item.id !== l.item.id))}
+                    />
+                  ),
                 },
               ]}
             />
@@ -333,7 +402,9 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
             )}
             {raise.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(raise.error) ? raise.error.userMessage : 'Could not raise the indent.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(raise.error) ? raise.error.userMessage : 'Could not raise the indent.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -341,7 +412,12 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
             <Button onClick={onClose} disabled={raise.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || raise.isPending} icon={raise.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => raise.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || raise.isPending}
+              icon={raise.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => raise.mutate()}
+            >
               Raise indent
             </Button>
           </DialogActions>
@@ -350,4 +426,3 @@ function RaiseIndentDialog({ onClose, onRaised }: { onClose: () => void; onRaise
     </Dialog>
   );
 }
-

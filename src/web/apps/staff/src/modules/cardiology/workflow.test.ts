@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { cardiologyActions, isCardiologyReportable, isCardiologyReportEditable, nextCardiologyAction } from './workflow';
+import {
+  cardiologyActions,
+  isCardiologyReportable,
+  isCardiologyReportEditable,
+  nextCardiologyAction,
+} from './workflow';
 
 describe('cardiology workflow', () => {
   it('offers only allowed actions', () => {

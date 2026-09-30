@@ -77,11 +77,19 @@ export function ReasonDialog({
                 required={!optional}
                 hint={optional ? 'Optional' : `At least ${minLength} characters. It is kept on the record.`}
               >
-                <Input value={reason} onChange={(_, d) => setReason(d.value)} placeholder={placeholder} maxLength={maxLength} autoFocus />
+                <Input
+                  value={reason}
+                  onChange={(_, d) => setReason(d.value)}
+                  placeholder={placeholder}
+                  maxLength={maxLength}
+                  autoFocus
+                />
               </Field>
               {Boolean(error) && (
                 <MessageBar intent="error" layout="multiline">
-                  <MessageBarBody>{isApiError(error) ? error.userMessage : 'The action failed. Try again.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(error) ? error.userMessage : 'The action failed. Try again.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>

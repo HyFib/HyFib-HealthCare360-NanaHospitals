@@ -73,7 +73,8 @@ const UUID_ANYWHERE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const PATIENT_IN_PATH = /(?:^|\/)patients\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=\/|$)/i;
 const SAFE_PATH = /^\/[A-Za-z0-9/_-]*$/;
 
-const NOT_UNDERSTOOD = 'Sorry, I did not understand. Try “today’s appointments”, “go to billing” or “open patient UHID …”.';
+const NOT_UNDERSTOOD =
+  'Sorry, I did not understand. Try “today’s appointments”, “go to billing” or “open patient UHID …”.';
 
 /**
  * The server's screen list (NavigationTargets) uses a few paths this app names differently. A route the app does not
@@ -137,7 +138,10 @@ export function canOpenPath(
 }
 
 /** Maps a server route to a screen of this app, or explains why it cannot be opened. */
-export function resolveScreen(route: string | null | undefined, hasRoute: (path: string) => boolean): { path: string } | { problem: string } {
+export function resolveScreen(
+  route: string | null | undefined,
+  hasRoute: (path: string) => boolean,
+): { path: string } | { problem: string } {
   const raw = (route ?? '').trim();
   const path = raw.length > 1 ? raw.replace(/\/+$/, '') : raw;
   if (!path || !SAFE_PATH.test(path) || path.includes('//')) {
@@ -163,7 +167,11 @@ function info(message: string): AssistantPlan {
 }
 
 function noAccess(what: string): AssistantPlan {
-  return { kind: 'message', tone: 'warning', message: `You do not have access to ${what}. Ask your administrator if you need it for your work.` };
+  return {
+    kind: 'message',
+    tone: 'warning',
+    message: `You do not have access to ${what}. Ask your administrator if you need it for your work.`,
+  };
 }
 
 function planNote(patientId: string | null, draft: NoteDraft, message: string, env: PlanEnvironment): AssistantPlan {
@@ -195,7 +203,9 @@ function planFor(intent: string, p: Record<string, string>, said: string, env: P
       if ('problem' in screen) {
         return info(screen.problem);
       }
-      return env.canOpen(screen.path) ? { kind: 'navigate', href: screen.path, message: said } : noAccess(p.label?.trim() || 'that screen');
+      return env.canOpen(screen.path)
+        ? { kind: 'navigate', href: screen.path, message: said }
+        : noAccess(p.label?.trim() || 'that screen');
     }
 
     case 'open_patient': {
@@ -204,7 +214,9 @@ function planFor(intent: string, p: Record<string, string>, said: string, env: P
         // "No patient was found with UHID …" (patientFound = "false") or a question back.
         return { kind: 'message', message: said, tone: p.patientFound === 'false' ? 'warning' : 'info' };
       }
-      return env.can(PATIENTS_READ) ? { kind: 'navigate', href: `/patients/${patientId}`, message: said } : noAccess('patient records');
+      return env.can(PATIENTS_READ)
+        ? { kind: 'navigate', href: `/patients/${patientId}`, message: said }
+        : noAccess('patient records');
     }
 
     case 'search_patient': {
@@ -212,7 +224,9 @@ function planFor(intent: string, p: Record<string, string>, said: string, env: P
       if (!term) {
         return info(said);
       }
-      return env.can(PATIENTS_READ) ? { kind: 'search', term, openIfSingleMatch: p.openIfSingleMatch === 'true', message: said } : noAccess('patient records');
+      return env.can(PATIENTS_READ)
+        ? { kind: 'search', term, openIfSingleMatch: p.openIfSingleMatch === 'true', message: said }
+        : noAccess('patient records');
     }
 
     case 'list_appointments': {
@@ -225,7 +239,11 @@ function planFor(intent: string, p: Record<string, string>, said: string, env: P
         return { kind: 'navigate', href: `${APPOINTMENTS}?${search.toString()}`, message: said };
       }
       if (env.hasRoute(DOCTOR_WORKLIST) && env.canOpen(DOCTOR_WORKLIST)) {
-        return { kind: 'navigate', href: `${DOCTOR_WORKLIST}?${new URLSearchParams({ date }).toString()}`, message: said };
+        return {
+          kind: 'navigate',
+          href: `${DOCTOR_WORKLIST}?${new URLSearchParams({ date }).toString()}`,
+          message: said,
+        };
       }
       return noAccess('appointments');
     }
@@ -280,5 +298,10 @@ export function planDictatedNote(text: string, patientId: string | null, env: Pl
   if (!patientId) {
     return info('Open the patient’s record first, then create the note.');
   }
-  return planNote(patientId, { type: 'ProgressNote', title: '', body: body.slice(0, NOTE_MAX_LENGTH) }, 'Create a clinical note with this text?', env);
+  return planNote(
+    patientId,
+    { type: 'ProgressNote', title: '', body: body.slice(0, NOTE_MAX_LENGTH) },
+    'Create a clinical note with this text?',
+    env,
+  );
 }

@@ -41,7 +41,12 @@ const schema = z
     requiredBy: z.string(),
     priority: z.enum(['Routine', 'Urgent']),
     notes: z.string().trim().max(500),
-    lines: z.array(z.object({ instrumentSetId: z.string(), quantity: z.number().int().min(1, 'At least 1.').max(50, 'At most 50.').nullable() })),
+    lines: z.array(
+      z.object({
+        instrumentSetId: z.string(),
+        quantity: z.number().int().min(1, 'At least 1.').max(50, 'At most 50.').nullable(),
+      }),
+    ),
   })
   .superRefine((v, ctx) => {
     if (!v.departmentId) {
@@ -71,7 +76,13 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
   const [minRequired] = useState(() => toIstInput(new Date()));
   const form = useForm<RequestValues>({
     resolver: zodResolver(schema),
-    defaultValues: { departmentId: lastDepartment || null, requiredBy: '', priority: 'Routine', notes: '', lines: [{ instrumentSetId: '', quantity: 1 }] },
+    defaultValues: {
+      departmentId: lastDepartment || null,
+      requiredBy: '',
+      priority: 'Routine',
+      notes: '',
+      lines: [{ instrumentSetId: '', quantity: 1 }],
+    },
   });
   const lines = useFieldArray({ control: form.control, name: 'lines' });
 
@@ -82,18 +93,26 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
         requiredBy: v.requiredBy ? fromIstInput(v.requiredBy) : null,
         priority: v.priority,
         notes: v.notes || null,
-        lines: v.lines.filter((l) => l.instrumentSetId && l.quantity).map((l) => ({ instrumentSetId: l.instrumentSetId, quantity: l.quantity! })),
+        lines: v.lines
+          .filter((l) => l.instrumentSetId && l.quantity)
+          .map((l) => ({ instrumentSetId: l.instrumentSetId, quantity: l.quantity! })),
       }),
     onSuccess: (request, v) => {
       setLastDepartment(v.departmentId ?? '');
-      notify.success(`Request ${request.requestNumber} sent to CSSD`, request.priority === 'Urgent' ? 'CSSD has been alerted.' : undefined);
+      notify.success(
+        `Request ${request.requestNumber} sent to CSSD`,
+        request.priority === 'Urgent' ? 'CSSD has been alerted.' : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
       onClose();
     },
     onError: (error) => applyServerErrors(error, form.setError),
   });
 
-  const setOptions = (sets.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code}) · ${s.packsAvailable} on shelf` }));
+  const setOptions = (sets.data ?? []).map((s) => ({
+    value: s.id,
+    label: `${s.name} (${s.code}) · ${s.packsAvailable} on shelf`,
+  }));
   const serverError = create.error && !(isApiError(create.error) && create.error.isValidation) ? create.error : null;
 
   return (
@@ -103,8 +122,20 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
           <DialogBody>
             <DialogTitle>Request sterile sets</DialogTitle>
             <DialogContent className={styles.stack}>
-              <SelectField control={form.control} name="departmentId" label="For department" required placeholder="Choose department" options={toOptions(departments.data)} />
-              <Field label="Sets" required validationMessage={form.formState.errors.lines?.message} validationState={form.formState.errors.lines?.message ? 'error' : 'none'}>
+              <SelectField
+                control={form.control}
+                name="departmentId"
+                label="For department"
+                required
+                placeholder="Choose department"
+                options={toOptions(departments.data)}
+              />
+              <Field
+                label="Sets"
+                required
+                validationMessage={form.formState.errors.lines?.message}
+                validationState={form.formState.errors.lines?.message ? 'error' : 'none'}
+              >
                 <div className={styles.stack}>
                   {lines.fields.map((line, index) => (
                     <div key={line.id} className={styles.line}>
@@ -112,7 +143,11 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                         control={form.control}
                         name={`lines.${index}.instrumentSetId`}
                         render={({ field }) => (
-                          <Select value={field.value} onChange={(_, d) => field.onChange(d.value)} aria-label={`Set ${index + 1}`}>
+                          <Select
+                            value={field.value}
+                            onChange={(_, d) => field.onChange(d.value)}
+                            aria-label={`Set ${index + 1}`}
+                          >
                             <option value="">Choose a set</option>
                             {setOptions.map((o) => (
                               <option key={o.value} value={o.value}>
@@ -126,7 +161,10 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                         control={form.control}
                         name={`lines.${index}.quantity`}
                         render={({ field, fieldState }) => (
-                          <Field validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                          <Field
+                            validationMessage={fieldState.error?.message}
+                            validationState={fieldState.error ? 'error' : 'none'}
+                          >
                             <Input
                               type="number"
                               min={1}
@@ -138,11 +176,21 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                           </Field>
                         )}
                       />
-                      <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove set ${index + 1}`} disabled={lines.fields.length === 1} onClick={() => lines.remove(index)} />
+                      <Button
+                        appearance="subtle"
+                        icon={<DeleteRegular />}
+                        aria-label={`Remove set ${index + 1}`}
+                        disabled={lines.fields.length === 1}
+                        onClick={() => lines.remove(index)}
+                      />
                     </div>
                   ))}
                   <div>
-                    <Button size="small" icon={<AddRegular />} onClick={() => lines.append({ instrumentSetId: '', quantity: 1 })}>
+                    <Button
+                      size="small"
+                      icon={<AddRegular />}
+                      onClick={() => lines.append({ instrumentSetId: '', quantity: 1 })}
+                    >
                       Add another set
                     </Button>
                   </div>
@@ -153,7 +201,12 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                 name="requiredBy"
                 render={({ field }) => (
                   <Field label="Needed by" hint="Leave blank if not time-bound">
-                    <Input type="datetime-local" value={field.value} min={minRequired} onChange={(_, d) => field.onChange(d.value)} />
+                    <Input
+                      type="datetime-local"
+                      value={field.value}
+                      min={minRequired}
+                      onChange={(_, d) => field.onChange(d.value)}
+                    />
                   </Field>
                 )}
               />
@@ -166,11 +219,22 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
                   { value: 'Urgent', label: 'Urgent (alerts CSSD)' },
                 ]}
               />
-              <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} placeholder="e.g. For LSCS list at 2 pm, OT 3" />
-              {sets.data && sets.data.length === 0 && <Caption1 className={styles.muted}>No instrument sets are set up yet.</Caption1>}
+              <TextAreaField
+                control={form.control}
+                name="notes"
+                label="Notes"
+                rows={2}
+                maxLength={500}
+                placeholder="e.g. For LSCS list at 2 pm, OT 3"
+              />
+              {sets.data && sets.data.length === 0 && (
+                <Caption1 className={styles.muted}>No instrument sets are set up yet.</Caption1>
+              )}
               {serverError && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(serverError) ? serverError.userMessage : 'The request could not be sent.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(serverError) ? serverError.userMessage : 'The request could not be sent.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -178,7 +242,12 @@ export function RequestDialog({ onClose }: { onClose: () => void }) {
               <Button onClick={onClose} disabled={create.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={create.isPending}
+                icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Send request
               </Button>
             </DialogActions>

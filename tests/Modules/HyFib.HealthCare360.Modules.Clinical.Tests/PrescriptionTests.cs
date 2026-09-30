@@ -9,18 +9,18 @@ public sealed class PrescriptionTests
 
     private static PrescriptionItem Item(string name = "Dolo 650", decimal quantity = 15, bool controlled = false,
         DoseFrequency frequency = DoseFrequency.TDS, string? custom = null, int days = 5) => new()
-    {
-        DrugName = name,
-        GenericName = "Paracetamol",
-        Strength = "650 mg",
-        Dose = "1 tab",
-        Frequency = frequency,
-        CustomFrequency = custom,
-        DurationDays = days,
-        Quantity = quantity,
-        IsControlledDrug = controlled,
-        ControlledSchedule = controlled ? "H1" : null,
-    };
+        {
+            DrugName = name,
+            GenericName = "Paracetamol",
+            Strength = "650 mg",
+            Dose = "1 tab",
+            Frequency = frequency,
+            CustomFrequency = custom,
+            DurationDays = days,
+            Quantity = quantity,
+            IsControlledDrug = controlled,
+            ControlledSchedule = controlled ? "H1" : null,
+        };
 
     private static Prescription Draft(params PrescriptionItem[] items)
     {

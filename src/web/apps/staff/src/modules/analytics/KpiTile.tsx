@@ -1,4 +1,13 @@
-import { Caption1, makeStyles, mergeClasses, Skeleton, SkeletonItem, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  Skeleton,
+  SkeletonItem,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { ArrowDownRegular, ArrowUpRegular, InfoRegular, SubtractRegular } from '@fluentui/react-icons';
 import { Link } from '@tanstack/react-router';
 import type { KpiValue, ReportInputs } from './api';
@@ -38,7 +47,14 @@ const useStyles = makeStyles({
     color: tokens.colorBrandForeground1,
     fontSize: '18px',
   },
-  label: { flex: 1, minWidth: 0, color: tokens.colorNeutralForeground2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  label: {
+    flex: 1,
+    minWidth: 0,
+    color: tokens.colorNeutralForeground2,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   info: { color: tokens.colorNeutralForeground3, display: 'flex', fontSize: '16px' },
   value: {
     fontSize: tokens.fontSizeHero700,
@@ -49,11 +65,22 @@ const useStyles = makeStyles({
   },
   valueCompact: { fontSize: tokens.fontSizeBase600, lineHeight: tokens.lineHeightBase600 },
   foot: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: '8px', minHeight: '28px' },
-  change: { display: 'inline-flex', alignItems: 'center', gap: '2px', fontWeight: tokens.fontWeightSemibold, whiteSpace: 'nowrap' },
+  change: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+    fontWeight: tokens.fontWeightSemibold,
+    whiteSpace: 'nowrap',
+  },
   good: { color: tokens.colorPaletteGreenForeground1 },
   bad: { color: tokens.colorPaletteRedForeground1 },
   neutral: { color: tokens.colorNeutralForeground3 },
-  previous: { color: tokens.colorNeutralForeground3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  previous: {
+    color: tokens.colorNeutralForeground3,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
   changeBlock: { display: 'flex', flexDirection: 'column', minWidth: 0 },
   spark: { flexShrink: 0 },
 });
@@ -66,7 +93,8 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
   const styles = useStyles();
   const Icon = KPI_ICONS[kpi.key] ?? DEFAULT_KPI_ICON;
   const change = kpiChange(kpi);
-  const Arrow = change?.direction === 'up' ? ArrowUpRegular : change?.direction === 'down' ? ArrowDownRegular : SubtractRegular;
+  const Arrow =
+    change?.direction === 'up' ? ArrowUpRegular : change?.direction === 'down' ? ArrowDownRegular : SubtractRegular;
   const full = formatKpiFull(kpi.value, kpi.unit);
 
   const body = (
@@ -101,7 +129,9 @@ export function KpiTile({ kpi, inputs, compact }: { kpi: KpiValue; inputs: Repor
             <Caption1 className={styles.previous}>Previous period {formatKpi(kpi.previous, kpi.unit)}</Caption1>
           )}
         </span>
-        {!compact && kpi.trend && kpi.trend.length > 1 && <Sparkline values={kpi.trend.map((p) => p.value)} tone={change?.tone ?? 'neutral'} />}
+        {!compact && kpi.trend && kpi.trend.length > 1 && (
+          <Sparkline values={kpi.trend.map((p) => p.value)} tone={change?.tone ?? 'neutral'} />
+        )}
       </span>
     </>
   );
@@ -144,9 +174,21 @@ function Sparkline({ values, tone }: { values: number[]; tone: 'good' | 'bad' | 
   if (!paths) {
     return null;
   }
-  const stroke = tone === 'bad' ? tokens.colorPaletteRedForeground1 : tone === 'good' ? tokens.colorPaletteGreenForeground1 : tokens.colorBrandForeground1;
+  const stroke =
+    tone === 'bad'
+      ? tokens.colorPaletteRedForeground1
+      : tone === 'good'
+        ? tokens.colorPaletteGreenForeground1
+        : tokens.colorBrandForeground1;
   return (
-    <svg className={styles.spark} width={SPARK_WIDTH} height={SPARK_HEIGHT} viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`} aria-hidden focusable="false">
+    <svg
+      className={styles.spark}
+      width={SPARK_WIDTH}
+      height={SPARK_HEIGHT}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      aria-hidden
+      focusable="false"
+    >
       <path d={paths.area} fill={stroke} opacity={0.12} />
       <path d={paths.line} fill="none" stroke={stroke} strokeWidth={1.6} strokeLinejoin="round" strokeLinecap="round" />
     </svg>

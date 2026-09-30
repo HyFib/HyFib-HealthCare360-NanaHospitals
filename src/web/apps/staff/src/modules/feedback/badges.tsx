@@ -9,7 +9,13 @@ export function SentimentBadge({ sentiment }: { sentiment: Sentiment }) {
 
 export function ComplaintStatusBadge({ status, isOverdue }: { status: ComplaintStatus; isOverdue?: boolean }) {
   const tone = isOverdue ? 'danger' : status === 'Open' ? 'warning' : status === 'InProgress' ? 'brand' : 'success';
-  return <StatusBadge status={status} tone={tone} label={isOverdue ? `${complaintStatusLabel[status]} · overdue` : complaintStatusLabel[status]} />;
+  return (
+    <StatusBadge
+      status={status}
+      tone={tone}
+      label={isOverdue ? `${complaintStatusLabel[status]} · overdue` : complaintStatusLabel[status]}
+    />
+  );
 }
 
 export function PriorityBadge({ priority }: { priority: ComplaintPriority }) {
@@ -47,5 +53,13 @@ export function StarsValue({ value }: { value: number | null | undefined }) {
   if (value === null || value === undefined) {
     return <>—</>;
   }
-  return <RatingDisplay value={Math.round(value * 10) / 10} compact color="marigold" size="small" aria-label={`${value.toFixed(1)} out of 5 stars`} />;
+  return (
+    <RatingDisplay
+      value={Math.round(value * 10) / 10}
+      compact
+      color="marigold"
+      size="small"
+      aria-label={`${value.toFixed(1)} out of 5 stars`}
+    />
+  );
 }

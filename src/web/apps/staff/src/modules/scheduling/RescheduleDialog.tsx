@@ -26,7 +26,14 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toOptions, usePractitioners } from '@/lib/lookups';
-import { schedulingApi, schedulingKeys, schedulingQueries, type AppointmentDetail, type AppointmentRef, type SlotDto } from './api';
+import {
+  schedulingApi,
+  schedulingKeys,
+  schedulingQueries,
+  type AppointmentDetail,
+  type AppointmentRef,
+  type SlotDto,
+} from './api';
 import { addDays, formatDayMedium, istDate, maxDate } from './dates';
 import { printAppointmentSlip } from './print';
 import { SlotPicker } from './SlotPicker';
@@ -36,8 +43,19 @@ const useStyles = makeStyles({
   layout: { display: 'flex', flexDirection: 'column', gap: '12px' },
   row: { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' },
   muted: { color: tokens.colorNeutralForeground3 },
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '12px 0', textAlign: 'center' },
-  time: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '12px 0',
+    textAlign: 'center',
+  },
+  time: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
 });
 
 /**
@@ -45,10 +63,18 @@ const useStyles = makeStyles({
  * and marks the old booking "Rescheduled" in one transaction, so the history is kept and the freed slot is offered to
  * the waitlist.
  */
-export function RescheduleDialog({ appointment, onClose }: { appointment: AppointmentRef | null; onClose: () => void }) {
+export function RescheduleDialog({
+  appointment,
+  onClose,
+}: {
+  appointment: AppointmentRef | null;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={appointment !== null} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 880, width: '100%' }}>{appointment && <RescheduleContent key={appointment.id} appointment={appointment} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 880, width: '100%' }}>
+        {appointment && <RescheduleContent key={appointment.id} appointment={appointment} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -71,7 +97,9 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
   const availability = useQuery(schedulingQueries.slots({ practitionerId, from: today, to: addDays(today, 13) }));
   const doctor = availability.data?.find((d) => d.practitionerId === practitionerId);
   const offersVideo = Boolean(doctor?.offersTelehealth) || appointment.isTelehealth;
-  const doctorName = doctor?.practitionerName ?? (practitionerId === appointment.practitionerId ? appointment.practitionerName : undefined);
+  const doctorName =
+    doctor?.practitionerName ??
+    (practitionerId === appointment.practitionerId ? appointment.practitionerName : undefined);
 
   const reschedule = useMutation({
     mutationFn: (chosen: SlotDto) =>
@@ -113,7 +141,14 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
           </div>
         </DialogContent>
         <DialogActions>
-          <Button icon={<PrintRegular />} onClick={() => void printAppointmentSlip(facilityName, done).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+          <Button
+            icon={<PrintRegular />}
+            onClick={() =>
+              void printAppointmentSlip(facilityName, done).catch((error: unknown) =>
+                notify.error(error, 'Printing failed'),
+              )
+            }
+          >
             Print new slip
           </Button>
           <Button appearance="primary" onClick={onClose} autoFocus>
@@ -151,7 +186,9 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
                     setSlot(null);
                   }}
                 >
-                  {!doctors.data?.some((d) => d.id === appointment.practitionerId) && <option value={appointment.practitionerId}>{appointment.practitionerName}</option>}
+                  {!doctors.data?.some((d) => d.id === appointment.practitionerId) && (
+                    <option value={appointment.practitionerId}>{appointment.practitionerName}</option>
+                  )}
                   {toOptions(doctors.data).map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
@@ -189,20 +226,36 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
             />
             {slot && slot.available <= 0 && (
               <MessageBar intent="warning">
-                <MessageBarBody>This slot is full. Moving the patient here books one extra patient (overbooking).</MessageBarBody>
+                <MessageBarBody>
+                  This slot is full. Moving the patient here books one extra patient (overbooking).
+                </MessageBarBody>
               </MessageBar>
             )}
             <Field label="Reason for the change (optional)">
-              <Textarea value={reason} onChange={(_, d) => setReason(d.value.slice(0, 300))} rows={2} resize="vertical" />
+              <Textarea
+                value={reason}
+                onChange={(_, d) => setReason(d.value.slice(0, 300))}
+                rows={2}
+                resize="vertical"
+              />
             </Field>
-            <Switch checked={notifyPatient} onChange={(_, d) => setNotifyPatient(d.checked)} label="Send the new time to the patient by SMS/WhatsApp" />
+            <Switch
+              checked={notifyPatient}
+              onChange={(_, d) => setNotifyPatient(d.checked)}
+              label="Send the new time to the patient by SMS/WhatsApp"
+            />
           </div>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={reschedule.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={!slot || reschedule.isPending} icon={reschedule.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={!slot || reschedule.isPending}
+            icon={reschedule.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {slot ? `Move to ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a new slot'}
           </Button>
         </DialogActions>

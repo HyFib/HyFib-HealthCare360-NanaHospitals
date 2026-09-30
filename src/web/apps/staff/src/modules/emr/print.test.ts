@@ -66,7 +66,11 @@ const model: PrescriptionPrintModel = {
 };
 
 describe('prescriptionHtml', () => {
-  const html = prescriptionHtml(model, { facilityName: 'Nana Hospitals', qrSvg: '<svg id="qr"></svg>', verifyUrl: 'https://hc360.local/api/v1/public/prescriptions/verify/tok' });
+  const html = prescriptionHtml(model, {
+    facilityName: 'Nana Hospitals',
+    qrSvg: '<svg id="qr"></svg>',
+    verifyUrl: 'https://hc360.local/api/v1/public/prescriptions/verify/tok',
+  });
 
   it('escapes patient data', () => {
     expect(html).toContain('Ravi &lt;Kumar&gt;');
@@ -84,7 +88,12 @@ describe('prescriptionHtml', () => {
   });
 
   it('marks drafts and cancelled prescriptions as not dispensable', () => {
-    expect(prescriptionHtml({ ...model, status: 'Cancelled' }, { facilityName: 'Nana Hospitals', qrSvg: null, verifyUrl: null })).toContain('do not dispense');
+    expect(
+      prescriptionHtml(
+        { ...model, status: 'Cancelled' },
+        { facilityName: 'Nana Hospitals', qrSvg: null, verifyUrl: null },
+      ),
+    ).toContain('do not dispense');
   });
 });
 

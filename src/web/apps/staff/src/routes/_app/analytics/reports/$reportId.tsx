@@ -13,7 +13,13 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowUndoRegular, BoardRegular, BookInformationRegular, MailClockRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
+import {
+  ArrowUndoRegular,
+  BoardRegular,
+  BookInformationRegular,
+  MailClockRegular,
+  ShieldCheckmarkRegular,
+} from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -26,7 +32,15 @@ import { ExportMenu } from '@/modules/analytics/ExportMenu';
 import { formatCount } from '@/modules/analytics/format';
 import { CATEGORY_ICONS } from '@/modules/analytics/icons';
 import { DEFAULT_PAGE_SIZE } from '@/modules/analytics/labels';
-import { drillInputs, inputsOf, parseReportSearch, scheduleInputs, toSearchInputs, withDefaults, type ReportSearch } from '@/modules/analytics/params';
+import {
+  drillInputs,
+  inputsOf,
+  parseReportSearch,
+  scheduleInputs,
+  toSearchInputs,
+  withDefaults,
+  type ReportSearch,
+} from '@/modules/analytics/params';
 import { ReportParameterForm } from '@/modules/analytics/ReportInputs';
 import { ReportTable } from '@/modules/analytics/ReportTable';
 import { ReportChart, ReportMeta, SummaryFigures, ViewSwitcher } from '@/modules/analytics/ReportView';
@@ -57,7 +71,15 @@ function ReportPage() {
   const catalogue = useQuery(analyticsQueries.catalogue());
   const inputs = inputsOf(search);
   // Runs straight away, in parallel with the catalogue (the server applies the report's defaults).
-  const run = useQuery(analyticsQueries.run(reportId, inputs, { page: search.page, pageSize: search.size, sort: search.sort, desc: search.desc, chart: search.view }));
+  const run = useQuery(
+    analyticsQueries.run(reportId, inputs, {
+      page: search.page,
+      pageSize: search.size,
+      sort: search.sort,
+      desc: search.desc,
+      chart: search.view,
+    }),
+  );
   const [addToDashboard, setAddToDashboard] = useState(false);
 
   if (catalogue.isLoading) {
@@ -66,7 +88,11 @@ function ReportPage() {
   if (catalogue.error || !catalogue.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={catalogue.error} onRetry={() => void catalogue.refetch()} title="Could not load the report list" />
+        <ErrorState
+          error={catalogue.error}
+          onRetry={() => void catalogue.refetch()}
+          title="Could not load the report list"
+        />
       </Page>
     );
   }
@@ -76,7 +102,13 @@ function ReportPage() {
   if (!report) {
     return (
       <Page maxWidth={900}>
-        <PageHeader title="Report not available" breadcrumbs={[{ label: 'MIS reports', onClick: () => void navigate({ to: '/analytics/reports' }) }, { label: 'Not available' }]} />
+        <PageHeader
+          title="Report not available"
+          breadcrumbs={[
+            { label: 'MIS reports', onClick: () => void navigate({ to: '/analytics/reports' }) },
+            { label: 'Not available' },
+          ]}
+        />
         <Section>
           <EmptyState
             title="This report is not available to you"
@@ -101,7 +133,8 @@ function ReportPage() {
     }),
   );
 
-  const go = (patch: Partial<ReportSearch>, replace = false) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace });
+  const go = (patch: Partial<ReportSearch>, replace = false) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace });
   const changeInputs = (next: ReportInputs) => {
     // A different "show by" changes the columns, so the old sort no longer applies.
     const keepSort = next.groupBy === values.groupBy;
@@ -137,7 +170,10 @@ function ReportPage() {
         breadcrumbs={[
           { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
           { label: 'MIS reports', onClick: () => void navigate({ to: '/analytics/reports' }) },
-          { label: report.categoryLabel, onClick: () => void navigate({ to: '/analytics/reports', search: { category: report.category } }) },
+          {
+            label: report.categoryLabel,
+            onClick: () => void navigate({ to: '/analytics/reports', search: { category: report.category } }),
+          },
           { label: report.title },
         ]}
         actions={
@@ -152,14 +188,21 @@ function ReportPage() {
                 <div className={styles.definition}>
                   <Subtitle2>{report.title}</Subtitle2>
                   <Text>{report.definition}</Text>
-                  <Caption1 className={styles.muted}>Dates are hospital days in IST. Cancelled and deleted records are left out.</Caption1>
+                  <Caption1 className={styles.muted}>
+                    Dates are hospital days in IST. Cancelled and deleted records are left out.
+                  </Caption1>
                 </div>
               </PopoverSurface>
             </Popover>
             {data.canManageSchedules && report.canSchedule && (
               <Button
                 icon={<MailClockRegular />}
-                onClick={() => void navigate({ to: '/analytics/schedules', search: { create: report.id, inputs: scheduleInputs(result?.parameters ?? values) } })}
+                onClick={() =>
+                  void navigate({
+                    to: '/analytics/schedules',
+                    search: { create: report.id, inputs: scheduleInputs(result?.parameters ?? values) },
+                  })
+                }
               >
                 E-mail regularly
               </Button>
@@ -184,7 +227,8 @@ function ReportPage() {
         <MessageBar intent="warning" layout="multiline" icon={<ShieldCheckmarkRegular />}>
           <MessageBarBody>
             <MessageBarTitle>This report lists patients</MessageBarTitle>
-            Each page you open and each export is recorded in the audit log with your name. Use it only for care, quality or statutory work.
+            Each page you open and each export is recorded in the audit log with your name. Use it only for care,
+            quality or statutory work.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -203,7 +247,11 @@ function ReportPage() {
             maxDays={report.maxDays}
           />
           {Object.keys(inputs).length > 0 && (
-            <Button appearance="subtle" icon={<ArrowUndoRegular />} onClick={() => void navigate({ search: { view: search.view } })}>
+            <Button
+              appearance="subtle"
+              icon={<ArrowUndoRegular />}
+              onClick={() => void navigate({ search: { view: search.view } })}
+            >
               Reset inputs
             </Button>
           )}
@@ -236,13 +284,31 @@ function ReportPage() {
           <Section
             flush
             title={formatCount(result.totalRows, 'row')}
-            description={result.drillDown && result.rowKeys ? `Select a row to see ${result.drillDown.label.toLowerCase()}.` : undefined}
-            actions={views.length > 1 && <ViewSwitcher views={views} value={view} onChange={(next) => go({ view: next === defaultView(report.chart) ? undefined : next }, true)} />}
+            description={
+              result.drillDown && result.rowKeys
+                ? `Select a row to see ${result.drillDown.label.toLowerCase()}.`
+                : undefined
+            }
+            actions={
+              views.length > 1 && (
+                <ViewSwitcher
+                  views={views}
+                  value={view}
+                  onChange={(next) => go({ view: next === defaultView(report.chart) ? undefined : next }, true)}
+                />
+              )
+            }
           >
-            <div className={styles.progress}>{run.isFetching && <ProgressBar thickness="medium" aria-label="Updating the report" />}</div>
+            <div className={styles.progress}>
+              {run.isFetching && <ProgressBar thickness="medium" aria-label="Updating the report" />}
+            </div>
             {CHART_VIEWS.has(view) && result.chart && result.rows.length > 0 && (
               <div className={styles.chart}>
-                <ReportChart chart={result.chart} title={report.title} height={result.chart.type === 'Pie' ? 300 : 320} />
+                <ReportChart
+                  chart={result.chart}
+                  title={report.title}
+                  height={result.chart.type === 'Pie' ? 300 : 320}
+                />
               </div>
             )}
             <ReportTable
@@ -265,7 +331,9 @@ function ReportPage() {
         </div>
       )}
 
-      {addToDashboard && result && <AddToDashboardDialog report={report} result={result} view={view} onClose={() => setAddToDashboard(false)} />}
+      {addToDashboard && result && (
+        <AddToDashboardDialog report={report} result={result} view={view} onClose={() => setAddToDashboard(false)} />
+      )}
     </Page>
   );
 }

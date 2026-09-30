@@ -1,4 +1,15 @@
-import { Avatar, Button, Field, Input, Link, makeStyles, Spinner, Text, Title3, tokens } from '@fluentui/react-components';
+import {
+  Avatar,
+  Button,
+  Field,
+  Input,
+  Link,
+  makeStyles,
+  Spinner,
+  Text,
+  Title3,
+  tokens,
+} from '@fluentui/react-components';
 import { LockClosedRegular } from '@fluentui/react-icons';
 import { auth, isApiError, useSession, type AuthUser } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
@@ -96,7 +107,11 @@ function LockPanel({ user }: { user: AuthUser }) {
         <Title3 as="h2">{user.displayName}</Title3>
         <Text className={styles.muted}>The screen was locked to protect patient information.</Text>
         <form className={styles.form} onSubmit={unlock}>
-          <Field label={pinMode ? 'PIN' : 'Password'} validationMessage={error ?? undefined} validationState={error ? 'error' : 'none'}>
+          <Field
+            label={pinMode ? 'PIN' : 'Password'}
+            validationMessage={error ?? undefined}
+            validationState={error ? 'error' : 'none'}
+          >
             <Input
               ref={inputRef}
               type="password"
@@ -109,7 +124,13 @@ function LockPanel({ user }: { user: AuthUser }) {
               disabled={busy}
             />
           </Field>
-          <Button type="submit" appearance="primary" size="large" disabled={busy || !secret} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            size="large"
+            disabled={busy || !secret}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             Unlock
           </Button>
         </form>

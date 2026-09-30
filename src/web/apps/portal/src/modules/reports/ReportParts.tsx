@@ -18,17 +18,47 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     '@media (min-width: 900px)': { padding: '20px 24px' },
   },
-  cardTitle: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold },
+  cardTitle: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   signers: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' },
   signer: { display: 'flex', flexDirection: 'column' },
   signerName: { fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase300 },
-  verification: { display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', color: tokens.colorNeutralForeground2, margin: 0 },
+  verification: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '12px',
+    alignItems: 'center',
+    color: tokens.colorNeutralForeground2,
+    margin: 0,
+  },
   verificationText: { display: 'flex', gap: '10px', alignItems: 'flex-start', flex: '1 1 220px', minWidth: 0 },
   verificationIcon: { flexShrink: 0, marginTop: '2px' },
-  qrBox: { padding: '8px', backgroundColor: '#fff', borderRadius: tokens.borderRadiusLarge, border: `1px solid ${tokens.colorNeutralStroke2}`, lineHeight: 0 },
-  code: { fontFamily: 'Consolas, "Courier New", monospace', letterSpacing: '0.08em', color: tokens.colorNeutralForeground1, fontWeight: tokens.fontWeightSemibold },
-  bar: { position: 'relative', height: '10px', borderRadius: tokens.borderRadiusCircular, display: 'flex', overflow: 'hidden', marginTop: '4px' },
+  qrBox: {
+    padding: '8px',
+    backgroundColor: '#fff',
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    lineHeight: 0,
+  },
+  code: {
+    fontFamily: 'Consolas, "Courier New", monospace',
+    letterSpacing: '0.08em',
+    color: tokens.colorNeutralForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
+  bar: {
+    position: 'relative',
+    height: '10px',
+    borderRadius: tokens.borderRadiusCircular,
+    display: 'flex',
+    overflow: 'hidden',
+    marginTop: '4px',
+  },
   zoneOut: { backgroundColor: tokens.colorNeutralBackground5 },
   zoneIn: { backgroundColor: tokens.colorStatusSuccessBackground3 },
   marker: {
@@ -45,7 +75,15 @@ const useStyles = makeStyles({
 });
 
 /** A titled white card; the building block of every report page. */
-export function ReportCard({ title, children, className }: { title?: ReactNode; children: ReactNode; className?: string }) {
+export function ReportCard({
+  title,
+  children,
+  className,
+}: {
+  title?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
   const styles = useStyles();
   return (
     <section className={mergeClasses(styles.card, className)}>
@@ -68,7 +106,9 @@ export function Signatories({ signatories }: { signatories: ReportSignatory[] })
           <li key={signer.userId} className={styles.signer}>
             <span className={styles.signerName}>{signer.name}</span>
             {(signer.qualification || signer.registrationNumber) && (
-              <span className={styles.muted}>{[signer.qualification, signer.registrationNumber].filter(Boolean).join(' · ')}</span>
+              <span className={styles.muted}>
+                {[signer.qualification, signer.registrationNumber].filter(Boolean).join(' · ')}
+              </span>
             )}
           </li>
         ))}

@@ -18,12 +18,17 @@ export function checkupReportHtml(report: CheckupReport, facilityName: string): 
     .join('');
   const tests = (report.order?.items ?? [])
     .filter((i) => i.status !== 'Cancelled')
-    .map((i) => `<tr><td>${escapeHtml(i.serviceName)}</td><td>${escapeHtml(i.status === 'Completed' ? 'Reported' : i.status === 'InProgress' ? 'In progress' : 'Pending')}</td></tr>`)
+    .map(
+      (i) =>
+        `<tr><td>${escapeHtml(i.serviceName)}</td><td>${escapeHtml(i.status === 'Completed' ? 'Reported' : i.status === 'InProgress' ? 'In progress' : 'Pending')}</td></tr>`,
+    )
     .join('');
   const gender = p.gender === 'Male' ? 'M' : p.gender === 'Female' ? 'F' : p.gender === 'Other' ? 'O' : '—';
   const doctor = d
     ? `<div class="name">${escapeHtml(d.displayName)}</div>${d.qualification ? `<div class="small">${escapeHtml(d.qualification)}</div>` : ''}${
-        d.registrationNumber ? `<div class="small">Reg. No. ${escapeHtml(d.registrationNumber)}${d.registrationCouncil ? ` (${escapeHtml(d.registrationCouncil)})` : ''}</div>` : ''
+        d.registrationNumber
+          ? `<div class="small">Reg. No. ${escapeHtml(d.registrationNumber)}${d.registrationCouncil ? ` (${escapeHtml(d.registrationCouncil)})` : ''}</div>`
+          : ''
       }`
     : '<div class="small">Reviewing doctor</div>';
 

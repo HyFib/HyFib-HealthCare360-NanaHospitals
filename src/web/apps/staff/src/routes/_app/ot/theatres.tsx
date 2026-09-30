@@ -17,7 +17,18 @@ import {
 } from '@fluentui/react-components';
 import { AddRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { DataTable, NumberField, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -93,17 +104,33 @@ function TheatresPage() {
                         {item}
                       </Tag>
                     ))}
-                    {t.equipment.length > 4 && <Caption1 className={styles.muted}>+{t.equipment.length - 4} more</Caption1>}
+                    {t.equipment.length > 4 && (
+                      <Caption1 className={styles.muted}>+{t.equipment.length - 4} more</Caption1>
+                    )}
                   </TagGroup>
                 ) : (
                   '—'
                 ),
             },
             { key: 'order', header: 'Order', width: 80, align: 'end', priority: 'low', render: (t) => t.displayOrder },
-            { key: 'status', header: 'Status', width: 110, render: (t) => <StatusBadge status={t.isActive ? 'Active' : 'Inactive'} tone={t.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 110,
+              render: (t) => (
+                <StatusBadge
+                  status={t.isActive ? 'Active' : 'Inactive'}
+                  tone={t.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No theatres yet"
-          emptyDescription={canManage ? 'Add each operating room so surgeries can be booked into it.' : 'Ask the OT coordinator to add the theatres.'}
+          emptyDescription={
+            canManage
+              ? 'Add each operating room so surgeries can be booked into it.'
+              : 'Ask the OT coordinator to add the theatres.'
+          }
         />
       </Section>
       {editing && <TheatreDrawer theatre={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
@@ -175,16 +202,44 @@ function TheatreDrawer({ theatre, onClose }: { theatre: TheatreDto | null; onClo
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {theatre ? `${theatre.code} · ${theatre.name}` : 'Add theatre'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
-            <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} hint="Shown on the OT board, for example OT-1." />
-            <TextField control={form.control} name="name" label="Name" required maxLength={100} hint="For example Main theatre 1 (laminar flow)." />
-            <SelectField control={form.control} name="type" label="Type" options={THEATRE_TYPES.map((t) => ({ value: t, label: theatreTypeLabel[t] }))} />
-            <TextField control={form.control} name="location" label="Location" maxLength={200} placeholder="Block, floor" />
+            <TextField
+              control={form.control}
+              name="code"
+              label="Code"
+              required
+              autoFocus
+              maxLength={16}
+              hint="Shown on the OT board, for example OT-1."
+            />
+            <TextField
+              control={form.control}
+              name="name"
+              label="Name"
+              required
+              maxLength={100}
+              hint="For example Main theatre 1 (laminar flow)."
+            />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Type"
+              options={THEATRE_TYPES.map((t) => ({ value: t, label: theatreTypeLabel[t] }))}
+            />
+            <TextField
+              control={form.control}
+              name="location"
+              label="Location"
+              maxLength={200}
+              placeholder="Block, floor"
+            />
             <Controller
               control={form.control}
               name="equipment"
@@ -200,12 +255,22 @@ function TheatreDrawer({ theatre, onClose }: { theatre: TheatreDto | null; onClo
               )}
             />
             <NumberField control={form.control} name="displayOrder" label="Order on the board" min={0} max={10000} />
-            <SwitchField control={form.control} name="isActive" label="Takes new bookings" hint="Inactive theatres keep their history but cannot be booked." />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Takes new bookings"
+              hint="Inactive theatres keep their history but cannot be booked."
+            />
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {theatre ? 'Save' : 'Add theatre'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

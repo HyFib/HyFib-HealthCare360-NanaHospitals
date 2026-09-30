@@ -1,4 +1,16 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, Select, Text, ToggleButton, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  Select,
+  Text,
+  ToggleButton,
+  tokens,
+} from '@fluentui/react-components';
 import {
   BeakerRegular,
   ClipboardPulseRegular,
@@ -18,13 +30,27 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { emrQueries, type TimelineFilters } from './api';
-import { groupByDay, prettyTitle, TIMELINE_TYPES, timelineTarget, timelineTypeLabel, toggleType, type TimelineEntry, type TimelineEntryType, type TimelineTarget } from './timeline';
+import {
+  groupByDay,
+  prettyTitle,
+  TIMELINE_TYPES,
+  timelineTarget,
+  timelineTypeLabel,
+  toggleType,
+  type TimelineEntry,
+  type TimelineEntryType,
+  type TimelineTarget,
+} from './timeline';
 
 const useStyles = makeStyles({
   filters: { display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: '12px' },
   types: { display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '12px' },
   day: { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' },
-  dayLabel: { padding: '4px 0', fontWeight: tokens.fontWeightSemibold, borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  dayLabel: {
+    padding: '4px 0',
+    fontWeight: tokens.fontWeightSemibold,
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   entry: {
     display: 'grid',
     gridTemplateColumns: '64px 28px minmax(0, 1fr) auto',
@@ -39,7 +65,14 @@ const useStyles = makeStyles({
   critical: { borderLeft: `3px solid ${tokens.colorPaletteRedBorder2}` },
   icon: { fontSize: '20px', color: tokens.colorBrandForeground1, display: 'flex', paddingTop: '2px' },
   text: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
-  summary: { color: tokens.colorNeutralForeground2, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' },
+  summary: {
+    color: tokens.colorNeutralForeground2,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -94,10 +127,21 @@ export function TimelinePanel({
       </div>
       <div className={styles.filters}>
         <Field label="From">
-          <Input type="date" value={filters.from ?? ''} max={filters.to ?? today} onChange={(_, d) => set({ from: d.value || undefined })} />
+          <Input
+            type="date"
+            value={filters.from ?? ''}
+            max={filters.to ?? today}
+            onChange={(_, d) => set({ from: d.value || undefined })}
+          />
         </Field>
         <Field label="To">
-          <Input type="date" value={filters.to ?? ''} min={filters.from} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+          <Input
+            type="date"
+            value={filters.to ?? ''}
+            min={filters.from}
+            max={today}
+            onChange={(_, d) => set({ to: d.value || undefined })}
+          />
         </Field>
         <Field label="Department">
           <Select value={filters.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
@@ -123,7 +167,11 @@ export function TimelinePanel({
       ) : days.length === 0 ? (
         <EmptyState
           title={filtered ? 'Nothing matches these filters' : 'No clinical history yet'}
-          description={filtered ? 'Clear the filters to see everything.' : 'Encounters, vitals, orders, prescriptions and results appear here as they happen.'}
+          description={
+            filtered
+              ? 'Clear the filters to see everything.'
+              : 'Encounters, vitals, orders, prescriptions and results appear here as they happen.'
+          }
         />
       ) : (
         <>
@@ -158,14 +206,24 @@ export function TimelinePanel({
                         Critical
                       </Badge>
                     )}
-                    {entry.status && <StatusBadge status={entry.status === 'InProgress' ? 'Draft' : entry.status} label={entry.status === 'InProgress' ? 'Unsigned' : undefined} />}
+                    {entry.status && (
+                      <StatusBadge
+                        status={entry.status === 'InProgress' ? 'Draft' : entry.status}
+                        label={entry.status === 'InProgress' ? 'Unsigned' : undefined}
+                      />
+                    )}
                   </span>
                 </div>
               ))}
             </section>
           ))}
           {(timeline.data?.totalCount ?? 0) > 30 && (
-            <Pagination page={filters.page ?? 1} pageSize={30} totalCount={timeline.data?.totalCount ?? 0} onPageChange={(page) => onFiltersChange({ ...filters, page: page > 1 ? page : undefined })} />
+            <Pagination
+              page={filters.page ?? 1}
+              pageSize={30}
+              totalCount={timeline.data?.totalCount ?? 0}
+              onPageChange={(page) => onFiltersChange({ ...filters, page: page > 1 ? page : undefined })}
+            />
           )}
         </>
       )}

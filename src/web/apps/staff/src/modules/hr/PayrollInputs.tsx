@@ -78,7 +78,8 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
           </>
         )}
         <Caption1>
-          {inputs.data?.length ?? 0} item(s) · earnings {formatInr(total.earnings)} · deductions {formatInr(total.deductions)}
+          {inputs.data?.length ?? 0} item(s) · earnings {formatInr(total.earnings)} · deductions{' '}
+          {formatInr(total.deductions)}
         </Caption1>
       </Toolbar>
       <DataTable
@@ -102,7 +103,15 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
           { key: 'head', header: 'Pay head', width: 110, render: (i) => i.componentCode || '—' },
           { key: 'description', header: 'Description', priority: 'low', render: (i) => i.description },
           { key: 'amount', header: 'Amount', align: 'end', render: (i) => inputAmountLabel(i.kind, i.amount) },
-          { key: 'source', header: 'Added by', priority: 'low', render: (i) => (i.source === 'Integration' ? `Other module${i.sourceReference ? ` (${i.sourceReference})` : ''}` : humanize(i.source)) },
+          {
+            key: 'source',
+            header: 'Added by',
+            priority: 'low',
+            render: (i) =>
+              i.source === 'Integration'
+                ? `Other module${i.sourceReference ? ` (${i.sourceReference})` : ''}`
+                : humanize(i.source),
+          },
         ]}
         rowActions={
           editable
@@ -128,7 +137,9 @@ export function PayrollInputsPanel({ runId, editable }: { runId: string; editabl
         onConfirm={() => deleting && remove.mutate(deleting.id)}
         onCancel={() => setDeleting(null)}
       >
-        {deleting ? `${deleting.employeeName}: ${payrollInputKindLabel[deleting.kind]} ${inputAmountLabel(deleting.kind, deleting.amount)}.` : null}
+        {deleting
+          ? `${deleting.employeeName}: ${payrollInputKindLabel[deleting.kind]} ${inputAmountLabel(deleting.kind, deleting.amount)}.`
+          : null}
       </ConfirmDialog>
     </>
   );
@@ -147,7 +158,10 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
   const [busy, setBusy] = useState(false);
   const needsHead = kind === 'Earning' || kind === 'Deduction';
   const heads = useMemo(
-    () => (components.data ?? []).filter((c) => c.isActive && !c.isStatutory && c.kind === (kind === 'Deduction' ? 'Deduction' : 'Earning')),
+    () =>
+      (components.data ?? []).filter(
+        (c) => c.isActive && !c.isStatutory && c.kind === (kind === 'Deduction' ? 'Deduction' : 'Earning'),
+      ),
     [components.data, kind],
   );
 
@@ -157,7 +171,8 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
     if (!employee) next.employeeId = 'Choose the employee.';
     if (needsHead && !componentCode) next.componentCode = 'Choose the pay head.';
     if (!description.trim()) next.description = 'Describe the item (shown on the payslip).';
-    if (!amount || Number.isNaN(value) || value < 0 || (needsHead && value === 0)) next.amount = 'Enter an amount above zero.';
+    if (!amount || Number.isNaN(value) || value < 0 || (needsHead && value === 0))
+      next.amount = 'Enter an amount above zero.';
     if (kind === 'LopDaysOverride' && value > 31) next.amount = 'Loss-of-pay days must be between 0 and 31.';
     setErrors(next);
     if (Object.keys(next).length > 0 || !employee) {
@@ -165,13 +180,21 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
     }
     setBusy(true);
     try {
-      await hrApi.addInput(runId, { employeeId: employee.id, kind, componentCode: needsHead ? componentCode : null, description: description.trim(), amount: value });
+      await hrApi.addInput(runId, {
+        employeeId: employee.id,
+        kind,
+        componentCode: needsHead ? componentCode : null,
+        description: description.trim(),
+        amount: value,
+      });
       notify.success('Input added', 'Process the payroll again to include it.');
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
       onClose();
     } catch (error) {
       if (isApiError(error) && error.isValidation) {
-        setErrors(Object.fromEntries(Object.entries(error.fieldErrors).map(([field, messages]) => [field, messages[0] ?? ''])));
+        setErrors(
+          Object.fromEntries(Object.entries(error.fieldErrors).map(([field, messages]) => [field, messages[0] ?? ''])),
+        );
       } else {
         notify.error(error, 'Could not add the input');
       }
@@ -193,7 +216,13 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
           <DialogBody>
             <DialogTitle>Add payroll input</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <EmployeePicker value={employee} onChange={setEmployee} required autoFocus validationMessage={errors.employeeId} />
+              <EmployeePicker
+                value={employee}
+                onChange={setEmployee}
+                required
+                autoFocus
+                validationMessage={errors.employeeId}
+              />
               <Field label="Kind" required>
                 <Select
                   value={kind}
@@ -210,7 +239,12 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
                 </Select>
               </Field>
               {needsHead && (
-                <Field label="Pay head" required validationMessage={errors.componentCode} validationState={errors.componentCode ? 'error' : 'none'}>
+                <Field
+                  label="Pay head"
+                  required
+                  validationMessage={errors.componentCode}
+                  validationState={errors.componentCode ? 'error' : 'none'}
+                >
                   <Select value={componentCode} onChange={(_, d) => setComponentCode(d.value)}>
                     <option value="">Choose</option>
                     {heads.map((head) => (
@@ -221,24 +255,51 @@ function AddInputDialog({ runId, onClose }: { runId: string; onClose: () => void
                   </Select>
                 </Field>
               )}
-              <Field label="Description (shown on the payslip)" required validationMessage={errors.description} validationState={errors.description ? 'error' : 'none'}>
-                <Input value={description} onChange={(_, d) => setDescription(d.value)} maxLength={200} placeholder="For example: night duty allowance, September" />
+              <Field
+                label="Description (shown on the payslip)"
+                required
+                validationMessage={errors.description}
+                validationState={errors.description ? 'error' : 'none'}
+              >
+                <Input
+                  value={description}
+                  onChange={(_, d) => setDescription(d.value)}
+                  maxLength={200}
+                  placeholder="For example: night duty allowance, September"
+                />
               </Field>
               <Field
                 label={kind === 'LopDaysOverride' ? 'Loss-of-pay days' : 'Amount (₹)'}
                 required
-                hint={kind === 'LopDaysOverride' ? 'Replaces the loss of pay worked out from attendance.' : kind === 'TdsOverride' ? 'Replaces the projected TDS for this month.' : undefined}
+                hint={
+                  kind === 'LopDaysOverride'
+                    ? 'Replaces the loss of pay worked out from attendance.'
+                    : kind === 'TdsOverride'
+                      ? 'Replaces the projected TDS for this month.'
+                      : undefined
+                }
                 validationMessage={errors.amount}
                 validationState={errors.amount ? 'error' : 'none'}
               >
-                <Input type="number" min={0} step={kind === 'LopDaysOverride' ? 0.5 : 1} value={amount} onChange={(_, d) => setAmount(d.value)} />
+                <Input
+                  type="number"
+                  min={0}
+                  step={kind === 'LopDaysOverride' ? 0.5 : 1}
+                  value={amount}
+                  onChange={(_, d) => setAmount(d.value)}
+                />
               </Field>
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 Add
               </Button>
             </DialogActions>
@@ -268,7 +329,9 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
       onClose();
     } catch (error) {
       if (isApiError(error) && (error.isValidation || error.status === 400)) {
-        const messages = Object.entries(error.fieldErrors).flatMap(([field, list]) => list.map((message) => (field && field !== 'csv' ? `${field}: ${message}` : message)));
+        const messages = Object.entries(error.fieldErrors).flatMap(([field, list]) =>
+          list.map((message) => (field && field !== 'csv' ? `${field}: ${message}` : message)),
+        );
         setServerErrors(messages.length ? messages : [error.userMessage]);
       } else {
         notify.error(error, 'Could not import the inputs');
@@ -285,8 +348,8 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
           <DialogTitle>Import payroll inputs</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Text>
-              One line per item: <code>employeeCode,componentCode,amount,description</code>. The header line is optional. The whole file is imported or nothing is, so fix
-              every line shown below first.
+              One line per item: <code>employeeCode,componentCode,amount,description</code>. The header line is
+              optional. The whole file is imported or nothing is, so fix every line shown below first.
             </Text>
             <Field label="CSV file">
               <input
@@ -306,13 +369,21 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
               />
             </Field>
             <Field label="Or paste the lines here">
-              <Textarea value={csv} onChange={(_, d) => setCsv(d.value)} rows={6} resize="vertical" placeholder={'NHEMP00042,INCENTIVE,1500,Referral incentive\nNHEMP00043,CANTEEN,640,Canteen September'} />
+              <Textarea
+                value={csv}
+                onChange={(_, d) => setCsv(d.value)}
+                rows={6}
+                resize="vertical"
+                placeholder={'NHEMP00042,INCENTIVE,1500,Referral incentive\nNHEMP00043,CANTEEN,640,Canteen September'}
+              />
             </Field>
             {csv.trim() && (
               <MessageBar intent={preview.errors.length ? 'error' : 'success'} layout="multiline">
                 <MessageBarBody>
                   <MessageBarTitle>
-                    {preview.errors.length ? `${preview.errors.length} line(s) need fixing` : `${preview.lines.length} line(s) ready · total ${formatInr(previewTotal(preview))}`}
+                    {preview.errors.length
+                      ? `${preview.errors.length} line(s) need fixing`
+                      : `${preview.lines.length} line(s) ready · total ${formatInr(previewTotal(preview))}`}
                   </MessageBarTitle>
                   {preview.errors.length > 0 && (
                     <ul style={{ margin: '4px 0 0', paddingLeft: 18, maxHeight: 140, overflowY: 'auto' }}>
@@ -343,7 +414,12 @@ function ImportDialog({ runId, onClose }: { runId: string; onClose: () => void }
             <Button onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!ready || busy} icon={busy ? <Spinner size="tiny" /> : <ArrowUploadRegular />} onClick={() => void submit()}>
+            <Button
+              appearance="primary"
+              disabled={!ready || busy}
+              icon={busy ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
+              onClick={() => void submit()}
+            >
               Import {preview.lines.length || ''} line(s)
             </Button>
           </DialogActions>

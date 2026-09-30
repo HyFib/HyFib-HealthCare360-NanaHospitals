@@ -8,7 +8,13 @@ import { EChart, type ChartOption } from '@/lib/EChart';
 import { DateRangeFields } from '@/modules/lab/common/DateRangeFields';
 import { searchDate, searchOneOf } from '@/modules/lab/common/search';
 import { formatMinutes, toHours } from '@/modules/lab/tat';
-import { MODALITIES, radiologyQueries, type Modality, type RadiologyTatReport, type RadiologyTatRow } from '@/modules/radiology/api';
+import {
+  MODALITIES,
+  radiologyQueries,
+  type Modality,
+  type RadiologyTatReport,
+  type RadiologyTatRow,
+} from '@/modules/radiology/api';
 import { modalityLabel, repeatReasonLabel } from '@/modules/radiology/labels';
 
 interface TatSearch {
@@ -18,7 +24,11 @@ interface TatSearch {
 }
 
 export const Route = createFileRoute('/_app/radiology/tat')({
-  validateSearch: (s: Record<string, unknown>): TatSearch => ({ from: searchDate(s.from), to: searchDate(s.to), modality: searchOneOf(s.modality, MODALITIES) }),
+  validateSearch: (s: Record<string, unknown>): TatSearch => ({
+    from: searchDate(s.from),
+    to: searchDate(s.to),
+    modality: searchOneOf(s.modality, MODALITIES),
+  }),
   component: RadiologyTatPage,
 });
 
@@ -43,13 +53,31 @@ function TatBars({ report }: { report: RadiologyTatReport }) {
       xAxis: { type: 'value', name: 'hours' },
       yAxis: { type: 'category', inverse: true, data: rows.map((row) => modalityLabel[row.modality]) },
       series: [
-        { type: 'bar', name: 'Order to scan', stack: 'tat', data: rows.map((row) => toHours(row.orderToAcquisition.medianMinutes)), itemStyle: { color: '#92C7E1' } },
-        { type: 'bar', name: 'Scan to report', stack: 'tat', data: rows.map((row) => toHours(row.acquisitionToReport.medianMinutes)), itemStyle: { color: '#0A7CA7' } },
+        {
+          type: 'bar',
+          name: 'Order to scan',
+          stack: 'tat',
+          data: rows.map((row) => toHours(row.orderToAcquisition.medianMinutes)),
+          itemStyle: { color: '#92C7E1' },
+        },
+        {
+          type: 'bar',
+          name: 'Scan to report',
+          stack: 'tat',
+          data: rows.map((row) => toHours(row.acquisitionToReport.medianMinutes)),
+          itemStyle: { color: '#0A7CA7' },
+        },
       ],
     };
   }, [report]);
   const count = report.modalities.filter((row) => row.studies > 0).length;
-  return <EChart option={option} height={Math.max(160, 60 + count * 40)} ariaLabel="Median turnaround per modality: order to scan and scan to report" />;
+  return (
+    <EChart
+      option={option}
+      height={Math.max(160, 60 + count * 40)}
+      ariaLabel="Median turnaround per modality: order to scan and scan to report"
+    />
+  );
 }
 
 /** Imaging turnaround and reject analysis (SRS IMG-04): order → scan → report per modality, repeat rate and reasons. */
@@ -65,13 +93,31 @@ function RadiologyTatPage() {
     <Page>
       <PageHeader
         title="Imaging turnaround"
-        subtitle={report ? (report.from === report.to ? (report.to === today ? 'Today' : formatDate(report.from)) : `${formatDate(report.from)} to ${formatDate(report.to)}`) : 'Order to report, per modality'}
+        subtitle={
+          report
+            ? report.from === report.to
+              ? report.to === today
+                ? 'Today'
+                : formatDate(report.from)
+              : `${formatDate(report.from)} to ${formatDate(report.to)}`
+            : 'Order to report, per modality'
+        }
       />
       <Section>
         <FilterBar>
-          <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => void navigate({ search: (prev) => ({ ...prev, ...range }) })} />
+          <DateRangeFields
+            value={{ from: search.from, to: search.to }}
+            onChange={(range) => void navigate({ search: (prev) => ({ ...prev, ...range }) })}
+          />
           <Field label="Modality">
-            <Select value={search.modality ?? ''} onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, modality: (data.value || undefined) as Modality | undefined }) })}>
+            <Select
+              value={search.modality ?? ''}
+              onChange={(_, data) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, modality: (data.value || undefined) as Modality | undefined }),
+                })
+              }
+            >
               <option value="">All</option>
               {MODALITIES.map((value) => (
                 <option key={value} value={value}>
@@ -119,16 +165,34 @@ function RadiologyTatPage() {
               getRowId={(row) => row.modality}
               size="small"
               columns={[
-                { key: 'modality', header: 'Modality', render: (row: RadiologyTatRow) => <Text weight="semibold">{modalityLabel[row.modality]}</Text> },
-                { key: 'studies', header: 'Studies', width: 90, align: 'end', render: (row: RadiologyTatRow) => row.studies.toLocaleString('en-IN') },
-                { key: 'reported', header: 'Reported', width: 90, align: 'end', render: (row: RadiologyTatRow) => row.reported.toLocaleString('en-IN') },
+                {
+                  key: 'modality',
+                  header: 'Modality',
+                  render: (row: RadiologyTatRow) => <Text weight="semibold">{modalityLabel[row.modality]}</Text>,
+                },
+                {
+                  key: 'studies',
+                  header: 'Studies',
+                  width: 90,
+                  align: 'end',
+                  render: (row: RadiologyTatRow) => row.studies.toLocaleString('en-IN'),
+                },
+                {
+                  key: 'reported',
+                  header: 'Reported',
+                  width: 90,
+                  align: 'end',
+                  render: (row: RadiologyTatRow) => row.reported.toLocaleString('en-IN'),
+                },
                 {
                   key: 'oa',
                   header: 'Order to scan',
                   render: (row: RadiologyTatRow) => (
                     <span className={styles.cell}>
                       <Text>{formatMinutes(row.orderToAcquisition.medianMinutes)}</Text>
-                      <Caption1 className={styles.muted}>90%: {formatMinutes(row.orderToAcquisition.p90Minutes)}</Caption1>
+                      <Caption1 className={styles.muted}>
+                        90%: {formatMinutes(row.orderToAcquisition.p90Minutes)}
+                      </Caption1>
                     </span>
                   ),
                 },
@@ -138,7 +202,9 @@ function RadiologyTatPage() {
                   render: (row: RadiologyTatRow) => (
                     <span className={styles.cell}>
                       <Text>{formatMinutes(row.acquisitionToReport.medianMinutes)}</Text>
-                      <Caption1 className={styles.muted}>90%: {formatMinutes(row.acquisitionToReport.p90Minutes)}</Caption1>
+                      <Caption1 className={styles.muted}>
+                        90%: {formatMinutes(row.acquisitionToReport.p90Minutes)}
+                      </Caption1>
                     </span>
                   ),
                 },
@@ -157,7 +223,8 @@ function RadiologyTatPage() {
                   key: 'repeats',
                   header: 'Repeat rate',
                   width: 110,
-                  render: (row: RadiologyTatRow) => (row.repeatRatePercent === null ? '—' : `${row.repeatRatePercent}% (${row.repeats})`),
+                  render: (row: RadiologyTatRow) =>
+                    row.repeatRatePercent === null ? '—' : `${row.repeatRatePercent}% (${row.repeats})`,
                 },
               ]}
             />

@@ -18,14 +18,20 @@ describe('sterilizer parameters (mirror of the server)', () => {
 
   it('explains why a steam cycle fails', () => {
     expect(checkParameters('Steam', 139, 10).message).toBe('Steam temperature 139 °C is above the 138 °C limit.');
-    expect(checkParameters('Steam', 120, 30).message).toBe('Steam at 120 °C is below the 121 °C sterilizing temperature.');
+    expect(checkParameters('Steam', 120, 30).message).toBe(
+      'Steam at 120 °C is below the 121 °C sterilizing temperature.',
+    );
     expect(checkParameters('Steam', 121, 10).message).toBe('Steam at 121 °C needs at least 15 minutes (recorded 10).');
   });
 
   it('checks ethylene oxide and plasma ranges', () => {
     expect(checkParameters('EthyleneOxide', 55, 60).ok).toBe(true);
-    expect(checkParameters('EthyleneOxide', 55, 59).message).toBe('Ethylene oxide cycles need at least 60 minutes of exposure (recorded 59).');
-    expect(checkParameters('EthyleneOxide', 64, 120).message).toBe('Ethylene oxide cycles run at 37–63 °C (recorded 64 °C).');
+    expect(checkParameters('EthyleneOxide', 55, 59).message).toBe(
+      'Ethylene oxide cycles need at least 60 minutes of exposure (recorded 59).',
+    );
+    expect(checkParameters('EthyleneOxide', 64, 120).message).toBe(
+      'Ethylene oxide cycles run at 37–63 °C (recorded 64 °C).',
+    );
     expect(checkParameters('Plasma', 50, 24).ok).toBe(true);
     expect(checkParameters('Plasma', 39, 30).ok).toBe(false);
   });

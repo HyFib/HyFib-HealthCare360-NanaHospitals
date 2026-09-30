@@ -61,11 +61,18 @@ export function PhysioTodayWidget() {
             {waiting.length} to see · {done} done
           </Text>
           {waiting.length === 0 ? (
-            <Caption1 className={styles.muted}>{items.length ? 'Everyone booked for today has been seen.' : 'No sessions booked for today.'}</Caption1>
+            <Caption1 className={styles.muted}>
+              {items.length ? 'Everyone booked for today has been seen.' : 'No sessions booked for today.'}
+            </Caption1>
           ) : (
             <div className={styles.list}>
               {waiting.slice(0, 6).map((item) => (
-                <button key={item.sessionId} type="button" className={styles.row} onClick={() => void navigate({ to: '/physio/referrals/$id', params: { id: item.referralId } })}>
+                <button
+                  key={item.sessionId}
+                  type="button"
+                  className={styles.row}
+                  onClick={() => void navigate({ to: '/physio/referrals/$id', params: { id: item.referralId } })}
+                >
                   <Text weight="semibold">{formatTime(item.scheduledAt)}</Text>
                   <span className={styles.truncate}>
                     {item.patientName}{' '}
@@ -74,7 +81,11 @@ export function PhysioTodayWidget() {
                       {item.sessionsPlanned ? ` of ${item.sessionsPlanned}` : ''}
                     </Caption1>
                   </span>
-                  <StatusBadge status={item.status} tone={physioSessionStatusTone[item.status]} label={physioSessionStatusLabel[item.status]} />
+                  <StatusBadge
+                    status={item.status}
+                    tone={physioSessionStatusTone[item.status]}
+                    label={physioSessionStatusLabel[item.status]}
+                  />
                 </button>
               ))}
             </div>

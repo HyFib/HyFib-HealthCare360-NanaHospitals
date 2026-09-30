@@ -1,12 +1,35 @@
-import { Button, Caption1, makeStyles, mergeClasses, Subtitle2, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, BoardRegular, ChevronRightRegular, DataTrendingRegular, DocumentTableRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  mergeClasses,
+  Subtitle2,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
+import {
+  ArrowClockwiseRegular,
+  BoardRegular,
+  ChevronRightRegular,
+  DataTrendingRegular,
+  DocumentTableRegular,
+} from '@fluentui/react-icons';
 import { formatRelative, todayIso } from '@hc360/core';
 import { EmptyState, ErrorState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { EChart } from '@/lib/EChart';
-import { analyticsKeys, analyticsQueries, type KpiValue, type ReportInputs, type ReportParameter } from '@/modules/analytics/api';
+import {
+  analyticsKeys,
+  analyticsQueries,
+  type KpiValue,
+  type ReportInputs,
+  type ReportParameter,
+} from '@/modules/analytics/api';
 import { kpiTrendOption } from '@/modules/analytics/charts';
 import { describeRange } from '@/modules/analytics/format';
 import { CATEGORY_ICONS } from '@/modules/analytics/icons';
@@ -38,8 +61,28 @@ export const Route = createFileRoute('/_app/analytics/')({
 
 /** The period and facility inputs of this screen, described like report parameters so the same form renders them. */
 const FILTERS: ReportParameter[] = [
-  { key: 'period', label: 'Period', kind: 'Period', required: false, defaultValue: DEFAULT_PERIOD, choices: null, min: null, max: null, hint: null },
-  { key: 'facilityId', label: 'Facility', kind: 'Facility', required: false, defaultValue: null, choices: null, min: null, max: null, hint: null },
+  {
+    key: 'period',
+    label: 'Period',
+    kind: 'Period',
+    required: false,
+    defaultValue: DEFAULT_PERIOD,
+    choices: null,
+    min: null,
+    max: null,
+    hint: null,
+  },
+  {
+    key: 'facilityId',
+    label: 'Facility',
+    kind: 'Facility',
+    required: false,
+    defaultValue: null,
+    choices: null,
+    min: null,
+    max: null,
+    hint: null,
+  },
 ];
 
 const useStyles = makeStyles({
@@ -99,14 +142,18 @@ function ExecutiveDashboardPage() {
     ...(search.facilityId ? { facilityId: search.facilityId } : {}),
   };
   const setFilters = (next: ReportInputs) =>
-    void navigate({ search: { period: next.period, from: next.from, to: next.to, facilityId: next.facilityId, trend: search.trend } });
+    void navigate({
+      search: { period: next.period, from: next.from, to: next.to, facilityId: next.facilityId, trend: search.trend },
+    });
 
   const data = kpis.data;
   const withTrend = data?.kpis.filter((k) => (k.trend?.length ?? 0) > 1) ?? [];
   const selectedTrend = withTrend.find((k) => k.key === search.trend) ?? withTrend[0];
   const reports = catalogue.data?.reports ?? [];
   const featured = FEATURED_REPORTS.map((id) => reports.find((r) => r.id === id)).filter((r) => r !== undefined);
-  const boards = [...(dashboards.data ?? [])].sort((a, b) => Number(b.isTemplate) - Number(a.isTemplate) || a.name.localeCompare(b.name)).slice(0, 6);
+  const boards = [...(dashboards.data ?? [])]
+    .sort((a, b) => Number(b.isTemplate) - Number(a.isTemplate) || a.name.localeCompare(b.name))
+    .slice(0, 6);
 
   return (
     <Page>
@@ -130,7 +177,11 @@ function ExecutiveDashboardPage() {
             <Button icon={<BoardRegular />} onClick={() => void navigate({ to: '/analytics/dashboards' })}>
               Dashboards
             </Button>
-            <Button appearance="primary" icon={<DocumentTableRegular />} onClick={() => void navigate({ to: '/analytics/reports' })}>
+            <Button
+              appearance="primary"
+              icon={<DocumentTableRegular />}
+              onClick={() => void navigate({ to: '/analytics/reports' })}
+            >
               MIS reports
             </Button>
           </>
@@ -148,7 +199,9 @@ function ExecutiveDashboardPage() {
           maxDays={366}
         />
         <Caption1 className={styles.fresh}>
-          {data ? `Figures from the ${data.dataSource.toLowerCase()} · updated ${formatRelative(data.generatedAt)} · refreshed every 5 minutes` : ' '}
+          {data
+            ? `Figures from the ${data.dataSource.toLowerCase()} · updated ${formatRelative(data.generatedAt)} · refreshed every 5 minutes`
+            : ' '}
         </Caption1>
       </div>
 
@@ -170,7 +223,8 @@ function ExecutiveDashboardPage() {
               : Array.from({ length: 8 }, (_, i) => <KpiTileSkeleton key={i} />)}
           </div>
           <Caption1 className={styles.legend}>
-            Arrows compare with the previous period of the same length. Green means better, red means worse; percentages and scores change in points.
+            Arrows compare with the previous period of the same length. Green means better, red means worse; percentages
+            and scores change in points.
           </Caption1>
         </>
       )}
@@ -184,7 +238,9 @@ function ExecutiveDashboardPage() {
               <TabList
                 size="small"
                 selectedValue={selectedTrend?.key}
-                onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, trend: String(d.value) }), replace: true })}
+                onTabSelect={(_, d) =>
+                  void navigate({ search: (prev) => ({ ...prev, trend: String(d.value) }), replace: true })
+                }
                 aria-label="Figure to show"
               >
                 {withTrend.map((k) => (
@@ -199,7 +255,9 @@ function ExecutiveDashboardPage() {
           {selectedTrend ? (
             <TrendChart kpi={selectedTrend} />
           ) : (
-            <Text className={styles.muted}>{kpis.isLoading ? 'Loading…' : 'Choose a period of two days or more to see the daily trend.'}</Text>
+            <Text className={styles.muted}>
+              {kpis.isLoading ? 'Loading…' : 'Choose a period of two days or more to see the daily trend.'}
+            </Text>
           )}
         </Section>
 
@@ -209,7 +267,12 @@ function ExecutiveDashboardPage() {
           ) : (
             <div className={styles.links} style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
               {boards.map((board) => (
-                <Link key={board.id} to="/analytics/dashboards/$dashboardId" params={{ dashboardId: board.id }} className={styles.linkCard}>
+                <Link
+                  key={board.id}
+                  to="/analytics/dashboards/$dashboardId"
+                  params={{ dashboardId: board.id }}
+                  className={styles.linkCard}
+                >
                   <span className={styles.linkIcon}>
                     <BoardRegular />
                   </span>
@@ -218,7 +281,12 @@ function ExecutiveDashboardPage() {
                       {board.name}
                     </Text>
                     <Caption1 className={styles.muted}>
-                      {board.isTemplate ? 'Hospital template' : board.isMine ? 'Mine' : `Shared by ${board.ownerName ?? 'a colleague'}`} · {board.widgetCount} tiles
+                      {board.isTemplate
+                        ? 'Hospital template'
+                        : board.isMine
+                          ? 'Mine'
+                          : `Shared by ${board.ownerName ?? 'a colleague'}`}{' '}
+                      · {board.widgetCount} tiles
                     </Caption1>
                   </span>
                   <ChevronRightRegular aria-hidden />
@@ -239,7 +307,9 @@ function ExecutiveDashboardPage() {
                   key={report.id}
                   to="/analytics/reports/$reportId"
                   params={{ reportId: report.id }}
-                  search={toSearchInputs(report.parameters.some((p) => p.kind === 'Period') ? filterValues : withoutPeriod(filterValues))}
+                  search={toSearchInputs(
+                    report.parameters.some((p) => p.kind === 'Period') ? filterValues : withoutPeriod(filterValues),
+                  )}
                   className={styles.linkCard}
                 >
                   <span className={styles.linkIcon}>

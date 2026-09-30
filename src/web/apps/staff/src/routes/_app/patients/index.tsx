@@ -22,7 +22,9 @@ export const Route = createFileRoute('/_app/patients/')({
     q: typeof search.q === 'string' && search.q ? search.q : undefined,
     page: typeof search.page === 'number' && search.page > 1 ? search.page : undefined,
     gender: GENDERS.includes(search.gender as Gender) ? (search.gender as Gender) : undefined,
-    category: PATIENT_CATEGORIES.includes(search.category as PatientCategory) ? (search.category as PatientCategory) : undefined,
+    category: PATIENT_CATEGORIES.includes(search.category as PatientCategory)
+      ? (search.category as PatientCategory)
+      : undefined,
   }),
   component: PatientsPage,
 });
@@ -40,7 +42,9 @@ function PatientsPage() {
   }, [debounced, search.q, navigate]);
 
   const page = search.page ?? 1;
-  const patients = useQuery(patientQueries.search({ search: search.q, page, pageSize: 25, gender: search.gender, category: search.category }));
+  const patients = useQuery(
+    patientQueries.search({ search: search.q, page, pageSize: 25, gender: search.gender, category: search.category }),
+  );
 
   return (
     <Page>
@@ -49,7 +53,11 @@ function PatientsPage() {
         subtitle="Search by UHID, mobile number, ABHA number or name"
         actions={
           <Can permission="patients.register">
-            <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => void navigate({ to: '/patients/register' })}>
+            <Button
+              appearance="primary"
+              icon={<PersonAddRegular />}
+              onClick={() => void navigate({ to: '/patients/register' })}
+            >
               Register patient
             </Button>
           </Can>
@@ -71,7 +79,13 @@ function PatientsPage() {
               <Select
                 value={search.gender ?? ''}
                 onChange={(_, data) =>
-                  void navigate({ search: (prev) => ({ ...prev, gender: (data.value || undefined) as Gender | undefined, page: undefined }) })
+                  void navigate({
+                    search: (prev) => ({
+                      ...prev,
+                      gender: (data.value || undefined) as Gender | undefined,
+                      page: undefined,
+                    }),
+                  })
                 }
               >
                 <option value="">All</option>
@@ -87,7 +101,11 @@ function PatientsPage() {
                 value={search.category ?? ''}
                 onChange={(_, data) =>
                   void navigate({
-                    search: (prev) => ({ ...prev, category: (data.value || undefined) as PatientCategory | undefined, page: undefined }),
+                    search: (prev) => ({
+                      ...prev,
+                      category: (data.value || undefined) as PatientCategory | undefined,
+                      page: undefined,
+                    }),
                   })
                 }
               >
@@ -122,7 +140,12 @@ function PatientsPage() {
               render: (p) => (
                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                   <Text weight="semibold">{p.fullName}</Text>
-                  {p.isVip && <ShieldKeyholeRegular aria-label="Restricted record" color={tokens.colorPaletteMarigoldForeground1} />}
+                  {p.isVip && (
+                    <ShieldKeyholeRegular
+                      aria-label="Restricted record"
+                      color={tokens.colorPaletteMarigoldForeground1}
+                    />
+                  )}
                   {p.isDeceased && (
                     <Badge size="small" color="danger">
                       Deceased
@@ -133,8 +156,18 @@ function PatientsPage() {
             },
             { key: 'age', header: 'Age / Sex', width: 110, render: (p) => `${p.age ?? '—'} / ${p.gender.charAt(0)}` },
             { key: 'phone', header: 'Mobile', width: 140, render: (p) => p.phoneMasked ?? '—' },
-            { key: 'category', header: 'Category', priority: 'low', render: (p) => (p.category === 'General' ? '—' : humanize(p.category)) },
-            { key: 'lastVisit', header: 'Last visit', priority: 'low', render: (p) => (p.lastVisitAt ? formatRelative(p.lastVisitAt) : 'No visits') },
+            {
+              key: 'category',
+              header: 'Category',
+              priority: 'low',
+              render: (p) => (p.category === 'General' ? '—' : humanize(p.category)),
+            },
+            {
+              key: 'lastVisit',
+              header: 'Last visit',
+              priority: 'low',
+              render: (p) => (p.lastVisitAt ? formatRelative(p.lastVisitAt) : 'No visits'),
+            },
             { key: 'registered', header: 'Registered', priority: 'low', render: (p) => formatDate(p.registeredAt) },
           ]}
           emptyTitle={search.q ? 'No patients match your search' : 'No patients registered yet'}

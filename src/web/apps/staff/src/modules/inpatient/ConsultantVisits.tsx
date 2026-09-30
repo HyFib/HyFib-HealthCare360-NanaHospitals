@@ -46,7 +46,15 @@ const schema = z
 type VisitValues = z.infer<typeof schema>;
 
 /** Consultant ward-round visits: each visit is charged (VISIT-DR, or VISIT-DR-ICU in critical care). */
-export function ConsultantVisits({ admissionId, chartOpen, defaultPractitioner }: { admissionId: string; chartOpen: boolean; defaultPractitioner: LookupItem | null }) {
+export function ConsultantVisits({
+  admissionId,
+  chartOpen,
+  defaultPractitioner,
+}: {
+  admissionId: string;
+  chartOpen: boolean;
+  defaultPractitioner: LookupItem | null;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canRecord = usePermission('nursing.chart') && chartOpen;
@@ -55,7 +63,8 @@ export function ConsultantVisits({ admissionId, chartOpen, defaultPractitioner }
   const [cancelling, setCancelling] = useState<ConsultantVisitDto | null>(null);
 
   const cancel = useMutation({
-    mutationFn: ({ visit, reason }: { visit: ConsultantVisitDto; reason: string }) => admissionApi.cancelVisit(visit.id, reason),
+    mutationFn: ({ visit, reason }: { visit: ConsultantVisitDto; reason: string }) =>
+      admissionApi.cancelVisit(visit.id, reason),
     onSuccess: () => {
       notify.success('Visit cancelled', 'Its charge has been reversed.');
       setCancelling(null);
@@ -105,7 +114,13 @@ export function ConsultantVisits({ admissionId, chartOpen, defaultPractitioner }
         rowActions={
           canRecord
             ? (v) => (
-                <Button size="small" appearance="subtle" icon={<DismissCircleRegular />} onClick={() => setCancelling(v)} aria-label={`Cancel visit of ${formatDateTime(v.visitedAt)}`}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<DismissCircleRegular />}
+                  onClick={() => setCancelling(v)}
+                  aria-label={`Cancel visit of ${formatDateTime(v.visitedAt)}`}
+                >
                   Cancel
                 </Button>
               )
@@ -159,7 +174,12 @@ function RecordVisitDialog({
   const [nowInput] = useState(() => toIstInput(new Date()));
   const form = useForm<VisitValues>({
     resolver: zodResolver(schema),
-    defaultValues: { practitionerId: ownPractitionerId ?? defaultPractitioner?.id ?? null, earlier: false, visitedAt: nowInput, notes: '' },
+    defaultValues: {
+      practitionerId: ownPractitionerId ?? defaultPractitioner?.id ?? null,
+      earlier: false,
+      visitedAt: nowInput,
+      notes: '',
+    },
   });
   const earlier = useWatch({ control: form.control, name: 'earlier' });
 
@@ -171,7 +191,10 @@ function RecordVisitDialog({
         notes: v.notes || null,
       }),
     onSuccess: (visit) => {
-      notify.success('Visit recorded', visit.isCharged ? `Charged as ${visit.serviceCode}.` : 'The charge will be posted when billing is reachable.');
+      notify.success(
+        'Visit recorded',
+        visit.isCharged ? `Charged as ${visit.serviceCode}.` : 'The charge will be posted when billing is reachable.',
+      );
       onSaved();
     },
     onError: (error) => applyServerErrors(error, form.setError),
@@ -197,15 +220,31 @@ function RecordVisitDialog({
               <Controller
                 control={form.control}
                 name="earlier"
-                render={({ field }) => <Switch checked={field.value} onChange={(_, d) => field.onChange(d.checked)} label="The visit was earlier (within 48 hours)" />}
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="The visit was earlier (within 48 hours)"
+                  />
+                )}
               />
               {earlier && (
                 <Controller
                   control={form.control}
                   name="visitedAt"
                   render={({ field, fieldState }) => (
-                    <Field label="Visited at" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
-                      <Input type="datetime-local" value={field.value} max={nowInput} onChange={(_, d) => field.onChange(d.value)} />
+                    <Field
+                      label="Visited at"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
+                      <Input
+                        type="datetime-local"
+                        value={field.value}
+                        max={nowInput}
+                        onChange={(_, d) => field.onChange(d.value)}
+                      />
                     </Field>
                   )}
                 />
@@ -214,7 +253,8 @@ function RecordVisitDialog({
               {error && (
                 <MessageBar intent="error" layout="multiline">
                   <MessageBarBody>
-                    <Text weight="semibold">{isApiError(error) ? error.title : 'Could not record the visit'}</Text> {isApiError(error) ? error.userMessage : ''}
+                    <Text weight="semibold">{isApiError(error) ? error.title : 'Could not record the visit'}</Text>{' '}
+                    {isApiError(error) ? error.userMessage : ''}
                   </MessageBarBody>
                 </MessageBar>
               )}
@@ -223,7 +263,12 @@ function RecordVisitDialog({
               <Button onClick={onClose} disabled={record.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={record.isPending}
+                icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Record visit
               </Button>
             </DialogActions>

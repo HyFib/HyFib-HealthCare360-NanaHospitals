@@ -1,5 +1,12 @@
 import { dec, toNumber } from '@/modules/inventory/decimal';
-import { allocateFefo, allocateFromBatch, batchProblem, batchProblemText, type AllocationResult, type FefoBatch } from '@/modules/inventory/fefo';
+import {
+  allocateFefo,
+  allocateFromBatch,
+  batchProblem,
+  batchProblemText,
+  type AllocationResult,
+  type FefoBatch,
+} from '@/modules/inventory/fefo';
 import { formatQty } from '@/modules/inventory/format';
 import { requiresRegister, type DrugSchedule } from '@/modules/inventory/labels';
 
@@ -41,7 +48,11 @@ export function isGenericEquivalent(
   if (normalizeDrugText(prescribedGeneric) !== normalizeDrugText(dispensedGeneric)) {
     return false;
   }
-  return !prescribedStrength?.trim() || !dispensedStrength?.trim() || normalizeDrugText(prescribedStrength) === normalizeDrugText(dispensedStrength);
+  return (
+    !prescribedStrength?.trim() ||
+    !dispensedStrength?.trim() ||
+    normalizeDrugText(prescribedStrength) === normalizeDrugText(dispensedStrength)
+  );
 }
 
 /**
@@ -58,7 +69,12 @@ export function evaluateSubstitution(
   if (prescribedItemId === dispensed.itemId) {
     return 'none';
   }
-  const equivalent = isGenericEquivalent(prescribedGeneric, prescribedStrength, dispensed.genericName, dispensed.strength);
+  const equivalent = isGenericEquivalent(
+    prescribedGeneric,
+    prescribedStrength,
+    dispensed.genericName,
+    dispensed.strength,
+  );
   if (prescribedItemId === null && equivalent === true) {
     return 'none';
   }
@@ -84,9 +100,18 @@ export interface BatchIssuePlan {
 }
 
 /** Picks the batches for one line and lists what blocks it. */
-export function planBatchIssue(input: BatchIssueInput, batches: readonly FefoBatch[] | undefined, unit?: string | null): BatchIssuePlan {
+export function planBatchIssue(
+  input: BatchIssueInput,
+  batches: readonly FefoBatch[] | undefined,
+  unit?: string | null,
+): BatchIssuePlan {
   const problems: string[] = [];
-  const empty: AllocationResult = { allocations: [], requested: input.quantity, allocated: 0, shortfall: input.quantity };
+  const empty: AllocationResult = {
+    allocations: [],
+    requested: input.quantity,
+    allocated: 0,
+    shortfall: input.quantity,
+  };
   if (!(input.quantity > 0)) {
     return { allocation: empty, problems: ['Enter the quantity to hand over.'], pending: false };
   }
@@ -100,15 +125,28 @@ export function planBatchIssue(input: BatchIssueInput, batches: readonly FefoBat
   if (input.batchId) {
     const picked = batches.find((b) => b.batchId === input.batchId);
     if (!picked) {
-      return { allocation: empty, problems: [...problems, 'The chosen batch is no longer in this store. Pick another batch.'], pending: false };
+      return {
+        allocation: empty,
+        problems: [...problems, 'The chosen batch is no longer in this store. Pick another batch.'],
+        pending: false,
+      };
     }
     const problem = batchProblem(picked, input.minimumShelfLifeDays);
     if (problem) {
-      return { allocation: empty, problems: [...problems, `Batch ${picked.batchNumber}: ${batchProblemText(problem, picked, input.minimumShelfLifeDays)}.`], pending: false };
+      return {
+        allocation: empty,
+        problems: [
+          ...problems,
+          `Batch ${picked.batchNumber}: ${batchProblemText(problem, picked, input.minimumShelfLifeDays)}.`,
+        ],
+        pending: false,
+      };
     }
     allocation = allocateFromBatch(input.quantity, picked, input.minimumShelfLifeDays);
     if (allocation.shortfall > 0) {
-      problems.push(`Batch ${picked.batchNumber} has only ${formatQty(allocation.allocated, unit)}. Lower the quantity or let the system pick batches.`);
+      problems.push(
+        `Batch ${picked.batchNumber} has only ${formatQty(allocation.allocated, unit)}. Lower the quantity or let the system pick batches.`,
+      );
     }
   } else {
     allocation = allocateFefo(input.quantity, batches, { minimumShelfLifeDays: input.minimumShelfLifeDays });
@@ -147,9 +185,16 @@ export function substitutionProblems(kind: SubstitutionKind, reason: string, con
 }
 
 /** Names of the items that need the explicit controlled-medicine confirmation (Schedule H1/X or NDPS). */
-export function controlledItems(items: readonly { name: string; schedule: DrugSchedule | null; isControlled: boolean; lineIsControlled?: boolean }[]): string[] {
+export function controlledItems(
+  items: readonly { name: string; schedule: DrugSchedule | null; isControlled: boolean; lineIsControlled?: boolean }[],
+): string[] {
   const names = items
-    .filter((i) => i.isControlled || i.lineIsControlled === true || (i.schedule !== null && requiresRegister(i.schedule, i.isControlled)))
+    .filter(
+      (i) =>
+        i.isControlled ||
+        i.lineIsControlled === true ||
+        (i.schedule !== null && requiresRegister(i.schedule, i.isControlled)),
+    )
     .map((i) => i.name);
   return Array.from(new Set(names));
 }

@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { addManyToCart, addToCart, maxQuantity, removeFromCart, setNotes, setQuantity, toOrderLines, type CartService } from './orderCart';
+import {
+  addManyToCart,
+  addToCart,
+  maxQuantity,
+  removeFromCart,
+  setNotes,
+  setQuantity,
+  toOrderLines,
+  type CartService,
+} from './orderCart';
 
 const cbc: CartService = { id: 's1', code: 'LAB-CBC', name: 'Complete blood count', category: 'Laboratory' };
 const prbc: CartService = { id: 's2', code: 'BB-PRBC', name: 'Packed red cells', category: 'BloodBank' };

@@ -134,10 +134,25 @@ describe('periods', () => {
   });
 
   it('resolves presets and chosen dates', () => {
-    expect(resolvePeriod(undefined, undefined, undefined, '2026-09-28')).toEqual({ from: '2025-10-01', to: '2026-09-28' });
-    expect(resolvePeriod('thisMonth', '2020-01-01', '2020-02-01', '2026-09-28')).toEqual({ from: '2026-09-01', to: '2026-09-28' });
-    expect(resolvePeriod('custom', '2026-05-01', '2026-05-31', '2026-09-28')).toEqual({ from: '2026-05-01', to: '2026-05-31' });
-    expect(resolvePeriod('custom', '2026-05-31', '2026-05-01', '2026-09-28')).toEqual({ from: '2026-05-01', to: '2026-05-31' });
-    expect(resolvePeriod('custom', '2026-05-01', undefined, '2026-09-28')).toEqual({ from: '2026-05-01', to: '2026-09-28' });
+    expect(resolvePeriod(undefined, undefined, undefined, '2026-09-28')).toEqual({
+      from: '2025-10-01',
+      to: '2026-09-28',
+    });
+    expect(resolvePeriod('thisMonth', '2020-01-01', '2020-02-01', '2026-09-28')).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-28',
+    });
+    expect(resolvePeriod('custom', '2026-05-01', '2026-05-31', '2026-09-28')).toEqual({
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    expect(resolvePeriod('custom', '2026-05-31', '2026-05-01', '2026-09-28')).toEqual({
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    expect(resolvePeriod('custom', '2026-05-01', undefined, '2026-09-28')).toEqual({
+      from: '2026-05-01',
+      to: '2026-09-28',
+    });
   });
 });

@@ -19,7 +19,11 @@ export function MyActionsTable() {
   return (
     <>
       <FilterPad>
-        <Checkbox checked={includeClosed} onChange={(_, d) => setIncludeClosed(Boolean(d.checked))} label="Include finished and cancelled actions" />
+        <Checkbox
+          checked={includeClosed}
+          onChange={(_, d) => setIncludeClosed(Boolean(d.checked))}
+          label="Include finished and cancelled actions"
+        />
       </FilterPad>
       <DataTable
         ariaLabel="My corrective and preventive actions"
@@ -37,13 +41,18 @@ export function MyActionsTable() {
               <span>
                 <Text weight="semibold">{c.action}</Text>
                 <Caption1 block>
-                  {c.capaNumber} · {c.type} · {c.incidentNumber ? `incident ${c.incidentNumber}` : capaSourceLabel[c.source]}
+                  {c.capaNumber} · {c.type} ·{' '}
+                  {c.incidentNumber ? `incident ${c.incidentNumber}` : capaSourceLabel[c.source]}
                 </Caption1>
               </span>
             ),
           },
           { key: 'due', header: 'Due', width: 120, render: (c) => formatDateOnly(c.dueDate) },
-          { key: 'status', header: 'Status', render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} /> },
+          {
+            key: 'status',
+            header: 'Status',
+            render: (c) => <CapaStatusBadge status={c.status} isOverdue={c.isOverdue} />,
+          },
         ]}
         rowActions={(c) => <CapaActionButtons capa={c} size="small" />}
         emptyTitle={includeClosed ? 'No actions assigned to you' : 'Nothing to do'}

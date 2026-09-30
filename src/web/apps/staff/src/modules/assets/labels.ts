@@ -29,7 +29,12 @@ export const assetStatusTone: Record<AssetStatus, StatusTone> = {
 
 export const CRITICALITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
 export type AssetCriticality = (typeof CRITICALITIES)[number];
-export const criticalityTone: Record<AssetCriticality, StatusTone> = { Low: 'informative', Medium: 'brand', High: 'warning', Critical: 'danger' };
+export const criticalityTone: Record<AssetCriticality, StatusTone> = {
+  Low: 'informative',
+  Medium: 'brand',
+  High: 'warning',
+  Critical: 'danger',
+};
 
 export const DEPRECIATION_METHODS = ['StraightLine', 'WrittenDownValue'] as const;
 export type DepreciationMethod = (typeof DEPRECIATION_METHODS)[number];
@@ -61,7 +66,11 @@ export const pmOutcomeLabel: Record<PmVisitOutcome, string> = {
 
 export const CALIBRATION_RESULTS = ['Pass', 'Fail', 'Adjusted'] as const;
 export type CalibrationResult = (typeof CALIBRATION_RESULTS)[number];
-export const calibrationLabel: Record<CalibrationResult, string> = { Pass: 'Passed', Fail: 'Failed', Adjusted: 'Adjusted and passed' };
+export const calibrationLabel: Record<CalibrationResult, string> = {
+  Pass: 'Passed',
+  Fail: 'Failed',
+  Adjusted: 'Adjusted and passed',
+};
 
 export const CONDEMNATION_STATUSES = ['Pending', 'Approved', 'Rejected'] as const;
 export type CondemnationStatus = (typeof CONDEMNATION_STATUSES)[number];

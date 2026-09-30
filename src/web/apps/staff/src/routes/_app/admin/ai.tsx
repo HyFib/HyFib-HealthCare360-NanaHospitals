@@ -17,7 +17,15 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { AI_PURPOSES, AI_USAGE_PAGE_SIZE, aiProviderLabel, aiUsageQueries, isAiPurpose, purposeLabel, type AiPurpose } from '@/modules/admin/aiApi';
+import {
+  AI_PURPOSES,
+  AI_USAGE_PAGE_SIZE,
+  aiProviderLabel,
+  aiUsageQueries,
+  isAiPurpose,
+  purposeLabel,
+  type AiPurpose,
+} from '@/modules/admin/aiApi';
 import { adminQueries } from '@/modules/admin/api';
 import { formatDuration, isIsoDay, pageFromUrl } from '@/modules/admin/integrationsApi';
 import { NoAccess } from '@/modules/admin/NoAccess';
@@ -49,7 +57,12 @@ export const Route = createFileRoute('/_app/admin/ai')({
 });
 
 const useStyles = makeStyles({
-  cards: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', alignItems: 'start' },
+  cards: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+    alignItems: 'start',
+  },
   rows: { display: 'grid', gridTemplateColumns: 'minmax(110px, auto) 1fr', gap: '6px 16px', alignItems: 'baseline' },
   muted: { color: tokens.colorNeutralForeground3 },
   error: { color: tokens.colorPaletteRedForeground1, display: 'block' },
@@ -83,7 +96,10 @@ function AiAdminPage() {
 
   return (
     <Page>
-      <PageHeader title="AI assistant" subtitle="Voice and typed commands, dictation and AI usage. AI is off until you turn it on." />
+      <PageHeader
+        title="AI assistant"
+        subtitle="Voice and typed commands, dictation and AI usage. AI is off until you turn it on."
+      />
       <AiStatus />
       <TabList
         selectedValue={search.tab ?? 'usage'}
@@ -119,7 +135,11 @@ function AiStatus() {
       <Section title="AI help">
         <div className={styles.rows}>
           <Row label="Status">
-            <StatusBadge status={ai.enabled ? 'Active' : 'Off'} tone={ai.enabled ? 'success' : 'subtle'} label={ai.enabled ? 'On' : 'Off'} />
+            <StatusBadge
+              status={ai.enabled ? 'Active' : 'Off'}
+              tone={ai.enabled ? 'success' : 'subtle'}
+              label={ai.enabled ? 'On' : 'Off'}
+            />
           </Row>
           <Row label="Provider">{aiProviderLabel(ai.provider)}</Row>
           <Row label="Model">{ai.model ?? '—'}</Row>
@@ -150,24 +170,33 @@ function AiUsage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canReadUsers = usePermission('admin.users.read');
   const page = search.page ?? 1;
-  const usage = useQuery(aiUsageQueries.usage({ purpose: search.purpose, userId: search.userId, from: search.from, to: search.to, page }));
+  const usage = useQuery(
+    aiUsageQueries.usage({ purpose: search.purpose, userId: search.userId, from: search.from, to: search.to, page }),
+  );
 
   // Usage rows carry user ids only; show names for the people on this page.
-  const userIds = useMemo(() => [...new Set((usage.data?.items ?? []).map((row) => row.userId).filter((id): id is string => Boolean(id)))], [usage.data]);
+  const userIds = useMemo(
+    () => [...new Set((usage.data?.items ?? []).map((row) => row.userId).filter((id): id is string => Boolean(id)))],
+    [usage.data],
+  );
   const users = useQueries({
     queries: userIds.map((id) => ({ ...adminQueries.user(id), staleTime: 10 * 60_000, enabled: canReadUsers })),
   });
   const names = new Map(users.flatMap((user) => (user.data ? [[user.data.id, user.data.displayName] as const] : [])));
   const person = (id: string | null) => (id ? (names.get(id) ?? `Staff member ${id.slice(0, 8)}`) : 'System');
 
-  const filter = (patch: Partial<AiSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const filter = (patch: Partial<AiSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Section flush>
       <div className={styles.toolbar}>
         <FilterBar>
           <Field label="What for">
-            <Select value={search.purpose ?? ''} onChange={(_, data) => filter({ purpose: isAiPurpose(data.value) ? data.value : undefined })}>
+            <Select
+              value={search.purpose ?? ''}
+              onChange={(_, data) => filter({ purpose: isAiPurpose(data.value) ? data.value : undefined })}
+            >
               <option value="">Everything</option>
               {AI_PURPOSES.map((purpose) => (
                 <option key={purpose} value={purpose}>
@@ -178,10 +207,20 @@ function AiUsage() {
           </Field>
           {canReadUsers && <UserFilter userId={search.userId} onChange={(userId) => filter({ userId })} />}
           <Field label="From">
-            <Input type="date" value={search.from ?? ''} max={search.to} onChange={(_, data) => filter({ from: isIsoDay(data.value) ? data.value : undefined })} />
+            <Input
+              type="date"
+              value={search.from ?? ''}
+              max={search.to}
+              onChange={(_, data) => filter({ from: isIsoDay(data.value) ? data.value : undefined })}
+            />
           </Field>
           <Field label="To">
-            <Input type="date" value={search.to ?? ''} min={search.from} onChange={(_, data) => filter({ to: isIsoDay(data.value) ? data.value : undefined })} />
+            <Input
+              type="date"
+              value={search.to ?? ''}
+              min={search.from}
+              onChange={(_, data) => filter({ to: isIsoDay(data.value) ? data.value : undefined })}
+            />
           </Field>
         </FilterBar>
       </div>
@@ -197,22 +236,46 @@ function AiUsage() {
           { key: 'when', header: 'When', width: 180, render: (row) => formatDateTime(row.createdAt) },
           { key: 'who', header: 'Person', render: (row) => person(row.userId) },
           { key: 'purpose', header: 'What for', render: (row) => purposeLabel(row.purpose) },
-          { key: 'model', header: 'Service', priority: 'low', render: (row) => row.model ?? aiProviderLabel(row.provider) },
+          {
+            key: 'model',
+            header: 'Service',
+            priority: 'low',
+            render: (row) => row.model ?? aiProviderLabel(row.provider),
+          },
           {
             key: 'tokens',
             header: 'Tokens in / out',
             priority: 'low',
             align: 'end',
-            render: (row) => (row.inputTokens || row.outputTokens ? `${formatNumber(row.inputTokens)} / ${formatNumber(row.outputTokens)}` : '—'),
+            render: (row) =>
+              row.inputTokens || row.outputTokens
+                ? `${formatNumber(row.inputTokens)} / ${formatNumber(row.outputTokens)}`
+                : '—',
           },
-          { key: 'latency', header: 'Took', width: 90, align: 'end', priority: 'low', render: (row) => formatDuration(row.latencyMs) },
-          { key: 'patient', header: 'For a patient', width: 110, priority: 'low', render: (row) => (row.patientId ? 'Yes' : '—') },
+          {
+            key: 'latency',
+            header: 'Took',
+            width: 90,
+            align: 'end',
+            priority: 'low',
+            render: (row) => formatDuration(row.latencyMs),
+          },
+          {
+            key: 'patient',
+            header: 'For a patient',
+            width: 110,
+            priority: 'low',
+            render: (row) => (row.patientId ? 'Yes' : '—'),
+          },
           {
             key: 'result',
             header: 'Result',
             render: (row) => (
               <span>
-                <StatusBadge status={row.success ? 'Succeeded' : 'Failed'} label={row.success ? 'Succeeded' : 'Failed'} />
+                <StatusBadge
+                  status={row.success ? 'Succeeded' : 'Failed'}
+                  label={row.success ? 'Succeeded' : 'Failed'}
+                />
                 {row.error && <Caption1 className={styles.error}>{row.error}</Caption1>}
               </span>
             ),
@@ -226,14 +289,22 @@ function AiUsage() {
         onPageChange={(next) => void navigate({ search: (prev) => ({ ...prev, page: next > 1 ? next : undefined }) })}
       />
       <div className={styles.toolbar}>
-        <Caption1 className={styles.muted}>What was said or written is never stored: only who, when, what for, tokens and time.</Caption1>
+        <Caption1 className={styles.muted}>
+          What was said or written is never stored: only who, when, what for, tokens and time.
+        </Caption1>
       </div>
     </Section>
   );
 }
 
 /** Pick a person to filter by (search by name or user name). */
-function UserFilter({ userId, onChange }: { userId: string | undefined; onChange: (userId: string | undefined) => void }) {
+function UserFilter({
+  userId,
+  onChange,
+}: {
+  userId: string | undefined;
+  onChange: (userId: string | undefined) => void;
+}) {
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 250);
   const matches = useQuery({ ...adminQueries.users({ search: debounced, page: 1 }), enabled: debounced.length >= 2 });
@@ -255,7 +326,11 @@ function UserFilter({ userId, onChange }: { userId: string | undefined; onChange
       >
         {options.length === 0 ? (
           <Option value="" text="" disabled>
-            {debounced.length >= 2 ? (matches.isFetching ? 'Searching…' : 'No one matches') : 'Type at least 2 letters of a name'}
+            {debounced.length >= 2
+              ? matches.isFetching
+                ? 'Searching…'
+                : 'No one matches'
+              : 'Type at least 2 letters of a name'}
           </Option>
         ) : (
           options.map((user) => (

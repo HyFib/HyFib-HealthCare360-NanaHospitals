@@ -47,7 +47,10 @@ export async function printUnitLabels(units: readonly BloodUnitDto[]): Promise<v
     .bottom { display: flex; justify-content: space-between; font-size: 6.5pt; line-height: 1.1; }
     .number { font-family: Consolas, monospace; font-weight: 700; }
     .store { font-size: 5pt; }`;
-  await printHtml(printDocument(labels.join(''), { title: `Blood unit labels (${units.length})`, pageSize: 'Label50x25', styles }), { pageSize: 'Label50x25', silent: true });
+  await printHtml(
+    printDocument(labels.join(''), { title: `Blood unit labels (${units.length})`, pageSize: 'Label50x25', styles }),
+    { pageSize: 'Label50x25', silent: true },
+  );
 }
 
 export interface IssueSlipUnit {
@@ -106,5 +109,7 @@ export async function printIssueSlip(
     .note { font-size: 7.5pt; margin-top: 6px; }
     .sign { margin-top: 10px; font-size: 8pt; }
     hr { border: none; border-top: 1px dashed #666; margin: 5px 0; }`;
-  await printHtml(printDocument(body, { title: `Blood issue ${issue.unitNumber}`, pageSize: 'Receipt80', styles }), { pageSize: 'Receipt80' });
+  await printHtml(printDocument(body, { title: `Blood issue ${issue.unitNumber}`, pageSize: 'Receipt80', styles }), {
+    pageSize: 'Receipt80',
+  });
 }

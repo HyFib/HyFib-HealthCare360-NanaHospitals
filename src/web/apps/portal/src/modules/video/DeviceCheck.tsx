@@ -34,7 +34,11 @@ const useStyles = makeStyles({
   },
   heading: { margin: 0, fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   lead: { margin: 0, color: tokens.colorNeutralForeground2 },
-  layout: { display: 'grid', gap: '16px', '@media (min-width: 760px)': { gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', alignItems: 'start' } },
+  layout: {
+    display: 'grid',
+    gap: '16px',
+    '@media (min-width: 760px)': { gridTemplateColumns: 'minmax(0, 1.2fr) minmax(0, 1fr)', alignItems: 'start' },
+  },
   previewBox: {
     position: 'relative',
     width: '100%',
@@ -47,16 +51,41 @@ const useStyles = makeStyles({
     justifyContent: 'center',
   },
   preview: { width: '100%', height: '100%', objectFit: 'cover' },
-  noCamera: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', color: '#e8e8e8', fontSize: tokens.fontSizeBase400 },
+  noCamera: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    color: '#e8e8e8',
+    fontSize: tokens.fontSizeBase400,
+  },
   noCameraIcon: { fontSize: '40px' },
   panel: { display: 'flex', flexDirection: 'column', gap: '14px' },
   meter: { display: 'flex', flexDirection: 'column', gap: '6px' },
   meterLabel: { display: 'flex', alignItems: 'center', gap: '8px', fontWeight: tokens.fontWeightSemibold },
-  heard: { display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorStatusSuccessForeground1, fontWeight: tokens.fontWeightSemibold },
+  heard: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: tokens.colorStatusSuccessForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   hint: { margin: 0, color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
-  tips: { margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '4px', color: tokens.colorNeutralForeground2 },
+  tips: {
+    margin: 0,
+    paddingLeft: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+    color: tokens.colorNeutralForeground2,
+  },
   tipsTitle: { margin: 0, fontWeight: tokens.fontWeightSemibold },
-  actions: { display: 'flex', flexDirection: 'column', gap: '8px', '@media (min-width: 520px)': { flexDirection: 'row', flexWrap: 'wrap' } },
+  actions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    '@media (min-width: 520px)': { flexDirection: 'row', flexWrap: 'wrap' },
+  },
   starting: { display: 'flex', justifyContent: 'center', padding: '32px 0' },
 });
 
@@ -69,8 +98,13 @@ const PROBLEM_TEXT: Record<Exclude<MediaProblem, 'denied'>, { title: MessageKey;
 };
 
 function deniedHelp(): MessageKey {
-  const platform = typeof navigator === 'undefined' ? 'desktop' : detectPlatform(navigator.userAgent, navigator.maxTouchPoints);
-  return platform === 'android' ? 'video.error.denied.android' : platform === 'ios' ? 'video.error.denied.ios' : 'video.error.denied.desktop';
+  const platform =
+    typeof navigator === 'undefined' ? 'desktop' : detectPlatform(navigator.userAgent, navigator.maxTouchPoints);
+  return platform === 'android'
+    ? 'video.error.denied.android'
+    : platform === 'ios'
+      ? 'video.error.denied.ios'
+      : 'video.error.denied.desktop';
 }
 
 /**
@@ -116,11 +150,19 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
 
       {state.status === 'error' && state.problem && (
         <>
-          <Notice intent="error" title={t(state.problem === 'denied' ? 'video.error.denied.title' : PROBLEM_TEXT[state.problem].title)}>
+          <Notice
+            intent="error"
+            title={t(state.problem === 'denied' ? 'video.error.denied.title' : PROBLEM_TEXT[state.problem].title)}
+          >
             {t(state.problem === 'denied' ? deniedHelp() : PROBLEM_TEXT[state.problem].body)}
           </Notice>
           <div className={styles.actions}>
-            <Button appearance="primary" size="large" icon={<ArrowClockwiseRegular />} onClick={() => void preview.start()}>
+            <Button
+              appearance="primary"
+              size="large"
+              icon={<ArrowClockwiseRegular />}
+              onClick={() => void preview.start()}
+            >
               {t('common.retry')}
             </Button>
             {state.problem !== 'insecure' && state.problem !== 'unsupported' && (
@@ -136,7 +178,13 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
         <div className={styles.layout}>
           <div className={styles.previewBox}>
             {state.hasVideo ? (
-              <VideoView stream={state.stream} muted mirrored className={styles.preview} label={t('video.check.preview')} />
+              <VideoView
+                stream={state.stream}
+                muted
+                mirrored
+                className={styles.preview}
+                label={t('video.check.preview')}
+              />
             ) : (
               <span className={styles.noCamera}>
                 <VideoOffRegular className={styles.noCameraIcon} aria-hidden />
@@ -152,7 +200,13 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
                   <MicRegular aria-hidden />
                   {t('video.check.micLevel')}
                 </span>
-                <ProgressBar value={state.level} max={1} thickness="large" shape="rounded" aria-label={t('video.check.micLevel')} />
+                <ProgressBar
+                  value={state.level}
+                  max={1}
+                  thickness="large"
+                  shape="rounded"
+                  aria-label={t('video.check.micLevel')}
+                />
                 {state.heard ? (
                   <span className={styles.heard} role="status">
                     <CheckmarkCircleRegular aria-hidden />
@@ -165,7 +219,10 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
             )}
             {state.cameras.length > 1 && (
               <Field label={t('video.check.camera')}>
-                <Select value={state.videoDeviceId ?? ''} onChange={(_, data) => void preview.changeDevice('video', data.value)}>
+                <Select
+                  value={state.videoDeviceId ?? ''}
+                  onChange={(_, data) => void preview.changeDevice('video', data.value)}
+                >
                   {state.cameras.map((camera, index) => (
                     <option key={camera.deviceId} value={camera.deviceId}>
                       {camera.label || `${t('video.check.camera')} ${index + 1}`}
@@ -176,7 +233,10 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
             )}
             {state.microphones.length > 1 && (
               <Field label={t('video.check.microphone')}>
-                <Select value={state.audioDeviceId ?? ''} onChange={(_, data) => void preview.changeDevice('audio', data.value)}>
+                <Select
+                  value={state.audioDeviceId ?? ''}
+                  onChange={(_, data) => void preview.changeDevice('audio', data.value)}
+                >
                   {state.microphones.map((microphone, index) => (
                     <option key={microphone.deviceId} value={microphone.deviceId}>
                       {microphone.label || `${t('video.check.microphone')} ${index + 1}`}
@@ -200,7 +260,12 @@ export function DeviceCheck({ onJoin, joinLabel }: { onJoin: (choice: DeviceChoi
               </ul>
             </div>
             <div className={styles.actions}>
-              <Button appearance="primary" size="large" icon={state.hasVideo ? <CameraRegular /> : <MicRegular />} onClick={() => join(!state.hasVideo)}>
+              <Button
+                appearance="primary"
+                size="large"
+                icon={state.hasVideo ? <CameraRegular /> : <MicRegular />}
+                onClick={() => join(!state.hasVideo)}
+              >
                 {joinLabel ?? (state.hasVideo ? t('video.check.join') : t('video.check.joinAudio'))}
               </Button>
             </div>

@@ -25,7 +25,13 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { adminQueries, type AuditEventDto, type AuditFilters, type AuditSeverity, type AuditVerification } from '@/modules/admin/api';
+import {
+  adminQueries,
+  type AuditEventDto,
+  type AuditFilters,
+  type AuditSeverity,
+  type AuditVerification,
+} from '@/modules/admin/api';
 
 export const Route = createFileRoute('/_app/admin/audit')({
   component: AuditPage,
@@ -35,7 +41,10 @@ const CATEGORIES = ['Security', 'PatientAccess', 'DataChange', 'Admin', 'Clinica
 
 function severityBadge(severity: AuditSeverity) {
   return (
-    <Badge appearance="tint" color={severity === 'Critical' ? 'danger' : severity === 'Warning' ? 'warning' : 'informative'}>
+    <Badge
+      appearance="tint"
+      color={severity === 'Critical' ? 'danger' : severity === 'Warning' ? 'warning' : 'informative'}
+    >
       {severity}
     </Badge>
   );
@@ -77,10 +86,13 @@ function AuditPage() {
       {verify.data && (
         <MessageBar intent={verify.data.valid ? 'success' : 'error'} layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>{verify.data.valid ? 'The audit log is intact' : 'The audit log has been altered'}</MessageBarTitle>
+            <MessageBarTitle>
+              {verify.data.valid ? 'The audit log is intact' : 'The audit log has been altered'}
+            </MessageBarTitle>
             {verify.data.message ??
               `${verify.data.checkedCount.toLocaleString('en-IN')} sealed entries checked${verify.data.unsealedCount ? `, ${verify.data.unsealedCount} awaiting sealing` : ''}.`}
-            {verify.data.firstInvalidChainIndex !== null && ` First broken link at entry #${verify.data.firstInvalidChainIndex}.`}
+            {verify.data.firstInvalidChainIndex !== null &&
+              ` First broken link at entry #${verify.data.firstInvalidChainIndex}.`}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -92,10 +104,18 @@ function AuditPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="User, action or summary" />
             </Field>
             <Field label="From">
-              <Input type="date" value={filters.from?.slice(0, 10) ?? ''} onChange={(_, d) => set({ from: d.value ? `${d.value}T00:00:00+05:30` : undefined })} />
+              <Input
+                type="date"
+                value={filters.from?.slice(0, 10) ?? ''}
+                onChange={(_, d) => set({ from: d.value ? `${d.value}T00:00:00+05:30` : undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={filters.to?.slice(0, 10) ?? ''} onChange={(_, d) => set({ to: d.value ? `${d.value}T23:59:59+05:30` : undefined })} />
+              <Input
+                type="date"
+                value={filters.to?.slice(0, 10) ?? ''}
+                onChange={(_, d) => set({ to: d.value ? `${d.value}T23:59:59+05:30` : undefined })}
+              />
             </Field>
             <Field label="Category">
               <Select value={filters.category ?? ''} onChange={(_, d) => set({ category: d.value || undefined })}>
@@ -108,7 +128,10 @@ function AuditPage() {
               </Select>
             </Field>
             <Field label="Severity">
-              <Select value={filters.minSeverity ?? ''} onChange={(_, d) => set({ minSeverity: (d.value || undefined) as AuditSeverity | undefined })}>
+              <Select
+                value={filters.minSeverity ?? ''}
+                onChange={(_, d) => set({ minSeverity: (d.value || undefined) as AuditSeverity | undefined })}
+              >
                 <option value="">All</option>
                 <option value="Warning">Warning and above</option>
                 <option value="Critical">Critical only</option>
@@ -165,7 +188,9 @@ function AuditPage() {
                   <Caption1>Summary</Caption1>
                   <Text>{detail.summary ?? '—'}</Text>
                   <Caption1>Sealed</Caption1>
-                  <Text>{detail.sealed ? 'Yes, part of the tamper-evident chain' : 'Not yet (sealed within a minute)'}</Text>
+                  <Text>
+                    {detail.sealed ? 'Yes, part of the tamper-evident chain' : 'Not yet (sealed within a minute)'}
+                  </Text>
                   {detail.details && (
                     <pre
                       style={{

@@ -31,17 +31,30 @@ export interface ShiftLike {
 }
 
 /** Colour dot + shift code (the colour is never the only signal: the code is always written). */
-export function ShiftChip({ shift, isWeekOff, className }: { shift?: ShiftLike | null; isWeekOff?: boolean; className?: string }) {
+export function ShiftChip({
+  shift,
+  isWeekOff,
+  className,
+}: {
+  shift?: ShiftLike | null;
+  isWeekOff?: boolean;
+  className?: string;
+}) {
   const styles = useStyles();
   if (isWeekOff || !shift) {
     return <span className={mergeClasses(styles.chip, styles.off, className)}>{isWeekOff ? 'Off' : '—'}</span>;
   }
-  const times = shift.startTime && shift.endTime ? `${formatTimeOfDay(shift.startTime)} to ${formatTimeOfDay(shift.endTime)}` : '';
+  const times =
+    shift.startTime && shift.endTime ? `${formatTimeOfDay(shift.startTime)} to ${formatTimeOfDay(shift.endTime)}` : '';
   const label = [shift.name ?? shift.code, times].filter(Boolean).join(' · ');
   return (
     <Tooltip content={label || (shift.code ?? '')} relationship="description">
       <span className={mergeClasses(styles.chip, className)}>
-        <span className={styles.swatch} style={{ backgroundColor: shift.color ?? tokens.colorBrandBackground }} aria-hidden />
+        <span
+          className={styles.swatch}
+          style={{ backgroundColor: shift.color ?? tokens.colorBrandBackground }}
+          aria-hidden
+        />
         {shift.code}
         {shift.isNightShift && <WeatherMoonRegular aria-label="Night shift" />}
       </span>

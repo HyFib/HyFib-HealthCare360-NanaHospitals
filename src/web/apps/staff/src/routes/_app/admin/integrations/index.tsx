@@ -1,5 +1,22 @@
-import { Button, Caption1, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Text, tokens } from '@fluentui/react-components';
-import { ArrowClockwiseRegular, DocumentTableRegular, MoreHorizontalRegular, SendRegular, SettingsRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  ArrowClockwiseRegular,
+  DocumentTableRegular,
+  MoreHorizontalRegular,
+  SendRegular,
+  SettingsRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatNumber, formatRelative } from '@hc360/core';
 import { DataTable, KpiCard, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -61,9 +78,12 @@ function IntegrationsPage() {
   const rows = status.data ?? [];
   const count = (...health: string[]) => rows.filter((row) => health.includes(row.health)).length;
   const listeners = rows.find((row) => row.name === 'lab')?.listeners ?? [];
-  const hasSettings = (row: IntegrationStatusDto) => isIntegrationName(row.name) && INTEGRATION_SETTINGS[row.name] !== undefined;
-  const configure = (row: IntegrationStatusDto) => void navigate({ to: '/admin/integrations/configure/$name', params: { name: row.name } });
-  const test = (row: IntegrationStatusDto) => isIntegrationName(row.name) && setTesting({ name: row.name, displayName: row.displayName });
+  const hasSettings = (row: IntegrationStatusDto) =>
+    isIntegrationName(row.name) && INTEGRATION_SETTINGS[row.name] !== undefined;
+  const configure = (row: IntegrationStatusDto) =>
+    void navigate({ to: '/admin/integrations/configure/$name', params: { name: row.name } });
+  const test = (row: IntegrationStatusDto) =>
+    isIntegrationName(row.name) && setTesting({ name: row.name, displayName: row.displayName });
 
   return (
     <Page>
@@ -81,7 +101,11 @@ function IntegrationsPage() {
       {status.data && (
         <div className={styles.kpis}>
           <KpiCard label="Working" value={count('healthy', 'idle')} hint="Working, or on with no traffic yet" />
-          <KpiCard label="Need attention" value={count('failing', 'degraded')} hint="Failing, or failures in the last 24 hours" />
+          <KpiCard
+            label="Need attention"
+            value={count('failing', 'degraded')}
+            hint="Failing, or failures in the last 24 hours"
+          />
           <KpiCard label="Off or not set up" value={count('disabled', 'not_configured')} />
         </div>
       )}
@@ -121,7 +145,12 @@ function IntegrationsPage() {
               key: 'success',
               header: 'Last worked',
               priority: 'low',
-              render: (row) => (row.lastSuccessAt ? <span title={formatDateTime(row.lastSuccessAt)}>{formatRelative(row.lastSuccessAt)}</span> : 'Never'),
+              render: (row) =>
+                row.lastSuccessAt ? (
+                  <span title={formatDateTime(row.lastSuccessAt)}>{formatRelative(row.lastSuccessAt)}</span>
+                ) : (
+                  'Never'
+                ),
             },
             {
               key: 'failure',
@@ -137,12 +166,24 @@ function IntegrationsPage() {
                   '—'
                 ),
             },
-            { key: 'failures', header: 'Failures (24 h)', width: 120, align: 'end', priority: 'low', render: (row) => formatNumber(row.failuresLast24Hours) },
+            {
+              key: 'failures',
+              header: 'Failures (24 h)',
+              width: 120,
+              align: 'end',
+              priority: 'low',
+              render: (row) => formatNumber(row.failuresLast24Hours),
+            },
           ]}
           rowActions={(row) => (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${row.displayName}`} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<MoreHorizontalRegular />}
+                  aria-label={`Actions for ${row.displayName}`}
+                />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
@@ -156,7 +197,12 @@ function IntegrationsPage() {
                   )}
                   <MenuItem
                     icon={<DocumentTableRegular />}
-                    onClick={() => void navigate({ to: '/admin/integrations/logs', search: { integration: isIntegrationName(row.name) ? row.name : undefined } })}
+                    onClick={() =>
+                      void navigate({
+                        to: '/admin/integrations/logs',
+                        search: { integration: isIntegrationName(row.name) ? row.name : undefined },
+                      })
+                    }
                   >
                     View log
                   </MenuItem>
@@ -176,12 +222,16 @@ function IntegrationsPage() {
       )}
 
       <Caption1 className={styles.muted}>
-        {canConfigure ? 'Choose an integration to change its settings. ' : 'Changing settings needs the “Change system settings” permission. '}
-        Biometric attendance machines (ZKTeco/eSSL) send punches straight to HR and are managed under HR → Devices. All settings are also listed under{' '}
-        <Link to="/admin/settings">Administration → Settings</Link>.
+        {canConfigure
+          ? 'Choose an integration to change its settings. '
+          : 'Changing settings needs the “Change system settings” permission. '}
+        Biometric attendance machines (ZKTeco/eSSL) send punches straight to HR and are managed under HR → Devices. All
+        settings are also listed under <Link to="/admin/settings">Administration → Settings</Link>.
       </Caption1>
 
-      {testing && <TestIntegrationDialog name={testing.name} displayName={testing.displayName} onClose={() => setTesting(null)} />}
+      {testing && (
+        <TestIntegrationDialog name={testing.name} displayName={testing.displayName} onClose={() => setTesting(null)} />
+      )}
     </Page>
   );
 }
@@ -195,8 +245,17 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
       getRowId={(listener) => `${listener.instrumentCode}:${listener.port}`}
       size="small"
       columns={[
-        { key: 'code', header: 'Analyser', render: (listener) => <Text weight="semibold">{listener.instrumentCode}</Text> },
-        { key: 'protocol', header: 'Protocol', width: 100, render: (listener) => (listener.protocol.toLowerCase() === 'astm' ? 'ASTM' : 'HL7 v2') },
+        {
+          key: 'code',
+          header: 'Analyser',
+          render: (listener) => <Text weight="semibold">{listener.instrumentCode}</Text>,
+        },
+        {
+          key: 'protocol',
+          header: 'Protocol',
+          width: 100,
+          render: (listener) => (listener.protocol.toLowerCase() === 'astm' ? 'ASTM' : 'HL7 v2'),
+        },
         { key: 'port', header: 'Port', width: 80, align: 'end', render: (listener) => listener.port },
         {
           key: 'state',
@@ -207,14 +266,27 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
             return <StatusBadge status={listener.state} tone={state.tone} label={state.label} />;
           },
         },
-        { key: 'connections', header: 'Connected', width: 100, align: 'end', priority: 'low', render: (listener) => listener.activeConnections },
+        {
+          key: 'connections',
+          header: 'Connected',
+          width: 100,
+          align: 'end',
+          priority: 'low',
+          render: (listener) => listener.activeConnections,
+        },
         {
           key: 'messages',
           header: 'Accepted / refused',
           priority: 'low',
-          render: (listener) => `${formatNumber(listener.messagesAccepted)} / ${formatNumber(listener.messagesRefused)}`,
+          render: (listener) =>
+            `${formatNumber(listener.messagesAccepted)} / ${formatNumber(listener.messagesRefused)}`,
         },
-        { key: 'last', header: 'Last message', priority: 'low', render: (listener) => (listener.lastMessageAt ? formatRelative(listener.lastMessageAt) : 'None yet') },
+        {
+          key: 'last',
+          header: 'Last message',
+          priority: 'low',
+          render: (listener) => (listener.lastMessageAt ? formatRelative(listener.lastMessageAt) : 'None yet'),
+        },
         {
           key: 'error',
           header: 'Last error',

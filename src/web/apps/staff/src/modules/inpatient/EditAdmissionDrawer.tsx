@@ -1,8 +1,27 @@
-import { Button, Caption1, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, OverlayDrawer, Spinner, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  OverlayDrawer,
+  Spinner,
+  tokens,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, isIndianMobile, normalizePhone, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, FormGrid, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  FormGrid,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -43,7 +62,15 @@ const schema = z
 type EditValues = z.infer<typeof schema>;
 
 /** Edit admission details. The payer is fixed at admission (changed by the insurance desk in Billing). */
-export function EditAdmissionDrawer({ admission, open, onClose }: { admission: AdmissionDetail; open: boolean; onClose: () => void }) {
+export function EditAdmissionDrawer({
+  admission,
+  open,
+  onClose,
+}: {
+  admission: AdmissionDetail;
+  open: boolean;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<EditValues>({
@@ -105,15 +132,25 @@ export function EditAdmissionDrawer({ admission, open, onClose }: { admission: A
     <OverlayDrawer open={open} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             Edit admission {admission.admissionNumber}
           </DrawerHeaderTitle>
-          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>The payer cannot be changed here; the insurance desk changes it in Billing.</Caption1>
+          <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+            The payer cannot be changed here; the insurance desk changes it in Billing.
+          </Caption1>
         </DrawerHeader>
         <DrawerBody>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
             <FormGrid columns={2} minColumnWidth={200}>
-              <SelectField control={form.control} name="departmentId" label="Department" placeholder="Not set" options={toOptions(departments.data)} />
+              <SelectField
+                control={form.control}
+                name="departmentId"
+                label="Department"
+                placeholder="Not set"
+                options={toOptions(departments.data)}
+              />
               <SelectField
                 control={form.control}
                 name="consultantPractitionerId"
@@ -123,29 +160,57 @@ export function EditAdmissionDrawer({ admission, open, onClose }: { admission: A
                 options={toOptions(practitioners.data)}
               />
             </FormGrid>
-            <TextAreaField control={form.control} name="provisionalDiagnosis" label="Provisional diagnosis" rows={2} maxLength={500} />
-            <DateField control={form.control} name="expectedDischargeDate" label="Expected discharge date" min={todayIso()} />
+            <TextAreaField
+              control={form.control}
+              name="provisionalDiagnosis"
+              label="Provisional diagnosis"
+              rows={2}
+              maxLength={500}
+            />
+            <DateField
+              control={form.control}
+              name="expectedDischargeDate"
+              label="Expected discharge date"
+              min={todayIso()}
+            />
             <TextField
               control={form.control}
               name="policyNumber"
               label="New policy / TPA card number"
-              hint={admission.policyNumberMasked ? `On file: ${admission.policyNumberMasked}. Leave blank to keep it.` : 'Leave blank if there is none.'}
+              hint={
+                admission.policyNumberMasked
+                  ? `On file: ${admission.policyNumberMasked}. Leave blank to keep it.`
+                  : 'Leave blank if there is none.'
+              }
               maxLength={64}
               autoComplete="off"
             />
-            {admission.policyNumberMasked && <SwitchField control={form.control} name="removePolicy" label="Remove the policy number on file" />}
+            {admission.policyNumberMasked && (
+              <SwitchField control={form.control} name="removePolicy" label="Remove the policy number on file" />
+            )}
             <SwitchField control={form.control} name="isMlc" label="Medico-legal case (MLC)" />
             {isMlc && <TextField control={form.control} name="mlcNumber" label="MLC number" required maxLength={64} />}
             <FormGrid columns={3} minColumnWidth={160}>
               <TextField control={form.control} name="attendantName" label="Attendant name" maxLength={200} />
               <TextField control={form.control} name="attendantRelation" label="Relation" maxLength={64} />
-              <TextField control={form.control} name="attendantPhone" label="Attendant mobile" type="tel" maxLength={14} />
+              <TextField
+                control={form.control}
+                name="attendantPhone"
+                label="Attendant mobile"
+                type="tel"
+                maxLength={14}
+              />
             </FormGrid>
             <TextAreaField control={form.control} name="notes" label="Notes" rows={3} maxLength={1000} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Save
           </Button>
           <Button onClick={onClose}>Cancel</Button>

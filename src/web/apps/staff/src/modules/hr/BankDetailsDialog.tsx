@@ -40,7 +40,15 @@ type Values = z.infer<typeof schema>;
  * Salary account change. The numbers are typed twice, never shown again after saving, stored encrypted, audited, and
  * the employee is always notified (a fraud alert if the change was not theirs).
  */
-export function BankDetailsDialog({ open, onClose, employee }: { open: boolean; onClose: () => void; employee: EmployeeDetail }) {
+export function BankDetailsDialog({
+  open,
+  onClose,
+  employee,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee: EmployeeDetail;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
       <DialogSurface style={{ maxWidth: 620 }}>{open && <Body onClose={onClose} employee={employee} />}</DialogSurface>
@@ -93,23 +101,52 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <MessageBar intent="info" layout="multiline">
             <MessageBarBody>
-              Current account: {employee.bankAccountMasked ?? 'none'} {employee.bankIfscMasked ? `(${employee.bankIfscMasked})` : ''}. The change is recorded in the audit
-              trail and {employee.fullName} is notified.
+              Current account: {employee.bankAccountMasked ?? 'none'}{' '}
+              {employee.bankIfscMasked ? `(${employee.bankIfscMasked})` : ''}. The change is recorded in the audit trail
+              and {employee.fullName} is notified.
             </MessageBarBody>
           </MessageBar>
           <FormGrid columns={2} minColumnWidth={220}>
             <TextField control={form.control} name="bankName" label="Bank name" autoComplete="off" />
-            <TextField control={form.control} name="ifsc" label="IFSC" required autoComplete="off" maxLength={11} hint="11 characters, e.g. SBIN0001234" />
-            <TextField control={form.control} name="accountNumber" label="Account number" required autoComplete="off" type="password" autoFocus />
-            <TextField control={form.control} name="confirmAccountNumber" label="Type the account number again" required autoComplete="off" type="password" />
+            <TextField
+              control={form.control}
+              name="ifsc"
+              label="IFSC"
+              required
+              autoComplete="off"
+              maxLength={11}
+              hint="11 characters, e.g. SBIN0001234"
+            />
+            <TextField
+              control={form.control}
+              name="accountNumber"
+              label="Account number"
+              required
+              autoComplete="off"
+              type="password"
+              autoFocus
+            />
+            <TextField
+              control={form.control}
+              name="confirmAccountNumber"
+              label="Type the account number again"
+              required
+              autoComplete="off"
+              type="password"
+            />
           </FormGrid>
           {shared && (
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>Another employee is paid into this account</MessageBarTitle>
-                {shared} Check with the employee before continuing: shared salary accounts are a common sign of payroll fraud.
+                {shared} Check with the employee before continuing: shared salary accounts are a common sign of payroll
+                fraud.
                 <div style={{ marginTop: 8 }}>
-                  <Checkbox checked={confirmShared} onChange={(_, data) => setConfirmShared(Boolean(data.checked))} label="I have checked; this is a genuine joint account" />
+                  <Checkbox
+                    checked={confirmShared}
+                    onChange={(_, data) => setConfirmShared(Boolean(data.checked))}
+                    label="I have checked; this is a genuine joint account"
+                  />
                 </div>
               </MessageBarBody>
             </MessageBar>
@@ -119,7 +156,12 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy || (shared !== null && !confirmShared)} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy || (shared !== null && !confirmShared)}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             Change account
           </Button>
         </DialogActions>

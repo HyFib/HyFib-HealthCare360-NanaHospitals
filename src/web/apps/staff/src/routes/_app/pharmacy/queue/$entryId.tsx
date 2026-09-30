@@ -38,7 +38,17 @@ import {
   TagRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, formatInr, formatRelative, isApiError, todayIso, useHotkey, useRealtimeEvent, useSession } from '@hc360/core';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  formatRelative,
+  isApiError,
+  todayIso,
+  useHotkey,
+  useRealtimeEvent,
+  useSession,
+} from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -67,7 +77,13 @@ import {
 } from '@/modules/pharmacy/api';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
 import { BillSummary } from '@/modules/pharmacy/BillSummary';
-import { DEFAULT_MAX_DISCOUNT_PERCENT, useCounterPrefs, useItemMaster, useLetterhead, usePharmacyBatches } from '@/modules/pharmacy/counter';
+import {
+  DEFAULT_MAX_DISCOUNT_PERCENT,
+  useCounterPrefs,
+  useItemMaster,
+  useLetterhead,
+  usePharmacyBatches,
+} from '@/modules/pharmacy/counter';
 import {
   controlledItems,
   evaluateSubstitution,
@@ -86,7 +102,9 @@ import { ipIssueAmount, priceSaleLine, saleTotals, type SaleLinePrice } from '@/
 import { directionsText, printIpIssueSlip, printLabels, printReceipt, type DrugLabel } from '@/modules/pharmacy/print';
 
 export const Route = createFileRoute('/_app/pharmacy/queue/$entryId')({
-  validateSearch: (s: Record<string, unknown>): { ip?: boolean } => ({ ip: s.ip === true || s.ip === 'true' ? true : undefined }),
+  validateSearch: (s: Record<string, unknown>): { ip?: boolean } => ({
+    ip: s.ip === true || s.ip === 'true' ? true : undefined,
+  }),
   component: EntryPage,
 });
 
@@ -100,7 +118,13 @@ const useStyles = makeStyles({
   },
   main: { display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 },
   aside: { display: 'flex', flexDirection: 'column', gap: '16px', position: 'sticky', top: '76px' },
-  facts: { display: 'flex', gap: '6px 18px', flexWrap: 'wrap', alignItems: 'center', color: tokens.colorNeutralForeground2 },
+  facts: {
+    display: 'flex',
+    gap: '6px 18px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    color: tokens.colorNeutralForeground2,
+  },
   drug: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: '220px' },
   muted: { color: tokens.colorNeutralForeground3 },
   problem: { color: tokens.colorPaletteRedForeground1 },
@@ -109,7 +133,12 @@ const useStyles = makeStyles({
   controlled: { borderLeft: `4px solid ${tokens.colorPaletteRedBorder2}` },
   footer: { display: 'flex', flexDirection: 'column', gap: '8px' },
   done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center' },
-  big: { fontSize: tokens.fontSizeHero800, lineHeight: tokens.lineHeightHero800, fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  big: {
+    fontSize: tokens.fontSizeHero800,
+    lineHeight: tokens.lineHeightHero800,
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
   row: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
 });
 
@@ -147,7 +176,14 @@ function EntryPage() {
   if (!entry.data) {
     return null;
   }
-  return <EntryScreen key={`${entryId}:${working.storeId ?? 'none'}`} entry={entry.data} working={working} refreshing={entry.isFetching} />;
+  return (
+    <EntryScreen
+      key={`${entryId}:${working.storeId ?? 'none'}`}
+      entry={entry.data}
+      working={working}
+      refreshing={entry.isFetching}
+    />
+  );
 }
 
 interface SubstituteChoice {
@@ -184,15 +220,33 @@ interface LinePlan {
   amount: number;
 }
 
-type Done = { kind: 'sale'; sale: PharmacySaleCreated; labels: DrugLabel[] } | { kind: 'issue'; id: string; number: string; total: number; labels: DrugLabel[] };
+type Done =
+  | { kind: 'sale'; sale: PharmacySaleCreated; labels: DrugLabel[] }
+  | { kind: 'issue'; id: string; number: string; total: number; labels: DrugLabel[] };
 
 function prescribedItem(line: QueueLineDto): SubstituteChoice | null {
   return line.drugItemId
-    ? { itemId: line.drugItemId, name: line.drugName, genericName: line.genericName, strength: line.strength, schedule: null, isControlled: line.isControlledDrug, baseUnit: null }
+    ? {
+        itemId: line.drugItemId,
+        name: line.drugName,
+        genericName: line.genericName,
+        strength: line.strength,
+        schedule: null,
+        isControlled: line.isControlledDrug,
+        baseUnit: null,
+      }
     : null;
 }
 
-function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; working: ReturnType<typeof useWorkingStore>; refreshing: boolean }) {
+function EntryScreen({
+  entry,
+  working,
+  refreshing,
+}: {
+  entry: QueueEntryDetail;
+  working: ReturnType<typeof useWorkingStore>;
+  refreshing: boolean;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -221,7 +275,14 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
     const choice = choices[line.id];
     return choice?.substitute !== undefined && choice.substitute !== null ? choice.substitute : prescribedItem(line);
   };
-  const itemIds = Array.from(new Set(openLines.map(effective).filter((i): i is SubstituteChoice => i !== null).map((i) => i.itemId)));
+  const itemIds = Array.from(
+    new Set(
+      openLines
+        .map(effective)
+        .filter((i): i is SubstituteChoice => i !== null)
+        .map((i) => i.itemId),
+    ),
+  );
   const stock = usePharmacyBatches(open ? storeId : null, itemIds);
   const master = useItemMaster(itemIds);
   const discountPercent = entry.isInpatient ? 0 : (parseNumber(discount) ?? 0);
@@ -235,22 +296,65 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
     const suggested = usable === null ? line.remainingQuantity : suggestedQuantity(line.remainingQuantity, usable);
     const quantityText = choice.quantity ?? String(suggested);
     const quantity = parseNumber(quantityText) ?? 0;
-    const kind: SubstitutionKind = item ? evaluateSubstitution(line.drugItemId, line.genericName, line.strength, item) : 'none';
+    const kind: SubstitutionKind = item
+      ? evaluateSubstitution(line.drugItemId, line.genericName, line.strength, item)
+      : 'none';
     const unit = item ? (master.items.get(item.itemId)?.baseUnit ?? item.baseUnit) : null;
-    const plan = item && quantity > 0 ? planBatchIssue({ quantity, remaining: line.remainingQuantity, batchId: choice.batchId ?? null, minimumShelfLifeDays: minDays }, batches, unit) : null;
+    const plan =
+      item && quantity > 0
+        ? planBatchIssue(
+            {
+              quantity,
+              remaining: line.remainingQuantity,
+              batchId: choice.batchId ?? null,
+              minimumShelfLifeDays: minDays,
+            },
+            batches,
+            unit,
+          )
+        : null;
     const problems =
       quantity > 0
-        ? [...(item ? [] : ['Choose the product to give: this line has no item from the drug master.']), ...(plan?.problems ?? []), ...substitutionProblems(kind, choice.reason ?? '', choice.consent ?? false)]
+        ? [
+            ...(item ? [] : ['Choose the product to give: this line has no item from the drug master.']),
+            ...(plan?.problems ?? []),
+            ...substitutionProblems(kind, choice.reason ?? '', choice.consent ?? false),
+          ]
         : [];
     const gstRate = item ? (master.items.get(item.itemId)?.gstRate ?? null) : null;
     const priced =
       plan && !entry.isInpatient
-        ? plan.allocation.allocations.map((a) => priceSaleLine(batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0, a.quantity, gstRate, discountPercent))
+        ? plan.allocation.allocations.map((a) =>
+            priceSaleLine(
+              batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0,
+              a.quantity,
+              gstRate,
+              discountPercent,
+            ),
+          )
         : [];
     const amount = entry.isInpatient
-      ? sumNumbers((plan?.allocation.allocations ?? []).map((a) => ipIssueAmount(a.quantity, batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0)))
+      ? sumNumbers(
+          (plan?.allocation.allocations ?? []).map((a) =>
+            ipIssueAmount(a.quantity, batches?.find((b) => b.batchId === a.batchId)?.mrp ?? 0),
+          ),
+        )
       : sumNumbers(priced.map((p) => p.net));
-    return { line, choice, item, kind, minDays, quantity, quantityText, usable, batches, plan, problems, priced, amount };
+    return {
+      line,
+      choice,
+      item,
+      kind,
+      minDays,
+      quantity,
+      quantityText,
+      usable,
+      batches,
+      plan,
+      problems,
+      priced,
+      amount,
+    };
   });
 
   const active = plans.filter((p) => p.quantity > 0);
@@ -282,14 +386,18 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
     (controlled.length === 0 || confirmControlled) &&
     (entry.isInpatient || (paymentCheck.ok && !discountInvalid));
 
-  const setChoice = (lineId: string, patch: Partial<LineChoice>) => setChoices((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
+  const setChoice = (lineId: string, patch: Partial<LineChoice>) =>
+    setChoices((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
 
   const buildLabels = (): DrugLabel[] =>
     active
       .filter((p) => p.plan)
       .map((p) => {
         const allocations = p.plan?.allocation.allocations ?? [];
-        const expiries = allocations.map((a) => a.expiryDate).filter((d): d is string => Boolean(d)).sort();
+        const expiries = allocations
+          .map((a) => a.expiryDate)
+          .filter((d): d is string => Boolean(d))
+          .sort();
         return {
           patientName: entry.patient.fullName,
           drugName: p.item?.name ?? p.line.drugName,
@@ -354,7 +462,9 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
         lines,
         counsellingNotes: notes.trim() || null,
         discountPercent,
-        payments: resolved.filter((p) => p.amount > 0).map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
+        payments: resolved
+          .filter((p) => p.amount > 0)
+          .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
         confirmControlledDrugs: controlled.length > 0 && confirmControlled,
       });
       return { kind: 'sale', sale, labels };
@@ -369,23 +479,32 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
           .catch((error: unknown) => notify.error(error, 'The receipt did not print'));
       }
       if (prefs.autoPrintLabels) {
-        void printLabels(result.labels, letterhead.name).catch((error: unknown) => notify.error(error, 'The labels did not print'));
+        void printLabels(result.labels, letterhead.name).catch((error: unknown) =>
+          notify.error(error, 'The labels did not print'),
+        );
       }
     },
     onError: (error) => {
-      if (isApiError(error) && (error.code?.startsWith('stock.') || error.code === 'payment.mismatch' || error.isConflict)) {
+      if (
+        isApiError(error) &&
+        (error.code?.startsWith('stock.') || error.code === 'payment.mismatch' || error.isConflict)
+      ) {
         stock.refetch();
         void queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue', 'detail', entry.id] });
       }
     },
   });
 
-  useRealtimeEvent<{ entryId: string; status: string }>(facilityId ? `pharmacy:${facilityId}` : null, 'pharmacy.queue.changed', (payload) => {
-    if (payload.entryId === entry.id && !submit.isPending && !done) {
-      setChangedElsewhere(true);
-      void queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue', 'detail', entry.id] });
-    }
-  });
+  useRealtimeEvent<{ entryId: string; status: string }>(
+    facilityId ? `pharmacy:${facilityId}` : null,
+    'pharmacy.queue.changed',
+    (payload) => {
+      if (payload.entryId === entry.id && !submit.isPending && !done) {
+        setChangedElsewhere(true);
+        void queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue', 'detail', entry.id] });
+      }
+    },
+  );
 
   const dispense = () => {
     if (ready && !submit.isPending) {
@@ -411,9 +530,15 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
   const goNext = async () => {
     try {
       const list = await queryClient.fetchQuery(pharmacyQueries.queue({ inpatient: entry.isInpatient }));
-      const next = list.items.find((e) => e.id !== entry.id && (e.status === 'Pending' || e.status === 'PartiallyDispensed'));
+      const next = list.items.find(
+        (e) => e.id !== entry.id && (e.status === 'Pending' || e.status === 'PartiallyDispensed'),
+      );
       if (next) {
-        void navigate({ to: '/pharmacy/queue/$entryId', params: { entryId: next.id }, search: { ip: next.isInpatient || undefined } });
+        void navigate({
+          to: '/pharmacy/queue/$entryId',
+          params: { entryId: next.id },
+          search: { ip: next.isInpatient || undefined },
+        });
       } else {
         notify.info('No one else is waiting');
         void navigate({ to: '/pharmacy/queue', search: { ip: entry.isInpatient || undefined } });
@@ -425,8 +550,18 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
 
   const refillsLeft = Math.max(entry.refillsAuthorized - entry.refillsUsed, 0);
   const hasControlledLines = entry.lines.some((l) => l.isControlledDrug);
-  const canAuthorize = canRefill && !entry.isInpatient && entry.refillOfEntryId === null && !hasControlledLines && entry.status !== 'Cancelled';
-  const canRequestRefill = canRefill && !entry.isInpatient && entry.status === 'Dispensed' && refillsLeft > 0 && (!entry.refillValidUntil || entry.refillValidUntil >= todayIso());
+  const canAuthorize =
+    canRefill &&
+    !entry.isInpatient &&
+    entry.refillOfEntryId === null &&
+    !hasControlledLines &&
+    entry.status !== 'Cancelled';
+  const canRequestRefill =
+    canRefill &&
+    !entry.isInpatient &&
+    entry.status === 'Dispensed' &&
+    refillsLeft > 0 &&
+    (!entry.refillValidUntil || entry.refillValidUntil >= todayIso());
   const errorItems = isApiError(submit.error) ? itemsFromErrorData(submit.error.data) : [];
 
   return (
@@ -451,7 +586,11 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: entry.patient.id } })}>Open patient profile</MenuItem>
+                <MenuItem
+                  onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: entry.patient.id } })}
+                >
+                  Open patient profile
+                </MenuItem>
                 {canAuthorize && (
                   <MenuItem icon={<ArrowRepeatAllRegular />} onClick={() => setDialog('authorize')}>
                     Authorise refills
@@ -475,17 +614,28 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
 
       <div className={styles.facts}>
         <Text weight="semibold">Prescription {entry.prescriptionNumber}</Text>
-        <StatusBadge status={entry.status} tone={workflowTone(entry.status)} label={entry.status === 'Pending' ? 'Waiting' : undefined} />
+        <StatusBadge
+          status={entry.status}
+          tone={workflowTone(entry.status)}
+          label={entry.status === 'Pending' ? 'Waiting' : undefined}
+        />
         {entry.isInpatient && <Badge color="brand">In-patient: issue to the ward</Badge>}
-        {entry.refillOfEntryId && <Badge appearance="tint" icon={<ArrowRepeatAllRegular />}>Refill</Badge>}
+        {entry.refillOfEntryId && (
+          <Badge appearance="tint" icon={<ArrowRepeatAllRegular />}>
+            Refill
+          </Badge>
+        )}
         <Caption1>
           {entry.prescriberName ?? 'Prescriber not recorded'}
           {entry.prescriberRegistrationNumber ? ` · Reg. ${entry.prescriberRegistrationNumber}` : ''}
         </Caption1>
-        <Caption1>Signed {formatDateTime(entry.signedAt)} · waiting since {formatRelative(entry.receivedAt)}</Caption1>
+        <Caption1>
+          Signed {formatDateTime(entry.signedAt)} · waiting since {formatRelative(entry.receivedAt)}
+        </Caption1>
         {entry.refillsAuthorized > 0 && (
           <Caption1>
-            Refills: {refillsLeft} of {entry.refillsAuthorized} left{entry.refillValidUntil ? ` until ${formatDateOnly(entry.refillValidUntil)}` : ''}
+            Refills: {refillsLeft} of {entry.refillsAuthorized} left
+            {entry.refillValidUntil ? ` until ${formatDateOnly(entry.refillValidUntil)}` : ''}
           </Caption1>
         )}
         {refreshing && <Spinner size="extra-tiny" aria-label="Refreshing" />}
@@ -507,7 +657,10 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
         <MessageBar intent={entry.status === 'Dispensed' ? 'success' : 'info'} layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>{entry.status === 'Dispensed' ? 'Fully dispensed' : 'Closed'}</MessageBarTitle>
-            {entry.closeReason ?? (entry.status === 'Dispensed' ? 'Every line of this prescription has been supplied.' : 'Nothing more can be supplied on this prescription.')}
+            {entry.closeReason ??
+              (entry.status === 'Dispensed'
+                ? 'Every line of this prescription has been supplied.'
+                : 'Nothing more can be supplied on this prescription.')}
           </MessageBarBody>
         </MessageBar>
       )}
@@ -525,7 +678,11 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                   : 'Batches are suggested earliest expiry first and must last the course (up to 30 days). Set a quantity to 0 to skip a line.'
                 : undefined
             }
-            actions={open && working.stores.length > 1 ? <WorkingStorePicker working={working} label="Dispensing from" /> : undefined}
+            actions={
+              open && working.stores.length > 1 ? (
+                <WorkingStorePicker working={working} label="Dispensing from" />
+              ) : undefined
+            }
             flush
           >
             <LineTable<LinePlan | QueueLineDto>
@@ -553,7 +710,11 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                                 </Caption1>
                               )}
                               <Caption1 block className={p.usable === 0 ? styles.problem : styles.muted}>
-                                {p.usable === null ? '' : p.usable > 0 ? `${formatQty(p.usable)} in stock` : 'Out of stock'}
+                                {p.usable === null
+                                  ? ''
+                                  : p.usable > 0
+                                    ? `${formatQty(p.usable)} in stock`
+                                    : 'Out of stock'}
                               </Caption1>
                             </span>
                           );
@@ -603,7 +764,11 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                         header: entry.isInpatient ? 'Charge' : 'Amount',
                         align: 'end',
                         width: 110,
-                        render: (row) => <span className={styles.amount}>{(row as LinePlan).quantity > 0 ? formatInr((row as LinePlan).amount) : '—'}</span>,
+                        render: (row) => (
+                          <span className={styles.amount}>
+                            {(row as LinePlan).quantity > 0 ? formatInr((row as LinePlan).amount) : '—'}
+                          </span>
+                        ),
                       },
                       {
                         key: 'actions',
@@ -613,7 +778,12 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                           const p = row as LinePlan;
                           return (
                             <Tooltip content="Give a generic equivalent (brand substitution)" relationship="label">
-                              <Button appearance="subtle" icon={<ArrowSwapRegular />} disabled={!canDispense || !storeId} onClick={() => setSubstituting(p.line)} />
+                              <Button
+                                appearance="subtle"
+                                icon={<ArrowSwapRegular />}
+                                disabled={!canDispense || !storeId}
+                                onClick={() => setSubstituting(p.line)}
+                              />
                             </Tooltip>
                           );
                         },
@@ -621,9 +791,28 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                     ]
                   : [
                       { key: 'drug', header: 'Medicine', render: (row) => <DrugSummary line={row as QueueLineDto} /> },
-                      { key: 'req', header: 'Prescribed', align: 'end', render: (row) => formatQty((row as QueueLineDto).requestedQuantity) },
-                      { key: 'given', header: 'Given', align: 'end', render: (row) => formatQty((row as QueueLineDto).dispensedQuantity) },
-                      { key: 'status', header: 'Status', render: (row) => <StatusBadge status={(row as QueueLineDto).status} tone={workflowTone((row as QueueLineDto).status)} /> },
+                      {
+                        key: 'req',
+                        header: 'Prescribed',
+                        align: 'end',
+                        render: (row) => formatQty((row as QueueLineDto).requestedQuantity),
+                      },
+                      {
+                        key: 'given',
+                        header: 'Given',
+                        align: 'end',
+                        render: (row) => formatQty((row as QueueLineDto).dispensedQuantity),
+                      },
+                      {
+                        key: 'status',
+                        header: 'Status',
+                        render: (row) => (
+                          <StatusBadge
+                            status={(row as QueueLineDto).status}
+                            tone={workflowTone((row as QueueLineDto).status)}
+                          />
+                        ),
+                      },
                     ]
               }
               empty={<EmptyState title="No medicines on this prescription" />}
@@ -643,8 +832,17 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
 
           {open && !entry.isInpatient && (
             <Section title="Counselling">
-              <Field label="Advice given to the patient" hint="Printed on the invoice, e.g. take after food, avoid alcohol, complete the course">
-                <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={2000} rows={2} disabled={!canDispense} />
+              <Field
+                label="Advice given to the patient"
+                hint="Printed on the invoice, e.g. take after food, avoid alcohol, complete the course"
+              >
+                <Textarea
+                  value={notes}
+                  onChange={(_, d) => setNotes(d.value)}
+                  maxLength={2000}
+                  rows={2}
+                  disabled={!canDispense}
+                />
               </Field>
             </Section>
           )}
@@ -657,8 +855,8 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                 <MessageBar intent="warning" layout="multiline" icon={<ShieldKeyholeRegular />}>
                   <MessageBarBody>
                     <MessageBarTitle>Controlled medicines</MessageBarTitle>
-                    {controlled.join(', ')}: Schedule H1/X or narcotic. They are written to the controlled-drug register with the patient, prescriber and
-                    registration number.
+                    {controlled.join(', ')}: Schedule H1/X or narcotic. They are written to the controlled-drug register
+                    with the patient, prescriber and registration number.
                   </MessageBarBody>
                 </MessageBar>
                 <Checkbox
@@ -688,7 +886,15 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                     validationState={discountInvalid ? 'error' : 'none'}
                     validationMessage={discountInvalid ? 'Enter 0 to 100' : undefined}
                   >
-                    <Input type="number" min={0} max={100} value={discount} placeholder="0" onChange={(_, d) => setDiscount(d.value)} disabled={!canDispense} />
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={discount}
+                      placeholder="0"
+                      onChange={(_, d) => setDiscount(d.value)}
+                      disabled={!canDispense}
+                    />
                   </Field>
                   <BillSummary totals={totals} discountPercent={discountPercent} />
                   <PaymentPanel
@@ -719,8 +925,15 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                     </MessageBarBody>
                   </MessageBar>
                 )}
-                {!canDispense && <Caption1>Your account can view this prescription but cannot {entry.isInpatient ? 'issue to the ward' : 'dispense'}.</Caption1>}
-                {canDispense && problems.length > 0 && active.length > 0 && <Caption1 className={styles.problem}>Fix the highlighted lines to continue.</Caption1>}
+                {!canDispense && (
+                  <Caption1>
+                    Your account can view this prescription but cannot{' '}
+                    {entry.isInpatient ? 'issue to the ward' : 'dispense'}.
+                  </Caption1>
+                )}
+                {canDispense && problems.length > 0 && active.length > 0 && (
+                  <Caption1 className={styles.problem}>Fix the highlighted lines to continue.</Caption1>
+                )}
                 <Button
                   appearance="primary"
                   size="large"
@@ -732,8 +945,16 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
                   {entry.isInpatient ? `Issue to ward (F9)` : `Dispense and bill ${formatInr(totals.net)} (F9)`}
                 </Button>
                 <div className={styles.row}>
-                  <Switch checked={prefs.autoPrintReceipt} onChange={(_, d) => setPrefs({ autoPrintReceipt: d.checked })} label="Print receipt" />
-                  <Switch checked={prefs.autoPrintLabels} onChange={(_, d) => setPrefs({ autoPrintLabels: d.checked })} label="Print labels" />
+                  <Switch
+                    checked={prefs.autoPrintReceipt}
+                    onChange={(_, d) => setPrefs({ autoPrintReceipt: d.checked })}
+                    label="Print receipt"
+                  />
+                  <Switch
+                    checked={prefs.autoPrintLabels}
+                    onChange={(_, d) => setPrefs({ autoPrintLabels: d.checked })}
+                    label="Print labels"
+                  />
                 </div>
               </div>
             </Section>
@@ -758,7 +979,12 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
       {dialog === 'authorize' && <AuthorizeRefillsDialog entry={entry} onClose={() => setDialog(null)} />}
       {dialog === 'request-refill' && <RequestRefillDialog entry={entry} onClose={() => setDialog(null)} />}
 
-      <Dialog open={done !== null} onOpenChange={(_, d) => !d.open && void navigate({ to: '/pharmacy/queue', search: { ip: entry.isInpatient || undefined } })}>
+      <Dialog
+        open={done !== null}
+        onOpenChange={(_, d) =>
+          !d.open && void navigate({ to: '/pharmacy/queue', search: { ip: entry.isInpatient || undefined } })
+        }
+      >
         <DialogSurface style={{ maxWidth: 520 }}>
           <DialogBody>
             <DialogTitle>{done?.kind === 'issue' ? 'Issued to the ward' : 'Dispensed'}</DialogTitle>
@@ -791,7 +1017,12 @@ function EntryScreen({ entry, working, refreshing }: { entry: QueueEntryDetail; 
               </Button>
               <Button
                 icon={<TagRegular />}
-                onClick={() => done && void printLabels(done.labels, letterhead.name).catch((error: unknown) => notify.error(error, 'The labels did not print'))}
+                onClick={() =>
+                  done &&
+                  void printLabels(done.labels, letterhead.name).catch((error: unknown) =>
+                    notify.error(error, 'The labels did not print'),
+                  )
+                }
               >
                 Print labels
               </Button>
@@ -818,7 +1049,9 @@ function DrugSummary({ line }: { line: QueueLineDto }) {
           </Badge>
         )}
       </span>
-      <Caption1 className={styles.muted}>{[line.genericName, line.strength, line.dosageForm].filter(Boolean).join(' · ')}</Caption1>
+      <Caption1 className={styles.muted}>
+        {[line.genericName, line.strength, line.dosageForm].filter(Boolean).join(' · ')}
+      </Caption1>
       <Caption1>{directionsText(line)}</Caption1>
     </div>
   );
@@ -881,8 +1114,8 @@ function SubstituteDialog({
           <DialogTitle>Give another product for {line.drugName}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 320 }}>
             <Caption1>
-              Prescribed: {[line.drugName, line.genericName, line.strength].filter(Boolean).join(' · ')}. Only a product with the same generic name and strength can be
-              given.
+              Prescribed: {[line.drugName, line.genericName, line.strength].filter(Boolean).join(' · ')}. Only a product
+              with the same generic name and strength can be given.
             </Caption1>
             <MedicineSearch
               storeId={storeId}
@@ -912,16 +1145,27 @@ function SubstituteDialog({
                 </Text>
                 {kind === 'not-equivalent' && (
                   <MessageBar intent="error">
-                    <MessageBarBody>This is a different generic or strength and cannot be given for this prescription.</MessageBarBody>
+                    <MessageBarBody>
+                      This is a different generic or strength and cannot be given for this prescription.
+                    </MessageBarBody>
                   </MessageBar>
                 )}
                 {kind === 'none' && <Caption1>Same generic as prescribed: no consent needed.</Caption1>}
                 {kind === 'substitution' && (
                   <>
                     <Field label="Reason for the substitution" required>
-                      <Input value={reason} maxLength={300} onChange={(_, d) => setReason(d.value)} placeholder="e.g. Prescribed brand out of stock" />
+                      <Input
+                        value={reason}
+                        maxLength={300}
+                        onChange={(_, d) => setReason(d.value)}
+                        placeholder="e.g. Prescribed brand out of stock"
+                      />
                     </Field>
-                    <Checkbox checked={consent} onChange={(_, d) => setConsent(d.checked === true)} label="The prescriber agreed to this substitution" />
+                    <Checkbox
+                      checked={consent}
+                      onChange={(_, d) => setConsent(d.checked === true)}
+                      label="The prescriber agreed to this substitution"
+                    />
                   </>
                 )}
               </div>
@@ -929,7 +1173,10 @@ function SubstituteDialog({
           </DialogContent>
           <DialogActions>
             {current?.substitute && (
-              <Button onClick={() => onChoose({ substitute: null, reason: '', consent: false })} disabled={!line.drugItemId}>
+              <Button
+                onClick={() => onChoose({ substitute: null, reason: '', consent: false })}
+                disabled={!line.drugItemId}
+              >
                 Give the prescribed item
               </Button>
             )}
@@ -986,14 +1233,20 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
   const today = todayIso();
   const minimum = Math.max(entry.refillsUsed, 1);
   const [refills, setRefills] = useState(String(Math.max(entry.refillsAuthorized, minimum)));
-  const [validUntil, setValidUntil] = useState(entry.refillValidUntil && entry.refillValidUntil > today ? entry.refillValidUntil : addDays(today, 90));
+  const [validUntil, setValidUntil] = useState(
+    entry.refillValidUntil && entry.refillValidUntil > today ? entry.refillValidUntil : addDays(today, 90),
+  );
   const [note, setNote] = useState('');
   const count = parseNumber(refills) ?? 0;
-  const valid = Number.isInteger(count) && count >= minimum && count <= 12 && validUntil > today && note.trim().length >= 3;
+  const valid =
+    Number.isInteger(count) && count >= minimum && count <= 12 && validUntil > today && note.trim().length >= 3;
   const save = useMutation({
     mutationFn: () => pharmacyApi.authorizeRefills(entry.id, { refills: count, validUntil, note: note.trim() }),
     onSuccess: () => {
-      notify.success(`${count} refill${count === 1 ? '' : 's'} authorised until ${formatDateOnly(validUntil)}`, 'The patient can now ask for a refill at the counter or on the portal.');
+      notify.success(
+        `${count} refill${count === 1 ? '' : 's'} authorised until ${formatDateOnly(validUntil)}`,
+        'The patient can now ask for a refill at the counter or on the portal.',
+      );
       void queryClient.invalidateQueries({ queryKey: ['pharmacy', 'queue', 'detail', entry.id] });
       onClose();
     },
@@ -1004,12 +1257,27 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
         <DialogBody>
           <DialogTitle>Authorise refills</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Caption1>For chronic medication only. Prescriptions with Schedule H1/X or narcotic medicines always need a new prescription.</Caption1>
+            <Caption1>
+              For chronic medication only. Prescriptions with Schedule H1/X or narcotic medicines always need a new
+              prescription.
+            </Caption1>
             <Field label="Number of refills" required hint={`Between ${minimum} and 12`}>
-              <Input type="number" min={minimum} max={12} value={refills} onChange={(_, d) => setRefills(d.value)} autoFocus />
+              <Input
+                type="number"
+                min={minimum}
+                max={12}
+                value={refills}
+                onChange={(_, d) => setRefills(d.value)}
+                autoFocus
+              />
             </Field>
             <Field label="Valid until" required>
-              <Input type="date" min={addDays(today, 1)} value={validUntil} onChange={(_, d) => setValidUntil(d.value)} />
+              <Input
+                type="date"
+                min={addDays(today, 1)}
+                value={validUntil}
+                onChange={(_, d) => setValidUntil(d.value)}
+              />
             </Field>
             <Field label="Authorised by" required hint='Record who authorised it, e.g. "Dr. Mehta, by phone, 25 Sep"'>
               <Input value={note} maxLength={300} onChange={(_, d) => setNote(d.value)} />
@@ -1041,9 +1309,17 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
   const [pickup, setPickup] = useState(today);
   const [notes, setNotes] = useState('');
   const request = useMutation({
-    mutationFn: () => pharmacyApi.requestRefill({ queueEntryId: entry.id, preferredPickupDate: pickup || null, notes: notes.trim() || null }),
+    mutationFn: () =>
+      pharmacyApi.requestRefill({
+        queueEntryId: entry.id,
+        preferredPickupDate: pickup || null,
+        notes: notes.trim() || null,
+      }),
     onSuccess: (result) => {
-      notify.success(`Refill request ${result.number} raised`, 'Approve it under Refill requests to put it in the queue.');
+      notify.success(
+        `Refill request ${result.number} raised`,
+        'Approve it under Refill requests to put it in the queue.',
+      );
       void queryClient.invalidateQueries({ queryKey: pharmacyKeys.refills });
       onClose();
     },
@@ -1055,7 +1331,13 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
           <DialogTitle>Request a refill</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <Field label="Preferred pickup date" hint="Within the next 30 days">
-              <Input type="date" min={today} max={addDays(today, 30)} value={pickup} onChange={(_, d) => setPickup(d.value)} />
+              <Input
+                type="date"
+                min={today}
+                max={addDays(today, 30)}
+                value={pickup}
+                onChange={(_, d) => setPickup(d.value)}
+              />
             </Field>
             <Field label="Notes">
               <Input value={notes} maxLength={500} onChange={(_, d) => setNotes(d.value)} />

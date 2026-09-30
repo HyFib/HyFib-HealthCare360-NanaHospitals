@@ -1,4 +1,14 @@
-import { makeStyles, mergeClasses, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, tokens } from '@fluentui/react-components';
+import {
+  makeStyles,
+  mergeClasses,
+  Table,
+  TableBody,
+  TableCell,
+  TableHeader,
+  TableHeaderCell,
+  TableRow,
+  tokens,
+} from '@fluentui/react-components';
 import type { ReactNode } from 'react';
 
 const useStyles = makeStyles({
@@ -46,14 +56,23 @@ export function LineTable<T>({
 }) {
   const styles = useStyles();
   const cellClass = (column: LineColumn<T>) =>
-    mergeClasses(styles.cell, column.align === 'end' && styles.end, column.align === 'center' && styles.center, column.priority === 'low' && styles.low);
+    mergeClasses(
+      styles.cell,
+      column.align === 'end' && styles.end,
+      column.align === 'center' && styles.center,
+      column.priority === 'low' && styles.low,
+    );
   return (
     <div className={styles.wrap}>
       <Table size="small" aria-label={ariaLabel}>
         <TableHeader>
           <TableRow>
             {columns.map((column) => (
-              <TableHeaderCell key={column.key} className={cellClass(column)} style={column.width ? { width: column.width } : undefined}>
+              <TableHeaderCell
+                key={column.key}
+                className={cellClass(column)}
+                style={column.width ? { width: column.width } : undefined}
+              >
                 {column.header}
               </TableHeaderCell>
             ))}

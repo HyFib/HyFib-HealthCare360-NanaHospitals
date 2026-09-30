@@ -11,19 +11,31 @@ import type {
 } from './api';
 
 /** Label, canonical unit (as stored by the server) and the units a nurse may type in (converted by the server). */
-export const readingTypeInfo: Record<RpmReadingType, { label: string; unit: string; inputUnits: string[]; plausible: { min: number; max: number } }> = {
+export const readingTypeInfo: Record<
+  RpmReadingType,
+  { label: string; unit: string; inputUnits: string[]; plausible: { min: number; max: number } }
+> = {
   SystolicBp: { label: 'Systolic BP', unit: 'mmHg', inputUnits: ['mmHg', 'kPa'], plausible: { min: 50, max: 300 } },
   DiastolicBp: { label: 'Diastolic BP', unit: 'mmHg', inputUnits: ['mmHg', 'kPa'], plausible: { min: 20, max: 200 } },
   HeartRate: { label: 'Heart rate', unit: 'bpm', inputUnits: ['bpm'], plausible: { min: 20, max: 300 } },
   SpO2: { label: 'SpO2', unit: '%', inputUnits: ['%'], plausible: { min: 50, max: 100 } },
-  Glucose: { label: 'Blood glucose', unit: 'mg/dL', inputUnits: ['mg/dL', 'mmol/L'], plausible: { min: 10, max: 1000 } },
+  Glucose: {
+    label: 'Blood glucose',
+    unit: 'mg/dL',
+    inputUnits: ['mg/dL', 'mmol/L'],
+    plausible: { min: 10, max: 1000 },
+  },
   Weight: { label: 'Weight', unit: 'kg', inputUnits: ['kg', 'lb'], plausible: { min: 0.5, max: 400 } },
   Temperature: { label: 'Temperature', unit: '°C', inputUnits: ['°C', '°F'], plausible: { min: 30, max: 45 } },
   EcgRhythm: { label: 'ECG rhythm', unit: 'class', inputUnits: ['class'], plausible: { min: 0, max: 2 } },
 };
 
 /** ECG readings are stored as a rhythm class. */
-export const ecgRhythmLabel: Record<number, string> = { 0: 'Normal sinus rhythm', 1: 'Needs review', 2: 'Atrial fibrillation or worse' };
+export const ecgRhythmLabel: Record<number, string> = {
+  0: 'Normal sinus rhythm',
+  1: 'Needs review',
+  2: 'Atrial fibrillation or worse',
+};
 
 export function formatReading(type: RpmReadingType, value: number | null, text?: string | null): string {
   if (type === 'EcgRhythm') {
@@ -88,4 +100,8 @@ export const severityText: Record<ReadingSeverity, { label: string; tone: Status
   Critical: { label: 'Critical', tone: 'danger' },
 };
 
-export const sourceLabel: Record<ReadingSource, string> = { Device: 'Device', Fhir: 'Health app (FHIR)', Manual: 'Entered by staff' };
+export const sourceLabel: Record<ReadingSource, string> = {
+  Device: 'Device',
+  Fhir: 'Health app (FHIR)',
+  Manual: 'Entered by staff',
+};

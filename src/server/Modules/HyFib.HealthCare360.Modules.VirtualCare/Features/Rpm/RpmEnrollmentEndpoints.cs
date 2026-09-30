@@ -132,8 +132,21 @@ internal static class RpmEnrollmentEndpoints
                 orderby critical descending, open descending, e.LastReadingAt descending
                 select new
                 {
-                    e.Id, e.PatientId, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, e.ProgramId, ProgramName = pg.Name, pg.Kind, e.Status,
-                    e.StartDate, e.EndDate, e.LastReadingAt, Open = open, Critical = critical,
+                    e.Id,
+                    e.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    e.ProgramId,
+                    ProgramName = pg.Name,
+                    pg.Kind,
+                    e.Status,
+                    e.StartDate,
+                    e.EndDate,
+                    e.LastReadingAt,
+                    Open = open,
+                    Critical = critical,
                 })
             .ToPagedResultAsync(page, ct);
 

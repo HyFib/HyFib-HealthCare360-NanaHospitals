@@ -29,7 +29,9 @@ import { usePharmacyLive } from '@/modules/pharmacy/counter';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 
 export const Route = createFileRoute('/_app/pharmacy/')({
-  validateSearch: (s: Record<string, unknown>): { storeId?: string } => ({ storeId: typeof s.storeId === 'string' && s.storeId ? s.storeId : undefined }),
+  validateSearch: (s: Record<string, unknown>): { storeId?: string } => ({
+    storeId: typeof s.storeId === 'string' && s.storeId ? s.storeId : undefined,
+  }),
   component: PharmacyDashboardPage,
 });
 
@@ -82,7 +84,11 @@ function PharmacyDashboardPage() {
               </Button>
             )}
             {canDispense && (
-              <Button appearance="primary" icon={<PillRegular />} onClick={() => void navigate({ to: '/pharmacy/queue' })}>
+              <Button
+                appearance="primary"
+                icon={<PillRegular />}
+                onClick={() => void navigate({ to: '/pharmacy/queue' })}
+              >
                 Dispensing queue
               </Button>
             )}
@@ -95,7 +101,12 @@ function PharmacyDashboardPage() {
       ) : (
         <>
           <div className={styles.kpis}>
-            <KpiCard label="OP prescriptions waiting" value={value(d?.pendingOutpatient)} icon={<PeopleQueueRegular />} onClick={() => void navigate({ to: '/pharmacy/queue' })} />
+            <KpiCard
+              label="OP prescriptions waiting"
+              value={value(d?.pendingOutpatient)}
+              icon={<PeopleQueueRegular />}
+              onClick={() => void navigate({ to: '/pharmacy/queue' })}
+            />
             <KpiCard
               label="IP prescriptions"
               value={value(d?.pendingInpatient)}
@@ -103,9 +114,24 @@ function PharmacyDashboardPage() {
               hint="To issue to the wards"
               onClick={() => void navigate({ to: '/pharmacy/queue', search: { ip: true } })}
             />
-            <KpiCard label="Partly dispensed" value={value(d?.partiallyDispensed)} icon={<HourglassHalfRegular />} hint="Balance still to supply" />
-            <KpiCard label="Ward indents" value={value(d?.pendingWardIndents)} icon={<ClipboardTaskListLtrRegular />} onClick={() => void navigate({ to: '/pharmacy/ward-indents' })} />
-            <KpiCard label="Refill requests" value={value(d?.pendingRefills)} icon={<ArrowRepeatAllRegular />} onClick={() => void navigate({ to: '/pharmacy/refills' })} />
+            <KpiCard
+              label="Partly dispensed"
+              value={value(d?.partiallyDispensed)}
+              icon={<HourglassHalfRegular />}
+              hint="Balance still to supply"
+            />
+            <KpiCard
+              label="Ward indents"
+              value={value(d?.pendingWardIndents)}
+              icon={<ClipboardTaskListLtrRegular />}
+              onClick={() => void navigate({ to: '/pharmacy/ward-indents' })}
+            />
+            <KpiCard
+              label="Refill requests"
+              value={value(d?.pendingRefills)}
+              icon={<ArrowRepeatAllRegular />}
+              onClick={() => void navigate({ to: '/pharmacy/refills' })}
+            />
             <KpiCard
               label="Average wait"
               value={d ? (d.averageWaitMinutes === null ? '—' : `${Math.round(d.averageWaitMinutes)} min`) : '…'}
@@ -116,7 +142,11 @@ function PharmacyDashboardPage() {
               label="Sales today"
               value={d ? formatInr(d.salesAmountToday, { whole: true }) : '…'}
               icon={<ReceiptMoneyRegular />}
-              hint={d ? `${d.salesToday} invoices${d.refundsToday > 0 ? ` · refunds ${formatInr(d.refundsToday)}` : ''}` : undefined}
+              hint={
+                d
+                  ? `${d.salesToday} invoices${d.refundsToday > 0 ? ` · refunds ${formatInr(d.refundsToday)}` : ''}`
+                  : undefined
+              }
               onClick={canSell ? () => void navigate({ to: '/pharmacy/sales' }) : undefined}
             />
             <KpiCard
@@ -182,13 +212,25 @@ function ModeChart({ dashboard }: { dashboard: PharmacyDashboard }) {
       tooltip: { trigger: 'axis', valueFormatter: (v) => formatInr(Number(v)) },
       xAxis: { type: 'value', axisLabel: { formatter: (v: number) => `₹${v.toLocaleString('en-IN')}` } },
       yAxis: { type: 'category', data: dashboard.byMode.map((m) => `${paymentModeLabel[m.mode]} (${m.count})`) },
-      series: [{ type: 'bar', name: 'Received', data: dashboard.byMode.map((m) => m.amount), barMaxWidth: 28, label: { show: true, position: 'right', formatter: (p) => formatInr(Number(p.value)) } }],
+      series: [
+        {
+          type: 'bar',
+          name: 'Received',
+          data: dashboard.byMode.map((m) => m.amount),
+          barMaxWidth: 28,
+          label: { show: true, position: 'right', formatter: (p) => formatInr(Number(p.value)) },
+        },
+      ],
     }),
     [dashboard],
   );
   return (
     <div>
-      <EChart option={option} height={Math.max(140, dashboard.byMode.length * 48 + 40)} ariaLabel="Takings today by payment mode" />
+      <EChart
+        option={option}
+        height={Math.max(140, dashboard.byMode.length * 48 + 40)}
+        ariaLabel="Takings today by payment mode"
+      />
       <Caption1>
         <MoneyRegular /> Total received {formatInr(sumNumbers(dashboard.byMode.map((m) => m.amount)))}
       </Caption1>

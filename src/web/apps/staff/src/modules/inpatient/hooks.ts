@@ -65,17 +65,28 @@ export function useInpatientRealtime(): void {
   const invalidate = useThrottledInvalidate();
 
   useRealtimeEvent(facilityId ? `beds:${facilityId}` : null, 'beds.changed', () => {
-    invalidate(inpatientKeys.boardAll, inpatientKeys.occupancy, ['inpatient', 'available'], ['inpatient', 'housekeeping'], ['inpatient', 'beds'], ['inpatient', 'wards']);
-  });
-
-  useRealtimeEvent<{ admissionId?: string }>(facilityId ? `facility:${facilityId}` : null, 'admissions.changed', (payload) => {
     invalidate(
-      inpatientKeys.admissionsAll,
-      ['inpatient', 'pending-discharges'],
-      ['inpatient', 'patient-admissions'],
-      ...(payload?.admissionId ? [inpatientKeys.admission(payload.admissionId)] : []),
+      inpatientKeys.boardAll,
+      inpatientKeys.occupancy,
+      ['inpatient', 'available'],
+      ['inpatient', 'housekeeping'],
+      ['inpatient', 'beds'],
+      ['inpatient', 'wards'],
     );
   });
+
+  useRealtimeEvent<{ admissionId?: string }>(
+    facilityId ? `facility:${facilityId}` : null,
+    'admissions.changed',
+    (payload) => {
+      invalidate(
+        inpatientKeys.admissionsAll,
+        ['inpatient', 'pending-discharges'],
+        ['inpatient', 'patient-admissions'],
+        ...(payload?.admissionId ? [inpatientKeys.admission(payload.admissionId)] : []),
+      );
+    },
+  );
 
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'inpatient.discharge_initiated', () => {
     invalidate(['inpatient', 'pending-discharges']);

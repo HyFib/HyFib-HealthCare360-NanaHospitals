@@ -20,9 +20,21 @@ import { Patient360Link } from '@/modules/crm/Patient360Link';
 import { feedbackApi, feedbackKeys, feedbackQueries, type ComplaintDetail } from '@/modules/feedback/api';
 import { ComplaintStatusBadge, PriorityBadge } from '@/modules/feedback/badges';
 import { ComplaintEditDialog } from '@/modules/feedback/ComplaintEditDialog';
-import { categoryLabel, complaintSourceLabel, FEEDBACK_PERMISSIONS as F, type ComplaintStatus } from '@/modules/feedback/labels';
+import {
+  categoryLabel,
+  complaintSourceLabel,
+  FEEDBACK_PERMISSIONS as F,
+  type ComplaintStatus,
+} from '@/modules/feedback/labels';
 import { ResponseDrawer } from '@/modules/feedback/ResponseDrawer';
-import { complaintMoveLabel, complaintMoves, complaintNoteRequired, deadlineText, SLA_HOURS, turnaroundText } from '@/modules/feedback/rules';
+import {
+  complaintMoveLabel,
+  complaintMoves,
+  complaintNoteRequired,
+  deadlineText,
+  SLA_HOURS,
+  turnaroundText,
+} from '@/modules/feedback/rules';
 import { Detail, DetailGrid } from '@/modules/hr/shared/DetailGrid';
 import { MainAside, Stack } from '@/modules/hr/shared/layout';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -58,7 +70,11 @@ function ComplaintPage() {
     return (
       <Page>
         <PageHeader title="Complaint" icon={<ChatMultipleRegular />} breadcrumbs={crumbs} />
-        {complaint.error ? <ErrorState error={complaint.error} onRetry={() => void complaint.refetch()} /> : <LoadingState />}
+        {complaint.error ? (
+          <ErrorState error={complaint.error} onRetry={() => void complaint.refetch()} />
+        ) : (
+          <LoadingState />
+        )}
       </Page>
     );
   }
@@ -81,13 +97,20 @@ function ComplaintView({
   const departments = useDepartments();
   const canReadFeedback = usePermission(F.read);
   const canReadPatient = usePermission('patients.read');
-  const patient = useQuery({ ...patientQueries.detail(c.patientId ?? ''), enabled: Boolean(c.patientId) && canReadPatient, retry: false, staleTime: 5 * 60_000 });
+  const patient = useQuery({
+    ...patientQueries.detail(c.patientId ?? ''),
+    enabled: Boolean(c.patientId) && canReadPatient,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
   const [moving, setMoving] = useState<ComplaintStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [responseOpen, setResponseOpen] = useState(false);
 
-  const department = c.departmentId ? (departments.data?.find((d) => d.id === c.departmentId)?.name ?? 'Other department') : null;
+  const department = c.departmentId
+    ? (departments.data?.find((d) => d.id === c.departmentId)?.name ?? 'Other department')
+    : null;
   const open = c.status === 'Open' || c.status === 'InProgress';
   const due = deadlineText(c.dueAt, fetchedAt);
   const turnaround = c.resolvedAt ? (Date.parse(c.resolvedAt) - Date.parse(c.raisedAt)) / 3_600_000 : null;
@@ -99,7 +122,13 @@ function ComplaintView({
     try {
       await feedbackApi.changeComplaintStatus(c.id, to, note);
       notify.success(
-        to === 'Resolved' ? 'Complaint resolved' : to === 'Closed' ? 'Complaint closed' : c.status === 'Resolved' ? 'Complaint reopened' : 'Handling started',
+        to === 'Resolved'
+          ? 'Complaint resolved'
+          : to === 'Closed'
+            ? 'Complaint closed'
+            : c.status === 'Resolved'
+              ? 'Complaint reopened'
+              : 'Handling started',
         to === 'Resolved' && turnaroundTextFor(c) ? `Turnaround ${turnaroundTextFor(c)}.` : undefined,
       );
       setMoving(null);
@@ -107,7 +136,10 @@ function ComplaintView({
       void queryClient.invalidateQueries({ queryKey: feedbackKeys.analytics });
     } catch (error) {
       if (isApiError(error) && error.code === 'complaint.invalid_transition') {
-        notify.warning('The complaint has moved on', 'Someone else changed its stage. The latest details have been loaded.');
+        notify.warning(
+          'The complaint has moved on',
+          'Someone else changed its stage. The latest details have been loaded.',
+        );
         setMoving(null);
         refresh();
       } else {
@@ -122,7 +154,13 @@ function ComplaintView({
     if (!me) return;
     setBusy(true);
     try {
-      await feedbackApi.updateComplaint(c.id, { ownerUserId: me.id, priority: c.priority, departmentId: c.departmentId, category: c.category, version: c.version });
+      await feedbackApi.updateComplaint(c.id, {
+        ownerUserId: me.id,
+        priority: c.priority,
+        departmentId: c.departmentId,
+        category: c.category,
+        version: c.version,
+      });
       notify.success('You own this complaint now');
       refresh();
     } catch (error) {
@@ -156,7 +194,8 @@ function ComplaintView({
               </Button>
             )}
             {moves.map((to) => {
-              const primary = (c.status === 'Resolved' && to === 'Closed') || (c.status !== 'Resolved' && to === 'Resolved');
+              const primary =
+                (c.status === 'Resolved' && to === 'Closed') || (c.status !== 'Resolved' && to === 'Resolved');
               return (
                 <Button
                   key={to}
@@ -195,7 +234,9 @@ function ComplaintView({
           )}
           {c.status === 'Resolved' && (
             <MessageBar intent="info">
-              <MessageBarBody>Close the complaint once the complainant is satisfied, or reopen it if the problem is not fixed.</MessageBarBody>
+              <MessageBarBody>
+                Close the complaint once the complainant is satisfied, or reopen it if the problem is not fixed.
+              </MessageBarBody>
             </MessageBar>
           )}
         </Stack>
@@ -204,7 +245,9 @@ function ComplaintView({
             <DetailGrid minColumnWidth={160}>
               {open ? (
                 <Detail label="Resolve by">
-                  <span style={{ color: due.overdue ? tokens.colorPaletteRedForeground1 : undefined, fontWeight: 600 }}>{due.text}</span>
+                  <span style={{ color: due.overdue ? tokens.colorPaletteRedForeground1 : undefined, fontWeight: 600 }}>
+                    {due.text}
+                  </span>
                   <Caption1 block>{formatDateTime(c.dueAt)}</Caption1>
                 </Detail>
               ) : (
@@ -212,7 +255,9 @@ function ComplaintView({
               )}
               <Detail label="Allowed">{SLA_HOURS[c.priority]} hours</Detail>
               {c.closedAt && <Detail label="Closed">{formatDateTime(c.closedAt)}</Detail>}
-              {c.reopenCount > 0 && <Detail label="Reopened">{c.reopenCount === 1 ? 'Once' : `${c.reopenCount} times`}</Detail>}
+              {c.reopenCount > 0 && (
+                <Detail label="Reopened">{c.reopenCount === 1 ? 'Once' : `${c.reopenCount} times`}</Detail>
+              )}
             </DetailGrid>
           </Section>
           <Section
@@ -237,13 +282,17 @@ function ComplaintView({
               {c.patientId && (
                 <Detail label="Patient" wide>
                   <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Text>{patient.data ? `${patient.data.fullName} · ${patient.data.uhid}` : 'Registered patient'}</Text>
+                    <Text>
+                      {patient.data ? `${patient.data.fullName} · ${patient.data.uhid}` : 'Registered patient'}
+                    </Text>
                     <Patient360Link patientId={c.patientId} size="small" appearance="subtle" />
                   </span>
                 </Detail>
               )}
             </DetailGrid>
-            {!c.contactPhone && !c.patientId && <Caption1>No contact details were recorded (for example an anonymous QR response).</Caption1>}
+            {!c.contactPhone && !c.patientId && (
+              <Caption1>No contact details were recorded (for example an anonymous QR response).</Caption1>
+            )}
           </Section>
         </Stack>
       </MainAside>

@@ -42,8 +42,10 @@ export function emptyAnswers(contactPhone = ''): FeedbackAnswers {
   return { ratings: {}, nps: null, comment: '', wantsCallback: false, contactPhone };
 }
 
-const isRating = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
-const isNps = (value: number | null | undefined): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
+const isRating = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5;
+const isNps = (value: number | null | undefined): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 10;
 
 /** At least one question answered (the server's rule: a rating, a score or a comment). */
 export function hasAnswer(answers: FeedbackAnswers, questions: FeedbackQuestions): boolean {
@@ -85,7 +87,10 @@ export function toFeedbackRequest(answers: FeedbackAnswers, questions: FeedbackQ
 }
 
 /** Field problems before sending (message keys); empty when the answers can be sent. */
-export function checkAnswers(answers: FeedbackAnswers, questions: FeedbackQuestions): Partial<Record<'form' | 'comment' | 'contactPhone', MessageKey>> {
+export function checkAnswers(
+  answers: FeedbackAnswers,
+  questions: FeedbackQuestions,
+): Partial<Record<'form' | 'comment' | 'contactPhone', MessageKey>> {
   const problems: Partial<Record<'form' | 'comment' | 'contactPhone', MessageKey>> = {};
   if (!hasAnswer(answers, questions)) {
     problems.form = 'feedback.empty';

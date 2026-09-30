@@ -1,4 +1,15 @@
-import { Button, Field, makeStyles, MessageBar, MessageBarBody, MessageBarTitle, Skeleton, SkeletonItem, Text, Textarea } from '@fluentui/react-components';
+import {
+  Button,
+  Field,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
+  Skeleton,
+  SkeletonItem,
+  Text,
+  Textarea,
+} from '@fluentui/react-components';
 import { formatDateTime, humanize } from '@hc360/core';
 import { ErrorState, Page, Section, useNotify, type PatientBannerData } from '@hc360/ui';
 import { useMutation } from '@tanstack/react-query';
@@ -17,7 +28,9 @@ const useStyles = makeStyles({
 
 /** "Penicillin (anaphylaxis)" — severity is shown for the reactions that matter most. */
 function allergyText(allergy: PatientClinicalSummary['allergies'][number]): string {
-  return allergy.severity === 'Severe' || allergy.severity === 'Anaphylaxis' ? `${allergy.allergen} (${allergy.severity.toLowerCase()})` : allergy.allergen;
+  return allergy.severity === 'Severe' || allergy.severity === 'Anaphylaxis'
+    ? `${allergy.allergen} (${allergy.severity.toLowerCase()})`
+    : allergy.allergen;
 }
 
 function bannerData(summary: PatientClinicalSummary): PatientBannerData {
@@ -44,7 +57,9 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
  * (sticky) on the chart and the encounter workspace.
  */
 export function ClinicalBanner({ summary, actions }: { summary: PatientClinicalSummary; actions?: ReactNode }) {
-  return <PatientBannerWithPhoto patient={bannerData(summary)} photoFileId={summary.patient.photoFileId} actions={actions} />;
+  return (
+    <PatientBannerWithPhoto patient={bannerData(summary)} photoFileId={summary.patient.photoFileId} actions={actions} />
+  );
 }
 
 export function BannerSkeleton() {
@@ -63,7 +78,15 @@ export function BannerSkeleton() {
 }
 
 /** Error screen for chart loads: restricted records offer audited emergency access, anything else a retry. */
-export function ChartLoadError({ patientId, error, onRetry }: { patientId: string; error: unknown; onRetry: () => void }) {
+export function ChartLoadError({
+  patientId,
+  error,
+  onRetry,
+}: {
+  patientId: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
   if (isRestricted(error)) {
     return <BreakGlass patientId={patientId} onGranted={onRetry} />;
   }
@@ -95,16 +118,25 @@ function BreakGlass({ patientId, onGranted }: { patientId: string; onGranted: ()
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
               <MessageBarTitle>Access to this patient's clinical record is restricted</MessageBarTitle>
-              Use emergency access only when it is clinically necessary. Your name, the reason and every screen you open are recorded and reviewed.
+              Use emergency access only when it is clinically necessary. Your name, the reason and every screen you open
+              are recorded and reviewed.
             </MessageBarBody>
           </MessageBar>
           {canBreakGlass ? (
             <>
-              <Field label="Reason for emergency access" required hint="At least 15 characters, for example: unconscious patient in casualty, needs allergy history">
+              <Field
+                label="Reason for emergency access"
+                required
+                hint="At least 15 characters, for example: unconscious patient in casualty, needs allergy history"
+              >
                 <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} />
               </Field>
               <div>
-                <Button appearance="primary" disabled={reason.trim().length < 15 || request.isPending} onClick={() => request.mutate()}>
+                <Button
+                  appearance="primary"
+                  disabled={reason.trim().length < 15 || request.isPending}
+                  onClick={() => request.mutate()}
+                >
                   Request emergency access
                 </Button>
               </div>

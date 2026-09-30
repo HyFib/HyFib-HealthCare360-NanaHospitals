@@ -11,8 +11,17 @@ const useStyles = makeStyles({
   },
   single: { '@media (min-width: 600px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
   item: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
-  label: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200, lineHeight: tokens.lineHeightBase200 },
-  value: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400, overflowWrap: 'anywhere' },
+  label: {
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
+  value: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+    overflowWrap: 'anywhere',
+  },
 });
 
 export interface InfoItem {
@@ -25,7 +34,9 @@ export interface InfoItem {
 /** Label/value pairs as a description list (read correctly by screen readers), two columns on wider screens. */
 export function InfoList({ items, singleColumn }: { items: InfoItem[]; singleColumn?: boolean }) {
   const styles = useStyles();
-  const visible = items.filter((item) => !(item.hideEmpty && (item.value === null || item.value === undefined || item.value === '')));
+  const visible = items.filter(
+    (item) => !(item.hideEmpty && (item.value === null || item.value === undefined || item.value === '')),
+  );
   return (
     <dl className={mergeClasses(styles.list, singleColumn && styles.single)}>
       {visible.map((item, index) => (

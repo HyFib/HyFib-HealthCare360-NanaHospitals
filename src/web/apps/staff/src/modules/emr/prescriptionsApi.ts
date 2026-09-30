@@ -121,7 +121,14 @@ export interface PrescriptionPrintModel {
   signedAt: string | null;
   letterhead: FacilityLetterhead | null;
   prescriber: PrescriberInfo | null;
-  patient: { id: string; uhid: string; name: string; age: string | null; gender: Gender; preferredLanguage: string | null };
+  patient: {
+    id: string;
+    uhid: string;
+    name: string;
+    age: string | null;
+    gender: Gender;
+    preferredLanguage: string | null;
+  };
   diagnoses: string[];
   knownAllergies: string[];
   lines: PrescriptionPrintLine[];
@@ -227,9 +234,11 @@ export interface PrescriptionListParams {
 }
 
 export const prescriptionKeys = {
-  list: (patientId: string, params: PrescriptionListParams) => ['emr', 'patient', patientId, 'prescriptions', params] as const,
+  list: (patientId: string, params: PrescriptionListParams) =>
+    ['emr', 'patient', patientId, 'prescriptions', params] as const,
   detail: (id: string) => ['emr', 'prescription', id] as const,
-  interactions: (search: string, severity: InteractionSeverity | null, page: number) => ['emr', 'drug-interactions', search, severity ?? 'all', page] as const,
+  interactions: (search: string, severity: InteractionSeverity | null, page: number) =>
+    ['emr', 'drug-interactions', search, severity ?? 'all', page] as const,
   doseLimits: () => ['emr', 'dose-limits'] as const,
   register: (from: string, to: string, page: number) => ['emr', 'controlled-register', from, to, page] as const,
   drugs: (search: string) => ['emr', 'drugs', search] as const,
@@ -270,24 +279,31 @@ export const prescriptionQueries = {
     queryOptions({
       queryKey: prescriptionKeys.register(from, to, page),
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ControlledDrugRegisterDto>>('/api/v1/clinical/controlled-drug-register', { query: { from, to, page, pageSize: 25 }, signal }),
+        api.get<PagedResult<ControlledDrugRegisterDto>>('/api/v1/clinical/controlled-drug-register', {
+          query: { from, to, page, pageSize: 25 },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   /** Prescriber drug search (needs `clinical.prescriptions.write`), with the facility's pharmacy stock. */
   drugs: (search: string) =>
     queryOptions({
       queryKey: prescriptionKeys.drugs(search),
-      queryFn: ({ signal }) => api.get<PrescribableDrug[]>('/api/v1/emr/drugs', { query: { search, take: 15 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PrescribableDrug[]>('/api/v1/emr/drugs', { query: { search, take: 15 }, signal }),
       staleTime: 60_000,
     }),
 };
 
 export const prescriptionsApi = {
   create: (request: CreatePrescriptionRequest) => api.post<PrescriptionDto>('/api/v1/clinical/prescriptions', request),
-  update: (id: string, request: UpdatePrescriptionRequest) => api.put<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}`, request),
+  update: (id: string, request: UpdatePrescriptionRequest) =>
+    api.put<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}`, request),
   check: (id: string) => api.post<SafetyCheckResponse>(`/api/v1/clinical/prescriptions/${id}/check`),
-  sign: (id: string, request: SignPrescriptionRequest) => api.post<SignPrescriptionResult>(`/api/v1/clinical/prescriptions/${id}/sign`, request),
-  cancel: (id: string, reason: string) => api.post<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}/cancel`, { reason }),
+  sign: (id: string, request: SignPrescriptionRequest) =>
+    api.post<SignPrescriptionResult>(`/api/v1/clinical/prescriptions/${id}/sign`, request),
+  cancel: (id: string, reason: string) =>
+    api.post<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}/cancel`, { reason }),
   repeat: (id: string) => api.post<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}/repeat`),
   refill: (id: string, request: Omit<SignPrescriptionRequest, 'version'>) =>
     api.post<SignPrescriptionResult>(`/api/v1/clinical/prescriptions/${id}/refill`, request),
@@ -296,7 +312,11 @@ export const prescriptionsApi = {
 
 export const safetyTablesApi = {
   saveInteraction: (id: string | null, request: SaveDrugInteractionRequest) =>
-    id ? api.put<DrugInteractionDto>(`/api/v1/clinical/drug-interactions/${id}`, request) : api.post<DrugInteractionDto>('/api/v1/clinical/drug-interactions', request),
+    id
+      ? api.put<DrugInteractionDto>(`/api/v1/clinical/drug-interactions/${id}`, request)
+      : api.post<DrugInteractionDto>('/api/v1/clinical/drug-interactions', request),
   saveDoseLimit: (id: string | null, request: SaveDoseLimitRequest) =>
-    id ? api.put<DoseLimitDto>(`/api/v1/clinical/dose-limits/${id}`, request) : api.post<DoseLimitDto>('/api/v1/clinical/dose-limits', request),
+    id
+      ? api.put<DoseLimitDto>(`/api/v1/clinical/dose-limits/${id}`, request)
+      : api.post<DoseLimitDto>('/api/v1/clinical/dose-limits', request),
 };

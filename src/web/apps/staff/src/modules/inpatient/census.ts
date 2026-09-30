@@ -28,10 +28,12 @@ export function presetRange(preset: CensusPreset, today: string): { from: string
 
 /** The preset a range matches, if any (to highlight the right button). */
 export function matchPreset(from: string, to: string, today: string): CensusPreset | null {
-  return CENSUS_PRESETS.find((p) => {
-    const range = presetRange(p.value, today);
-    return range.from === from && range.to === to;
-  })?.value ?? null;
+  return (
+    CENSUS_PRESETS.find((p) => {
+      const range = presetRange(p.value, today);
+      return range.from === from && range.to === to;
+    })?.value ?? null
+  );
 }
 
 /**
@@ -62,7 +64,10 @@ export interface DailyPoint {
 
 /** Period totals of transfers between wards (hospital-level census has none; sum the ward rows). */
 export function sumTransfers(days: readonly DailyPoint[]): { transfersIn: number; transfersOut: number } {
-  return days.reduce((sum, d) => ({ transfersIn: sum.transfersIn + d.transfersIn, transfersOut: sum.transfersOut + d.transfersOut }), { transfersIn: 0, transfersOut: 0 });
+  return days.reduce(
+    (sum, d) => ({ transfersIn: sum.transfersIn + d.transfersIn, transfersOut: sum.transfersOut + d.transfersOut }),
+    { transfersIn: 0, transfersOut: 0 },
+  );
 }
 
 /** "2026-09-26" → "26 Sep" for chart axes (no time zone involved). */
@@ -71,5 +76,7 @@ export function shortDate(date: string): string {
   if (!year || !month || !day) {
     return date;
   }
-  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(Date.UTC(year, month - 1, day));
+  return new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+    Date.UTC(year, month - 1, day),
+  );
 }

@@ -15,7 +15,12 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowSyncRegular, DocumentEditRegular, ImageMultipleRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import {
+  ArrowSyncRegular,
+  DocumentEditRegular,
+  ImageMultipleRegular,
+  MoreHorizontalRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatTime, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,7 +31,17 @@ import { DateRangeFields } from '@/modules/lab/common/DateRangeFields';
 import { useDiagnosticsLive } from '@/modules/lab/common/live';
 import { searchDate, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
 import { PriorityBadge } from '@/modules/lab/badges';
-import { MODALITIES, RADIOLOGY_PERMISSIONS, radiologyApi, radiologyKeys, radiologyQueries, STUDY_STATUSES, type ImagingStudyListItem, type ImagingStudyStatus, type Modality } from '@/modules/radiology/api';
+import {
+  MODALITIES,
+  RADIOLOGY_PERMISSIONS,
+  radiologyApi,
+  radiologyKeys,
+  radiologyQueries,
+  STUDY_STATUSES,
+  type ImagingStudyListItem,
+  type ImagingStudyStatus,
+  type Modality,
+} from '@/modules/radiology/api';
 import { DiagnosticReportBadge, ModalityBadge, StudyFlags, StudyStatusBadge } from '@/modules/radiology/badges';
 import { modalityLabel, studyStatusLabel } from '@/modules/radiology/labels';
 import { useStudyActions } from '@/modules/radiology/useStudyActions';
@@ -80,18 +95,34 @@ function ImagingWorklistPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const studies = useQuery(radiologyQueries.studies({ modality: search.modality, status: search.status, from: search.from, to: search.to, search: search.search, page: search.page }));
-  const set = (patch: Partial<StudiesSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const studies = useQuery(
+    radiologyQueries.studies({
+      modality: search.modality,
+      status: search.status,
+      from: search.from,
+      to: search.to,
+      search: search.search,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<StudiesSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
 
   const reconcileAll = useMutation({
     mutationFn: () => radiologyApi.reconcileRecent(),
     onSuccess: (summary) => {
-      notify.success(`${summary.linked} of ${summary.checked} studies linked to their images`, summary.messages.slice(0, 3).join(' · ') || undefined);
+      notify.success(
+        `${summary.linked} of ${summary.checked} studies linked to their images`,
+        summary.messages.slice(0, 3).join(' · ') || undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: radiologyKeys.all });
     },
     onError: (error) => notify.error(error, 'PACS could not be checked'),
@@ -101,16 +132,28 @@ function ImagingWorklistPage() {
     <Page>
       <PageHeader
         title="Imaging worklist"
-        subtitle={search.from && search.from !== today ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}` : "Today's studies, live"}
+        subtitle={
+          search.from && search.from !== today
+            ? `From ${formatDate(search.from)}${search.to && search.to !== search.from ? ` to ${formatDate(search.to)}` : ''}`
+            : "Today's studies, live"
+        }
         actions={
           <>
             <Can permission={[RADIOLOGY_PERMISSIONS.write, RADIOLOGY_PERMISSIONS.verify]}>
-              <Button appearance="primary" icon={<DocumentEditRegular />} onClick={() => void navigate({ to: '/radiology/reporting' })}>
+              <Button
+                appearance="primary"
+                icon={<DocumentEditRegular />}
+                onClick={() => void navigate({ to: '/radiology/reporting' })}
+              >
                 Reporting worklist
               </Button>
             </Can>
             {canWork && (
-              <Button icon={<ArrowSyncRegular />} disabled={reconcileAll.isPending} onClick={() => reconcileAll.mutate()}>
+              <Button
+                icon={<ArrowSyncRegular />}
+                disabled={reconcileAll.isPending}
+                onClick={() => reconcileAll.mutate()}
+              >
                 Check PACS for images
               </Button>
             )}
@@ -118,7 +161,10 @@ function ImagingWorklistPage() {
         }
       />
 
-      <TabList selectedValue={search.modality ?? 'all'} onTabSelect={(_, data) => set({ modality: data.value === 'all' ? undefined : (data.value as Modality) })}>
+      <TabList
+        selectedValue={search.modality ?? 'all'}
+        onTabSelect={(_, data) => set({ modality: data.value === 'all' ? undefined : (data.value as Modality) })}
+      >
         <Tab value="all">All</Tab>
         {MODALITIES.map((modality) => (
           <Tab key={modality} value={modality}>
@@ -131,11 +177,23 @@ function ImagingWorklistPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 240px' }}>
-              <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Accession, UHID, name or mobile" autoFocus />
+              <SearchBox
+                value={term}
+                onChange={(_, data) => setTerm(data.value)}
+                placeholder="Accession, UHID, name or mobile"
+                autoFocus
+              />
             </Field>
-            <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => set(range)} allowFuture />
+            <DateRangeFields
+              value={{ from: search.from, to: search.to }}
+              onChange={(range) => set(range)}
+              allowFuture
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, data) => set({ status: (data.value || undefined) as ImagingStudyStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, data) => set({ status: (data.value || undefined) as ImagingStudyStatus | undefined })}
+              >
                 <option value="">All</option>
                 {STUDY_STATUSES.map((value) => (
                   <option key={value} value={value}>
@@ -199,23 +257,53 @@ function ImagingWorklistPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', width: 160, render: (study: ImagingStudyListItem) => <StudyStatusBadge status={study.status} /> },
-            { key: 'report', header: 'Report', width: 150, priority: 'low', render: (study: ImagingStudyListItem) => <DiagnosticReportBadge status={study.reportStatus} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 160,
+              render: (study: ImagingStudyListItem) => <StudyStatusBadge status={study.status} />,
+            },
+            {
+              key: 'report',
+              header: 'Report',
+              width: 150,
+              priority: 'low',
+              render: (study: ImagingStudyListItem) => <DiagnosticReportBadge status={study.reportStatus} />,
+            },
           ]}
           rowActions={(study: ImagingStudyListItem) => {
             const next = canWork ? nextStudyAction(study.status) : null;
-            const ref = { id: study.id, studyName: study.studyName, patientName: study.patientName, status: study.status, scheduledAt: study.scheduledAt, room: study.room };
-            const others = canWork ? studyActions(study.status).filter((action) => action !== next && action !== 'report') : [];
+            const ref = {
+              id: study.id,
+              studyName: study.studyName,
+              patientName: study.patientName,
+              status: study.status,
+              scheduledAt: study.scheduledAt,
+              room: study.room,
+            };
+            const others = canWork
+              ? studyActions(study.status).filter((action) => action !== next && action !== 'report')
+              : [];
             return (
               <span className={styles.actions}>
                 {next && (
-                  <Button size="small" appearance="primary" disabled={actions.busy} onClick={() => actions.run(next, ref)}>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    disabled={actions.busy}
+                    onClick={() => actions.run(next, ref)}
+                  >
                     {studyActionLabel[next]}
                   </Button>
                 )}
                 <Menu>
                   <MenuTrigger disableButtonEnhancement>
-                    <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More for ${study.studyName}, ${study.patientName}`} />
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<MoreHorizontalRegular />}
+                      aria-label={`More for ${study.studyName}, ${study.patientName}`}
+                    />
                   </MenuTrigger>
                   <MenuPopover>
                     <MenuList>

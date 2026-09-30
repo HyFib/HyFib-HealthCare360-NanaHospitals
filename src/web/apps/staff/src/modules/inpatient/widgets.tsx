@@ -1,4 +1,13 @@
-import { Button, Caption1, makeStyles, ProgressBar, Skeleton, SkeletonItem, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  ProgressBar,
+  Skeleton,
+  SkeletonItem,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { ArrowExitRegular, BedRegular, ChevronRightRegular } from '@fluentui/react-icons';
 import { ErrorState, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -14,7 +23,11 @@ const useStyles = makeStyles({
   full: { gridColumn: '1 / -1' },
   muted: { color: tokens.colorNeutralForeground3 },
   total: { display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' },
-  big: { fontSize: tokens.fontSizeHero700, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero700 },
+  big: {
+    fontSize: tokens.fontSizeHero700,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero700,
+  },
   item: {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) auto',
@@ -52,7 +65,9 @@ export function WardOccupancyWidget() {
   const occupancy = useQuery(inpatientQueries.occupancy());
 
   const report = occupancy.data;
-  const wards = [...(report?.wards ?? [])].filter((w) => w.counts.total > 0).sort((a, b) => b.counts.occupancyPercent - a.counts.occupancyPercent);
+  const wards = [...(report?.wards ?? [])]
+    .filter((w) => w.counts.total > 0)
+    .sort((a, b) => b.counts.occupancyPercent - a.counts.occupancyPercent);
   const shown = wards.slice(0, 8);
 
   return (
@@ -60,7 +75,12 @@ export function WardOccupancyWidget() {
       title="Ward occupancy"
       description="Live. Blocked and maintenance beds are not counted as in service."
       actions={
-        <Button size="small" appearance="subtle" icon={<BedRegular />} onClick={() => void navigate({ to: '/inpatient/beds' })}>
+        <Button
+          size="small"
+          appearance="subtle"
+          icon={<BedRegular />}
+          onClick={() => void navigate({ to: '/inpatient/beds' })}
+        >
           Bed board
         </Button>
       }
@@ -74,7 +94,8 @@ export function WardOccupancyWidget() {
           <div className={styles.total}>
             <span className={styles.big}>{report.total.occupancyPercent}%</span>
             <Text>
-              {report.total.occupied} of {report.total.operational} beds occupied · <strong>{report.total.vacant} vacant</strong>
+              {report.total.occupied} of {report.total.operational} beds occupied ·{' '}
+              <strong>{report.total.vacant} vacant</strong>
               {report.total.cleaning > 0 ? ` · ${report.total.cleaning} being cleaned` : ''}
             </Text>
           </div>
@@ -86,7 +107,8 @@ export function WardOccupancyWidget() {
                 <div key={ward.wardId} className={styles.row}>
                   <Text weight="semibold">{ward.name}</Text>
                   <Caption1>
-                    {ward.counts.occupied}/{ward.counts.operational} · {ward.counts.vacant} vacant · {ward.counts.occupancyPercent}%
+                    {ward.counts.occupied}/{ward.counts.operational} · {ward.counts.vacant} vacant ·{' '}
+                    {ward.counts.occupancyPercent}%
                   </Caption1>
                   <div className={styles.full}>
                     <ProgressBar
@@ -119,17 +141,27 @@ export function PendingDischargesWidget() {
   const items = pending.data ?? [];
 
   return (
-    <Section title="Pending discharges" description={pending.data ? `${items.length} waiting for billing clearance` : 'Discharges in progress'}>
+    <Section
+      title="Pending discharges"
+      description={pending.data ? `${items.length} waiting for billing clearance` : 'Discharges in progress'}
+    >
       {pending.error ? (
         <ErrorState error={pending.error} onRetry={() => void pending.refetch()} />
       ) : !pending.data ? (
         <Loading />
       ) : items.length === 0 ? (
-        <Text className={styles.muted}>No discharges in progress. Started discharges appear here until they are completed.</Text>
+        <Text className={styles.muted}>
+          No discharges in progress. Started discharges appear here until they are completed.
+        </Text>
       ) : (
         <div className={styles.rows} style={{ gap: 2 }}>
           {items.slice(0, 6).map((item) => (
-            <Link key={item.admissionId} to="/inpatient/admissions/$admissionId" params={{ admissionId: item.admissionId }} className={styles.item}>
+            <Link
+              key={item.admissionId}
+              to="/inpatient/admissions/$admissionId"
+              params={{ admissionId: item.admissionId }}
+              className={styles.item}
+            >
               <Text weight="semibold">{item.patientName}</Text>
               <Caption1 className={item.waitingMinutes >= 180 ? styles.late : undefined}>
                 <ArrowExitRegular aria-hidden /> {formatDuration(item.waitingMinutes)}

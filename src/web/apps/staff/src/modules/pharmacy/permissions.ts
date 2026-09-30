@@ -19,7 +19,11 @@ export const COUNTER_STAFF = [
 ] as const;
 
 /** Readers of the e-prescription queue. */
-export const QUEUE_READERS = [PHARMACY_PERMISSIONS.queueRead, PHARMACY_PERMISSIONS.dispense, PHARMACY_PERMISSIONS.ipIssue] as const;
+export const QUEUE_READERS = [
+  PHARMACY_PERMISSIONS.queueRead,
+  PHARMACY_PERMISSIONS.dispense,
+  PHARMACY_PERMISSIONS.ipIssue,
+] as const;
 
 /** Readers of ward indents and IP issues. */
 export const IP_READERS = [PHARMACY_PERMISSIONS.ipIssue, PHARMACY_PERMISSIONS.ipIndent] as const;

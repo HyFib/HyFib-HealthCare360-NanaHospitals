@@ -11,10 +11,28 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DeleteRegular, DocumentArrowLeftRegular, DropRegular, InfoRegular, SaveRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DeleteRegular,
+  DocumentArrowLeftRegular,
+  DropRegular,
+  InfoRegular,
+  SaveRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, formatRelative, useHotkey } from '@hc360/core';
-import { applyServerErrors, ChoiceField, FormGrid, LookupField, Page, PageHeader, Section, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  FormGrid,
+  LookupField,
+  Page,
+  PageHeader,
+  Section,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -23,7 +41,15 @@ import { z } from 'zod';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
-import { CONTAINER_TYPES, LAB_PERMISSIONS, LAB_SECTIONS, labApi, labKeys, type LabOrderCreated, type LabTestListItem } from '@/modules/lab/api';
+import {
+  CONTAINER_TYPES,
+  LAB_PERMISSIONS,
+  LAB_SECTIONS,
+  labApi,
+  labKeys,
+  type LabOrderCreated,
+  type LabTestListItem,
+} from '@/modules/lab/api';
 import { TubeChip } from '@/modules/lab/badges';
 import { searchId } from '@/modules/lab/common/search';
 import { sectionLabel } from '@/modules/lab/labels';
@@ -61,7 +87,11 @@ const schema = z
   })
   .superRefine((values, ctx) => {
     if (!values.patient) {
-      ctx.addIssue({ code: 'custom', path: ['patient'], message: 'Find the patient by UHID, mobile or name. Register new patients first.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['patient'],
+        message: 'Find the patient by UHID, mobile or name. Register new patients first.',
+      });
     }
     if (values.tests.length === 0) {
       ctx.addIssue({ code: 'custom', path: ['tests'], message: 'Add at least one test.' });
@@ -70,7 +100,11 @@ const schema = z
       ctx.addIssue({ code: 'custom', path: ['tests'], message: 'At most 50 tests per order.' });
     }
     if (values.source === 'OutsideReferral' && !values.referringDoctorName) {
-      ctx.addIssue({ code: 'custom', path: ['referringDoctorName'], message: 'Enter the referring doctor for an outside referral.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['referringDoctorName'],
+        message: 'Enter the referring doctor for an outside referral.',
+      });
     }
   });
 
@@ -127,7 +161,12 @@ const useStyles = makeStyles({
   total: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' },
   amount: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   done: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  accession: { fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold, color: tokens.colorBrandForeground1 },
+  accession: {
+    fontFamily: tokens.fontFamilyMonospace,
+    fontSize: tokens.fontSizeBase600,
+    fontWeight: tokens.fontWeightSemibold,
+    color: tokens.colorBrandForeground1,
+  },
   tube: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
@@ -159,7 +198,10 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
   const queryClient = useQueryClient();
   const canCollect = usePermission(LAB_PERMISSIONS.collect);
   const [created, setCreated] = useState<{ order: LabOrderCreated; patientName: string } | null>(null);
-  const form = useForm<OrderValues>({ resolver: zodResolver(schema), defaultValues: { ...EMPTY, patient: initialPatient } });
+  const form = useForm<OrderValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { ...EMPTY, patient: initialPatient },
+  });
   const draft = useFormDraft(form, 'lab-order-new');
   const [tests, source] = useWatch({ control: form.control, name: ['tests', 'source'] });
   const total = tests.reduce((sum, test) => sum + (test.price ?? 0), 0);
@@ -198,18 +240,27 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
     const { order } = created;
     return (
       <Page maxWidth={900}>
-        <PageHeader title="Lab order placed" subtitle={created.patientName} breadcrumbs={[{ label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) }, { label: 'New order' }]} />
+        <PageHeader
+          title="Lab order placed"
+          subtitle={created.patientName}
+          breadcrumbs={[
+            { label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) },
+            { label: 'New order' },
+          ]}
+        />
         <Section>
           <div className={styles.done} role="status">
             <span>
-              <CheckmarkCircleRegular fontSize={28} color={tokens.colorPaletteGreenForeground1} /> <Text size={400}>Accession number</Text>
+              <CheckmarkCircleRegular fontSize={28} color={tokens.colorPaletteGreenForeground1} />{' '}
+              <Text size={400}>Accession number</Text>
             </span>
             <span className={styles.accession}>{order.accessionNumber}</span>
             {order.chargeWarnings.length > 0 && (
               <MessageBar intent="warning" layout="multiline">
                 <MessageBarBody>
                   <MessageBarTitle>Some charges were not posted to the bill</MessageBarTitle>
-                  {order.chargeWarnings.join(' · ')}. The tests are booked; retry the charges from the order once billing is available.
+                  {order.chargeWarnings.join(' · ')}. The tests are booked; retry the charges from the order once
+                  billing is available.
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -222,19 +273,29 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                 <Text>{sample.tests.join(', ')}</Text>
               </div>
             ))}
-            <Caption1 className={styles.muted}>Out-patients and walk-ins pay at the billing counter before the sample is drawn.</Caption1>
+            <Caption1 className={styles.muted}>
+              Out-patients and walk-ins pay at the billing counter before the sample is drawn.
+            </Caption1>
             <div className={styles.actions}>
               {canCollect && (
                 <Button
                   appearance="primary"
                   icon={<DropRegular />}
                   autoFocus
-                  onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: order.id }, search: { collect: true } })}
+                  onClick={() =>
+                    void navigate({
+                      to: '/lab/orders/$orderId',
+                      params: { orderId: order.id },
+                      search: { collect: true },
+                    })
+                  }
                 >
                   Collect samples now
                 </Button>
               )}
-              <Button onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: order.id } })}>Open the order</Button>
+              <Button onClick={() => void navigate({ to: '/lab/orders/$orderId', params: { orderId: order.id } })}>
+                Open the order
+              </Button>
               <Button
                 appearance="subtle"
                 onClick={() => {
@@ -256,12 +317,18 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
       <PageHeader
         title="New lab order"
         subtitle="Walk-in and outside-referral patients. Type a test and press Enter to add it; Ctrl+S places the order."
-        breadcrumbs={[{ label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) }, { label: 'New order' }]}
+        breadcrumbs={[
+          { label: 'Lab orders', onClick: () => void navigate({ to: '/lab/orders' }) },
+          { label: 'New order' },
+        ]}
       />
 
       {draft.saved && (
         <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-          <MessageBarBody>An order that was not placed ({formatRelative(new Date(draft.saved.savedAt).toISOString())}) was found on this computer.</MessageBarBody>
+          <MessageBarBody>
+            An order that was not placed ({formatRelative(new Date(draft.saved.savedAt).toISOString())}) was found on
+            this computer.
+          </MessageBarBody>
           <MessageBarActions>
             <Button onClick={draft.restore}>Restore it</Button>
             <Button appearance="subtle" onClick={draft.discard}>
@@ -279,7 +346,13 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                 control={form.control}
                 name="patient"
                 render={({ field, fieldState }) => (
-                  <PatientPicker value={field.value} onChange={field.onChange} required validationMessage={fieldState.error?.message} hint="New patient? Register them first, then come back." />
+                  <PatientPicker
+                    value={field.value}
+                    onChange={field.onChange}
+                    required
+                    validationMessage={fieldState.error?.message}
+                    hint="New patient? Register them first, then come back."
+                  />
                 )}
               />
             </Section>
@@ -300,7 +373,8 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                         {field.value.map((test) => (
                           <li key={test.id} className={styles.test}>
                             <span>
-                              <Text weight="semibold">{test.name}</Text> <Caption1 className={styles.muted}>{test.code}</Caption1>
+                              <Text weight="semibold">{test.name}</Text>{' '}
+                              <Caption1 className={styles.muted}>{test.code}</Caption1>
                             </span>
                             <Text>{test.price === null ? '—' : formatInr(test.price, { whole: true })}</Text>
                             <Button
@@ -345,7 +419,14 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                   ]}
                 />
                 {source === 'OutsideReferral' && (
-                  <TextField control={form.control} name="referringDoctorName" label="Referring doctor" required placeholder="e.g. Dr. R. Kulkarni, Kothrud" maxLength={200} />
+                  <TextField
+                    control={form.control}
+                    name="referringDoctorName"
+                    label="Referring doctor"
+                    required
+                    placeholder="e.g. Dr. R. Kulkarni, Kothrud"
+                    maxLength={200}
+                  />
                 )}
                 <LookupField
                   control={form.control}
@@ -356,7 +437,14 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                 />
               </FormGrid>
               <div style={{ height: 12 }} />
-              <TextAreaField control={form.control} name="clinicalNotes" label="Clinical notes for the lab" rows={2} maxLength={1000} placeholder="e.g. Fever for 5 days, on antibiotics" />
+              <TextAreaField
+                control={form.control}
+                name="clinicalNotes"
+                label="Clinical notes for the lab"
+                rows={2}
+                maxLength={1000}
+                placeholder="e.g. Fever for 5 days, on antibiotics"
+              />
             </Section>
           </div>
 
@@ -369,8 +457,8 @@ function OrderForm({ initialPatient }: { initialPatient: OrderValues['patient'] 
                 <span className={styles.amount}>{formatInr(total, { whole: true })}</span>
               </div>
               <Caption1 className={styles.muted} block>
-                Estimate at list prices{unpriced ? `; ${unpriced} without a price` : ''}. Diagnostic services are exempt from GST. The bill is made at the billing
-                counter.
+                Estimate at list prices{unpriced ? `; ${unpriced} without a price` : ''}. Diagnostic services are exempt
+                from GST. The bill is made at the billing counter.
               </Caption1>
               {preparation.length > 0 && (
                 <>

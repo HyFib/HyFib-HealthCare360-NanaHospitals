@@ -19,12 +19,23 @@ const SECTIONS: { title: MessageKey; items: MessageKey[] }[] = [
   { title: 'privacy.share.title', items: ['privacy.share.body'] },
   { title: 'privacy.keep.title', items: ['privacy.keep.body'] },
   { title: 'privacy.family.title', items: ['privacy.family.body'] },
-  { title: 'privacy.rights.title', items: ['privacy.rights.1', 'privacy.rights.2', 'privacy.rights.3', 'privacy.rights.4'] },
+  {
+    title: 'privacy.rights.title',
+    items: ['privacy.rights.1', 'privacy.rights.2', 'privacy.rights.3', 'privacy.rights.4'],
+  },
 ];
 
 const useStyles = makeStyles({
   intro: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
-  list: { margin: 0, paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
+  list: {
+    margin: 0,
+    paddingLeft: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    fontSize: tokens.fontSizeBase400,
+    lineHeight: tokens.lineHeightBase400,
+  },
   text: { margin: 0, fontSize: tokens.fontSizeBase400, lineHeight: tokens.lineHeightBase400 },
   links: { display: 'flex', flexWrap: 'wrap', gap: '8px 20px' },
 });

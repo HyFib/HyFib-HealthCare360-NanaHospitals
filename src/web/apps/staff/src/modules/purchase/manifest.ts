@@ -9,11 +9,36 @@ const manifest: ModuleManifest = {
   icon: VehicleTruckProfileRegular,
   order: 30,
   links: [
-    { label: 'Purchase overview', to: '/purchase', permission: PURCHASE_READERS, keywords: ['procurement', 'approvals'] },
-    { label: 'Requisitions', to: '/purchase/requisitions', permission: PURCHASE_READERS, keywords: ['purchase request', 'reorder', 'pr'] },
-    { label: 'Purchase orders', to: '/purchase/orders', permission: PURCHASE_READERS, keywords: ['po', 'order', 'vendor order'] },
-    { label: 'Goods receipts', to: '/purchase/grns', permission: PURCHASE_READERS, keywords: ['grn', 'inward', 'vendor invoice', 'receive'] },
-    { label: 'Vendors', to: '/purchase/vendors', permission: VENDOR_READERS, keywords: ['supplier', 'gstin', 'drug licence'] },
+    {
+      label: 'Purchase overview',
+      to: '/purchase',
+      permission: PURCHASE_READERS,
+      keywords: ['procurement', 'approvals'],
+    },
+    {
+      label: 'Requisitions',
+      to: '/purchase/requisitions',
+      permission: PURCHASE_READERS,
+      keywords: ['purchase request', 'reorder', 'pr'],
+    },
+    {
+      label: 'Purchase orders',
+      to: '/purchase/orders',
+      permission: PURCHASE_READERS,
+      keywords: ['po', 'order', 'vendor order'],
+    },
+    {
+      label: 'Goods receipts',
+      to: '/purchase/grns',
+      permission: PURCHASE_READERS,
+      keywords: ['grn', 'inward', 'vendor invoice', 'receive'],
+    },
+    {
+      label: 'Vendors',
+      to: '/purchase/vendors',
+      permission: VENDOR_READERS,
+      keywords: ['supplier', 'gstin', 'drug licence'],
+    },
   ],
   quickActions: [
     {

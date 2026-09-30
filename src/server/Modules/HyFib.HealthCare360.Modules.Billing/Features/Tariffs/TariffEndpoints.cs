@@ -44,7 +44,15 @@ internal static class TariffEndpoints
             .OrderByDescending(p => p.IsDefault).ThenBy(p => p.Name)
             .Select(p => new
             {
-                p.Id, p.Code, p.Name, p.Type, p.PayerId, p.FacilityId, p.DefaultDiscountPercent, p.IsDefault, p.IsActive,
+                p.Id,
+                p.Code,
+                p.Name,
+                p.Type,
+                p.PayerId,
+                p.FacilityId,
+                p.DefaultDiscountPercent,
+                p.IsDefault,
+                p.IsActive,
                 PayerName = db.Set<Payer>().Where(x => x.Id == p.PayerId).Select(x => x.Name).FirstOrDefault(),
                 PriceCount = db.Set<TariffPrice>().Count(x => x.TariffPlanId == p.Id),
             })

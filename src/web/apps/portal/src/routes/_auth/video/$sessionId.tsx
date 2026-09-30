@@ -32,7 +32,11 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
   waitIcon: { fontSize: '40px', color: tokens.colorBrandForeground1 },
-  countdown: { fontSize: tokens.fontSizeHero800, fontWeight: tokens.fontWeightSemibold, fontVariantNumeric: 'tabular-nums' },
+  countdown: {
+    fontSize: tokens.fontSizeHero800,
+    fontWeight: tokens.fontWeightSemibold,
+    fontVariantNumeric: 'tabular-nums',
+  },
   muted: { margin: 0, color: tokens.colorNeutralForeground2 },
 });
 
@@ -46,7 +50,8 @@ function VideoSessionPage() {
     ...videoQueries.joinInfo(profile.id, sessionId),
     enabled: isGuid(sessionId),
     // Poll only while waiting for the join window; once joinable, nothing may disturb the call on screen.
-    refetchInterval: (query) => (query.state.data && !query.state.data.canJoinNow && !isClosedSession(query.state.data.status) ? 30_000 : false),
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.canJoinNow && !isClosedSession(query.state.data.status) ? 30_000 : false,
   });
   const waiting = info.data ? !info.data.canJoinNow && !isClosedSession(info.data.status) : false;
   const now = useNow(1000, waiting);
@@ -72,7 +77,11 @@ function VideoSessionPage() {
 
   const session = info.data;
   const title = t('video.call.label', { doctor: session.practitionerName });
-  const subtitle = [session.departmentName, `${f.dateLong(session.scheduledStartAt)}, ${f.time(session.scheduledStartAt)}`, t('common.forPerson', { name: session.patientName })]
+  const subtitle = [
+    session.departmentName,
+    `${f.dateLong(session.scheduledStartAt)}, ${f.time(session.scheduledStartAt)}`,
+    t('common.forPerson', { name: session.patientName }),
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -80,12 +89,20 @@ function VideoSessionPage() {
     <PortalPage title={title} subtitle={subtitle} back={back} width="wide">
       {isClosedSession(session.status) ? (
         <Notice intent={session.status === 'Completed' ? 'success' : 'warning'}>
-          {t(session.status === 'Cancelled' ? 'video.ended.cancelled' : session.status === 'Missed' ? 'video.ended.missed' : 'video.ended.body')}
+          {t(
+            session.status === 'Cancelled'
+              ? 'video.ended.cancelled'
+              : session.status === 'Missed'
+                ? 'video.ended.missed'
+                : 'video.ended.body',
+          )}
         </Notice>
       ) : !session.canJoinNow ? (
         <div className={styles.wait} role="status">
           <ClockRegular className={styles.waitIcon} aria-hidden />
-          <span className={styles.countdown}>{formatCountdown(Math.max(0, Date.parse(session.joinOpensAt) - now))}</span>
+          <span className={styles.countdown}>
+            {formatCountdown(Math.max(0, Date.parse(session.joinOpensAt) - now))}
+          </span>
           <p className={styles.muted}>{t('video.opensAt', { time: f.dateTime(session.joinOpensAt) })}</p>
         </div>
       ) : (

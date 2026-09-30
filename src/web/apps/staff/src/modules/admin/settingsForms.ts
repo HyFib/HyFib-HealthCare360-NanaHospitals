@@ -14,7 +14,8 @@ import type { IntegrationName } from './integrationsApi';
  * Everything here is pure and unit-tested; `SettingsForm.tsx` renders it.
  */
 
-export type FieldKind = 'text' | 'url' | 'email' | 'number' | 'switch' | 'select' | 'textarea' | 'list' | 'map' | 'json';
+export type FieldKind =
+  'text' | 'url' | 'email' | 'number' | 'switch' | 'select' | 'textarea' | 'list' | 'map' | 'json';
 
 export interface FieldCondition {
   /** Id of the controlling field (see `fieldId`). */
@@ -191,7 +192,14 @@ function toFieldValue(field: SettingField, raw: unknown): FormValue {
       }
       return typeof raw === 'string' && raw.trim() && Number.isFinite(Number(raw)) ? Number(raw) : null;
     case 'list':
-      return Array.isArray(raw) ? raw.filter((item) => item !== null && item !== undefined).map(String).join('\n') : typeof raw === 'string' ? raw : '';
+      return Array.isArray(raw)
+        ? raw
+            .filter((item) => item !== null && item !== undefined)
+            .map(String)
+            .join('\n')
+        : typeof raw === 'string'
+          ? raw
+          : '';
     case 'map':
       return isPlainObject(raw)
         ? Object.entries(raw)
@@ -240,7 +248,9 @@ export function urlProblem(text: string, httpsOnly: boolean): string | null {
   try {
     url = new URL(text);
   } catch {
-    return httpsOnly ? 'Enter a full address starting with https://' : 'Enter a full address starting with http:// or https://';
+    return httpsOnly
+      ? 'Enter a full address starting with https://'
+      : 'Enter a full address starting with http:// or https://';
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
     return 'Use an http:// or https:// address.';
@@ -285,7 +295,9 @@ export function parseFieldValue(field: SettingField, raw: FormValue | undefined)
       }
       if (field.numeric) {
         const numbers = items.map(Number);
-        return numbers.some((number) => !Number.isInteger(number)) ? fail('Use whole numbers, one per line.') : ok(numbers);
+        return numbers.some((number) => !Number.isInteger(number))
+          ? fail('Use whole numbers, one per line.')
+          : ok(numbers);
       }
       return ok(items);
     }
@@ -333,7 +345,14 @@ export function parseFieldValue(field: SettingField, raw: FormValue | undefined)
     }
 
     default: {
-      const text = typeof raw === 'string' ? (field.keepSpaces ? raw : raw.trim()) : raw === null || raw === undefined ? '' : String(raw);
+      const text =
+        typeof raw === 'string'
+          ? field.keepSpaces
+            ? raw
+            : raw.trim()
+          : raw === null || raw === undefined
+            ? ''
+            : String(raw);
       if (!text.trim()) {
         return ok(undefined);
       }
@@ -406,7 +425,11 @@ export function validateSettings(spec: SettingsSpec, values: FormValues): Record
  * changed. Fields that are hidden or cannot be parsed keep their stored value; server defaults that were never stored
  * are not written.
  */
-export function buildSettingChanges(spec: SettingsSpec, values: FormValues, stored: Record<string, unknown>): { key: string; value: unknown }[] {
+export function buildSettingChanges(
+  spec: SettingsSpec,
+  values: FormValues,
+  stored: Record<string, unknown>,
+): { key: string; value: unknown }[] {
   const next = new Map<string, unknown>(specKeys(spec).map((key) => [key, cloneJson(stored[key])]));
   for (const field of spec.fields) {
     const parsed = parseFieldValue(field, values[fieldId(field)]);
@@ -443,7 +466,10 @@ export function buildSettingChanges(spec: SettingsSpec, values: FormValues, stor
 }
 
 /** Secrets to replace: each secret key whose Replace switch is on, with the credentials that were typed. */
-export function buildSecretChanges(spec: SettingsSpec, values: FormValues): { key: string; value: Record<string, string> }[] {
+export function buildSecretChanges(
+  spec: SettingsSpec,
+  values: FormValues,
+): { key: string; value: Record<string, string> }[] {
   return specSecretKeys(spec)
     .filter((key) => values[replaceFlagId(key)] === true)
     .map((key) => {
@@ -469,7 +495,12 @@ export interface ScopedSettings {
   secretStatus: Record<string, SecretStatus>;
 }
 
-export function scopedSettings(rows: readonly SettingRow[], spec: SettingsSpec, scope: Scope, facilityId: string | null): ScopedSettings {
+export function scopedSettings(
+  rows: readonly SettingRow[],
+  spec: SettingsSpec,
+  scope: Scope,
+  facilityId: string | null,
+): ScopedSettings {
   const target = scope === 'facility' ? facilityId : null;
   const own = (key: string) => rows.find((row) => row.key === key && (row.facilityId ?? null) === target);
   const global = (key: string) => rows.find((row) => row.key === key && row.facilityId === null);
@@ -489,7 +520,11 @@ export function scopedSettings(rows: readonly SettingRow[], spec: SettingsSpec, 
   }
   const secretStatus: Record<string, SecretStatus> = {};
   for (const key of specSecretKeys(spec)) {
-    secretStatus[key] = own(key)?.hasValue ? 'set' : scope === 'facility' && global(key)?.hasValue ? 'inherited' : 'not-set';
+    secretStatus[key] = own(key)?.hasValue
+      ? 'set'
+      : scope === 'facility' && global(key)?.hasValue
+        ? 'inherited'
+        : 'not-set';
   }
   return { stored, inherited, secretStatus };
 }
@@ -505,7 +540,10 @@ export function defaultScope(rows: readonly SettingRow[], spec: SettingsSpec, fa
 
 // ---------------------------------------------------------------------------------------------------- the forms
 
-const when = (key: string, path: string | undefined, ...values: string[]): FieldCondition => ({ field: fieldId({ key, path }), values });
+const when = (key: string, path: string | undefined, ...values: string[]): FieldCondition => ({
+  field: fieldId({ key, path }),
+  values,
+});
 const switchedOn = (key: string): FieldCondition => when(key, 'enabled', 'true');
 
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,32}$/;
@@ -543,7 +581,12 @@ export function checkInstruments(value: unknown): string | null {
     if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
       return `Analyser ${code}: "port" must be a number from 1 to 65535.`;
     }
-    if (protocol !== undefined && !(typeof protocol === 'string' && /^(hl7v2|astm)$/i.test(protocol)) && protocol !== 0 && protocol !== 1) {
+    if (
+      protocol !== undefined &&
+      !(typeof protocol === 'string' && /^(hl7v2|astm)$/i.test(protocol)) &&
+      protocol !== 0 &&
+      protocol !== 1
+    ) {
       return `Analyser ${code}: "protocol" must be Hl7v2 or Astm.`;
     }
     if (codes.has(code)) {
@@ -565,11 +608,18 @@ const smsBy = (...providers: string[]) => when(SMS, 'provider', ...providers);
 const smsSpec: SettingsSpec = {
   id: 'sms',
   title: 'SMS',
-  intro: 'Reminders, OTPs, bills and reports by SMS. Indian routes need TRAI DLT registration: each message template carries its approved DLT template id.',
+  intro:
+    'Reminders, OTPs, bills and reports by SMS. Indian routes need TRAI DLT registration: each message template carries its approved DLT template id.',
   prefix: SMS,
   backgroundUsesGlobal: true,
   fields: [
-    { key: SMS, path: 'enabled', label: 'Send SMS', kind: 'switch', hint: 'Turn off to stop all SMS without losing these settings.' },
+    {
+      key: SMS,
+      path: 'enabled',
+      label: 'Send SMS',
+      kind: 'switch',
+      hint: 'Turn off to stop all SMS without losing these settings.',
+    },
     {
       key: SMS,
       path: 'provider',
@@ -583,9 +633,33 @@ const smsSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(SMS),
     },
-    { key: SMS, path: 'senderId', label: 'Sender id (header)', kind: 'text', placeholder: 'NANAHS', maxLength: 11, hint: 'The TRAI-registered header patients see.' },
-    { key: SMS, path: 'dltEntityId', label: 'DLT entity id', kind: 'text', maxLength: 30, hint: 'Your principal entity id from the DLT portal.' },
-    { key: SMS, path: 'msg91.baseUrl', label: 'MSG91 address', kind: 'url', https: true, placeholder: 'https://control.msg91.com', when: smsBy('msg91'), group: 'MSG91' },
+    {
+      key: SMS,
+      path: 'senderId',
+      label: 'Sender id (header)',
+      kind: 'text',
+      placeholder: 'NANAHS',
+      maxLength: 11,
+      hint: 'The TRAI-registered header patients see.',
+    },
+    {
+      key: SMS,
+      path: 'dltEntityId',
+      label: 'DLT entity id',
+      kind: 'text',
+      maxLength: 30,
+      hint: 'Your principal entity id from the DLT portal.',
+    },
+    {
+      key: SMS,
+      path: 'msg91.baseUrl',
+      label: 'MSG91 address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://control.msg91.com',
+      when: smsBy('msg91'),
+      group: 'MSG91',
+    },
     {
       key: SMS,
       path: 'msg91.templateIds',
@@ -603,10 +677,43 @@ const smsSpec: SettingsSpec = {
       hint: 'When a message cannot be matched to its template, send the whole text in this MSG91 variable. Leave empty to refuse instead.',
     },
     { key: SMS, path: 'msg91.shortUrl', label: 'Shorten links with MSG91', kind: 'switch', when: smsBy('msg91') },
-    { key: SMS, path: 'twilio.baseUrl', label: 'Twilio address', kind: 'url', https: true, placeholder: 'https://api.twilio.com', when: smsBy('twilio'), group: 'Twilio' },
-    { key: SMS, path: 'twilio.accountSid', label: 'Account SID', kind: 'text', when: smsBy('twilio'), pattern: { regex: /^AC[0-9a-fA-F]{32}$/, message: 'A Twilio account SID starts with AC followed by 32 letters and digits.' } },
-    { key: SMS, path: 'twilio.from', label: 'From number', kind: 'text', placeholder: '+14155550100', when: smsBy('twilio'), hint: 'In international format. Or use a messaging service below.' },
-    { key: SMS, path: 'twilio.messagingServiceSid', label: 'Messaging service SID', kind: 'text', when: smsBy('twilio') },
+    {
+      key: SMS,
+      path: 'twilio.baseUrl',
+      label: 'Twilio address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://api.twilio.com',
+      when: smsBy('twilio'),
+      group: 'Twilio',
+    },
+    {
+      key: SMS,
+      path: 'twilio.accountSid',
+      label: 'Account SID',
+      kind: 'text',
+      when: smsBy('twilio'),
+      pattern: {
+        regex: /^AC[0-9a-fA-F]{32}$/,
+        message: 'A Twilio account SID starts with AC followed by 32 letters and digits.',
+      },
+    },
+    {
+      key: SMS,
+      path: 'twilio.from',
+      label: 'From number',
+      kind: 'text',
+      placeholder: '+14155550100',
+      when: smsBy('twilio'),
+      hint: 'In international format. Or use a messaging service below.',
+    },
+    {
+      key: SMS,
+      path: 'twilio.messagingServiceSid',
+      label: 'Messaging service SID',
+      kind: 'text',
+      when: smsBy('twilio'),
+    },
     {
       key: SMS,
       path: 'twilio.statusCallbackUrl',
@@ -637,20 +744,83 @@ const smsSpec: SettingsSpec = {
       ],
       when: smsBy('generic'),
     },
-    { key: SMS, path: 'generic.contentType', label: 'Content type', kind: 'text', placeholder: 'application/json', when: smsBy('generic') },
-    { key: SMS, path: 'generic.bodyTemplate', label: 'Request body', kind: 'textarea', when: smsBy('generic'), hint: 'Uses the same placeholders as the address.' },
-    { key: SMS, path: 'generic.headers', label: 'Extra headers (name = value)', kind: 'map', when: smsBy('generic'), hint: 'Not for keys: the API key goes in the credentials.' },
-    { key: SMS, path: 'generic.apiKeyHeader', label: 'API key header', kind: 'text', placeholder: 'Authorization', when: smsBy('generic') },
-    { key: SMS, path: 'generic.apiKeyPrefix', label: 'API key prefix', kind: 'text', placeholder: 'Bearer ', keepSpaces: true, when: smsBy('generic'), hint: 'Include the space, e.g. “Bearer ”.' },
-    { key: SMS, path: 'generic.messageIdPath', label: 'Message id in the reply', kind: 'text', placeholder: 'data.id', when: smsBy('generic') },
-    { key: SMS, path: 'generic.successContains', label: 'A successful reply contains', kind: 'text', when: smsBy('generic'), hint: 'For gateways that answer OK even when sending failed.' },
-    { key: SMS, path: 'webhookAllowedIps', label: 'Delivery reports only from these IP addresses', kind: 'list', hint: 'Optional. One address per line.', group: 'Delivery reports' },
+    {
+      key: SMS,
+      path: 'generic.contentType',
+      label: 'Content type',
+      kind: 'text',
+      placeholder: 'application/json',
+      when: smsBy('generic'),
+    },
+    {
+      key: SMS,
+      path: 'generic.bodyTemplate',
+      label: 'Request body',
+      kind: 'textarea',
+      when: smsBy('generic'),
+      hint: 'Uses the same placeholders as the address.',
+    },
+    {
+      key: SMS,
+      path: 'generic.headers',
+      label: 'Extra headers (name = value)',
+      kind: 'map',
+      when: smsBy('generic'),
+      hint: 'Not for keys: the API key goes in the credentials.',
+    },
+    {
+      key: SMS,
+      path: 'generic.apiKeyHeader',
+      label: 'API key header',
+      kind: 'text',
+      placeholder: 'Authorization',
+      when: smsBy('generic'),
+    },
+    {
+      key: SMS,
+      path: 'generic.apiKeyPrefix',
+      label: 'API key prefix',
+      kind: 'text',
+      placeholder: 'Bearer ',
+      keepSpaces: true,
+      when: smsBy('generic'),
+      hint: 'Include the space, e.g. “Bearer ”.',
+    },
+    {
+      key: SMS,
+      path: 'generic.messageIdPath',
+      label: 'Message id in the reply',
+      kind: 'text',
+      placeholder: 'data.id',
+      when: smsBy('generic'),
+    },
+    {
+      key: SMS,
+      path: 'generic.successContains',
+      label: 'A successful reply contains',
+      kind: 'text',
+      when: smsBy('generic'),
+      hint: 'For gateways that answer OK even when sending failed.',
+    },
+    {
+      key: SMS,
+      path: 'webhookAllowedIps',
+      label: 'Delivery reports only from these IP addresses',
+      kind: 'list',
+      hint: 'Optional. One address per line.',
+      group: 'Delivery reports',
+    },
   ],
   secrets: [
     { key: SMS_SECRET, prop: 'msg91AuthKey', label: 'MSG91 auth key', hint: 'Used by MSG91.' },
     { key: SMS_SECRET, prop: 'twilioAuthToken', label: 'Twilio auth token', hint: 'Used by Twilio.' },
     { key: SMS_SECRET, prop: 'genericApiKey', label: 'Gateway API key', hint: 'Used by other gateways ({{apiKey}}).' },
-    { key: SMS_SECRET, prop: 'webhookToken', label: 'Delivery report token', hint: 'MSG91 and other gateways add ?token=… to their delivery report calls.' },
+    {
+      key: SMS_SECRET,
+      prop: 'webhookToken',
+      label: 'Delivery report token',
+      hint: 'MSG91 and other gateways add ?token=… to their delivery report calls.',
+    },
   ],
 };
 
@@ -661,7 +831,8 @@ const waBy = (...providers: string[]) => when(WA, 'provider', ...providers);
 const whatsAppSpec: SettingsSpec = {
   id: 'whatsapp',
   title: 'WhatsApp',
-  intro: 'Template messages and documents (reports, bills) through the Meta WhatsApp Cloud API. Patients’ replies appear in the WhatsApp inbox.',
+  intro:
+    'Template messages and documents (reports, bills) through the Meta WhatsApp Cloud API. Patients’ replies appear in the WhatsApp inbox.',
   prefix: WA,
   backgroundUsesGlobal: true,
   fields: [
@@ -677,8 +848,25 @@ const whatsAppSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(WA),
     },
-    { key: WA, path: 'graphBaseUrl', label: 'Graph API address', kind: 'url', https: true, placeholder: 'https://graph.facebook.com', when: waBy('meta'), group: 'Meta' },
-    { key: WA, path: 'apiVersion', label: 'API version', kind: 'text', placeholder: 'v21.0', when: waBy('meta'), pattern: { regex: /^v\d{1,3}\.\d{1,2}$/, message: 'Use a version such as v21.0.' } },
+    {
+      key: WA,
+      path: 'graphBaseUrl',
+      label: 'Graph API address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://graph.facebook.com',
+      when: waBy('meta'),
+      group: 'Meta',
+    },
+    {
+      key: WA,
+      path: 'apiVersion',
+      label: 'API version',
+      kind: 'text',
+      placeholder: 'v21.0',
+      when: waBy('meta'),
+      pattern: { regex: /^v\d{1,3}\.\d{1,2}$/, message: 'Use a version such as v21.0.' },
+    },
     {
       key: WA,
       path: 'phoneNumberId',
@@ -689,22 +877,56 @@ const whatsAppSpec: SettingsSpec = {
       pattern: { regex: /^\d{5,25}$/, message: 'The phone number id is a long number.' },
     },
     { key: WA, path: 'businessAccountId', label: 'Business account id', kind: 'text', when: waBy('meta') },
-    { key: WA, path: 'languageCodes', label: 'Template languages (HC360 = WhatsApp)', kind: 'map', hint: 'For example en = en_US and hi = hi.' },
-    { key: WA, path: 'maxDocumentMegabytes', label: 'Largest document (MB)', kind: 'number', defaultNumber: 20, min: 1, max: 100 },
+    {
+      key: WA,
+      path: 'languageCodes',
+      label: 'Template languages (HC360 = WhatsApp)',
+      kind: 'map',
+      hint: 'For example en = en_US and hi = hi.',
+    },
+    {
+      key: WA,
+      path: 'maxDocumentMegabytes',
+      label: 'Largest document (MB)',
+      kind: 'number',
+      defaultNumber: 20,
+      min: 1,
+      max: 100,
+    },
     {
       key: WA,
       path: 'testTemplateName',
       label: 'Template for “Send test”',
       kind: 'text',
       placeholder: 'hello_world',
-      pattern: { regex: /^[a-z0-9_]{1,512}$/, message: 'Template names use lower-case letters, digits and underscores.' },
+      pattern: {
+        regex: /^[a-z0-9_]{1,512}$/,
+        message: 'Template names use lower-case letters, digits and underscores.',
+      },
     },
-    { key: WA, path: 'testTemplateLanguage', label: 'Its language', kind: 'text', placeholder: 'en_US', pattern: { regex: /^[a-z]{2,3}(_[A-Z]{2})?$/, message: 'Use a code such as en or en_US.' } },
+    {
+      key: WA,
+      path: 'testTemplateLanguage',
+      label: 'Its language',
+      kind: 'text',
+      placeholder: 'en_US',
+      pattern: { regex: /^[a-z]{2,3}(_[A-Z]{2})?$/, message: 'Use a code such as en or en_US.' },
+    },
   ],
   secrets: [
-    { key: WA_SECRET, prop: 'accessToken', label: 'Access token', hint: 'A system-user token with whatsapp_business_messaging permission.' },
+    {
+      key: WA_SECRET,
+      prop: 'accessToken',
+      label: 'Access token',
+      hint: 'A system-user token with whatsapp_business_messaging permission.',
+    },
     { key: WA_SECRET, prop: 'appSecret', label: 'App secret', hint: 'Checks the signature on incoming webhooks.' },
-    { key: WA_SECRET, prop: 'verifyToken', label: 'Webhook verify token', hint: 'The token you typed when subscribing the webhook in Meta.' },
+    {
+      key: WA_SECRET,
+      prop: 'verifyToken',
+      label: 'Webhook verify token',
+      hint: 'The token you typed when subscribing the webhook in Meta.',
+    },
   ],
 };
 
@@ -730,7 +952,15 @@ const emailSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(EMAIL_KEY),
     },
-    { key: EMAIL_KEY, path: 'host', label: 'Mail server', kind: 'text', placeholder: 'smtp.office365.com', when: emailBy('smtp'), group: 'Mail server' },
+    {
+      key: EMAIL_KEY,
+      path: 'host',
+      label: 'Mail server',
+      kind: 'text',
+      placeholder: 'smtp.office365.com',
+      when: emailBy('smtp'),
+      group: 'Mail server',
+    },
     {
       key: EMAIL_KEY,
       path: 'port',
@@ -742,12 +972,49 @@ const emailSpec: SettingsSpec = {
       when: emailBy('smtp'),
       check: (port) => (port === 465 ? 'Port 465 (implicit TLS) is not supported. Use 587 with STARTTLS.' : null),
     },
-    { key: EMAIL_KEY, path: 'useStartTls', label: 'Encrypt the connection (STARTTLS)', kind: 'switch', defaultValue: true, when: emailBy('smtp'), hint: 'Keep this on for any server outside the hospital network.' },
-    { key: EMAIL_KEY, path: 'userName', label: 'User name', kind: 'text', when: emailBy('smtp'), hint: 'Or keep it with the password in the credentials.' },
-    { key: EMAIL_KEY, path: 'fromAddress', label: 'From address', kind: 'email', placeholder: 'noreply@nanahospitals.in' },
+    {
+      key: EMAIL_KEY,
+      path: 'useStartTls',
+      label: 'Encrypt the connection (STARTTLS)',
+      kind: 'switch',
+      defaultValue: true,
+      when: emailBy('smtp'),
+      hint: 'Keep this on for any server outside the hospital network.',
+    },
+    {
+      key: EMAIL_KEY,
+      path: 'userName',
+      label: 'User name',
+      kind: 'text',
+      when: emailBy('smtp'),
+      hint: 'Or keep it with the password in the credentials.',
+    },
+    {
+      key: EMAIL_KEY,
+      path: 'fromAddress',
+      label: 'From address',
+      kind: 'email',
+      placeholder: 'noreply@nanahospitals.in',
+    },
     { key: EMAIL_KEY, path: 'fromName', label: 'From name', kind: 'text', placeholder: 'Nana Hospitals' },
-    { key: EMAIL_KEY, path: 'timeoutSeconds', label: 'Time limit (seconds)', kind: 'number', defaultNumber: 20, min: 5, max: 300 },
-    { key: EMAIL_KEY, path: 'maxAttachmentMegabytes', label: 'Largest attachment (MB)', kind: 'number', defaultNumber: 15, min: 1, max: 50 },
+    {
+      key: EMAIL_KEY,
+      path: 'timeoutSeconds',
+      label: 'Time limit (seconds)',
+      kind: 'number',
+      defaultNumber: 20,
+      min: 5,
+      max: 300,
+    },
+    {
+      key: EMAIL_KEY,
+      path: 'maxAttachmentMegabytes',
+      label: 'Largest attachment (MB)',
+      kind: 'number',
+      defaultNumber: 15,
+      min: 1,
+      max: 50,
+    },
   ],
   secrets: [
     { key: 'integrations.email.secret', prop: 'userName', label: 'User name', hint: 'Used by the mail server.' },
@@ -777,7 +1044,16 @@ const paymentSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(PAY),
     },
-    { key: PAY, path: 'baseUrl', label: 'Razorpay address', kind: 'url', https: true, placeholder: 'https://api.razorpay.com', when: payBy('razorpay'), group: 'Razorpay' },
+    {
+      key: PAY,
+      path: 'baseUrl',
+      label: 'Razorpay address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://api.razorpay.com',
+      when: payBy('razorpay'),
+      group: 'Razorpay',
+    },
     {
       key: PAY,
       path: 'keyId',
@@ -785,16 +1061,52 @@ const paymentSpec: SettingsSpec = {
       kind: 'text',
       when: payBy('razorpay'),
       hint: 'rzp_live_… or rzp_test_…. It is public by design; the key secret goes in the credentials.',
-      pattern: { regex: /^rzp_(live|test)_[A-Za-z0-9]+$/, message: 'A Razorpay key id starts with rzp_live_ or rzp_test_.' },
+      pattern: {
+        regex: /^rzp_(live|test)_[A-Za-z0-9]+$/,
+        message: 'A Razorpay key id starts with rzp_live_ or rzp_test_.',
+      },
     },
-    { key: PAY, path: 'paymentLinkCallbackUrl', label: 'Page after paying a link', kind: 'url', https: true, when: payBy('razorpay'), hint: 'Optional.' },
-    { key: PAY, path: 'notifyByRazorpay', label: 'Let Razorpay also send payment links by SMS or e-mail', kind: 'switch', when: payBy('razorpay'), hint: 'Off: HC360 sends links with its own templates.' },
-    { key: PAY, path: 'paymentLinkExpiryHours', label: 'Payment links expire after (hours)', kind: 'number', defaultNumber: 72, min: 1, max: 2160 },
+    {
+      key: PAY,
+      path: 'paymentLinkCallbackUrl',
+      label: 'Page after paying a link',
+      kind: 'url',
+      https: true,
+      when: payBy('razorpay'),
+      hint: 'Optional.',
+    },
+    {
+      key: PAY,
+      path: 'notifyByRazorpay',
+      label: 'Let Razorpay also send payment links by SMS or e-mail',
+      kind: 'switch',
+      when: payBy('razorpay'),
+      hint: 'Off: HC360 sends links with its own templates.',
+    },
+    {
+      key: PAY,
+      path: 'paymentLinkExpiryHours',
+      label: 'Payment links expire after (hours)',
+      kind: 'number',
+      defaultNumber: 72,
+      min: 1,
+      max: 2160,
+    },
   ],
   secrets: [
-    { key: PAY_SECRET, prop: 'keySecret', label: 'Key secret', hint: 'Used by Razorpay (API and checkout signatures).' },
+    {
+      key: PAY_SECRET,
+      prop: 'keySecret',
+      label: 'Key secret',
+      hint: 'Used by Razorpay (API and checkout signatures).',
+    },
     { key: PAY_SECRET, prop: 'webhookSecret', label: 'Webhook secret', hint: 'From Razorpay Dashboard → Webhooks.' },
-    { key: PAY_SECRET, prop: 'simulatorSecret', label: 'Simulator signing key', hint: 'Optional, simulator only: for test tools that sign simulated payments.' },
+    {
+      key: PAY_SECRET,
+      prop: 'simulatorSecret',
+      label: 'Simulator signing key',
+      hint: 'Optional, simulator only: for test tools that sign simulated payments.',
+    },
   ],
 };
 
@@ -804,7 +1116,8 @@ const posBy = (...providers: string[]) => when(POS, 'provider', ...providers);
 const posSpec: SettingsSpec = {
   id: 'pos',
   title: 'Card/UPI POS',
-  intro: 'Pushes the bill amount to the card/UPI terminal at the counter (Pine Labs Plutus Cloud) and reads the result.',
+  intro:
+    'Pushes the bill amount to the card/UPI terminal at the counter (Pine Labs Plutus Cloud) and reads the result.',
   prefix: POS,
   fields: [
     { key: POS, path: 'enabled', label: 'Use POS terminals', kind: 'switch' },
@@ -819,15 +1132,68 @@ const posSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(POS),
     },
-    { key: POS, path: 'baseUrl', label: 'Pine Labs address', kind: 'url', https: true, placeholder: 'https://www.plutuscloudserviceuat.in:8201', when: posBy('pinelabs'), group: 'Pine Labs' },
+    {
+      key: POS,
+      path: 'baseUrl',
+      label: 'Pine Labs address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://www.plutuscloudserviceuat.in:8201',
+      when: posBy('pinelabs'),
+      group: 'Pine Labs',
+    },
     { key: POS, path: 'merchantId', label: 'Merchant id', kind: 'text', when: posBy('pinelabs') },
     { key: POS, path: 'userId', label: 'User id', kind: 'text', when: posBy('pinelabs') },
-    { key: POS, path: 'uploadPath', label: 'Upload path', kind: 'text', placeholder: '/API/CloudBasedIntegration/V1/UploadBilledTransaction', when: posBy('pinelabs') },
-    { key: POS, path: 'statusPath', label: 'Status path', kind: 'text', placeholder: '/API/CloudBasedIntegration/V1/GetCloudBasedTxnStatus', when: posBy('pinelabs') },
-    { key: POS, path: 'cancelPath', label: 'Cancel path', kind: 'text', placeholder: '/API/CloudBasedIntegration/V1/CancelTransaction', when: posBy('pinelabs') },
-    { key: POS, path: 'paymentModes', label: 'Payment mode codes (mode = code)', kind: 'map', when: posBy('pinelabs'), hint: 'Defaults: all = 0, card = 1, upi = 10.' },
-    { key: POS, path: 'pendingResponseCodes', label: 'Codes that mean “still waiting”', kind: 'list', numeric: true, when: posBy('pinelabs'), hint: 'Default 1001. One per line.' },
-    { key: POS, path: 'autoCancelMinutes', label: 'Terminal cancels an unpaid sale after (minutes)', kind: 'number', defaultNumber: 5, min: 1, max: 60 },
+    {
+      key: POS,
+      path: 'uploadPath',
+      label: 'Upload path',
+      kind: 'text',
+      placeholder: '/API/CloudBasedIntegration/V1/UploadBilledTransaction',
+      when: posBy('pinelabs'),
+    },
+    {
+      key: POS,
+      path: 'statusPath',
+      label: 'Status path',
+      kind: 'text',
+      placeholder: '/API/CloudBasedIntegration/V1/GetCloudBasedTxnStatus',
+      when: posBy('pinelabs'),
+    },
+    {
+      key: POS,
+      path: 'cancelPath',
+      label: 'Cancel path',
+      kind: 'text',
+      placeholder: '/API/CloudBasedIntegration/V1/CancelTransaction',
+      when: posBy('pinelabs'),
+    },
+    {
+      key: POS,
+      path: 'paymentModes',
+      label: 'Payment mode codes (mode = code)',
+      kind: 'map',
+      when: posBy('pinelabs'),
+      hint: 'Defaults: all = 0, card = 1, upi = 10.',
+    },
+    {
+      key: POS,
+      path: 'pendingResponseCodes',
+      label: 'Codes that mean “still waiting”',
+      kind: 'list',
+      numeric: true,
+      when: posBy('pinelabs'),
+      hint: 'Default 1001. One per line.',
+    },
+    {
+      key: POS,
+      path: 'autoCancelMinutes',
+      label: 'Terminal cancels an unpaid sale after (minutes)',
+      kind: 'number',
+      defaultNumber: 5,
+      min: 1,
+      max: 60,
+    },
     {
       key: POS,
       path: 'terminals',
@@ -838,9 +1204,20 @@ const posSpec: SettingsSpec = {
       group: 'Terminals',
       hint: 'One entry per counter, e.g. [{ "id": "OPD-1", "name": "OPD counter 1", "imei": "…", "storePosCode": "…" }]. Billing counters use the id.',
     },
-    { key: POS, path: 'simulatorApproveAfterSeconds', label: 'Simulator approves a sale after (seconds)', kind: 'number', defaultNumber: 8, min: 0, max: 120, when: posBy('simulator') },
+    {
+      key: POS,
+      path: 'simulatorApproveAfterSeconds',
+      label: 'Simulator approves a sale after (seconds)',
+      kind: 'number',
+      defaultNumber: 8,
+      min: 0,
+      max: 120,
+      when: posBy('simulator'),
+    },
   ],
-  secrets: [{ key: 'integrations.pos.secret', prop: 'securityToken', label: 'Security token', hint: 'Used by Pine Labs.' }],
+  secrets: [
+    { key: 'integrations.pos.secret', prop: 'securityToken', label: 'Security token', hint: 'Used by Pine Labs.' },
+  ],
 };
 
 const TALLY = 'integrations.tally';
@@ -848,7 +1225,8 @@ const TALLY = 'integrations.tally';
 const tallySpec: SettingsSpec = {
   id: 'tally',
   title: 'Tally',
-  intro: 'Posts the billing day book to Tally Prime over its XML port (Tally → F1 Help → Settings → Connectivity). Tally’s port has no password.',
+  intro:
+    'Posts the billing day book to Tally Prime over its XML port (Tally → F1 Help → Settings → Connectivity). Tally’s port has no password.',
   prefix: TALLY,
   backgroundUsesGlobal: true,
   fields: [
@@ -873,10 +1251,30 @@ const tallySpec: SettingsSpec = {
       when: when(TALLY, 'provider', 'tally'),
       hint: 'Usually the accounts computer, for example http://192.168.1.20:9000.',
     },
-    { key: TALLY, path: 'companyName', label: 'Company', kind: 'text', hint: 'Must be open in Tally. Leave empty for the active company.' },
-    { key: TALLY, path: 'ledgerMap', label: 'Ledger names (HC360 = Tally)', kind: 'map', hint: 'Only where the Tally ledger has a different name.' },
+    {
+      key: TALLY,
+      path: 'companyName',
+      label: 'Company',
+      kind: 'text',
+      hint: 'Must be open in Tally. Leave empty for the active company.',
+    },
+    {
+      key: TALLY,
+      path: 'ledgerMap',
+      label: 'Ledger names (HC360 = Tally)',
+      kind: 'map',
+      hint: 'Only where the Tally ledger has a different name.',
+    },
     { key: TALLY, path: 'costCategory', label: 'Cost category', kind: 'text', placeholder: 'Primary Cost Category' },
-    { key: TALLY, path: 'batchSize', label: 'Vouchers per import', kind: 'number', defaultNumber: 50, min: 1, max: 500 },
+    {
+      key: TALLY,
+      path: 'batchSize',
+      label: 'Vouchers per import',
+      kind: 'number',
+      defaultNumber: 50,
+      min: 1,
+      max: 500,
+    },
   ],
   secrets: [],
 };
@@ -888,7 +1286,8 @@ const pacsBy = (...providers: string[]) => when(PACS, 'provider', ...providers);
 const pacsSpec: SettingsSpec = {
   id: 'pacs',
   title: 'PACS',
-  intro: 'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee) and opens them in the viewer.',
+  intro:
+    'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee) and opens them in the viewer.',
   prefix: PACS,
   fields: [
     { key: PACS, path: 'enabled', label: 'Look up studies on the PACS', kind: 'switch' },
@@ -903,7 +1302,15 @@ const pacsSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(PACS),
     },
-    { key: PACS, path: 'qidoUrl', label: 'DICOMweb address', kind: 'url', placeholder: 'http://orthanc:8042/dicom-web', when: pacsBy('dicomweb'), group: 'DICOMweb' },
+    {
+      key: PACS,
+      path: 'qidoUrl',
+      label: 'DICOMweb address',
+      kind: 'url',
+      placeholder: 'http://orthanc:8042/dicom-web',
+      when: pacsBy('dicomweb'),
+      group: 'DICOMweb',
+    },
     {
       key: PACS,
       path: 'authType',
@@ -917,14 +1324,24 @@ const pacsSpec: SettingsSpec = {
       ],
       when: pacsBy('dicomweb'),
     },
-    { key: PACS, path: 'userName', label: 'User name', kind: 'text', when: pacsBy('dicomweb'), hint: 'For sign-in with a user name and password.' },
+    {
+      key: PACS,
+      path: 'userName',
+      label: 'User name',
+      kind: 'text',
+      when: pacsBy('dicomweb'),
+      hint: 'For sign-in with a user name and password.',
+    },
     {
       key: PACS,
       path: 'viewerUrlTemplate',
       label: 'Viewer link',
       kind: 'text',
       hint: 'With {studyUid} and {accession}, e.g. https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}.',
-      check: (text) => (typeof text === 'string' && !/^https?:\/\//i.test(text) ? 'The viewer link must start with http:// or https://.' : null),
+      check: (text) =>
+        typeof text === 'string' && !/^https?:\/\//i.test(text)
+          ? 'The viewer link must start with http:// or https://.'
+          : null,
     },
     { key: PACS, path: 'limit', label: 'Studies per search', kind: 'number', defaultNumber: 50, min: 1, max: 500 },
     { key: PACS, path: 'timeZone', label: 'PACS time zone', kind: 'text', placeholder: 'Asia/Kolkata' },
@@ -956,15 +1373,61 @@ const icdSpec: SettingsSpec = {
       ],
       requiredWhen: switchedOn(ICD),
     },
-    { key: ICD, path: 'tokenUrl', label: 'Sign-in address', kind: 'url', https: true, placeholder: 'https://icdaccessmanagement.who.int/connect/token', when: icdBy('who'), group: 'WHO ICD-API' },
-    { key: ICD, path: 'apiBaseUrl', label: 'API address', kind: 'url', https: true, placeholder: 'https://id.who.int', when: icdBy('who') },
-    { key: ICD, path: 'icd11Release', label: 'ICD-11 release', kind: 'text', placeholder: '2025-01', when: icdBy('who') },
+    {
+      key: ICD,
+      path: 'tokenUrl',
+      label: 'Sign-in address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://icdaccessmanagement.who.int/connect/token',
+      when: icdBy('who'),
+      group: 'WHO ICD-API',
+    },
+    {
+      key: ICD,
+      path: 'apiBaseUrl',
+      label: 'API address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://id.who.int',
+      when: icdBy('who'),
+    },
+    {
+      key: ICD,
+      path: 'icd11Release',
+      label: 'ICD-11 release',
+      kind: 'text',
+      placeholder: '2025-01',
+      when: icdBy('who'),
+    },
     { key: ICD, path: 'icd10Release', label: 'ICD-10 release', kind: 'text', placeholder: '2019', when: icdBy('who') },
-    { key: ICD, path: 'language', label: 'Language', kind: 'text', placeholder: 'en', when: icdBy('who'), pattern: { regex: /^[a-z]{2}(-[A-Za-z]{2})?$/, message: 'Use a code such as en.' } },
-    { key: ICD, path: 'cacheHours', label: 'Keep answers for (hours)', kind: 'number', defaultNumber: 24, min: 1, max: 720, when: icdBy('who') },
+    {
+      key: ICD,
+      path: 'language',
+      label: 'Language',
+      kind: 'text',
+      placeholder: 'en',
+      when: icdBy('who'),
+      pattern: { regex: /^[a-z]{2}(-[A-Za-z]{2})?$/, message: 'Use a code such as en.' },
+    },
+    {
+      key: ICD,
+      path: 'cacheHours',
+      label: 'Keep answers for (hours)',
+      kind: 'number',
+      defaultNumber: 24,
+      min: 1,
+      max: 720,
+      when: icdBy('who'),
+    },
   ],
   secrets: [
-    { key: 'integrations.icd.secret', prop: 'clientId', label: 'Client id', hint: 'From the WHO ICD-API access portal.' },
+    {
+      key: 'integrations.icd.secret',
+      prop: 'clientId',
+      label: 'Client id',
+      hint: 'From the WHO ICD-API access portal.',
+    },
     { key: 'integrations.icd.secret', prop: 'clientSecret', label: 'Client secret' },
   ],
 };
@@ -974,15 +1437,47 @@ const LAB = 'integrations.lab';
 const labSpec: SettingsSpec = {
   id: 'lab',
   title: 'Laboratory equipment',
-  intro: 'Receives results from analysers over the lab network (HL7 v2 over MLLP, or ASTM). One listening port per analyser; the server checks every minute.',
+  intro:
+    'Receives results from analysers over the lab network (HL7 v2 over MLLP, or ASTM). One listening port per analyser; the server checks every minute.',
   prefix: LAB,
   globalOnly: true,
   fields: [
     { key: LAB, path: 'enabled', label: 'Receive results from analysers', kind: 'switch' },
-    { key: LAB, path: 'bindAddress', label: 'Listen on address', kind: 'text', placeholder: '0.0.0.0', hint: 'Use the lab network address to keep analyser ports off other networks.' },
-    { key: LAB, path: 'maxMessageKilobytes', label: 'Largest message (KB)', kind: 'number', defaultNumber: 1024, min: 16, max: 16_384 },
-    { key: LAB, path: 'idleTimeoutSeconds', label: 'Close idle connections after (seconds)', kind: 'number', defaultNumber: 300, min: 30, max: 86_400 },
-    { key: LAB, path: 'maxConnectionsPerInstrument', label: 'Connections per analyser', kind: 'number', defaultNumber: 4, min: 1, max: 32 },
+    {
+      key: LAB,
+      path: 'bindAddress',
+      label: 'Listen on address',
+      kind: 'text',
+      placeholder: '0.0.0.0',
+      hint: 'Use the lab network address to keep analyser ports off other networks.',
+    },
+    {
+      key: LAB,
+      path: 'maxMessageKilobytes',
+      label: 'Largest message (KB)',
+      kind: 'number',
+      defaultNumber: 1024,
+      min: 16,
+      max: 16_384,
+    },
+    {
+      key: LAB,
+      path: 'idleTimeoutSeconds',
+      label: 'Close idle connections after (seconds)',
+      kind: 'number',
+      defaultNumber: 300,
+      min: 30,
+      max: 86_400,
+    },
+    {
+      key: LAB,
+      path: 'maxConnectionsPerInstrument',
+      label: 'Connections per analyser',
+      kind: 'number',
+      defaultNumber: 4,
+      min: 1,
+      max: 32,
+    },
     { key: LAB, path: 'timeZone', label: 'Analyser time zone', kind: 'text', placeholder: 'Asia/Kolkata' },
     {
       key: 'integrations.lab.instruments',
@@ -1017,10 +1512,16 @@ const whisper = when(SPEECH, 'provider', 'whisper');
 export const AI_SETTINGS: SettingsSpec = {
   id: 'ai',
   title: 'AI assistant',
-  intro: 'AI is off until you turn it on. Everyday voice and typed commands work without it; AI only helps with commands the built-in rules do not understand, and with structuring dictated notes.',
+  intro:
+    'AI is off until you turn it on. Everyday voice and typed commands work without it; AI only helps with commands the built-in rules do not understand, and with structuring dictated notes.',
   prefix: 'ai.',
   fields: [
-    { key: 'ai.enabled', label: 'Allow AI help', kind: 'switch', hint: 'Text is stripped of names, UHIDs and phone numbers before it leaves the hospital.' },
+    {
+      key: 'ai.enabled',
+      label: 'Allow AI help',
+      kind: 'switch',
+      hint: 'Text is stripped of names, UHIDs and phone numbers before it leaves the hospital.',
+    },
     {
       key: 'ai.provider',
       label: 'AI provider',
@@ -1031,7 +1532,13 @@ export const AI_SETTINGS: SettingsSpec = {
         { value: 'disabled', label: 'Off' },
       ],
     },
-    { key: 'ai.model', label: 'Model', kind: 'text', placeholder: 'claude-opus-5-5', pattern: { regex: /^[a-z0-9][a-z0-9.-]{1,63}$/, message: 'Use a model id such as claude-opus-5-5.' } },
+    {
+      key: 'ai.model',
+      label: 'Model',
+      kind: 'text',
+      placeholder: 'claude-opus-5-5',
+      pattern: { regex: /^[a-z0-9][a-z0-9.-]{1,63}$/, message: 'Use a model id such as claude-opus-5-5.' },
+    },
     { key: 'ai.timeoutSeconds', label: 'Time limit (seconds)', kind: 'number', defaultNumber: 90, min: 10, max: 300 },
     {
       key: SPEECH,
@@ -1057,13 +1564,52 @@ export const AI_SETTINGS: SettingsSpec = {
       hint: 'An OpenAI-compatible /audio/transcriptions address, for example an on-premises faster-whisper server.',
     },
     { key: SPEECH, path: 'model', label: 'Speech model', kind: 'text', placeholder: 'whisper-1', when: whisper },
-    { key: SPEECH, path: 'language', label: 'Spoken language', kind: 'text', placeholder: 'en', when: whisper, pattern: { regex: /^[a-z]{2}$/, message: 'Use a two-letter code such as en or hi.' } },
-    { key: SPEECH, path: 'timeoutSeconds', label: 'Speech time limit (seconds)', kind: 'number', defaultNumber: 120, min: 10, max: 600, when: whisper },
-    { key: 'ai.limits', path: 'perUserPerHour', label: 'AI requests per person per hour', kind: 'number', defaultNumber: 60, min: 1, max: 10_000, group: 'Limits' },
-    { key: 'ai.limits', path: 'perUserPerDay', label: 'AI requests per person per day', kind: 'number', defaultNumber: 300, min: 1, max: 100_000 },
+    {
+      key: SPEECH,
+      path: 'language',
+      label: 'Spoken language',
+      kind: 'text',
+      placeholder: 'en',
+      when: whisper,
+      pattern: { regex: /^[a-z]{2}$/, message: 'Use a two-letter code such as en or hi.' },
+    },
+    {
+      key: SPEECH,
+      path: 'timeoutSeconds',
+      label: 'Speech time limit (seconds)',
+      kind: 'number',
+      defaultNumber: 120,
+      min: 10,
+      max: 600,
+      when: whisper,
+    },
+    {
+      key: 'ai.limits',
+      path: 'perUserPerHour',
+      label: 'AI requests per person per hour',
+      kind: 'number',
+      defaultNumber: 60,
+      min: 1,
+      max: 10_000,
+      group: 'Limits',
+    },
+    {
+      key: 'ai.limits',
+      path: 'perUserPerDay',
+      label: 'AI requests per person per day',
+      kind: 'number',
+      defaultNumber: 300,
+      min: 1,
+      max: 100_000,
+    },
   ],
   secrets: [
     { key: 'ai.anthropic.secret', prop: 'apiKey', label: 'Anthropic API key', hint: 'Read only while AI is on.' },
-    { key: 'ai.speech.secret', prop: 'apiKey', label: 'Speech server key', hint: 'Optional bearer key for the speech server.' },
+    {
+      key: 'ai.speech.secret',
+      prop: 'apiKey',
+      label: 'Speech server key',
+      hint: 'Optional bearer key for the speech server.',
+    },
   ],
 };

@@ -23,14 +23,38 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowSwapRegular, BoxCheckmarkRegular, DeleteRegular, DismissCircleRegular, DismissRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  ArrowSwapRegular,
+  BoxCheckmarkRegular,
+  DeleteRegular,
+  DismissCircleRegular,
+  DismissRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, useDebouncedValue } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type ItemLookup, type TransferListItem } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type ItemLookup,
+  type TransferListItem,
+} from '@/modules/inventory/api';
 import { allocateFefo, allocateFromBatch } from '@/modules/inventory/fefo';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { ItemPicker } from '@/modules/inventory/ItemPicker';
@@ -66,7 +90,11 @@ export const Route = createFileRoute('/_app/inventory/transfers')({
   component: TransfersPage,
 });
 
-const STATUS_LABEL: Record<TransferStatus, string> = { InTransit: 'In transit', Received: 'Received', Cancelled: 'Cancelled' };
+const STATUS_LABEL: Record<TransferStatus, string> = {
+  InTransit: 'In transit',
+  Received: 'Received',
+  Cancelled: 'Cancelled',
+};
 
 /** Stock transfer notes between stores (INV-06, PH-04): goods leave the source on dispatch and arrive when received. */
 function TransfersPage() {
@@ -83,8 +111,11 @@ function TransfersPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const transfers = useQuery(inventoryQueries.transfers({ status: search.status, storeId: search.storeId, search: search.q, page: search.page }));
-  const set = (patch: Partial<TransferSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const transfers = useQuery(
+    inventoryQueries.transfers({ status: search.status, storeId: search.storeId, search: search.q, page: search.page }),
+  );
+  const set = (patch: Partial<TransferSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -105,9 +136,18 @@ function TransfersPage() {
             <Field label="Transfer number" style={{ flex: '0 1 220px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll label="Store (sending or receiving)" />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+              label="Store (sending or receiving)"
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as TransferStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as TransferStatus | undefined })}
+              >
                 <option value="">All</option>
                 {TRANSFER_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -131,13 +171,24 @@ function TransfersPage() {
             { key: 'no', header: 'Transfer', render: (t) => <Text font="monospace">{t.number}</Text> },
             { key: 'route', header: 'From → to', render: (t) => `${t.fromStoreName} → ${t.toStoreName}` },
             { key: 'sent', header: 'Sent', render: (t) => formatDateTime(t.dispatchedAt) },
-            { key: 'received', header: 'Received', priority: 'low', render: (t) => (t.receivedAt ? formatDateTime(t.receivedAt) : '—') },
+            {
+              key: 'received',
+              header: 'Received',
+              priority: 'low',
+              render: (t) => (t.receivedAt ? formatDateTime(t.receivedAt) : '—'),
+            },
             { key: 'lines', header: 'Lines', align: 'end', width: 70, render: (t) => t.lineCount },
             { key: 'value', header: 'Value', align: 'end', priority: 'low', render: (t) => formatInr(t.totalValue) },
-            { key: 'status', header: 'Status', render: (t) => <DocStatus status={t.status} label={STATUS_LABEL[t.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (t) => <DocStatus status={t.status} label={STATUS_LABEL[t.status]} />,
+            },
           ]}
           emptyTitle="No transfers"
-          emptyDescription={canTransfer ? 'Send stock to move items between the central store, pharmacies and sub-stores.' : undefined}
+          emptyDescription={
+            canTransfer ? 'Send stock to move items between the central store, pharmacies and sub-stores.' : undefined
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={transfers.data?.totalCount}
@@ -145,7 +196,9 @@ function TransfersPage() {
         />
       </Section>
       {search.id && <TransferDrawer transferId={search.id} onClose={() => set({ id: undefined })} />}
-      {canTransfer && search.send && <SendDialog onClose={() => set({ send: undefined })} onSent={(id) => set({ send: undefined, id })} />}
+      {canTransfer && search.send && (
+        <SendDialog onClose={() => set({ send: undefined })} onSent={(id) => set({ send: undefined, id })} />
+      )}
     </Page>
   );
 }
@@ -187,7 +240,9 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {t ? `Transfer ${t.number}` : 'Transfer'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -219,7 +274,13 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
                 { key: 'exp', header: 'Expiry', render: (l) => <ExpiryText date={l.expiryDate} /> },
                 { key: 'qty', header: 'Qty', align: 'end', render: (l) => formatQty(l.quantity) },
                 { key: 'mrp', header: 'MRP', align: 'end', priority: 'low', render: (l) => formatInr(l.mrp) },
-                { key: 'rate', header: 'Cost', align: 'end', priority: 'low', render: (l) => formatInr(l.purchaseRate) },
+                {
+                  key: 'rate',
+                  header: 'Cost',
+                  align: 'end',
+                  priority: 'low',
+                  render: (l) => formatInr(l.purchaseRate),
+                },
               ]}
             />
           </div>
@@ -228,7 +289,12 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
       <DrawerFooter>
         {t && (
           <>
-            <Button icon={<PrintRegular />} onClick={() => void printTransferNote(t, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+            <Button
+              icon={<PrintRegular />}
+              onClick={() =>
+                void printTransferNote(t, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))
+              }
+            >
               Print note
             </Button>
             {canTransfer && t.status === 'InTransit' && (
@@ -252,7 +318,8 @@ function TransferDrawer({ transferId, onClose }: { transferId: string; onClose: 
         onConfirm={() => receive.mutate()}
         onCancel={() => setConfirmReceive(false)}
       >
-        Check the goods against the note first. The same batches, expiry dates and MRPs are booked into {t?.toStoreName}.
+        Check the goods against the note first. The same batches, expiry dates and MRPs are booked into {t?.toStoreName}
+        .
       </ConfirmDialog>
       {cancelling && (
         <ReasonDialog
@@ -286,17 +353,32 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<SendLine[]>([]);
   const sourceId = fromStoreId ?? working.storeId;
-  const batchQueries = useQueries({ queries: lines.map((l) => ({ ...inventoryQueries.batches(sourceId ?? '', l.item.id), enabled: Boolean(sourceId) })) });
+  const batchQueries = useQueries({
+    queries: lines.map((l) => ({ ...inventoryQueries.batches(sourceId ?? '', l.item.id), enabled: Boolean(sourceId) })),
+  });
 
   const planned = lines.map((line, index) => {
     const batches = batchQueries[index]?.data;
     const quantity = parseNumber(line.quantity) ?? 0;
     const picked = line.batchId ? batches?.find((b) => b.batchId === line.batchId) : undefined;
-    const allocation = batches ? (picked ? allocateFromBatch(quantity, picked) : allocateFefo(quantity, batches)) : null;
-    const problem = !(quantity > 0) ? 'Enter the quantity.' : allocation && allocation.shortfall > 0 ? `Only ${formatQty(allocation.allocated, line.item.baseUnit)} can be sent.` : null;
+    const allocation = batches
+      ? picked
+        ? allocateFromBatch(quantity, picked)
+        : allocateFefo(quantity, batches)
+      : null;
+    const problem = !(quantity > 0)
+      ? 'Enter the quantity.'
+      : allocation && allocation.shortfall > 0
+        ? `Only ${formatQty(allocation.allocated, line.item.baseUnit)} can be sent.`
+        : null;
     return { line, batches, quantity, allocation, problem };
   });
-  const valid = Boolean(sourceId) && Boolean(toStoreId) && toStoreId !== sourceId && planned.length > 0 && planned.every((p) => !p.problem && p.allocation);
+  const valid =
+    Boolean(sourceId) &&
+    Boolean(toStoreId) &&
+    toStoreId !== sourceId &&
+    planned.length > 0 &&
+    planned.every((p) => !p.problem && p.allocation);
 
   const add = (item: ItemLookup) => {
     if (lines.some((l) => l.item.id === item.id)) {
@@ -305,7 +387,8 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
     }
     setLines([...lines, { item, quantity: '', batchId: null }]);
   };
-  const update = (id: string, patch: Partial<SendLine>) => setLines(lines.map((l) => (l.item.id === id ? { ...l, ...patch } : l)));
+  const update = (id: string, patch: Partial<SendLine>) =>
+    setLines(lines.map((l) => (l.item.id === id ? { ...l, ...patch } : l)));
 
   const send = useMutation({
     mutationFn: () =>
@@ -341,9 +424,21 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
                 label="From"
                 required
               />
-              <StorePicker stores={working.stores} value={toStoreId} onChange={setToStoreId} excludeId={sourceId} label="To" required />
+              <StorePicker
+                stores={working.stores}
+                value={toStoreId}
+                onChange={setToStoreId}
+                excludeId={sourceId}
+                label="To"
+                required
+              />
             </div>
-            <ItemPicker storeId={sourceId} onPick={add} label="Add item" hint="Stock shown is what the sending store has" />
+            <ItemPicker
+              storeId={sourceId}
+              onPick={add}
+              label="Add item"
+              hint="Stock shown is what the sending store has"
+            />
             <LineTable
               ariaLabel="Items to send"
               rows={planned}
@@ -356,7 +451,12 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
                   header: 'Item',
                   render: (p) => (
                     <span>
-                      <Text weight="semibold">{p.line.item.name}</Text> <ItemFlags schedule={p.line.item.schedule} isControlled={p.line.item.isControlled} isColdChain={p.line.item.isColdChain} />
+                      <Text weight="semibold">{p.line.item.name}</Text>{' '}
+                      <ItemFlags
+                        schedule={p.line.item.schedule}
+                        isControlled={p.line.item.isControlled}
+                        isColdChain={p.line.item.isColdChain}
+                      />
                       {p.problem && p.quantity > 0 && (
                         <Caption1 block style={{ color: tokens.colorPaletteRedForeground1 }}>
                           {p.problem}
@@ -397,7 +497,14 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
                   key: 'remove',
                   header: '',
                   width: 44,
-                  render: (p) => <Button appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${p.line.item.name}`} onClick={() => setLines(lines.filter((l) => l.item.id !== p.line.item.id))} />,
+                  render: (p) => (
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label={`Remove ${p.line.item.name}`}
+                      onClick={() => setLines(lines.filter((l) => l.item.id !== p.line.item.id))}
+                    />
+                  ),
                 },
               ]}
             />
@@ -414,7 +521,12 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
             <Button onClick={onClose} disabled={send.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || send.isPending} icon={send.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => send.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || send.isPending}
+              icon={send.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => send.mutate()}
+            >
               Send
             </Button>
           </DialogActions>
@@ -423,4 +535,3 @@ function SendDialog({ onClose, onSent }: { onClose: () => void; onSent: (id: str
     </Dialog>
   );
 }
-

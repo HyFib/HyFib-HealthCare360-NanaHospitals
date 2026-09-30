@@ -164,7 +164,11 @@ export const patientFormSchema = z
   .superRefine((v, ctx) => {
     if (v.ageMode === 'dob') {
       if (!v.dateOfBirth) {
-        ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: 'Enter the date of birth, or switch to "Age only".' });
+        ctx.addIssue({
+          code: 'custom',
+          path: ['dateOfBirth'],
+          message: 'Enter the date of birth, or switch to "Age only".',
+        });
       } else if (v.dateOfBirth > todayIso() || v.dateOfBirth < '1900-01-01') {
         ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: 'Enter a valid date of birth.' });
       }

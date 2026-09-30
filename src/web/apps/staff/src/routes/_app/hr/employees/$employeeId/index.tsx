@@ -16,7 +16,13 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { BuildingBankRegular, EditRegular, MoreHorizontalRegular, PersonDeleteRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
+import {
+  BuildingBankRegular,
+  EditRegular,
+  MoreHorizontalRegular,
+  PersonDeleteRegular,
+  ShieldKeyholeRegular,
+} from '@fluentui/react-icons';
 import { formatAge, formatDateOnly, formatPhone, humanize } from '@hc360/core';
 import { ErrorState, LoadingState, Page, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -105,7 +111,12 @@ function EmployeeProfilePage() {
     { id: 'credentials', label: 'Credentials' },
     { id: 'leave', label: 'Leave' },
     ...(canAttendance ? [{ id: 'attendance' as const, label: 'Attendance' }] : []),
-    ...(canPayroll ? [{ id: 'salary' as const, label: 'Salary' }, { id: 'payslips' as const, label: 'Payslips' }] : []),
+    ...(canPayroll
+      ? [
+          { id: 'salary' as const, label: 'Salary' },
+          { id: 'payslips' as const, label: 'Payslips' },
+        ]
+      : []),
   ];
   const current = visibleTabs.some((t) => t.id === tab) ? tab : 'details';
 
@@ -119,10 +130,21 @@ function EmployeeProfilePage() {
               {e.fullName}
             </Text>
             <Text className={styles.code}>{e.employeeCode}</Text>
-            <StatusBadge status={e.status} label={employeeStatusLabel[e.status]} tone={separated ? 'informative' : undefined} />
+            <StatusBadge
+              status={e.status}
+              label={employeeStatusLabel[e.status]}
+              tone={separated ? 'informative' : undefined}
+            />
           </div>
           <Caption1 className={styles.muted}>
-            {[e.designationName, e.departmentName, humanize(e.employmentType), `joined ${formatDateOnly(e.joiningDate)}`].filter(Boolean).join(' · ')}
+            {[
+              e.designationName,
+              e.departmentName,
+              humanize(e.employmentType),
+              `joined ${formatDateOnly(e.joiningDate)}`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </Caption1>
         </div>
         <div className={styles.actions}>
@@ -131,7 +153,10 @@ function EmployeeProfilePage() {
           </Button>
           {canManage && !separated && (
             <>
-              <Button icon={<EditRegular />} onClick={() => void navigate({ to: '/hr/employees/$employeeId/edit', params: { employeeId } })}>
+              <Button
+                icon={<EditRegular />}
+                onClick={() => void navigate({ to: '/hr/employees/$employeeId/edit', params: { employeeId } })}
+              >
                 Edit
               </Button>
               <Menu>
@@ -159,7 +184,8 @@ function EmployeeProfilePage() {
           <MessageBarBody>
             <MessageBarTitle>Separated on {formatDateOnly(e.leavingDate)}</MessageBarTitle>
             {humanize(e.separationReason)}
-            {e.separationNote ? ` · ${e.separationNote}` : ''}. The record is kept for statutory retention and cannot be edited.
+            {e.separationNote ? ` · ${e.separationNote}` : ''}. The record is kept for statutory retention and cannot be
+            edited.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -168,7 +194,9 @@ function EmployeeProfilePage() {
         <div className={styles.tabs}>
           <TabList
             selectedValue={current}
-            onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'details' ? undefined : (d.value as TabId) }, replace: true })}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'details' ? undefined : (d.value as TabId) }, replace: true })
+            }
           >
             {visibleTabs.map((t) => (
               <Tab key={t.id} value={t.id}>
@@ -179,8 +207,12 @@ function EmployeeProfilePage() {
         </div>
         <div className={styles.body}>
           {current === 'details' && <DetailsTab employee={e} />}
-          {current === 'pay' && <PayTab employee={e} canChange={canManage && !separated} onChangeBank={() => setBankOpen(true)} />}
-          {current === 'credentials' && <EmployeeCredentials employeeId={e.id} employeeName={e.fullName} readOnly={separated} />}
+          {current === 'pay' && (
+            <PayTab employee={e} canChange={canManage && !separated} onChangeBank={() => setBankOpen(true)} />
+          )}
+          {current === 'credentials' && (
+            <EmployeeCredentials employeeId={e.id} employeeName={e.fullName} readOnly={separated} />
+          )}
           {current === 'leave' && <EmployeeLeave employee={picked} readOnly={separated} />}
           {current === 'attendance' && <EmployeeAttendance employee={picked} />}
           {current === 'salary' && <EmployeeSalary employeeId={e.id} employeeName={e.fullName} separated={separated} />}
@@ -201,11 +233,22 @@ function EmployeeProfilePage() {
 function DetailsTab({ employee: e }: { employee: EmployeeDetail }) {
   const shifts = useQuery(hrQueries.shifts(true));
   const shift = shifts.data?.find((s) => s.id === e.defaultShiftId);
-  const address = [e.address.line1, e.address.line2, e.address.city, e.address.district, e.address.state, e.address.pinCode].filter(Boolean).join(', ');
+  const address = [
+    e.address.line1,
+    e.address.line2,
+    e.address.city,
+    e.address.district,
+    e.address.state,
+    e.address.pinCode,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <Stack gap={20}>
       <DetailGrid>
-        <Detail label="Date of birth">{e.dateOfBirth ? `${formatDateOnly(e.dateOfBirth)} (${formatAge(e.dateOfBirth)})` : null}</Detail>
+        <Detail label="Date of birth">
+          {e.dateOfBirth ? `${formatDateOnly(e.dateOfBirth)} (${formatAge(e.dateOfBirth)})` : null}
+        </Detail>
         <Detail label="Gender">{e.gender}</Detail>
         <Detail label="Mobile">{e.phone ? formatPhone(e.phone) : null}</Detail>
         <Detail label="Email">{e.email}</Detail>
@@ -213,7 +256,9 @@ function DetailsTab({ employee: e }: { employee: EmployeeDetail }) {
           {address}
         </Detail>
         <Detail label="Emergency contact">
-          {e.emergencyContactName ? `${e.emergencyContactName}${e.emergencyContactPhone ? ` · ${formatPhone(e.emergencyContactPhone)}` : ''}` : null}
+          {e.emergencyContactName
+            ? `${e.emergencyContactName}${e.emergencyContactPhone ? ` · ${formatPhone(e.emergencyContactPhone)}` : ''}`
+            : null}
         </Detail>
       </DetailGrid>
       <DetailGrid>
@@ -229,7 +274,9 @@ function DetailsTab({ employee: e }: { employee: EmployeeDetail }) {
             </Link>
           ) : null}
         </Detail>
-        <Detail label="Usual shift">{shift ? `${shift.code} · ${shift.name}` : e.defaultShiftId ? 'Assigned' : 'Rostered'}</Detail>
+        <Detail label="Usual shift">
+          {shift ? `${shift.code} · ${shift.name}` : e.defaultShiftId ? 'Assigned' : 'Rostered'}
+        </Detail>
         <Detail label="Fixed weekly off">{e.weeklyOff ?? 'Rostered'}</Detail>
         <Detail label="Attendance">{e.isAttendanceExempt ? 'Exempt' : 'Tracked by terminal'}</Detail>
         <Detail label="Terminal PIN" mono>
@@ -247,13 +294,21 @@ function DetailsTab({ employee: e }: { employee: EmployeeDetail }) {
   );
 }
 
-function PayTab({ employee: e, canChange, onChangeBank }: { employee: EmployeeDetail; canChange: boolean; onChangeBank: () => void }) {
+function PayTab({
+  employee: e,
+  canChange,
+  onChangeBank,
+}: {
+  employee: EmployeeDetail;
+  canChange: boolean;
+  onChangeBank: () => void;
+}) {
   return (
     <Stack gap={16}>
       <MessageBar intent="info" icon={<ShieldKeyholeRegular />} layout="multiline">
         <MessageBarBody>
-          Account, IFSC and PAN are stored encrypted and only ever shown masked. The full account number leaves the server only in the payroll bank-transfer file, and every
-          download is recorded.
+          Account, IFSC and PAN are stored encrypted and only ever shown masked. The full account number leaves the
+          server only in the payroll bank-transfer file, and every download is recorded.
         </MessageBarBody>
       </MessageBar>
       <DetailGrid>

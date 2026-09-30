@@ -69,7 +69,13 @@ export function AlertsTable(props: AlertsTableProps) {
             key: 'severity',
             header: 'Severity',
             width: 110,
-            render: (a) => <StatusBadge status={a.severity} tone={alertSeverityText[a.severity].tone} label={alertSeverityText[a.severity].label} />,
+            render: (a) => (
+              <StatusBadge
+                status={a.severity}
+                tone={alertSeverityText[a.severity].tone}
+                label={alertSeverityText[a.severity].label}
+              />
+            ),
           },
           ...(props.showPatient === false
             ? []
@@ -93,23 +99,43 @@ export function AlertsTable(props: AlertsTableProps) {
             render: (a) => (
               <span className={styles.stack}>
                 <Text className={a.severity === 'Critical' ? styles.critical : undefined} weight="semibold">
-                  {a.kind === 'DeviceSilence' ? <PlugDisconnectedRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 4 }} /> : null}
+                  {a.kind === 'DeviceSilence' ? (
+                    <PlugDisconnectedRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                  ) : null}
                   {a.message}
                 </Text>
-                {a.occurrences > 1 && <Caption1 className={styles.muted}>Happened {a.occurrences} times, last {formatRelative(a.lastOccurredAt)}</Caption1>}
+                {a.occurrences > 1 && (
+                  <Caption1 className={styles.muted}>
+                    Happened {a.occurrences} times, last {formatRelative(a.lastOccurredAt)}
+                  </Caption1>
+                )}
               </span>
             ),
           },
-          { key: 'raised', header: 'Raised', width: 120, priority: 'low', render: (a) => <span title={formatDateTime(a.raisedAt)}>{formatRelative(a.raisedAt)}</span> },
+          {
+            key: 'raised',
+            header: 'Raised',
+            width: 120,
+            priority: 'low',
+            render: (a) => <span title={formatDateTime(a.raisedAt)}>{formatRelative(a.raisedAt)}</span>,
+          },
           {
             key: 'status',
             header: 'Status',
             width: 140,
             render: (a) => (
               <span className={styles.stack}>
-                <StatusBadge status={a.status} tone={alertStatusText[a.status].tone} label={alertStatusText[a.status].label} />
-                {a.status === 'Acknowledged' && a.acknowledgedAt && <Caption1 className={styles.muted}>{formatRelative(a.acknowledgedAt)}</Caption1>}
-                {a.status === 'Resolved' && a.resolvedAt && <Caption1 className={styles.muted}>{formatRelative(a.resolvedAt)}</Caption1>}
+                <StatusBadge
+                  status={a.status}
+                  tone={alertStatusText[a.status].tone}
+                  label={alertStatusText[a.status].label}
+                />
+                {a.status === 'Acknowledged' && a.acknowledgedAt && (
+                  <Caption1 className={styles.muted}>{formatRelative(a.acknowledgedAt)}</Caption1>
+                )}
+                {a.status === 'Resolved' && a.resolvedAt && (
+                  <Caption1 className={styles.muted}>{formatRelative(a.resolvedAt)}</Caption1>
+                )}
               </span>
             ),
           },
@@ -120,11 +146,20 @@ export function AlertsTable(props: AlertsTableProps) {
                 a.status === 'Resolved' ? null : (
                   <div className={styles.actions}>
                     {a.status === 'Open' && (
-                      <Button size="small" icon={<EyeRegular />} onClick={() => setActing({ alert: a, action: 'acknowledge' })}>
+                      <Button
+                        size="small"
+                        icon={<EyeRegular />}
+                        onClick={() => setActing({ alert: a, action: 'acknowledge' })}
+                      >
                         Seen
                       </Button>
                     )}
-                    <Button size="small" appearance={a.status === 'Acknowledged' ? 'primary' : 'subtle'} icon={<CheckmarkCircleRegular />} onClick={() => setActing({ alert: a, action: 'resolve' })}>
+                    <Button
+                      size="small"
+                      appearance={a.status === 'Acknowledged' ? 'primary' : 'subtle'}
+                      icon={<CheckmarkCircleRegular />}
+                      onClick={() => setActing({ alert: a, action: 'resolve' })}
+                    >
                       Resolve
                     </Button>
                   </div>
@@ -145,21 +180,40 @@ export function AlertsTable(props: AlertsTableProps) {
   );
 }
 
-function AlertActionDialog({ acting, onClose }: { acting: { alert: RpmAlertDto; action: AlertAction } | null; onClose: () => void }) {
+function AlertActionDialog({
+  acting,
+  onClose,
+}: {
+  acting: { alert: RpmAlertDto; action: AlertAction } | null;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={acting !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 520 }}>{acting && <AlertActionContent key={`${acting.alert.id}-${acting.action}`} {...acting} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 520 }}>
+        {acting && <AlertActionContent key={`${acting.alert.id}-${acting.action}`} {...acting} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function AlertActionContent({ alert, action, onClose }: { alert: RpmAlertDto; action: AlertAction; onClose: () => void }) {
+function AlertActionContent({
+  alert,
+  action,
+  onClose,
+}: {
+  alert: RpmAlertDto;
+  action: AlertAction;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [notes, setNotes] = useState('');
   const act = useMutation({
-    mutationFn: () => (action === 'acknowledge' ? rpmApi.acknowledgeAlert(alert.id, notes.trim() || null) : rpmApi.resolveAlert(alert.id, notes.trim() || null)),
+    mutationFn: () =>
+      action === 'acknowledge'
+        ? rpmApi.acknowledgeAlert(alert.id, notes.trim() || null)
+        : rpmApi.resolveAlert(alert.id, notes.trim() || null),
     onSuccess: () => {
       notify.success(action === 'acknowledge' ? 'Marked as seen' : 'Alert resolved');
       void queryClient.invalidateQueries({ queryKey: rpmKeys.all });
@@ -187,22 +241,39 @@ function AlertActionContent({ alert, action, onClose }: { alert: RpmAlertDto; ac
         </DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Text className={alert.severity === 'Critical' ? styles.critical : undefined} weight="semibold">
-            {alert.severity === 'Critical' && <AlertUrgentRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 4 }} />}
+            {alert.severity === 'Critical' && (
+              <AlertUrgentRegular aria-hidden style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            )}
             {alert.message}
           </Text>
           <Caption1 className={styles.muted}>Raised {formatDateTime(alert.raisedAt)}</Caption1>
           <Field
             label={action === 'acknowledge' ? 'Note (optional)' : 'What was done (optional)'}
-            hint={action === 'resolve' ? 'For example: called the patient, medicine adjusted, repeat reading normal.' : undefined}
+            hint={
+              action === 'resolve'
+                ? 'For example: called the patient, medicine adjusted, repeat reading normal.'
+                : undefined
+            }
           >
-            <Textarea value={notes} onChange={(_, d) => setNotes(d.value.slice(0, 500))} rows={3} resize="vertical" autoFocus />
+            <Textarea
+              value={notes}
+              onChange={(_, d) => setNotes(d.value.slice(0, 500))}
+              rows={3}
+              resize="vertical"
+              autoFocus
+            />
           </Field>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={act.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={act.isPending} icon={act.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={act.isPending}
+            icon={act.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {action === 'acknowledge' ? 'Mark as seen' : 'Resolve'}
           </Button>
         </DialogActions>

@@ -1,4 +1,16 @@
-import { Badge, Button, Caption1, Field, makeStyles, Select, Switch, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  Select,
+  Switch,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { CertificateRegular, ClipboardTaskRegular, HandshakeRegular } from '@fluentui/react-icons';
 import { formatDateOnly } from '@hc360/core';
 import { DataTable, Page, PageHeader, Section } from '@hc360/ui';
@@ -67,7 +79,12 @@ function TabCount({ total, overdue }: { total: number | undefined; overdue: numb
     return null;
   }
   return (
-    <Badge size="small" appearance={overdue > 0 ? 'filled' : 'tint'} color={overdue > 0 ? 'danger' : total > 0 ? 'warning' : 'informative'} style={{ marginLeft: 6 }}>
+    <Badge
+      size="small"
+      appearance={overdue > 0 ? 'filled' : 'tint'}
+      color={overdue > 0 ? 'danger' : total > 0 ? 'warning' : 'informative'}
+      style={{ marginLeft: 6 }}
+    >
       {total}
     </Badge>
   );
@@ -126,7 +143,15 @@ function MaintenancePage() {
       <Section flush>
         <div className={styles.tabs}>
           <div className={styles.bar} style={{ flex: 1 }}>
-            <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, tab: d.value === 'pm' ? undefined : (d.value as MaintenanceTab) }), replace: true })}>
+            <TabList
+              selectedValue={tab}
+              onTabSelect={(_, d) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, tab: d.value === 'pm' ? undefined : (d.value as MaintenanceTab) }),
+                  replace: true,
+                })
+              }
+            >
               <Tab value="pm">
                 Preventive maintenance
                 <TabCount total={planRowsDue?.length} overdue={overdue(planRowsDue)} />
@@ -141,11 +166,21 @@ function MaintenancePage() {
               </Tab>
             </TabList>
             <div style={{ display: 'flex', gap: 16, alignItems: 'end', flexWrap: 'wrap' }}>
-              {tab === 'pm' && <Switch checked={allPlans} onChange={(_, d) => setAllPlans(d.checked)} label="All plans" />}
+              {tab === 'pm' && (
+                <Switch checked={allPlans} onChange={(_, d) => setAllPlans(d.checked)} label="All plans" />
+              )}
               <Field label="Look ahead" orientation="horizontal">
                 <Select
                   value={String(days)}
-                  onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, days: Number(d.value) === DEFAULT_WINDOW ? undefined : Number(d.value) }), replace: true })}
+                  onChange={(_, d) =>
+                    void navigate({
+                      search: (prev) => ({
+                        ...prev,
+                        days: Number(d.value) === DEFAULT_WINDOW ? undefined : Number(d.value),
+                      }),
+                      replace: true,
+                    })
+                  }
                   disabled={tab === 'pm' && allPlans}
                 >
                   {WINDOWS.map((w) => (
@@ -188,7 +223,12 @@ function MaintenancePage() {
                   </span>
                 ),
               },
-              { key: 'last', header: 'Last done', priority: 'low', render: (p) => (p.lastDoneOn ? formatDateOnly(p.lastDoneOn) : 'Not yet') },
+              {
+                key: 'last',
+                header: 'Last done',
+                priority: 'low',
+                render: (p) => (p.lastDoneOn ? formatDateOnly(p.lastDoneOn) : 'Not yet'),
+              },
               { key: 'due', header: 'Next visit', render: (p) => whenCell(p.daysToDue, p.nextDueDate) },
               { key: 'who', header: 'Done by', priority: 'low', render: (p) => p.assignedTo ?? '—' },
               {
@@ -204,7 +244,9 @@ function MaintenancePage() {
                   ) : null,
               },
             ]}
-            emptyTitle={allPlans ? 'No maintenance plans yet' : `No preventive maintenance due in the next ${days} days`}
+            emptyTitle={
+              allPlans ? 'No maintenance plans yet' : `No preventive maintenance due in the next ${days} days`
+            }
             emptyDescription="Plans are set up on each asset's Maintenance tab, with how often the visit is due."
           />
         )}
@@ -229,7 +271,10 @@ function MaintenancePage() {
                 align: 'end',
                 render: (i) =>
                   canMaintain ? (
-                    <RowButton icon={<CertificateRegular />} onClick={() => setCalibrateFor({ id: i.assetId, name: i.assetName, assetTag: i.assetTag })}>
+                    <RowButton
+                      icon={<CertificateRegular />}
+                      onClick={() => setCalibrateFor({ id: i.assetId, name: i.assetName, assetTag: i.assetTag })}
+                    >
                       Record calibration
                     </RowButton>
                   ) : null,
@@ -243,7 +288,8 @@ function MaintenancePage() {
         {tab === 'expiring' && (
           <>
             <Caption1 block className={styles.muted} style={{ padding: '0 16px 8px' }}>
-              Warranties and AMC/CMC contracts ending in the next {Math.max(days, EXPIRY_WINDOW)} days. Renew before the cover lapses.
+              Warranties and AMC/CMC contracts ending in the next {Math.max(days, EXPIRY_WINDOW)} days. Renew before the
+              cover lapses.
             </Caption1>
             <DataTable<MaintenanceDueItem>
               ariaLabel="Warranties and contracts ending"

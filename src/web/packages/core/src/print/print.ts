@@ -30,9 +30,18 @@ export async function printHtml(html: string, options: Omit<PrintHtmlRequest, 'h
 }
 
 /** Wraps body HTML with the page setup for the given paper size. */
-export function printDocument(body: string, options: { title: string; pageSize?: 'A4' | 'A5' | 'Receipt80' | 'Label50x25'; styles?: string }): string {
+export function printDocument(
+  body: string,
+  options: { title: string; pageSize?: 'A4' | 'A5' | 'Receipt80' | 'Label50x25'; styles?: string },
+): string {
   const size =
-    options.pageSize === 'Receipt80' ? '80mm auto' : options.pageSize === 'Label50x25' ? '50mm 25mm' : options.pageSize === 'A5' ? 'A5' : 'A4';
+    options.pageSize === 'Receipt80'
+      ? '80mm auto'
+      : options.pageSize === 'Label50x25'
+        ? '50mm 25mm'
+        : options.pageSize === 'A5'
+          ? 'A5'
+          : 'A4';
   const margin = options.pageSize === 'Receipt80' || options.pageSize === 'Label50x25' ? '2mm' : '12mm';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(options.title)}</title>
 <style>

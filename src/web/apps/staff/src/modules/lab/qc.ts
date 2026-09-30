@@ -67,7 +67,11 @@ export const QC_COLORS = {
 } as const;
 
 export function outcomeColor(outcome: QcOutcome): string {
-  return outcome === 'Rejected' ? QC_COLORS.rejected : outcome === 'AcceptedWithWarning' ? QC_COLORS.warning : QC_COLORS.accepted;
+  return outcome === 'Rejected'
+    ? QC_COLORS.rejected
+    : outcome === 'AcceptedWithWarning'
+      ? QC_COLORS.warning
+      : QC_COLORS.accepted;
 }
 
 /** Line style for a limit line: dotted at 1 SD, dashed at 2 SD, solid at 3 SD and the mean. */

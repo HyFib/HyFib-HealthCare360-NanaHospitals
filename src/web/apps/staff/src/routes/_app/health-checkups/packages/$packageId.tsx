@@ -32,14 +32,21 @@ function PackageEditorPage() {
       <PageHeader
         title={isNew ? 'New health package' : (pkg.data?.name ?? 'Health package')}
         subtitle={isNew ? 'Code, price, who it is for, and the tests and consultations it includes.' : pkg.data?.code}
-        breadcrumbs={[{ label: 'Health packages', onClick: toList }, { label: isNew ? 'New' : (pkg.data?.code ?? 'Package') }]}
+        breadcrumbs={[
+          { label: 'Health packages', onClick: toList },
+          { label: isNew ? 'New' : (pkg.data?.code ?? 'Package') },
+        ]}
       />
       <PackageForm
         key={isNew ? 'new' : packageId}
         pkg={isNew ? null : (pkg.data ?? null)}
         onSaved={(saved) => {
           if (isNew) {
-            void navigate({ to: '/health-checkups/packages/$packageId', params: { packageId: saved.id }, replace: true });
+            void navigate({
+              to: '/health-checkups/packages/$packageId',
+              params: { packageId: saved.id },
+              replace: true,
+            });
           }
         }}
       />

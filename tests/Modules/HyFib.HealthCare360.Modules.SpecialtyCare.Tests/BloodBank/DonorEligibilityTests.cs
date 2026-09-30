@@ -102,7 +102,9 @@ public sealed class DonorEligibilityTests
     {
         var result = Evaluate(Healthy with
         {
-            Systolic = systolic, Diastolic = diastolic, Pulse = pulse,
+            Systolic = systolic,
+            Diastolic = diastolic,
+            Pulse = pulse,
             TemperatureC = decimal.Parse(temperature, System.Globalization.CultureInfo.InvariantCulture),
         });
 
@@ -116,7 +118,9 @@ public sealed class DonorEligibilityTests
     public void Boundary_vitals_are_acceptable(int systolic, int diastolic, int pulse, string temperature) =>
         Evaluate(Healthy with
         {
-            Systolic = systolic, Diastolic = diastolic, Pulse = pulse,
+            Systolic = systolic,
+            Diastolic = diastolic,
+            Pulse = pulse,
             TemperatureC = decimal.Parse(temperature, System.Globalization.CultureInfo.InvariantCulture),
         }).IsEligible.ShouldBeTrue();
 

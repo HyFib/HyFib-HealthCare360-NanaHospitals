@@ -136,6 +136,45 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
 
+### Dependencies, secrets and code scanning
+CI runs these checks on every pull request and on main. A pull request cannot merge while one fails.
+- **Known-vulnerable packages fail the build**, whatever the severity, and whether the package is a direct or a
+  transitive dependency:
+  - NuGet audits every restore (`Directory.Build.props`).
+  - `pnpm audit` checks the web apps' lockfile.
+  - The weekly **Security audit** workflow runs both audits on main, so an advisory published while the code is not
+    changing still fails a run.
+  - An advisory reviewed as not affecting HC360 is accepted explicitly, never by lowering the level. For NuGet, add a
+    `NuGetAuditSuppress` item to `Directory.Packages.props`. For npm, add the advisory under `auditConfig` in
+    `pnpm-workspace.yaml`. Each entry has a comment giving the reason and the date to look again.
+- **Dependabot** proposes updates every Monday: NuGet packages, the web packages, the .NET SDK (the server and HC360
+  Desktop ship the runtime that comes with it) and the CI actions.
+  - Minor and patch updates come grouped, and CI tests them like any change.
+  - A new release waits 7 days first, long enough for a hijacked release to be caught and pulled. Microsoft's .NET
+    packages and the SDK do not wait, because their monthly releases carry the security fixes.
+- **CI actions** are pinned to commits, and no job keeps the checkout's token.
+- **Secret scan:** gitleaks checks every commit in the history, not only the latest files.
+  - Values reviewed as not secret, such as the fixed fake tokens in the tests, are listed in `.gitleaks.toml` with
+    where they come from.
+  - A real secret found in a commit must be revoked at its provider first. Removing it from the files is not enough,
+    because the history keeps it.
+- **Static analysis:**
+  - **.NET:** every security analyzer rule is an error, including those off by default: native library loading, TLS
+    and certificate validation, weak cryptography, insecure randomness and SQL built from text. An accepted exception
+    is a `[SuppressMessage]` next to the code, with its justification; each one is listed below. Test projects are
+    exempt from the SQL-text and randomness rules, because test code never ships.
+  - **Web apps:** ESLint refuses code built from strings (`eval`, `new Function`, `javascript:` links). It also refuses
+    HTML written straight into the page (`innerHTML`, `insertAdjacentHTML`, `document.write` and the like), where
+    React's escaping does not apply. A reviewed use carries an `eslint-disable` comment saying why its markup is safe.
+    The only one is the portal's in-page print, whose templates escape every value.
+
+| Rule | Where | Why it is accepted |
+|---|---|---|
+| CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
+| CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
+| CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
+| CA5398, fixed TLS versions | `Program.cs` (server) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
+
 ## 3. What the hospital must do
 
 1. Use WPA2/WPA3-Enterprise for the clinical SSID. Keep guests on a separate network that cannot reach the server.

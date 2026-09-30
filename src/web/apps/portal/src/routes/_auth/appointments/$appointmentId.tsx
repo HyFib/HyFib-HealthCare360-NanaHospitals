@@ -1,5 +1,11 @@
 import { Button, Field, makeStyles, Spinner, Textarea, tokens } from '@fluentui/react-components';
-import { CalendarCancelRegular, CalendarEditRegular, InfoRegular, PaymentRegular, VideoRegular } from '@fluentui/react-icons';
+import {
+  CalendarCancelRegular,
+  CalendarEditRegular,
+  InfoRegular,
+  PaymentRegular,
+  VideoRegular,
+} from '@fluentui/react-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
@@ -38,7 +44,12 @@ const useStyles = makeStyles({
     '@media (min-width: 900px)': { padding: '24px' },
   },
   pills: { display: 'flex', flexWrap: 'wrap', gap: '8px' },
-  actions: { display: 'flex', flexDirection: 'column', gap: '10px', '@media (min-width: 600px)': { flexDirection: 'row', flexWrap: 'wrap' } },
+  actions: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '10px',
+    '@media (min-width: 600px)': { flexDirection: 'row', flexWrap: 'wrap' },
+  },
   tip: { display: 'flex', gap: '8px', alignItems: 'flex-start', color: tokens.colorNeutralForeground2 },
 });
 
@@ -46,7 +57,10 @@ function AppointmentPage() {
   const { appointmentId } = Route.useParams();
   const t = useT();
   const { profile } = useActiveProfile();
-  const appointment = useQuery({ ...appointmentQueries.detail(profile.id, appointmentId), enabled: isGuid(appointmentId) });
+  const appointment = useQuery({
+    ...appointmentQueries.detail(profile.id, appointmentId),
+    enabled: isGuid(appointmentId),
+  });
   const back = <BackLink to="/appointments">{t('nav.appointments')}</BackLink>;
 
   if (!isGuid(appointmentId)) {
@@ -130,7 +144,8 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
     }
   };
 
-  const changeClosed = open && !appointment.canCancel && !appointment.canReschedule && appointment.status !== 'InConsultation';
+  const changeClosed =
+    open && !appointment.canCancel && !appointment.canReschedule && appointment.status !== 'InConsultation';
 
   return (
     <PortalPage
@@ -150,12 +165,21 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
         </div>
         <InfoList
           items={[
-            { label: t('appointment.when'), value: `${f.dateLong(appointment.startsAt)}, ${f.time(appointment.startsAt)}` },
+            {
+              label: t('appointment.when'),
+              value: `${f.dateLong(appointment.startsAt)}, ${f.time(appointment.startsAt)}`,
+            },
             {
               label: t('appointment.where'),
-              value: appointment.isTelehealth ? t('booking.confirm.videoWhere') : (appointment.facilityName ?? hospital),
+              value: appointment.isTelehealth
+                ? t('booking.confirm.videoWhere')
+                : (appointment.facilityName ?? hospital),
             },
-            { label: t('common.department'), value: appointment.specialtyName ?? appointment.departmentName, hideEmpty: true },
+            {
+              label: t('common.department'),
+              value: appointment.specialtyName ?? appointment.departmentName,
+              hideEmpty: true,
+            },
             { label: t('appointment.visitType'), value: t(VISIT_TYPE[appointment.visitType]) },
             { label: t('booking.confirm.patient'), value: appointment.patientName },
             { label: t('appointment.number'), value: appointment.number },
@@ -172,7 +196,12 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
         <div className={styles.actions}>
           {appointment.isTelehealth &&
             (session ? (
-              <ButtonLink appearance="primary" icon={<VideoRegular />} to="/video/$sessionId" params={{ sessionId: session.id }}>
+              <ButtonLink
+                appearance="primary"
+                icon={<VideoRegular />}
+                to="/video/$sessionId"
+                params={{ sessionId: session.id }}
+              >
                 {t('appointment.joinVideo')}
               </ButtonLink>
             ) : (
@@ -203,7 +232,13 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
             </ButtonLink>
           )}
           {appointment.canCancel && (
-            <Button appearance="subtle" size="large" icon={<CalendarCancelRegular />} disabled={busy !== null} onClick={() => setCancelOpen(true)}>
+            <Button
+              appearance="subtle"
+              size="large"
+              icon={<CalendarCancelRegular />}
+              disabled={busy !== null}
+              onClick={() => setCancelOpen(true)}
+            >
               {t('appointment.cancel')}
             </Button>
           )}
@@ -229,7 +264,13 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
       >
         <p style={{ marginTop: 0 }}>{t('appointment.cancel.body')}</p>
         <Field label={t('appointment.cancel.reason')}>
-          <Textarea value={reason} onChange={(_, data) => setReason(data.value)} maxLength={300} rows={2} resize="vertical" />
+          <Textarea
+            value={reason}
+            onChange={(_, data) => setReason(data.value)}
+            maxLength={300}
+            rows={2}
+            resize="vertical"
+          />
         </Field>
       </ConfirmDialog>
     </PortalPage>

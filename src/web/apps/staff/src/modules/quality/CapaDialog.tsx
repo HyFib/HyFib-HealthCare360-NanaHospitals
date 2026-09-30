@@ -25,7 +25,10 @@ const schema = z.object({
   source: z.enum(CAPA_SOURCES),
   type: z.enum(['Corrective', 'Preventive']),
   action: z.string().trim().min(5, 'Describe the action: what will be done, where and by when.').max(2000),
-  owner: z.object({ id: z.string(), name: z.string() }).nullable().refine((v) => Boolean(v), 'Choose who owns this action.'),
+  owner: z
+    .object({ id: z.string(), name: z.string() })
+    .nullable()
+    .refine((v) => Boolean(v), 'Choose who owns this action.'),
   dueDate: z.string({ error: 'Choose the due date.' }).min(1, 'Choose the due date.'),
   effectivenessCheckDue: z.string().nullable(),
 });
@@ -44,10 +47,22 @@ export interface CapaContext {
  * Plan (or edit) a corrective/preventive action. From an incident or a risk the source is fixed; the owner is notified
  * as soon as it is saved.
  */
-export function CapaDialog({ open, onClose, context, capa }: { open: boolean; onClose: () => void; context?: CapaContext; capa?: CapaDetail | null }) {
+export function CapaDialog({
+  open,
+  onClose,
+  context,
+  capa,
+}: {
+  open: boolean;
+  onClose: () => void;
+  context?: CapaContext;
+  capa?: CapaDetail | null;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>{open && <Body onClose={onClose} context={context} capa={capa ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
+        {open && <Body onClose={onClose} context={context} capa={capa ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -107,7 +122,13 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
     }
   };
 
-  const about = context?.incidentNumber ? `For incident ${context.incidentNumber}` : context?.riskNumber ? `For risk ${context.riskNumber}` : capa ? capa.capaNumber : null;
+  const about = context?.incidentNumber
+    ? `For incident ${context.incidentNumber}`
+    : context?.riskNumber
+      ? `For risk ${context.riskNumber}`
+      : capa
+        ? capa.capaNumber
+        : null;
 
   return (
     <form onSubmit={form.handleSubmit(submit)} noValidate>
@@ -124,7 +145,9 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
                 name="source"
                 label="Arising from"
                 disabled={fixedSource}
-                options={CAPA_SOURCES.filter((s) => (fixedSource ? true : s !== 'Incident' && s !== 'Risk')).map((s) => ({ value: s, label: capaSourceLabel[s] }))}
+                options={CAPA_SOURCES.filter((s) => (fixedSource ? true : s !== 'Incident' && s !== 'Risk')).map(
+                  (s) => ({ value: s, label: capaSourceLabel[s] }),
+                )}
               />
               <ChoiceField
                 control={form.control}
@@ -137,17 +160,44 @@ function Body({ onClose, context, capa }: { onClose: () => void; context?: CapaC
               />
             </FormGrid>
           )}
-          <TextAreaField control={form.control} name="action" label="Action" required rows={3} maxLength={2000} placeholder="For example: separate look-alike insulin vials on the ward trolley and add tall-man labels" />
+          <TextAreaField
+            control={form.control}
+            name="action"
+            label="Action"
+            required
+            rows={3}
+            maxLength={2000}
+            placeholder="For example: separate look-alike insulin vials on the ward trolley and add tall-man labels"
+          />
           <FormGrid columns={2} minColumnWidth={220}>
             <Controller
               control={form.control}
               name="owner"
               render={({ field, fieldState }) => (
-                <UserPicker label="Owner" required value={field.value} onChange={field.onChange} validationMessage={fieldState.error?.message} />
+                <UserPicker
+                  label="Owner"
+                  required
+                  value={field.value}
+                  onChange={field.onChange}
+                  validationMessage={fieldState.error?.message}
+                />
               )}
             />
-            <DateField control={form.control} name="dueDate" label="Due by" required min={capa ? undefined : todayIso()} />
-            {capa && <DateField control={form.control} name="effectivenessCheckDue" label="Check effectiveness by" hint="Set automatically 30 days after completion." />}
+            <DateField
+              control={form.control}
+              name="dueDate"
+              label="Due by"
+              required
+              min={capa ? undefined : todayIso()}
+            />
+            {capa && (
+              <DateField
+                control={form.control}
+                name="effectivenessCheckDue"
+                label="Check effectiveness by"
+                hint="Set automatically 30 days after completion."
+              />
+            )}
           </FormGrid>
         </DialogContent>
         <DialogActions>

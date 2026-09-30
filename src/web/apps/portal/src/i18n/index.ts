@@ -19,7 +19,11 @@ export function createTranslator(language: Language): Translate {
 const translators: Record<Language, Translate> = { en: createTranslator('en'), hi: createTranslator('hi') };
 
 /** Translates outside React (print templates, toasts built in event handlers). */
-export function translate(key: MessageKey, vars?: MessageVars, language: Language = useLanguageStore.getState().language): string {
+export function translate(
+  key: MessageKey,
+  vars?: MessageVars,
+  language: Language = useLanguageStore.getState().language,
+): string {
   return translators[language](key, vars);
 }
 

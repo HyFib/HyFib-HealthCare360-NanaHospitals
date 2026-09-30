@@ -1,4 +1,11 @@
-import { Button, makeStyles, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle } from '@fluentui/react-components';
+import {
+  Button,
+  makeStyles,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  MessageBarTitle,
+} from '@fluentui/react-components';
 import { ArrowClockwiseRegular, PlugDisconnectedRegular, WifiWarningRegular } from '@fluentui/react-icons';
 import { useConnection } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';

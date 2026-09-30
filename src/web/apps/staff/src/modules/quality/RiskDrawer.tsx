@@ -1,7 +1,26 @@
-import { Caption1, Field, makeStyles, MessageBar, MessageBarBody, Select, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Caption1,
+  Field,
+  makeStyles,
+  MessageBar,
+  MessageBarBody,
+  Select,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { humanize, isApiError, todayIso } from '@hc360/core';
-import { applyServerErrors, DateField, ErrorState, FormGrid, SelectField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DateField,
+  ErrorState,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
@@ -43,10 +62,19 @@ const schema = z
 type Values = z.infer<typeof schema>;
 
 const useStyles = makeStyles({
-  scores: { display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center', padding: '8px 10px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3 },
+  scores: {
+    display: 'flex',
+    gap: '16px',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    padding: '8px 10px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorNeutralBackground3,
+  },
 });
 
-const levelOptions = (labels: readonly string[]) => labels.map((label, index) => ({ value: String(index + 1), label: `${index + 1} · ${label}` }));
+const levelOptions = (labels: readonly string[]) =>
+  labels.map((label, index) => ({ value: String(index + 1), label: `${index + 1} · ${label}` }));
 
 /** Add or edit a risk; `riskId` null creates one. Scores and ratings are shown live as the levels are chosen. */
 export function RiskDrawer({ riskId, onClose }: { riskId: string | null; onClose: () => void }) {
@@ -54,7 +82,11 @@ export function RiskDrawer({ riskId, onClose }: { riskId: string | null; onClose
   if (riskId && !risk.data) {
     return (
       <EditorDrawer open title="Risk" onClose={onClose} onSubmit={(e) => e.preventDefault()} busy={false}>
-        {risk.error ? <ErrorState error={risk.error} onRetry={() => void risk.refetch()} /> : <Spinner label="Loading…" />}
+        {risk.error ? (
+          <ErrorState error={risk.error} onRetry={() => void risk.refetch()} />
+        ) : (
+          <Spinner label="Loading…" />
+        )}
       </EditorDrawer>
     );
   }
@@ -85,7 +117,10 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       status: risk?.status ?? 'Open',
     },
   });
-  const [likelihood, impact, rl, ri] = useWatch({ control: form.control, name: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'] });
+  const [likelihood, impact, rl, ri] = useWatch({
+    control: form.control,
+    name: ['likelihood', 'impact', 'residualLikelihood', 'residualImpact'],
+  });
   const inherent = riskScore(likelihood, impact);
   const residual = rl && ri ? riskScore(rl, ri) : null;
 
@@ -131,12 +166,22 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
   };
 
   // Levels are numbers in the form; the select works with strings.
-  const levelField = (name: 'likelihood' | 'impact' | 'residualLikelihood' | 'residualImpact', label: string, labels: readonly string[], optional?: boolean) => (
+  const levelField = (
+    name: 'likelihood' | 'impact' | 'residualLikelihood' | 'residualImpact',
+    label: string,
+    labels: readonly string[],
+    optional?: boolean,
+  ) => (
     <Controller
       control={form.control}
       name={name}
       render={({ field, fieldState }) => (
-        <Field label={label} required={!optional} validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+        <Field
+          label={label}
+          required={!optional}
+          validationMessage={fieldState.error?.message}
+          validationState={fieldState.error ? 'error' : 'none'}
+        >
           <Select
             value={field.value === null ? '' : String(field.value)}
             onChange={(_, d) => field.onChange(d.value === '' ? null : Number(d.value))}
@@ -164,18 +209,51 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       busy={busy}
       submitLabel={risk ? 'Save risk' : 'Add risk'}
     >
-      <TextField control={form.control} name="title" label="Risk" required autoFocus maxLength={200} hint="For example: patient falls in the dialysis unit" />
-      <TextAreaField control={form.control} name="description" label="Description" rows={2} maxLength={2000} placeholder="Cause, event and consequence" />
+      <TextField
+        control={form.control}
+        name="title"
+        label="Risk"
+        required
+        autoFocus
+        maxLength={200}
+        hint="For example: patient falls in the dialysis unit"
+      />
+      <TextAreaField
+        control={form.control}
+        name="description"
+        label="Description"
+        rows={2}
+        maxLength={2000}
+        placeholder="Cause, event and consequence"
+      />
       <FormGrid columns={2} minColumnWidth={220}>
-        <SelectField control={form.control} name="category" label="Category" required options={RISK_CATEGORIES.map((c) => ({ value: c, label: humanize(c) }))} />
-        <SelectField control={form.control} name="departmentId" label="Department" placeholder="Hospital-wide" options={toOptions(departments.data)} />
+        <SelectField
+          control={form.control}
+          name="category"
+          label="Category"
+          required
+          options={RISK_CATEGORIES.map((c) => ({ value: c, label: humanize(c) }))}
+        />
+        <SelectField
+          control={form.control}
+          name="departmentId"
+          label="Department"
+          placeholder="Hospital-wide"
+          options={toOptions(departments.data)}
+        />
       </FormGrid>
       <Text weight="semibold">Before controls (inherent risk)</Text>
       <FormGrid columns={2} minColumnWidth={200}>
         {levelField('likelihood', 'Likelihood', LIKELIHOOD_LABELS)}
         {levelField('impact', 'Impact', IMPACT_LABELS)}
       </FormGrid>
-      <TextAreaField control={form.control} name="existingControls" label="Controls already in place" rows={2} maxLength={2000} />
+      <TextAreaField
+        control={form.control}
+        name="existingControls"
+        label="Controls already in place"
+        rows={2}
+        maxLength={2000}
+      />
       <Text weight="semibold">After controls (residual risk)</Text>
       <FormGrid columns={2} minColumnWidth={200}>
         {levelField('residualLikelihood', 'Likelihood', LIKELIHOOD_LABELS, true)}
@@ -185,7 +263,14 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
         <span>
           Inherent: <RatingBadge rating={riskRating(inherent)} score={inherent} />
         </span>
-        <span>Residual: {residual !== null ? <RatingBadge rating={riskRating(residual)} score={residual} /> : <Caption1>not assessed</Caption1>}</span>
+        <span>
+          Residual:{' '}
+          {residual !== null ? (
+            <RatingBadge rating={riskRating(residual)} score={residual} />
+          ) : (
+            <Caption1>not assessed</Caption1>
+          )}
+        </span>
       </div>
       {residual !== null && residual > inherent && (
         <MessageBar intent="error">
@@ -194,9 +279,19 @@ function RiskForm({ risk, onClose }: { risk: RiskDetail | null; onClose: () => v
       )}
       <TextAreaField control={form.control} name="mitigationPlan" label="Plan to reduce it" rows={2} maxLength={2000} />
       <FormGrid columns={2} minColumnWidth={220}>
-        <Controller control={form.control} name="owner" render={({ field }) => <UserPicker label="Risk owner" value={field.value} onChange={field.onChange} />} />
+        <Controller
+          control={form.control}
+          name="owner"
+          render={({ field }) => <UserPicker label="Risk owner" value={field.value} onChange={field.onChange} />}
+        />
         <DateField control={form.control} name="reviewDate" label="Next review" required />
-        <SelectField control={form.control} name="status" label="Status" required options={RISK_STATUSES.map((s) => ({ value: s, label: riskStatusLabel[s] }))} />
+        <SelectField
+          control={form.control}
+          name="status"
+          label="Status"
+          required
+          options={RISK_STATUSES.map((s) => ({ value: s, label: riskStatusLabel[s] }))}
+        />
       </FormGrid>
     </EditorDrawer>
   );

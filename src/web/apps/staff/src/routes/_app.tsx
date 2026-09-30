@@ -40,7 +40,10 @@ function AppLayout() {
   }
 
   return (
-    <RealtimeProvider accessTokenFactory={() => useSession.getState().accessToken ?? ''} enabled={status === 'authenticated'}>
+    <RealtimeProvider
+      accessTokenFactory={() => useSession.getState().accessToken ?? ''}
+      enabled={status === 'authenticated'}
+    >
       <AppShell>
         <Outlet />
       </AppShell>

@@ -71,7 +71,14 @@ export function statusFor(paid: number, due: number): SaleStatus {
  * counter gives change outside the system).
  */
 export function checkPayments(payable: number, payments: readonly SalePayment[], creditAllowed: boolean): PaymentCheck {
-  const fail = (message: string, field: PaymentCheck['field']): PaymentCheck => ({ ok: false, message, field, paid: 0, due: payable, status: 'Credit' });
+  const fail = (message: string, field: PaymentCheck['field']): PaymentCheck => ({
+    ok: false,
+    message,
+    field,
+    paid: 0,
+    due: payable,
+    status: 'Credit',
+  });
   if (payable === 0 && payments.length === 0) {
     return { ok: true, message: null, field: null, paid: 0, due: 0, status: 'Paid' };
   }
@@ -102,7 +109,14 @@ export function checkPayments(payable: number, payments: readonly SalePayment[],
   }
   const paid = sum(payments.filter((p) => p.mode !== 'Credit').map((p) => dec(p.amount)));
   const due = dec(payable) - paid;
-  return { ok: true, message: null, field: null, paid: toNumber(paid), due: toNumber(due), status: statusFor(toNumber(paid), toNumber(due)) };
+  return {
+    ok: true,
+    message: null,
+    field: null,
+    paid: toNumber(paid),
+    due: toNumber(due),
+    status: statusFor(toNumber(paid), toNumber(due)),
+  };
 }
 
 /** Change to hand back for cash received (never negative). */

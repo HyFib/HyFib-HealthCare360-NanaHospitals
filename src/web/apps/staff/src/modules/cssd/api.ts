@@ -20,10 +20,21 @@ export const LOAD_STATUS_LABEL: Record<LoadStatus, string> = {
 };
 /** Badge colour of a load status (the badge also shows the status word). */
 export function loadStatusTone(status: LoadStatus): 'success' | 'danger' | 'warning' | 'brand' {
-  return status === 'Released' ? 'success' : status === 'Failed' ? 'danger' : status === 'Completed' ? 'warning' : 'brand';
+  return status === 'Released'
+    ? 'success'
+    : status === 'Failed'
+      ? 'danger'
+      : status === 'Completed'
+        ? 'warning'
+        : 'brand';
 }
 
-export const REQUEST_STATUS_LABEL: Record<CssdRequestStatus, string> = { Open: 'Open', PartiallyIssued: 'Partly issued', Issued: 'Issued', Cancelled: 'Cancelled' };
+export const REQUEST_STATUS_LABEL: Record<CssdRequestStatus, string> = {
+  Open: 'Open',
+  PartiallyIssued: 'Partly issued',
+  Issued: 'Issued',
+  Cancelled: 'Cancelled',
+};
 export const PACK_STATUS_LABEL: Record<PackStatus, string> = {
   InProcess: 'In sterilizer',
   Available: 'On shelf',
@@ -32,7 +43,12 @@ export const PACK_STATUS_LABEL: Record<PackStatus, string> = {
   Recalled: 'Recalled',
   Reprocess: 'Reprocess',
 };
-export const ISSUE_STATUS_LABEL: Record<SetIssueStatus, string> = { Issued: 'Issued', Used: 'Used on patient', Returned: 'Returned', Recalled: 'Recalled' };
+export const ISSUE_STATUS_LABEL: Record<SetIssueStatus, string> = {
+  Issued: 'Issued',
+  Used: 'Used on patient',
+  Returned: 'Returned',
+  Recalled: 'Recalled',
+};
 
 export interface InstrumentSetItem {
   name: string;
@@ -126,7 +142,11 @@ export interface ReceiveSoiledRequest {
   departmentId: string;
   handedOverByName: string | null;
   notes: string | null;
-  lines: { instrumentSetId: string; setIssueId: string | null; counts: { itemName: string; received: number; damaged: number }[] }[];
+  lines: {
+    instrumentSetId: string;
+    setIssueId: string | null;
+    counts: { itemName: string; received: number; damaged: number }[];
+  }[];
 }
 
 export interface SterilePackDto {
@@ -289,9 +309,12 @@ export interface IssueFilters {
 export const cssdKeys = {
   all: ['cssd'] as const,
   sets: (includeInactive: boolean) => ['cssd', 'sets', includeInactive] as const,
-  requests: (filters: { status?: CssdRequestStatus; departmentId?: string; openOnly?: boolean }) => ['cssd', 'requests', filters] as const,
-  receipts: (filters: { from?: string; to?: string; discrepanciesOnly?: boolean }) => ['cssd', 'receipts', filters] as const,
-  packs: (filters: { setId?: string; status?: PackStatus; expiringWithinDays?: number }) => ['cssd', 'packs', filters] as const,
+  requests: (filters: { status?: CssdRequestStatus; departmentId?: string; openOnly?: boolean }) =>
+    ['cssd', 'requests', filters] as const,
+  receipts: (filters: { from?: string; to?: string; discrepanciesOnly?: boolean }) =>
+    ['cssd', 'receipts', filters] as const,
+  packs: (filters: { setId?: string; status?: PackStatus; expiringWithinDays?: number }) =>
+    ['cssd', 'packs', filters] as const,
   issues: (filters: IssueFilters) => ['cssd', 'issues', filters] as const,
   summary: (from: string, to: string) => ['cssd', 'summary', from, to] as const,
   loads: (filters: LoadFilters) => ['cssd', 'loads', filters] as const,
@@ -303,7 +326,11 @@ export const cssdQueries = {
   sets: (includeInactive = false) =>
     queryOptions({
       queryKey: cssdKeys.sets(includeInactive),
-      queryFn: ({ signal }) => api.get<InstrumentSetDto[]>('/api/v1/cssd/sets', { query: { includeInactive: includeInactive || undefined }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<InstrumentSetDto[]>('/api/v1/cssd/sets', {
+          query: { includeInactive: includeInactive || undefined },
+          signal,
+        }),
       staleTime: 60_000,
     }),
   requests: (filters: { status?: CssdRequestStatus; departmentId?: string; openOnly?: boolean }) =>
@@ -325,7 +352,8 @@ export const cssdQueries = {
   issues: (filters: IssueFilters) =>
     queryOptions({
       queryKey: cssdKeys.issues(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<SetIssueDto>>('/api/v1/cssd/issues', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<SetIssueDto>>('/api/v1/cssd/issues', { query: { pageSize: 25, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   summary: (from: string, to: string) =>
@@ -337,7 +365,8 @@ export const cssdQueries = {
   loads: (filters: LoadFilters) =>
     queryOptions({
       queryKey: cssdKeys.loads(filters),
-      queryFn: ({ signal }) => api.get<PagedResult<LoadListItem>>('/api/v1/cssd/loads', { query: { pageSize: 25, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<LoadListItem>>('/api/v1/cssd/loads', { query: { pageSize: 25, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   load: (id: string) =>
@@ -359,13 +388,23 @@ export const cssdApi = {
   cancelRequest: (id: string, reason: string) => api.post<void>(`/api/v1/cssd/requests/${id}/cancel`, { reason }),
   receiveSoiled: (body: ReceiveSoiledRequest) => api.post<SoiledReceiptDto>('/api/v1/cssd/receipts', body),
   issue: (body: IssuePacksRequest) => api.post<SetIssueDto[]>('/api/v1/cssd/issues', body),
-  recordUse: (issueId: string, body: { patientId: string; usedAt: string | null }) => api.post<void>(`/api/v1/cssd/issues/${issueId}/use`, body),
-  acknowledgeRecall: (issueId: string, action: string) => api.post<void>(`/api/v1/cssd/issues/${issueId}/acknowledge-recall`, { action }),
+  recordUse: (issueId: string, body: { patientId: string; usedAt: string | null }) =>
+    api.post<void>(`/api/v1/cssd/issues/${issueId}/use`, body),
+  acknowledgeRecall: (issueId: string, action: string) =>
+    api.post<void>(`/api/v1/cssd/issues/${issueId}/acknowledge-recall`, { action }),
   createLoad: (body: CreateLoadRequest) => api.post<LoadDto>('/api/v1/cssd/loads', body),
   startLoad: (id: string) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/start`),
-  completeLoad: (id: string, body: { temperatureC: number; pressureKpa: number | null; exposureMinutes: number; chemicalIndicator: 'Pass' | 'Fail' }) =>
-    api.post<LoadDto>(`/api/v1/cssd/loads/${id}/complete`, body),
+  completeLoad: (
+    id: string,
+    body: {
+      temperatureC: number;
+      pressureKpa: number | null;
+      exposureMinutes: number;
+      chemicalIndicator: 'Pass' | 'Fail';
+    },
+  ) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/complete`, body),
   releaseLoad: (id: string) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/release`),
-  recordBiological: (id: string, body: { result: 'Pass' | 'Fail'; lot: string | null }) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/biological-indicator`, body),
+  recordBiological: (id: string, body: { result: 'Pass' | 'Fail'; lot: string | null }) =>
+    api.post<LoadDto>(`/api/v1/cssd/loads/${id}/biological-indicator`, body),
   abortLoad: (id: string, reason: string) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/abort`, { reason }),
 };

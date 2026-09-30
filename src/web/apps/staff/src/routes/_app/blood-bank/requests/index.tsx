@@ -1,4 +1,14 @@
-import { Button, Caption1, Field, ProgressBar, SearchBox, Select, Switch, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  ProgressBar,
+  SearchBox,
+  Select,
+  Switch,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { DropRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
@@ -6,7 +16,13 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { bloodKeys, bloodQueries, REQUEST_STATUSES, type BloodRequestStatus, type RequestFilters } from '@/modules/blood-bank/api';
+import {
+  bloodKeys,
+  bloodQueries,
+  REQUEST_STATUSES,
+  type BloodRequestStatus,
+  type RequestFilters,
+} from '@/modules/blood-bank/api';
 import { RequestStatusBadge, UrgencyBadge } from '@/modules/blood-bank/BloodBadges';
 import { componentShort, groupLabel, requestStatusLabel } from '@/modules/blood-bank/labels';
 import { NoAccess } from '@/modules/ot/shared/feedback';
@@ -36,7 +52,10 @@ function BloodRequestsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -50,17 +69,25 @@ function BloodRequestsPage() {
     );
   }
 
-  const set = (patch: Partial<RequestFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<RequestFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Blood requests"
         subtitle="Emergency requests first. Search by request number, patient name, UHID or mobile."
-        breadcrumbs={[{ label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) }, { label: 'Requests' }]}
+        breadcrumbs={[
+          { label: 'Blood stock', onClick: () => void navigate({ to: '/blood-bank' }) },
+          { label: 'Requests' },
+        ]}
         actions={
           canRequest && (
-            <Button appearance="primary" icon={<DropRegular />} onClick={() => void navigate({ to: '/blood-bank/requests/new' })}>
+            <Button
+              appearance="primary"
+              icon={<DropRegular />}
+              onClick={() => void navigate({ to: '/blood-bank/requests/new' })}
+            >
               Request blood
             </Button>
           )
@@ -70,10 +97,17 @@ function BloodRequestsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Request number, name, UHID or mobile" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Request number, name, UHID or mobile"
+              />
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as BloodRequestStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as BloodRequestStatus | undefined })}
+              >
                 <option value="">{filters.closed ? 'All' : 'All open'}</option>
                 {REQUEST_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -82,7 +116,11 @@ function BloodRequestsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(filters.closed)} onChange={(_, d) => set({ closed: d.checked || undefined })} label="Include issued and cancelled" />
+            <Switch
+              checked={Boolean(filters.closed)}
+              onChange={(_, d) => set({ closed: d.checked || undefined })}
+              label="Include issued and cancelled"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -107,7 +145,11 @@ function BloodRequestsPage() {
                 </span>
               ),
             },
-            { key: 'what', header: 'Asked for', render: (r) => `${r.unitsRequested} × ${componentShort[r.componentType]}` },
+            {
+              key: 'what',
+              header: 'Asked for',
+              render: (r) => `${r.unitsRequested} × ${componentShort[r.componentType]}`,
+            },
             {
               key: 'progress',
               header: 'Progress',
@@ -116,7 +158,10 @@ function BloodRequestsPage() {
                   <Caption1>
                     {r.unitsIssued} issued · {r.unitsReserved} reserved
                   </Caption1>
-                  <ProgressBar value={r.unitsRequested ? r.unitsIssued / r.unitsRequested : 0} aria-label={`${r.unitsIssued} of ${r.unitsRequested} issued`} />
+                  <ProgressBar
+                    value={r.unitsRequested ? r.unitsIssued / r.unitsRequested : 0}
+                    aria-label={`${r.unitsIssued} of ${r.unitsRequested} issued`}
+                  />
                 </span>
               ),
             },
@@ -127,7 +172,13 @@ function BloodRequestsPage() {
               priority: 'low',
               render: (r) =>
                 r.requiredBy ? (
-                  <Text style={Date.parse(r.requiredBy) < now && r.status !== 'Issued' ? { color: tokens.colorPaletteRedForeground1, fontWeight: 600 } : undefined}>
+                  <Text
+                    style={
+                      Date.parse(r.requiredBy) < now && r.status !== 'Issued'
+                        ? { color: tokens.colorPaletteRedForeground1, fontWeight: 600 }
+                        : undefined
+                    }
+                  >
                     {formatDateTime(r.requiredBy)}
                   </Text>
                 ) : (

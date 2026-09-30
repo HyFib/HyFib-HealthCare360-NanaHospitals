@@ -33,7 +33,9 @@ describe('applyServerErrors', () => {
 
   it('ignores non-validation errors', () => {
     const setError = vi.fn();
-    expect(applyServerErrors(new ApiError({ status: 409, title: 'Conflict', code: 'duplicate' }), setError)).toBe(false);
+    expect(applyServerErrors(new ApiError({ status: 409, title: 'Conflict', code: 'duplicate' }), setError)).toBe(
+      false,
+    );
     expect(applyServerErrors(new Error('boom'), setError)).toBe(false);
     expect(setError).not.toHaveBeenCalled();
   });

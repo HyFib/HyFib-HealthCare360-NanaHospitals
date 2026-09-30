@@ -66,7 +66,12 @@ function PunchesPage() {
         icon={<FingerprintRegular />}
       />
       <SubNav items={ATTENDANCE_NAV} ariaLabel="Attendance screens" />
-      <TabList selectedValue={search.tab ?? 'punches'} onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, tab: d.value === 'unmatched' ? 'unmatched' : undefined }) })}>
+      <TabList
+        selectedValue={search.tab ?? 'punches'}
+        onTabSelect={(_, d) =>
+          void navigate({ search: (prev) => ({ ...prev, tab: d.value === 'unmatched' ? 'unmatched' : undefined }) })
+        }
+      >
         <Tab value="punches">Punches by day</Tab>
         <Tab value="unmatched">Unknown PINs</Tab>
       </TabList>
@@ -82,10 +87,17 @@ function PunchList({ search }: { search: PunchSearch }) {
   const to = search.to ?? today;
   const from = search.from ?? addDays(to, -1);
   const tooLong = diffDays(from, to) > 31 || diffDays(from, to) < 0;
-  const employee = useQuery({ ...hrQueries.employee(search.employeeId ?? ''), enabled: Boolean(search.employeeId) && canReadEmployees });
+  const employee = useQuery({
+    ...hrQueries.employee(search.employeeId ?? ''),
+    enabled: Boolean(search.employeeId) && canReadEmployees,
+  });
   const punches = useQuery({ ...hrQueries.punches(from, to, search.employeeId), enabled: !tooLong });
   const picked: PickedEmployee | null = search.employeeId
-    ? { id: search.employeeId, code: employee.data?.employeeCode ?? '', name: employee.data?.fullName ?? punches.data?.find((p) => p.employeeName)?.employeeName ?? 'Selected employee' }
+    ? {
+        id: search.employeeId,
+        code: employee.data?.employeeCode ?? '',
+        name: employee.data?.fullName ?? punches.data?.find((p) => p.employeeName)?.employeeName ?? 'Selected employee',
+      }
     : null;
 
   return (
@@ -103,10 +115,26 @@ function PunchList({ search }: { search: PunchSearch }) {
             </div>
           )}
           <Field label="From">
-            <Input type="date" value={from} max={today} onChange={(_, d) => isIsoDate(d.value) && void navigate({ search: (prev) => ({ ...prev, from: d.value }) })} />
+            <Input
+              type="date"
+              value={from}
+              max={today}
+              onChange={(_, d) =>
+                isIsoDate(d.value) && void navigate({ search: (prev) => ({ ...prev, from: d.value }) })
+              }
+            />
           </Field>
-          <Field label="To" validationMessage={tooLong ? 'Choose at most 31 days.' : undefined} validationState={tooLong ? 'error' : 'none'}>
-            <Input type="date" value={to} max={today} onChange={(_, d) => isIsoDate(d.value) && void navigate({ search: (prev) => ({ ...prev, to: d.value }) })} />
+          <Field
+            label="To"
+            validationMessage={tooLong ? 'Choose at most 31 days.' : undefined}
+            validationState={tooLong ? 'error' : 'none'}
+          >
+            <Input
+              type="date"
+              value={to}
+              max={today}
+              onChange={(_, d) => isIsoDate(d.value) && void navigate({ search: (prev) => ({ ...prev, to: d.value }) })}
+            />
           </Field>
         </FilterBar>
       </FilterPad>
@@ -122,11 +150,33 @@ function PunchList({ search }: { search: PunchSearch }) {
           {
             key: 'employee',
             header: 'Employee',
-            render: (p) => (p.employeeName ? <Text weight="semibold">{p.employeeName}</Text> : <Caption1>Unknown PIN {p.pin}</Caption1>),
+            render: (p) =>
+              p.employeeName ? (
+                <Text weight="semibold">{p.employeeName}</Text>
+              ) : (
+                <Caption1>Unknown PIN {p.pin}</Caption1>
+              ),
           },
-          { key: 'pin', header: 'PIN', width: 90, priority: 'low', render: (p) => <Text font="monospace">{p.pin}</Text> },
-          { key: 'direction', header: 'In / out', width: 90, render: (p) => (p.direction === 'Unknown' ? '—' : p.direction) },
-          { key: 'source', header: 'From', priority: 'low', render: (p) => (p.source === 'Regularisation' ? 'Approved correction' : (p.deviceName ?? humanize(p.source))) },
+          {
+            key: 'pin',
+            header: 'PIN',
+            width: 90,
+            priority: 'low',
+            render: (p) => <Text font="monospace">{p.pin}</Text>,
+          },
+          {
+            key: 'direction',
+            header: 'In / out',
+            width: 90,
+            render: (p) => (p.direction === 'Unknown' ? '—' : p.direction),
+          },
+          {
+            key: 'source',
+            header: 'From',
+            priority: 'low',
+            render: (p) =>
+              p.source === 'Regularisation' ? 'Approved correction' : (p.deviceName ?? humanize(p.source)),
+          },
         ]}
         emptyTitle="No punches in this period"
         emptyDescription="Check that the terminal shows as online on the Terminals screen."
@@ -144,7 +194,11 @@ function UnmatchedPins() {
   const [assigning, setAssigning] = useState<UnmatchedPinDto | null>(null);
 
   return (
-    <Section flush title="PINs not linked to any employee" description="Usually an enrolment typo. Punches are kept and are counted once the PIN is assigned.">
+    <Section
+      flush
+      title="PINs not linked to any employee"
+      description="Usually an enrolment typo. Punches are kept and are counted once the PIN is assigned."
+    >
       <DataTable
         ariaLabel="Unknown PINs"
         rows={pins.data}
@@ -212,16 +266,30 @@ function AssignPinDialog({ pin, onClose }: { pin: UnmatchedPinDto; onClose: () =
         <DialogBody>
           <DialogTitle>Assign PIN {pin.pin}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <EmployeePicker value={employee} onChange={setEmployee} required autoFocus validationMessage={error ?? undefined} />
+            <EmployeePicker
+              value={employee}
+              onChange={setEmployee}
+              required
+              autoFocus
+              validationMessage={error ?? undefined}
+            />
             <MessageBar intent="info">
-              <MessageBarBody>The employee's terminal PIN is changed to {pin.pin}. Their {pin.punchCount} earlier punch(es) are linked to them.</MessageBarBody>
+              <MessageBarBody>
+                The employee's terminal PIN is changed to {pin.pin}. Their {pin.punchCount} earlier punch(es) are linked
+                to them.
+              </MessageBarBody>
             </MessageBar>
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={busy || !employee} icon={busy ? <Spinner size="tiny" /> : undefined} onClick={() => void assign()}>
+            <Button
+              appearance="primary"
+              disabled={busy || !employee}
+              icon={busy ? <Spinner size="tiny" /> : undefined}
+              onClick={() => void assign()}
+            >
               Assign PIN
             </Button>
           </DialogActions>

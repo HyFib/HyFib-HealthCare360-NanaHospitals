@@ -21,7 +21,16 @@ import {
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError, normalizePhone } from '@hc360/core';
-import { applyServerErrors, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -148,23 +157,53 @@ export function WardDrawer({ ward, onClose }: { ward: WardDto | null; onClose: (
     },
   });
 
-  const serviceOptions = (services.data ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code}) · ${formatInr(s.basePrice)}/day` }));
+  const serviceOptions = (services.data ?? []).map((s) => ({
+    value: s.id,
+    label: `${s.name} (${s.code}) · ${formatInr(s.basePrice)}/day`,
+  }));
 
   return (
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {ward ? `Edit ${ward.name}` : 'Add ward'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>
             <FormGrid columns={2} minColumnWidth={180}>
-              <TextField control={form.control} name="code" label="Code" required maxLength={16} hint="Short and unique, e.g. GWM" autoFocus={!ward} />
-              <TextField control={form.control} name="name" label="Name" required maxLength={128} placeholder="General Ward — Male" />
-              <SelectField control={form.control} name="type" label="Ward class" options={enumOptions(WARD_TYPES, WARD_TYPE_LABEL)} />
-              <SelectField control={form.control} name="genderPolicy" label="Admits" options={enumOptions(GENDER_POLICIES, GENDER_POLICY_LABEL)} />
+              <TextField
+                control={form.control}
+                name="code"
+                label="Code"
+                required
+                maxLength={16}
+                hint="Short and unique, e.g. GWM"
+                autoFocus={!ward}
+              />
+              <TextField
+                control={form.control}
+                name="name"
+                label="Name"
+                required
+                maxLength={128}
+                placeholder="General Ward — Male"
+              />
+              <SelectField
+                control={form.control}
+                name="type"
+                label="Ward class"
+                options={enumOptions(WARD_TYPES, WARD_TYPE_LABEL)}
+              />
+              <SelectField
+                control={form.control}
+                name="genderPolicy"
+                label="Admits"
+                options={enumOptions(GENDER_POLICIES, GENDER_POLICY_LABEL)}
+              />
               <TextField control={form.control} name="floor" label="Floor" maxLength={32} />
               <TextField control={form.control} name="block" label="Block / wing" maxLength={64} />
               <TextField control={form.control} name="nurseStation" label="Nurse station" maxLength={64} />
@@ -176,17 +215,44 @@ export function WardDrawer({ ward, onClose }: { ward: WardDto | null; onClose: (
               label="Bed tariff (charged per day)"
               placeholder={services.isLoading ? 'Loading…' : 'No bed charge'}
               options={serviceOptions}
-              hint={services.error ? 'Could not load bed-charge services; ask the administrator for the masters permission.' : 'Changing it re-prices new stays only.'}
+              hint={
+                services.error
+                  ? 'Could not load bed-charge services; ask the administrator for the masters permission.'
+                  : 'Changing it re-prices new stays only.'
+              }
             />
-            <SelectField control={form.control} name="departmentId" label="Department" placeholder="None" options={toOptions(departments.data)} />
-            <NumberField control={form.control} name="displayOrder" label="Display order" min={0} max={10_000} hint="Lower numbers are shown first" />
+            <SelectField
+              control={form.control}
+              name="departmentId"
+              label="Department"
+              placeholder="None"
+              options={toOptions(departments.data)}
+            />
+            <NumberField
+              control={form.control}
+              name="displayOrder"
+              label="Display order"
+              min={0}
+              max={10_000}
+              hint="Lower numbers are shown first"
+            />
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} />
-            <SwitchField control={form.control} name="isActive" label="Ward is open" hint="Close a ward only after moving its patients out." />
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Ward is open"
+              hint="Close a ward only after moving its patients out."
+            />
             <ServerError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {ward ? 'Save' : 'Add ward'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>
@@ -216,11 +282,23 @@ export function RoomDialog({ wardId, room, onClose }: { wardId: string; room: Ro
   const saved = useSaved(room ? 'Room saved' : 'Room added', onClose);
   const form = useForm<RoomValues>({
     resolver: zodResolver(roomSchema),
-    defaultValues: { number: room?.number ?? '', description: room?.description ?? '', isIsolation: room?.isIsolation ?? false, isActive: room?.isActive ?? true },
+    defaultValues: {
+      number: room?.number ?? '',
+      description: room?.description ?? '',
+      isIsolation: room?.isIsolation ?? false,
+      isActive: room?.isActive ?? true,
+    },
   });
   const save = useMutation({
     mutationFn: async (v: RoomValues): Promise<void> => {
-      const body = { wardId, number: v.number, description: v.description || null, isIsolation: v.isIsolation, isActive: v.isActive, version: room?.version ?? null };
+      const body = {
+        wardId,
+        number: v.number,
+        description: v.description || null,
+        isIsolation: v.isIsolation,
+        isActive: v.isActive,
+        version: room?.version ?? null,
+      };
       if (room) {
         await wardApi.updateRoom(room.id, body);
       } else {
@@ -238,7 +316,13 @@ export function RoomDialog({ wardId, room, onClose }: { wardId: string; room: Ro
             <DialogTitle>{room ? `Edit room ${room.number}` : 'Add room'}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <TextField control={form.control} name="number" label="Room number" required maxLength={16} autoFocus />
-              <TextField control={form.control} name="description" label="Description" maxLength={200} placeholder="e.g. Twin-sharing with attached bath" />
+              <TextField
+                control={form.control}
+                name="description"
+                label="Description"
+                maxLength={200}
+                placeholder="e.g. Twin-sharing with attached bath"
+              />
               <SwitchField control={form.control} name="isIsolation" label="Isolation room" />
               <SwitchField control={form.control} name="isActive" label="In use" />
               <ServerError error={save.error} />
@@ -277,7 +361,19 @@ const bedSchema = z.object({
 
 type BedValues = z.infer<typeof bedSchema>;
 
-export function BedDialog({ wardId, bed, rooms, nextOrder, onClose }: { wardId: string; bed: BedDto | null; rooms: RoomDto[]; nextOrder: number; onClose: () => void }) {
+export function BedDialog({
+  wardId,
+  bed,
+  rooms,
+  nextOrder,
+  onClose,
+}: {
+  wardId: string;
+  bed: BedDto | null;
+  rooms: RoomDto[];
+  nextOrder: number;
+  onClose: () => void;
+}) {
   const saved = useSaved(bed ? 'Bed saved' : 'Bed added', onClose);
   const inUse = bed ? bed.status === 'Occupied' || bed.status === 'Reserved' : false;
   const form = useForm<BedValues>({
@@ -312,13 +408,24 @@ export function BedDialog({ wardId, bed, rooms, nextOrder, onClose }: { wardId: 
             <DialogTitle>{bed ? `Edit bed ${bed.label}` : 'Add bed'}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <FormGrid columns={2} minColumnWidth={180}>
-                <TextField control={form.control} name="label" label="Bed label" required maxLength={24} hint="Unique in the hospital" autoFocus />
+                <TextField
+                  control={form.control}
+                  name="label"
+                  label="Bed label"
+                  required
+                  maxLength={24}
+                  hint="Unique in the hospital"
+                  autoFocus
+                />
                 <SelectField
                   control={form.control}
                   name="roomId"
                   label="Room"
                   placeholder="Open ward (no room)"
-                  options={rooms.map((r) => ({ value: r.id, label: `Room ${r.number}${r.isIsolation ? ' (isolation)' : ''}` }))}
+                  options={rooms.map((r) => ({
+                    value: r.id,
+                    label: `Room ${r.number}${r.isIsolation ? ' (isolation)' : ''}`,
+                  }))}
                 />
               </FormGrid>
               <SwitchField control={form.control} name="hasOxygen" label="Oxygen point" />
@@ -359,7 +466,11 @@ const bulkSchema = z.object({
     .max(16)
     .regex(/^[A-Za-z0-9-]+$/, 'Use letters, digits or dashes.'),
   startNumber: z.number({ message: 'Enter a number.' }).int().min(1).max(999),
-  count: z.number({ message: 'Enter a number.' }).int().min(1, 'Add at least one bed.').max(100, 'Add at most 100 beds at a time.'),
+  count: z
+    .number({ message: 'Enter a number.' })
+    .int()
+    .min(1, 'Add at least one bed.')
+    .max(100, 'Add at most 100 beds at a time.'),
   roomId: z.string().nullable(),
   hasOxygen: z.boolean(),
   hasVentilator: z.boolean(),
@@ -369,12 +480,30 @@ const bulkSchema = z.object({
 type BulkValues = z.infer<typeof bulkSchema>;
 
 /** Add many beds at once (ward set-up): labels follow "{prefix}-{nn}", continuing the ward's series. */
-export function BulkBedsDialog({ ward, rooms, startNumber, onClose }: { ward: WardDto; rooms: RoomDto[]; startNumber: number; onClose: () => void }) {
+export function BulkBedsDialog({
+  ward,
+  rooms,
+  startNumber,
+  onClose,
+}: {
+  ward: WardDto;
+  rooms: RoomDto[];
+  startNumber: number;
+  onClose: () => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<BulkValues>({
     resolver: zodResolver(bulkSchema),
-    defaultValues: { labelPrefix: ward.code, startNumber, count: 10, roomId: null, hasOxygen: false, hasVentilator: false, hasMonitor: false },
+    defaultValues: {
+      labelPrefix: ward.code,
+      startNumber,
+      count: 10,
+      roomId: null,
+      hasOxygen: false,
+      hasVentilator: false,
+      hasMonitor: false,
+    },
   });
   const [prefix, start, count] = useWatch({ control: form.control, name: ['labelPrefix', 'startNumber', 'count'] });
   const labels = bulkBedLabels(prefix ?? '', Number(start), Math.min(Number(count) || 0, 100));
@@ -413,10 +542,14 @@ export function BulkBedsDialog({ ward, rooms, startNumber, onClose }: { ward: Wa
                 {labels.length > 0 ? (
                   <Text>
                     Creates <strong>{labels.length}</strong> beds:{' '}
-                    <Text font="monospace">{labels.length <= 6 ? labels.join(', ') : `${labels.slice(0, 3).join(', ')} … ${labels.at(-1)}`}</Text>
+                    <Text font="monospace">
+                      {labels.length <= 6 ? labels.join(', ') : `${labels.slice(0, 3).join(', ')} … ${labels.at(-1)}`}
+                    </Text>
                   </Text>
                 ) : (
-                  <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Enter a prefix and a count to preview the labels.</Caption1>
+                  <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+                    Enter a prefix and a count to preview the labels.
+                  </Caption1>
                 )}
               </div>
               <ServerError error={save.error} />
@@ -425,7 +558,12 @@ export function BulkBedsDialog({ ward, rooms, startNumber, onClose }: { ward: Wa
               <Button onClick={onClose} disabled={save.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={save.isPending || labels.length === 0} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={save.isPending || labels.length === 0}
+                icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Add {labels.length || ''} beds
               </Button>
             </DialogActions>

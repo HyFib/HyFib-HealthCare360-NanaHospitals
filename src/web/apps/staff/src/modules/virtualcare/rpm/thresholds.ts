@@ -16,7 +16,10 @@ export function evaluateSeverity(value: number, limits: Limits | null | undefine
   if (!limits) {
     return 'Normal';
   }
-  if ((limits.criticalMin !== null && value < limits.criticalMin) || (limits.criticalMax !== null && value > limits.criticalMax)) {
+  if (
+    (limits.criticalMin !== null && value < limits.criticalMin) ||
+    (limits.criticalMax !== null && value > limits.criticalMax)
+  ) {
     return 'Critical';
   }
   if ((limits.min !== null && value < limits.min) || (limits.max !== null && value > limits.max)) {
@@ -57,10 +60,15 @@ export function thresholdBands(limits: Limits, axis: { min: number; max: number 
  * A y-axis range that shows every reading and every limit with some air, rounded to readable steps and kept within
  * what is physically possible for the measurement.
  */
-export function axisRange(values: readonly number[], limits: Limits | null, plausible: { min: number; max: number }): { min: number; max: number } {
-  const candidates = [...values, ...(limits ? [limits.min, limits.max, limits.criticalMin, limits.criticalMax] : [])].filter(
-    (v): v is number => typeof v === 'number' && Number.isFinite(v),
-  );
+export function axisRange(
+  values: readonly number[],
+  limits: Limits | null,
+  plausible: { min: number; max: number },
+): { min: number; max: number } {
+  const candidates = [
+    ...values,
+    ...(limits ? [limits.min, limits.max, limits.criticalMin, limits.criticalMax] : []),
+  ].filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
   if (candidates.length === 0) {
     return { min: plausible.min, max: plausible.max };
   }
@@ -118,6 +126,9 @@ export function describeLimits(limits: Limits | null, unit: string): string {
         : limits.max !== null
           ? `up to ${limits.max}${u}`
           : 'any value';
-  const critical = [limits.criticalMin !== null ? `below ${limits.criticalMin}` : null, limits.criticalMax !== null ? `above ${limits.criticalMax}` : null].filter(Boolean);
+  const critical = [
+    limits.criticalMin !== null ? `below ${limits.criticalMin}` : null,
+    limits.criticalMax !== null ? `above ${limits.criticalMax}` : null,
+  ].filter(Boolean);
   return critical.length > 0 ? `${normal} (critical ${critical.join(' or ')})` : normal;
 }

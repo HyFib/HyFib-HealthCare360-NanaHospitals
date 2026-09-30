@@ -50,7 +50,10 @@ function DialysisPatientsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -62,14 +65,18 @@ function DialysisPatientsPage() {
     );
   }
 
-  const set = (patch: Partial<ProfileFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<ProfileFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
       <PageHeader
         title="Dialysis patients"
         subtitle="Patients enrolled in the unit, with their sero status, weekly schedule and access."
-        breadcrumbs={[{ label: 'Dialysis board', onClick: () => void navigate({ to: '/dialysis' }) }, { label: 'Patients' }]}
+        breadcrumbs={[
+          { label: 'Dialysis board', onClick: () => void navigate({ to: '/dialysis' }) },
+          { label: 'Patients' },
+        ]}
         actions={
           canEnrol && (
             <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => setEnrolling(true)}>
@@ -85,7 +92,10 @@ function DialysisPatientsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, UHID or mobile" />
             </Field>
             <Field label="Sero status">
-              <Select value={filters.sero ?? ''} onChange={(_, d) => set({ sero: (d.value || undefined) as SeroStatus | undefined })}>
+              <Select
+                value={filters.sero ?? ''}
+                onChange={(_, d) => set({ sero: (d.value || undefined) as SeroStatus | undefined })}
+              >
                 <option value="">All</option>
                 {SERO_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -94,7 +104,11 @@ function DialysisPatientsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={Boolean(filters.includeInactive)} onChange={(_, d) => set({ includeInactive: d.checked || undefined })} label="Include inactive" />
+            <Switch
+              checked={Boolean(filters.includeInactive)}
+              onChange={(_, d) => set({ includeInactive: d.checked || undefined })}
+              label="Include inactive"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -111,7 +125,10 @@ function DialysisPatientsPage() {
               header: 'Patient',
               render: (p) => (
                 <span>
-                  <Text weight="semibold">{p.patientName}</Text> <Text size={200}>({p.age ?? '—'} / {p.gender.charAt(0)})</Text>
+                  <Text weight="semibold">{p.patientName}</Text>{' '}
+                  <Text size={200}>
+                    ({p.age ?? '—'} / {p.gender.charAt(0)})
+                  </Text>
                   {!p.isActive && (
                     <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
                       Inactive
@@ -135,10 +152,20 @@ function DialysisPatientsPage() {
                 </span>
               ),
             },
-            { key: 'schedule', header: 'Schedule', render: (p) => `${p.scheduleDays.map((d) => weekdayShort[d]).join(', ')} · ${shiftLabel[p.shift]}` },
+            {
+              key: 'schedule',
+              header: 'Schedule',
+              render: (p) => `${p.scheduleDays.map((d) => weekdayShort[d]).join(', ')} · ${shiftLabel[p.shift]}`,
+            },
             { key: 'access', header: 'Access', priority: 'low', render: (p) => accessLabel[p.vascularAccess] },
             { key: 'dry', header: 'Dry weight', align: 'end', priority: 'low', render: (p) => `${p.dryWeightKg} kg` },
-            { key: 'reuse', header: 'Dialyzer', priority: 'low', render: (p) => (p.effectiveMaxDialyzerUses === 1 ? 'Single use' : `Up to ${p.effectiveMaxDialyzerUses} uses`) },
+            {
+              key: 'reuse',
+              header: 'Dialyzer',
+              priority: 'low',
+              render: (p) =>
+                p.effectiveMaxDialyzerUses === 1 ? 'Single use' : `Up to ${p.effectiveMaxDialyzerUses} uses`,
+            },
             { key: 'neph', header: 'Nephrologist', priority: 'low', render: (p) => p.nephrologistName ?? '—' },
           ]}
           emptyTitle={filters.search || filters.sero ? 'No enrolled patient matches' : 'No patients enrolled yet'}
@@ -156,11 +183,22 @@ function DialysisPatientsPage() {
           <DialogBody>
             <DialogTitle>Enrol a patient in the dialysis unit</DialogTitle>
             <DialogContent>
-              <PatientPicker value={picked} onChange={setPicked} required hint="Register the patient first if they are new to the hospital." />
+              <PatientPicker
+                value={picked}
+                onChange={setPicked}
+                required
+                hint="Register the patient first if they are new to the hospital."
+              />
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setEnrolling(false)}>Cancel</Button>
-              <Button appearance="primary" disabled={!picked} onClick={() => picked && void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: picked.id } })}>
+              <Button
+                appearance="primary"
+                disabled={!picked}
+                onClick={() =>
+                  picked && void navigate({ to: '/dialysis/patients/$patientId', params: { patientId: picked.id } })
+                }
+              >
                 Continue
               </Button>
             </DialogActions>

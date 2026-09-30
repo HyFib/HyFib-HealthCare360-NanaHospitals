@@ -1,4 +1,17 @@
-import { Button, Caption1, Field, Input, makeStyles, Select, Switch, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  Select,
+  Switch,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { CalendarAddRegular, ChevronLeftRegular, ChevronRightRegular, PrintRegular } from '@fluentui/react-icons';
 import { formatDateOnly, todayIso, useHotkey, useSession } from '@hc360/core';
 import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
@@ -37,7 +50,15 @@ const useStyles = makeStyles({
   toolbar: { padding: '0 16px 12px' },
   nav: { display: 'flex', gap: '4px', alignItems: 'end' },
   legend: { display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center', padding: '8px 16px' },
-  swatch: { display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', marginRight: '6px', verticalAlign: 'middle', border: `1px solid ${tokens.colorNeutralStroke2}` },
+  swatch: {
+    display: 'inline-block',
+    width: '14px',
+    height: '14px',
+    borderRadius: '3px',
+    marginRight: '6px',
+    verticalAlign: 'middle',
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
@@ -61,9 +82,15 @@ function OtCalendarPage() {
   const date = search.date ?? today;
   const view = search.view ?? 'day';
   const theatres = useQuery({ ...otQueries.theatres(), enabled: canRead });
-  const calendar = useQuery({ ...otQueries.calendar({ date, view, theatreId: search.theatreId, surgeonId: search.surgeonId }), enabled: canRead });
+  const calendar = useQuery({
+    ...otQueries.calendar({ date, view, theatreId: search.theatreId, surgeonId: search.surgeonId }),
+    enabled: canRead,
+  });
 
-  useLiveInvalidation(facilityId ? `ot:${facilityId}` : null, 'ot.booking.changed', [otKeys.calendars, ['ot', 'utilisation']]);
+  useLiveInvalidation(facilityId ? `ot:${facilityId}` : null, 'ot.booking.changed', [
+    otKeys.calendars,
+    ['ot', 'utilisation'],
+  ]);
 
   const set = (patch: Partial<OtSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch }) });
   const step = view === 'week' ? 7 : 1;
@@ -82,8 +109,10 @@ function OtCalendarPage() {
   const weekStart = startOfWeek(date);
   const rangeFrom = view === 'week' ? weekStart : date;
   const rangeTo = view === 'week' ? addDays(weekStart, 6) : date;
-  const openBooking = (booking: OtCalendarBooking) => void navigate({ to: '/ot/bookings/$id', params: { id: booking.id } });
-  const title = view === 'week' ? `Week of ${formatDateOnly(weekStart)}` : `${dayLabel(date)}${date === today ? ' · today' : ''}`;
+  const openBooking = (booking: OtCalendarBooking) =>
+    void navigate({ to: '/ot/bookings/$id', params: { id: booking.id } });
+  const title =
+    view === 'week' ? `Week of ${formatDateOnly(weekStart)}` : `${dayLabel(date)}${date === today ? ' · today' : ''}`;
 
   return (
     <Page>
@@ -95,12 +124,21 @@ function OtCalendarPage() {
             <Button
               icon={<PrintRegular />}
               disabled={!calendar.data || view === 'week'}
-              onClick={() => calendar.data && void printOtList(facilityName, calendar.data, dayLabel(date)).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+              onClick={() =>
+                calendar.data &&
+                void printOtList(facilityName, calendar.data, dayLabel(date)).catch((error: unknown) =>
+                  notify.error(error, 'Printing failed'),
+                )
+              }
             >
               Print OT list
             </Button>
             {canBook && (
-              <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/ot/book' })}>
+              <Button
+                appearance="primary"
+                icon={<CalendarAddRegular />}
+                onClick={() => void navigate({ to: '/ot/book' })}
+              >
                 Book surgery
               </Button>
             )}
@@ -123,10 +161,18 @@ function OtCalendarPage() {
               </Tooltip>
             </div>
             <Field label="Date">
-              <Input type="date" value={date} onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })} />
+              <Input
+                type="date"
+                value={date}
+                onChange={(_, d) => set({ date: d.value && d.value !== today ? d.value : undefined })}
+              />
             </Field>
             <Field label="Show">
-              <TabList size="small" selectedValue={view} onTabSelect={(_, d) => set({ view: d.value === 'week' ? 'week' : undefined })}>
+              <TabList
+                size="small"
+                selectedValue={view}
+                onTabSelect={(_, d) => set({ view: d.value === 'week' ? 'week' : undefined })}
+              >
                 <Tab value="day">Day</Tab>
                 <Tab value="week">Week</Tab>
               </TabList>
@@ -158,7 +204,12 @@ function OtCalendarPage() {
           </div>
         ) : calendar.data ? (
           view === 'week' ? (
-            <WeekBoard calendar={calendar.data} today={today} onOpen={openBooking} onOpenDay={(day) => set({ date: day === today ? undefined : day, view: undefined })} />
+            <WeekBoard
+              calendar={calendar.data}
+              today={today}
+              onOpen={openBooking}
+              onOpenDay={(day) => set({ date: day === today ? undefined : day, view: undefined })}
+            />
           ) : (
             <DayBoard
               calendar={calendar.data}
@@ -166,7 +217,9 @@ function OtCalendarPage() {
               now={now}
               canBook={canBook}
               onOpen={openBooking}
-              onBookSlot={(theatre, start) => void navigate({ to: '/ot/book', search: { theatreId: theatre.theatreId, start } })}
+              onBookSlot={(theatre, start) =>
+                void navigate({ to: '/ot/book', search: { theatreId: theatre.theatreId, start } })
+              }
             />
           )
         ) : null}
@@ -188,7 +241,9 @@ function OtCalendarPage() {
             <span className={styles.swatch} style={{ backgroundColor: tokens.colorNeutralBackground3 }} />
             Completed
           </Caption1>
-          <Caption1 className={styles.muted}>Left edge: red emergency, orange urgent. SI / TO / SO: WHO Sign-in, Time-out, Sign-out.</Caption1>
+          <Caption1 className={styles.muted}>
+            Left edge: red emergency, orange urgent. SI / TO / SO: WHO Sign-in, Time-out, Sign-out.
+          </Caption1>
         </div>
       </Section>
 
@@ -205,25 +260,43 @@ function OtCalendarPage() {
           onRowClick={openBooking}
           size="small"
           columns={[
-            { key: 'priority', header: 'Priority', width: 110, render: (b) => <PriorityBadge priority={b.priority} showElective /> },
+            {
+              key: 'priority',
+              header: 'Priority',
+              width: 110,
+              render: (b) => <PriorityBadge priority={b.priority} showElective />,
+            },
             {
               key: 'patient',
               header: 'Patient',
               render: (b) => (
                 <span>
-                  <Text weight="semibold">{b.patientName}</Text> <Text size={200}>({b.age ?? '—'} / {b.gender.charAt(0)})</Text>
+                  <Text weight="semibold">{b.patientName}</Text>{' '}
+                  <Text size={200}>
+                    ({b.age ?? '—'} / {b.gender.charAt(0)})
+                  </Text>
                 </span>
               ),
             },
             { key: 'procedure', header: 'Procedure', render: (b) => procedureWithSide(b.procedureName, b.laterality) },
             { key: 'surgeon', header: 'Surgeon', priority: 'low', render: (b) => b.surgeonName ?? 'Not chosen' },
-            { key: 'number', header: 'Booking', priority: 'low', render: (b) => <Text font="monospace">{b.bookingNumber}</Text> },
+            {
+              key: 'number',
+              header: 'Booking',
+              priority: 'low',
+              render: (b) => <Text font="monospace">{b.bookingNumber}</Text>,
+            },
             { key: 'status', header: 'Status', render: (b) => <SurgeryStatusBadge status={b.status} /> },
           ]}
           rowActions={
             canBook
               ? (b) => (
-                  <Button size="small" onClick={() => void navigate({ to: '/ot/bookings/$id', params: { id: b.id }, search: { action: 'schedule' } })}>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      void navigate({ to: '/ot/bookings/$id', params: { id: b.id }, search: { action: 'schedule' } })
+                    }
+                  >
                     Schedule
                   </Button>
                 )

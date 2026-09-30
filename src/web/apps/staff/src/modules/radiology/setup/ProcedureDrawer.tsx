@@ -1,7 +1,26 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, makeStyles, OverlayDrawer, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  makeStyles,
+  OverlayDrawer,
+  Spinner,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { applyServerErrors, FormGrid, FullRow, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  FormGrid,
+  FullRow,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -31,7 +50,13 @@ type ProcedureValues = z.infer<typeof schema>;
 const useStyles = makeStyles({ form: { display: 'flex', flexDirection: 'column', gap: '12px' } });
 
 /** Imaging procedure master: modality, body part, slot length, contrast and preparation, linked to its billable service. */
-export function ProcedureDrawer({ procedure, onClose }: { procedure: ImagingProcedureDto | null; onClose: () => void }) {
+export function ProcedureDrawer({
+  procedure,
+  onClose,
+}: {
+  procedure: ImagingProcedureDto | null;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -80,7 +105,9 @@ export function ProcedureDrawer({ procedure, onClose }: { procedure: ImagingProc
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
       <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {procedure ? procedure.name : 'Add imaging procedure'}
           </DrawerHeaderTitle>
         </DrawerHeader>
@@ -89,28 +116,63 @@ export function ProcedureDrawer({ procedure, onClose }: { procedure: ImagingProc
             <FormGrid columns={2}>
               <TextField control={form.control} name="code" label="Code" required disabled={Boolean(procedure)} />
               <TextField control={form.control} name="name" label="Name" required />
-              <SelectField control={form.control} name="modality" label="Modality" options={MODALITIES.map((value) => ({ value, label: `${modalityLabel[value]} (${value})` }))} />
-              <TextField control={form.control} name="bodyPart" label="Body part" required placeholder="e.g. Chest, Abdomen, Brain" />
-              <NumberField control={form.control} name="durationMinutes" label="Slot length (minutes)" required min={5} max={240} />
+              <SelectField
+                control={form.control}
+                name="modality"
+                label="Modality"
+                options={MODALITIES.map((value) => ({ value, label: `${modalityLabel[value]} (${value})` }))}
+              />
+              <TextField
+                control={form.control}
+                name="bodyPart"
+                label="Body part"
+                required
+                placeholder="e.g. Chest, Abdomen, Brain"
+              />
+              <NumberField
+                control={form.control}
+                name="durationMinutes"
+                label="Slot length (minutes)"
+                required
+                min={5}
+                max={240}
+              />
               <SwitchField control={form.control} name="requiresContrast" label="Usually needs contrast" />
               <FullRow>
                 <Controller
                   control={form.control}
                   name="serviceItemId"
                   render={({ field, fieldState }) => (
-                    <ServiceLookup category="Radiology" value={field.value} onChange={field.onChange} validationMessage={fieldState.error?.message} />
+                    <ServiceLookup
+                      category="Radiology"
+                      value={field.value}
+                      onChange={field.onChange}
+                      validationMessage={fieldState.error?.message}
+                    />
                   )}
                 />
               </FullRow>
               <FullRow>
-                <TextAreaField control={form.control} name="patientPreparation" label="Patient preparation" rows={3} maxLength={1000} placeholder="e.g. Fasting 6 hours; bring previous reports" />
+                <TextAreaField
+                  control={form.control}
+                  name="patientPreparation"
+                  label="Patient preparation"
+                  rows={3}
+                  maxLength={1000}
+                  placeholder="e.g. Fasting 6 hours; bring previous reports"
+                />
               </FullRow>
             </FormGrid>
             <SwitchField control={form.control} name="isActive" label="In use" />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {procedure ? 'Save' : 'Add procedure'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>

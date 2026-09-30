@@ -19,7 +19,9 @@ describe('posterHtml', () => {
   });
 
   it('uses the intro text when the form has one, and a kiosk headline for kiosk cards', () => {
-    expect(posterHtml({ ...data, introText: 'Rate our <b>care</b>' }, '')).toContain('Rate our &lt;b&gt;care&lt;/b&gt;');
+    expect(posterHtml({ ...data, introText: 'Rate our <b>care</b>' }, '')).toContain(
+      'Rate our &lt;b&gt;care&lt;/b&gt;',
+    );
     expect(posterHtml({ ...data, kiosk: true }, '')).toContain('Tell us about your visit');
     expect(posterHtml(data, '')).toContain('How was your visit?');
   });

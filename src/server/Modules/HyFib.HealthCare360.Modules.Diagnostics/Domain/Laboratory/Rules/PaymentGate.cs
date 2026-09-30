@@ -31,20 +31,15 @@ internal static class PaymentGate
             return Result.Success();
         }
 
-        return Error.Rule(
+        var pending = Error.Rule(
             "lab.payment_pending",
-            $"Payment is pending for {string.Join(", ", unpaid.Select(u => u.Name))}. Collect payment at the billing counter before drawing the sample.")
-            with
-            {
-                Data = new
-                {
-                    tests = unpaid.Select(u => new
-                    {
-                        reference = u.Reference,
-                        name = u.Name,
-                        state = (states.TryGetValue(u.Reference, out var s) ? s : ChargeBillingState.NotFound).ToString(),
-                    }).ToList(),
-                },
-            };
+            $"Payment is pending for {string.Join(", ", unpaid.Select(u => u.Name))}. Collect payment at the billing counter before drawing the sample.");
+        var tests = unpaid.Select(u => new
+        {
+            reference = u.Reference,
+            name = u.Name,
+            state = (states.TryGetValue(u.Reference, out var s) ? s : ChargeBillingState.NotFound).ToString(),
+        }).ToList();
+        return pending with { Data = new { tests } };
     }
 }

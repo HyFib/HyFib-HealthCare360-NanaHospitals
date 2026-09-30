@@ -49,8 +49,18 @@ internal static class PrescriptionEndpoints
         }
 
         var page = await rows.OrderByDescending(p => p.PrescribedAt)
-            .Select(p => new { p.Id, p.PrescriptionNumber, p.PatientId, p.Status, p.IsInpatient, p.PrescribedAt, p.SignedAt, p.PractitionerId,
-                Drugs = p.Items.OrderBy(i => i.Sequence).Select(i => i.DrugName).ToList() })
+            .Select(p => new
+            {
+                p.Id,
+                p.PrescriptionNumber,
+                p.PatientId,
+                p.Status,
+                p.IsInpatient,
+                p.PrescribedAt,
+                p.SignedAt,
+                p.PractitionerId,
+                Drugs = p.Items.OrderBy(i => i.Sequence).Select(i => i.DrugName).ToList()
+            })
             .ToPagedResultAsync(query.ToRequest(), ct);
         var names = await PrintQueries.PractitionerNamesAsync(db, page.Items.Select(p => (Guid?)p.PractitionerId), ct);
         return TypedResults.Ok(page.Map(p => new PrescriptionListItem(p.Id, p.PrescriptionNumber, p.PatientId, p.Status, p.IsInpatient, p.PrescribedAt, p.SignedAt,

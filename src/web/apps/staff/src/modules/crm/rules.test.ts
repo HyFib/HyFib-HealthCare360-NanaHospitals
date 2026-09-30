@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { campaignActions, inSendingWindow, isLeadOpen, leadMoves, outcomeClosesTask, outcomeNeedsNextDate, percent, smsLength } from './rules';
+import {
+  campaignActions,
+  inSendingWindow,
+  isLeadOpen,
+  leadMoves,
+  outcomeClosesTask,
+  outcomeNeedsNextDate,
+  percent,
+  smsLength,
+} from './rules';
 
 describe('lead workflow', () => {
   it('offers only the moves the server allows', () => {

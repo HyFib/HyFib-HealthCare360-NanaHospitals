@@ -23,10 +23,22 @@ import { crmApi, crmKeys } from './api';
 import { LEAD_ACTIVITY_TYPES, leadActivityLabel, type LeadActivityType } from './labels';
 
 /** Log a call, message, visit or note on a lead. Any contact except a note moves a new lead to "Contacted". */
-export function LeadActivityDialog({ open, onClose, leadId, leadName }: { open: boolean; onClose: () => void; leadId: string; leadName: string }) {
+export function LeadActivityDialog({
+  open,
+  onClose,
+  leadId,
+  leadName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  leadId: string;
+  leadName: string;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 620 }}>{open && <Body onClose={onClose} leadId={leadId} leadName={leadName} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {open && <Body onClose={onClose} leadId={leadId} leadName={leadName} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -92,10 +104,21 @@ function Body({ onClose, leadId, leadName }: { onClose: () => void; leadId: stri
             </RadioGroup>
           </Field>
           <Field label="When" hint="Hospital time">
-            <Input type="datetime-local" value={occurredAt} max={nowIstInput()} onChange={(_, d) => setOccurredAt(d.value)} />
+            <Input
+              type="datetime-local"
+              value={occurredAt}
+              max={nowIstInput()}
+              onChange={(_, d) => setOccurredAt(d.value)}
+            />
           </Field>
           <Field label="Outcome" validationMessage={error ?? undefined} validationState={error ? 'error' : 'none'}>
-            <Input value={outcome} onChange={(_, d) => setOutcome(d.value)} maxLength={200} autoFocus placeholder="For example: interested, will come on Saturday" />
+            <Input
+              value={outcome}
+              onChange={(_, d) => setOutcome(d.value)}
+              maxLength={200}
+              autoFocus
+              placeholder="For example: interested, will come on Saturday"
+            />
           </Field>
           <Field label="Notes">
             <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} rows={3} maxLength={2000} />

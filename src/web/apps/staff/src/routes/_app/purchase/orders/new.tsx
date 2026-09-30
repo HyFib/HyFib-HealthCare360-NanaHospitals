@@ -18,12 +18,18 @@ function NewOrderPage() {
   const { requisitionId } = Route.useSearch();
   const navigate = useNavigate();
   const canManage = usePermission(S.purchaseManage);
-  const requisition = useQuery({ ...purchaseQueries.requisition(requisitionId ?? ''), enabled: Boolean(requisitionId) });
+  const requisition = useQuery({
+    ...purchaseQueries.requisition(requisitionId ?? ''),
+    enabled: Boolean(requisitionId),
+  });
 
   if (!canManage) {
     return (
       <Page maxWidth={800}>
-        <EmptyState title="You cannot raise purchase orders" description="Ask the purchase team or an administrator for access." />
+        <EmptyState
+          title="You cannot raise purchase orders"
+          description="Ask the purchase team or an administrator for access."
+        />
       </Page>
     );
   }
@@ -42,8 +48,15 @@ function NewOrderPage() {
     <Page>
       <PageHeader
         title="New purchase order"
-        subtitle={requisition.data ? `From requisition ${requisition.data.number} for ${requisition.data.storeName}` : 'Choose the vendor, the store and the items'}
-        breadcrumbs={[{ label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) }, { label: 'New' }]}
+        subtitle={
+          requisition.data
+            ? `From requisition ${requisition.data.number} for ${requisition.data.storeName}`
+            : 'Choose the vendor, the store and the items'
+        }
+        breadcrumbs={[
+          { label: 'Purchase orders', onClick: () => void navigate({ to: '/purchase/orders' }) },
+          { label: 'New' },
+        ]}
       />
       <OrderForm
         order={null}

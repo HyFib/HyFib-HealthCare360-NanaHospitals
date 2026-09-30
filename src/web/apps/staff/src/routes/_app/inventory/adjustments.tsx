@@ -25,14 +25,39 @@ import {
   ToggleButton,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, BinRecycleRegular, CheckmarkRegular, DeleteRegular, DismissRegular, ShieldCheckmarkRegular, StopRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  BinRecycleRegular,
+  CheckmarkRegular,
+  DeleteRegular,
+  DismissRegular,
+  ShieldCheckmarkRegular,
+  StopRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, useDebouncedValue, useSession } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, ErrorState, FilterBar, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterBar,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type AdjustmentListItem, type ItemLookup } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type AdjustmentListItem,
+  type ItemLookup,
+} from '@/modules/inventory/api';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatQty, parseNumber } from '@/modules/inventory/format';
 import { ItemPicker } from '@/modules/inventory/ItemPicker';
@@ -64,7 +89,12 @@ interface AdjustmentSearch {
 
 export const Route = createFileRoute('/_app/inventory/adjustments')({
   validateSearch: (s: Record<string, unknown>): AdjustmentSearch => ({
-    status: s.status === 'all' ? 'all' : ADJUSTMENT_STATUSES.includes(s.status as AdjustmentStatus) ? (s.status as AdjustmentStatus) : undefined,
+    status:
+      s.status === 'all'
+        ? 'all'
+        : ADJUSTMENT_STATUSES.includes(s.status as AdjustmentStatus)
+          ? (s.status as AdjustmentStatus)
+          : undefined,
     storeId: typeof s.storeId === 'string' && s.storeId ? s.storeId : undefined,
     reason: ADJUSTMENT_REASONS.includes(s.reason as AdjustmentReason) ? (s.reason as AdjustmentReason) : undefined,
     q: typeof s.q === 'string' && s.q ? s.q : undefined,
@@ -75,7 +105,11 @@ export const Route = createFileRoute('/_app/inventory/adjustments')({
   component: AdjustmentsPage,
 });
 
-const STATUS_LABEL: Record<AdjustmentStatus, string> = { PendingApproval: 'Waiting for approval', Approved: 'Approved', Rejected: 'Rejected' };
+const STATUS_LABEL: Record<AdjustmentStatus, string> = {
+  PendingApproval: 'Waiting for approval',
+  Approved: 'Approved',
+  Rejected: 'Rejected',
+};
 
 /**
  * Stock corrections (INV-07): damage, breakage, expiry write-offs and count differences change stock only after a
@@ -100,15 +134,27 @@ function AdjustmentsPage() {
   }, [debounced, search.q, navigate]);
 
   const status = search.status === 'all' ? undefined : (search.status ?? 'PendingApproval');
-  const adjustments = useQuery(inventoryQueries.adjustments({ status, storeId: search.storeId, reason: search.reason, search: search.q, page: search.page }));
-  const set = (patch: Partial<AdjustmentSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const adjustments = useQuery(
+    inventoryQueries.adjustments({
+      status,
+      storeId: search.storeId,
+      reason: search.reason,
+      search: search.q,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<AdjustmentSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const writeOffStoreId = writeOffStore ?? search.storeId ?? working.storeId;
 
   const writeOff = useMutation({
     mutationFn: () => inventoryApi.expiredWriteOff(writeOffStoreId!),
     onSuccess: (result) => {
       setConfirmWriteOff(false);
-      notify.success(`Write-off ${result.number} raised`, 'Every expired batch of the store is on it. It changes stock once approved.');
+      notify.success(
+        `Write-off ${result.number} raised`,
+        'Every expired batch of the store is on it. It changes stock once approved.',
+      );
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.adjustments });
       set({ id: result.id, status: 'PendingApproval' });
     },
@@ -142,9 +188,19 @@ function AdjustmentsPage() {
             <Field label="Number" style={{ flex: '0 1 200px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Exact number" />
             </Field>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             <Field label="Status">
-              <Select value={search.status ?? 'PendingApproval'} onChange={(_, d) => set({ status: d.value === 'PendingApproval' ? undefined : (d.value as AdjustmentStatus | 'all') })}>
+              <Select
+                value={search.status ?? 'PendingApproval'}
+                onChange={(_, d) =>
+                  set({ status: d.value === 'PendingApproval' ? undefined : (d.value as AdjustmentStatus | 'all') })
+                }
+              >
                 {ADJUSTMENT_STATUSES.map((s) => (
                   <option key={s} value={s}>
                     {STATUS_LABEL[s]}
@@ -154,7 +210,10 @@ function AdjustmentsPage() {
               </Select>
             </Field>
             <Field label="Reason">
-              <Select value={search.reason ?? ''} onChange={(_, d) => set({ reason: (d.value || undefined) as AdjustmentReason | undefined })}>
+              <Select
+                value={search.reason ?? ''}
+                onChange={(_, d) => set({ reason: (d.value || undefined) as AdjustmentReason | undefined })}
+              >
                 <option value="">All</option>
                 {ADJUSTMENT_REASONS.map((r) => (
                   <option key={r} value={r}>
@@ -194,9 +253,17 @@ function AdjustmentsPage() {
               key: 'value',
               header: 'Value at cost',
               align: 'end',
-              render: (a) => <Text style={a.netValue < 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>{formatInr(a.netValue)}</Text>,
+              render: (a) => (
+                <Text style={a.netValue < 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
+                  {formatInr(a.netValue)}
+                </Text>
+              ),
             },
-            { key: 'status', header: 'Status', render: (a) => <DocStatus status={a.status} label={STATUS_LABEL[a.status]} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (a) => <DocStatus status={a.status} label={STATUS_LABEL[a.status]} />,
+            },
           ]}
           emptyTitle={status === 'PendingApproval' ? 'Nothing waiting for approval' : 'No adjustments'}
           emptyDescription="Adjustments come from damage and breakage reports, expiry write-offs and stock counts."
@@ -209,7 +276,11 @@ function AdjustmentsPage() {
 
       {search.id && <AdjustmentDrawer adjustmentId={search.id} onClose={() => set({ id: undefined })} />}
       {canRaise && search.create && (
-        <NewAdjustmentDialog defaultStoreId={search.storeId ?? working.storeId} onClose={() => set({ create: undefined })} onCreated={(id) => set({ create: undefined, id, status: undefined })} />
+        <NewAdjustmentDialog
+          defaultStoreId={search.storeId ?? working.storeId}
+          onClose={() => set({ create: undefined })}
+          onCreated={(id) => set({ create: undefined, id, status: undefined })}
+        />
       )}
       <ConfirmDialog
         open={confirmWriteOff}
@@ -220,7 +291,9 @@ function AdjustmentsPage() {
         onCancel={() => setConfirmWriteOff(false)}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span>Every expired batch of the store goes on one write-off. Stock changes only when another person approves it.</span>
+          <span>
+            Every expired batch of the store goes on one write-off. Stock changes only when another person approves it.
+          </span>
           <StorePicker stores={working.stores} value={writeOffStoreId} onChange={setWriteOffStore} label="Store" />
         </div>
       </ConfirmDialog>
@@ -268,7 +341,9 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
   return (
     <OverlayDrawer open position="end" size="large" onOpenChange={(_, d) => !d.open && onClose()}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {a ? `Adjustment ${a.number}` : 'Adjustment'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -294,7 +369,9 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
                 </Detail>
               )}
               <Detail label="Net value at cost">
-                <Text style={a.netValue < 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>{formatInr(a.netValue)}</Text>
+                <Text style={a.netValue < 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
+                  {formatInr(a.netValue)}
+                </Text>
               </Detail>
               {a.remarks && <Detail label="Remarks">{a.remarks}</Detail>}
               {a.rejectReason && <Detail label="Rejected because">{a.rejectReason}</Detail>}
@@ -303,14 +380,16 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
               <MessageBar intent="warning" layout="multiline" icon={<ShieldCheckmarkRegular />}>
                 <MessageBarBody>
                   <MessageBarTitle>Another person must approve this</MessageBarTitle>
-                  You raised this adjustment, so you cannot approve it yourself. Write-offs need a second person (segregation of duties). Ask another approver
-                  to open it from Stock adjustments.
+                  You raised this adjustment, so you cannot approve it yourself. Write-offs need a second person
+                  (segregation of duties). Ask another approver to open it from Stock adjustments.
                 </MessageBarBody>
               </MessageBar>
             )}
             {approve.error && !selfApprovalRefused && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(approve.error) ? approve.error.userMessage : 'Not approved.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(approve.error) ? approve.error.userMessage : 'Not approved.'}
+                </MessageBarBody>
               </MessageBar>
             )}
             <DataTable
@@ -322,19 +401,39 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
                 { key: 'item', header: 'Item', render: (l) => <Text weight="semibold">{l.itemName}</Text> },
                 { key: 'batch', header: 'Batch', render: (l) => <Text font="monospace">{l.batchNumber}</Text> },
                 { key: 'exp', header: 'Expiry', render: (l) => <ExpiryText date={l.expiryDate} /> },
-                { key: 'book', header: 'Book qty', align: 'end', priority: 'low', render: (l) => formatQty(l.systemQuantity) },
+                {
+                  key: 'book',
+                  header: 'Book qty',
+                  align: 'end',
+                  priority: 'low',
+                  render: (l) => formatQty(l.systemQuantity),
+                },
                 {
                   key: 'change',
                   header: 'Change',
                   align: 'end',
                   render: (l) => (
-                    <Text weight="semibold" style={{ color: l.quantityChange < 0 ? tokens.colorPaletteRedForeground1 : tokens.colorPaletteGreenForeground1 }}>
+                    <Text
+                      weight="semibold"
+                      style={{
+                        color:
+                          l.quantityChange < 0
+                            ? tokens.colorPaletteRedForeground1
+                            : tokens.colorPaletteGreenForeground1,
+                      }}
+                    >
                       {l.quantityChange > 0 ? '+' : ''}
                       {formatQty(l.quantityChange)}
                     </Text>
                   ),
                 },
-                { key: 'cost', header: 'Unit cost', align: 'end', priority: 'low', render: (l) => formatInr(l.unitCost) },
+                {
+                  key: 'cost',
+                  header: 'Unit cost',
+                  align: 'end',
+                  priority: 'low',
+                  render: (l) => formatInr(l.unitCost),
+                },
                 { key: 'value', header: 'Value', align: 'end', render: (l) => formatInr(l.value) },
               ]}
             />
@@ -347,7 +446,12 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
             <Button icon={<StopRegular />} onClick={() => setRejecting(true)}>
               Reject
             </Button>
-            <Button appearance="primary" icon={<CheckmarkRegular />} disabled={ownRequest || selfApprovalRefused} onClick={() => setConfirmApprove(true)}>
+            <Button
+              appearance="primary"
+              icon={<CheckmarkRegular />}
+              disabled={ownRequest || selfApprovalRefused}
+              onClick={() => setConfirmApprove(true)}
+            >
               Approve and change stock
             </Button>
           </>
@@ -362,7 +466,8 @@ function AdjustmentDrawer({ adjustmentId, onClose }: { adjustmentId: string; onC
         onConfirm={() => approve.mutate()}
         onCancel={() => setConfirmApprove(false)}
       >
-        The stock of {a?.lines.length ?? 0} batches changes now ({formatInr(a?.netValue)} at cost). This cannot be undone except with another adjustment.
+        The stock of {a?.lines.length ?? 0} batches changes now ({formatInr(a?.netValue)} at cost). This cannot be
+        undone except with another adjustment.
       </ConfirmDialog>
       {rejecting && a && (
         <ReasonDialog
@@ -389,7 +494,15 @@ interface AdjustLine {
   quantity: string;
 }
 
-function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultStoreId: string | null; onClose: () => void; onCreated: (id: string) => void }) {
+function NewAdjustmentDialog({
+  defaultStoreId,
+  onClose,
+  onCreated,
+}: {
+  defaultStoreId: string | null;
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const working = useWorkingStore('inventory');
@@ -398,7 +511,12 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<AdjustLine[]>([]);
   const itemIds = Array.from(new Set(lines.map((l) => l.item.id)));
-  const batchResults = useQueries({ queries: itemIds.map((id) => ({ ...inventoryQueries.batches(storeId ?? '', id, false), enabled: Boolean(storeId) })) });
+  const batchResults = useQueries({
+    queries: itemIds.map((id) => ({
+      ...inventoryQueries.batches(storeId ?? '', id, false),
+      enabled: Boolean(storeId),
+    })),
+  });
   const batchesOf = (itemId: string) => batchResults[itemIds.indexOf(itemId)]?.data;
 
   const planned = lines.map((line) => {
@@ -416,7 +534,12 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
   });
   const duplicate = new Set(lines.map((l) => l.batchId).filter(Boolean)).size !== lines.filter((l) => l.batchId).length;
   const needsRemarks = REASONS_NEEDING_REMARKS.includes(reason);
-  const valid = Boolean(storeId) && planned.length > 0 && planned.every((p) => !p.problem) && !duplicate && (!needsRemarks || remarks.trim().length > 0);
+  const valid =
+    Boolean(storeId) &&
+    planned.length > 0 &&
+    planned.every((p) => !p.problem) &&
+    !duplicate &&
+    (!needsRemarks || remarks.trim().length > 0);
   const total = toNumber(sum(planned.map((p) => dec(p.value))));
 
   const create = useMutation({
@@ -434,8 +557,13 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
     },
   });
 
-  const add = (item: ItemLookup) => setLines([...lines, { key: `${item.id}-${lines.length}-${item.code}`, item, batchId: '', direction: 'remove', quantity: '' }]);
-  const update = (key: string, patch: Partial<AdjustLine>) => setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const add = (item: ItemLookup) =>
+    setLines([
+      ...lines,
+      { key: `${item.id}-${lines.length}-${item.code}`, item, batchId: '', direction: 'remove', quantity: '' },
+    ]);
+  const update = (key: string, patch: Partial<AdjustLine>) =>
+    setLines(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
   return (
     <Dialog open onOpenChange={(_, d) => !d.open && !create.isPending && onClose()}>
@@ -463,24 +591,36 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
                 </Select>
               </Field>
             </div>
-            <ItemPicker storeId={storeId} onPick={add} label="Add item" hint="Then choose the batch that is damaged, lost or found" />
+            <ItemPicker
+              storeId={storeId}
+              onPick={add}
+              label="Add item"
+              hint="Then choose the batch that is damaged, lost or found"
+            />
             <LineTable
               ariaLabel="Adjustment lines"
               rows={planned}
               getRowId={(p) => p.line.key}
               isFlagged={(p) => p.problem !== null && p.line.quantity !== ''}
-              empty={<EmptyState title="No batches yet" description="Search above for the item, then pick the batch." />}
+              empty={
+                <EmptyState title="No batches yet" description="Search above for the item, then pick the batch." />
+              }
               columns={[
                 { key: 'item', header: 'Item', render: (p) => <Text weight="semibold">{p.line.item.name}</Text> },
                 {
                   key: 'batch',
                   header: 'Batch',
                   render: (p) => (
-                    <Select aria-label={`Batch of ${p.line.item.name}`} value={p.line.batchId} onChange={(_, d) => update(p.line.key, { batchId: d.value })}>
+                    <Select
+                      aria-label={`Batch of ${p.line.item.name}`}
+                      value={p.line.batchId}
+                      onChange={(_, d) => update(p.line.key, { batchId: d.value })}
+                    >
                       <option value="">Choose batch</option>
                       {(batchesOf(p.line.item.id) ?? []).map((b) => (
                         <option key={b.batchId} value={b.batchId}>
-                          {b.batchNumber} · exp {formatExpiry(b.expiryDate)} · {formatQty(b.onHand)} on hand{b.isExpired ? ' · expired' : ''}
+                          {b.batchNumber} · exp {formatExpiry(b.expiryDate)} · {formatQty(b.onHand)} on hand
+                          {b.isExpired ? ' · expired' : ''}
                           {b.isBlocked ? ' · on hold' : ''}
                         </option>
                       ))}
@@ -492,10 +632,18 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
                   header: 'Change',
                   render: (p) => (
                     <span style={{ display: 'inline-flex', gap: 4 }}>
-                      <ToggleButton size="small" checked={p.line.direction === 'remove'} onClick={() => update(p.line.key, { direction: 'remove' })}>
+                      <ToggleButton
+                        size="small"
+                        checked={p.line.direction === 'remove'}
+                        onClick={() => update(p.line.key, { direction: 'remove' })}
+                      >
                         Remove
                       </ToggleButton>
-                      <ToggleButton size="small" checked={p.line.direction === 'add'} onClick={() => update(p.line.key, { direction: 'add' })}>
+                      <ToggleButton
+                        size="small"
+                        checked={p.line.direction === 'add'}
+                        onClick={() => update(p.line.key, { direction: 'add' })}
+                      >
                         Add
                       </ToggleButton>
                     </span>
@@ -535,11 +683,22 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
                   key: 'remove',
                   header: '',
                   width: 44,
-                  render: (p) => <Button appearance="subtle" icon={<DeleteRegular />} aria-label="Remove line" onClick={() => setLines(lines.filter((l) => l.key !== p.line.key))} />,
+                  render: (p) => (
+                    <Button
+                      appearance="subtle"
+                      icon={<DeleteRegular />}
+                      aria-label="Remove line"
+                      onClick={() => setLines(lines.filter((l) => l.key !== p.line.key))}
+                    />
+                  ),
                 },
               ]}
             />
-            <Field label="Remarks" required={needsRemarks} hint={needsRemarks ? 'Explain what happened; the approver reads this.' : undefined}>
+            <Field
+              label="Remarks"
+              required={needsRemarks}
+              hint={needsRemarks ? 'Explain what happened; the approver reads this.' : undefined}
+            >
               <Textarea value={remarks} rows={2} maxLength={1000} onChange={(_, d) => setRemarks(d.value)} />
             </Field>
             {duplicate && (
@@ -562,7 +721,12 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
             <Button onClick={onClose} disabled={create.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || create.isPending} icon={create.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => create.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || create.isPending}
+              icon={create.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => create.mutate()}
+            >
               Send for approval
             </Button>
           </DialogActions>
@@ -571,4 +735,3 @@ function NewAdjustmentDialog({ defaultStoreId, onClose, onCreated }: { defaultSt
     </Dialog>
   );
 }
-

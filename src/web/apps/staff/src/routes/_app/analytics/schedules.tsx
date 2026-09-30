@@ -1,4 +1,16 @@
-import { Button, Caption1, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import {
   AddRegular,
   DeleteRegular,
@@ -11,12 +23,30 @@ import {
   SendRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatRelative } from '@hc360/core';
-import { ConfirmDialog, DataTable, EmptyState, KpiCard, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  EmptyState,
+  KpiCard,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { analyticsApi, analyticsKeys, analyticsQueries, type DeliveryDto, type ReportInputs, type SaveScheduleRequest, type ScheduleDto } from '@/modules/analytics/api';
+import {
+  analyticsApi,
+  analyticsKeys,
+  analyticsQueries,
+  type DeliveryDto,
+  type ReportInputs,
+  type SaveScheduleRequest,
+  type ScheduleDto,
+} from '@/modules/analytics/api';
 import { DeliveriesDrawer } from '@/modules/analytics/DeliveriesDrawer';
 import { ANALYTICS_PERMISSIONS as A, RUN_STATUS_LABELS } from '@/modules/analytics/labels';
 import { sanitizeInputs } from '@/modules/analytics/params';
@@ -31,7 +61,10 @@ interface SchedulesSearch {
 export const Route = createFileRoute('/_app/analytics/schedules')({
   validateSearch: (s: Record<string, unknown>): SchedulesSearch => ({
     create: typeof s.create === 'string' && /^[a-z0-9-]{1,64}$/.test(s.create) ? s.create : undefined,
-    inputs: s.inputs && typeof s.inputs === 'object' && !Array.isArray(s.inputs) ? sanitizeInputs(s.inputs as Record<string, unknown>, new Set()) : undefined,
+    inputs:
+      s.inputs && typeof s.inputs === 'object' && !Array.isArray(s.inputs)
+        ? sanitizeInputs(s.inputs as Record<string, unknown>, new Set())
+        : undefined,
   }),
   component: SchedulesPage,
 });
@@ -39,7 +72,13 @@ export const Route = createFileRoute('/_app/analytics/schedules')({
 const useStyles = makeStyles({
   stats: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' },
   muted: { color: tokens.colorNeutralForeground3 },
-  error: { color: tokens.colorPaletteRedForeground1, maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  error: {
+    color: tokens.colorPaletteRedForeground1,
+    maxWidth: '260px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   cell: { display: 'flex', flexDirection: 'column', minWidth: 0 },
 });
 
@@ -98,7 +137,10 @@ function SchedulesPage() {
       refresh();
       if (kind === 'send') {
         const delivery = result as DeliveryDto;
-        notify.success('Report sent', `${delivery.recipients.length} e-mail(s) are on their way with ${delivery.fileName ?? 'the file'}.`);
+        notify.success(
+          'Report sent',
+          `${delivery.recipients.length} e-mail(s) are on their way with ${delivery.fileName ?? 'the file'}.`,
+        );
       } else if (kind === 'delete') {
         notify.success('Schedule deleted');
       } else {
@@ -124,7 +166,10 @@ function SchedulesPage() {
       <Page maxWidth={900}>
         <PageHeader title="Scheduled e-mails" />
         <Section>
-          <EmptyState title="You cannot manage scheduled e-mails" description="Ask your administrator for the analytics schedules permission." />
+          <EmptyState
+            title="You cannot manage scheduled e-mails"
+            description="Ask your administrator for the analytics schedules permission."
+          />
         </Section>
       </Page>
     );
@@ -132,7 +177,8 @@ function SchedulesPage() {
 
   const list = schedules.data;
   const s = status.data;
-  const togglePause = (schedule: ScheduleDto) => (schedule.isMine ? act.mutate({ kind: 'pause', schedule }) : setPending({ kind: 'pause', schedule }));
+  const togglePause = (schedule: ScheduleDto) =>
+    schedule.isMine ? act.mutate({ kind: 'pause', schedule }) : setPending({ kind: 'pause', schedule });
 
   return (
     <Page>
@@ -140,9 +186,17 @@ function SchedulesPage() {
         title="Scheduled e-mails"
         icon={<MailClockRegular />}
         subtitle="Reports e-mailed automatically as Excel or CSV files. Times are in IST."
-        breadcrumbs={[{ label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) }, { label: 'Scheduled e-mails' }]}
+        breadcrumbs={[
+          { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
+          { label: 'Scheduled e-mails' },
+        ]}
         actions={
-          <Button appearance="primary" icon={<AddRegular />} disabled={!catalogue.data} onClick={() => setEditing({ schedule: null, draft: null })}>
+          <Button
+            appearance="primary"
+            icon={<AddRegular />}
+            disabled={!catalogue.data}
+            onClick={() => setEditing({ schedule: null, draft: null })}
+          >
             New schedule
           </Button>
         }
@@ -150,17 +204,37 @@ function SchedulesPage() {
 
       {s && (
         <div className={styles.stats}>
-          <KpiCard label="Active schedules" value={s.activeSchedules.toLocaleString('en-IN')} icon={<MailClockRegular />} />
-          <KpiCard label="Last e-mail" value={s.lastDeliveryAt ? formatRelative(s.lastDeliveryAt) : 'None yet'} hint={s.lastDeliveryAt ? formatDateTime(s.lastDeliveryAt) : undefined} />
+          <KpiCard
+            label="Active schedules"
+            value={s.activeSchedules.toLocaleString('en-IN')}
+            icon={<MailClockRegular />}
+          />
+          <KpiCard
+            label="Last e-mail"
+            value={s.lastDeliveryAt ? formatRelative(s.lastDeliveryAt) : 'None yet'}
+            hint={s.lastDeliveryAt ? formatDateTime(s.lastDeliveryAt) : undefined}
+          />
           <KpiCard
             label="Failed in the last 7 days"
-            value={<span style={s.failedDeliveriesLast7Days > 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>{s.failedDeliveriesLast7Days}</span>}
-            hint={s.failedDeliveriesLast7Days > 0 ? 'Open the delivery history of the schedule to see why' : 'All files were produced'}
+            value={
+              <span style={s.failedDeliveriesLast7Days > 0 ? { color: tokens.colorPaletteRedForeground1 } : undefined}>
+                {s.failedDeliveriesLast7Days}
+              </span>
+            }
+            hint={
+              s.failedDeliveriesLast7Days > 0
+                ? 'Open the delivery history of the schedule to see why'
+                : 'All files were produced'
+            }
           />
           <KpiCard
             label="Reports read from"
             value={<span style={{ fontSize: tokens.fontSizeBase500 }}>{s.dataSource}</span>}
-            hint={s.usesReplica && s.replicaLagSeconds !== null ? `About ${Math.round(s.replicaLagSeconds)} s behind live data` : undefined}
+            hint={
+              s.usesReplica && s.replicaLagSeconds !== null
+                ? `About ${Math.round(s.replicaLagSeconds)} s behind live data`
+                : undefined
+            }
           />
         </div>
       )}
@@ -177,7 +251,11 @@ function SchedulesPage() {
           emptyTitle="No scheduled e-mails yet"
           emptyDescription="Send reports such as the daily census or yesterday's collections to managers automatically."
           emptyAction={
-            <Button icon={<AddRegular />} disabled={!catalogue.data} onClick={() => setEditing({ schedule: null, draft: null })}>
+            <Button
+              icon={<AddRegular />}
+              disabled={!catalogue.data}
+              onClick={() => setEditing({ schedule: null, draft: null })}
+            >
               Create a schedule
             </Button>
           }
@@ -198,7 +276,9 @@ function SchedulesPage() {
               render: (row) => (
                 <span className={styles.cell}>
                   <Text>{row.when}</Text>
-                  <Caption1 className={styles.muted}>{row.isActive && row.nextRunAt ? `Next ${formatDateTime(row.nextRunAt)}` : 'Paused'}</Caption1>
+                  <Caption1 className={styles.muted}>
+                    {row.isActive && row.nextRunAt ? `Next ${formatDateTime(row.nextRunAt)}` : 'Paused'}
+                  </Caption1>
                 </span>
               ),
             },
@@ -222,7 +302,10 @@ function SchedulesPage() {
                 row.lastRunAt && row.lastStatus ? (
                   <span className={styles.cell}>
                     <span>
-                      <StatusBadge status={row.lastStatus === 'Succeeded' ? 'Delivered' : row.lastStatus} label={RUN_STATUS_LABELS[row.lastStatus]} />{' '}
+                      <StatusBadge
+                        status={row.lastStatus === 'Succeeded' ? 'Delivered' : row.lastStatus}
+                        label={RUN_STATUS_LABELS[row.lastStatus]}
+                      />{' '}
                       <Caption1 className={styles.muted}>{formatRelative(row.lastRunAt)}</Caption1>
                     </span>
                     {row.lastError && (
@@ -240,13 +323,23 @@ function SchedulesPage() {
               key: 'status',
               header: 'Status',
               width: 110,
-              render: (row) => <StatusBadge status={row.isActive ? 'Active' : 'Paused'} tone={row.isActive ? 'success' : 'informative'} />,
+              render: (row) => (
+                <StatusBadge
+                  status={row.isActive ? 'Active' : 'Paused'}
+                  tone={row.isActive ? 'success' : 'informative'}
+                />
+              ),
             },
           ]}
           rowActions={(row) => (
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${row.name}`} />
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<MoreHorizontalRegular />}
+                  aria-label={`Actions for ${row.name}`}
+                />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
@@ -273,7 +366,12 @@ function SchedulesPage() {
       </Section>
 
       {editing && catalogue.data && (
-        <ScheduleDrawer catalogue={catalogue.data} schedule={editing.schedule} draft={editing.draft} onClose={closeEditor} />
+        <ScheduleDrawer
+          catalogue={catalogue.data}
+          schedule={editing.schedule}
+          draft={editing.draft}
+          onClose={closeEditor}
+        />
       )}
       {history && <DeliveriesDrawer schedule={history} onClose={() => setHistory(null)} />}
 
@@ -286,7 +384,15 @@ function SchedulesPage() {
               ? `Delete “${pending.schedule.name}”?`
               : `${pending?.schedule.isActive ? 'Pause' : 'Resume'} “${pending?.schedule.name ?? ''}”?`
         }
-        confirmLabel={pending?.kind === 'send' ? 'Send now' : pending?.kind === 'delete' ? 'Delete' : pending?.schedule.isActive ? 'Pause' : 'Resume'}
+        confirmLabel={
+          pending?.kind === 'send'
+            ? 'Send now'
+            : pending?.kind === 'delete'
+              ? 'Delete'
+              : pending?.schedule.isActive
+                ? 'Pause'
+                : 'Resume'
+        }
         destructive={pending?.kind === 'delete'}
         busy={act.isPending}
         onConfirm={() => pending && act.mutate(pending)}

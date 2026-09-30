@@ -2,7 +2,20 @@ import { Badge, Button, Caption1, Text, Tooltip } from '@fluentui/react-componen
 import { AddRegular, LockClosedRegular, MoneyRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatInr, isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, DataTable, FormGrid, NumberField, Page, PageHeader, Section, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  DataTable,
+  FormGrid,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -83,11 +96,28 @@ function ComponentsPage() {
             {
               key: 'calc',
               header: 'Default',
-              render: (c) => (c.isStatutory ? 'By law' : c.calculationType === 'PercentOfBasic' ? `${c.defaultValue}% of basic` : c.defaultValue ? formatInr(c.defaultValue) : 'Set per employee'),
+              render: (c) =>
+                c.isStatutory
+                  ? 'By law'
+                  : c.calculationType === 'PercentOfBasic'
+                    ? `${c.defaultValue}% of basic`
+                    : c.defaultValue
+                      ? formatInr(c.defaultValue)
+                      : 'Set per employee',
             },
             { key: 'tax', header: 'Taxable', width: 90, priority: 'low', render: (c) => (c.isTaxable ? 'Yes' : 'No') },
             { key: 'order', header: 'Order', width: 70, align: 'end', priority: 'low', render: (c) => c.sortOrder },
-            { key: 'active', header: 'Status', width: 100, render: (c) => <StatusBadge status={c.isActive ? 'Active' : 'Inactive'} tone={c.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'active',
+              header: 'Status',
+              width: 100,
+              render: (c) => (
+                <StatusBadge
+                  status={c.isActive ? 'Active' : 'Inactive'}
+                  tone={c.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No pay heads"
           size="small"
@@ -115,7 +145,10 @@ const schema = z
     sortOrder: z.number({ error: 'Enter the order on the payslip.' }).int().min(0).max(800),
     isActive: z.boolean(),
   })
-  .refine((v) => v.calculationType !== 'PercentOfBasic' || v.defaultValue <= 100, { path: ['defaultValue'], message: 'A percentage of basic cannot exceed 100.' });
+  .refine((v) => v.calculationType !== 'PercentOfBasic' || v.defaultValue <= 100, {
+    path: ['defaultValue'],
+    message: 'A percentage of basic cannot exceed 100.',
+  });
 
 type Values = z.infer<typeof schema>;
 
@@ -138,7 +171,12 @@ function ComponentDrawer({ component, onClose }: { component: SalaryComponentDto
   const calculationType = useWatch({ control: form.control, name: 'calculationType' });
 
   const save = useMutation({
-    mutationFn: (v: Values) => hrApi.saveComponent(component?.id ?? null, { ...v, code: v.code.toUpperCase(), version: component?.version ?? null }),
+    mutationFn: (v: Values) =>
+      hrApi.saveComponent(component?.id ?? null, {
+        ...v,
+        code: v.code.toUpperCase(),
+        version: component?.version ?? null,
+      }),
     onSuccess: () => {
       notify.success('Pay head saved', 'It applies from the next processing.');
       void queryClient.invalidateQueries({ queryKey: hrKeys.payroll });
@@ -154,9 +192,23 @@ function ComponentDrawer({ component, onClose }: { component: SalaryComponentDto
   });
 
   return (
-    <EditorDrawer open title={component ? component.name : 'Add pay head'} onClose={onClose} onSubmit={form.handleSubmit((v) => save.mutate(v))} busy={save.isPending}>
+    <EditorDrawer
+      open
+      title={component ? component.name : 'Add pay head'}
+      onClose={onClose}
+      onSubmit={form.handleSubmit((v) => save.mutate(v))}
+      busy={save.isPending}
+    >
       <FormGrid columns={2} minColumnWidth={160}>
-        <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={24} disabled={component?.code === 'BASIC'} />
+        <TextField
+          control={form.control}
+          name="code"
+          label="Code"
+          required
+          autoFocus
+          maxLength={24}
+          disabled={component?.code === 'BASIC'}
+        />
         <NumberField control={form.control} name="sortOrder" label="Order on payslip" required min={0} max={800} />
       </FormGrid>
       <TextField control={form.control} name="name" label="Name on payslip" required maxLength={100} />

@@ -22,7 +22,11 @@ describe('report frame', () => {
       ],
       bodyHtml: '<table id="results"></table>',
       signatories: [{ name: 'Dr. Meena Iyer', qualification: 'MD (Pathology)', registrationNumber: 'MMC 12345' }],
-      qr: { svg: '<svg id="qr"></svg>', code: 'ABCD2345EFGH6789JKLM', url: 'https://nh.local/api/v1/lab/reports/verify/ABCD2345EFGH6789JKLM' },
+      qr: {
+        svg: '<svg id="qr"></svg>',
+        code: 'ABCD2345EFGH6789JKLM',
+        url: 'https://nh.local/api/v1/lab/reports/verify/ABCD2345EFGH6789JKLM',
+      },
     });
     expect(html).toContain('Nana Hospitals');
     expect(html).toContain('NABH accreditation NABH-H-2026-001');
@@ -36,13 +40,22 @@ describe('report frame', () => {
   });
 
   it('marks copies that are not final', () => {
-    const html = reportShellHtml({ title: 'Radiology report', letterhead, patientRows: [], bodyHtml: '', signatories: [], statusBanner: 'Preliminary: not released' });
+    const html = reportShellHtml({
+      title: 'Radiology report',
+      letterhead,
+      patientRows: [],
+      bodyHtml: '',
+      signatories: [],
+      statusBanner: 'Preliminary: not released',
+    });
     expect(html).toContain('class="banner">Preliminary: not released');
     expect(html).not.toContain('Scan to verify');
   });
 
   it('keeps paragraphs and line breaks of free text, escaped', () => {
-    expect(paragraphs('Lungs clear.\nNo effusion.\n\nImpression <normal>')).toBe('<p>Lungs clear.<br/>No effusion.</p><p>Impression &lt;normal&gt;</p>');
+    expect(paragraphs('Lungs clear.\nNo effusion.\n\nImpression <normal>')).toBe(
+      '<p>Lungs clear.<br/>No effusion.</p><p>Impression &lt;normal&gt;</p>',
+    );
     expect(paragraphs('  ')).toBe('');
     expect(paragraphs(null)).toBe('');
   });

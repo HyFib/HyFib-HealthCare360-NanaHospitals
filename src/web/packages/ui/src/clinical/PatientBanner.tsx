@@ -1,5 +1,11 @@
 import { Avatar, Badge, Caption1, makeStyles, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { AlertUrgentRegular, CallRegular, DropRegular, ShieldKeyholeRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  AlertUrgentRegular,
+  CallRegular,
+  DropRegular,
+  ShieldKeyholeRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { bloodGroupLabel, formatPhone, genderShort, type BloodGroup, type Gender } from '@hc360/core';
 import type { ReactNode } from 'react';
 
@@ -64,7 +70,12 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
 
   return (
     <section className={styles.banner} aria-label={`Patient ${patient.fullName}, UHID ${patient.uhid}`}>
-      <Avatar name={patient.fullName} size={48} color="colorful" image={patient.photoUrl ? { src: patient.photoUrl, alt: '' } : undefined} />
+      <Avatar
+        name={patient.fullName}
+        size={48}
+        color="colorful"
+        image={patient.photoUrl ? { src: patient.photoUrl, alt: '' } : undefined}
+      />
       <div className={styles.identity}>
         <div className={styles.nameRow}>
           <Text className={styles.name}>{patient.fullName}</Text>

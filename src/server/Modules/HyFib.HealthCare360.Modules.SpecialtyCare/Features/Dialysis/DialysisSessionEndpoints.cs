@@ -127,8 +127,13 @@ internal static class DialysisSessionEndpoints
                 where x.Id == id
                 select new
                 {
-                    s = x, p.Uhid, p.FullName, MachineCode = m != null ? m.Code : null, DialyzerSerial = z != null ? z.SerialNumber : null,
-                    DialyzerMaxUses = z != null ? (int?)z.MaxUses : null, Sero = d != null ? (SeroStatus?)d.SeroStatus : null,
+                    s = x,
+                    p.Uhid,
+                    p.FullName,
+                    MachineCode = m != null ? m.Code : null,
+                    DialyzerSerial = z != null ? z.SerialNumber : null,
+                    DialyzerMaxUses = z != null ? (int?)z.MaxUses : null,
+                    Sero = d != null ? (SeroStatus?)d.SeroStatus : null,
                     DryWeight = d != null ? (decimal?)d.DryWeightKg : null,
                 })
             .FirstOrDefaultAsync(ct);

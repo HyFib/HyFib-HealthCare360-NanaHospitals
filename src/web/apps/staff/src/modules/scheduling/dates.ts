@@ -66,9 +66,26 @@ export function maxDate(a: IsoDate, b: IsoDate): IsoDate {
 
 const weekdayShortFormat = new Intl.DateTimeFormat('en-IN', { weekday: 'short', timeZone: 'UTC' });
 const monthShortFormat = new Intl.DateTimeFormat('en-IN', { month: 'short', timeZone: 'UTC' });
-const longFormat = new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
-const mediumFormat = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
-const shortFormat = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+const longFormat = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const mediumFormat = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+const shortFormat = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
 
 /** Pieces for a date chip: "Sat", 26, "Sept". */
 export function dayParts(date: IsoDate): { weekday: string; day: number; month: string } {
@@ -180,7 +197,9 @@ export function toInputTime(value: string | null | undefined): string {
 /** `<input type="datetime-local">` value, read as IST → ISO instant ("2026-09-26T10:30" → "2026-09-26T10:30:00+05:30"). */
 export function istLocalToIso(local: string): string | null {
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})$/.exec(local.trim());
-  return match && isIsoDate(match[1]) && !Number.isNaN(timeToMinutes(match[2])) ? `${match[1]}T${match[2]}:00${IST_OFFSET}` : null;
+  return match && isIsoDate(match[1]) && !Number.isNaN(timeToMinutes(match[2]))
+    ? `${match[1]}T${match[2]}:00${IST_OFFSET}`
+    : null;
 }
 
 /** ISO instant → `<input type="datetime-local">` value in IST. */

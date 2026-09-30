@@ -37,7 +37,10 @@ function VisitsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
@@ -45,12 +48,20 @@ function VisitsPage() {
     void queryClient.invalidateQueries({ queryKey: ['visits', 'list'] });
   });
 
-  const set = (patch: Partial<VisitFilters>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<VisitFilters>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const today = todayIso();
 
   return (
     <Page>
-      <PageHeader title="Visits" subtitle={filters.from && filters.from !== today ? `From ${filters.from}${filters.to ? ` to ${filters.to}` : ''}` : "Today's check-ins, live"} />
+      <PageHeader
+        title="Visits"
+        subtitle={
+          filters.from && filters.from !== today
+            ? `From ${filters.from}${filters.to ? ` to ${filters.to}` : ''}`
+            : "Today's check-ins, live"
+        }
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
@@ -58,13 +69,26 @@ function VisitsPage() {
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, UHID or visit number" />
             </Field>
             <Field label="From">
-              <Input type="date" value={filters.from ?? today} max={today} onChange={(_, d) => set({ from: d.value || undefined })} />
+              <Input
+                type="date"
+                value={filters.from ?? today}
+                max={today}
+                onChange={(_, d) => set({ from: d.value || undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={filters.to ?? filters.from ?? today} max={today} onChange={(_, d) => set({ to: d.value || undefined })} />
+              <Input
+                type="date"
+                value={filters.to ?? filters.from ?? today}
+                max={today}
+                onChange={(_, d) => set({ to: d.value || undefined })}
+              />
             </Field>
             <Field label="Department">
-              <Select value={filters.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={filters.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -74,7 +98,10 @@ function VisitsPage() {
               </Select>
             </Field>
             <Field label="Type">
-              <Select value={filters.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as VisitType | undefined })}>
+              <Select
+                value={filters.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as VisitType | undefined })}
+              >
                 <option value="">All</option>
                 {VISIT_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -84,7 +111,10 @@ function VisitsPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={filters.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as VisitStatus | undefined })}>
+              <Select
+                value={filters.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as VisitStatus | undefined })}
+              >
                 <option value="">All</option>
                 {VISIT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -102,16 +132,26 @@ function VisitsPage() {
           error={visits.error}
           onRetry={() => void visits.refetch()}
           getRowId={(v) => v.id}
-          onRowClick={(v) => void navigate({ to: '/patients/$patientId', params: { patientId: v.patientId }, search: { tab: 'visits' } })}
+          onRowClick={(v) =>
+            void navigate({ to: '/patients/$patientId', params: { patientId: v.patientId }, search: { tab: 'visits' } })
+          }
           columns={[
             { key: 'time', header: 'Time', width: 90, render: (v) => formatTime(v.visitedAt) },
-            { key: 'token', header: 'Token', width: 90, render: (v) => (v.tokenLabel ? <Text weight="semibold">{v.tokenLabel}</Text> : '—') },
+            {
+              key: 'token',
+              header: 'Token',
+              width: 90,
+              render: (v) => (v.tokenLabel ? <Text weight="semibold">{v.tokenLabel}</Text> : '—'),
+            },
             {
               key: 'patient',
               header: 'Patient',
               render: (v) => (
                 <span>
-                  <Text weight="semibold">{v.patientName}</Text> <Text size={200}>({v.age ?? '—'} / {v.gender.charAt(0)})</Text>
+                  <Text weight="semibold">{v.patientName}</Text>{' '}
+                  <Text size={200}>
+                    ({v.age ?? '—'} / {v.gender.charAt(0)})
+                  </Text>
                   {v.isMlc && (
                     <Badge size="small" color="danger" style={{ marginLeft: 6 }}>
                       MLC
@@ -123,9 +163,19 @@ function VisitsPage() {
             { key: 'uhid', header: 'UHID', priority: 'low', render: (v) => <Text font="monospace">{v.uhid}</Text> },
             { key: 'dept', header: 'Department', render: (v) => v.departmentName ?? '—' },
             { key: 'doctor', header: 'Doctor', priority: 'low', render: (v) => v.practitionerName ?? 'Any' },
-            { key: 'type', header: 'Type', priority: 'low', render: (v) => `${humanize(v.type)}${v.isFollowUp ? ' · follow-up' : ''}${v.isFreeFollowUp ? ' (free)' : ''}` },
+            {
+              key: 'type',
+              header: 'Type',
+              priority: 'low',
+              render: (v) =>
+                `${humanize(v.type)}${v.isFollowUp ? ' · follow-up' : ''}${v.isFreeFollowUp ? ' (free)' : ''}`,
+            },
             { key: 'payer', header: 'Payer', priority: 'low', render: (v) => humanize(v.payerType) },
-            { key: 'status', header: 'Status', render: (v) => <StatusBadge status={v.tokenStatus && v.status === 'Open' ? v.tokenStatus : v.status} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (v) => <StatusBadge status={v.tokenStatus && v.status === 'Open' ? v.tokenStatus : v.status} />,
+            },
           ]}
           emptyTitle="No visits match"
           emptyDescription="Patients appear here as soon as they are checked in."

@@ -21,7 +21,14 @@ function calendarDay(value: string | null | undefined): number | null {
   return match ? Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
 }
 
-const NUMERIC_TYPES: ReadonlySet<ReportValueType> = new Set(['Integer', 'Decimal', 'Money', 'Percent', 'Days', 'Minutes']);
+const NUMERIC_TYPES: ReadonlySet<ReportValueType> = new Set([
+  'Integer',
+  'Decimal',
+  'Money',
+  'Percent',
+  'Days',
+  'Minutes',
+]);
 
 /** Numbers are right-aligned in tables and can be charted. */
 export function isNumericType(type: ReportValueType): boolean {
@@ -99,7 +106,11 @@ export function formatInrCompact(value: number | null | undefined, digits = 2): 
  * A report value as shown in a table cell. Day columns already say "days" in their heading, so cells show the number;
  * headline figures (`figure`) carry the unit.
  */
-export function formatValue(value: CellValue | undefined, type: ReportValueType, context: 'cell' | 'figure' = 'cell'): string {
+export function formatValue(
+  value: CellValue | undefined,
+  type: ReportValueType,
+  context: 'cell' | 'figure' = 'cell',
+): string {
   if (value === null || value === undefined || value === '') {
     return '—';
   }
@@ -133,7 +144,9 @@ export function formatValue(value: CellValue | undefined, type: ReportValueType,
     case 'Percent':
       return `${oneDecimal.format(number)}%`;
     case 'Days':
-      return context === 'figure' ? `${oneDecimal.format(number)} ${Math.abs(number) === 1 ? 'day' : 'days'}` : oneDecimal.format(number);
+      return context === 'figure'
+        ? `${oneDecimal.format(number)} ${Math.abs(number) === 1 ? 'day' : 'days'}`
+        : oneDecimal.format(number);
     case 'Minutes':
       return formatMinutes(number);
     default:
@@ -213,7 +226,9 @@ export interface KpiChange {
 }
 
 /** How a KPI moved against the previous period of the same length, and whether that is good. */
-export function kpiChange(kpi: Pick<KpiValue, 'value' | 'previous' | 'changePercent' | 'higherIsBetter' | 'unit'>): KpiChange | null {
+export function kpiChange(
+  kpi: Pick<KpiValue, 'value' | 'previous' | 'changePercent' | 'higherIsBetter' | 'unit'>,
+): KpiChange | null {
   if (kpi.value === null || kpi.previous === null) {
     return null;
   }
@@ -224,11 +239,15 @@ export function kpiChange(kpi: Pick<KpiValue, 'value' | 'previous' | 'changePerc
   }
   const rounded = Math.round(delta * 10) / 10;
   const direction = rounded > 0 ? 'up' : rounded < 0 ? 'down' : 'flat';
-  const tone: ChangeTone = direction === 'flat' ? 'neutral' : (direction === 'up') === kpi.higherIsBetter ? 'good' : 'bad';
+  const tone: ChangeTone =
+    direction === 'flat' ? 'neutral' : (direction === 'up') === kpi.higherIsBetter ? 'good' : 'bad';
   const magnitude = `${upToOne.format(Math.abs(rounded))}${inPoints ? ' pts' : '%'}`;
   const text = direction === 'flat' ? `0${inPoints ? ' pts' : '%'}` : `${direction === 'up' ? '+' : '−'}${magnitude}`;
   const verdict = tone === 'good' ? ', which is better' : tone === 'bad' ? ', which is worse' : '';
-  const description = direction === 'flat' ? 'No change on the previous period' : `${direction === 'up' ? 'Up' : 'Down'} ${magnitude} on the previous period${verdict}`;
+  const description =
+    direction === 'flat'
+      ? 'No change on the previous period'
+      : `${direction === 'up' ? 'Up' : 'Down'} ${magnitude} on the previous period${verdict}`;
   return { text, direction, tone, description };
 }
 

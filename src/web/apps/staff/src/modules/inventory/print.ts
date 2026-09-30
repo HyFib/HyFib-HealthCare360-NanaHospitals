@@ -26,10 +26,17 @@ function heading(letterhead: StoreLetterhead, title: string): string {
 }
 
 /** Issue slip that travels with goods issued against an indent. */
-export function buildIndentIssueHtml(issue: IndentIssueDto, indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>, letterhead: StoreLetterhead): string {
+export function buildIndentIssueHtml(
+  issue: IndentIssueDto,
+  indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>,
+  letterhead: StoreLetterhead,
+): string {
   const rows = issue.lines
     .map(
-      (l, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
+      (
+        l,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
         <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.unitCost))}</td><td class="right">${escapeHtml(formatInr(l.value))}</td></tr>`,
     )
     .join('');
@@ -53,7 +60,10 @@ export function buildIndentIssueHtml(issue: IndentIssueDto, indent: Pick<IndentD
 export function buildTransferNoteHtml(transfer: TransferDetail, letterhead: StoreLetterhead): string {
   const rows = transfer.lines
     .map(
-      (l, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
+      (
+        l,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
         <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.mrp))}</td></tr>`,
     )
     .join('');
@@ -72,7 +82,11 @@ export function buildTransferNoteHtml(transfer: TransferDetail, letterhead: Stor
   return printDocument(body, { title: `Transfer ${transfer.number}`, pageSize: 'A5', styles: STYLES });
 }
 
-export async function printIndentIssue(issue: IndentIssueDto, indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>, letterhead: StoreLetterhead): Promise<void> {
+export async function printIndentIssue(
+  issue: IndentIssueDto,
+  indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>,
+  letterhead: StoreLetterhead,
+): Promise<void> {
   await printHtml(buildIndentIssueHtml(issue, indent, letterhead), { pageSize: 'A5' });
 }
 
@@ -88,7 +102,10 @@ export function buildCountSheetHtml(count: CountDetail, letterhead: StoreLetterh
   const rows = [...count.lines]
     .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.batchNumber.localeCompare(b.batchNumber))
     .map(
-      (l, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
+      (
+        l,
+        i,
+      ) => `<tr><td>${i + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
         <td class="blank"></td><td class="blank"></td></tr>`,
     )
     .join('');

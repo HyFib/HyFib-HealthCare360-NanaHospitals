@@ -132,9 +132,17 @@ internal static class AssetEndpoints
             .OrderByDescending(c => c.EndDate)
             .Select(c => new
             {
-                c.Id, c.AssetId, c.Type, c.VendorId,
+                c.Id,
+                c.AssetId,
+                c.Type,
+                c.VendorId,
                 VendorName = db.Set<Vendor>().Where(v => v.Id == c.VendorId).Select(v => v.Name).FirstOrDefault(),
-                c.ContractNumber, c.StartDate, c.EndDate, c.Cost, c.CoverageNotes, c.Version,
+                c.ContractNumber,
+                c.StartDate,
+                c.EndDate,
+                c.Cost,
+                c.CoverageNotes,
+                c.Version,
             })
             .ToListAsync(ct);
         return TypedResults.Ok(rows.Select(c => new AssetContractDto(

@@ -15,13 +15,43 @@ import type {
 
 // ------------------------------------------------------------------------------------------------ enums (as strings)
 
-export const LAB_SECTIONS = ['Hematology', 'Biochemistry', 'Microbiology', 'Serology', 'ClinicalPathology', 'Histopathology', 'Immunology'] as const;
+export const LAB_SECTIONS = [
+  'Hematology',
+  'Biochemistry',
+  'Microbiology',
+  'Serology',
+  'ClinicalPathology',
+  'Histopathology',
+  'Immunology',
+] as const;
 export type LabSection = (typeof LAB_SECTIONS)[number];
 
-export const SPECIMEN_TYPES = ['WholeBlood', 'Serum', 'Plasma', 'Urine', 'Stool', 'Swab', 'Sputum', 'Csf', 'BodyFluid', 'Tissue', 'Other'] as const;
+export const SPECIMEN_TYPES = [
+  'WholeBlood',
+  'Serum',
+  'Plasma',
+  'Urine',
+  'Stool',
+  'Swab',
+  'Sputum',
+  'Csf',
+  'BodyFluid',
+  'Tissue',
+  'Other',
+] as const;
 export type SpecimenType = (typeof SPECIMEN_TYPES)[number];
 
-export const CONTAINER_TYPES = ['Edta', 'Plain', 'Fluoride', 'Citrate', 'Heparin', 'UrineContainer', 'Swab', 'StoolContainer', 'SterileContainer'] as const;
+export const CONTAINER_TYPES = [
+  'Edta',
+  'Plain',
+  'Fluoride',
+  'Citrate',
+  'Heparin',
+  'UrineContainer',
+  'Swab',
+  'StoolContainer',
+  'SterileContainer',
+] as const;
 export type ContainerType = (typeof CONTAINER_TYPES)[number];
 
 export const RESULT_TYPES = ['Numeric', 'Text', 'Options', 'Culture'] as const;
@@ -33,9 +63,18 @@ export type LabOrderSource = 'ClinicalOrder' | 'WalkIn' | 'OutsideReferral';
 export const ORDER_STATUSES = ['Ordered', 'InProgress', 'Completed', 'Cancelled'] as const;
 export type LabOrderStatus = (typeof ORDER_STATUSES)[number];
 
-export type LabOrderItemStatus = 'Ordered' | 'Collected' | 'InLab' | 'ResultsEntered' | 'Verified' | 'Released' | 'Cancelled';
+export type LabOrderItemStatus =
+  'Ordered' | 'Collected' | 'InLab' | 'ResultsEntered' | 'Verified' | 'Released' | 'Cancelled';
 
-export const SAMPLE_STATUSES = ['Pending', 'Collected', 'Received', 'InProcess', 'Completed', 'Rejected', 'Cancelled'] as const;
+export const SAMPLE_STATUSES = [
+  'Pending',
+  'Collected',
+  'Received',
+  'InProcess',
+  'Completed',
+  'Rejected',
+  'Cancelled',
+] as const;
 export type SampleStatus = (typeof SAMPLE_STATUSES)[number];
 
 export const REJECTION_REASONS = [
@@ -890,7 +929,10 @@ export const labQueries = {
     queryOptions({
       queryKey: ['lab', 'masters', 'tests', params],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<LabTestListItem>>('/api/v1/lab/tests', { query: { ...params, pageSize: params.pageSize ?? PAGE }, signal }),
+        api.get<PagedResult<LabTestListItem>>('/api/v1/lab/tests', {
+          query: { ...params, pageSize: params.pageSize ?? PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       staleTime: 5 * 60_000,
     }),
@@ -903,19 +945,22 @@ export const labQueries = {
   instruments: (includeInactive = false) =>
     queryOptions({
       queryKey: ['lab', 'masters', 'instruments', includeInactive],
-      queryFn: ({ signal }) => api.get<LabInstrumentDto[]>('/api/v1/lab/instruments', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<LabInstrumentDto[]>('/api/v1/lab/instruments', { query: { includeInactive }, signal }),
       staleTime: 10 * 60_000,
     }),
   referralLabs: (includeInactive = false) =>
     queryOptions({
       queryKey: ['lab', 'masters', 'referral-labs', includeInactive],
-      queryFn: ({ signal }) => api.get<ReferralLabDto[]>('/api/v1/lab/referral-labs', { query: { includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ReferralLabDto[]>('/api/v1/lab/referral-labs', { query: { includeInactive }, signal }),
       staleTime: 10 * 60_000,
     }),
   orders: (filters: LabOrderFilters) =>
     queryOptions({
       queryKey: ['lab', 'orders', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<LabOrderListItem>>('/api/v1/lab/orders', { query: { ...filters, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<LabOrderListItem>>('/api/v1/lab/orders', { query: { ...filters, pageSize: PAGE }, signal }),
       placeholderData: keepPreviousData,
     }),
   order: (id: string) =>
@@ -926,26 +971,32 @@ export const labQueries = {
   history: (patientId: string, labTestId?: string) =>
     queryOptions({
       queryKey: ['lab', 'orders', 'history', patientId, labTestId ?? 'all'],
-      queryFn: ({ signal }) => api.get<PatientLabHistory[]>(`/api/v1/lab/patients/${patientId}/history`, { query: { labTestId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PatientLabHistory[]>(`/api/v1/lab/patients/${patientId}/history`, { query: { labTestId }, signal }),
     }),
   pendingCollection: (filters: PendingCollectionFilters, pageSize = 100) =>
     queryOptions({
       queryKey: ['lab', 'samples', 'pending-collection', filters, pageSize],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<PendingCollectionItem>>('/api/v1/lab/samples/pending-collection', { query: { ...filters, pageSize }, signal }),
+        api.get<PagedResult<PendingCollectionItem>>('/api/v1/lab/samples/pending-collection', {
+          query: { ...filters, pageSize },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
   sampleByBarcode: (barcode: string) =>
     queryOptions({
       queryKey: ['lab', 'samples', 'barcode', barcode],
-      queryFn: ({ signal }) => api.get<SampleLookup>(`/api/v1/lab/samples/by-barcode/${encodeURIComponent(barcode)}`, { signal }),
+      queryFn: ({ signal }) =>
+        api.get<SampleLookup>(`/api/v1/lab/samples/by-barcode/${encodeURIComponent(barcode)}`, { signal }),
       staleTime: 15_000,
     }),
   worklist: (filters: WorklistFilters, pageSize = PAGE) =>
     queryOptions({
       queryKey: ['lab', 'worklist', filters, pageSize],
-      queryFn: ({ signal }) => api.get<PagedResult<WorklistItem>>('/api/v1/lab/worklist', { query: { ...filters, pageSize }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<WorklistItem>>('/api/v1/lab/worklist', { query: { ...filters, pageSize }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -959,7 +1010,11 @@ export const labQueries = {
   reports: (filters: ReportFilters) =>
     queryOptions({
       queryKey: ['lab', 'reports', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<LabReportListItem>>('/api/v1/lab/reports', { query: { ...filters, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<LabReportListItem>>('/api/v1/lab/reports', {
+          query: { ...filters, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   report: (id: string) =>
@@ -976,13 +1031,18 @@ export const labQueries = {
   criticalCalls: (params: { from?: string; to?: string; kind?: DiagnosticKind; page?: number }) =>
     queryOptions({
       queryKey: ['lab', 'critical-calls', params],
-      queryFn: ({ signal }) => api.get<PagedResult<CriticalCallDto>>('/api/v1/lab/critical-calls', { query: { ...params, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<CriticalCallDto>>('/api/v1/lab/critical-calls', {
+          query: { ...params, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   qcLots: (includeInactive = false, labTestId?: string) =>
     queryOptions({
       queryKey: ['lab', 'qc', 'lots', includeInactive, labTestId ?? 'all'],
-      queryFn: ({ signal }) => api.get<QcLotDto[]>('/api/v1/lab/qc/lots', { query: { includeInactive, labTestId }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<QcLotDto[]>('/api/v1/lab/qc/lots', { query: { includeInactive, labTestId }, signal }),
     }),
   qcStatus: () =>
     queryOptions({
@@ -990,21 +1050,34 @@ export const labQueries = {
       queryFn: ({ signal }) => api.get<QcStatusRow[]>('/api/v1/lab/qc/status', { signal }),
       refetchInterval: 2 * 60_000,
     }),
-  qcRuns: (params: { lotId?: string; labTestId?: string; outcome?: QcOutcome; from?: string; to?: string; page?: number }) =>
+  qcRuns: (params: {
+    lotId?: string;
+    labTestId?: string;
+    outcome?: QcOutcome;
+    from?: string;
+    to?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['lab', 'qc', 'runs', params],
-      queryFn: ({ signal }) => api.get<PagedResult<QcRunDto>>('/api/v1/lab/qc/runs', { query: { ...params, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<QcRunDto>>('/api/v1/lab/qc/runs', { query: { ...params, pageSize: PAGE }, signal }),
       placeholderData: keepPreviousData,
     }),
   leveyJennings: (lotId: string, from?: string, to?: string) =>
     queryOptions({
       queryKey: ['lab', 'qc', 'levey-jennings', lotId, from ?? '', to ?? ''],
-      queryFn: ({ signal }) => api.get<LeveyJenningsChartDto>(`/api/v1/lab/qc/lots/${lotId}/levey-jennings`, { query: { from, to }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<LeveyJenningsChartDto>(`/api/v1/lab/qc/lots/${lotId}/levey-jennings`, { query: { from, to }, signal }),
     }),
   outsourcing: (params: { pendingOnly: boolean; referralLabId?: string; page?: number }) =>
     queryOptions({
       queryKey: ['lab', 'outsourcing', params],
-      queryFn: ({ signal }) => api.get<PagedResult<OutsourcedItem>>('/api/v1/lab/outsourcing', { query: { ...params, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<OutsourcedItem>>('/api/v1/lab/outsourcing', {
+          query: { ...params, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
 };
@@ -1020,34 +1093,45 @@ export const labApi = {
   // orders
   createOrder: (request: CreateLabOrderRequest) => api.post<LabOrderCreated>('/api/v1/lab/orders', request),
   retryCharges: (orderId: string) => api.post<ChargeRetryOutcome>(`/api/v1/lab/orders/${orderId}/charges/retry`),
-  cancelItem: (itemId: string, reason: string) => api.post<void>(`/api/v1/lab/orders/items/${itemId}/cancel`, { reason }),
+  cancelItem: (itemId: string, reason: string) =>
+    api.post<void>(`/api/v1/lab/orders/items/${itemId}/cancel`, { reason }),
 
   // samples
-  collect: (orderId: string, request: CollectSamplesRequest) => api.post<SampleLabel[]>(`/api/v1/lab/orders/${orderId}/collect`, request),
-  labels: (orderId: string, sampleId?: string) => api.get<SampleLabel[]>(`/api/v1/lab/orders/${orderId}/labels`, { query: { sampleId } }),
+  collect: (orderId: string, request: CollectSamplesRequest) =>
+    api.post<SampleLabel[]>(`/api/v1/lab/orders/${orderId}/collect`, request),
+  labels: (orderId: string, sampleId?: string) =>
+    api.get<SampleLabel[]>(`/api/v1/lab/orders/${orderId}/labels`, { query: { sampleId } }),
   receive: (barcodes: string[]) => api.post<ReceiveOutcome[]>('/api/v1/lab/samples/receive', { barcodes }),
-  reject: (sampleId: string, request: RejectSampleRequest) => api.post<SampleRejected>(`/api/v1/lab/samples/${sampleId}/reject`, request),
+  reject: (sampleId: string, request: RejectSampleRequest) =>
+    api.post<SampleRejected>(`/api/v1/lab/samples/${sampleId}/reject`, request),
   recollect: (sampleId: string) => api.post<SampleRejected>(`/api/v1/lab/samples/${sampleId}/recollect`),
-  sampleByBarcode: (barcode: string) => api.get<SampleLookup>(`/api/v1/lab/samples/by-barcode/${encodeURIComponent(barcode)}`),
+  sampleByBarcode: (barcode: string) =>
+    api.get<SampleLookup>(`/api/v1/lab/samples/by-barcode/${encodeURIComponent(barcode)}`),
 
   // results
   enterResults: (entries: ResultEntry[]) => api.post<ResultSheetLine[]>('/api/v1/lab/results', { entries }),
-  verifyResults: (request: VerifyResultsRequest) => api.post<VerificationOutcome>('/api/v1/lab/results/verify', request),
-  reopenResult: (resultId: string, reason: string) => api.post<void>(`/api/v1/lab/results/${resultId}/reopen`, { reason }),
-  recordCriticalCall: (resultId: string, call: CriticalCallDetails) => api.post<string>(`/api/v1/lab/results/${resultId}/critical-calls`, call),
+  verifyResults: (request: VerifyResultsRequest) =>
+    api.post<VerificationOutcome>('/api/v1/lab/results/verify', request),
+  reopenResult: (resultId: string, reason: string) =>
+    api.post<void>(`/api/v1/lab/results/${resultId}/reopen`, { reason }),
+  recordCriticalCall: (resultId: string, call: CriticalCallDetails) =>
+    api.post<string>(`/api/v1/lab/results/${resultId}/critical-calls`, call),
   sheet: (sampleId: string) => api.get<ResultSheet>(`/api/v1/lab/samples/${sampleId}/results`),
 
   // reports
   releaseReport: (reportId: string) => api.post<ReleaseOutcome>(`/api/v1/lab/reports/${reportId}/release`),
-  amendReport: (reportId: string, request: AmendReportRequest) => api.post<void>(`/api/v1/lab/reports/${reportId}/amend`, request),
+  amendReport: (reportId: string, request: AmendReportRequest) =>
+    api.post<void>(`/api/v1/lab/reports/${reportId}/amend`, request),
 
   // quality control
   saveQcLot: (id: string | null, request: SaveQcLotRequest): Promise<Created | undefined> =>
     id ? api.put<undefined>(`/api/v1/lab/qc/lots/${id}`, request) : api.post<Created>('/api/v1/lab/qc/lots', request),
-  recordQcRun: (lotId: string, value: number, runAt: string | null) => api.post<QcRunDto>('/api/v1/lab/qc/runs', { lotId, value, runAt }),
+  recordQcRun: (lotId: string, value: number, runAt: string | null) =>
+    api.post<QcRunDto>('/api/v1/lab/qc/runs', { lotId, value, runAt }),
   reviewQcRun: (runId: string, note: string | null, correctiveAction: string | null) =>
     api.post<QcRunDto>(`/api/v1/lab/qc/runs/${runId}/review`, { note, correctiveAction }),
-  overrideQc: (labTestId: string, reason: string) => api.post<{ overrides: number }>('/api/v1/lab/qc/overrides', { labTestId, reason }),
+  overrideQc: (labTestId: string, reason: string) =>
+    api.post<{ overrides: number }>('/api/v1/lab/qc/overrides', { labTestId, reason }),
 
   // outsourcing
   sendOut: (itemId: string, referralLabId: string, dispatchReference: string | null) =>
@@ -1060,11 +1144,16 @@ export const labApi = {
     id ? api.put<undefined>(`/api/v1/lab/tests/${id}`, request) : api.post<Created>('/api/v1/lab/tests', request),
   setComponents: (id: string, components: ComponentEntry[], version: number) =>
     api.put<void>(`/api/v1/lab/tests/${id}/components`, { components, version }),
-  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number) => api.put<void>(`/api/v1/lab/tests/${id}/ranges`, { ranges, version }),
+  setRanges: (id: string, ranges: ReferenceRangeDto[], version: number) =>
+    api.put<void>(`/api/v1/lab/tests/${id}/ranges`, { ranges, version }),
   saveInstrument: (id: string | null, request: SaveLabInstrumentRequest): Promise<Created | undefined> =>
-    id ? api.put<undefined>(`/api/v1/lab/instruments/${id}`, request) : api.post<Created>('/api/v1/lab/instruments', request),
+    id
+      ? api.put<undefined>(`/api/v1/lab/instruments/${id}`, request)
+      : api.post<Created>('/api/v1/lab/instruments', request),
   saveReferralLab: (id: string | null, request: SaveReferralLabRequest): Promise<Created | undefined> =>
-    id ? api.put<undefined>(`/api/v1/lab/referral-labs/${id}`, request) : api.post<Created>('/api/v1/lab/referral-labs', request),
+    id
+      ? api.put<undefined>(`/api/v1/lab/referral-labs/${id}`, request)
+      : api.post<Created>('/api/v1/lab/referral-labs', request),
 };
 
 /** Permission names used by the lab screens (the server enforces them again on every call). */

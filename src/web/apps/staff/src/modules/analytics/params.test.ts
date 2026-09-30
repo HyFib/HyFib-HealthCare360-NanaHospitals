@@ -23,7 +23,11 @@ import {
   withDefaults,
 } from './params';
 
-const parameter = (key: string, kind: ReportParameter['kind'], defaultValue: string | null = null): ReportParameter => ({
+const parameter = (
+  key: string,
+  kind: ReportParameter['kind'],
+  defaultValue: string | null = null,
+): ReportParameter => ({
   key,
   label: key,
   kind,
@@ -71,7 +75,11 @@ describe('report inputs in the URL', () => {
   });
 
   it('writes whole numbers as numbers so URLs stay readable', () => {
-    expect(toSearchInputs({ days: '90', period: 'lastMonth', from: '2026-09-01' })).toEqual({ days: 90, period: 'lastMonth', from: '2026-09-01' });
+    expect(toSearchInputs({ days: '90', period: 'lastMonth', from: '2026-09-01' })).toEqual({
+      days: 90,
+      period: 'lastMonth',
+      from: '2026-09-01',
+    });
   });
 });
 
@@ -105,19 +113,32 @@ describe('drill-down', () => {
       { reportId: 'revenue-by-doctor', parameterKey: 'departmentId', label: 'Doctors', parameters: { view: 'doctor' } },
       'd1',
     );
-    expect(inputs).toEqual({ period: 'custom', from: '2026-09-01', to: '2026-09-15', facilityId: 'f1', view: 'doctor', departmentId: 'd1' });
+    expect(inputs).toEqual({
+      period: 'custom',
+      from: '2026-09-01',
+      to: '2026-09-15',
+      facilityId: 'f1',
+      view: 'doctor',
+      departmentId: 'd1',
+    });
   });
 });
 
 describe('schedules and dashboards', () => {
   it('never keeps a facility or fixed dates in a schedule', () => {
-    expect(scheduleInputs({ period: 'custom', from: '2026-09-01', to: '2026-09-02', facilityId: 'f', departmentId: 'd' })).toEqual({ departmentId: 'd' });
+    expect(
+      scheduleInputs({ period: 'custom', from: '2026-09-01', to: '2026-09-02', facilityId: 'f', departmentId: 'd' }),
+    ).toEqual({ departmentId: 'd' });
     expect(scheduleInputs({ period: 'lastWeek', facilityId: 'f' })).toEqual({ period: 'lastWeek' });
   });
 
   it('applies a dashboard-wide period only to reports that have a period', () => {
-    expect(applyPeriodOverride(PARAMETERS, { period: 'custom', from: 'a', to: 'b', departmentId: 'd' }, 'lastMonth')).toEqual({ period: 'lastMonth', departmentId: 'd' });
-    expect(applyPeriodOverride([parameter('storeId', 'Store')], { storeId: 's' }, 'lastMonth')).toEqual({ storeId: 's' });
+    expect(
+      applyPeriodOverride(PARAMETERS, { period: 'custom', from: 'a', to: 'b', departmentId: 'd' }, 'lastMonth'),
+    ).toEqual({ period: 'lastMonth', departmentId: 'd' });
+    expect(applyPeriodOverride([parameter('storeId', 'Store')], { storeId: 's' }, 'lastMonth')).toEqual({
+      storeId: 's',
+    });
     expect(applyPeriodOverride(PARAMETERS, { period: 'today' }, undefined)).toEqual({ period: 'today' });
   });
 
@@ -126,7 +147,18 @@ describe('schedules and dashboards', () => {
     expect(describeSchedule('Weekly', '08:30', 'Monday', null)).toBe('Every Monday at 08:30 IST');
     expect(describeSchedule('Monthly', '06:00', null, 1)).toBe('On the 1st of every month at 06:00 IST');
     expect(describeSchedule('Monthly', '06:00', null, 31)).toBe('On the last day of every month at 06:00 IST');
-    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd', '23rd']);
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23].map(ordinal)).toEqual([
+      '1st',
+      '2nd',
+      '3rd',
+      '4th',
+      '11th',
+      '12th',
+      '13th',
+      '21st',
+      '22nd',
+      '23rd',
+    ]);
   });
 
   it('splits pasted e-mail addresses and reports the invalid ones', () => {
@@ -189,7 +221,9 @@ describe('periods (IST calendar)', () => {
   });
 
   it('names export files like the server', () => {
-    expect(exportFileName('revenue-by-department', '2026-09-01', '2026-09-15', today, 'xlsx')).toBe('revenue-by-department_20260901-20260915.xlsx');
+    expect(exportFileName('revenue-by-department', '2026-09-01', '2026-09-15', today, 'xlsx')).toBe(
+      'revenue-by-department_20260901-20260915.xlsx',
+    );
     expect(exportFileName('op-census', '2026-09-15', '2026-09-15', today, 'csv')).toBe('op-census_20260915.csv');
     expect(exportFileName('near-expiry-stock', null, null, today, 'xlsx')).toBe('near-expiry-stock_20260916.xlsx');
   });

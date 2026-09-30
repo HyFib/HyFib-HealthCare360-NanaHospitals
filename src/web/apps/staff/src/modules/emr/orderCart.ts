@@ -105,7 +105,17 @@ export function addToCart(cart: readonly CartLine[], service: CartService): Cart
   if (cart.some((line) => line.serviceItemId === service.id)) {
     return [...cart];
   }
-  return [...cart, { serviceItemId: service.id, code: service.code, name: service.name, category: service.category, quantity: 1, notes: '' }];
+  return [
+    ...cart,
+    {
+      serviceItemId: service.id,
+      code: service.code,
+      name: service.name,
+      category: service.category,
+      quantity: 1,
+      notes: '',
+    },
+  ];
 }
 
 export function addManyToCart(cart: readonly CartLine[], services: readonly CartService[]): CartLine[] {
@@ -132,7 +142,9 @@ export function setNotes(cart: readonly CartLine[], serviceItemId: string, notes
 }
 
 /** Request lines; quantity is sent only when it differs from the default of 1. */
-export function toOrderLines(cart: readonly CartLine[]): { serviceItemId: string; notes: string | null; quantity: number | null }[] {
+export function toOrderLines(
+  cart: readonly CartLine[],
+): { serviceItemId: string; notes: string | null; quantity: number | null }[] {
   return cart.map((line) => ({
     serviceItemId: line.serviceItemId,
     notes: line.notes.trim() || null,

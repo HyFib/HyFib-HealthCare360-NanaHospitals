@@ -8,7 +8,12 @@ import { useEffect, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { workflowTone } from '@/modules/inventory/labels';
 import { useWorkingStore } from '@/modules/inventory/stores';
-import { pharmacyQueries, WARD_INDENT_STATUSES, type WardIndentListItem, type WardIndentStatus } from '@/modules/pharmacy/api';
+import {
+  pharmacyQueries,
+  WARD_INDENT_STATUSES,
+  type WardIndentListItem,
+  type WardIndentStatus,
+} from '@/modules/pharmacy/api';
 import { usePharmacyLive } from '@/modules/pharmacy/counter';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { WardIndentDialog } from '@/modules/pharmacy/WardIndentDialog';
@@ -50,15 +55,27 @@ function WardIndentsPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const indents = useQuery(pharmacyQueries.wardIndents({ status: search.status, includeClosed: search.closed, search: search.q, page: search.page }));
-  const set = (patch: Partial<IndentSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const indents = useQuery(
+    pharmacyQueries.wardIndents({
+      status: search.status,
+      includeClosed: search.closed,
+      search: search.q,
+      page: search.page,
+    }),
+  );
+  const set = (patch: Partial<IndentSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const showRaise = canRaise && (raising || search.raise === true);
 
   return (
     <Page>
       <PageHeader
         title="Ward indents"
-        subtitle={canIssue ? 'Requests from the wards, STAT first. Open one to issue the medicines.' : 'Your requests to the IP pharmacy and what has been issued.'}
+        subtitle={
+          canIssue
+            ? 'Requests from the wards, STAT first. Open one to issue the medicines.'
+            : 'Your requests to the IP pharmacy and what has been issued.'
+        }
         actions={
           canRaise && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setRaising(true)}>
@@ -71,10 +88,17 @@ function WardIndentsPage() {
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 260px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Patient name, UHID or indent number" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Patient name, UHID or indent number"
+              />
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as WardIndentStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as WardIndentStatus | undefined })}
+              >
                 <option value="">Still to issue</option>
                 {WARD_INDENT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -83,7 +107,12 @@ function WardIndentsPage() {
                 ))}
               </Select>
             </Field>
-            <Switch checked={search.closed === true} onChange={(_, d) => set({ closed: d.checked || undefined })} label="Include finished" disabled={Boolean(search.status)} />
+            <Switch
+              checked={search.closed === true}
+              onChange={(_, d) => set({ closed: d.checked || undefined })}
+              label="Include finished"
+              disabled={Boolean(search.status)}
+            />
           </FilterBar>
         </div>
         <DataTable<WardIndentListItem>
@@ -115,11 +144,16 @@ function WardIndentsPage() {
               header: 'Patient',
               render: (i) => (
                 <span>
-                  <Text weight="semibold">{i.patientName}</Text> <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{i.uhid}</Caption1>
+                  <Text weight="semibold">{i.patientName}</Text>{' '}
+                  <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{i.uhid}</Caption1>
                 </span>
               ),
             },
-            { key: 'ward', header: 'Ward / bed', render: (i) => [i.wardName, i.bedLabel].filter(Boolean).join(' / ') || '—' },
+            {
+              key: 'ward',
+              header: 'Ward / bed',
+              render: (i) => [i.wardName, i.bedLabel].filter(Boolean).join(' / ') || '—',
+            },
             { key: 'items', header: 'Items', width: 70, align: 'end', render: (i) => i.lineCount },
             {
               key: 'raised',
@@ -132,10 +166,18 @@ function WardIndentsPage() {
                 </span>
               ),
             },
-            { key: 'status', header: 'Status', render: (i) => <StatusBadge status={i.status} tone={workflowTone(i.status)} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (i) => <StatusBadge status={i.status} tone={workflowTone(i.status)} />,
+            },
           ]}
           emptyTitle={search.q ? 'No indent matches' : 'No ward indents waiting'}
-          emptyDescription={canRaise ? 'Raise an indent for an admitted patient when the ward needs medicines.' : 'New indents appear here as the wards raise them.'}
+          emptyDescription={
+            canRaise
+              ? 'Raise an indent for an admitted patient when the ward needs medicines.'
+              : 'New indents appear here as the wards raise them.'
+          }
           page={search.page ?? 1}
           pageSize={25}
           totalCount={indents.data?.totalCount}
@@ -151,7 +193,9 @@ function WardIndentsPage() {
               void navigate({ search: (prev) => ({ ...prev, raise: undefined }), replace: true });
             }
           }}
-          onRaised={(id) => canIssue && void navigate({ to: '/pharmacy/ward-indents/$indentId', params: { indentId: id } })}
+          onRaised={(id) =>
+            canIssue && void navigate({ to: '/pharmacy/ward-indents/$indentId', params: { indentId: id } })
+          }
         />
       )}
     </Page>

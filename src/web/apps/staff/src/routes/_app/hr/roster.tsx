@@ -118,7 +118,10 @@ const useStyles = makeStyles({
     backgroundColor: 'transparent',
     cursor: 'pointer',
     color: tokens.colorNeutralForeground3,
-    ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover, border: `1px solid ${tokens.colorNeutralStroke1}` },
+    ':hover': {
+      backgroundColor: tokens.colorNeutralBackground1Hover,
+      border: `1px solid ${tokens.colorNeutralStroke1}`,
+    },
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
     ':disabled': { cursor: 'default' },
   },
@@ -141,7 +144,13 @@ const useStyles = makeStyles({
   off: { fontStyle: 'italic', color: tokens.colorNeutralForeground3 },
   swatch: { width: '8px', height: '8px', borderRadius: '50%' },
   palette: { display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' },
-  coverage: { fontSize: tokens.fontSizeBase100, color: tokens.colorNeutralForeground3, padding: '6px 4px', textAlign: 'center', verticalAlign: 'top' },
+  coverage: {
+    fontSize: tokens.fontSizeBase100,
+    color: tokens.colorNeutralForeground3,
+    padding: '6px 4px',
+    textAlign: 'center',
+    verticalAlign: 'top',
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   conflicts: { margin: '4px 0 0', paddingLeft: '18px', maxHeight: '160px', overflowY: 'auto' },
 });
@@ -153,7 +162,13 @@ function RosterPage() {
   const week = search.week ?? startOfWeek(todayIso());
   const departmentId = search.departmentId ?? null;
 
-  const setWeek = (next: string) => void navigate({ search: (prev) => ({ ...prev, week: startOfWeek(next) === startOfWeek(todayIso()) ? undefined : startOfWeek(next) }) });
+  const setWeek = (next: string) =>
+    void navigate({
+      search: (prev) => ({
+        ...prev,
+        week: startOfWeek(next) === startOfWeek(todayIso()) ? undefined : startOfWeek(next),
+      }),
+    });
 
   return (
     <Page>
@@ -164,7 +179,10 @@ function RosterPage() {
       />
       <Toolbar spaced={false}>
         <Field label="Department">
-          <Select value={departmentId ?? ''} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, departmentId: d.value || undefined }) })}>
+          <Select
+            value={departmentId ?? ''}
+            onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, departmentId: d.value || undefined }) })}
+          >
             <option value="">Choose a department</option>
             {toOptions(departments.data).map((o) => (
               <option key={o.value} value={o.value}>
@@ -175,8 +193,17 @@ function RosterPage() {
         </Field>
         <Field label="Week">
           <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <Button icon={<ChevronLeftRegular />} aria-label="Previous week" onClick={() => setWeek(addDays(week, -7))} />
-            <Input type="date" value={week} onChange={(_, d) => isIsoDate(d.value) && setWeek(d.value)} aria-label="Week starting" />
+            <Button
+              icon={<ChevronLeftRegular />}
+              aria-label="Previous week"
+              onClick={() => setWeek(addDays(week, -7))}
+            />
+            <Input
+              type="date"
+              value={week}
+              onChange={(_, d) => isIsoDate(d.value) && setWeek(d.value)}
+              aria-label="Week starting"
+            />
             <Button icon={<ChevronRightRegular />} aria-label="Next week" onClick={() => setWeek(addDays(week, 7))} />
             <Button appearance="subtle" onClick={() => setWeek(todayIso())}>
               This week
@@ -188,7 +215,11 @@ function RosterPage() {
         <RosterBoard key={`${departmentId}:${week}`} departmentId={departmentId} week={week} />
       ) : (
         <Section>
-          <EmptyState icon={<CalendarLtrRegular />} title="Choose a department" description="The roster is planned one department and one week at a time." />
+          <EmptyState
+            icon={<CalendarLtrRegular />}
+            title="Choose a department"
+            description="The roster is planned one department and one week at a time."
+          />
         </Section>
       )}
     </Page>
@@ -264,7 +295,11 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
     }
     setBusy('check');
     try {
-      const result = await hrApi.checkRoster({ assignments: diff.assignments, replaceExisting: true, acknowledgeWarnings: false });
+      const result = await hrApi.checkRoster({
+        assignments: diff.assignments,
+        replaceExisting: true,
+        acknowledgeWarnings: false,
+      });
       setConflicts(result.conflicts);
       if (result.conflicts.length === 0) {
         notify.success('No conflicts', 'The changes can be saved.');
@@ -281,7 +316,11 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
     try {
       let saved = 0;
       if (diff.assignments.length > 0) {
-        const result = await hrApi.saveRoster({ assignments: diff.assignments, replaceExisting: true, acknowledgeWarnings });
+        const result = await hrApi.saveRoster({
+          assignments: diff.assignments,
+          replaceExisting: true,
+          acknowledgeWarnings,
+        });
         saved = result.saved;
       }
       const toDelete = diff.clearedKeys.flatMap((key) => savedIds[key] ?? []);
@@ -291,7 +330,10 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
       setDraft({});
       setConflicts([]);
       setWarnings(null);
-      notify.success('Roster saved', `${saved} duty assignment(s) saved${toDelete.length ? `, ${toDelete.length} removed` : ''}.`);
+      notify.success(
+        'Roster saved',
+        `${saved} duty assignment(s) saved${toDelete.length ? `, ${toDelete.length} removed` : ''}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.roster });
     } catch (error) {
       if (isApiError(error) && error.code === 'roster.warnings' && Array.isArray(error.data)) {
@@ -331,15 +373,28 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
                   onClick={() => setBrush({ kind: 'shift', shiftId: shift.id })}
                   title={`${shift.name}: ${formatTimeOfDay(shift.startTime)} to ${formatTimeOfDay(shift.endTime)}`}
                 >
-                  <span className={styles.swatch} style={{ backgroundColor: shift.color ?? tokens.colorBrandBackground, marginRight: 6 }} aria-hidden />
+                  <span
+                    className={styles.swatch}
+                    style={{ backgroundColor: shift.color ?? tokens.colorBrandBackground, marginRight: 6 }}
+                    aria-hidden
+                  />
                   {shift.code}
                   {shift.isNightShift && <WeatherMoonRegular aria-label="night" style={{ marginLeft: 2 }} />}
                 </ToggleButton>
               ))}
-              <ToggleButton size="small" checked={currentBrush?.kind === 'weekOff'} onClick={() => setBrush({ kind: 'weekOff' })}>
+              <ToggleButton
+                size="small"
+                checked={currentBrush?.kind === 'weekOff'}
+                onClick={() => setBrush({ kind: 'weekOff' })}
+              >
                 Week off
               </ToggleButton>
-              <ToggleButton size="small" icon={<EraserRegular />} checked={currentBrush?.kind === 'clear'} onClick={() => setBrush({ kind: 'clear' })}>
+              <ToggleButton
+                size="small"
+                icon={<EraserRegular />}
+                checked={currentBrush?.kind === 'clear'}
+                onClick={() => setBrush({ kind: 'clear' })}
+              >
                 Clear
               </ToggleButton>
             </div>
@@ -347,16 +402,29 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
             <Button icon={<CopyArrowRightRegular />} onClick={() => setCopyOpen(true)} disabled={dirty}>
               Copy last week
             </Button>
-            <Button icon={busy === 'check' ? <Spinner size="tiny" /> : <ShieldCheckmarkRegular />} disabled={!dirty || busy !== null} onClick={() => void check()}>
+            <Button
+              icon={busy === 'check' ? <Spinner size="tiny" /> : <ShieldCheckmarkRegular />}
+              disabled={!dirty || busy !== null}
+              onClick={() => void check()}
+            >
               Check conflicts
             </Button>
-            <Button icon={<ArrowUndoRegular />} disabled={!dirty || busy !== null} onClick={() => {
+            <Button
+              icon={<ArrowUndoRegular />}
+              disabled={!dirty || busy !== null}
+              onClick={() => {
                 setDraft({});
                 setConflicts([]);
-              }}>
+              }}
+            >
               Undo changes
             </Button>
-            <Button appearance="primary" icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />} disabled={!dirty || busy !== null} onClick={() => void save(false)}>
+            <Button
+              appearance="primary"
+              icon={busy === 'save' ? <Spinner size="tiny" /> : <SaveRegular />}
+              disabled={!dirty || busy !== null}
+              onClick={() => void save(false)}
+            >
               Save roster{dirty ? ` (${diff.changedKeys.length})` : ''}
             </Button>
           </Toolbar>
@@ -367,7 +435,11 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
       {conflicts.length > 0 && (
         <MessageBar intent={errorCount > 0 ? 'error' : 'warning'} layout="multiline">
           <MessageBarBody>
-            <MessageBarTitle>{errorCount > 0 ? `${errorCount} clash(es) must be fixed before saving` : 'Warnings: you can save after confirming'}</MessageBarTitle>
+            <MessageBarTitle>
+              {errorCount > 0
+                ? `${errorCount} clash(es) must be fixed before saving`
+                : 'Warnings: you can save after confirming'}
+            </MessageBarTitle>
             <ul className={styles.conflicts}>
               {conflicts.map((c) => (
                 <li key={`${c.employeeId}-${c.date}-${c.kind}`}>
@@ -384,7 +456,11 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
         {people.length === 0 ? (
           <EmptyState
             title="Nobody to roster in this department"
-            description={canListStaff ? 'Assign employees to this department on their records first.' : 'Only staff already on the roster are shown: you need access to the employee list to plan new staff.'}
+            description={
+              canListStaff
+                ? 'Assign employees to this department on their records first.'
+                : 'Only staff already on the roster are shown: you need access to the employee list to plan new staff.'
+            }
           />
         ) : (
           <div className={styles.wrap}>
@@ -421,23 +497,45 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
                       const items = cells[key] ?? [];
                       const changed = key in draft && !sameItems(saved[key] ?? [], items);
                       const cellConflicts = byCell[key] ?? [];
-                      const severity = cellConflicts.some((c) => c.severity === 'Error') ? 'error' : cellConflicts.length ? 'warning' : null;
+                      const severity = cellConflicts.some((c) => c.severity === 'Error')
+                        ? 'error'
+                        : cellConflicts.length
+                          ? 'warning'
+                          : null;
                       const label = describe(items, shiftById);
                       const button = (
                         <button
                           type="button"
-                          className={mergeClasses(styles.cell, changed && styles.dirty, severity === 'error' && styles.error, severity === 'warning' && styles.warning)}
+                          className={mergeClasses(
+                            styles.cell,
+                            changed && styles.dirty,
+                            severity === 'error' && styles.error,
+                            severity === 'warning' && styles.warning,
+                          )}
                           onClick={(event) => onCell(event, key)}
                           disabled={!canEdit}
                           aria-label={`${person.name}, ${formatDateOnly(date)}: ${label || 'nothing planned'}${changed ? ' (changed, not saved)' : ''}`}
                         >
-                          {items.length === 0 ? <span aria-hidden>—</span> : items.map((item, index) => <CellChip key={index} item={item} shift={item.shiftId ? shiftById.get(item.shiftId) : undefined} />)}
+                          {items.length === 0 ? (
+                            <span aria-hidden>—</span>
+                          ) : (
+                            items.map((item, index) => (
+                              <CellChip
+                                key={index}
+                                item={item}
+                                shift={item.shiftId ? shiftById.get(item.shiftId) : undefined}
+                              />
+                            ))
+                          )}
                         </button>
                       );
                       return (
                         <td key={date} className={styles.td}>
                           {cellConflicts.length > 0 ? (
-                            <Tooltip content={cellConflicts.map((c) => c.message).join(' · ')} relationship="description">
+                            <Tooltip
+                              content={cellConflicts.map((c) => c.message).join(' · ')}
+                              relationship="description"
+                            >
                               {button}
                             </Tooltip>
                           ) : (
@@ -491,7 +589,12 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
         </DialogSurface>
       </Dialog>
 
-      <CopyWeekDialog open={copyOpen} onClose={() => setCopyOpen(false)} departmentId={departmentId} targetWeek={week} />
+      <CopyWeekDialog
+        open={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        departmentId={departmentId}
+        targetWeek={week}
+      />
 
       <Dialog open={blocker.status === 'blocked'} onOpenChange={(_, d) => !d.open && blocker.reset?.()}>
         <DialogSurface>
@@ -512,7 +615,9 @@ function RosterBoard({ departmentId, week }: { departmentId: string; week: strin
 }
 
 function describe(items: CellItem[], shifts: Map<string, ShiftDto>): string {
-  return items.map((item) => (item.isWeekOff ? 'week off' : (shifts.get(item.shiftId ?? '')?.name ?? 'shift'))).join(' and ');
+  return items
+    .map((item) => (item.isWeekOff ? 'week off' : (shifts.get(item.shiftId ?? '')?.name ?? 'shift')))
+    .join(' and ');
 }
 
 function CellChip({ item, shift }: { item: CellItem; shift?: ShiftDto }) {
@@ -522,14 +627,28 @@ function CellChip({ item, shift }: { item: CellItem; shift?: ShiftDto }) {
   }
   return (
     <span className={styles.chip}>
-      <span className={styles.swatch} style={{ backgroundColor: shift?.color ?? tokens.colorBrandBackground }} aria-hidden />
+      <span
+        className={styles.swatch}
+        style={{ backgroundColor: shift?.color ?? tokens.colorBrandBackground }}
+        aria-hidden
+      />
       {shift?.code ?? '?'}
       {shift?.isNightShift && <WeatherMoonRegular aria-hidden />}
     </span>
   );
 }
 
-function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boolean; onClose: () => void; departmentId: string; targetWeek: string }) {
+function CopyWeekDialog({
+  open,
+  onClose,
+  departmentId,
+  targetWeek,
+}: {
+  open: boolean;
+  onClose: () => void;
+  departmentId: string;
+  targetWeek: string;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [source, setSource] = useState(addDays(targetWeek, -7));
@@ -540,14 +659,26 @@ function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boo
   const copy = async () => {
     setBusy(true);
     try {
-      const result = await hrApi.copyRosterWeek({ sourceWeekStart: startOfWeek(source), targetWeekStart: targetWeek, departmentId, acknowledgeWarnings: acknowledge });
-      notify.success('Week copied', `${result.saved} duty assignment(s) copied into the week of ${formatDateOnly(targetWeek)}.`);
+      const result = await hrApi.copyRosterWeek({
+        sourceWeekStart: startOfWeek(source),
+        targetWeekStart: targetWeek,
+        departmentId,
+        acknowledgeWarnings: acknowledge,
+      });
+      notify.success(
+        'Week copied',
+        `${result.saved} duty assignment(s) copied into the week of ${formatDateOnly(targetWeek)}.`,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.roster });
       setWarnings(null);
       setAcknowledge(false);
       onClose();
     } catch (error) {
-      if (isApiError(error) && (error.code === 'roster.warnings' || error.code === 'roster.conflicts') && Array.isArray(error.data)) {
+      if (
+        isApiError(error) &&
+        (error.code === 'roster.warnings' || error.code === 'roster.conflicts') &&
+        Array.isArray(error.data)
+      ) {
         setWarnings(error.data as RosterConflictDto[]);
       } else {
         notify.error(error, 'Could not copy the week');
@@ -565,13 +696,18 @@ function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boo
         <DialogBody>
           <DialogTitle>Copy a week into {formatDateOnly(targetWeek)}</DialogTitle>
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Field label="Copy from the week starting" hint="Days already planned in this week are replaced for the staff in the copied week.">
+            <Field
+              label="Copy from the week starting"
+              hint="Days already planned in this week are replaced for the staff in the copied week."
+            >
               <Input type="date" value={source} onChange={(_, d) => setSource(d.value)} />
             </Field>
             {warnings && warnings.length > 0 && (
               <MessageBar intent={blockingErrors.length ? 'error' : 'warning'} layout="multiline">
                 <MessageBarBody>
-                  <MessageBarTitle>{blockingErrors.length ? 'The copy clashes with existing duties' : 'Please review'}</MessageBarTitle>
+                  <MessageBarTitle>
+                    {blockingErrors.length ? 'The copy clashes with existing duties' : 'Please review'}
+                  </MessageBarTitle>
                   <ul style={{ margin: '4px 0 0', paddingLeft: 18, maxHeight: 140, overflowY: 'auto' }}>
                     {warnings.map((w) => (
                       <li key={`${w.employeeId}-${w.date}-${w.kind}`}>
@@ -579,7 +715,13 @@ function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boo
                       </li>
                     ))}
                   </ul>
-                  {blockingErrors.length === 0 && <Checkbox checked={acknowledge} onChange={(_, d) => setAcknowledge(Boolean(d.checked))} label="Copy anyway" />}
+                  {blockingErrors.length === 0 && (
+                    <Checkbox
+                      checked={acknowledge}
+                      onChange={(_, d) => setAcknowledge(Boolean(d.checked))}
+                      label="Copy anyway"
+                    />
+                  )}
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -591,7 +733,9 @@ function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boo
             <Button
               appearance="primary"
               icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
-              disabled={busy || !isIsoDate(source) || blockingErrors.length > 0 || (Boolean(warnings?.length) && !acknowledge)}
+              disabled={
+                busy || !isIsoDate(source) || blockingErrors.length > 0 || (Boolean(warnings?.length) && !acknowledge)
+              }
               onClick={() => void copy()}
             >
               Copy week
@@ -602,4 +746,3 @@ function CopyWeekDialog({ open, onClose, departmentId, targetWeek }: { open: boo
     </Dialog>
   );
 }
-

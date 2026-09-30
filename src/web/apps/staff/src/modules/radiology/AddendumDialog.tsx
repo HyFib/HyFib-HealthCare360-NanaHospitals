@@ -34,7 +34,15 @@ const useStyles = makeStyles({
  * Signed addition to a signed report (SRS IMG-03): the original text is never edited. A released report is
  * re-announced so the doctor sees the addendum; a new critical finding needs its own documented call.
  */
-export function AddendumDialog({ studyId, studyName, onClose }: { studyId: string; studyName: string; onClose: () => void }) {
+export function AddendumDialog({
+  studyId,
+  studyName,
+  onClose,
+}: {
+  studyId: string;
+  studyName: string;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -45,7 +53,12 @@ export function AddendumDialog({ studyId, studyName, onClose }: { studyId: strin
 
   const add = useMutation({
     mutationFn: (criticalCall: CriticalCallDetails | null) =>
-      radiologyApi.addAddendum(studyId, { text: text.trim(), reason: reason.trim() || null, isCriticalFinding: critical, criticalCall }),
+      radiologyApi.addAddendum(studyId, {
+        text: text.trim(),
+        reason: reason.trim() || null,
+        isCriticalFinding: critical,
+        criticalCall,
+      }),
     onSuccess: () => {
       notify.success('Addendum added', 'The doctor is informed of the addition.');
       void queryClient.invalidateQueries({ queryKey: radiologyKeys.all });
@@ -102,18 +115,33 @@ export function AddendumDialog({ studyId, studyName, onClose }: { studyId: strin
                 </MessageBar>
               )}
               <Field label="Addendum" required>
-                <Textarea value={text} onChange={(_, data) => setText(data.value.slice(0, 4000))} rows={5} resize="vertical" autoFocus />
+                <Textarea
+                  value={text}
+                  onChange={(_, data) => setText(data.value.slice(0, 4000))}
+                  rows={5}
+                  resize="vertical"
+                  autoFocus
+                />
               </Field>
               <Field label="Reason" hint="e.g. Comparison with previous films, clinical correlation requested">
                 <Input value={reason} onChange={(_, data) => setReason(data.value.slice(0, 300))} />
               </Field>
-              <Switch checked={critical} onChange={(_, data) => setCritical(data.checked)} label="This addendum reports a critical finding (the doctor must be called)" />
+              <Switch
+                checked={critical}
+                onChange={(_, data) => setCritical(data.checked)}
+                label="This addendum reports a critical finding (the doctor must be called)"
+              />
             </DialogContent>
             <DialogActions>
               <Button onClick={onClose} disabled={add.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!text.trim() || add.isPending} icon={add.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!text.trim() || add.isPending}
+                icon={add.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 {critical ? 'Continue to the call' : 'Sign and add'}
               </Button>
             </DialogActions>

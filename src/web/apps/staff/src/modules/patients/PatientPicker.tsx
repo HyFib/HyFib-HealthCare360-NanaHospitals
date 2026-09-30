@@ -34,7 +34,8 @@ export function PatientPicker({
   const debounced = useDebouncedValue(term.trim(), 300);
   const results = useQuery({
     queryKey: ['patients', 'picker', debounced],
-    queryFn: ({ signal }) => api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { search: debounced, pageSize: 8 }, signal }),
+    queryFn: ({ signal }) =>
+      api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { search: debounced, pageSize: 8 }, signal }),
     enabled: debounced.length >= 3,
     staleTime: 15_000,
   });
@@ -42,7 +43,13 @@ export function PatientPicker({
   const items = results.data?.items ?? [];
 
   return (
-    <Field label={label} required={required} validationMessage={validationMessage} validationState={validationMessage ? 'error' : 'none'} hint={hint}>
+    <Field
+      label={label}
+      required={required}
+      validationMessage={validationMessage}
+      validationState={validationMessage ? 'error' : 'none'}
+      hint={hint}
+    >
       <Combobox
         placeholder="UHID, mobile number or name"
         // Opt-in, for counter screens whose first step is finding the patient.

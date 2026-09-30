@@ -20,8 +20,20 @@ import { formatDayLong, istDate } from './dates';
 import { paymentLabel, visitTypeLabel } from './labels';
 
 const useStyles = makeStyles({
-  done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', padding: '8px 0', textAlign: 'center' },
-  time: { fontSize: '40px', lineHeight: '48px', fontWeight: tokens.fontWeightBold, color: tokens.colorBrandForeground1 },
+  done: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '8px 0',
+    textAlign: 'center',
+  },
+  time: {
+    fontSize: '40px',
+    lineHeight: '48px',
+    fontWeight: tokens.fontWeightBold,
+    color: tokens.colorBrandForeground1,
+  },
   number: { fontFamily: tokens.fontFamilyMonospace, letterSpacing: '1px' },
   muted: { color: tokens.colorNeutralForeground3 },
 });
@@ -58,15 +70,22 @@ export function BookingSuccessDialog({
                 <span className={styles.time}>{formatTime(appointment.startsAt)}</span>
                 <Text>
                   {appointment.practitionerName}
-                  {appointment.isTelehealth ? ' · Video consultation' : appointment.room ? ` · Room ${appointment.room}` : ''}
+                  {appointment.isTelehealth
+                    ? ' · Video consultation'
+                    : appointment.room
+                      ? ` · Room ${appointment.room}`
+                      : ''}
                 </Text>
                 <Caption1 className={styles.muted}>
-                  {visitTypeLabel[appointment.visitType]} · Fee {formatInr(appointment.feeAmount)} ({paymentLabel[appointment.paymentStatus].toLowerCase()})
+                  {visitTypeLabel[appointment.visitType]} · Fee {formatInr(appointment.feeAmount)} (
+                  {paymentLabel[appointment.paymentStatus].toLowerCase()})
                 </Caption1>
                 <Caption1 className={styles.muted}>
                   Appointment number <span className={styles.number}>{appointment.number}</span>
                 </Caption1>
-                {appointment.isTelehealth && <Caption1>The video link is sent to the patient by SMS/WhatsApp.</Caption1>}
+                {appointment.isTelehealth && (
+                  <Caption1>The video link is sent to the patient by SMS/WhatsApp.</Caption1>
+                )}
               </div>
             </DialogContent>
             <DialogActions>
@@ -82,7 +101,12 @@ export function BookingSuccessDialog({
                   Check in now
                 </Button>
               )}
-              <Button appearance="primary" icon={<PrintRegular />} autoFocus onClick={() => desk.run('print', appointment)}>
+              <Button
+                appearance="primary"
+                icon={<PrintRegular />}
+                autoFocus
+                onClick={() => desk.run('print', appointment)}
+              >
                 Print slip
               </Button>
               <Button onClick={onClose}>Done</Button>

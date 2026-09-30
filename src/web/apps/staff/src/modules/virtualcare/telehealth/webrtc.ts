@@ -90,10 +90,14 @@ const num = (value: unknown): number | null => (typeof value === 'number' && Num
 /** Reduces an `RTCStatsReport` (or any iterable of stat records) to the numbers the quality check needs. */
 export function snapshotFromStats(stats: Iterable<StatLike>): StatsSnapshot {
   const all = [...stats];
-  const selectedPairId = all.find((s) => s.type === 'transport' && typeof s.selectedCandidatePairId === 'string')?.selectedCandidatePairId;
+  const selectedPairId = all.find(
+    (s) => s.type === 'transport' && typeof s.selectedCandidatePairId === 'string',
+  )?.selectedCandidatePairId;
   const pair =
     all.find((s) => s.type === 'candidate-pair' && s.id === selectedPairId) ??
-    all.find((s) => s.type === 'candidate-pair' && s.state === 'succeeded' && (s.nominated === true || s.selected === true)) ??
+    all.find(
+      (s) => s.type === 'candidate-pair' && s.state === 'succeeded' && (s.nominated === true || s.selected === true),
+    ) ??
     all.find((s) => s.type === 'candidate-pair' && s.state === 'succeeded');
 
   let bytesReceived = 0;
@@ -155,7 +159,11 @@ export function classifyQuality(sample: Omit<QualityReading, 'level'>, expectVid
 }
 
 /** Quality between two snapshots (loss and bitrate are measured over the interval, not since the call began). */
-export function computeQuality(previous: StatsSnapshot | null, current: StatsSnapshot, expectVideo: boolean): QualityReading {
+export function computeQuality(
+  previous: StatsSnapshot | null,
+  current: StatsSnapshot,
+  expectVideo: boolean,
+): QualityReading {
   let lossPercent: number | null = null;
   let bitrateKbps: number | null = null;
   if (previous) {
@@ -183,6 +191,7 @@ export function describeQuality(reading: QualityReading | null): string {
     reading.lossPercent !== null ? `${reading.lossPercent}% lost` : null,
     reading.bitrateKbps !== null ? `${reading.bitrateKbps} kbps` : null,
   ].filter(Boolean);
-  const label = reading.level === 'good' ? 'Good connection' : reading.level === 'fair' ? 'Fair connection' : 'Poor connection';
+  const label =
+    reading.level === 'good' ? 'Good connection' : reading.level === 'fair' ? 'Fair connection' : 'Poor connection';
   return parts.length > 0 ? `${label}: ${parts.join(', ')}` : label;
 }

@@ -10,7 +10,12 @@ import { usePharmacyLive } from './counter';
 import { PHARMACY_PERMISSIONS as P, QUEUE_READERS } from './permissions';
 
 const useStyles = makeStyles({
-  counts: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px', marginBottom: '12px' },
+  counts: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+    gap: '8px',
+    marginBottom: '12px',
+  },
   count: {
     display: 'flex',
     flexDirection: 'column',
@@ -22,7 +27,11 @@ const useStyles = makeStyles({
     textAlign: 'start',
     ':hover': { backgroundColor: tokens.colorNeutralBackground2Hover },
   },
-  value: { fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase600 },
+  value: {
+    fontSize: tokens.fontSizeBase600,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase600,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   rows: { display: 'flex', flexDirection: 'column', gap: '6px' },
   row: { display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' },
@@ -49,9 +58,18 @@ export function PharmacyQueueWidget() {
   return (
     <Section
       title="Pharmacy queue"
-      description={d?.averageWaitMinutes != null ? `Average wait today ${Math.round(d.averageWaitMinutes)} min` : 'Prescriptions waiting to be dispensed'}
+      description={
+        d?.averageWaitMinutes != null
+          ? `Average wait today ${Math.round(d.averageWaitMinutes)} min`
+          : 'Prescriptions waiting to be dispensed'
+      }
       actions={
-        <Button appearance="subtle" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/pharmacy/queue' })}>
+        <Button
+          appearance="subtle"
+          icon={<ArrowRightRegular />}
+          iconPosition="after"
+          onClick={() => void navigate({ to: '/pharmacy/queue' })}
+        >
           Open queue
         </Button>
       }
@@ -61,7 +79,11 @@ export function PharmacyQueueWidget() {
           <span className={styles.value}>{value(d?.pendingOutpatient)}</span>
           <Caption1 className={styles.muted}>OP waiting</Caption1>
         </button>
-        <button type="button" className={styles.count} onClick={() => void navigate({ to: '/pharmacy/queue', search: { ip: true } })}>
+        <button
+          type="button"
+          className={styles.count}
+          onClick={() => void navigate({ to: '/pharmacy/queue', search: { ip: true } })}
+        >
           <span className={styles.value}>{value(d?.pendingInpatient)}</span>
           <Caption1 className={styles.muted}>IP prescriptions</Caption1>
         </button>
@@ -76,7 +98,11 @@ export function PharmacyQueueWidget() {
       </div>
       {canSeeQueue && (
         <div className={styles.rows}>
-          {oldest.length === 0 && queue.data && <Text className={styles.muted}>No one is waiting. New e-prescriptions appear here as doctors sign them.</Text>}
+          {oldest.length === 0 && queue.data && (
+            <Text className={styles.muted}>
+              No one is waiting. New e-prescriptions appear here as doctors sign them.
+            </Text>
+          )}
           {oldest.map((e) => (
             <div key={e.id} className={styles.row}>
               <span>
@@ -90,7 +116,9 @@ export function PharmacyQueueWidget() {
                   </Badge>
                 )}
               </span>
-              <Caption1 className={e.waitingMinutes >= 20 ? styles.late : styles.muted}>{e.waitingMinutes} min</Caption1>
+              <Caption1 className={e.waitingMinutes >= 20 ? styles.late : styles.muted}>
+                {e.waitingMinutes} min
+              </Caption1>
             </div>
           ))}
         </div>

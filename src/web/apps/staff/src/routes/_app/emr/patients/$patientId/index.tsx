@@ -1,4 +1,17 @@
-import { Button, makeStyles, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, Tab, TabList } from '@fluentui/react-components';
+import {
+  Button,
+  makeStyles,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  MessageBar,
+  MessageBarActions,
+  MessageBarBody,
+  Tab,
+  TabList,
+} from '@fluentui/react-components';
 import {
   AlertUrgentRegular,
   HeartPulseRegular,
@@ -23,7 +36,15 @@ import { OrdersTab } from '@/modules/emr/OrdersPanel';
 import { PrescriptionsList } from '@/modules/emr/PrescriptionsList';
 import { AdmissionsTab, DocumentsTab, EncountersTab, ImmunizationsTab } from '@/modules/emr/RecordTabs';
 import { StartEncounterDialog } from '@/modules/emr/StartEncounterDialog';
-import { CHART_TABS, chartTabLabel, parseChartTab, parseTypes, serializeTypes, type ChartTab, type TimelineTarget } from '@/modules/emr/timeline';
+import {
+  CHART_TABS,
+  chartTabLabel,
+  parseChartTab,
+  parseTypes,
+  serializeTypes,
+  type ChartTab,
+  type TimelineTarget,
+} from '@/modules/emr/timeline';
 import { TimelinePanel } from '@/modules/emr/TimelinePanel';
 import { RecordVitalsDialog, VitalsTab } from '@/modules/emr/VitalsPanel';
 
@@ -83,10 +104,19 @@ function PatientChartPage() {
   }
 
   const s = summary.data;
-  const openTab = (next: ChartTab) => void navigate({ search: (prev) => ({ ...prev, tab: next === 'timeline' ? undefined : next }), replace: true });
-  const openEncounter = (encounterId: string) => void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId } });
-  const timelineFilters: TimelineFilters = { types: parseTypes(search.types), from: search.from, to: search.to, departmentId: search.dept, page: search.tpage };
-  const onTimelineOpen = (target: TimelineTarget) => (target.kind === 'encounter' ? openEncounter(target.encounterId) : openTab(target.tab));
+  const openTab = (next: ChartTab) =>
+    void navigate({ search: (prev) => ({ ...prev, tab: next === 'timeline' ? undefined : next }), replace: true });
+  const openEncounter = (encounterId: string) =>
+    void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId } });
+  const timelineFilters: TimelineFilters = {
+    types: parseTypes(search.types),
+    from: search.from,
+    to: search.to,
+    departmentId: search.dept,
+    page: search.tpage,
+  };
+  const onTimelineOpen = (target: TimelineTarget) =>
+    target.kind === 'encounter' ? openEncounter(target.encounterId) : openTab(target.tab);
   const unsigned = s.recentEncounters.find((e) => e.status === 'InProgress');
 
   return (
@@ -121,7 +151,10 @@ function PatientChartPage() {
                       Add patient alert
                     </MenuItem>
                   )}
-                  <MenuItem icon={<PersonRegular />} onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}>
+                  <MenuItem
+                    icon={<PersonRegular />}
+                    onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId } })}
+                  >
                     Patient profile
                   </MenuItem>
                 </MenuList>
@@ -145,7 +178,8 @@ function PatientChartPage() {
       {s.resultsAwaitingReview > 0 && (
         <MessageBar intent="info">
           <MessageBarBody>
-            {s.resultsAwaitingReview} {s.resultsAwaitingReview === 1 ? 'result is' : 'results are'} waiting for the doctor's review.
+            {s.resultsAwaitingReview} {s.resultsAwaitingReview === 1 ? 'result is' : 'results are'} waiting for the
+            doctor's review.
           </MessageBarBody>
           <MessageBarActions>
             <Button onClick={() => void navigate({ to: '/emr' })}>Open worklist</Button>
@@ -153,10 +187,21 @@ function PatientChartPage() {
         </MessageBar>
       )}
 
-      <ChartSummary summary={s} onOpenTab={openTab} onOpenEncounter={openEncounter} onRecordVitals={canVitals ? () => setDialog('vitals') : undefined} />
+      <ChartSummary
+        summary={s}
+        onOpenTab={openTab}
+        onOpenEncounter={openEncounter}
+        onRecordVitals={canVitals ? () => setDialog('vitals') : undefined}
+      />
 
       <Section flush>
-        <TabList className={styles.tabs} selectedValue={tab} onTabSelect={(_, d) => openTab(d.value as ChartTab)} size="small" aria-label="Patient record">
+        <TabList
+          className={styles.tabs}
+          selectedValue={tab}
+          onTabSelect={(_, d) => openTab(d.value as ChartTab)}
+          size="small"
+          aria-label="Patient record"
+        >
           {CHART_TABS.map((t) => (
             <Tab key={t} value={t}>
               {chartTabLabel[t]}
@@ -170,7 +215,14 @@ function PatientChartPage() {
               filters={timelineFilters}
               onFiltersChange={(f) =>
                 void navigate({
-                  search: (prev) => ({ ...prev, types: serializeTypes(f.types), from: f.from, to: f.to, dept: f.departmentId, tpage: f.page }),
+                  search: (prev) => ({
+                    ...prev,
+                    types: serializeTypes(f.types),
+                    from: f.from,
+                    to: f.to,
+                    dept: f.departmentId,
+                    tpage: f.page,
+                  }),
                   replace: true,
                 })
               }
@@ -192,11 +244,21 @@ function PatientChartPage() {
       </Section>
 
       <StartEncounterDialog patientId={patientId} open={dialog === 'encounter'} onClose={() => setDialog(null)} />
-      <RecordVitalsDialog patientId={patientId} encounterId={null} open={dialog === 'vitals'} onClose={() => setDialog(null)} />
-      <RecordAllergyDialog patientId={patientId} open={dialog === 'allergy'} onClose={() => setDialog(null)} onOpenExisting={() => {
-        setDialog(null);
-        openTab('allergies');
-      }} />
+      <RecordVitalsDialog
+        patientId={patientId}
+        encounterId={null}
+        open={dialog === 'vitals'}
+        onClose={() => setDialog(null)}
+      />
+      <RecordAllergyDialog
+        patientId={patientId}
+        open={dialog === 'allergy'}
+        onClose={() => setDialog(null)}
+        onOpenExisting={() => {
+          setDialog(null);
+          openTab('allergies');
+        }}
+      />
       <RaiseAlertDialog patientId={patientId} open={dialog === 'alert'} onClose={() => setDialog(null)} />
     </Page>
   );

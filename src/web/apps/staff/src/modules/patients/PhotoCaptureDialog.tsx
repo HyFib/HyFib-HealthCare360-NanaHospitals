@@ -36,7 +36,15 @@ type CameraState = { status: 'starting' } | { status: 'live' } | { status: 'fail
  * Takes a photo with the workstation's camera. The camera is on only while this dialog is open. The captured frame is
  * handed over as an ImageBitmap (its new owner closes it); nothing is stored here.
  */
-export function PhotoCaptureDialog({ open, onClose, onCaptured }: { open: boolean; onClose: () => void; onCaptured: (frame: ImageBitmap) => void }) {
+export function PhotoCaptureDialog({
+  open,
+  onClose,
+  onCaptured,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCaptured: (frame: ImageBitmap) => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
       <DialogSurface>
@@ -131,7 +139,12 @@ export function CameraView({ onClose, onCaptured }: { onClose: () => void; onCap
         <Button appearance="secondary" onClick={onClose}>
           Cancel
         </Button>
-        <Button appearance="primary" icon={<CameraRegular />} disabled={state.status !== 'live' || capturing} onClick={() => void capture()}>
+        <Button
+          appearance="primary"
+          icon={<CameraRegular />}
+          disabled={state.status !== 'live' || capturing}
+          onClick={() => void capture()}
+        >
           Take photo
         </Button>
       </DialogActions>

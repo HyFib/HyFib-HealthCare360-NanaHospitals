@@ -33,7 +33,9 @@ export function pickRecordingType(isSupported: (type: string) => boolean): strin
 }
 
 /** Content type and file extension for the upload ("audio/webm;codecs=opus" → audio/webm, .webm). */
-export function uploadTypeFor(recordingType: string): { contentType: 'audio/webm' | 'audio/ogg'; extension: '.webm' | '.ogg' } | null {
+export function uploadTypeFor(
+  recordingType: string,
+): { contentType: 'audio/webm' | 'audio/ogg'; extension: '.webm' | '.ogg' } | null {
   const mediaType = recordingType.split(';', 1)[0]?.trim().toLowerCase();
   if (mediaType === 'audio/webm' || mediaType === 'video/webm') {
     return { contentType: 'audio/webm', extension: '.webm' };
@@ -87,20 +89,35 @@ export interface VoiceAvailability {
 }
 
 /** Whether the mic is offered, and how: Desktop speech first, else server speech-to-text when it is set up. */
-export function voiceAvailability(input: { isDesktop: boolean; recorderSupported: boolean; status: AiStatusDto | undefined; statusFailed: boolean }): VoiceAvailability {
+export function voiceAvailability(input: {
+  isDesktop: boolean;
+  recorderSupported: boolean;
+  status: AiStatusDto | undefined;
+  statusFailed: boolean;
+}): VoiceAvailability {
   if (input.isDesktop) {
     return { mode: 'desktop', reason: null };
   }
   if (!input.recorderSupported) {
-    return { mode: null, reason: 'Voice input is not supported in this browser. Type the command, or use HC360 Desktop.' };
+    return {
+      mode: null,
+      reason: 'Voice input is not supported in this browser. Type the command, or use HC360 Desktop.',
+    };
   }
   if (!input.status) {
-    return { mode: null, reason: input.statusFailed ? 'Voice input could not be checked right now. Type the command instead.' : null };
+    return {
+      mode: null,
+      reason: input.statusFailed ? 'Voice input could not be checked right now. Type the command instead.' : null,
+    };
   }
   if (input.status.serverSpeechToText) {
     return { mode: 'server', reason: null };
   }
-  return { mode: null, reason: 'Voice input in a browser needs server speech-to-text, which is not set up. Use HC360 Desktop, or type the command.' };
+  return {
+    mode: null,
+    reason:
+      'Voice input in a browser needs server speech-to-text, which is not set up. Use HC360 Desktop, or type the command.',
+  };
 }
 
 /** True when this browser can record audio at all (secure context, microphone API and MediaRecorder). */
@@ -137,7 +154,9 @@ export async function startRecording(): Promise<Recording> {
   const recordingType = recorderSupported() ? pickRecordingType((type) => MediaRecorder.isTypeSupported(type)) : null;
   const upload = recordingType ? uploadTypeFor(recordingType) : null;
   if (!recordingType || !upload) {
-    throw new VoiceError('This browser cannot record voice in a format the server understands. Use Edge or Chrome, or HC360 Desktop.');
+    throw new VoiceError(
+      'This browser cannot record voice in a format the server understands. Use Edge or Chrome, or HC360 Desktop.',
+    );
   }
 
   let stream: MediaStream;

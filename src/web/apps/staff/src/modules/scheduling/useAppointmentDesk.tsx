@@ -71,7 +71,9 @@ export function useAppointmentDesk(): AppointmentDesk {
         confirm.mutate(appointment);
         break;
       case 'print':
-        void printAppointmentSlip(facilityName, appointment).catch((error: unknown) => notify.error(error, 'Printing failed'));
+        void printAppointmentSlip(facilityName, appointment).catch((error: unknown) =>
+          notify.error(error, 'Printing failed'),
+        );
         break;
       default:
         setDialog({ kind: action, appointment });

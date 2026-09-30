@@ -10,10 +10,31 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, DeleteRegular, DocumentArrowLeftRegular, LockClosedRegular, PrintRegular, SaveRegular, SignatureRegular, TextBulletListLtrRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DeleteRegular,
+  DocumentArrowLeftRegular,
+  LockClosedRegular,
+  PrintRegular,
+  SaveRegular,
+  SignatureRegular,
+  TextBulletListLtrRegular,
+} from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, useHotkey, useSession } from '@hc360/core';
-import { ConfirmDialog, ErrorState, FormGrid, FullRow, LoadingState, NumberField, Section, SelectField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  ErrorState,
+  FormGrid,
+  FullRow,
+  LoadingState,
+  NumberField,
+  Section,
+  SelectField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
@@ -30,7 +51,12 @@ import { ActionError, Detail, DetailGrid, WhoWhen } from './shared/feedback';
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
   rows: { display: 'flex', flexDirection: 'column', gap: '8px' },
-  specimen: { display: 'grid', gridTemplateColumns: 'minmax(200px, 3fr) minmax(150px, 2fr) minmax(110px, 1fr) auto', gap: '8px', alignItems: 'start' },
+  specimen: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(200px, 3fr) minmax(150px, 2fr) minmax(110px, 1fr) auto',
+    gap: '8px',
+    alignItems: 'start',
+  },
   removeButton: { marginTop: '24px' },
   footer: { display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -79,14 +105,21 @@ const noteSchema = z
 type NoteValues = z.infer<typeof noteSchema>;
 
 function toValues(note: OperationNoteDto | null, booking: SurgeryDetail): NoteValues {
-  const side = booking.laterality === 'NotApplicable' ? '' : ` (${booking.laterality === 'Bilateral' ? 'bilateral' : booking.laterality.toLowerCase()})`;
+  const side =
+    booking.laterality === 'NotApplicable'
+      ? ''
+      : ` (${booking.laterality === 'Bilateral' ? 'bilateral' : booking.laterality.toLowerCase()})`;
   return {
     preOperativeDiagnosis: note?.preOperativeDiagnosis ?? booking.diagnosis ?? '',
     postOperativeDiagnosis: note?.postOperativeDiagnosis ?? '',
     procedurePerformed: note?.procedurePerformed ?? `${booking.procedureName}${side}`,
     findings: note?.findings ?? '',
     procedureDetails: note?.procedureDetails ?? '',
-    specimens: (note?.specimens ?? []).map((s) => ({ description: s.description, sentTo: s.sentTo, label: s.label ?? '' })),
+    specimens: (note?.specimens ?? []).map((s) => ({
+      description: s.description,
+      sentTo: s.sentTo,
+      label: s.label ?? '',
+    })),
     drains: note?.drains ?? '',
     estimatedBloodLossMl: note?.estimatedBloodLossMl ?? null,
     complications: note?.complications ?? '',
@@ -151,7 +184,11 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
         procedurePerformed: values.procedurePerformed,
         findings: orNull(values.findings),
         procedureDetails: orNull(values.procedureDetails),
-        specimens: values.specimens.map((s) => ({ description: s.description, sentTo: s.sentTo, label: orNull(s.label) })),
+        specimens: values.specimens.map((s) => ({
+          description: s.description,
+          sentTo: s.sentTo,
+          label: orNull(s.label),
+        })),
         drains: orNull(values.drains),
         estimatedBloodLossMl: values.estimatedBloodLossMl,
         complications: orNull(values.complications),
@@ -182,7 +219,11 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
   };
 
   const insertTemplate = () =>
-    form.setValue('postOpOrders', postOpOrders.trim() ? `${postOpOrders.trimEnd()}\n${POST_OP_TEMPLATE}` : POST_OP_TEMPLATE, { shouldDirty: true });
+    form.setValue(
+      'postOpOrders',
+      postOpOrders.trim() ? `${postOpOrders.trimEnd()}\n${POST_OP_TEMPLATE}` : POST_OP_TEMPLATE,
+      { shouldDirty: true },
+    );
 
   return (
     <Section
@@ -190,7 +231,14 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
       description={note ? 'Draft — press Ctrl+S to save' : 'Written by the operating surgeon. Press Ctrl+S to save.'}
       actions={
         note && (
-          <Button icon={<PrintRegular />} onClick={() => void printOperationNote(facilityName, booking, note).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+          <Button
+            icon={<PrintRegular />}
+            onClick={() =>
+              void printOperationNote(facilityName, booking, note).catch((error: unknown) =>
+                notify.error(error, 'Printing failed'),
+              )
+            }
+          >
             Print draft
           </Button>
         )
@@ -199,7 +247,10 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
       <form onSubmit={(event) => event.preventDefault()} noValidate className={styles.stack}>
         {draft.saved && (
           <MessageBar intent="info" icon={<DocumentArrowLeftRegular />}>
-            <MessageBarBody>Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this computer.</MessageBarBody>
+            <MessageBarBody>
+              Unsaved changes from {formatRelative(new Date(draft.saved.savedAt).toISOString())} were found on this
+              computer.
+            </MessageBarBody>
             <MessageBarActions>
               <Button onClick={draft.restore}>Restore them</Button>
               <Button appearance="subtle" onClick={draft.discard}>
@@ -209,16 +260,39 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
           </MessageBar>
         )}
         <FormGrid columns={2}>
-          <TextField control={form.control} name="preOperativeDiagnosis" label="Pre-operative diagnosis" maxLength={500} />
-          <TextField control={form.control} name="postOperativeDiagnosis" label="Post-operative diagnosis" maxLength={500} />
+          <TextField
+            control={form.control}
+            name="preOperativeDiagnosis"
+            label="Pre-operative diagnosis"
+            maxLength={500}
+          />
+          <TextField
+            control={form.control}
+            name="postOperativeDiagnosis"
+            label="Post-operative diagnosis"
+            maxLength={500}
+          />
           <FullRow>
-            <TextField control={form.control} name="procedurePerformed" label="Procedure performed" required maxLength={500} />
+            <TextField
+              control={form.control}
+              name="procedurePerformed"
+              label="Procedure performed"
+              required
+              maxLength={500}
+            />
           </FullRow>
           <FullRow>
             <TextAreaField control={form.control} name="findings" label="Findings" rows={3} maxLength={4000} />
           </FullRow>
           <FullRow>
-            <TextAreaField control={form.control} name="procedureDetails" label="Procedure details" rows={6} maxLength={8000} placeholder="Position, incision, steps, closure" />
+            <TextAreaField
+              control={form.control}
+              name="procedureDetails"
+              label="Procedure details"
+              rows={6}
+              maxLength={8000}
+              placeholder="Position, incision, steps, closure"
+            />
           </FullRow>
         </FormGrid>
 
@@ -227,14 +301,34 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
           {specimens.fields.length === 0 && <Caption1 className={styles.muted}>No specimens sent.</Caption1>}
           {specimens.fields.map((row, index) => (
             <div key={row.id} className={styles.specimen}>
-              <TextField control={form.control} name={`specimens.${index}.description`} label="Specimen" required maxLength={200} />
-              <SelectField control={form.control} name={`specimens.${index}.sentTo`} label="Sent to" options={SPECIMEN_DESTINATIONS.map((d) => ({ value: d, label: specimenLabel[d] }))} />
+              <TextField
+                control={form.control}
+                name={`specimens.${index}.description`}
+                label="Specimen"
+                required
+                maxLength={200}
+              />
+              <SelectField
+                control={form.control}
+                name={`specimens.${index}.sentTo`}
+                label="Sent to"
+                options={SPECIMEN_DESTINATIONS.map((d) => ({ value: d, label: specimenLabel[d] }))}
+              />
               <TextField control={form.control} name={`specimens.${index}.label`} label="Label" maxLength={64} />
-              <Button className={styles.removeButton} appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove specimen ${index + 1}`} onClick={() => specimens.remove(index)} />
+              <Button
+                className={styles.removeButton}
+                appearance="subtle"
+                icon={<DeleteRegular />}
+                aria-label={`Remove specimen ${index + 1}`}
+                onClick={() => specimens.remove(index)}
+              />
             </div>
           ))}
           <div>
-            <Button icon={<AddRegular />} onClick={() => specimens.append({ description: '', sentTo: 'Histopathology', label: '' })}>
+            <Button
+              icon={<AddRegular />}
+              onClick={() => specimens.append({ description: '', sentTo: 'Histopathology', label: '' })}
+            >
               Add specimen
             </Button>
           </div>
@@ -242,7 +336,13 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
 
         <FormGrid columns={3}>
           <TextField control={form.control} name="drains" label="Drains" maxLength={500} />
-          <NumberField control={form.control} name="estimatedBloodLossMl" label="Estimated blood loss (ml)" min={0} max={20000} />
+          <NumberField
+            control={form.control}
+            name="estimatedBloodLossMl"
+            label="Estimated blood loss (ml)"
+            min={0}
+            max={20000}
+          />
           <TextField control={form.control} name="complications" label="Complications" maxLength={2000} />
         </FormGrid>
 
@@ -253,17 +353,34 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
               Insert order headings
             </Button>
           </div>
-          <TextAreaField control={form.control} name="postOpOrders" label="Orders for recovery and the ward" rows={8} maxLength={4000} />
+          <TextAreaField
+            control={form.control}
+            name="postOpOrders"
+            label="Orders for recovery and the ward"
+            rows={8}
+            maxLength={4000}
+          />
         </div>
 
         <ActionError error={save.error} onReload={() => void reload()} />
 
         <div className={styles.footer}>
-          <Caption1 className={styles.muted}>Signing locks the note. The ward sees the post-op orders as soon as it is saved.</Caption1>
-          <Button icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending} onClick={() => void submit(false)}>
+          <Caption1 className={styles.muted}>
+            Signing locks the note. The ward sees the post-op orders as soon as it is saved.
+          </Caption1>
+          <Button
+            icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+            disabled={save.isPending}
+            onClick={() => void submit(false)}
+          >
             Save draft
           </Button>
-          <Button appearance="primary" icon={<SignatureRegular />} disabled={save.isPending} onClick={() => setConfirmSign(true)}>
+          <Button
+            appearance="primary"
+            icon={<SignatureRegular />}
+            disabled={save.isPending}
+            onClick={() => setConfirmSign(true)}
+          >
             Sign and lock
           </Button>
         </div>
@@ -277,7 +394,8 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
         onConfirm={() => void submit(true)}
         onCancel={() => setConfirmSign(false)}
       >
-        The note is saved with your name and the time and can no longer be changed. Check the procedure, specimens and post-operative orders first.
+        The note is saved with your name and the time and can no longer be changed. Check the procedure, specimens and
+        post-operative orders first.
       </ConfirmDialog>
     </Section>
   );
@@ -293,7 +411,14 @@ function NoteView({ booking, note }: { booking: SurgeryDetail; note: OperationNo
       actions={
         <>
           {note.signedAt && <WhoWhen prefix="Signed by" by={note.signedByName} at={note.signedAt} locked />}
-          <Button icon={<PrintRegular />} onClick={() => void printOperationNote(facilityName, booking, note).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+          <Button
+            icon={<PrintRegular />}
+            onClick={() =>
+              void printOperationNote(facilityName, booking, note).catch((error: unknown) =>
+                notify.error(error, 'Printing failed'),
+              )
+            }
+          >
             Print
           </Button>
         </>
@@ -317,7 +442,9 @@ function NoteView({ booking, note }: { booking: SurgeryDetail; note: OperationNo
           <Detail label="Post-operative diagnosis">{note.postOperativeDiagnosis}</Detail>
           <Detail label="Procedure performed">{note.procedurePerformed}</Detail>
           <Detail label="Drains">{note.drains}</Detail>
-          <Detail label="Estimated blood loss">{note.estimatedBloodLossMl !== null ? `${note.estimatedBloodLossMl} ml` : null}</Detail>
+          <Detail label="Estimated blood loss">
+            {note.estimatedBloodLossMl !== null ? `${note.estimatedBloodLossMl} ml` : null}
+          </Detail>
           <Detail label="Complications">{note.complications}</Detail>
         </DetailGrid>
         <Detail label="Findings">
@@ -326,7 +453,11 @@ function NoteView({ booking, note }: { booking: SurgeryDetail; note: OperationNo
         <Detail label="Procedure details">
           <span className={styles.pre}>{note.procedureDetails}</span>
         </Detail>
-        <Detail label="Specimens">{note.specimens.map((s) => `${s.description} → ${specimenLabel[s.sentTo]}${s.label ? ` (${s.label})` : ''}`).join('; ') || 'None'}</Detail>
+        <Detail label="Specimens">
+          {note.specimens
+            .map((s) => `${s.description} → ${specimenLabel[s.sentTo]}${s.label ? ` (${s.label})` : ''}`)
+            .join('; ') || 'None'}
+        </Detail>
         <Section title="Post-operative orders">
           <Text className={styles.pre}>{note.postOpOrders ?? 'None written.'}</Text>
         </Section>

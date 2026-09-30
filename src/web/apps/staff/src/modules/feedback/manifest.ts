@@ -10,10 +10,30 @@ const manifest: ModuleManifest = {
   icon: PersonFeedbackRegular,
   order: 20,
   links: [
-    { label: 'Feedback analytics', to: '/feedback', permission: F.read, keywords: ['nps', 'net promoter', 'satisfaction', 'sentiment', 'ratings'] },
-    { label: 'Feedback responses', to: '/feedback/responses', permission: F.read, keywords: ['feedback', 'survey', 'comments', 'low score'] },
-    { label: 'Complaints', to: '/feedback/complaints', permission: F.complaintsManage, keywords: ['complaint', 'grievance', 'sla', 'tat'] },
-    { label: 'Feedback forms and QR codes', to: '/feedback/forms', permission: FORM_VIEWERS, keywords: ['qr', 'kiosk', 'poster', 'questionnaire'] },
+    {
+      label: 'Feedback analytics',
+      to: '/feedback',
+      permission: F.read,
+      keywords: ['nps', 'net promoter', 'satisfaction', 'sentiment', 'ratings'],
+    },
+    {
+      label: 'Feedback responses',
+      to: '/feedback/responses',
+      permission: F.read,
+      keywords: ['feedback', 'survey', 'comments', 'low score'],
+    },
+    {
+      label: 'Complaints',
+      to: '/feedback/complaints',
+      permission: F.complaintsManage,
+      keywords: ['complaint', 'grievance', 'sla', 'tat'],
+    },
+    {
+      label: 'Feedback forms and QR codes',
+      to: '/feedback/forms',
+      permission: FORM_VIEWERS,
+      keywords: ['qr', 'kiosk', 'poster', 'questionnaire'],
+    },
   ],
   quickActions: [
     {

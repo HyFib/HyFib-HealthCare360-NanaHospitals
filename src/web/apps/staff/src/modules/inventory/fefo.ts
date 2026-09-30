@@ -72,13 +72,17 @@ export function batchProblemText(problem: BatchProblem, batch: FefoBatch, minimu
 }
 
 /** Usable batches in the order FEFO takes them. */
-export function fefoOrder(batches: readonly FefoBatch[], options: { minimumShelfLifeDays?: number; preferredBatchId?: string | null } = {}): FefoBatch[] {
+export function fefoOrder(
+  batches: readonly FefoBatch[],
+  options: { minimumShelfLifeDays?: number; preferredBatchId?: string | null } = {},
+): FefoBatch[] {
   const minimum = options.minimumShelfLifeDays ?? 0;
   return batches
     .map((batch, index) => ({ batch, index }))
     .filter(({ batch }) => batchProblem(batch, minimum) === null)
     .sort((a, b) => {
-      const preferred = Number(b.batch.batchId === options.preferredBatchId) - Number(a.batch.batchId === options.preferredBatchId);
+      const preferred =
+        Number(b.batch.batchId === options.preferredBatchId) - Number(a.batch.batchId === options.preferredBatchId);
       if (preferred !== 0) {
         return preferred;
       }
@@ -119,7 +123,12 @@ export function allocateFefo(
         break;
       }
       const take = min(dec(batch.available), remaining);
-      allocations.push({ batchId: batch.batchId, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, quantity: toNumber(take) });
+      allocations.push({
+        batchId: batch.batchId,
+        batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate,
+        quantity: toNumber(take),
+      });
       remaining -= take;
     }
   }
@@ -136,12 +145,25 @@ export function allocateFromBatch(quantity: number, batch: FefoBatch, minimumShe
     return result([], requested, ZERO);
   }
   const take = min(dec(batch.available), requested);
-  return result([{ batchId: batch.batchId, batchNumber: batch.batchNumber, expiryDate: batch.expiryDate, quantity: toNumber(take) }], requested, take);
+  return result(
+    [
+      {
+        batchId: batch.batchId,
+        batchNumber: batch.batchNumber,
+        expiryDate: batch.expiryDate,
+        quantity: toNumber(take),
+      },
+    ],
+    requested,
+    take,
+  );
 }
 
 /** Quantity FEFO could hand out now under the same rules. */
 export function usableQuantity(batches: readonly FefoBatch[], minimumShelfLifeDays = 0): number {
-  return toNumber(fefoOrder(batches, { minimumShelfLifeDays }).reduce((total, batch) => total + dec(batch.available), ZERO));
+  return toNumber(
+    fefoOrder(batches, { minimumShelfLifeDays }).reduce((total, batch) => total + dec(batch.available), ZERO),
+  );
 }
 
 /** Server shelf-life rule for OP dispensing: the course length, capped at 30 days. */

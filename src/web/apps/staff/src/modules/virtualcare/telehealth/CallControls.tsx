@@ -1,5 +1,13 @@
 import { Button, Caption1, makeStyles, mergeClasses, Tooltip, tokens } from '@fluentui/react-components';
-import { CallEndRegular, CallRegular, DoorArrowLeftRegular, MicOffRegular, MicRegular, VideoOffRegular, VideoRegular } from '@fluentui/react-icons';
+import {
+  CallEndRegular,
+  CallRegular,
+  DoorArrowLeftRegular,
+  MicOffRegular,
+  MicRegular,
+  VideoOffRegular,
+  VideoRegular,
+} from '@fluentui/react-icons';
 import { useHotkey } from '@hc360/core';
 import type { CallState, TelehealthCall } from './TelehealthCall';
 import { describeQuality, type QualityReading } from './webrtc';
@@ -13,7 +21,13 @@ const useStyles = makeStyles({
     ':hover': { backgroundColor: tokens.colorPaletteRedForeground1, color: tokens.colorNeutralForegroundOnBrand },
   },
   off: { color: tokens.colorPaletteRedForeground1 },
-  quality: { display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 8px', borderRadius: tokens.borderRadiusMedium },
+  quality: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '4px 8px',
+    borderRadius: tokens.borderRadiusMedium,
+  },
   bars: { display: 'inline-flex', alignItems: 'flex-end', gap: '2px', height: '16px' },
   bar1: { width: '4px', height: '6px', borderRadius: '1px', backgroundColor: tokens.colorNeutralStroke1 },
   bar2: { width: '4px', height: '11px', borderRadius: '1px', backgroundColor: tokens.colorNeutralStroke1 },
@@ -29,9 +43,20 @@ export function QualityIndicator({ quality, connected }: { quality: QualityReadi
   const level = connected ? quality?.level : undefined;
   const filled = level === 'good' ? 3 : level === 'fair' ? 2 : level === 'poor' ? 1 : 0;
   const tone = level ? styles[level] : undefined;
-  const label = !connected ? 'Not connected' : !quality ? 'Measuring…' : level === 'good' ? 'Good' : level === 'fair' ? 'Fair' : 'Poor';
+  const label = !connected
+    ? 'Not connected'
+    : !quality
+      ? 'Measuring…'
+      : level === 'good'
+        ? 'Good'
+        : level === 'fair'
+          ? 'Fair'
+          : 'Poor';
   return (
-    <Tooltip content={connected ? describeQuality(quality) : 'The video is not connected yet'} relationship="description">
+    <Tooltip
+      content={connected ? describeQuality(quality) : 'The video is not connected yet'}
+      relationship="description"
+    >
       <span className={styles.quality} role="img" aria-label={`Connection quality: ${label}`} tabIndex={0}>
         <span className={styles.bars} aria-hidden>
           <span className={mergeClasses(styles.bar1, filled >= 1 && tone)} />
@@ -75,7 +100,10 @@ export function CallControls({ state, call, canEnd, onEnd, onLeave }: CallContro
           {state.micOn ? 'Mute' : 'Unmute'}
         </Button>
       </Tooltip>
-      <Tooltip content={`${state.cameraOn ? 'Turn camera off' : 'Turn camera on'} (Ctrl+Shift+O)`} relationship="description">
+      <Tooltip
+        content={`${state.cameraOn ? 'Turn camera off' : 'Turn camera on'} (Ctrl+Shift+O)`}
+        relationship="description"
+      >
         <Button
           icon={state.cameraOn ? <VideoRegular /> : <VideoOffRegular className={styles.off} />}
           disabled={!canUseCamera}
@@ -87,7 +115,13 @@ export function CallControls({ state, call, canEnd, onEnd, onLeave }: CallContro
         </Button>
       </Tooltip>
       <Tooltip content="Stop video to keep the call going on a weak network" relationship="description">
-        <Button icon={<CallRegular />} disabled={!canUseCamera} aria-pressed={state.audioOnly} appearance={state.audioOnly ? 'primary' : 'secondary'} onClick={() => call.setAudioOnly(!state.audioOnly)}>
+        <Button
+          icon={<CallRegular />}
+          disabled={!canUseCamera}
+          aria-pressed={state.audioOnly}
+          appearance={state.audioOnly ? 'primary' : 'secondary'}
+          onClick={() => call.setAudioOnly(!state.audioOnly)}
+        >
           Audio only
         </Button>
       </Tooltip>

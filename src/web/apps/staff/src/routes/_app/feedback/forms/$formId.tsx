@@ -65,7 +65,11 @@ function FormPage() {
         onSaved={() => undefined}
         aside={
           <Section title="QR code" description="For posters at the exit, waiting areas and the feedback kiosk">
-            <FormQrPanel form={f} canManage={canManage} onRotated={(updated) => queryClient.setQueryData(feedbackQueries.form(formId).queryKey, updated)} />
+            <FormQrPanel
+              form={f}
+              canManage={canManage}
+              onRotated={(updated) => queryClient.setQueryData(feedbackQueries.form(formId).queryKey, updated)}
+            />
           </Section>
         }
       />

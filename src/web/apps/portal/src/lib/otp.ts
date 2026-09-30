@@ -53,7 +53,9 @@ const MAX_LIFETIME_MS = 15 * 60_000;
 export function otpDeadline(expiresAtIso: string | null | undefined, receivedAtMs: number): number {
   const expires = expiresAtIso ? Date.parse(expiresAtIso) : Number.NaN;
   const lifetime = expires - receivedAtMs;
-  return Number.isFinite(lifetime) && lifetime > 0 && lifetime <= MAX_LIFETIME_MS ? expires : receivedAtMs + DEFAULT_LIFETIME_MS;
+  return Number.isFinite(lifetime) && lifetime > 0 && lifetime <= MAX_LIFETIME_MS
+    ? expires
+    : receivedAtMs + DEFAULT_LIFETIME_MS;
 }
 
 /** Whole seconds left until `deadlineMs` (never negative). */

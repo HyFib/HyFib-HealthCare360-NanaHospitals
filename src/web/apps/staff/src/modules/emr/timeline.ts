@@ -86,7 +86,9 @@ export const chartTabLabel: Record<ChartTab, string> = {
 };
 
 export function parseChartTab(value: unknown): ChartTab | undefined {
-  return typeof value === 'string' && (CHART_TABS as readonly string[]).includes(value) ? (value as ChartTab) : undefined;
+  return typeof value === 'string' && (CHART_TABS as readonly string[]).includes(value)
+    ? (value as ChartTab)
+    : undefined;
 }
 
 /** "Encounter,Vitals" → ['Encounter', 'Vitals']; unknown names are dropped; nothing valid → undefined (all types). */
@@ -110,13 +112,21 @@ export function serializeTypes(types: readonly TimelineEntryType[] | undefined):
   return TIMELINE_TYPES.filter((type) => types.includes(type)).join(',');
 }
 
-export function toggleType(types: readonly TimelineEntryType[] | undefined, type: TimelineEntryType): TimelineEntryType[] | undefined {
+export function toggleType(
+  types: readonly TimelineEntryType[] | undefined,
+  type: TimelineEntryType,
+): TimelineEntryType[] | undefined {
   const current = types ?? [];
   const next = current.includes(type) ? current.filter((t) => t !== type) : [...current, type];
   return next.length === 0 ? undefined : next;
 }
 
-const IST_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+const IST_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** IST calendar day ("yyyy-MM-dd") of an instant. */
 export function istDay(iso: string): string {

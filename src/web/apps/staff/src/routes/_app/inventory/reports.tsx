@@ -1,13 +1,46 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, SearchBox, Select, Tab, TabList, Text, tokens } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  SearchBox,
+  Select,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { BinRecycleRegular, ReceiptAddRegular } from '@fluentui/react-icons';
 import { formatDateOnly, formatInr, todayIso } from '@hc360/core';
-import { ConfirmDialog, DataTable, ErrorState, FilterBar, KpiCard, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  ErrorState,
+  FilterBar,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { usePermission } from '@/lib/permissions';
-import { inventoryApi, inventoryKeys, inventoryQueries, type AnalysisRow, type ExpiringBatch, type ExpiryReport, type ReorderRow, type ValuationRow } from '@/modules/inventory/api';
+import {
+  inventoryApi,
+  inventoryKeys,
+  inventoryQueries,
+  type AnalysisRow,
+  type ExpiringBatch,
+  type ExpiryReport,
+  type ReorderRow,
+  type ValuationRow,
+} from '@/modules/inventory/api';
 import { dec, mul, sum, toNumber } from '@/modules/inventory/decimal';
 import { expiryLabel, formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import { abcVedLabel, itemTypeLabel, type AbcClass, type FsnClass } from '@/modules/inventory/labels';
@@ -41,8 +74,18 @@ export const Route = createFileRoute('/_app/inventory/reports')({
 });
 
 const useStyles = makeStyles({
-  kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', padding: '0 16px 12px' },
-  charts: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', padding: '0 16px 12px' },
+  kpis: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    padding: '0 16px 12px',
+  },
+  charts: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+    padding: '0 16px 12px',
+  },
   chartTitle: { marginBottom: '4px' },
   muted: { color: tokens.colorNeutralForeground3 },
   soon: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
@@ -58,10 +101,16 @@ function ReportsPage() {
 
   return (
     <Page>
-      <PageHeader title="Inventory reports" subtitle="Figures are worked out from the live stock and ledger; they change as stock moves." />
+      <PageHeader
+        title="Inventory reports"
+        subtitle="Figures are worked out from the live stock and ledger; they change as stock moves."
+      />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => set({ tab: d.value === 'near-expiry' ? undefined : (d.value as ReportTab) })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) => set({ tab: d.value === 'near-expiry' ? undefined : (d.value as ReportTab) })}
+          >
             <Tab value="near-expiry">Near expiry</Tab>
             <Tab value="expired">Expired</Tab>
             <Tab value="valuation">Valuation</Tab>
@@ -71,10 +120,18 @@ function ReportsPage() {
         </div>
         <div style={{ padding: '8px 16px 12px' }}>
           <FilterBar>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             {tab === 'near-expiry' && (
               <Field label="Expiring within">
-                <Select value={String(search.days ?? 90)} onChange={(_, d) => set({ days: Number(d.value) === 90 ? undefined : Number(d.value) })}>
+                <Select
+                  value={String(search.days ?? 90)}
+                  onChange={(_, d) => set({ days: Number(d.value) === 90 ? undefined : Number(d.value) })}
+                >
                   {[30, 60, 90, 180, 365].map((d) => (
                     <option key={d} value={d}>
                       {d} days
@@ -86,10 +143,20 @@ function ReportsPage() {
             {tab === 'analysis' && (
               <>
                 <Field label="From">
-                  <Input type="date" value={search.from ?? ''} max={search.to ?? todayIso()} onChange={(_, d) => set({ from: d.value || undefined })} />
+                  <Input
+                    type="date"
+                    value={search.from ?? ''}
+                    max={search.to ?? todayIso()}
+                    onChange={(_, d) => set({ from: d.value || undefined })}
+                  />
                 </Field>
                 <Field label="To">
-                  <Input type="date" value={search.to ?? ''} max={todayIso()} onChange={(_, d) => set({ to: d.value || undefined })} />
+                  <Input
+                    type="date"
+                    value={search.to ?? ''}
+                    max={todayIso()}
+                    onChange={(_, d) => set({ to: d.value || undefined })}
+                  />
                 </Field>
                 <Caption1 style={{ alignSelf: 'center' }}>Blank = the last 12 months</Caption1>
               </>
@@ -106,7 +173,15 @@ function ReportsPage() {
   );
 }
 
-function ExpiryTable({ report, loading, expired }: { report: ExpiryReport | undefined; loading: boolean; expired?: boolean }) {
+function ExpiryTable({
+  report,
+  loading,
+  expired,
+}: {
+  report: ExpiryReport | undefined;
+  loading: boolean;
+  expired?: boolean;
+}) {
   const styles = useStyles();
   return (
     <DataTable<ExpiringBatch>
@@ -160,7 +235,15 @@ function NearExpiry({ storeId, days }: { storeId?: string; days: number }) {
       tooltip: { trigger: 'axis', valueFormatter: (v) => formatInr(Number(v)) },
       xAxis: { type: 'category', data: months.map((m) => formatExpiry(`${m}-01`)) },
       yAxis: { type: 'value', axisLabel: { formatter: (v: number) => `₹${v.toLocaleString('en-IN')}` } },
-      series: [{ type: 'bar', name: 'Value at MRP', data: months.map((m) => byMonth.get(m) ?? 0), itemStyle: { color: '#C27C0E' }, barMaxWidth: 36 }],
+      series: [
+        {
+          type: 'bar',
+          name: 'Value at MRP',
+          data: months.map((m) => byMonth.get(m) ?? 0),
+          itemStyle: { color: '#C27C0E' },
+          barMaxWidth: 36,
+        },
+      ],
     };
   }, [report.data]);
   if (report.error) {
@@ -170,9 +253,17 @@ function NearExpiry({ storeId, days }: { storeId?: string; days: number }) {
   return (
     <>
       <div className={styles.kpis}>
-        <KpiCard label="Batches" value={r ? r.batchCount.toLocaleString('en-IN') : '…'} hint={`Expiring within ${days} days`} />
+        <KpiCard
+          label="Batches"
+          value={r ? r.batchCount.toLocaleString('en-IN') : '…'}
+          hint={`Expiring within ${days} days`}
+        />
         <KpiCard label="Value at cost" value={r ? formatInr(r.valueAtCost, { whole: true }) : '…'} />
-        <KpiCard label="Value at MRP" value={r ? formatInr(r.valueAtMrp, { whole: true }) : '…'} hint="Sell or return to the vendor before expiry" />
+        <KpiCard
+          label="Value at MRP"
+          value={r ? formatInr(r.valueAtMrp, { whole: true }) : '…'}
+          hint="Sell or return to the vendor before expiry"
+        />
       </div>
       {option && (
         <div style={{ padding: '0 16px 12px' }}>
@@ -215,11 +306,20 @@ function Expired({ storeId }: { storeId?: string }) {
   return (
     <>
       <div className={styles.kpis}>
-        <KpiCard label="Expired batches" value={r ? r.batchCount.toLocaleString('en-IN') : '…'} hint="Never sold or issued; waiting to be written off" />
+        <KpiCard
+          label="Expired batches"
+          value={r ? r.batchCount.toLocaleString('en-IN') : '…'}
+          hint="Never sold or issued; waiting to be written off"
+        />
         <KpiCard label="Value at cost" value={r ? formatInr(r.valueAtCost, { whole: true }) : '…'} />
         {canWriteOff && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
-            <Button appearance="primary" icon={<BinRecycleRegular />} disabled={!storeId || !r || r.batchCount === 0} onClick={() => setConfirm(true)}>
+            <Button
+              appearance="primary"
+              icon={<BinRecycleRegular />}
+              disabled={!storeId || !r || r.batchCount === 0}
+              onClick={() => setConfirm(true)}
+            >
               Write off this store's expired stock
             </Button>
             {!storeId && <Caption1 className={styles.muted}>Choose a store first</Caption1>}
@@ -235,8 +335,8 @@ function Expired({ storeId }: { storeId?: string }) {
         onConfirm={() => writeOff.mutate()}
         onCancel={() => setConfirm(false)}
       >
-        {r ? `${r.batchCount} expired batches worth ${formatInr(r.valueAtCost)} at cost go on one adjustment. ` : ''}Stock changes only after another person approves
-        it. Controlled drugs are also recorded in the register.
+        {r ? `${r.batchCount} expired batches worth ${formatInr(r.valueAtCost)} at cost go on one adjustment. ` : ''}
+        Stock changes only after another person approves it. Controlled drugs are also recorded in the register.
       </ConfirmDialog>
     </>
   );
@@ -272,12 +372,22 @@ function Valuation({ storeId }: { storeId?: string }) {
   }
   const r = report.data;
   const term = filter.trim().toLowerCase();
-  const rows = term ? r.rows.filter((row) => row.itemName.toLowerCase().includes(term) || row.itemCode.toLowerCase().includes(term)) : r.rows;
+  const rows = term
+    ? r.rows.filter((row) => row.itemName.toLowerCase().includes(term) || row.itemCode.toLowerCase().includes(term))
+    : r.rows;
   return (
     <>
       <div className={styles.kpis}>
-        <KpiCard label="Stock at cost" value={formatInr(r.totalAtCost, { whole: true })} hint={`As of ${formatDateOnly(r.asOf)}`} />
-        <KpiCard label="Stock at MRP" value={formatInr(r.totalAtMrp, { whole: true })} hint={`Margin potential ${formatInr(toNumber(dec(r.totalAtMrp) - dec(r.totalAtCost)), { whole: true })}`} />
+        <KpiCard
+          label="Stock at cost"
+          value={formatInr(r.totalAtCost, { whole: true })}
+          hint={`As of ${formatDateOnly(r.asOf)}`}
+        />
+        <KpiCard
+          label="Stock at MRP"
+          value={formatInr(r.totalAtMrp, { whole: true })}
+          hint={`Margin potential ${formatInr(toNumber(dec(r.totalAtMrp) - dec(r.totalAtCost)), { whole: true })}`}
+        />
       </div>
       {option && (
         <div className={styles.charts}>
@@ -290,7 +400,12 @@ function Valuation({ storeId }: { storeId?: string }) {
         </div>
       )}
       <div style={{ padding: '0 16px 12px', maxWidth: 360 }}>
-        <SearchBox value={filter} onChange={(_, d) => setFilter(d.value)} placeholder="Filter items" aria-label="Filter items" />
+        <SearchBox
+          value={filter}
+          onChange={(_, d) => setFilter(d.value)}
+          placeholder="Filter items"
+          aria-label="Filter items"
+        />
       </div>
       <DataTable<ValuationRow>
         ariaLabel="Stock valuation"
@@ -320,7 +435,9 @@ function Reorder({ storeId }: { storeId?: string }) {
   const [confirm, setConfirm] = useState(false);
   const report = useQuery(inventoryQueries.reorder(storeId ?? null));
   const rows = report.data ?? [];
-  const estimate = toNumber(sum(rows.map((r) => (r.lastUnitCost === null ? 0n : mul(dec(r.suggestedQuantity), dec(r.lastUnitCost))))));
+  const estimate = toNumber(
+    sum(rows.map((r) => (r.lastUnitCost === null ? 0n : mul(dec(r.suggestedQuantity), dec(r.lastUnitCost))))),
+  );
   const requisition = useMutation({
     mutationFn: () => purchaseApi.requisitionFromReorder(storeId!),
     onSuccess: (result) => {
@@ -340,11 +457,24 @@ function Reorder({ storeId }: { storeId?: string }) {
   return (
     <>
       <div className={styles.kpis}>
-        <KpiCard label="Items to reorder" value={report.data ? rows.length.toLocaleString('en-IN') : '…'} hint="Available plus on order at or below the reorder level" />
-        <KpiCard label="Estimated purchase value" value={report.data ? formatInr(estimate, { whole: true }) : '…'} hint="At the last unit cost" />
+        <KpiCard
+          label="Items to reorder"
+          value={report.data ? rows.length.toLocaleString('en-IN') : '…'}
+          hint="Available plus on order at or below the reorder level"
+        />
+        <KpiCard
+          label="Estimated purchase value"
+          value={report.data ? formatInr(estimate, { whole: true }) : '…'}
+          hint="At the last unit cost"
+        />
         {canRequisition && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, justifyContent: 'center' }}>
-            <Button appearance="primary" icon={<ReceiptAddRegular />} disabled={!storeId || rows.length === 0} onClick={() => setConfirm(true)}>
+            <Button
+              appearance="primary"
+              icon={<ReceiptAddRegular />}
+              disabled={!storeId || rows.length === 0}
+              onClick={() => setConfirm(true)}
+            >
               Create purchase requisition
             </Button>
             {!storeId && <Caption1 className={styles.muted}>Choose the store to order for</Caption1>}
@@ -377,7 +507,13 @@ function Reorder({ storeId }: { storeId?: string }) {
           },
           { key: 'available', header: 'Available', align: 'end', render: (r) => formatQty(r.available, r.baseUnit) },
           { key: 'onOrder', header: 'On order', align: 'end', render: (r) => (r.onOrder ? formatQty(r.onOrder) : '—') },
-          { key: 'level', header: 'Reorder at', align: 'end', priority: 'low', render: (r) => formatQty(r.reorderLevel) },
+          {
+            key: 'level',
+            header: 'Reorder at',
+            align: 'end',
+            priority: 'low',
+            render: (r) => formatQty(r.reorderLevel),
+          },
           {
             key: 'suggested',
             header: 'Suggested',
@@ -385,11 +521,19 @@ function Reorder({ storeId }: { storeId?: string }) {
             render: (r) => (
               <span>
                 <Text weight="semibold">{formatQty(r.suggestedPurchaseUnits, r.purchaseUnit)}</Text>
-                {r.purchaseUnit !== r.baseUnit && <Caption1 block>{formatQty(r.suggestedQuantity, r.baseUnit)}</Caption1>}
+                {r.purchaseUnit !== r.baseUnit && (
+                  <Caption1 block>{formatQty(r.suggestedQuantity, r.baseUnit)}</Caption1>
+                )}
               </span>
             ),
           },
-          { key: 'cost', header: 'Last cost', align: 'end', priority: 'low', render: (r) => (r.lastUnitCost === null ? '—' : formatInr(r.lastUnitCost)) },
+          {
+            key: 'cost',
+            header: 'Last cost',
+            align: 'end',
+            priority: 'low',
+            render: (r) => (r.lastUnitCost === null ? '—' : formatInr(r.lastUnitCost)),
+          },
         ]}
         emptyTitle="Nothing needs reordering"
         emptyDescription="Items appear here when available plus on-order stock falls to the reorder level set in the item master."
@@ -402,7 +546,8 @@ function Reorder({ storeId }: { storeId?: string }) {
         onConfirm={() => requisition.mutate()}
         onCancel={() => setConfirm(false)}
       >
-        Every suggested item (up to 300) goes on one requisition for the chosen store, in purchase units. The approver can still reject it.
+        Every suggested item (up to 300) goes on one requisition for the chosen store, in purchase units. The approver
+        can still reject it.
       </ConfirmDialog>
     </>
   );
@@ -428,7 +573,11 @@ function Analysis({ storeId, from, to }: { storeId?: string; from?: string; to?:
           type: 'pie',
           name: 'Consumption value',
           radius: ['40%', '70%'],
-          data: d.abc.map((c) => ({ name: `Class ${c.class} (${c.items} items)`, value: c.value, itemStyle: { color: ABC_COLOURS[c.class] } })),
+          data: d.abc.map((c) => ({
+            name: `Class ${c.class} (${c.items} items)`,
+            value: c.value,
+            itemStyle: { color: ABC_COLOURS[c.class] },
+          })),
           label: { formatter: '{d}%' },
         },
       ],
@@ -461,9 +610,18 @@ function Analysis({ storeId, from, to }: { storeId?: string; from?: string; to?:
   return (
     <>
       <div className={styles.kpis}>
-        <KpiCard label="Consumption value" value={formatInr(d.totalValue, { whole: true })} hint={`${formatDateOnly(d.from)} to ${formatDateOnly(d.to)}`} />
+        <KpiCard
+          label="Consumption value"
+          value={formatInr(d.totalValue, { whole: true })}
+          hint={`${formatDateOnly(d.from)} to ${formatDateOnly(d.to)}`}
+        />
         {d.abc.map((c) => (
-          <KpiCard key={c.class} label={`Class ${c.class}`} value={`${c.items} items`} hint={`${formatPercent(c.valuePercent)} of value · ${formatInr(c.value, { whole: true })}`} />
+          <KpiCard
+            key={c.class}
+            label={`Class ${c.class}`}
+            value={`${c.items} items`}
+            hint={`${formatPercent(c.valuePercent)} of value · ${formatInr(c.value, { whole: true })}`}
+          />
         ))}
       </div>
       <div className={styles.charts}>
@@ -513,8 +671,20 @@ function Analysis({ storeId, from, to }: { storeId?: string; from?: string; to?:
         columns={[
           { key: 'item', header: 'Item', render: (i) => <Text weight="semibold">{i.itemName}</Text> },
           { key: 'value', header: 'Consumed value', align: 'end', render: (i) => formatInr(i.consumedValue) },
-          { key: 'share', header: 'Share', align: 'end', priority: 'low', render: (i) => formatPercent(i.sharePercent) },
-          { key: 'cum', header: 'Cumulative', align: 'end', priority: 'low', render: (i) => formatPercent(i.cumulativePercent) },
+          {
+            key: 'share',
+            header: 'Share',
+            align: 'end',
+            priority: 'low',
+            render: (i) => formatPercent(i.sharePercent),
+          },
+          {
+            key: 'cum',
+            header: 'Cumulative',
+            align: 'end',
+            priority: 'low',
+            render: (i) => formatPercent(i.cumulativePercent),
+          },
           { key: 'issues', header: 'Issues', align: 'end', priority: 'low', render: (i) => i.issueCount },
           {
             key: 'classes',

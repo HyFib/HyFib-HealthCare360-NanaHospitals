@@ -87,7 +87,12 @@ export function verificationPagePath(kind: VerifyKind, code: string): string {
  * (`portal.baseUrl`, sent as `verificationUrl`), otherwise the same page on the address the patient is using now.
  * Null without a code.
  */
-export function verificationPageUrl(kind: VerifyKind, code: string | null, serverUrl: string | null | undefined, origin: string): string | null {
+export function verificationPageUrl(
+  kind: VerifyKind,
+  code: string | null,
+  serverUrl: string | null | undefined,
+  origin: string,
+): string | null {
   if (serverUrl && /^https:\/\//i.test(serverUrl)) {
     return serverUrl;
   }

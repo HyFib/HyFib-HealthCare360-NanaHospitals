@@ -104,6 +104,20 @@ need a database. Either:
 cd src/web && pnpm -r typecheck && pnpm -r test
 ```
 
+CI also checks formatting. Before committing, format the C# code (whitespace, from `.editorconfig`) and the web code
+(Prettier):
+
+```bash
+dotnet format whitespace . --folder
+```
+
+```bash
+cd src/web && pnpm format
+```
+
+The commits that formatted the whole code base once are listed in `.git-blame-ignore-revs`. GitHub's blame view skips
+them; to do the same locally, run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+
 Conventions for new work: `docs/architecture/MODULE-GUIDE.md` (server modules) and
 `docs/architecture/FRONTEND-GUIDE.md` (screens).
 

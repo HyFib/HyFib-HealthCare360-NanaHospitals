@@ -97,7 +97,13 @@ export function AttendanceTable({
       key: 'late',
       header: 'Late / early',
       priority: 'low',
-      render: (d) => [d.lateMinutes ? `${formatMinutes(d.lateMinutes)} late` : '', d.earlyExitMinutes ? `${formatMinutes(d.earlyExitMinutes)} early` : ''].filter(Boolean).join(' · ') || '—',
+      render: (d) =>
+        [
+          d.lateMinutes ? `${formatMinutes(d.lateMinutes)} late` : '',
+          d.earlyExitMinutes ? `${formatMinutes(d.earlyExitMinutes)} early` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ') || '—',
     },
     { key: 'ot', header: 'Overtime', priority: 'low', width: 100, render: (d) => formatMinutes(d.overtimeMinutes) },
     {

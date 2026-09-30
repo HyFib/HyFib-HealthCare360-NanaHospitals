@@ -104,7 +104,11 @@ export interface DayRestriction {
 }
 
 /** Leave and blocked time of a doctor on one date (extra sessions add slots and are not restrictions). */
-export function restrictionsOn(date: IsoDate, exceptions: readonly ScheduleExceptionDto[], practitionerId?: string | null): DayRestriction[] {
+export function restrictionsOn(
+  date: IsoDate,
+  exceptions: readonly ScheduleExceptionDto[],
+  practitionerId?: string | null,
+): DayRestriction[] {
   return exceptions
     .filter(
       (e) =>

@@ -23,13 +23,19 @@ describe('compact age parsing', () => {
   });
 
   it('splits the label age/sex text', () => {
-    expect(parseAgeSex('34Y 2M / M')).toEqual({ age: '34Y 2M', ageDays: Math.round(34 * 365.25 + 2 * 30.44), gender: 'Male' });
+    expect(parseAgeSex('34Y 2M / M')).toEqual({
+      age: '34Y 2M',
+      ageDays: Math.round(34 * 365.25 + 2 * 30.44),
+      gender: 'Male',
+    });
     expect(parseAgeSex('- / F')).toEqual({ age: null, ageDays: null, gender: 'Female' });
     expect(parseAgeSex('')).toEqual({ age: null, ageDays: null, gender: 'Unknown' });
   });
 
   it('builds banner data from a diagnostics record', () => {
-    expect(bannerFor({ patientId: 'p1', uhid: 'NH26000001', patientName: 'Asha Rao', gender: 'Female', age: '31Y' })).toEqual({
+    expect(
+      bannerFor({ patientId: 'p1', uhid: 'NH26000001', patientName: 'Asha Rao', gender: 'Female', age: '31Y' }),
+    ).toEqual({
       id: 'p1',
       uhid: 'NH26000001',
       fullName: 'Asha Rao',

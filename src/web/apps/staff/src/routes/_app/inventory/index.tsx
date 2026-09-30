@@ -22,13 +22,20 @@ import { useWorkingStore } from '@/modules/inventory/stores';
 import { NearExpiryStockWidget } from '@/modules/inventory/widgets';
 
 export const Route = createFileRoute('/_app/inventory/')({
-  validateSearch: (s: Record<string, unknown>): { storeId?: string } => ({ storeId: typeof s.storeId === 'string' && s.storeId ? s.storeId : undefined }),
+  validateSearch: (s: Record<string, unknown>): { storeId?: string } => ({
+    storeId: typeof s.storeId === 'string' && s.storeId ? s.storeId : undefined,
+  }),
   component: InventoryOverviewPage,
 });
 
 const useStyles = makeStyles({
   kpis: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' },
-  grid: { display: 'grid', gap: '16px', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', alignItems: 'start' },
+  grid: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+    alignItems: 'start',
+  },
 });
 
 /** Store manager's dashboard (HMS-02): money in stock, expiry exposure and the work waiting. */
@@ -51,14 +58,27 @@ function InventoryOverviewPage() {
         subtitle={storeId ? working.stores.find((x) => x.id === storeId)?.name : 'All stores of this hospital'}
         actions={
           <>
-            <StorePicker stores={working.stores} value={storeId ?? null} onChange={(id) => void navigate({ search: { storeId: id ?? undefined } })} allowAll label="Store" />
+            <StorePicker
+              stores={working.stores}
+              value={storeId ?? null}
+              onChange={(id) => void navigate({ search: { storeId: id ?? undefined } })}
+              allowAll
+              label="Store"
+            />
             {canTransfer && (
-              <Button icon={<ArrowSwapRegular />} onClick={() => void navigate({ to: '/inventory/transfers', search: { send: true } })}>
+              <Button
+                icon={<ArrowSwapRegular />}
+                onClick={() => void navigate({ to: '/inventory/transfers', search: { send: true } })}
+              >
                 Send stock
               </Button>
             )}
             {canRaise && (
-              <Button appearance="primary" icon={<ClipboardTaskListLtrRegular />} onClick={() => void navigate({ to: '/inventory/indents', search: { raise: true } })}>
+              <Button
+                appearance="primary"
+                icon={<ClipboardTaskListLtrRegular />}
+                onClick={() => void navigate({ to: '/inventory/indents', search: { raise: true } })}
+              >
                 Raise indent
               </Button>
             )}
@@ -97,15 +117,30 @@ function InventoryOverviewPage() {
             hint="At or below the reorder level"
             onClick={() => void navigate({ to: '/inventory/reports', search: { tab: 'reorder', ...storeSearch } })}
           />
-          <KpiCard label="Indents waiting" value={count(s?.pendingIndents)} icon={<BoxRegular />} onClick={() => void navigate({ to: '/inventory/indents' })} />
+          <KpiCard
+            label="Indents waiting"
+            value={count(s?.pendingIndents)}
+            icon={<BoxRegular />}
+            onClick={() => void navigate({ to: '/inventory/indents' })}
+          />
           <KpiCard
             label="Adjustments to approve"
             value={count(s?.pendingAdjustments)}
             icon={<ScalesRegular />}
             onClick={() => void navigate({ to: '/inventory/adjustments' })}
           />
-          <KpiCard label="Transfers in transit" value={count(s?.transfersInTransit)} icon={<ArrowSwapRegular />} onClick={() => void navigate({ to: '/inventory/transfers', search: { status: 'InTransit' } })} />
-          <KpiCard label="Open purchase orders" value={count(s?.openPurchaseOrders)} icon={<VehicleTruckProfileRegular />} onClick={() => void navigate({ to: '/purchase/orders' })} />
+          <KpiCard
+            label="Transfers in transit"
+            value={count(s?.transfersInTransit)}
+            icon={<ArrowSwapRegular />}
+            onClick={() => void navigate({ to: '/inventory/transfers', search: { status: 'InTransit' } })}
+          />
+          <KpiCard
+            label="Open purchase orders"
+            value={count(s?.openPurchaseOrders)}
+            icon={<VehicleTruckProfileRegular />}
+            onClick={() => void navigate({ to: '/purchase/orders' })}
+          />
         </div>
       )}
       <div className={styles.grid}>

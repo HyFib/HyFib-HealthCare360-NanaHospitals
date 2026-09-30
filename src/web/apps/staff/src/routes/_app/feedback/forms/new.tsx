@@ -26,7 +26,11 @@ function NewFormPage() {
           { label: 'Forms and QR codes', onClick: () => void navigate({ to: '/feedback/forms' }) },
         ]}
       />
-      <FeedbackFormEditor form={null} canManage onSaved={(formId) => void navigate({ to: '/feedback/forms/$formId', params: { formId }, replace: true })} />
+      <FeedbackFormEditor
+        form={null}
+        canManage
+        onSaved={(formId) => void navigate({ to: '/feedback/forms/$formId', params: { formId }, replace: true })}
+      />
     </Page>
   );
 }

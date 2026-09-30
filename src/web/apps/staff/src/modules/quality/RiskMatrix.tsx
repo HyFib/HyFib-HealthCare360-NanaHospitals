@@ -5,10 +5,29 @@ import { riskRating, riskScore } from './rules';
 
 const useStyles = makeStyles({
   wrap: { display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: '6px', alignItems: 'stretch' },
-  yAxis: { writingMode: 'vertical-rl', transform: 'rotate(180deg)', textAlign: 'center', color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
+  yAxis: {
+    writingMode: 'vertical-rl',
+    transform: 'rotate(180deg)',
+    textAlign: 'center',
+    color: tokens.colorNeutralForeground3,
+    fontSize: tokens.fontSizeBase200,
+  },
   grid: { display: 'grid', gridTemplateColumns: 'minmax(84px, auto) repeat(5, minmax(56px, 1fr))', gap: '4px' },
-  rowLabel: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: '6px', textAlign: 'end', fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2 },
-  colLabel: { textAlign: 'center', fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground2, paddingTop: '4px' },
+  rowLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingRight: '6px',
+    textAlign: 'end',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+  },
+  colLabel: {
+    textAlign: 'center',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+    paddingTop: '4px',
+  },
   cell: {
     minHeight: '54px',
     borderRadius: tokens.borderRadiusMedium,
@@ -24,14 +43,25 @@ const useStyles = makeStyles({
   },
   empty: { opacity: 0.55 },
   selected: { border: `2px solid ${tokens.colorNeutralForeground1}` },
-  count: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase500 },
+  count: {
+    fontSize: tokens.fontSizeBase500,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase500,
+  },
   score: { fontSize: tokens.fontSizeBase100 },
   Low: { backgroundColor: tokens.colorPaletteGreenBackground2 },
   Medium: { backgroundColor: tokens.colorPaletteYellowBackground2 },
   High: { backgroundColor: tokens.colorPaletteDarkOrangeBackground2 },
   Extreme: { backgroundColor: tokens.colorPaletteRedBackground2 },
   legend: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'center' },
-  swatch: { display: 'inline-block', width: '14px', height: '14px', borderRadius: '3px', marginRight: '4px', verticalAlign: 'middle' },
+  swatch: {
+    display: 'inline-block',
+    width: '14px',
+    height: '14px',
+    borderRadius: '3px',
+    marginRight: '4px',
+    verticalAlign: 'middle',
+  },
 });
 
 const RATINGS: RiskRating[] = ['Low', 'Medium', 'High', 'Extreme'];
@@ -52,7 +82,8 @@ export function RiskMatrix({
   residual: boolean;
 }) {
   const styles = useStyles();
-  const count = (likelihood: number, impact: number) => cells.find((c) => c.likelihood === likelihood && c.impact === impact)?.count ?? 0;
+  const count = (likelihood: number, impact: number) =>
+    cells.find((c) => c.likelihood === likelihood && c.impact === impact)?.count ?? 0;
 
   return (
     <div>
@@ -76,7 +107,12 @@ export function RiskMatrix({
                     role="gridcell"
                     aria-pressed={isSelected}
                     aria-label={`${LIKELIHOOD_LABELS[likelihood - 1]} likelihood, ${IMPACT_LABELS[impact - 1]} impact: score ${score}, ${rating}. ${n} risk${n === 1 ? '' : 's'}.`}
-                    className={mergeClasses(styles.cell, styles[rating], n === 0 && styles.empty, isSelected && styles.selected)}
+                    className={mergeClasses(
+                      styles.cell,
+                      styles[rating],
+                      n === 0 && styles.empty,
+                      isSelected && styles.selected,
+                    )}
                     onClick={() => onSelect(isSelected ? null : { likelihood, impact })}
                   >
                     <span className={styles.count}>{n}</span>

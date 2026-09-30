@@ -4,7 +4,8 @@ import { defineMessages } from '../define';
 export const prescriptionMessages = defineMessages({
   en: {
     'rx.title': 'Prescriptions',
-    'rx.subtitle': 'Medicines your doctors prescribed. Show the QR code at any pharmacy to prove a prescription is genuine.',
+    'rx.subtitle':
+      'Medicines your doctors prescribed. Show the QR code at any pharmacy to prove a prescription is genuine.',
     'rx.empty.title': 'No prescriptions yet',
     'rx.empty.body': 'Prescriptions from your consultations will appear here.',
     'rx.status.Signed': 'Valid',
@@ -25,7 +26,8 @@ export const prescriptionMessages = defineMessages({
     'rx.quantityLabel': 'Quantity',
     'rx.instructions': 'Instructions',
     'rx.advice': "Doctor's advice",
-    'rx.cancelledNote': 'This prescription was cancelled by the doctor. Do not buy or take these medicines without asking your doctor.',
+    'rx.cancelledNote':
+      'This prescription was cancelled by the doctor. Do not buy or take these medicines without asking your doctor.',
     'rx.qr.title': 'Show this at the pharmacy',
     'rx.qr.body': 'The pharmacist can scan this code to check that the prescription is genuine.',
     'rx.qr.label': 'QR code to check this prescription',
@@ -55,7 +57,8 @@ export const prescriptionMessages = defineMessages({
   },
   hi: {
     'rx.title': 'दवा के पर्चे',
-    'rx.subtitle': 'डॉक्टरों द्वारा लिखी गई दवाइयाँ। पर्चा असली है, यह दिखाने के लिए किसी भी फ़ार्मेसी पर QR कोड दिखाएँ।',
+    'rx.subtitle':
+      'डॉक्टरों द्वारा लिखी गई दवाइयाँ। पर्चा असली है, यह दिखाने के लिए किसी भी फ़ार्मेसी पर QR कोड दिखाएँ।',
     'rx.empty.title': 'अभी कोई दवा का पर्चा नहीं',
     'rx.empty.body': 'आपके परामर्श के दवा के पर्चे यहाँ दिखेंगे।',
     'rx.status.Signed': 'मान्य',

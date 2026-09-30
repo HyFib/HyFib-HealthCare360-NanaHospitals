@@ -29,7 +29,10 @@ export function useStartEncounter() {
       void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: encounter.id } });
     },
     onError: (error) => {
-      const existing = isApiError(error) && error.code === 'encounter.already_open' ? (error.data as { encounterId?: string } | undefined)?.encounterId : undefined;
+      const existing =
+        isApiError(error) && error.code === 'encounter.already_open'
+          ? (error.data as { encounterId?: string } | undefined)?.encounterId
+          : undefined;
       if (existing) {
         notify.info('Continuing the open encounter', 'An unsigned encounter already exists for this visit.');
         void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: existing } });

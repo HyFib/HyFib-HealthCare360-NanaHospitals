@@ -20,7 +20,13 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DismissCircleRegular, HandRightRegular, ShieldKeyholeRegular, SubtractCircleRegular } from '@fluentui/react-icons';
+import {
+  CheckmarkCircleRegular,
+  DismissCircleRegular,
+  HandRightRegular,
+  ShieldKeyholeRegular,
+  SubtractCircleRegular,
+} from '@fluentui/react-icons';
 import { formatTime, isApiError } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -52,13 +58,24 @@ const OUTCOMES: { value: MarOutcome; label: string; icon: ReactElement; hint: st
 ];
 
 const QUICK_REASONS: Record<Exclude<MarOutcome, 'Given'>, string[]> = {
-  Held: ['Nil by mouth', 'Low blood pressure', 'Low pulse', 'Doctor advised to hold', 'Medicine not available on the ward'],
+  Held: [
+    'Nil by mouth',
+    'Low blood pressure',
+    'Low pulse',
+    'Doctor advised to hold',
+    'Medicine not available on the ward',
+  ],
   Refused: ['Patient refused', 'Patient vomited', 'Patient asleep, family asked to wait'],
   Missed: ['Patient away for a procedure', 'Patient not on the ward', 'Dose not available in time'],
 };
 
 const useStyles = makeStyles({
-  outcomes: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', '@media (max-width: 520px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } },
+  outcomes: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: '8px',
+    '@media (max-width: 520px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+  },
   outcome: {
     display: 'flex',
     flexDirection: 'column',
@@ -69,12 +86,25 @@ const useStyles = makeStyles({
     fontSize: tokens.fontSizeBase300,
     '& svg': { fontSize: '22px' },
   },
-  given: { backgroundColor: tokens.colorPaletteGreenBackground2, color: tokens.colorPaletteGreenForeground2, border: `2px solid ${tokens.colorPaletteGreenBorderActive}` },
-  notGiven: { backgroundColor: tokens.colorPaletteMarigoldBackground2, color: tokens.colorPaletteMarigoldForeground2, border: `2px solid ${tokens.colorPaletteMarigoldBorderActive}` },
+  given: {
+    backgroundColor: tokens.colorPaletteGreenBackground2,
+    color: tokens.colorPaletteGreenForeground2,
+    border: `2px solid ${tokens.colorPaletteGreenBorderActive}`,
+  },
+  notGiven: {
+    backgroundColor: tokens.colorPaletteMarigoldBackground2,
+    color: tokens.colorPaletteMarigoldForeground2,
+    border: `2px solid ${tokens.colorPaletteMarigoldBorderActive}`,
+  },
   reasons: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
   muted: { color: tokens.colorNeutralForeground3 },
-  row: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 520px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  row: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 520px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
 });
 
 /**
@@ -82,7 +112,15 @@ const useStyles = makeStyles({
  * on the list, Enter confirms. Anything but "given" needs a reason; controlled drugs need a witness. A dose is recorded
  * once: if someone else recorded it meanwhile, the chart refreshes instead of overwriting.
  */
-export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { dose: DoseToRecord; initialOutcome?: MarOutcome; onClose: () => void }) {
+export function RecordDoseDialog({
+  dose,
+  initialOutcome = 'Given',
+  onClose,
+}: {
+  dose: DoseToRecord;
+  initialOutcome?: MarOutcome;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -108,7 +146,11 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
         version: dose.version,
       }),
     onSuccess: () => {
-      notify.success(outcome === 'Given' ? `${dose.drugName} recorded as given` : `${dose.drugName} recorded as ${outcome.toLowerCase()}`);
+      notify.success(
+        outcome === 'Given'
+          ? `${dose.drugName} recorded as given`
+          : `${dose.drugName} recorded as ${outcome.toLowerCase()}`,
+      );
       void queryClient.invalidateQueries({ queryKey: nursingKeys.all });
       void queryClient.invalidateQueries({ queryKey: ['inpatient', 'board'] });
       onClose();
@@ -125,8 +167,12 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
 
   const needsReason = outcome !== 'Given';
   const needsWitness = outcome === 'Given' && witnessRequired;
-  const valid = (!needsReason || reason.trim().length > 0) && (!needsWitness || witness.trim().length > 0) && (!earlier || fromIstInput(administeredAt) !== null);
-  const alreadyDone = isApiError(record.error) && (record.error.isConflict || record.error.code === 'mar.already_recorded');
+  const valid =
+    (!needsReason || reason.trim().length > 0) &&
+    (!needsWitness || witness.trim().length > 0) &&
+    (!earlier || fromIstInput(administeredAt) !== null);
+  const alreadyDone =
+    isApiError(record.error) && (record.error.isConflict || record.error.code === 'mar.already_recorded');
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -157,7 +203,10 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
                     role="radio"
                     aria-checked={outcome === o.value}
                     title={o.hint}
-                    className={mergeClasses(styles.outcome, outcome === o.value && (o.value === 'Given' ? styles.given : styles.notGiven))}
+                    className={mergeClasses(
+                      styles.outcome,
+                      outcome === o.value && (o.value === 'Given' ? styles.given : styles.notGiven),
+                    )}
                     appearance={outcome === o.value ? 'primary' : 'secondary'}
                     onClick={() => setOutcome(o.value)}
                   >
@@ -172,34 +221,65 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
                   <div className={styles.stack}>
                     <div className={styles.reasons}>
                       {QUICK_REASONS[outcome as Exclude<MarOutcome, 'Given'>].map((r) => (
-                        <Button key={r} size="small" shape="circular" appearance={reason === r ? 'primary' : 'outline'} onClick={() => setReason(r)}>
+                        <Button
+                          key={r}
+                          size="small"
+                          shape="circular"
+                          appearance={reason === r ? 'primary' : 'outline'}
+                          onClick={() => setReason(r)}
+                        >
                           {r}
                         </Button>
                       ))}
                     </div>
-                    <Textarea value={reason} onChange={(_, d) => setReason(d.value)} maxLength={300} rows={2} placeholder="Or type the reason" />
+                    <Textarea
+                      value={reason}
+                      onChange={(_, d) => setReason(d.value)}
+                      maxLength={300}
+                      rows={2}
+                      placeholder="Or type the reason"
+                    />
                   </div>
                 </Field>
               )}
 
               {outcome === 'Given' && (
                 <>
-                  <Switch checked={earlier} onChange={(_, d) => setEarlier(d.checked)} label="Given earlier (not just now)" />
+                  <Switch
+                    checked={earlier}
+                    onChange={(_, d) => setEarlier(d.checked)}
+                    label="Given earlier (not just now)"
+                  />
                   {earlier && (
                     <Field label="Given at" required>
-                      <Input type="datetime-local" value={administeredAt} max={limits.now} onChange={(_, d) => setAdministeredAt(d.value)} />
+                      <Input
+                        type="datetime-local"
+                        value={administeredAt}
+                        max={limits.now}
+                        onChange={(_, d) => setAdministeredAt(d.value)}
+                      />
                     </Field>
                   )}
                   <div className={styles.row}>
                     <Field label="Batch number">
-                      <Input value={batch} onChange={(_, d) => setBatch(d.value)} maxLength={64} placeholder="From the strip or vial" />
+                      <Input
+                        value={batch}
+                        onChange={(_, d) => setBatch(d.value)}
+                        maxLength={64}
+                        placeholder="From the strip or vial"
+                      />
                     </Field>
                     <Field
                       label="Witness (second nurse)"
                       required={needsWitness}
                       hint={needsWitness ? 'Required for controlled drugs' : 'Needed for controlled drugs'}
                     >
-                      <Input value={witness} onChange={(_, d) => setWitness(d.value)} maxLength={200} contentBefore={needsWitness ? <ShieldKeyholeRegular /> : undefined} />
+                      <Input
+                        value={witness}
+                        onChange={(_, d) => setWitness(d.value)}
+                        maxLength={200}
+                        contentBefore={needsWitness ? <ShieldKeyholeRegular /> : undefined}
+                      />
                     </Field>
                   </div>
                 </>
@@ -212,7 +292,13 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
               {record.error && (
                 <MessageBar intent={alreadyDone ? 'warning' : 'error'} layout="multiline">
                   <MessageBarBody>
-                    <MessageBarTitle>{alreadyDone ? 'Already recorded' : isApiError(record.error) ? record.error.title : 'Not recorded'}</MessageBarTitle>
+                    <MessageBarTitle>
+                      {alreadyDone
+                        ? 'Already recorded'
+                        : isApiError(record.error)
+                          ? record.error.title
+                          : 'Not recorded'}
+                    </MessageBarTitle>
                     {alreadyDone
                       ? 'Someone recorded this dose a moment ago. The chart has been refreshed; write a nursing note to correct it if needed.'
                       : isApiError(record.error)
@@ -230,7 +316,12 @@ export function RecordDoseDialog({ dose, initialOutcome = 'Given', onClose }: { 
                 {alreadyDone ? 'Close' : 'Cancel'}
               </Button>
               {!alreadyDone && (
-                <Button type="submit" appearance="primary" disabled={!valid || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!valid || record.isPending}
+                  icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+                >
                   Record {outcome.toLowerCase()}
                 </Button>
               )}

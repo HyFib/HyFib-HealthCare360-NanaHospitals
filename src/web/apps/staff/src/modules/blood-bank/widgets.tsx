@@ -10,10 +10,27 @@ import { componentShort, groupLabel } from './labels';
 import { stockLevel } from './rules';
 
 const useStyles = makeStyles({
-  alert: { display: 'flex', gap: '6px', alignItems: 'center', color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold, marginBottom: '8px' },
+  alert: {
+    display: 'flex',
+    gap: '6px',
+    alignItems: 'center',
+    color: tokens.colorPaletteRedForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+    marginBottom: '8px',
+  },
   groups: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px', marginBottom: '10px' },
-  cell: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}` },
-  low: { border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`, backgroundColor: tokens.colorPaletteDarkOrangeBackground1 },
+  cell: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '6px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  low: {
+    border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`,
+    backgroundColor: tokens.colorPaletteDarkOrangeBackground1,
+  },
   out: { border: `1px solid ${tokens.colorPaletteRedBorder2}`, backgroundColor: tokens.colorPaletteRedBackground1 },
   count: { fontSize: tokens.fontSizeBase500, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
@@ -33,7 +50,8 @@ export function BloodStockWidget() {
     return <ErrorState error={inventory.error} onRetry={() => void inventory.refetch()} />;
   }
   const d = inventory.data;
-  const prbc = (group: string) => d?.stock.find((c) => c.component === 'PRBC' && c.bloodGroup === group)?.available ?? 0;
+  const prbc = (group: string) =>
+    d?.stock.find((c) => c.component === 'PRBC' && c.bloodGroup === group)?.available ?? 0;
   const groups = KNOWN_GROUPS.filter((g) => !g.startsWith('Bombay'));
 
   return (
@@ -52,7 +70,8 @@ export function BloodStockWidget() {
         <>
           {d.emergencyRequests > 0 && (
             <Text className={styles.alert}>
-              <WarningRegular aria-hidden /> {d.emergencyRequests} emergency request{d.emergencyRequests === 1 ? '' : 's'} open
+              <WarningRegular aria-hidden /> {d.emergencyRequests} emergency request
+              {d.emergencyRequests === 1 ? '' : 's'} open
             </Text>
           )}
           <div className={styles.groups}>
@@ -60,10 +79,15 @@ export function BloodStockWidget() {
               const available = prbc(group);
               const level = stockLevel('PRBC', available);
               return (
-                <div key={group} className={mergeClasses(styles.cell, level === 'low' && styles.low, level === 'out' && styles.out)}>
+                <div
+                  key={group}
+                  className={mergeClasses(styles.cell, level === 'low' && styles.low, level === 'out' && styles.out)}
+                >
                   <Text weight="semibold">{groupLabel(group)}</Text>
                   <span className={styles.count}>{available}</span>
-                  <Caption1 className={styles.muted}>{level === 'out' ? 'None' : level === 'low' ? 'Low' : componentShort.PRBC}</Caption1>
+                  <Caption1 className={styles.muted}>
+                    {level === 'out' ? 'None' : level === 'low' ? 'Low' : componentShort.PRBC}
+                  </Caption1>
                 </div>
               );
             })}
@@ -73,7 +97,8 @@ export function BloodStockWidget() {
               <Text weight="semibold">Expiring within 3 days: {d.expiringSoon.length}</Text>
               {d.expiringSoon.slice(0, 3).map((u) => (
                 <Caption1 key={u.id}>
-                  {u.unitNumber} · {componentShort[u.component]} {groupLabel(u.bloodGroup)} · <ExpiryText expiresAt={u.expiresAt} now={now} />
+                  {u.unitNumber} · {componentShort[u.component]} {groupLabel(u.bloodGroup)} ·{' '}
+                  <ExpiryText expiresAt={u.expiresAt} now={now} />
                 </Caption1>
               ))}
             </div>

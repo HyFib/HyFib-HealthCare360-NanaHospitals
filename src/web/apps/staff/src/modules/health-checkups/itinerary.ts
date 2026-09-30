@@ -6,7 +6,14 @@
 export type BookingStatus = 'Booked' | 'CheckedIn' | 'InProgress' | 'Completed' | 'Cancelled' | 'NoShow';
 export type ItineraryStatus = 'Pending' | 'Done' | 'Skipped';
 
-export const BOOKING_STATUSES: readonly BookingStatus[] = ['Booked', 'CheckedIn', 'InProgress', 'Completed', 'Cancelled', 'NoShow'];
+export const BOOKING_STATUSES: readonly BookingStatus[] = [
+  'Booked',
+  'CheckedIn',
+  'InProgress',
+  'Completed',
+  'Cancelled',
+  'NoShow',
+];
 
 export const bookingStatusLabel: Record<BookingStatus, string> = {
   Booked: 'Booked',
@@ -50,7 +57,8 @@ export function nextStop<T extends StopLike>(itinerary: readonly T[]): T | undef
   return itinerary.filter((s) => s.status === 'Pending').toSorted((a, b) => a.sequence - b.sequence)[0];
 }
 
-export const isOpen = (status: BookingStatus) => status === 'Booked' || status === 'CheckedIn' || status === 'InProgress';
+export const isOpen = (status: BookingStatus) =>
+  status === 'Booked' || status === 'CheckedIn' || status === 'InProgress';
 export const canCheckIn = (status: BookingStatus) => status === 'Booked';
 export const canMarkNoShow = (status: BookingStatus) => status === 'Booked';
 export const canCancel = isOpen;
@@ -65,7 +73,9 @@ export function completionBlockers(booking: BookingLike): string[] {
   }
   const pending = progress(booking.itinerary).pending;
   if (pending > 0) {
-    blockers.push(`${pending} ${pending === 1 ? 'stop is' : 'stops are'} still pending. Complete or skip ${pending === 1 ? 'it' : 'them'}.`);
+    blockers.push(
+      `${pending} ${pending === 1 ? 'stop is' : 'stops are'} still pending. Complete or skip ${pending === 1 ? 'it' : 'them'}.`,
+    );
   }
   if (!booking.summary?.trim()) {
     blockers.push("The reviewing doctor's summary is missing.");
@@ -90,41 +100,73 @@ export interface Wording {
  * Plain-language explanation of a refused check-in, cancellation or completion. Check-in now charges the package
  * through Billing, so Billing's refusals are explained with what to do next.
  */
-export function checkupProblem(problem: ProblemLike, action: 'check-in' | 'cancel' | 'no-show' | 'complete' | 'book'): Wording {
+export function checkupProblem(
+  problem: ProblemLike,
+  action: 'check-in' | 'cancel' | 'no-show' | 'complete' | 'book',
+): Wording {
   const server = problem.userMessage?.trim() ?? '';
   const visitError = problem.fieldErrors?.visitId?.[0];
   if (visitError) {
-    return { title: 'That visit belongs to another patient', message: 'Choose one of this patient’s visits, or check in without linking a visit.' };
+    return {
+      title: 'That visit belongs to another patient',
+      message: 'Choose one of this patient’s visits, or check in without linking a visit.',
+    };
   }
   switch (problem.code) {
     case 'package.not_billable':
       return {
         title: 'This package cannot be billed yet',
-        message: server || 'An administrator can open the package under Health check-ups › Packages and save it once to register its billing item; then check in again.',
+        message:
+          server ||
+          'An administrator can open the package under Health check-ups › Packages and save it once to register its billing item; then check in again.',
       };
     case 'booking.package_billed':
       return {
         title: 'The package fee is already on a finalised bill',
-        message: server || `Ask billing to cancel that bill or issue a credit note first, then ${action === 'no-show' ? 'mark the no-show' : 'cancel the checkup'} again.`,
+        message:
+          server ||
+          `Ask billing to cancel that bill or issue a credit note first, then ${action === 'no-show' ? 'mark the no-show' : 'cancel the checkup'} again.`,
       };
     case 'billing.service_inactive':
-      return { title: 'The package is no longer offered for billing', message: `${server} Ask the administrator to reactivate the package’s service before checking in.`.trim() };
+      return {
+        title: 'The package is no longer offered for billing',
+        message: `${server} Ask the administrator to reactivate the package’s service before checking in.`.trim(),
+      };
     case 'billing.unavailable':
-      return { title: 'Billing is not available', message: 'Check-in charges the package fee through billing, which is not set up. Contact the system administrator.' };
+      return {
+        title: 'Billing is not available',
+        message:
+          'Check-in charges the package fee through billing, which is not set up. Contact the system administrator.',
+      };
     case 'patient.merged':
-      return { title: 'This UHID was merged into another record', message: 'Book and check in the checkup on the surviving patient record.' };
+      return {
+        title: 'This UHID was merged into another record',
+        message: 'Book and check in the checkup on the surviving patient record.',
+      };
     case 'booking.not_booked':
-      return { title: action === 'no-show' ? 'The patient has already arrived' : 'Already checked in', message: server || 'Refresh the page to see the current status.' };
+      return {
+        title: action === 'no-show' ? 'The patient has already arrived' : 'Already checked in',
+        message: server || 'Refresh the page to see the current status.',
+      };
     case 'booking.closed':
-      return { title: 'This checkup is already closed', message: server || 'Refresh the page to see the current status.' };
+      return {
+        title: 'This checkup is already closed',
+        message: server || 'Refresh the page to see the current status.',
+      };
     case 'booking.pending_stops':
       return { title: 'Stops are still pending', message: server };
     case 'booking.summary_missing':
-      return { title: "The doctor's summary is missing", message: server || 'The reviewing doctor writes the summary before the checkup is completed.' };
+      return {
+        title: "The doctor's summary is missing",
+        message: server || 'The reviewing doctor writes the summary before the checkup is completed.',
+      };
     case 'package.inactive':
       return { title: 'This package is no longer offered', message: server || 'Choose another package.' };
     case 'facility.required':
-      return { title: 'Select a facility first', message: 'Choose your hospital branch from your name at the top right, then try again.' };
+      return {
+        title: 'Select a facility first',
+        message: 'Choose your hospital branch from your name at the top right, then try again.',
+      };
     default: {
       const titles: Record<typeof action, string> = {
         'check-in': 'Could not check the patient in',

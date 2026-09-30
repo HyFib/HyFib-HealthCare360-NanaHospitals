@@ -104,7 +104,9 @@ interface Limit {
 export function limitFor(field: VitalField, temperatureUnit: TemperatureUnit = 'Celsius'): Limit {
   switch (field) {
     case 'temperature':
-      return temperatureUnit === 'Fahrenheit' ? { min: 77, max: 113, label: 'Temperature', unit: '°F' } : { min: 25, max: 45, label: 'Temperature', unit: '°C' };
+      return temperatureUnit === 'Fahrenheit'
+        ? { min: 77, max: 113, label: 'Temperature', unit: '°F' }
+        : { min: 25, max: 45, label: 'Temperature', unit: '°C' };
     case 'pulse':
       return { min: 20, max: 300, label: 'Pulse', unit: '/min' };
     case 'respiratoryRate':
@@ -146,10 +148,16 @@ export function validateVitals(values: VitalsValues): Partial<Record<VitalField,
     }
     const limit = limitFor(field, values.temperatureUnit);
     if (value < limit.min || value > limit.max) {
-      errors[field] = `${limit.label} must be between ${limit.min} and ${limit.max}${limit.unit && !limit.unit.startsWith('/') ? ` ${limit.unit}` : ''}.`;
+      errors[field] =
+        `${limit.label} must be between ${limit.min} and ${limit.max}${limit.unit && !limit.unit.startsWith('/') ? ` ${limit.unit}` : ''}.`;
     }
   }
-  if (present(values.systolicBp) && present(values.diastolicBp) && values.diastolicBp >= values.systolicBp && !errors.diastolicBp) {
+  if (
+    present(values.systolicBp) &&
+    present(values.diastolicBp) &&
+    values.diastolicBp >= values.systolicBp &&
+    !errors.diastolicBp
+  ) {
     errors.diastolicBp = 'Diastolic pressure must be lower than systolic.';
   }
   return errors;
@@ -257,13 +265,28 @@ export function vitalChips(reading: VitalsReading): VitalChip[] {
     chips.push({ parameter: 'spo2', label: 'SpO₂', value: `${reading.spO2}%`, flag: flagged('spo2') });
   }
   if (present(reading.temperatureCelsius)) {
-    chips.push({ parameter: 'temperature', label: 'Temp', value: formatTemperature(reading.temperatureCelsius), flag: flagged('temperature') });
+    chips.push({
+      parameter: 'temperature',
+      label: 'Temp',
+      value: formatTemperature(reading.temperatureCelsius),
+      flag: flagged('temperature'),
+    });
   }
   if (present(reading.respiratoryRate)) {
-    chips.push({ parameter: 'respiratoryRate', label: 'RR', value: `${reading.respiratoryRate}/min`, flag: flagged('respiratoryRate') });
+    chips.push({
+      parameter: 'respiratoryRate',
+      label: 'RR',
+      value: `${reading.respiratoryRate}/min`,
+      flag: flagged('respiratoryRate'),
+    });
   }
   if (present(reading.bloodGlucose)) {
-    chips.push({ parameter: 'bloodGlucose', label: 'Glucose', value: `${reading.bloodGlucose} mg/dL`, flag: flagged('bloodGlucose') });
+    chips.push({
+      parameter: 'bloodGlucose',
+      label: 'Glucose',
+      value: `${reading.bloodGlucose} mg/dL`,
+      flag: flagged('bloodGlucose'),
+    });
   }
   if (present(reading.painScore)) {
     chips.push({ parameter: 'painScore', label: 'Pain', value: `${reading.painScore}/10`, flag: flagged('painScore') });
@@ -272,12 +295,18 @@ export function vitalChips(reading: VitalsReading): VitalChip[] {
     chips.push({ parameter: 'gcs', label: 'GCS', value: `${reading.gcs}/15`, flag: flagged('gcs') });
   }
   if (present(reading.weightKg)) {
-    chips.push({ parameter: 'bmi', label: 'Weight', value: `${reading.weightKg} kg${present(reading.bmi) ? ` · BMI ${reading.bmi}` : ''}`, flag: flagged('bmi') });
+    chips.push({
+      parameter: 'bmi',
+      label: 'Weight',
+      value: `${reading.weightKg} kg${present(reading.bmi) ? ` · BMI ${reading.bmi}` : ''}`,
+      flag: flagged('bmi'),
+    });
   }
   return chips;
 }
 
-export type TrendMetric = 'bp' | 'pulse' | 'spo2' | 'temperature' | 'respiratoryRate' | 'bloodGlucose' | 'weight' | 'painScore';
+export type TrendMetric =
+  'bp' | 'pulse' | 'spo2' | 'temperature' | 'respiratoryRate' | 'bloodGlucose' | 'weight' | 'painScore';
 
 export interface TrendMetricInfo {
   id: TrendMetric;
@@ -335,9 +364,22 @@ export function trendSeries(readings: readonly VitalsReading[], metric: TrendMet
     .map((reading) => ({ at: reading.recordedAt, values: metricValues(reading, metric) }))
     .filter((row) => row.values.some((entry) => entry.value !== null))
     .toSorted((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const names = metricValues({ recordedAt: '', temperatureCelsius: null, pulse: null, systolicBp: null, diastolicBp: null, spO2: null, weightKg: null, bmi: null, painScore: null, bloodGlucose: null, gcs: null }, metric).map(
-    (entry) => entry.name,
-  );
+  const names = metricValues(
+    {
+      recordedAt: '',
+      temperatureCelsius: null,
+      pulse: null,
+      systolicBp: null,
+      diastolicBp: null,
+      spO2: null,
+      weightKg: null,
+      bmi: null,
+      painScore: null,
+      bloodGlucose: null,
+      gcs: null,
+    },
+    metric,
+  ).map((entry) => entry.name);
   return {
     at: rows.map((row) => row.at),
     series: names.map((name, index) => ({ name, values: rows.map((row) => row.values[index]?.value ?? null) })),
@@ -365,7 +407,11 @@ export interface RecordVitalsPayload {
 }
 
 /** RecordVitalsRequest from the form (empty inputs become null). */
-export function toVitalsPayload(values: VitalsValues, encounterId: string | null, recordedAt: string | null = null): RecordVitalsPayload {
+export function toVitalsPayload(
+  values: VitalsValues,
+  encounterId: string | null,
+  recordedAt: string | null = null,
+): RecordVitalsPayload {
   const n = (value: number | null) => (present(value) ? value : null);
   return {
     encounterId,

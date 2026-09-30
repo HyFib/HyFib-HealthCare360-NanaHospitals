@@ -7,7 +7,15 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
-import { schedulingApi, schedulingKeys, schedulingQueries, WAITLIST_STATUSES, type AppointmentDetail, type WaitlistEntryDto, type WaitlistStatus } from '@/modules/scheduling/api';
+import {
+  schedulingApi,
+  schedulingKeys,
+  schedulingQueries,
+  WAITLIST_STATUSES,
+  type AppointmentDetail,
+  type WaitlistEntryDto,
+  type WaitlistStatus,
+} from '@/modules/scheduling/api';
 import { useAppointmentDesk } from '@/modules/scheduling/useAppointmentDesk';
 import { BookingSuccessDialog } from '@/modules/scheduling/BookingSuccessDialog';
 import { formatDayMedium } from '@/modules/scheduling/dates';
@@ -63,7 +71,12 @@ function WaitlistPage() {
   const [cancelling, setCancelling] = useState<WaitlistEntryDto | null>(null);
 
   const entries = useQuery(
-    schedulingQueries.waitlist({ departmentId: search.departmentId, practitionerId: search.practitionerId, status: search.status, page: search.page }),
+    schedulingQueries.waitlist({
+      departmentId: search.departmentId,
+      practitionerId: search.practitionerId,
+      status: search.status,
+      page: search.page,
+    }),
   );
 
   // A cancellation anywhere may offer a slot to someone on this list.
@@ -81,7 +94,8 @@ function WaitlistPage() {
     onError: (error) => notify.error(error, 'Could not remove the request'),
   });
 
-  const set = (patch: Partial<WaitlistSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<WaitlistSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const openStatuses: WaitlistStatus[] = ['Waiting', 'Offered'];
 
   return (
@@ -89,7 +103,10 @@ function WaitlistPage() {
       <PageHeader
         title="Waitlist"
         subtitle="Patients waiting for a slot. Offered slots are booked here as soon as the patient agrees."
-        breadcrumbs={[{ label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) }, { label: 'Waitlist' }]}
+        breadcrumbs={[
+          { label: 'Appointments', onClick: () => void navigate({ to: '/scheduling' }) },
+          { label: 'Waitlist' },
+        ]}
         actions={
           canBook && (
             <Button appearance="primary" icon={<PersonAddRegular />} onClick={() => setAdding(true)}>
@@ -103,7 +120,10 @@ function WaitlistPage() {
         <div className={styles.toolbar}>
           <FilterBar>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}
+              >
                 <option value="">All departments</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -113,7 +133,10 @@ function WaitlistPage() {
               </Select>
             </Field>
             <Field label="Doctor">
-              <Select value={search.practitionerId ?? ''} onChange={(_, d) => set({ practitionerId: d.value || undefined })}>
+              <Select
+                value={search.practitionerId ?? ''}
+                onChange={(_, d) => set({ practitionerId: d.value || undefined })}
+              >
                 <option value="">All doctors</option>
                 {toOptions(doctors.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -123,7 +146,10 @@ function WaitlistPage() {
               </Select>
             </Field>
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as WaitlistStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as WaitlistStatus | undefined })}
+              >
                 <option value="">Waiting or offered</option>
                 {WAITLIST_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -165,7 +191,9 @@ function WaitlistPage() {
               render: (e) => (
                 <span className={styles.stack}>
                   <Text>
-                    {e.preferredFrom === e.preferredTo ? formatDayMedium(e.preferredFrom) : `${formatDayMedium(e.preferredFrom)} – ${formatDayMedium(e.preferredTo)}`}
+                    {e.preferredFrom === e.preferredTo
+                      ? formatDayMedium(e.preferredFrom)
+                      : `${formatDayMedium(e.preferredFrom)} – ${formatDayMedium(e.preferredTo)}`}
                   </Text>
                   <Caption1 className={styles.muted}>
                     {preferredSessionLabel[e.preferredSession]}
@@ -181,15 +209,29 @@ function WaitlistPage() {
               render: (e) => (
                 <span className={styles.stack}>
                   <span>
-                    <StatusBadge status={e.status} tone={waitlistStatusText[e.status].tone} label={waitlistStatusText[e.status].label} />
+                    <StatusBadge
+                      status={e.status}
+                      tone={waitlistStatusText[e.status].tone}
+                      label={waitlistStatusText[e.status].label}
+                    />
                     {e.isTelehealth && (
-                      <Badge size="small" appearance="tint" color="brand" icon={<VideoRegular />} style={{ marginLeft: 4 }}>
+                      <Badge
+                        size="small"
+                        appearance="tint"
+                        color="brand"
+                        icon={<VideoRegular />}
+                        style={{ marginLeft: 4 }}
+                      >
                         Video
                       </Badge>
                     )}
                   </span>
-                  {e.status === 'Offered' && e.offeredSlotStartsAt && <Caption1 className={styles.offered}>Slot: {formatDateTime(e.offeredSlotStartsAt)}</Caption1>}
-                  {e.preferredTo < today && openStatuses.includes(e.status) && <Caption1 className={styles.muted}>Dates have passed</Caption1>}
+                  {e.status === 'Offered' && e.offeredSlotStartsAt && (
+                    <Caption1 className={styles.offered}>Slot: {formatDateTime(e.offeredSlotStartsAt)}</Caption1>
+                  )}
+                  {e.preferredTo < today && openStatuses.includes(e.status) && (
+                    <Caption1 className={styles.muted}>Dates have passed</Caption1>
+                  )}
                 </span>
               ),
             },
@@ -200,17 +242,32 @@ function WaitlistPage() {
             openStatuses.includes(e.status) ? (
               <div className={styles.actions}>
                 {canBook && (
-                  <Button size="small" appearance={e.status === 'Offered' ? 'primary' : 'secondary'} icon={<CalendarCheckmarkRegular />} onClick={() => setBooking(e)}>
+                  <Button
+                    size="small"
+                    appearance={e.status === 'Offered' ? 'primary' : 'secondary'}
+                    icon={<CalendarCheckmarkRegular />}
+                    onClick={() => setBooking(e)}
+                  >
                     Book
                   </Button>
                 )}
                 {canManage && (
-                  <Button size="small" appearance="subtle" icon={<DismissCircleRegular />} aria-label={`Remove ${e.patientName} from the waitlist`} onClick={() => setCancelling(e)} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DismissCircleRegular />}
+                    aria-label={`Remove ${e.patientName} from the waitlist`}
+                    onClick={() => setCancelling(e)}
+                  />
                 )}
               </div>
             ) : null
           }
-          emptyTitle={search.status && !openStatuses.includes(search.status) ? 'No requests with this status' : 'No one is waiting'}
+          emptyTitle={
+            search.status && !openStatuses.includes(search.status)
+              ? 'No requests with this status'
+              : 'No one is waiting'
+          }
           emptyDescription="When a doctor's days are full, add the patient here and book them when a slot opens."
           page={search.page ?? 1}
           pageSize={25}
@@ -220,7 +277,11 @@ function WaitlistPage() {
         />
       </Section>
 
-      <AddToWaitlistDialog open={adding} defaults={{ departmentId: search.departmentId, practitionerId: search.practitionerId }} onClose={() => setAdding(false)} />
+      <AddToWaitlistDialog
+        open={adding}
+        defaults={{ departmentId: search.departmentId, practitionerId: search.practitionerId }}
+        onClose={() => setAdding(false)}
+      />
       <BookFromWaitlistDialog
         entry={booking}
         onClose={() => setBooking(null)}
@@ -239,7 +300,9 @@ function WaitlistPage() {
         onConfirm={() => cancelling && cancel.mutate(cancelling)}
         onCancel={() => setCancelling(null)}
       >
-        {cancelling ? `${cancelling.patientName} will no longer be offered freed slots with ${cancelling.practitionerName}.` : null}
+        {cancelling
+          ? `${cancelling.patientName} will no longer be offered freed slots with ${cancelling.practitionerName}.`
+          : null}
       </ConfirmDialog>
       {desk.dialogs}
     </Page>

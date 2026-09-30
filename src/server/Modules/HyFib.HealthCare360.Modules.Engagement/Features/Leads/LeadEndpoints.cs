@@ -83,8 +83,18 @@ internal static class LeadEndpoints
             .OrderBy(l => l.NextFollowUpAt == null).ThenBy(l => l.NextFollowUpAt).ThenByDescending(l => l.CreatedAt)
             .Select(l => new
             {
-                l.Id, l.LeadNumber, l.Name, l.Phone, l.Source, l.Status, l.InterestPackage, l.InterestDepartmentId, l.OwnerUserId,
-                l.NextFollowUpAt, l.LastContactedAt, l.CreatedAt,
+                l.Id,
+                l.LeadNumber,
+                l.Name,
+                l.Phone,
+                l.Source,
+                l.Status,
+                l.InterestPackage,
+                l.InterestDepartmentId,
+                l.OwnerUserId,
+                l.NextFollowUpAt,
+                l.LastContactedAt,
+                l.CreatedAt,
             })
             .ToPagedResultAsync(page, ct);
 

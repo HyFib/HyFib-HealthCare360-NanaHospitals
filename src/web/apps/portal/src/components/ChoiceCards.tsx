@@ -21,13 +21,21 @@ const useStyles = makeStyles({
     ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
     ':focus-within': { outline: `3px solid ${tokens.colorStrokeFocus2}`, outlineOffset: '2px' },
   },
-  checked: { border: `2px solid ${tokens.colorBrandStroke1}`, backgroundColor: tokens.colorBrandBackground2, padding: '11px 13px' },
+  checked: {
+    border: `2px solid ${tokens.colorBrandStroke1}`,
+    backgroundColor: tokens.colorBrandBackground2,
+    padding: '11px 13px',
+  },
   disabled: { cursor: 'not-allowed', opacity: 0.6 },
   input: { margin: '3px 0 0', width: '20px', height: '20px', accentColor: tokens.colorBrandBackground, flexShrink: 0 },
   icon: { fontSize: '22px', color: tokens.colorBrandForeground1, display: 'flex', flexShrink: 0, marginTop: '1px' },
   text: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
   title: { fontWeight: tokens.fontWeightSemibold },
-  hint: { color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase200, lineHeight: tokens.lineHeightBase200 },
+  hint: {
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase200,
+    lineHeight: tokens.lineHeightBase200,
+  },
 });
 
 export interface ChoiceOption<T extends string> {
@@ -64,7 +72,10 @@ export function ChoiceCards<T extends string>({
         {options.map((option) => {
           const checked = option.value === value;
           return (
-            <label key={option.value} className={mergeClasses(styles.option, checked && styles.checked, option.disabled && styles.disabled)}>
+            <label
+              key={option.value}
+              className={mergeClasses(styles.option, checked && styles.checked, option.disabled && styles.disabled)}
+            >
               <input
                 type="radio"
                 className={styles.input}

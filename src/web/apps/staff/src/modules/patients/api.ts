@@ -18,7 +18,15 @@ export const PATIENT_CATEGORIES = [
 ] as const;
 export type PatientCategory = (typeof PATIENT_CATEGORIES)[number];
 
-export const GUARDIAN_RELATIONS = ['SonOf', 'DaughterOf', 'WifeOf', 'HusbandOf', 'FatherOf', 'MotherOf', 'Guardian'] as const;
+export const GUARDIAN_RELATIONS = [
+  'SonOf',
+  'DaughterOf',
+  'WifeOf',
+  'HusbandOf',
+  'FatherOf',
+  'MotherOf',
+  'Guardian',
+] as const;
 export type GuardianRelation = (typeof GUARDIAN_RELATIONS)[number];
 
 export const guardianRelationLabel: Record<GuardianRelation, string> = {
@@ -178,7 +186,8 @@ export type VisitType = 'OutPatient' | 'InPatient' | 'Emergency' | 'DayCare' | '
 export type VisitStatus = 'Open' | 'InProgress' | 'Completed' | 'Cancelled';
 export type TokenStatus = 'Waiting' | 'Called' | 'InService' | 'Completed' | 'Skipped' | 'NoShow' | 'Cancelled';
 export type TokenPriority = 'Normal' | 'Priority' | 'Emergency';
-export type ReferralSource = 'Self' | 'Doctor' | 'Hospital' | 'HealthCamp' | 'Online' | 'Corporate' | 'Advertisement' | 'Other';
+export type ReferralSource =
+  'Self' | 'Doctor' | 'Hospital' | 'HealthCamp' | 'Online' | 'Corporate' | 'Advertisement' | 'Other';
 
 export interface VisitListItem {
   id: string;
@@ -335,7 +344,8 @@ export const patientQueries = {
   search: (params: PatientSearchParams) =>
     queryOptions({
       queryKey: patientKeys.search(params),
-      queryFn: ({ signal }) => api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { ...params }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { ...params }, signal }),
       placeholderData: keepPreviousData,
     }),
   detail: (id: string) =>
@@ -346,7 +356,8 @@ export const patientQueries = {
   visits: (id: string, page = 1) =>
     queryOptions({
       queryKey: patientKeys.visits(id, page),
-      queryFn: ({ signal }) => api.get<PagedResult<VisitListItem>>(`/api/v1/patients/${id}/visits`, { query: { page, pageSize: 10 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<VisitListItem>>(`/api/v1/patients/${id}/visits`, { query: { page, pageSize: 10 }, signal }),
       placeholderData: keepPreviousData,
     }),
   consents: (id: string) =>
@@ -375,6 +386,7 @@ export const patientApi = {
   update: (id: string, request: UpdatePatientRequest) => api.put<void>(`/api/v1/patients/${id}`, request),
   duplicates: (request: DuplicateCheckRequest, signal?: AbortSignal) =>
     api.post<DuplicateCandidate[]>('/api/v1/patients/duplicates', request, { signal }),
-  breakGlass: (id: string, reason: string) => api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
+  breakGlass: (id: string, reason: string) =>
+    api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
 };

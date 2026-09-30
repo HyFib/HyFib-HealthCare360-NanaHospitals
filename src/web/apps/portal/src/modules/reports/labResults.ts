@@ -1,6 +1,13 @@
 import type { Tone } from '@/components/ListRow';
 import type { MessageKey } from '@/i18n';
-import type { CardiologyStudyType, LabReportSection, LabSection, Modality, ResultFlag, SusceptibilityInterpretation } from '@/lib/types';
+import type {
+  CardiologyStudyType,
+  LabReportSection,
+  LabSection,
+  Modality,
+  ResultFlag,
+  SusceptibilityInterpretation,
+} from '@/lib/types';
 
 /**
  * Lab results in plain language (pure functions, unit-tested): what each flag means, how serious it is, and where a
@@ -151,11 +158,15 @@ export function rangePosition(value: number, range: NumericRange): number {
   }
   if (high !== null) {
     // "< 200": normal from the left edge up to 75 %.
-    return value <= high ? clamp((0.75 * value) / (high || 1)) : clamp(0.75 + (0.25 * (value - high)) / (Math.abs(high) || 1));
+    return value <= high
+      ? clamp((0.75 * value) / (high || 1))
+      : clamp(0.75 + (0.25 * (value - high)) / (Math.abs(high) || 1));
   }
   if (low !== null) {
     // "> 40": normal from 25 % to the right edge.
-    return value >= low ? clamp(0.25 + (0.75 * (value - low)) / (Math.abs(low) || 1)) : clamp((0.25 * value) / (low || 1));
+    return value >= low
+      ? clamp(0.25 + (0.75 * (value - low)) / (Math.abs(low) || 1))
+      : clamp((0.25 * value) / (low || 1));
   }
   return 0.5;
 }

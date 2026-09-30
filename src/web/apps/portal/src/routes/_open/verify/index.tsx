@@ -10,7 +10,9 @@ import { isVerifyKind, parseVerificationInput, VERIFY_KINDS, type VerifyKind } f
 
 /** Checking a printed prescription or report by its QR link or printed code (open to everyone). */
 export const Route = createFileRoute('/_open/verify/')({
-  validateSearch: (search: Record<string, unknown>): { kind?: VerifyKind } => ({ kind: isVerifyKind(search.kind) ? search.kind : undefined }),
+  validateSearch: (search: Record<string, unknown>): { kind?: VerifyKind } => ({
+    kind: isVerifyKind(search.kind) ? search.kind : undefined,
+  }),
   component: VerifyPage,
 });
 
@@ -35,7 +37,10 @@ function VerifyPage() {
   const submit = form.handleSubmit((values) => {
     const parsed = parseVerificationInput(values.input, values.kind);
     if ('error' in parsed) {
-      form.setError('input', { type: 'validate', message: t(parsed.error === 'empty' ? 'verify.code.empty' : 'verify.code.unrecognised') });
+      form.setError('input', {
+        type: 'validate',
+        message: t(parsed.error === 'empty' ? 'verify.code.empty' : 'verify.code.unrecognised'),
+      });
       return;
     }
     void navigate({ to: '/verify/$kind/$code', params: { kind: parsed.kind, code: parsed.code } });
@@ -61,7 +66,11 @@ function VerifyPage() {
               value={field.value}
               onChange={(value) => field.onChange(value)}
               twoUp
-              options={VERIFY_KINDS.map((kind) => ({ value: kind, title: t(VERIFY_KIND_TEXT[kind].title), hint: t(VERIFY_KIND_TEXT[kind].hint) }))}
+              options={VERIFY_KINDS.map((kind) => ({
+                value: kind,
+                title: t(VERIFY_KIND_TEXT[kind].title),
+                hint: t(VERIFY_KIND_TEXT[kind].hint),
+              }))}
             />
           )}
         />

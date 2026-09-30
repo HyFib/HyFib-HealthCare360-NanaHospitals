@@ -11,14 +11,52 @@ import {
 } from './safety';
 
 function alert(partial: Partial<SafetyAlert> & Pick<SafetyAlert, 'key'>): SafetyAlert {
-  return { kind: 'Interaction', severity: 'Moderate', isBlocking: false, message: partial.key, detail: null, itemIds: [], ...partial };
+  return {
+    kind: 'Interaction',
+    severity: 'Moderate',
+    isBlocking: false,
+    message: partial.key,
+    detail: null,
+    itemIds: [],
+    ...partial,
+  };
 }
 
-const allergy = alert({ key: 'allergy:amox', kind: 'Allergy', severity: 'Major', isBlocking: true, message: 'Amoxicillin: patient is allergic to penicillin', itemIds: ['i1'] });
-const maxDose = alert({ key: 'dose:paracetamol', kind: 'MaxDose', severity: 'Major', isBlocking: true, message: 'Paracetamol above 4 g a day', itemIds: ['i2'] });
-const duplicate = alert({ key: 'dup:ibuprofen', kind: 'DuplicateTherapy', severity: 'Moderate', message: 'Two NSAIDs', itemIds: ['i2', 'i3'] });
-const minor = alert({ key: 'dose:unverified', kind: 'DoseUnverified', severity: 'Minor', message: 'Dose could not be computed' });
-const controlled = alert({ key: 'controlled:alprazolam', kind: 'ControlledDrug', severity: 'Info', message: 'Alprazolam is Schedule H1' });
+const allergy = alert({
+  key: 'allergy:amox',
+  kind: 'Allergy',
+  severity: 'Major',
+  isBlocking: true,
+  message: 'Amoxicillin: patient is allergic to penicillin',
+  itemIds: ['i1'],
+});
+const maxDose = alert({
+  key: 'dose:paracetamol',
+  kind: 'MaxDose',
+  severity: 'Major',
+  isBlocking: true,
+  message: 'Paracetamol above 4 g a day',
+  itemIds: ['i2'],
+});
+const duplicate = alert({
+  key: 'dup:ibuprofen',
+  kind: 'DuplicateTherapy',
+  severity: 'Moderate',
+  message: 'Two NSAIDs',
+  itemIds: ['i2', 'i3'],
+});
+const minor = alert({
+  key: 'dose:unverified',
+  kind: 'DoseUnverified',
+  severity: 'Minor',
+  message: 'Dose could not be computed',
+});
+const controlled = alert({
+  key: 'controlled:alprazolam',
+  kind: 'ControlledDrug',
+  severity: 'Info',
+  message: 'Alprazolam is Schedule H1',
+});
 
 describe('groupAlerts', () => {
   it('separates blocking alerts, warnings and controlled medicines, most severe first', () => {
@@ -37,7 +75,12 @@ describe('sign requirements', () => {
   it('needs nothing when the check is clean', () => {
     const requirements = signRequirements(groupAlerts([]), false);
     expect(signBlockers(requirements, emptyDecision)).toEqual([]);
-    expect(toSignRequest(requirements, emptyDecision, 7)).toEqual({ overrideReason: null, acknowledgeWarnings: false, confirmControlledDrugs: false, version: 7 });
+    expect(toSignRequest(requirements, emptyDecision, 7)).toEqual({
+      overrideReason: null,
+      acknowledgeWarnings: false,
+      confirmControlledDrugs: false,
+      version: 7,
+    });
   });
 
   it('asks for an override reason of at least 10 characters for blocking alerts', () => {
@@ -52,9 +95,18 @@ describe('sign requirements', () => {
   it('asks for acknowledgement of warnings and confirmation of controlled medicines', () => {
     const requirements = signRequirements(groupAlerts([duplicate, controlled]), true);
     expect(signBlockers(requirements, emptyDecision)).toHaveLength(2);
-    const decision = { overrideReason: 'ignored because nothing blocks', acknowledgeWarnings: true, confirmControlledDrugs: true };
+    const decision = {
+      overrideReason: 'ignored because nothing blocks',
+      acknowledgeWarnings: true,
+      confirmControlledDrugs: true,
+    };
     expect(signBlockers(requirements, decision)).toEqual([]);
-    expect(toSignRequest(requirements, decision, 3)).toEqual({ overrideReason: null, acknowledgeWarnings: true, confirmControlledDrugs: true, version: 3 });
+    expect(toSignRequest(requirements, decision, 3)).toEqual({
+      overrideReason: null,
+      acknowledgeWarnings: true,
+      confirmControlledDrugs: true,
+      version: 3,
+    });
   });
 
   it('treats controlled lines as needing confirmation even without an info alert', () => {
@@ -63,7 +115,11 @@ describe('sign requirements', () => {
 
   it('sends the trimmed override reason only when something blocks', () => {
     const requirements = signRequirements(groupAlerts([allergy]), false);
-    const request = toSignRequest(requirements, { ...emptyDecision, overrideReason: '  Tolerated amoxicillin in 2024 without reaction  ' }, 1);
+    const request = toSignRequest(
+      requirements,
+      { ...emptyDecision, overrideReason: '  Tolerated amoxicillin in 2024 without reaction  ' },
+      1,
+    );
     expect(request.overrideReason).toBe('Tolerated amoxicillin in 2024 without reaction');
   });
 });

@@ -1,5 +1,12 @@
 import { Caption1, makeStyles, ProgressBar, Text, tokens } from '@fluentui/react-components';
-import { ChatHelpRegular, ClockRegular, ContactCardRegular, PeopleQueueRegular, PersonAddRegular, StethoscopeRegular } from '@fluentui/react-icons';
+import {
+  ChatHelpRegular,
+  ClockRegular,
+  ContactCardRegular,
+  PeopleQueueRegular,
+  PersonAddRegular,
+  StethoscopeRegular,
+} from '@fluentui/react-icons';
 import { humanize, useRealtimeEvent, useSession } from '@hc360/core';
 import { ErrorState, KpiCard, Section } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -38,7 +45,13 @@ export function FrontOfficeKpis() {
 
   return (
     <div className={styles.kpis}>
-      <KpiCard label="New registrations" value={value(d?.registrationsToday)} icon={<PersonAddRegular />} hint="Today" onClick={() => void navigate({ to: '/patients' })} />
+      <KpiCard
+        label="New registrations"
+        value={value(d?.registrationsToday)}
+        icon={<PersonAddRegular />}
+        hint="Today"
+        onClick={() => void navigate({ to: '/patients' })}
+      />
       <KpiCard
         label="OP visits"
         value={value(d?.visitsToday)}
@@ -46,15 +59,31 @@ export function FrontOfficeKpis() {
         hint={d ? `${d.completedVisits} completed · ${d.openVisits} open` : undefined}
         onClick={() => void navigate({ to: '/front-office/visits' })}
       />
-      <KpiCard label="Waiting now" value={value(d?.waitingTokens)} icon={<PeopleQueueRegular />} hint="Tokens not yet called" onClick={() => void navigate({ to: '/front-office/queue' })} />
+      <KpiCard
+        label="Waiting now"
+        value={value(d?.waitingTokens)}
+        icon={<PeopleQueueRegular />}
+        hint="Tokens not yet called"
+        onClick={() => void navigate({ to: '/front-office/queue' })}
+      />
       <KpiCard
         label="Average wait"
         value={d ? (d.averageWaitMinutes === null ? '—' : `${Math.round(d.averageWaitMinutes)} min`) : '…'}
         icon={<ClockRegular />}
         hint="Token issue to call, today"
       />
-      <KpiCard label="Open enquiries" value={value(d?.openEnquiries)} icon={<ChatHelpRegular />} onClick={() => void navigate({ to: '/front-office/enquiries' })} />
-      <KpiCard label="Visitors inside" value={value(d?.visitorsInside)} icon={<ContactCardRegular />} onClick={() => void navigate({ to: '/front-office/visitors' })} />
+      <KpiCard
+        label="Open enquiries"
+        value={value(d?.openEnquiries)}
+        icon={<ChatHelpRegular />}
+        onClick={() => void navigate({ to: '/front-office/enquiries' })}
+      />
+      <KpiCard
+        label="Visitors inside"
+        value={value(d?.visitorsInside)}
+        icon={<ContactCardRegular />}
+        onClick={() => void navigate({ to: '/front-office/visitors' })}
+      />
     </div>
   );
 }
@@ -80,7 +109,11 @@ export function DepartmentQueues({ dashboard }: { dashboard?: FrontOfficeDashboa
                   {dept.nowServing ? `Now: ${dept.nowServing}` : 'Not started'} · {dept.waiting} waiting
                 </Caption1>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <ProgressBar value={total ? dept.served / total : 0} thickness="large" aria-label={`${dept.departmentName}: ${dept.served} of ${total} served`} />
+                  <ProgressBar
+                    value={total ? dept.served / total : 0}
+                    thickness="large"
+                    aria-label={`${dept.departmentName}: ${dept.served} of ${total} served`}
+                  />
                 </div>
               </div>
             );
@@ -106,7 +139,11 @@ export function VisitsByType({ dashboard }: { dashboard?: FrontOfficeDashboard }
               <Text>{humanize(item.type)}</Text>
               <Text weight="semibold">{item.count}</Text>
               <div style={{ gridColumn: '1 / -1' }}>
-                <ProgressBar value={item.count / max} color="brand" aria-label={`${humanize(item.type)}: ${item.count}`} />
+                <ProgressBar
+                  value={item.count / max}
+                  color="brand"
+                  aria-label={`${humanize(item.type)}: ${item.count}`}
+                />
               </div>
             </div>
           ))}

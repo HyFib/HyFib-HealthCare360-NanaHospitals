@@ -35,7 +35,11 @@ const schema = z
       ctx.addIssue({ code: 'custom', path: ['expiresOn'], message: 'The expiry date must be after the issue date.' });
     }
     if (!v.expiresOn && (v.type === 'BLS' || v.type === 'ACLS')) {
-      ctx.addIssue({ code: 'custom', path: ['expiresOn'], message: 'BLS and ACLS certificates expire; enter the expiry date.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['expiresOn'],
+        message: 'BLS and ACLS certificates expire; enter the expiry date.',
+      });
     }
   });
 
@@ -64,7 +68,17 @@ export function CredentialDialog({
   );
 }
 
-function Body({ onClose, employeeId, employeeName, credential }: { onClose: () => void; employeeId: string; employeeName: string; credential: CredentialDto | null }) {
+function Body({
+  onClose,
+  employeeId,
+  employeeName,
+  credential,
+}: {
+  onClose: () => void;
+  employeeId: string;
+  employeeName: string;
+  credential: CredentialDto | null;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
@@ -99,7 +113,12 @@ function Body({ onClose, employeeId, employeeName, credential }: { onClose: () =
         notes: values.notes.trim() || null,
         version: credential?.version ?? null,
       });
-      notify.success(credential ? 'Credential updated' : 'Credential added', credential && credential.expiresOn !== (values.expiresOn || null) ? 'Expiry reminders start again from the new date.' : undefined);
+      notify.success(
+        credential ? 'Credential updated' : 'Credential added',
+        credential && credential.expiresOn !== (values.expiresOn || null)
+          ? 'Expiry reminders start again from the new date.'
+          : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: hrKeys.credentials });
       void queryClient.invalidateQueries({ queryKey: hrKeys.me });
       onClose();
@@ -121,7 +140,13 @@ function Body({ onClose, employeeId, employeeName, credential }: { onClose: () =
         </DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <FormGrid columns={2} minColumnWidth={220}>
-            <SelectField control={form.control} name="type" label="Type" required options={CREDENTIAL_TYPES.map((t) => ({ value: t, label: credentialTypeLabel[t] }))} />
+            <SelectField
+              control={form.control}
+              name="type"
+              label="Type"
+              required
+              options={CREDENTIAL_TYPES.map((t) => ({ value: t, label: credentialTypeLabel[t] }))}
+            />
             <TextField control={form.control} name="name" label="Name" required autoFocus />
             <TextField control={form.control} name="number" label="Registration / certificate number" required />
             <TextField control={form.control} name="issuingAuthority" label="Issued by" />
@@ -130,7 +155,11 @@ function Body({ onClose, employeeId, employeeName, credential }: { onClose: () =
               control={form.control}
               name="expiresOn"
               label="Valid until"
-              hint={expiresOn ? 'Reminders go out 30 and 7 days before, and on the day.' : 'Leave blank for lifetime registrations.'}
+              hint={
+                expiresOn
+                  ? 'Reminders go out 30 and 7 days before, and on the day.'
+                  : 'Leave blank for lifetime registrations.'
+              }
             />
           </FormGrid>
           <Field

@@ -8,7 +8,12 @@ import { datesBetween, isIsoDate } from './shared/dates';
  * Days asked for, before the server removes holidays and weekly offs (it does that for every type that does not count
  * calendar days). Starting in the second half or ending in the first half removes half a day each.
  */
-export function estimateLeaveDays(from: string, fromSession: LeaveSession, to: string, toSession: LeaveSession): number | null {
+export function estimateLeaveDays(
+  from: string,
+  fromSession: LeaveSession,
+  to: string,
+  toSession: LeaveSession,
+): number | null {
   if (!isIsoDate(from) || !isIsoDate(to) || to < from) {
     return null;
   }
@@ -27,10 +32,15 @@ export function estimateLeaveDays(from: string, fromSession: LeaveSession, to: s
 
 /** Leave types this employee may apply for (active, and for the right gender where the type is gender-specific). */
 export function applicableLeaveTypes(types: LeaveTypeDto[], gender?: Gender | null): LeaveTypeDto[] {
-  return types.filter((type) => type.isActive && (!type.applicableGender || !gender || type.applicableGender === gender));
+  return types.filter(
+    (type) => type.isActive && (!type.applicableGender || !gender || type.applicableGender === gender),
+  );
 }
 
-export function balanceFor(balances: LeaveBalanceDto[] | undefined, leaveTypeId: string | null | undefined): LeaveBalanceDto | undefined {
+export function balanceFor(
+  balances: LeaveBalanceDto[] | undefined,
+  leaveTypeId: string | null | undefined,
+): LeaveBalanceDto | undefined {
   return leaveTypeId ? balances?.find((balance) => balance.leaveTypeId === leaveTypeId) : undefined;
 }
 
@@ -42,7 +52,9 @@ export function daysText(days: number): string {
 
 /** Whether the request needs a supporting document for the (estimated) number of days. */
 export function needsDocument(type: LeaveTypeDto | undefined, days: number | null): boolean {
-  return Boolean(type && type.documentRequiredAfterDays !== null && days !== null && days > type.documentRequiredAfterDays);
+  return Boolean(
+    type && type.documentRequiredAfterDays !== null && days !== null && days > type.documentRequiredAfterDays,
+  );
 }
 
 /**
@@ -65,7 +77,12 @@ export function sessionNote(session: LeaveSession, edge: 'from' | 'to'): string 
 }
 
 /** "12 Sept 2026 (from the second half) to 14 Sept 2026" or a single day with its half. */
-export function leavePeriodText(r: { fromDate: string; fromSession: LeaveSession; toDate: string; toSession: LeaveSession }): string {
+export function leavePeriodText(r: {
+  fromDate: string;
+  fromSession: LeaveSession;
+  toDate: string;
+  toSession: LeaveSession;
+}): string {
   if (r.fromDate === r.toDate) {
     const half = r.fromSession === 'SecondHalf' ? ' (second half)' : r.toSession === 'FirstHalf' ? ' (first half)' : '';
     return `${formatDateOnly(r.fromDate)}${half}`;

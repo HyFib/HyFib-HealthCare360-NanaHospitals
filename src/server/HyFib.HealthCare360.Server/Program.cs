@@ -75,7 +75,10 @@ builder.WebHost.ConfigureKestrel(kestrel =>
     kestrel.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
     kestrel.ListenAnyIP(platformOptions.HttpsPort, listen => listen.UseHttps(https =>
     {
+        // TLS 1.2 is the floor on purpose: older Windows versions the server may run on still enable TLS 1.0/1.1 by default.
+#pragma warning disable CA5398 // Avoid hardcoded SslProtocols values
         https.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
+#pragma warning restore CA5398
         https.ServerCertificateSelector = (_, _) => certificates.ServerCertificate;
     }));
     if (platformOptions.HttpRedirectPort > 0)

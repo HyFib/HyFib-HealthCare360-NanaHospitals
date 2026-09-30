@@ -16,7 +16,11 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [defaults] = useState<EncounterFormValues>(() => toFormValues(encounter));
-  const form = useForm<EncounterFormValues>({ resolver: zodResolver(encounterFormSchema(today)), defaultValues: defaults, mode: 'onBlur' });
+  const form = useForm<EncounterFormValues>({
+    resolver: zodResolver(encounterFormSchema(today)),
+    defaultValues: defaults,
+    mode: 'onBlur',
+  });
   const draft = useFormDraft(form, `emr-encounter:${encounter.id}`);
   const [amending, setAmending] = useState(false);
   const locked = encounter.status !== 'InProgress' && !amending;
@@ -30,7 +34,10 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
 
   const onConflict = () => {
     void queryClient.invalidateQueries({ queryKey: emrKeys.encounter(encounter.id) });
-    notify.warning('This encounter was changed in another window', 'Your text is kept on this screen. Save again to replace the other version.');
+    notify.warning(
+      'This encounter was changed in another window',
+      'Your text is kept on this screen. Save again to replace the other version.',
+    );
   };
 
   const valid = async (): Promise<EncounterFormValues | null> => ((await form.trigger()) ? form.getValues() : null);
@@ -50,7 +57,8 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
         notify.success('Encounter saved');
       }
     },
-    onError: (error) => (isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not save the encounter')),
+    onError: (error) =>
+      isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not save the encounter'),
   });
 
   const sign = useMutation({
@@ -72,7 +80,8 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
         notify.success('Encounter signed', 'The note is locked. Later corrections are recorded as amendments.');
       }
     },
-    onError: (error) => (isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not sign the encounter')),
+    onError: (error) =>
+      isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not sign the encounter'),
   });
 
   const amend = useMutation({
@@ -91,10 +100,13 @@ export function useEncounterNote(encounter: EncounterDetail, today: string) {
         notify.success('Amendment recorded', 'The previous text is kept in the amendment history.');
       }
     },
-    onError: (error) => (isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not record the amendment')),
+    onError: (error) =>
+      isApiError(error) && error.isConflict ? onConflict() : notify.error(error, 'Could not record the amendment'),
   });
 
-  useHotkey('mod+s', () => !locked && encounter.status === 'InProgress' && !save.isPending && save.mutate(), { allowInInputs: true });
+  useHotkey('mod+s', () => !locked && encounter.status === 'InProgress' && !save.isPending && save.mutate(), {
+    allowInInputs: true,
+  });
 
   const cancelAmendment = () => {
     form.reset(toFormValues(encounter));

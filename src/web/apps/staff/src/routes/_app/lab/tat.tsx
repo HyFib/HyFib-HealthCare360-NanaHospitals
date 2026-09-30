@@ -18,7 +18,11 @@ interface TatSearch {
 }
 
 export const Route = createFileRoute('/_app/lab/tat')({
-  validateSearch: (s: Record<string, unknown>): TatSearch => ({ from: searchDate(s.from), to: searchDate(s.to), section: searchOneOf(s.section, LAB_SECTIONS) }),
+  validateSearch: (s: Record<string, unknown>): TatSearch => ({
+    from: searchDate(s.from),
+    to: searchDate(s.to),
+    section: searchOneOf(s.section, LAB_SECTIONS),
+  }),
   component: LabTatPage,
 });
 
@@ -68,9 +72,19 @@ function LabTatPage() {
       />
       <Section>
         <FilterBar>
-          <DateRangeFields value={{ from: search.from, to: search.to }} onChange={(range) => void navigate({ search: (prev) => ({ ...prev, ...range }) })} />
+          <DateRangeFields
+            value={{ from: search.from, to: search.to }}
+            onChange={(range) => void navigate({ search: (prev) => ({ ...prev, ...range }) })}
+          />
           <Field label="Bench">
-            <Select value={search.section ?? ''} onChange={(_, data) => void navigate({ search: (prev) => ({ ...prev, section: (data.value || undefined) as LabSection | undefined }) })}>
+            <Select
+              value={search.section ?? ''}
+              onChange={(_, data) =>
+                void navigate({
+                  search: (prev) => ({ ...prev, section: (data.value || undefined) as LabSection | undefined }),
+                })
+              }
+            >
               <option value="">All benches</option>
               {LAB_SECTIONS.map((value) => (
                 <option key={value} value={value}>
@@ -91,8 +105,16 @@ function LabTatPage() {
       ) : (
         <>
           <div className={styles.kpis}>
-            <KpiCard label="Median, order to release" value={formatMinutes(report.overall.medianMinutes)} icon={<TimerRegular />} />
-            <KpiCard label="90% released within" value={formatMinutes(report.overall.p90Minutes)} icon={<ClockRegular />} />
+            <KpiCard
+              label="Median, order to release"
+              value={formatMinutes(report.overall.medianMinutes)}
+              icon={<TimerRegular />}
+            />
+            <KpiCard
+              label="90% released within"
+              value={formatMinutes(report.overall.p90Minutes)}
+              icon={<ClockRegular />}
+            />
             <KpiCard
               label="Released on time"
               value={<span className={styles[complianceTone(within)]}>{within === null ? '—' : `${within}%`}</span>}
@@ -101,7 +123,11 @@ function LabTatPage() {
             />
             <KpiCard label="Tests released" value={report.overall.count.toLocaleString('en-IN')} />
             <KpiCard label="Samples collected" value={report.samples.toLocaleString('en-IN')} />
-            <KpiCard label="Samples rejected" value={report.rejections.toLocaleString('en-IN')} hint={rate !== null ? `${rate}% of samples` : undefined} />
+            <KpiCard
+              label="Samples rejected"
+              value={report.rejections.toLocaleString('en-IN')}
+              hint={rate !== null ? `${rate}% of samples` : undefined}
+            />
           </div>
 
           {report.tests.length === 0 ? (
@@ -111,8 +137,15 @@ function LabTatPage() {
           ) : (
             <>
               <div className={styles.charts}>
-                <Section title="Busiest tests" description="Median and 90th percentile against the target (diamond), hours">
-                  {report.tests.some((row) => row.released > 0) ? <TatChart rows={report.tests} count={12} /> : <Caption1 className={styles.muted}>Nothing released yet.</Caption1>}
+                <Section
+                  title="Busiest tests"
+                  description="Median and 90th percentile against the target (diamond), hours"
+                >
+                  {report.tests.some((row) => row.released > 0) ? (
+                    <TatChart rows={report.tests} count={12} />
+                  ) : (
+                    <Caption1 className={styles.muted}>Nothing released yet.</Caption1>
+                  )}
                 </Section>
                 <Section title="Rejected samples" description="By reason">
                   {report.rejectionsByReason.length > 0 ? (
@@ -148,13 +181,21 @@ function LabTatPage() {
                       ),
                     },
                     { key: 'target', header: 'Target', width: 80, render: (row: LabTatRow) => `${row.targetHours} h` },
-                    { key: 'released', header: 'Released', width: 90, align: 'end', render: (row: LabTatRow) => row.released.toLocaleString('en-IN') },
+                    {
+                      key: 'released',
+                      header: 'Released',
+                      width: 90,
+                      align: 'end',
+                      render: (row: LabTatRow) => row.released.toLocaleString('en-IN'),
+                    },
                     {
                       key: 'ontime',
                       header: 'On time',
                       width: 90,
                       render: (row: LabTatRow) => (
-                        <span className={styles[complianceTone(row.withinTargetPercent)]}>{row.withinTargetPercent === null ? '—' : `${row.withinTargetPercent}%`}</span>
+                        <span className={styles[complianceTone(row.withinTargetPercent)]}>
+                          {row.withinTargetPercent === null ? '—' : `${row.withinTargetPercent}%`}
+                        </span>
                       ),
                     },
                     {
@@ -163,7 +204,9 @@ function LabTatPage() {
                       render: (row: LabTatRow) => (
                         <span className={styles.cell}>
                           <Text>{formatMinutes(row.orderToRelease.medianMinutes)}</Text>
-                          <Caption1 className={styles.muted}>90%: {formatMinutes(row.orderToRelease.p90Minutes)}</Caption1>
+                          <Caption1 className={styles.muted}>
+                            90%: {formatMinutes(row.orderToRelease.p90Minutes)}
+                          </Caption1>
                         </span>
                       ),
                     },
@@ -174,7 +217,9 @@ function LabTatPage() {
                       render: (row: LabTatRow) => (
                         <span className={styles.cell}>
                           <Text>{formatMinutes(row.receiptToVerification.medianMinutes)}</Text>
-                          <Caption1 className={styles.muted}>90%: {formatMinutes(row.receiptToVerification.p90Minutes)}</Caption1>
+                          <Caption1 className={styles.muted}>
+                            90%: {formatMinutes(row.receiptToVerification.p90Minutes)}
+                          </Caption1>
                         </span>
                       ),
                     },

@@ -9,7 +9,14 @@ import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { hrQueries, type CredentialDto } from '@/modules/hr/api';
 import { CredentialDialog } from '@/modules/hr/CredentialDialog';
-import { CREDENTIAL_TYPES, CREDENTIAL_VIEWERS, credentialExpiry, credentialTypeLabel, HR_PERMISSIONS as P, type CredentialType } from '@/modules/hr/labels';
+import {
+  CREDENTIAL_TYPES,
+  CREDENTIAL_VIEWERS,
+  credentialExpiry,
+  credentialTypeLabel,
+  HR_PERMISSIONS as P,
+  type CredentialType,
+} from '@/modules/hr/labels';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { FilterPad } from '@/modules/hr/shared/layout';
 
@@ -26,7 +33,10 @@ interface CredentialSearch {
 
 export const Route = createFileRoute('/_app/hr/credentials')({
   validateSearch: (s: Record<string, unknown>): CredentialSearch => ({
-    within: WINDOWS.includes(String(s.within) as Window) && String(s.within) !== '60' ? (String(s.within) as Window) : undefined,
+    within:
+      WINDOWS.includes(String(s.within) as Window) && String(s.within) !== '60'
+        ? (String(s.within) as Window)
+        : undefined,
     type: CREDENTIAL_TYPES.includes(s.type as CredentialType) ? (s.type as CredentialType) : undefined,
     departmentId: typeof s.departmentId === 'string' && s.departmentId ? s.departmentId : undefined,
     search: typeof s.search === 'string' && s.search ? s.search : undefined,
@@ -60,11 +70,15 @@ function CredentialsPage() {
 
   useEffect(() => {
     if ((debounced || undefined) !== filters.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, filters.search, navigate]);
 
-  const set = (patch: Partial<CredentialSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<CredentialSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -77,10 +91,17 @@ function CredentialsPage() {
         <FilterPad>
           <FilterBar>
             <Field label="Search" style={{ flex: '1 1 240px' }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Employee name, code or certificate number" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Employee name, code or certificate number"
+              />
             </Field>
             <Field label="Expiring">
-              <Select value={within} onChange={(_, d) => set({ within: d.value === '60' ? undefined : (d.value as Window) })}>
+              <Select
+                value={within}
+                onChange={(_, d) => set({ within: d.value === '60' ? undefined : (d.value as Window) })}
+              >
                 <option value="7">Within 7 days (and expired)</option>
                 <option value="30">Within 30 days (and expired)</option>
                 <option value="60">Within 60 days (and expired)</option>
@@ -89,7 +110,10 @@ function CredentialsPage() {
               </Select>
             </Field>
             <Field label="Type">
-              <Select value={filters.type ?? ''} onChange={(_, d) => set({ type: (d.value || undefined) as CredentialType | undefined })}>
+              <Select
+                value={filters.type ?? ''}
+                onChange={(_, d) => set({ type: (d.value || undefined) as CredentialType | undefined })}
+              >
                 <option value="">All</option>
                 {CREDENTIAL_TYPES.map((t) => (
                   <option key={t} value={t}>
@@ -99,7 +123,10 @@ function CredentialsPage() {
               </Select>
             </Field>
             <Field label="Department">
-              <Select value={filters.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined })}>
+              <Select
+                value={filters.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined })}
+              >
                 <option value="">All</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -117,20 +144,31 @@ function CredentialsPage() {
           error={credentials.error}
           onRetry={() => void credentials.refetch()}
           getRowId={(c) => c.id}
-          onRowClick={(c) => void navigate({ to: '/hr/employees/$employeeId', params: { employeeId: c.employeeId }, search: { tab: 'credentials' } })}
+          onRowClick={(c) =>
+            void navigate({
+              to: '/hr/employees/$employeeId',
+              params: { employeeId: c.employeeId },
+              search: { tab: 'credentials' },
+            })
+          }
           columns={[
             {
               key: 'employee',
               header: 'Employee',
               render: (c) => (
                 <span>
-                  <Text weight="semibold">{c.employeeName}</Text> <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{c.employeeCode}</Caption1>
+                  <Text weight="semibold">{c.employeeName}</Text>{' '}
+                  <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>{c.employeeCode}</Caption1>
                 </span>
               ),
             },
             { key: 'credential', header: 'Credential', render: (c) => `${credentialTypeLabel[c.type]} · ${c.name}` },
             { key: 'number', header: 'Number', priority: 'low', render: (c) => c.number },
-            { key: 'expires', header: 'Valid until', render: (c) => (c.expiresOn ? formatDateOnly(c.expiresOn) : 'Lifetime') },
+            {
+              key: 'expires',
+              header: 'Valid until',
+              render: (c) => (c.expiresOn ? formatDateOnly(c.expiresOn) : 'Lifetime'),
+            },
             {
               key: 'status',
               header: 'Status',
@@ -158,7 +196,13 @@ function CredentialsPage() {
         />
       </Section>
       {editing && (
-        <CredentialDialog open onClose={() => setEditing(null)} employeeId={editing.employeeId} employeeName={editing.employeeName} credential={editing} />
+        <CredentialDialog
+          open
+          onClose={() => setEditing(null)}
+          employeeId={editing.employeeId}
+          employeeName={editing.employeeName}
+          credential={editing}
+        />
       )}
     </Page>
   );

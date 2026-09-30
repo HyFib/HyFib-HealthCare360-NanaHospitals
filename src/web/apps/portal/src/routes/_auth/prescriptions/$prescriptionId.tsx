@@ -29,7 +29,14 @@ export const Route = createFileRoute('/_auth/prescriptions/$prescriptionId')({
 
 const useStyles = makeStyles({
   lines: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '10px' },
-  line: { display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', borderRadius: tokens.borderRadiusLarge, backgroundColor: tokens.colorNeutralBackground2 },
+  line: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    padding: '12px',
+    borderRadius: tokens.borderRadiusLarge,
+    backgroundColor: tokens.colorNeutralBackground2,
+  },
   lineName: { fontSize: tokens.fontSizeBase400, fontWeight: tokens.fontWeightSemibold, overflowWrap: 'anywhere' },
   generic: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   how: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '6px 16px' },
@@ -37,7 +44,13 @@ const useStyles = makeStyles({
   strong: { fontWeight: tokens.fontWeightSemibold },
   text: { margin: 0, whiteSpace: 'pre-line' },
   qr: { display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' },
-  qrBox: { padding: '10px', backgroundColor: '#fff', borderRadius: tokens.borderRadiusLarge, border: `1px solid ${tokens.colorNeutralStroke2}`, lineHeight: 0 },
+  qrBox: {
+    padding: '10px',
+    backgroundColor: '#fff',
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+    lineHeight: 0,
+  },
   muted: { margin: 0, color: tokens.colorNeutralForeground2, display: 'flex', gap: '8px', alignItems: 'flex-start' },
 });
 
@@ -82,8 +95,14 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
   const qrBox = useRef<HTMLDivElement>(null);
   const [refillOpen, setRefillOpen] = useState(false);
   const status = RX_STATUS[rx.status];
-  const refillable = refills.data?.prescriptions.find((item) => item.prescriptionNumber === rx.prescriptionNumber) ?? null;
-  const verifyUrl = verificationPageUrl('prescription', rx.verificationToken, rx.verificationUrl, window.location.origin);
+  const refillable =
+    refills.data?.prescriptions.find((item) => item.prescriptionNumber === rx.prescriptionNumber) ?? null;
+  const verifyUrl = verificationPageUrl(
+    'prescription',
+    rx.verificationToken,
+    rx.verificationUrl,
+    window.location.origin,
+  );
 
   return (
     <PortalPage
@@ -182,11 +201,19 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
             <>
               <p className={styles.muted}>
                 {refillable.refillValidUntil
-                  ? t('rx.refill.available', { count: refillable.refillsRemaining, date: f.calendarDate(refillable.refillValidUntil) })
+                  ? t('rx.refill.available', {
+                      count: refillable.refillsRemaining,
+                      date: f.calendarDate(refillable.refillValidUntil),
+                    })
                   : t('rx.refill.availableNoDate', { count: refillable.refillsRemaining })}
               </p>
               <div>
-                <Button appearance="primary" size="large" icon={<ArrowRepeatAllRegular />} onClick={() => setRefillOpen(true)}>
+                <Button
+                  appearance="primary"
+                  size="large"
+                  icon={<ArrowRepeatAllRegular />}
+                  onClick={() => setRefillOpen(true)}
+                >
                   {t('rx.refill.request')}
                 </Button>
               </div>

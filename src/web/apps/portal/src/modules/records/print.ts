@@ -26,9 +26,16 @@ const STYLES = `
 export function dischargeSummaryDocument(summary: DischargeSummaryDto, ctx: DischargePrintContext): PrintableDocument {
   const { t, f } = ctx;
   const section = (title: string, text: string | null | undefined) =>
-    text?.trim() ? `<div class="section"><h2>${escapeHtml(title)}</h2><p>${escapeMultiline(text.trim())}</p></div>` : '';
-  const codes = summary.diagnosisCodes.length ? ` <span class="small muted">(${escapeHtml(summary.diagnosisCodes.join(', '))})</span>` : '';
-  const followUp = [summary.followUpDate ? t('discharge.followUpOn', { date: f.calendarDate(summary.followUpDate) }) : '', summary.followUpInstructions ?? '']
+    text?.trim()
+      ? `<div class="section"><h2>${escapeHtml(title)}</h2><p>${escapeMultiline(text.trim())}</p></div>`
+      : '';
+  const codes = summary.diagnosisCodes.length
+    ? ` <span class="small muted">(${escapeHtml(summary.diagnosisCodes.join(', '))})</span>`
+    : '';
+  const followUp = [
+    summary.followUpDate ? t('discharge.followUpOn', { date: f.calendarDate(summary.followUpDate) }) : '',
+    summary.followUpInstructions ?? '',
+  ]
     .filter((part) => part.trim())
     .join('\n');
   const stay = [
@@ -48,7 +55,9 @@ export function dischargeSummaryDocument(summary: DischargeSummaryDto, ctx: Disc
     stay,
   )}</div></div></div>
 <div class="patient"><span><strong>${escapeHtml(ctx.patient.fullName)}</strong></span><span>${escapeHtml(t('common.uhid'))} ${escapeHtml(ctx.patient.uhid)}</span>${
-    summary.practitionerName ? `<span>${escapeHtml(t('discharge.doctor'))}: ${escapeHtml(summary.practitionerName)}</span>` : ''
+    summary.practitionerName
+      ? `<span>${escapeHtml(t('discharge.doctor'))}: ${escapeHtml(summary.practitionerName)}</span>`
+      : ''
   }</div>
 ${summary.diagnoses?.trim() ? `<div class="section"><h2>${escapeHtml(t('discharge.diagnoses'))}</h2><p>${escapeMultiline(summary.diagnoses.trim())}${codes}</p></div>` : ''}
 ${section(t('discharge.complaints'), summary.presentingComplaints)}

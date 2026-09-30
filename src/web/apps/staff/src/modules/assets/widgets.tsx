@@ -8,7 +8,12 @@ import { dueKindLabel } from './labels';
 import { dueLabel } from './ticketFlow';
 
 const useStyles = makeStyles({
-  counts: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '8px', marginBottom: '12px' },
+  counts: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+    gap: '8px',
+    marginBottom: '12px',
+  },
   count: {
     display: 'flex',
     flexDirection: 'column',
@@ -20,7 +25,11 @@ const useStyles = makeStyles({
     textAlign: 'start',
     ':hover': { backgroundColor: tokens.colorNeutralBackground2Hover },
   },
-  value: { fontSize: tokens.fontSizeBase600, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightBase600 },
+  value: {
+    fontSize: tokens.fontSizeBase600,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightBase600,
+  },
   alert: { color: tokens.colorPaletteRedForeground1 },
   muted: { color: tokens.colorNeutralForeground3 },
   rows: { display: 'flex', flexDirection: 'column', gap: '6px' },
@@ -46,18 +55,29 @@ export function EquipmentAttentionWidget() {
       title="Equipment needing attention"
       description="Breakdowns, preventive maintenance and calibration"
       actions={
-        <Button appearance="subtle" icon={<ArrowRightRegular />} iconPosition="after" onClick={() => void navigate({ to: '/assets' })}>
+        <Button
+          appearance="subtle"
+          icon={<ArrowRightRegular />}
+          iconPosition="after"
+          onClick={() => void navigate({ to: '/assets' })}
+        >
           Open
         </Button>
       }
     >
       <div className={styles.counts}>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/tickets' })}>
-          <span className={mergeClasses(styles.value, d && d.criticalOpenTickets > 0 ? styles.alert : '')}>{n(d?.openTickets)}</span>
-          <Caption1 className={styles.muted}>{d && d.criticalOpenTickets > 0 ? `open (${d.criticalOpenTickets} critical)` : 'open breakdowns'}</Caption1>
+          <span className={mergeClasses(styles.value, d && d.criticalOpenTickets > 0 ? styles.alert : '')}>
+            {n(d?.openTickets)}
+          </span>
+          <Caption1 className={styles.muted}>
+            {d && d.criticalOpenTickets > 0 ? `open (${d.criticalOpenTickets} critical)` : 'open breakdowns'}
+          </Caption1>
         </button>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/maintenance' })}>
-          <span className={mergeClasses(styles.value, d && d.pmOverdue > 0 ? styles.alert : '')}>{n(d?.pmOverdue)}</span>
+          <span className={mergeClasses(styles.value, d && d.pmOverdue > 0 ? styles.alert : '')}>
+            {n(d?.pmOverdue)}
+          </span>
           <Caption1 className={styles.muted}>PM overdue</Caption1>
         </button>
         <button type="button" className={styles.count} onClick={() => void navigate({ to: '/assets/maintenance' })}>

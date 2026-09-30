@@ -23,7 +23,22 @@ describe('cardiology measurements', () => {
   });
 
   it('formats treadmill, Holter and ABPM values', () => {
-    expect(measurementRows('Tmt', { tmt: { protocol: 'Bruce', durationSeconds: 545, mets: 10.1, maxHeartRate: 152, targetHeartRatePercent: 89, bpResponse: null, symptoms: null, stChanges: null, reasonForTermination: 'Fatigue', result: 'Negative' } })).toEqual([
+    expect(
+      measurementRows('Tmt', {
+        tmt: {
+          protocol: 'Bruce',
+          durationSeconds: 545,
+          mets: 10.1,
+          maxHeartRate: 152,
+          targetHeartRatePercent: 89,
+          bpResponse: null,
+          symptoms: null,
+          stChanges: null,
+          reasonForTermination: 'Fatigue',
+          result: 'Negative',
+        },
+      }),
+    ).toEqual([
       ['Protocol', 'Bruce'],
       ['Exercise duration', '9:05 min'],
       ['Workload', '10.1 METs'],
@@ -33,7 +48,15 @@ describe('cardiology measurements', () => {
       ['Result', 'Negative for inducible ischaemia'],
     ]);
     expect(
-      measurementRows('Abpm', { abpm: { daytimeMeanSystolic: 142, daytimeMeanDiastolic: 88, nighttimeMeanSystolic: 130, nighttimeMeanDiastolic: 80, dippingPattern: 'Non-dipper' } }),
+      measurementRows('Abpm', {
+        abpm: {
+          daytimeMeanSystolic: 142,
+          daytimeMeanDiastolic: 88,
+          nighttimeMeanSystolic: 130,
+          nighttimeMeanDiastolic: 80,
+          dippingPattern: 'Non-dipper',
+        },
+      }),
     ).toContainEqual(['Daytime mean BP', '142/88 mmHg']);
     expect(measurementRows('Other', { ecg })).toEqual([]);
   });
@@ -43,7 +66,15 @@ describe('printed cardiology report', () => {
   const view = {
     reportId: 'r',
     cardiologyStudyId: 's',
-    letterhead: { facilityName: 'Nana Hospitals', address: null, phone: null, email: null, nabhNumber: null, letterheadNote: null, logoFileId: null },
+    letterhead: {
+      facilityName: 'Nana Hospitals',
+      address: null,
+      phone: null,
+      email: null,
+      nabhNumber: null,
+      letterheadNote: null,
+      logoFileId: null,
+    },
     patient: { id: 'p', uhid: 'NH26000009', name: 'Sunil Patil', gender: 'Male', age: '61Y', dateOfBirth: null },
     accessionNumber: 'NHCD260000007',
     studyName: 'ECG',

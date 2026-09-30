@@ -12,18 +12,38 @@ import { exportFileName } from './params';
  * "Export" → Excel or CSV of the whole report as on screen (inputs and sort). Files carry the hospital name, inputs,
  * who generated them and a confidentiality notice; exports of patient lists are confirmed first and audited per patient.
  */
-export function ExportMenu({ result, disabled, appearance = 'secondary' }: { result: ReportResult; disabled?: boolean; appearance?: 'primary' | 'secondary' }) {
+export function ExportMenu({
+  result,
+  disabled,
+  appearance = 'secondary',
+}: {
+  result: ReportResult;
+  disabled?: boolean;
+  appearance?: 'primary' | 'secondary';
+}) {
   const notify = useNotify();
   const [pending, setPending] = useState<ExportFormat | null>(null);
 
   const download = useMutation({
     mutationFn: async (format: ExportFormat) => {
-      const blob = await analyticsApi.exportReport(result.reportId, result.parameters, format, result.sort ?? undefined, result.desc);
-      saveBlob(blob, exportFileName(result.reportId, result.from, result.to, todayIso(), format === 'Xlsx' ? 'xlsx' : 'csv'));
+      const blob = await analyticsApi.exportReport(
+        result.reportId,
+        result.parameters,
+        format,
+        result.sort ?? undefined,
+        result.desc,
+      );
+      saveBlob(
+        blob,
+        exportFileName(result.reportId, result.from, result.to, todayIso(), format === 'Xlsx' ? 'xlsx' : 'csv'),
+      );
     },
     onSuccess: (_, format) => {
       setPending(null);
-      notify.success(format === 'Xlsx' ? 'Excel file downloaded' : 'CSV file downloaded', 'It is in your Downloads folder.');
+      notify.success(
+        format === 'Xlsx' ? 'Excel file downloaded' : 'CSV file downloaded',
+        'It is in your Downloads folder.',
+      );
     },
     onError: (error) => {
       setPending(null);
@@ -43,7 +63,11 @@ export function ExportMenu({ result, disabled, appearance = 'secondary' }: { res
     <>
       <Menu>
         <MenuTrigger disableButtonEnhancement>
-          <Button appearance={appearance} icon={download.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />} disabled={disabled || download.isPending}>
+          <Button
+            appearance={appearance}
+            icon={download.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            disabled={disabled || download.isPending}
+          >
             {download.isPending ? 'Preparing file…' : 'Export'}
           </Button>
         </MenuTrigger>
@@ -67,8 +91,9 @@ export function ExportMenu({ result, disabled, appearance = 'secondary' }: { res
         onConfirm={() => pending && download.mutate(pending)}
         onCancel={() => setPending(null)}
       >
-        This file lists patients by name and UHID. The download is recorded in the audit log with your name. Keep it on a hospital computer, do not
-        e-mail or print it unless it is needed for care or quality review, and delete it when you are done.
+        This file lists patients by name and UHID. The download is recorded in the audit log with your name. Keep it on
+        a hospital computer, do not e-mail or print it unless it is needed for care or quality review, and delete it
+        when you are done.
       </ConfirmDialog>
     </>
   );

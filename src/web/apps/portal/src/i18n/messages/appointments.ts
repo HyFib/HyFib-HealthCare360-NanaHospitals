@@ -48,15 +48,18 @@ export const appointmentMessages = defineMessages({
     'appointment.reschedule': 'Change time',
     'appointment.cancel': 'Cancel appointment',
     'appointment.cancel.title': 'Cancel this appointment?',
-    'appointment.cancel.body': 'The time will be offered to other patients. If you paid online, the hospital will refund the fee.',
+    'appointment.cancel.body':
+      'The time will be offered to other patients. If you paid online, the hospital will refund the fee.',
     'appointment.cancel.reason': 'Reason (optional)',
     'appointment.cancel.confirm': 'Yes, cancel it',
     'appointment.cancel.keep': 'Keep appointment',
     'appointment.cancelled': 'Your appointment has been cancelled.',
-    'appointment.changeClosed': 'It is too close to the appointment to change it online. Please call the hospital if you need to.',
+    'appointment.changeClosed':
+      'It is too close to the appointment to change it online. Please call the hospital if you need to.',
     'appointment.joinVideo': 'Go to the video consultation',
     'appointment.arrive': 'Please arrive 15 minutes early and bring earlier reports and medicines.',
-    'appointment.videoTip': 'You can join from 30 minutes before the time. Use a quiet, well-lit place and a charged phone.',
+    'appointment.videoTip':
+      'You can join from 30 minutes before the time. Use a quiet, well-lit place and a charged phone.',
     'appointment.paid': 'Payment received. Thank you.',
     'appointment.shortNumber': 'No. {number}',
     'appointment.with': 'With {doctor}',
@@ -67,9 +70,11 @@ export const appointmentMessages = defineMessages({
     'payment.dismissed': 'The payment window was closed before the payment finished. You can try again.',
     'payment.failed': 'The payment did not go through. If money was taken, your bank will return it automatically.',
     'payment.unavailable': 'Online payment is not available right now. You can pay at the hospital.',
-    'payment.pending': 'We have not received confirmation of the payment yet. If money was taken, it will show here within a few minutes.',
+    'payment.pending':
+      'We have not received confirmation of the payment yet. If money was taken, it will show here within a few minutes.',
     'payment.checkAgain': 'Check payment status',
-    'payment.secure': "Payments are handled by the hospital's payment partner. This portal never sees your card number or UPI PIN.",
+    'payment.secure':
+      "Payments are handled by the hospital's payment partner. This portal never sees your card number or UPI PIN.",
     'payment.training': 'The hospital payment system is in training mode. No real money is taken.',
   },
   hi: {
@@ -118,12 +123,14 @@ export const appointmentMessages = defineMessages({
     'appointment.reschedule': 'समय बदलें',
     'appointment.cancel': 'अपॉइंटमेंट रद्द करें',
     'appointment.cancel.title': 'यह अपॉइंटमेंट रद्द करें?',
-    'appointment.cancel.body': 'यह समय दूसरे मरीज़ों को दे दिया जाएगा। अगर आपने ऑनलाइन भुगतान किया है, तो अस्पताल शुल्क वापस करेगा।',
+    'appointment.cancel.body':
+      'यह समय दूसरे मरीज़ों को दे दिया जाएगा। अगर आपने ऑनलाइन भुगतान किया है, तो अस्पताल शुल्क वापस करेगा।',
     'appointment.cancel.reason': 'कारण (वैकल्पिक)',
     'appointment.cancel.confirm': 'हाँ, रद्द करें',
     'appointment.cancel.keep': 'अपॉइंटमेंट रखें',
     'appointment.cancelled': 'आपका अपॉइंटमेंट रद्द कर दिया गया है।',
-    'appointment.changeClosed': 'अपॉइंटमेंट का समय बहुत पास है, इसलिए इसे ऑनलाइन नहीं बदला जा सकता। ज़रूरत हो तो अस्पताल को कॉल करें।',
+    'appointment.changeClosed':
+      'अपॉइंटमेंट का समय बहुत पास है, इसलिए इसे ऑनलाइन नहीं बदला जा सकता। ज़रूरत हो तो अस्पताल को कॉल करें।',
     'appointment.joinVideo': 'वीडियो परामर्श पर जाएँ',
     'appointment.arrive': 'कृपया 15 मिनट पहले पहुँचें और पुरानी रिपोर्ट व दवाइयाँ साथ लाएँ।',
     'appointment.videoTip': 'आप तय समय से 30 मिनट पहले से जुड़ सकते हैं। शांत, रोशनी वाली जगह और चार्ज फ़ोन रखें।',
@@ -139,7 +146,8 @@ export const appointmentMessages = defineMessages({
     'payment.unavailable': 'अभी ऑनलाइन भुगतान उपलब्ध नहीं है। आप अस्पताल में भुगतान कर सकते हैं।',
     'payment.pending': 'भुगतान की पुष्टि अभी नहीं मिली है। अगर राशि कटी है, तो कुछ मिनटों में यहाँ दिख जाएगी।',
     'payment.checkAgain': 'भुगतान की स्थिति जाँचें',
-    'payment.secure': 'भुगतान अस्पताल के पेमेंट पार्टनर द्वारा किया जाता है। यह पोर्टल आपका कार्ड नंबर या UPI PIN कभी नहीं देखता।',
+    'payment.secure':
+      'भुगतान अस्पताल के पेमेंट पार्टनर द्वारा किया जाता है। यह पोर्टल आपका कार्ड नंबर या UPI PIN कभी नहीं देखता।',
     'payment.training': 'अस्पताल की भुगतान प्रणाली प्रशिक्षण मोड में है। कोई असली राशि नहीं ली जाती।',
   },
 });

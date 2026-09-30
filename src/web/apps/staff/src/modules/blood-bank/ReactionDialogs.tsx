@@ -17,7 +17,17 @@ import {
 import { HeartPulseWarningRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime } from '@hc360/core';
-import { ChoiceField, FormGrid, FullRow, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  ChoiceField,
+  FormGrid,
+  FullRow,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -25,7 +35,15 @@ import { fromIstInput, nowIstInput } from '@/modules/ot/shared/datetime';
 import { applyFormErrors } from '@/modules/ot/shared/errors';
 import { ActionError } from '@/modules/ot/shared/feedback';
 import { CheckboxGroupField, DateTimeField } from '@/modules/ot/shared/fields';
-import { bloodApi, bloodKeys, REACTION_SEVERITIES, REACTION_SYMPTOMS, REACTION_TYPES, type BloodIssueDto, type TransfusionReactionDto } from './api';
+import {
+  bloodApi,
+  bloodKeys,
+  REACTION_SEVERITIES,
+  REACTION_SYMPTOMS,
+  REACTION_TYPES,
+  type BloodIssueDto,
+  type TransfusionReactionDto,
+} from './api';
 import { reactionTypeLabel, severityLabel, symptomLabel } from './labels';
 
 const useStyles = makeStyles({
@@ -58,13 +76,29 @@ const reportSchema = z
 type ReportValues = z.infer<typeof reportSchema>;
 
 /** Reports an adverse transfusion reaction from the ward; blood bank officers are alerted at once. */
-export function ReportReactionDialog({ issue, patientName, onClose }: { issue: BloodIssueDto; patientName: string; onClose: () => void }) {
+export function ReportReactionDialog({
+  issue,
+  patientName,
+  onClose,
+}: {
+  issue: BloodIssueDto;
+  patientName: string;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<ReportValues>({
     resolver: zodResolver(reportSchema),
-    defaultValues: { onsetAt: nowIstInput(), symptoms: [], vitals: '', transfusionStopped: true, volumeTransfusedMl: null, actionsTaken: '', severity: 'Mild' },
+    defaultValues: {
+      onsetAt: nowIstInput(),
+      symptoms: [],
+      vitals: '',
+      transfusionStopped: true,
+      volumeTransfusedMl: null,
+      actionsTaken: '',
+      severity: 'Mild',
+    },
   });
   const report = useMutation({
     mutationFn: (v: ReportValues) =>
@@ -102,13 +136,19 @@ export function ReportReactionDialog({ issue, patientName, onClose }: { issue: B
               <MessageBar intent="error" layout="multiline" icon={<HeartPulseWarningRegular />}>
                 <MessageBarBody>
                   <MessageBarTitle>First: stop the transfusion</MessageBarTitle>
-                  Keep the line open with normal saline, check the patient’s identity against the unit label, inform the doctor, and send the bag with a fresh
-                  blood and urine sample to the blood bank.
+                  Keep the line open with normal saline, check the patient’s identity against the unit label, inform the
+                  doctor, and send the bag with a fresh blood and urine sample to the blood bank.
                 </MessageBarBody>
               </MessageBar>
               <FormGrid columns={3}>
                 <DateTimeField control={form.control} name="onsetAt" label="Reaction started" required />
-                <NumberField control={form.control} name="volumeTransfusedMl" label="Volume transfused (ml)" min={0} max={1000} />
+                <NumberField
+                  control={form.control}
+                  name="volumeTransfusedMl"
+                  label="Volume transfused (ml)"
+                  min={0}
+                  max={1000}
+                />
                 <SwitchField control={form.control} name="transfusionStopped" label="Transfusion stopped" />
                 <FullRow>
                   <CheckboxGroupField
@@ -121,13 +161,30 @@ export function ReportReactionDialog({ issue, patientName, onClose }: { issue: B
                   />
                 </FullRow>
                 <FullRow>
-                  <TextField control={form.control} name="vitals" label="Vital signs at the time" maxLength={500} placeholder="e.g. T 39.2 °C, P 124, BP 86/50, SpO₂ 91%" />
+                  <TextField
+                    control={form.control}
+                    name="vitals"
+                    label="Vital signs at the time"
+                    maxLength={500}
+                    placeholder="e.g. T 39.2 °C, P 124, BP 86/50, SpO₂ 91%"
+                  />
                 </FullRow>
                 <FullRow>
-                  <TextAreaField control={form.control} name="actionsTaken" label="Actions taken" rows={2} maxLength={2000} />
+                  <TextAreaField
+                    control={form.control}
+                    name="actionsTaken"
+                    label="Actions taken"
+                    rows={2}
+                    maxLength={2000}
+                  />
                 </FullRow>
                 <FullRow>
-                  <ChoiceField control={form.control} name="severity" label="Severity" options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))} />
+                  <ChoiceField
+                    control={form.control}
+                    name="severity"
+                    label="Severity"
+                    options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))}
+                  />
                 </FullRow>
               </FormGrid>
               <ActionError error={report.error} />
@@ -136,7 +193,12 @@ export function ReportReactionDialog({ issue, patientName, onClose }: { issue: B
               <Button onClick={onClose} disabled={report.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={report.isPending} icon={report.isPending ? <Spinner size="tiny" /> : <HeartPulseWarningRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={report.isPending}
+                icon={report.isPending ? <Spinner size="tiny" /> : <HeartPulseWarningRegular />}
+              >
                 Report reaction
               </Button>
             </DialogActions>
@@ -201,14 +263,34 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
                   name="type"
                   label="Classification (HvPI)"
                   required
-                  options={REACTION_TYPES.filter((t) => t !== 'Unclassified').map((t) => ({ value: t, label: reactionTypeLabel[t] }))}
+                  options={REACTION_TYPES.filter((t) => t !== 'Unclassified').map((t) => ({
+                    value: t,
+                    label: reactionTypeLabel[t],
+                  }))}
                 />
-                <SelectField control={form.control} name="severity" label="Severity" options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))} />
+                <SelectField
+                  control={form.control}
+                  name="severity"
+                  label="Severity"
+                  options={REACTION_SEVERITIES.map((s) => ({ value: s, label: severityLabel[s] }))}
+                />
                 <FullRow>
-                  <TextAreaField control={form.control} name="findings" label="Investigation findings" required rows={5} maxLength={4000} placeholder="Clerical check, repeat grouping, DAT, culture, conclusion" />
+                  <TextAreaField
+                    control={form.control}
+                    name="findings"
+                    label="Investigation findings"
+                    required
+                    rows={5}
+                    maxLength={4000}
+                    placeholder="Clerical check, repeat grouping, DAT, culture, conclusion"
+                  />
                 </FullRow>
                 <FullRow>
-                  <SwitchField control={form.control} name="reportedToHaemovigilance" label="Reported to the Haemovigilance Programme of India" />
+                  <SwitchField
+                    control={form.control}
+                    name="reportedToHaemovigilance"
+                    label="Reported to the Haemovigilance Programme of India"
+                  />
                 </FullRow>
               </FormGrid>
               <ActionError error={close.error} />
@@ -217,7 +299,12 @@ export function CloseReactionDialog({ reaction, onClose }: { reaction: Transfusi
               <Button onClick={onClose} disabled={close.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={close.isPending} icon={close.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={close.isPending}
+                icon={close.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Close investigation
               </Button>
             </DialogActions>

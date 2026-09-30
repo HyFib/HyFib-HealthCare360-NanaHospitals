@@ -18,7 +18,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, BarcodeScannerRegular, BoxArrowUpRegular, CheckmarkCircleRegular, DeleteRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  BarcodeScannerRegular,
+  BoxArrowUpRegular,
+  CheckmarkCircleRegular,
+  DeleteRegular,
+  PrintRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, isApiError, todayIso, useSession } from '@hc360/core';
 import { DataTable, EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -44,11 +51,30 @@ export const Route = createFileRoute('/_app/cssd/issue')({
 });
 
 const useStyles = makeStyles({
-  layout: { display: 'grid', gap: '16px', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', alignItems: 'start', '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  layout: {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)',
+    alignItems: 'start',
+    '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  two: { display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', '@media (max-width: 640px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  two: {
+    display: 'grid',
+    gap: '12px',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    '@media (max-width: 640px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   scan: { display: 'flex', gap: '8px', alignItems: 'flex-end' },
-  line: { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', padding: '6px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  line: {
+    display: 'flex',
+    gap: '8px',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    padding: '6px 0',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   done: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center' },
 });
@@ -71,7 +97,10 @@ function IssuePacksPage() {
   const [selected, setSelected] = useState<SterilePackDto[]>([]);
   const [issued, setIssued] = useState<SetIssueDto[] | null>(null);
   const available = useQuery(cssdQueries.packs({}));
-  const requests = useQuery({ ...cssdQueries.requests({ departmentId, openOnly: true }), enabled: Boolean(departmentId) });
+  const requests = useQuery({
+    ...cssdQueries.requests({ departmentId, openOnly: true }),
+    enabled: Boolean(departmentId),
+  });
   const request = requests.data?.find((r) => r.id === requestId) ?? null;
   const today = todayIso();
   const usable = (available.data ?? []).filter((p) => !p.isExpired && !selected.some((s) => s.id === p.id));
@@ -91,7 +120,9 @@ function IssuePacksPage() {
     if (!pack) {
       setScanError(`Pack ${code} is not on the shelf (not released, already issued or recalled).`);
     } else if (pack.isExpired) {
-      setScanError(`Pack ${code} expired on ${pack.sterileUntil ? formatDateOnly(pack.sterileUntil) : '—'}. Send it for reprocessing.`);
+      setScanError(
+        `Pack ${code} expired on ${pack.sterileUntil ? formatDateOnly(pack.sterileUntil) : '—'}. Send it for reprocessing.`,
+      );
     } else if (selected.some((p) => p.id === pack.id)) {
       setScanError(`Pack ${code} is already in this issue.`);
     } else {
@@ -110,7 +141,13 @@ function IssuePacksPage() {
   };
 
   const issue = useMutation({
-    mutationFn: () => cssdApi.issue({ departmentId, cssdRequestId: requestId || null, issuedToName: issuedTo.trim() || null, packIds: selected.map((p) => p.id) }),
+    mutationFn: () =>
+      cssdApi.issue({
+        departmentId,
+        cssdRequestId: requestId || null,
+        issuedToName: issuedTo.trim() || null,
+        packIds: selected.map((p) => p.id),
+      }),
     onSuccess: (result) => {
       setIssued(result);
       void queryClient.invalidateQueries({ queryKey: cssdKeys.all });
@@ -134,7 +171,10 @@ function IssuePacksPage() {
   if (!canIssue) {
     return (
       <Page maxWidth={720}>
-        <EmptyState title="Only CSSD staff issue packs" description="Request sterile sets from the Requests page; CSSD issues them to your department." />
+        <EmptyState
+          title="Only CSSD staff issue packs"
+          description="Request sterile sets from the Requests page; CSSD issues them to your department."
+        />
       </Page>
     );
   }
@@ -187,7 +227,12 @@ function IssuePacksPage() {
                 </Select>
               </Field>
               <Field label="Received by">
-                <Input value={issuedTo} onChange={(_, d) => setIssuedTo(d.value)} maxLength={200} placeholder="Name of the person collecting" />
+                <Input
+                  value={issuedTo}
+                  onChange={(_, d) => setIssuedTo(d.value)}
+                  maxLength={200}
+                  placeholder="Name of the person collecting"
+                />
               </Field>
             </div>
           </Section>
@@ -195,13 +240,21 @@ function IssuePacksPage() {
           {request && (
             <Section title={`Request ${request.requestNumber}`} description={request.notes ?? undefined}>
               {request.lines.map((line) => {
-                const outstanding = Math.max(0, line.quantity - line.issuedQuantity - (bySet.get(line.instrumentSetId)?.count ?? 0));
+                const outstanding = Math.max(
+                  0,
+                  line.quantity - line.issuedQuantity - (bySet.get(line.instrumentSetId)?.count ?? 0),
+                );
                 return (
                   <div key={line.instrumentSetId} className={styles.line}>
                     <Text>
                       <strong>{line.setName ?? 'Set'}</strong> · asked {line.quantity}, issued {line.issuedQuantity}
                     </Text>
-                    <Button size="small" icon={<AddRegular />} disabled={outstanding === 0} onClick={() => addSoonest(line.instrumentSetId, outstanding)}>
+                    <Button
+                      size="small"
+                      icon={<AddRegular />}
+                      disabled={outstanding === 0}
+                      onClick={() => addSoonest(line.instrumentSetId, outstanding)}
+                    >
                       {outstanding ? `Add ${outstanding} soonest-expiring` : 'Covered'}
                     </Button>
                   </div>
@@ -212,7 +265,12 @@ function IssuePacksPage() {
 
           <Section title="Scan packs">
             <form className={styles.scan} onSubmit={onScan}>
-              <Field label="Pack number" style={{ flex: 1 }} validationMessage={scanError ?? undefined} validationState={scanError ? 'error' : 'none'}>
+              <Field
+                label="Pack number"
+                style={{ flex: 1 }}
+                validationMessage={scanError ?? undefined}
+                validationState={scanError ? 'error' : 'none'}
+              >
                 <Input
                   value={scan}
                   onChange={(_, d) => setScan(d.value)}
@@ -239,7 +297,12 @@ function IssuePacksPage() {
               onRowClick={add}
               size="small"
               columns={[
-                { key: 'number', header: 'Pack', width: 190, render: (p) => <Text font="monospace">{p.packNumber}</Text> },
+                {
+                  key: 'number',
+                  header: 'Pack',
+                  width: 190,
+                  render: (p) => <Text font="monospace">{p.packNumber}</Text>,
+                },
                 { key: 'set', header: 'Set', render: (p) => p.setName ?? '—' },
                 {
                   key: 'expiry',
@@ -260,7 +323,9 @@ function IssuePacksPage() {
                   },
                 },
               ]}
-              rowActions={(p) => <Button size="small" icon={<AddRegular />} aria-label={`Add ${p.packNumber}`} onClick={() => add(p)} />}
+              rowActions={(p) => (
+                <Button size="small" icon={<AddRegular />} aria-label={`Add ${p.packNumber}`} onClick={() => add(p)} />
+              )}
               emptyTitle="No sterile packs on the shelf"
               emptyDescription="Release a sterilizer load to put packs on the shelf."
             />
@@ -282,14 +347,26 @@ function IssuePacksPage() {
                       {p.setName} · use by {p.sterileUntil ? formatDateOnly(p.sterileUntil) : '—'}
                     </Caption1>
                   </span>
-                  <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${p.packNumber}`} onClick={() => setSelected(selected.filter((s) => s.id !== p.id))} />
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<DeleteRegular />}
+                    aria-label={`Remove ${p.packNumber}`}
+                    onClick={() => setSelected(selected.filter((s) => s.id !== p.id))}
+                  />
                 </div>
               ))
             )}
-            {[...bySet.values()].length > 1 && <Caption1 className={styles.muted}>{[...bySet.values()].map((s) => `${s.name} × ${s.count}`).join(' · ')}</Caption1>}
+            {[...bySet.values()].length > 1 && (
+              <Caption1 className={styles.muted}>
+                {[...bySet.values()].map((s) => `${s.name} × ${s.count}`).join(' · ')}
+              </Caption1>
+            )}
             {issue.error && (
               <MessageBar intent="error" layout="multiline">
-                <MessageBarBody>{isApiError(issue.error) ? issue.error.userMessage : 'The packs could not be issued.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(issue.error) ? issue.error.userMessage : 'The packs could not be issued.'}
+                </MessageBarBody>
               </MessageBar>
             )}
             <Button
@@ -319,7 +396,15 @@ function IssuePacksPage() {
               </div>
             </DialogContent>
             <DialogActions>
-              <Button icon={<PrintRegular />} onClick={() => issued && void printIssueSlip(issued, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'))}>
+              <Button
+                icon={<PrintRegular />}
+                onClick={() =>
+                  issued &&
+                  void printIssueSlip(issued, facilityName).catch((error: unknown) =>
+                    notify.error(error, 'Printing failed'),
+                  )
+                }
+              >
                 Print issue slip
               </Button>
               <Button appearance="primary" onClick={reset} autoFocus>

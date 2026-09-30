@@ -26,7 +26,11 @@ function MyLeavePage() {
       subtitle="Your balance, requests and holidays"
       icon={<CalendarPersonRegular />}
       actions={
-        <Button appearance="primary" icon={<CalendarAddRegular />} onClick={() => void navigate({ to: '/hr/me/apply-leave' })}>
+        <Button
+          appearance="primary"
+          icon={<CalendarAddRegular />}
+          onClick={() => void navigate({ to: '/hr/me/apply-leave' })}
+        >
           Apply for leave
         </Button>
       }
@@ -70,9 +74,18 @@ function MyLeave() {
         </Field>
       </Toolbar>
       <Section title={`Balance ${year}`} flush>
-        <BalancesTable balances={balances.data} loading={balances.isLoading} error={balances.error} onRetry={() => void balances.refetch()} />
+        <BalancesTable
+          balances={balances.data}
+          loading={balances.isLoading}
+          error={balances.error}
+          onRetry={() => void balances.refetch()}
+        />
       </Section>
-      <Section title="My requests" description="Pending requests and leave that has not started can be withdrawn." flush>
+      <Section
+        title="My requests"
+        description="Pending requests and leave that has not started can be withdrawn."
+        flush
+      >
         <DataTable
           ariaLabel="My leave requests"
           rows={requests.data}
@@ -100,7 +113,12 @@ function MyLeave() {
           rowActions={(r) =>
             canCancelLeave(r, today, false) ? (
               <Tooltip content="Withdraw this request" relationship="label">
-                <Button size="small" appearance="subtle" icon={<CalendarCancelRegular />} onClick={() => setCancelling(r)}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<CalendarCancelRegular />}
+                  onClick={() => setCancelling(r)}
+                >
                   Withdraw
                 </Button>
               </Tooltip>
@@ -120,9 +138,19 @@ function MyLeave() {
           onRetry={() => void holidays.refetch()}
           getRowId={(h) => h.id}
           columns={[
-            { key: 'date', header: 'Date', width: 150, render: (h) => `${formatDateOnly(h.date)} · ${dayHeader(h.date).weekday}` },
+            {
+              key: 'date',
+              header: 'Date',
+              width: 150,
+              render: (h) => `${formatDateOnly(h.date)} · ${dayHeader(h.date).weekday}`,
+            },
             { key: 'name', header: 'Holiday', render: (h) => h.name },
-            { key: 'kind', header: '', width: 200, render: (h) => (h.kind === 'Restricted' ? <Caption1>Optional (restricted) holiday</Caption1> : null) },
+            {
+              key: 'kind',
+              header: '',
+              width: 200,
+              render: (h) => (h.kind === 'Restricted' ? <Caption1>Optional (restricted) holiday</Caption1> : null),
+            },
           ]}
           emptyTitle="No holidays listed yet"
           size="small"

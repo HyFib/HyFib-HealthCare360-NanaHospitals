@@ -121,7 +121,9 @@ describe('numeric classification', () => {
   });
 
   it('cannot flag without limits', () => {
-    expect(classifyNumeric({ low: null, high: null, criticalLow: null, criticalHigh: null }, { comparator: null, value: 3 })).toBeNull();
+    expect(
+      classifyNumeric({ low: null, high: null, criticalLow: null, criticalHigh: null }, { comparator: null, value: 3 }),
+    ).toBeNull();
   });
 });
 
@@ -200,19 +202,34 @@ describe('line interpretation while typing', () => {
 
   it('keeps the server answer for unchanged values', () => {
     const saved = line({ status: 'Entered', value: '5.8', flag: 'High', deltaPercent: 20, deltaExceeded: false });
-    expect(interpretLine(saved, { value: '5.8' }, context)).toMatchObject({ flag: 'High', source: 'server', dirty: false });
+    expect(interpretLine(saved, { value: '5.8' }, context)).toMatchObject({
+      flag: 'High',
+      source: 'server',
+      dirty: false,
+    });
     expect(interpretLine(saved, undefined, context)).toMatchObject({ flag: 'High', source: 'server' });
   });
 
   it('previews flags, validity and delta for typed values', () => {
     const pending = line({ previousValue: 4 });
-    expect(interpretLine(pending, { value: '6.9' }, context)).toMatchObject({ flag: 'CriticalHigh', source: 'preview', deltaExceeded: true, dirty: true });
-    expect(interpretLine(pending, { value: '4.2' }, context)).toMatchObject({ flag: 'Normal', deltaPercent: 5, deltaExceeded: false });
+    expect(interpretLine(pending, { value: '6.9' }, context)).toMatchObject({
+      flag: 'CriticalHigh',
+      source: 'preview',
+      deltaExceeded: true,
+      dirty: true,
+    });
+    expect(interpretLine(pending, { value: '4.2' }, context)).toMatchObject({
+      flag: 'Normal',
+      deltaPercent: 5,
+      deltaExceeded: false,
+    });
     expect(interpretLine(pending, { value: 'high' }, context).invalid).toMatch(/number/);
     // Clearing a value that was never saved is not a change.
     expect(interpretLine(pending, { value: '' }, context)).toMatchObject({ flag: null, invalid: null, dirty: false });
     // Clearing a saved value is a change without a flag.
-    expect(interpretLine(line({ status: 'Entered', value: '4.2', flag: 'Normal' }), { value: ' ' }, context)).toMatchObject({ flag: null, dirty: true });
+    expect(
+      interpretLine(line({ status: 'Entered', value: '4.2', flag: 'Normal' }), { value: ' ' }, context),
+    ).toMatchObject({ flag: null, dirty: true });
   });
 
   it('falls back to the printed interval when the test master is not available', () => {
@@ -222,9 +239,13 @@ describe('line interpretation while typing', () => {
 
   it('checks answers against the allowed options', () => {
     const answer = line({ resultType: 'Options', options: ['Negative', 'Positive'], referenceText: 'Negative' });
-    expect(interpretLine(answer, { value: 'Maybe' }, { gender: 'Female', ageDays: 9000 }).invalid).toMatch(/Negative, Positive/);
+    expect(interpretLine(answer, { value: 'Maybe' }, { gender: 'Female', ageDays: 9000 }).invalid).toMatch(
+      /Negative, Positive/,
+    );
     const answerRanges = [range({ normalValues: ['Negative'], criticalValues: ['Positive'] })];
-    expect(interpretLine(answer, { value: 'Positive' }, { gender: 'Female', ageDays: 9000, ranges: answerRanges }).flag).toBe('Critical');
+    expect(
+      interpretLine(answer, { value: 'Positive' }, { gender: 'Female', ageDays: 9000, ranges: answerRanges }).flag,
+    ).toBe('Critical');
   });
 });
 
@@ -235,15 +256,37 @@ describe('verification hints', () => {
       'Critical value: document the call to the doctor',
       'Large change from the previous result',
     ]);
-    expect(reviewHints(line({ status: 'Entered' }), { flag: 'High', deltaExceeded: false, invalid: null })).toEqual(['Flagged high']);
-    expect(reviewHints(line({ status: 'Entered' }), { flag: null, deltaExceeded: false, invalid: null })).toEqual(['No reference range applies to this patient']);
+    expect(reviewHints(line({ status: 'Entered' }), { flag: 'High', deltaExceeded: false, invalid: null })).toEqual([
+      'Flagged high',
+    ]);
+    expect(reviewHints(line({ status: 'Entered' }), { flag: null, deltaExceeded: false, invalid: null })).toEqual([
+      'No reference range applies to this patient',
+    ]);
   });
 
   it('allows bulk verification only for clean, saved, normal results', () => {
     const clean = line({ status: 'Entered', value: '4.2', flag: 'Normal' });
-    expect(isReadyForBulkVerify(clean, { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: false })).toBe(true);
-    expect(isReadyForBulkVerify(clean, { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: true })).toBe(false);
-    expect(isReadyForBulkVerify(line({ status: 'Entered', remarks: 'Repeat sample' }), { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: false })).toBe(false);
-    expect(isReadyForBulkVerify(line({ status: 'Pending' }), { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: false })).toBe(false);
+    expect(isReadyForBulkVerify(clean, { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: false })).toBe(
+      true,
+    );
+    expect(isReadyForBulkVerify(clean, { flag: 'Normal', deltaExceeded: false, invalid: null, dirty: true })).toBe(
+      false,
+    );
+    expect(
+      isReadyForBulkVerify(line({ status: 'Entered', remarks: 'Repeat sample' }), {
+        flag: 'Normal',
+        deltaExceeded: false,
+        invalid: null,
+        dirty: false,
+      }),
+    ).toBe(false);
+    expect(
+      isReadyForBulkVerify(line({ status: 'Pending' }), {
+        flag: 'Normal',
+        deltaExceeded: false,
+        invalid: null,
+        dirty: false,
+      }),
+    ).toBe(false);
   });
 });

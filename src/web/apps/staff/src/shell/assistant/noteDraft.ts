@@ -29,7 +29,9 @@ function storedDraftValue(json: string | null): Partial<Record<keyof NoteDraft, 
   }
   try {
     const parsed = JSON.parse(json) as { value?: unknown } | null;
-    return parsed && typeof parsed.value === 'object' && parsed.value !== null ? (parsed.value as Partial<Record<keyof NoteDraft, unknown>>) : null;
+    return parsed && typeof parsed.value === 'object' && parsed.value !== null
+      ? (parsed.value as Partial<Record<keyof NoteDraft, unknown>>)
+      : null;
   } catch {
     return null;
   }
@@ -51,7 +53,12 @@ export function mergeNoteDraft(existingJson: string | null, draft: NoteDraft, sa
 }
 
 /** Stores the note for the EMR composer. Returns false when this computer's storage is unavailable. */
-export function keepNoteDraft(storage: Pick<Storage, 'getItem' | 'setItem'> | null, storageKey: string, draft: NoteDraft, now = Date.now()): boolean {
+export function keepNoteDraft(
+  storage: Pick<Storage, 'getItem' | 'setItem'> | null,
+  storageKey: string,
+  draft: NoteDraft,
+  now = Date.now(),
+): boolean {
   if (!storage) {
     return false;
   }

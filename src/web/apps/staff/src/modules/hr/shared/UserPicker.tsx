@@ -58,7 +58,12 @@ export function UserPicker({
       required={required}
       validationMessage={validationMessage}
       validationState={validationMessage ? 'error' : 'none'}
-      hint={hint ?? (canSearch ? 'Type at least two letters of the name.' : 'You can choose yourself. Choosing other staff needs access to the staff list.')}
+      hint={
+        hint ??
+        (canSearch
+          ? 'Type at least two letters of the name.'
+          : 'You can choose yourself. Choosing other staff needs access to the staff list.')
+      }
     >
       <Combobox
         placeholder={canSearch ? 'Search staff by name' : 'Choose'}

@@ -8,7 +8,11 @@ import { incidentStatusLabel, INCIDENT_STATUSES, type IncidentStatus } from './l
 
 const useStyles = makeStyles({
   head: { display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' },
-  big: { fontSize: tokens.fontSizeHero800, fontWeight: tokens.fontWeightSemibold, lineHeight: tokens.lineHeightHero800 },
+  big: {
+    fontSize: tokens.fontSizeHero800,
+    fontWeight: tokens.fontWeightSemibold,
+    lineHeight: tokens.lineHeightHero800,
+  },
   rows: { display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' },
   row: {
     display: 'flex',

@@ -48,7 +48,15 @@ internal static class IpEndpoints
             .OrderByDescending(a => a.AdmittedAt)
             .Select(a => new
             {
-                a.Id, a.AdmissionId, a.AdmissionNumber, a.PatientId, a.PayerType, a.Status, a.AdmittedAt, a.DischargedAt, a.EstimatedAmount,
+                a.Id,
+                a.AdmissionId,
+                a.AdmissionNumber,
+                a.PatientId,
+                a.PayerType,
+                a.Status,
+                a.AdmittedAt,
+                a.DischargedAt,
+                a.EstimatedAmount,
                 DepositBalance = a.DepositReceived - a.DepositAdjusted - a.DepositRefunded,
                 HasPackage = a.PackageId != null,
                 PayerName = db.Set<Payer>().Where(p => p.Id == a.PayerId).Select(p => p.Name).FirstOrDefault(),

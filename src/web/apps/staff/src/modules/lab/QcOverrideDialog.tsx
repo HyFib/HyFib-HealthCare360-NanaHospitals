@@ -70,22 +70,39 @@ export function QcOverrideDialog({
                     {assays.map((assay) => (
                       <li key={assay.testName}>
                         <strong>{assay.testName}</strong>
-                        {assay.violations.length > 0 && `: ${assay.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}`}
+                        {assay.violations.length > 0 &&
+                          `: ${assay.violations.map((rule) => westgardRuleText[rule] ?? rule).join('; ')}`}
                       </li>
                     ))}
                   </ul>
-                  The safest course is to correct the problem and repeat QC. Override only if you are sure the patient results are reliable.
+                  The safest course is to correct the problem and repeat QC. Override only if you are sure the patient
+                  results are reliable.
                 </MessageBarBody>
               </MessageBar>
-              <Field label="Why is it safe to release these results?" required hint="At least 10 characters. Recorded in the audit trail with your name.">
-                <Textarea value={reason} onChange={(_, data) => setReason(data.value.slice(0, 500))} rows={3} resize="vertical" autoFocus />
+              <Field
+                label="Why is it safe to release these results?"
+                required
+                hint="At least 10 characters. Recorded in the audit trail with your name."
+              >
+                <Textarea
+                  value={reason}
+                  onChange={(_, data) => setReason(data.value.slice(0, 500))}
+                  rows={3}
+                  resize="vertical"
+                  autoFocus
+                />
               </Field>
             </DialogContent>
             <DialogActions>
               <Button onClick={onCancel} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || busy}
+                icon={busy ? <Spinner size="tiny" /> : undefined}
+              >
                 {confirmLabel}
               </Button>
             </DialogActions>

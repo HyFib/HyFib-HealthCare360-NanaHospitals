@@ -4,7 +4,14 @@ import { formatDateOnly } from '@hc360/core';
 import { StatusBadge } from '@hc360/ui';
 import type { ReactNode } from 'react';
 import { expiryLabel, expiryTone, formatExpiry } from './format';
-import { requiresPrescription, requiresRegister, scheduleHint, scheduleLabel, workflowTone, type DrugSchedule } from './labels';
+import {
+  requiresPrescription,
+  requiresRegister,
+  scheduleHint,
+  scheduleLabel,
+  workflowTone,
+  type DrugSchedule,
+} from './labels';
 
 const useStyles = makeStyles({
   flags: { display: 'inline-flex', gap: '4px', alignItems: 'center', flexWrap: 'wrap' },
@@ -17,10 +24,19 @@ const useStyles = makeStyles({
 });
 
 /** Schedule H / H1 / X and NDPS markers with their meaning on hover; nothing for unscheduled items. */
-export function ScheduleBadge({ schedule, isControlled }: { schedule: DrugSchedule | null | undefined; isControlled?: boolean }) {
+export function ScheduleBadge({
+  schedule,
+  isControlled,
+}: {
+  schedule: DrugSchedule | null | undefined;
+  isControlled?: boolean;
+}) {
   if (!schedule || schedule === 'None' || schedule === 'Otc' || schedule === 'G') {
     return isControlled ? (
-      <Tooltip content="Narcotic / psychotropic (NDPS): prescription and register entry needed" relationship="description">
+      <Tooltip
+        content="Narcotic / psychotropic (NDPS): prescription and register entry needed"
+        relationship="description"
+      >
         <Badge size="small" appearance="filled" color="danger" icon={<ShieldKeyholeRegular />}>
           NDPS
         </Badge>
@@ -29,8 +45,16 @@ export function ScheduleBadge({ schedule, isControlled }: { schedule: DrugSchedu
   }
   const register = requiresRegister(schedule, Boolean(isControlled));
   return (
-    <Tooltip content={isControlled ? `${scheduleHint[schedule]} (NDPS controlled)` : scheduleHint[schedule]} relationship="description">
-      <Badge size="small" appearance={register ? 'filled' : 'tint'} color={register ? 'danger' : 'warning'} icon={register ? <ShieldKeyholeRegular /> : undefined}>
+    <Tooltip
+      content={isControlled ? `${scheduleHint[schedule]} (NDPS controlled)` : scheduleHint[schedule]}
+      relationship="description"
+    >
+      <Badge
+        size="small"
+        appearance={register ? 'filled' : 'tint'}
+        color={register ? 'danger' : 'warning'}
+        icon={register ? <ShieldKeyholeRegular /> : undefined}
+      >
         {schedule === 'H' ? 'Rx · H' : scheduleLabel[schedule].replace('Schedule ', '')}
         {isControlled && schedule !== 'X' ? ' · NDPS' : ''}
       </Badge>
@@ -39,7 +63,15 @@ export function ScheduleBadge({ schedule, isControlled }: { schedule: DrugSchedu
 }
 
 /** Prescription, register and cold-chain markers for an item. */
-export function ItemFlags({ schedule, isControlled, isColdChain }: { schedule: DrugSchedule | null | undefined; isControlled: boolean; isColdChain?: boolean }) {
+export function ItemFlags({
+  schedule,
+  isControlled,
+  isColdChain,
+}: {
+  schedule: DrugSchedule | null | undefined;
+  isControlled: boolean;
+  isColdChain?: boolean;
+}) {
   const styles = useStyles();
   const rxOnly = schedule ? requiresPrescription(schedule, isControlled) : isControlled;
   if (!rxOnly && !isColdChain && !isControlled) {
@@ -60,7 +92,17 @@ export function ItemFlags({ schedule, isControlled, isColdChain }: { schedule: D
 }
 
 /** Pack-style expiry ("Mar 2027") coloured by how soon it expires, with the exact date and days on hover. */
-export function ExpiryText({ date, daysToExpiry, warnDays = 90, showDays }: { date: string | null | undefined; daysToExpiry?: number | null; warnDays?: number; showDays?: boolean }) {
+export function ExpiryText({
+  date,
+  daysToExpiry,
+  warnDays = 90,
+  showDays,
+}: {
+  date: string | null | undefined;
+  daysToExpiry?: number | null;
+  warnDays?: number;
+  showDays?: boolean;
+}) {
   const styles = useStyles();
   if (!date) {
     return <Text>—</Text>;
@@ -68,12 +110,17 @@ export function ExpiryText({ date, daysToExpiry, warnDays = 90, showDays }: { da
   const tone = daysToExpiry === undefined ? undefined : expiryTone(daysToExpiry, warnDays);
   const className = tone === 'danger' ? styles.danger : tone === 'warning' ? styles.warning : undefined;
   return (
-    <Tooltip content={`${formatDateOnly(date)}${daysToExpiry !== undefined ? ` · ${expiryLabel(daysToExpiry)}` : ''}`} relationship="description">
+    <Tooltip
+      content={`${formatDateOnly(date)}${daysToExpiry !== undefined ? ` · ${expiryLabel(daysToExpiry)}` : ''}`}
+      relationship="description"
+    >
       <span className={styles.expiry}>
         <Text className={className} weight={tone === 'danger' || tone === 'warning' ? 'semibold' : 'regular'}>
           {formatExpiry(date)}
         </Text>
-        {showDays && daysToExpiry !== undefined && daysToExpiry !== null && <Caption1 className={className ?? styles.label}>{expiryLabel(daysToExpiry)}</Caption1>}
+        {showDays && daysToExpiry !== undefined && daysToExpiry !== null && (
+          <Caption1 className={className ?? styles.label}>{expiryLabel(daysToExpiry)}</Caption1>
+        )}
       </span>
     </Tooltip>
   );

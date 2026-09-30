@@ -105,7 +105,12 @@ function Body({ text, onClose }: { text: string; onClose: () => void }) {
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <Caption1>Visits whose “Referred by” reads exactly this will count for the doctor you choose.</Caption1>
           <Field label="Find the doctor">
-            <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, clinic or area" autoFocus />
+            <SearchBox
+              value={term}
+              onChange={(_, d) => setTerm(d.value)}
+              placeholder="Name, clinic or area"
+              autoFocus
+            />
           </Field>
           {doctors.isLoading ? (
             <Spinner size="tiny" label="Searching…" labelPosition="after" />
@@ -128,7 +133,12 @@ function Body({ text, onClose }: { text: string; onClose: () => void }) {
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy || !doctorId} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy || !doctorId}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             Add spelling
           </Button>
         </DialogActions>

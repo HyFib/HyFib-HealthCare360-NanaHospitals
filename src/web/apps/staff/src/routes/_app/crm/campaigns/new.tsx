@@ -26,7 +26,12 @@ function NewCampaignPage() {
           { label: 'Campaigns', onClick: () => void navigate({ to: '/crm/campaigns' }) },
         ]}
       />
-      <CampaignEditor campaign={null} onSaved={(campaignId) => void navigate({ to: '/crm/campaigns/$campaignId', params: { campaignId }, replace: true })} />
+      <CampaignEditor
+        campaign={null}
+        onSaved={(campaignId) =>
+          void navigate({ to: '/crm/campaigns/$campaignId', params: { campaignId }, replace: true })
+        }
+      />
     </Page>
   );
 }

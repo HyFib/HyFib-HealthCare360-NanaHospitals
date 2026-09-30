@@ -18,10 +18,29 @@ import type {
 export const MODALITIES = ['XR', 'CT', 'MR', 'US', 'MG', 'RF', 'DX'] as const;
 export type Modality = (typeof MODALITIES)[number];
 
-export const STUDY_STATUSES = ['Ordered', 'Scheduled', 'Arrived', 'InProgress', 'Acquired', 'Reported', 'Verified', 'Released', 'Cancelled'] as const;
+export const STUDY_STATUSES = [
+  'Ordered',
+  'Scheduled',
+  'Arrived',
+  'InProgress',
+  'Acquired',
+  'Reported',
+  'Verified',
+  'Released',
+  'Cancelled',
+] as const;
 export type ImagingStudyStatus = (typeof STUDY_STATUSES)[number];
 
-export const REPEAT_REASONS = ['Positioning', 'Exposure', 'PatientMotion', 'Artefact', 'EquipmentFault', 'WrongProtocol', 'PatientRelated', 'Other'] as const;
+export const REPEAT_REASONS = [
+  'Positioning',
+  'Exposure',
+  'PatientMotion',
+  'Artefact',
+  'EquipmentFault',
+  'WrongProtocol',
+  'PatientRelated',
+  'Other',
+] as const;
 export type ImageRepeatReason = (typeof REPEAT_REASONS)[number];
 
 export type AiFindingStatus = 'Preliminary' | 'Acknowledged' | 'Dismissed';
@@ -309,7 +328,11 @@ export const radiologyQueries = {
   studies: (filters: StudyFilters) =>
     queryOptions({
       queryKey: ['radiology', 'studies', 'list', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<ImagingStudyListItem>>('/api/v1/radiology/studies', { query: { ...filters, pageSize: PAGE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<ImagingStudyListItem>>('/api/v1/radiology/studies', {
+          query: { ...filters, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -322,7 +345,10 @@ export const radiologyQueries = {
     queryOptions({
       queryKey: ['radiology', 'studies', 'reporting', modality ?? 'all', page ?? 1],
       queryFn: ({ signal }) =>
-        api.get<PagedResult<ImagingStudyListItem>>('/api/v1/radiology/reporting-worklist', { query: { modality, page, pageSize: PAGE }, signal }),
+        api.get<PagedResult<ImagingStudyListItem>>('/api/v1/radiology/reporting-worklist', {
+          query: { modality, page, pageSize: PAGE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -358,19 +384,27 @@ export const radiologyQueries = {
     queryOptions({
       queryKey: ['radiology', 'masters', 'templates', modality ?? 'all', bodyPart ?? '', includeInactive],
       queryFn: ({ signal }) =>
-        api.get<ReportTemplateDto[]>('/api/v1/radiology/templates', { query: { modality, bodyPart: bodyPart ?? undefined, includeInactive }, signal }),
+        api.get<ReportTemplateDto[]>('/api/v1/radiology/templates', {
+          query: { modality, bodyPart: bodyPart ?? undefined, includeInactive },
+          signal,
+        }),
       staleTime: 10 * 60_000,
     }),
   procedures: (modality?: Modality, includeInactive = false) =>
     queryOptions({
       queryKey: ['radiology', 'masters', 'procedures', modality ?? 'all', includeInactive],
-      queryFn: ({ signal }) => api.get<ImagingProcedureDto[]>('/api/v1/radiology/procedures', { query: { modality, includeInactive }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<ImagingProcedureDto[]>('/api/v1/radiology/procedures', {
+          query: { modality, includeInactive },
+          signal,
+        }),
       staleTime: 10 * 60_000,
     }),
   tat: (from?: string, to?: string, modality?: Modality) =>
     queryOptions({
       queryKey: ['radiology', 'tat', from ?? 'today', to ?? 'today', modality ?? 'all'],
-      queryFn: ({ signal }) => api.get<RadiologyTatReport>('/api/v1/radiology/tat', { query: { from, to, modality }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<RadiologyTatReport>('/api/v1/radiology/tat', { query: { from, to, modality }, signal }),
     }),
 };
 
@@ -379,11 +413,13 @@ export const radiologyQueries = {
 const study = (id: string) => `/api/v1/radiology/studies/${id}`;
 
 export const radiologyApi = {
-  schedule: (id: string, request: ScheduleStudyRequest) => api.post<ImagingStudyDetail>(`${study(id)}/schedule`, request),
+  schedule: (id: string, request: ScheduleStudyRequest) =>
+    api.post<ImagingStudyDetail>(`${study(id)}/schedule`, request),
   arrive: (id: string) => api.post<ImagingStudyDetail>(`${study(id)}/arrive`),
   start: (id: string) => api.post<ImagingStudyDetail>(`${study(id)}/start`),
   acquire: (id: string, request: AcquireStudyRequest) => api.post<ImagingStudyDetail>(`${study(id)}/acquire`, request),
-  recordRepeat: (id: string, reason: ImageRepeatReason, note: string | null) => api.post<ImagingStudyDetail>(`${study(id)}/repeats`, { reason, note }),
+  recordRepeat: (id: string, reason: ImageRepeatReason, note: string | null) =>
+    api.post<ImagingStudyDetail>(`${study(id)}/repeats`, { reason, note }),
   cancel: (id: string, reason: string) => api.post<ImagingStudyDetail>(`${study(id)}/cancel`, { reason }),
   reconcile: (id: string) => api.post<ImagingStudyDetail>(`${study(id)}/reconcile`),
   reconcileRecent: () => api.post<PacsReconciliationSummary>('/api/v1/radiology/pacs/reconcile'),
@@ -391,18 +427,24 @@ export const radiologyApi = {
   reviewAiFinding: (findingId: string, acknowledge: boolean, note: string | null) =>
     api.post<AiFindingDto>(`/api/v1/radiology/ai-findings/${findingId}/review`, { acknowledge, note }),
 
-  saveReport: (id: string, request: SaveRadiologyReportRequest) => api.put<RadiologyReportDto>(`${study(id)}/report`, request),
+  saveReport: (id: string, request: SaveRadiologyReportRequest) =>
+    api.put<RadiologyReportDto>(`${study(id)}/report`, request),
   submitReport: (id: string) => api.post<RadiologyReportDto>(`${study(id)}/report/submit`),
   verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
     api.post<RadiologyReportDto>(`${study(id)}/report/verify`, { criticalCall, release }),
   releaseReport: (id: string) => api.post<RadiologyReportDto>(`${study(id)}/report/release`),
-  addAddendum: (id: string, request: AddAddendumRequest) => api.post<RadiologyReportDto>(`${study(id)}/report/addenda`, request),
+  addAddendum: (id: string, request: AddAddendumRequest) =>
+    api.post<RadiologyReportDto>(`${study(id)}/report/addenda`, request),
   printView: (id: string) => api.get<RadiologyReportView>(`${study(id)}/report/print`),
 
   saveTemplate: (id: string | null, request: SaveReportTemplateRequest): Promise<{ id: string } | undefined> =>
-    id ? api.put<undefined>(`/api/v1/radiology/templates/${id}`, request) : api.post<{ id: string }>('/api/v1/radiology/templates', request),
+    id
+      ? api.put<undefined>(`/api/v1/radiology/templates/${id}`, request)
+      : api.post<{ id: string }>('/api/v1/radiology/templates', request),
   saveProcedure: (id: string | null, request: SaveImagingProcedureRequest): Promise<{ id: string } | undefined> =>
-    id ? api.put<undefined>(`/api/v1/radiology/procedures/${id}`, request) : api.post<{ id: string }>('/api/v1/radiology/procedures', request),
+    id
+      ? api.put<undefined>(`/api/v1/radiology/procedures/${id}`, request)
+      : api.post<{ id: string }>('/api/v1/radiology/procedures', request),
 };
 
 export const RADIOLOGY_PERMISSIONS = {
@@ -414,4 +456,8 @@ export const RADIOLOGY_PERMISSIONS = {
 } as const;
 
 /** Who may open imaging studies and resolve a report id to its study (server `RadiologyEndpoints.StudyReaders`). */
-export const RADIOLOGY_STUDY_READERS = [RADIOLOGY_PERMISSIONS.read, RADIOLOGY_PERMISSIONS.worklist, RADIOLOGY_PERMISSIONS.write] as const;
+export const RADIOLOGY_STUDY_READERS = [
+  RADIOLOGY_PERMISSIONS.read,
+  RADIOLOGY_PERMISSIONS.worklist,
+  RADIOLOGY_PERMISSIONS.write,
+] as const;

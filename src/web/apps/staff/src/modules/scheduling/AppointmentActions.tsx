@@ -1,4 +1,13 @@
-import { Button, makeStyles, Menu, MenuDivider, MenuItem, MenuList, MenuPopover, MenuTrigger } from '@fluentui/react-components';
+import {
+  Button,
+  makeStyles,
+  Menu,
+  MenuDivider,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+} from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
   CheckmarkRegular,
@@ -23,7 +32,12 @@ export function AppointmentRowActions({ appointment, desk }: { appointment: Appo
   const actions = appointmentActions(appointment, desk.context);
   const primary = primaryAction(appointment, desk.context);
   const item = (action: AppointmentAction, icon: ReactElement, label: string) => (
-    <MenuItem icon={icon} disabled={!actions[action].allowed} title={actions[action].reason} onClick={() => desk.run(action, appointment)}>
+    <MenuItem
+      icon={icon}
+      disabled={!actions[action].allowed}
+      title={actions[action].reason}
+      onClick={() => desk.run(action, appointment)}
+    >
       {label}
     </MenuItem>
   );
@@ -31,7 +45,12 @@ export function AppointmentRowActions({ appointment, desk }: { appointment: Appo
   return (
     <div className={styles.actions}>
       {primary === 'checkIn' && (
-        <Button size="small" appearance="primary" icon={<PersonArrowRightRegular />} onClick={() => desk.run('checkIn', appointment)}>
+        <Button
+          size="small"
+          appearance="primary"
+          icon={<PersonArrowRightRegular />}
+          onClick={() => desk.run('checkIn', appointment)}
+        >
           Check in
         </Button>
       )}
@@ -42,7 +61,12 @@ export function AppointmentRowActions({ appointment, desk }: { appointment: Appo
       )}
       <Menu>
         <MenuTrigger disableButtonEnhancement>
-          <Button size="small" appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`More actions for ${appointment.patientName}`} />
+          <Button
+            size="small"
+            appearance="subtle"
+            icon={<MoreHorizontalRegular />}
+            aria-label={`More actions for ${appointment.patientName}`}
+          />
         </MenuTrigger>
         <MenuPopover>
           <MenuList>

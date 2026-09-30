@@ -15,7 +15,20 @@ import {
 import { AddRegular, PersonAddRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatRelative, humanize, normalizePhone, useDebouncedValue } from '@hc360/core';
-import { applyServerErrors, DataTable, FilterBar, FormGrid, Page, PageHeader, Section, SelectField, StatusBadge, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FilterBar,
+  FormGrid,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -24,13 +37,29 @@ import { z } from 'zod';
 import { api } from '@/lib/api';
 import { enumOptions } from '@/lib/lookups';
 import { Can } from '@/lib/permissions';
-import { frontOfficeQueries, type EnquiryChannel, type EnquiryDto, type EnquiryStatus, type EnquiryType } from '@/modules/front-office/api';
+import {
+  frontOfficeQueries,
+  type EnquiryChannel,
+  type EnquiryDto,
+  type EnquiryStatus,
+  type EnquiryType,
+} from '@/modules/front-office/api';
 
 export const Route = createFileRoute('/_app/front-office/enquiries')({
   component: EnquiriesPage,
 });
 
-const TYPES = ['General', 'Appointment', 'DoctorAvailability', 'Billing', 'Insurance', 'HealthPackage', 'Admission', 'Complaint', 'Other'] as const;
+const TYPES = [
+  'General',
+  'Appointment',
+  'DoctorAvailability',
+  'Billing',
+  'Insurance',
+  'HealthPackage',
+  'Admission',
+  'Complaint',
+  'Other',
+] as const;
 const CHANNELS = ['WalkIn', 'Phone', 'WhatsApp', 'Email', 'Website'] as const;
 const STATUSES = ['Open', 'InProgress', 'Resolved', 'Converted'] as const;
 
@@ -56,7 +85,9 @@ function EnquiriesPage() {
   const [term, setTerm] = useState('');
   const search = useDebouncedValue(term.trim(), 300);
   const [editing, setEditing] = useState<EnquiryDto | 'new' | null>(null);
-  const enquiries = useQuery(frontOfficeQueries.enquiries(status === 'All' ? undefined : status, page, search || undefined));
+  const enquiries = useQuery(
+    frontOfficeQueries.enquiries(status === 'All' ? undefined : status, page, search || undefined),
+  );
 
   return (
     <Page>
@@ -86,7 +117,12 @@ function EnquiriesPage() {
               <Tab value="All">All</Tab>
             </TabList>
             <Field style={{ marginLeft: 'auto', minWidth: 240 }}>
-              <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name or phone" aria-label="Search enquiries" />
+              <SearchBox
+                value={term}
+                onChange={(_, d) => setTerm(d.value)}
+                placeholder="Name or phone"
+                aria-label="Search enquiries"
+              />
             </Field>
           </FilterBar>
         </div>
@@ -119,14 +155,24 @@ function EnquiriesPage() {
         <EnquiryDialog
           enquiry={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
-          onRegister={(name, phone) => void navigate({ to: '/patients/register', search: { name, phone: phone ?? undefined } })}
+          onRegister={(name, phone) =>
+            void navigate({ to: '/patients/register', search: { name, phone: phone ?? undefined } })
+          }
         />
       )}
     </Page>
   );
 }
 
-function EnquiryDialog({ enquiry, onClose, onRegister }: { enquiry: EnquiryDto | null; onClose: () => void; onRegister: (name: string, phone: string | null) => void }) {
+function EnquiryDialog({
+  enquiry,
+  onClose,
+  onRegister,
+}: {
+  enquiry: EnquiryDto | null;
+  onClose: () => void;
+  onRegister: (name: string, phone: string | null) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const form = useForm<EnquiryForm>({
@@ -155,7 +201,9 @@ function EnquiryDialog({ enquiry, onClose, onRegister }: { enquiry: EnquiryDto |
         patientId: enquiry?.patientId ?? null,
         version: enquiry?.version ?? null,
       };
-      return enquiry ? api.put(`/api/v1/front-office/enquiries/${enquiry.id}`, body) : api.post('/api/v1/front-office/enquiries', body);
+      return enquiry
+        ? api.put(`/api/v1/front-office/enquiries/${enquiry.id}`, body)
+        : api.post('/api/v1/front-office/enquiries', body);
     },
     onSuccess: () => {
       notify.success(enquiry ? 'Enquiry updated' : 'Enquiry recorded');
@@ -179,12 +227,43 @@ function EnquiryDialog({ enquiry, onClose, onRegister }: { enquiry: EnquiryDto |
               <FormGrid columns={2}>
                 <TextField control={form.control} name="name" label="Name" required autoFocus />
                 <TextField control={form.control} name="phone" label="Phone" type="tel" />
-                <SelectField control={form.control} name="type" label="About" options={enumOptions(TYPES, { DoctorAvailability: 'Doctor availability', HealthPackage: 'Health package' })} />
-                <SelectField control={form.control} name="channel" label="Received via" options={enumOptions(CHANNELS, { WalkIn: 'Walk-in', WhatsApp: 'WhatsApp' })} />
+                <SelectField
+                  control={form.control}
+                  name="type"
+                  label="About"
+                  options={enumOptions(TYPES, {
+                    DoctorAvailability: 'Doctor availability',
+                    HealthPackage: 'Health package',
+                  })}
+                />
+                <SelectField
+                  control={form.control}
+                  name="channel"
+                  label="Received via"
+                  options={enumOptions(CHANNELS, { WalkIn: 'Walk-in', WhatsApp: 'WhatsApp' })}
+                />
               </FormGrid>
-              <TextAreaField control={form.control} name="details" label="What did they ask?" required rows={3} maxLength={2000} />
-              <TextAreaField control={form.control} name="response" label="Answer given / action taken" rows={2} maxLength={2000} />
-              <SelectField control={form.control} name="status" label="Status" options={enumOptions(STATUSES, { InProgress: 'In progress' })} />
+              <TextAreaField
+                control={form.control}
+                name="details"
+                label="What did they ask?"
+                required
+                rows={3}
+                maxLength={2000}
+              />
+              <TextAreaField
+                control={form.control}
+                name="response"
+                label="Answer given / action taken"
+                rows={2}
+                maxLength={2000}
+              />
+              <SelectField
+                control={form.control}
+                name="status"
+                label="Status"
+                options={enumOptions(STATUSES, { InProgress: 'In progress' })}
+              />
             </DialogContent>
             <DialogActions>
               <Can permission="patients.register">

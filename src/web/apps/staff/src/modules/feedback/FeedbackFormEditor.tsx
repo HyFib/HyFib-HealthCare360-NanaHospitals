@@ -52,7 +52,11 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     backgroundColor: tokens.colorNeutralBackground2,
   },
-  thanks: { padding: '10px 12px', borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorPaletteGreenBackground1 },
+  thanks: {
+    padding: '10px 12px',
+    borderRadius: tokens.borderRadiusMedium,
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+  },
   footer: { display: 'flex', gap: '8px', alignItems: 'center' },
 });
 
@@ -145,7 +149,11 @@ export function FeedbackFormEditor({
 
   // Compared with what the server holds now, so saving (and the refetch after it) clears the flag.
   const dirty = canManage && !sameDraft(draft, toDraft(form));
-  const blocker = useBlocker({ shouldBlockFn: () => dirty && !leaving.current, enableBeforeUnload: () => dirty, withResolver: true });
+  const blocker = useBlocker({
+    shouldBlockFn: () => dirty && !leaving.current,
+    enableBeforeUnload: () => dirty,
+    withResolver: true,
+  });
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));
@@ -180,7 +188,10 @@ export function FeedbackFormEditor({
     try {
       if (form) {
         await feedbackApi.updateForm(form.id, request);
-        notify.success('Form saved', draft.isActive ? 'Patients see the changes straight away.' : 'The form is inactive.');
+        notify.success(
+          'Form saved',
+          draft.isActive ? 'Patients see the changes straight away.' : 'The form is inactive.',
+        );
         await queryClient.invalidateQueries({ queryKey: feedbackKeys.forms });
       } else {
         const id = await feedbackApi.createForm(request);
@@ -193,9 +204,16 @@ export function FeedbackFormEditor({
       if (isApiError(error) && error.code === 'feedback.form_code_taken') {
         setErrors({ code: error.userMessage });
       } else if (isApiError(error) && error.code === 'concurrency') {
-        notify.warning('Someone else changed this form', 'Reload the page to see their changes, then make yours again.');
+        notify.warning(
+          'Someone else changed this form',
+          'Reload the page to see their changes, then make yours again.',
+        );
       } else if (isApiError(error) && error.isValidation) {
-        setErrors(Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? ''])) as Errors);
+        setErrors(
+          Object.fromEntries(
+            Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? '']),
+          ) as Errors,
+        );
       } else {
         notify.error(error, 'Could not save the form');
       }
@@ -211,7 +229,10 @@ export function FeedbackFormEditor({
   return (
     <>
       <MainAside>
-        <Section title="Questionnaire" description={canManage ? 'Changes apply to every QR poster, kiosk and link of this form.' : undefined}>
+        <Section
+          title="Questionnaire"
+          description={canManage ? 'Changes apply to every QR poster, kiosk and link of this form.' : undefined}
+        >
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -221,11 +242,27 @@ export function FeedbackFormEditor({
           >
             <Stack gap={14}>
               <div className={styles.row}>
-                <Field label="Code" required hint="Short and unique, for example OPD-GEN." validationMessage={errors.code} validationState={errors.code ? 'error' : 'none'}>
-                  <Input value={draft.code} onChange={(_, d) => set('code', d.value)} maxLength={32} disabled={disabled} style={{ textTransform: 'uppercase' }} />
+                <Field
+                  label="Code"
+                  required
+                  hint="Short and unique, for example OPD-GEN."
+                  validationMessage={errors.code}
+                  validationState={errors.code ? 'error' : 'none'}
+                >
+                  <Input
+                    value={draft.code}
+                    onChange={(_, d) => set('code', d.value)}
+                    maxLength={32}
+                    disabled={disabled}
+                    style={{ textTransform: 'uppercase' }}
+                  />
                 </Field>
                 <Field label="Used for" required>
-                  <Select value={draft.type} onChange={(_, d) => set('type', d.value as FeedbackFormType)} disabled={disabled}>
+                  <Select
+                    value={draft.type}
+                    onChange={(_, d) => set('type', d.value as FeedbackFormType)}
+                    disabled={disabled}
+                  >
                     {FORM_TYPES.map((t) => (
                       <option key={t} value={t}>
                         {formTypeLabel[t]}
@@ -234,8 +271,19 @@ export function FeedbackFormEditor({
                   </Select>
                 </Field>
               </div>
-              <Field label="Title patients see" required validationMessage={errors.title} validationState={errors.title ? 'error' : 'none'}>
-                <Input value={draft.title} onChange={(_, d) => set('title', d.value)} maxLength={150} disabled={disabled} placeholder="How was your visit today?" />
+              <Field
+                label="Title patients see"
+                required
+                validationMessage={errors.title}
+                validationState={errors.title ? 'error' : 'none'}
+              >
+                <Input
+                  value={draft.title}
+                  onChange={(_, d) => set('title', d.value)}
+                  maxLength={150}
+                  disabled={disabled}
+                  placeholder="How was your visit today?"
+                />
               </Field>
               <Field
                 label="Department"
@@ -243,7 +291,11 @@ export function FeedbackFormEditor({
                 validationMessage={errors.departmentId}
                 validationState={errors.departmentId ? 'error' : 'none'}
               >
-                <Select value={draft.departmentId} onChange={(_, d) => set('departmentId', d.value)} disabled={disabled}>
+                <Select
+                  value={draft.departmentId}
+                  onChange={(_, d) => set('departmentId', d.value)}
+                  disabled={disabled}
+                >
                   <option value="">Whole hospital</option>
                   {toOptions(departments.data).map((o) => (
                     <option key={o.value} value={o.value}>
@@ -252,7 +304,11 @@ export function FeedbackFormEditor({
                   ))}
                 </Select>
               </Field>
-              <Field label="Rated from 1 to 5 stars" validationMessage={errors.aspects} validationState={errors.aspects ? 'error' : 'none'}>
+              <Field
+                label="Rated from 1 to 5 stars"
+                validationMessage={errors.aspects}
+                validationState={errors.aspects ? 'error' : 'none'}
+              >
                 <div className={styles.aspects}>
                   {ASPECTS.map((aspect) => (
                     <Checkbox
@@ -271,22 +327,54 @@ export function FeedbackFormEditor({
                 disabled={disabled}
                 label="Ask how likely they are to recommend us (0–10, for the NPS)"
               />
-              <Switch checked={draft.allowsComment} onChange={(_, d) => set('allowsComment', d.checked)} disabled={disabled} label="Offer a comment box" />
-              <Field label="Opening text" hint="Shown above the questions. Up to 500 characters." validationMessage={errors.introText}>
-                <Textarea value={draft.introText} onChange={(_, d) => set('introText', d.value)} maxLength={500} rows={2} disabled={disabled} />
+              <Switch
+                checked={draft.allowsComment}
+                onChange={(_, d) => set('allowsComment', d.checked)}
+                disabled={disabled}
+                label="Offer a comment box"
+              />
+              <Field
+                label="Opening text"
+                hint="Shown above the questions. Up to 500 characters."
+                validationMessage={errors.introText}
+              >
+                <Textarea
+                  value={draft.introText}
+                  onChange={(_, d) => set('introText', d.value)}
+                  maxLength={500}
+                  rows={2}
+                  disabled={disabled}
+                />
               </Field>
-              <Field label="Thank-you text" hint="Shown after the answers are sent. Leave empty for the standard thank-you." validationMessage={errors.thankYouText}>
-                <Textarea value={draft.thankYouText} onChange={(_, d) => set('thankYouText', d.value)} maxLength={500} rows={2} disabled={disabled} />
+              <Field
+                label="Thank-you text"
+                hint="Shown after the answers are sent. Leave empty for the standard thank-you."
+                validationMessage={errors.thankYouText}
+              >
+                <Textarea
+                  value={draft.thankYouText}
+                  onChange={(_, d) => set('thankYouText', d.value)}
+                  maxLength={500}
+                  rows={2}
+                  disabled={disabled}
+                />
               </Field>
               <Switch
                 checked={draft.isActive}
                 onChange={(_, d) => set('isActive', d.checked)}
                 disabled={disabled}
-                label={draft.isActive ? 'Active: patients can answer it' : 'Inactive: its QR code and links show “not valid”'}
+                label={
+                  draft.isActive ? 'Active: patients can answer it' : 'Inactive: its QR code and links show “not valid”'
+                }
               />
               {canManage && (
                 <div className={styles.footer}>
-                  <Button type="submit" appearance="primary" icon={busy ? <Spinner size="tiny" /> : <SaveRegular />} disabled={busy || (!!form && !dirty)}>
+                  <Button
+                    type="submit"
+                    appearance="primary"
+                    icon={busy ? <Spinner size="tiny" /> : <SaveRegular />}
+                    disabled={busy || (!!form && !dirty)}
+                  >
                     {form ? 'Save changes' : 'Create form'}
                   </Button>
                   {dirty && <Caption1>Unsaved changes · Ctrl+S saves</Caption1>}

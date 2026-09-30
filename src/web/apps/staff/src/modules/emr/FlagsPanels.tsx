@@ -60,7 +60,11 @@ const useStyles = makeStyles({
 });
 
 function severityTone(severity: string): 'danger' | 'warning' | 'informative' {
-  return severity === 'Anaphylaxis' || severity === 'Severe' || severity === 'Critical' ? 'danger' : severity === 'Moderate' || severity === 'Warning' ? 'warning' : 'informative';
+  return severity === 'Anaphylaxis' || severity === 'Severe' || severity === 'Critical'
+    ? 'danger'
+    : severity === 'Moderate' || severity === 'Warning'
+      ? 'warning'
+      : 'informative';
 }
 
 // ------------------------------------------------------------------------------------------------ allergies
@@ -86,21 +90,45 @@ const updateAllergySchema = z
   })
   .superRefine((values, ctx) => {
     if (values.status !== 'Active' && !values.statusReason.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['statusReason'], message: 'Give a reason: this stops the allergy from appearing in prescribing checks.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['statusReason'],
+        message: 'Give a reason: this stops the allergy from appearing in prescribing checks.',
+      });
     }
   });
 
 type UpdateAllergyValues = z.infer<typeof updateAllergySchema>;
 
-export function RecordAllergyDialog({ patientId, open, onClose, onOpenExisting }: { patientId: string; open: boolean; onClose: () => void; onOpenExisting?: (allergyId: string) => void }) {
+export function RecordAllergyDialog({
+  patientId,
+  open,
+  onClose,
+  onOpenExisting,
+}: {
+  patientId: string;
+  open: boolean;
+  onClose: () => void;
+  onOpenExisting?: (allergyId: string) => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 640 }}>{open && <RecordAllergyForm patientId={patientId} onClose={onClose} onOpenExisting={onOpenExisting} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 640 }}>
+        {open && <RecordAllergyForm patientId={patientId} onClose={onClose} onOpenExisting={onOpenExisting} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function RecordAllergyForm({ patientId, onClose, onOpenExisting }: { patientId: string; onClose: () => void; onOpenExisting?: (allergyId: string) => void }) {
+function RecordAllergyForm({
+  patientId,
+  onClose,
+  onOpenExisting,
+}: {
+  patientId: string;
+  onClose: () => void;
+  onOpenExisting?: (allergyId: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -159,10 +187,26 @@ function RecordAllergyForm({ patientId, onClose, onOpenExisting }: { patientId: 
             maxLength={200}
             hint="Use the generic drug or class for medicines (e.g. Amoxicillin, Penicillins, Sulfa drugs, NSAIDs) so prescribing checks catch it."
           />
-          <ChoiceField control={form.control} name="type" label="Type" options={ALLERGY_TYPES.map((t) => ({ value: t, label: t }))} />
-          <ChoiceField control={form.control} name="severity" label="Severity" options={ALLERGY_SEVERITIES.map((s) => ({ value: s, label: s }))} />
+          <ChoiceField
+            control={form.control}
+            name="type"
+            label="Type"
+            options={ALLERGY_TYPES.map((t) => ({ value: t, label: t }))}
+          />
+          <ChoiceField
+            control={form.control}
+            name="severity"
+            label="Severity"
+            options={ALLERGY_SEVERITIES.map((s) => ({ value: s, label: s }))}
+          />
           <FormGrid columns={2}>
-            <TextField control={form.control} name="reaction" label="Reaction" placeholder="e.g. rash, breathlessness" maxLength={300} />
+            <TextField
+              control={form.control}
+              name="reaction"
+              label="Reaction"
+              placeholder="e.g. rash, breathlessness"
+              maxLength={300}
+            />
             <DateField control={form.control} name="onsetDate" label="Since" max={todayIso()} />
           </FormGrid>
           <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={500} />
@@ -171,7 +215,12 @@ function RecordAllergyForm({ patientId, onClose, onOpenExisting }: { patientId: 
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Record allergy
           </Button>
         </DialogActions>
@@ -180,22 +229,46 @@ function RecordAllergyForm({ patientId, onClose, onOpenExisting }: { patientId: 
   );
 }
 
-function UpdateAllergyDialog({ allergy, patientId, onClose }: { allergy: AllergyDto | null; patientId: string; onClose: () => void }) {
+function UpdateAllergyDialog({
+  allergy,
+  patientId,
+  onClose,
+}: {
+  allergy: AllergyDto | null;
+  patientId: string;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={allergy !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 600 }}>{allergy && <UpdateAllergyForm key={allergy.id} allergy={allergy} patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 600 }}>
+        {allergy && <UpdateAllergyForm key={allergy.id} allergy={allergy} patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function UpdateAllergyForm({ allergy, patientId, onClose }: { allergy: AllergyDto; patientId: string; onClose: () => void }) {
+function UpdateAllergyForm({
+  allergy,
+  patientId,
+  onClose,
+}: {
+  allergy: AllergyDto;
+  patientId: string;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const voided = allergy.status === 'EnteredInError';
   const form = useForm<UpdateAllergyValues>({
     resolver: zodResolver(updateAllergySchema),
-    defaultValues: { severity: allergy.severity, status: allergy.status, reaction: allergy.reaction ?? '', statusReason: allergy.statusReason ?? '', notes: allergy.notes ?? '' },
+    defaultValues: {
+      severity: allergy.severity,
+      status: allergy.status,
+      reaction: allergy.reaction ?? '',
+      statusReason: allergy.statusReason ?? '',
+      notes: allergy.notes ?? '',
+    },
   });
   const status = useWatch({ control: form.control, name: 'status' });
 
@@ -237,11 +310,18 @@ function UpdateAllergyForm({ allergy, patientId, onClose }: { allergy: AllergyDt
         <DialogContent className={styles.form}>
           {voided ? (
             <MessageBar intent="info">
-              <MessageBarBody>This entry was marked as entered in error and cannot be changed. Record a new allergy if needed.</MessageBarBody>
+              <MessageBarBody>
+                This entry was marked as entered in error and cannot be changed. Record a new allergy if needed.
+              </MessageBarBody>
             </MessageBar>
           ) : (
             <>
-              <ChoiceField control={form.control} name="severity" label="Severity" options={ALLERGY_SEVERITIES.map((s) => ({ value: s, label: s }))} />
+              <ChoiceField
+                control={form.control}
+                name="severity"
+                label="Severity"
+                options={ALLERGY_SEVERITIES.map((s) => ({ value: s, label: s }))}
+              />
               <TextField control={form.control} name="reaction" label="Reaction" maxLength={300} />
               <SelectField
                 control={form.control}
@@ -257,7 +337,9 @@ function UpdateAllergyForm({ allergy, patientId, onClose }: { allergy: AllergyDt
               {status !== 'Active' && (
                 <>
                   <MessageBar intent="warning">
-                    <MessageBarBody>An allergy that is not active is no longer checked when prescribing.</MessageBarBody>
+                    <MessageBarBody>
+                      An allergy that is not active is no longer checked when prescribing.
+                    </MessageBarBody>
                   </MessageBar>
                   <TextField control={form.control} name="statusReason" label="Reason" required maxLength={300} />
                 </>
@@ -271,7 +353,12 @@ function UpdateAllergyForm({ allergy, patientId, onClose }: { allergy: AllergyDt
             {voided ? 'Close' : 'Cancel'}
           </Button>
           {!voided && (
-            <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+            <Button
+              type="submit"
+              appearance="primary"
+              disabled={save.isPending}
+              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+            >
               Save
             </Button>
           )}
@@ -293,7 +380,7 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
   const allergies = useQuery(emrQueries.allergies(patientId, showAll));
   const status = useQuery(emrQueries.allergyStatus(patientId));
   const all = useQuery({ ...emrQueries.allergies(patientId, true), enabled: editingId !== null });
-  const editing = editingId ? (all.data ?? allergies.data)?.find((a) => a.id === editingId) ?? null : null;
+  const editing = editingId ? ((all.data ?? allergies.data)?.find((a) => a.id === editingId) ?? null) : null;
   const activeListed = (allergies.data ?? []).filter((a) => a.status === 'Active').length;
 
   const recordNone = useMutation({
@@ -351,18 +438,37 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
         columns={[
           { key: 'allergen', header: 'Allergen', render: (a) => <Text weight="semibold">{a.allergen}</Text> },
           { key: 'type', header: 'Type', render: (a) => a.type },
-          { key: 'severity', header: 'Severity', render: (a) => <StatusBadge status={a.severity} tone={severityTone(a.severity)} /> },
+          {
+            key: 'severity',
+            header: 'Severity',
+            render: (a) => <StatusBadge status={a.severity} tone={severityTone(a.severity)} />,
+          },
           { key: 'reaction', header: 'Reaction', render: (a) => a.reaction ?? '—' },
-          { key: 'onset', header: 'Since', priority: 'low', render: (a) => (a.onsetDate ? formatDateOnly(a.onsetDate) : '—') },
+          {
+            key: 'onset',
+            header: 'Since',
+            priority: 'low',
+            render: (a) => (a.onsetDate ? formatDateOnly(a.onsetDate) : '—'),
+          },
           {
             key: 'status',
             header: 'Status',
-            render: (a) => <StatusBadge status={a.status} tone={a.status === 'Active' ? 'danger' : 'informative'} label={a.status === 'EnteredInError' ? 'Entered in error' : undefined} />,
+            render: (a) => (
+              <StatusBadge
+                status={a.status}
+                tone={a.status === 'Active' ? 'danger' : 'informative'}
+                label={a.status === 'EnteredInError' ? 'Entered in error' : undefined}
+              />
+            ),
           },
           { key: 'recorded', header: 'Recorded', priority: 'low', render: (a) => formatDate(a.recordedAt) },
         ]}
         emptyTitle={showAll ? 'No allergies recorded' : 'No active allergies'}
-        emptyDescription={canManage ? 'Ask about drug, food and other allergies and record them here; drug allergies are checked on every prescription.' : undefined}
+        emptyDescription={
+          canManage
+            ? 'Ask about drug, food and other allergies and record them here; drug allergies are checked on every prescription.'
+            : undefined
+        }
       />
       <RecordAllergyDialog
         patientId={patientId}
@@ -383,13 +489,19 @@ export function AllergiesTab({ patientId }: { patientId: string }) {
         onCancel={closeNone}
       >
         <div className={styles.form}>
-          <Text block>Record this only after asking the patient, or their family, about medicine, food and other allergies.</Text>
-          <Text block>The banner will then show &quot;No known allergies&quot; with your name and the time. If an allergy is recorded later, it replaces this statement.</Text>
+          <Text block>
+            Record this only after asking the patient, or their family, about medicine, food and other allergies.
+          </Text>
+          <Text block>
+            The banner will then show &quot;No known allergies&quot; with your name and the time. If an allergy is
+            recorded later, it replaces this statement.
+          </Text>
           {recordNone.error && (
             <MessageBar intent="error" layout="multiline" politeness="assertive">
               <MessageBarBody>
                 <MessageBarTitle>Not recorded</MessageBarTitle>
-                {noKnownAllergiesRefusal(recordNone.error) ?? (isApiError(recordNone.error) ? recordNone.error.userMessage : 'Please try again.')}
+                {noKnownAllergiesRefusal(recordNone.error) ??
+                  (isApiError(recordNone.error) ? recordNone.error.userMessage : 'Please try again.')}
               </MessageBarBody>
             </MessageBar>
           )}
@@ -414,7 +526,11 @@ const raiseAlertSchema = z
       ctx.addIssue({ code: 'custom', path: ['title'], message: 'Give the alert a title.' });
     }
     if (values.type === 'InfectionControl' && !values.detail.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['detail'], message: 'Name the organism or infection (for example MRSA, open TB).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['detail'],
+        message: 'Name the organism or infection (for example MRSA, open TB).',
+      });
     }
   });
 
@@ -429,10 +545,20 @@ const DETAIL_HINT: Record<RaiseAlertValues['type'], string> = {
   Custom: 'What staff need to know',
 };
 
-export function RaiseAlertDialog({ patientId, open, onClose }: { patientId: string; open: boolean; onClose: () => void }) {
+export function RaiseAlertDialog({
+  patientId,
+  open,
+  onClose,
+}: {
+  patientId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 620 }}>{open && <RaiseAlertForm patientId={patientId} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 620 }}>
+        {open && <RaiseAlertForm patientId={patientId} onClose={onClose} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -473,9 +599,24 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
       <DialogBody>
         <DialogTitle>Add patient alert</DialogTitle>
         <DialogContent className={styles.form}>
-          <SelectField control={form.control} name="type" label="Alert" options={ALERT_TYPES.map((t) => ({ value: t, label: alertTypeLabel[t] }))} />
-          {type === 'Custom' && <TextField control={form.control} name="title" label="Title" required autoFocus maxLength={200} />}
-          <TextAreaField control={form.control} name="detail" label="Details" required={type === 'InfectionControl'} rows={2} maxLength={500} hint={DETAIL_HINT[type]} />
+          <SelectField
+            control={form.control}
+            name="type"
+            label="Alert"
+            options={ALERT_TYPES.map((t) => ({ value: t, label: alertTypeLabel[t] }))}
+          />
+          {type === 'Custom' && (
+            <TextField control={form.control} name="title" label="Title" required autoFocus maxLength={200} />
+          )}
+          <TextAreaField
+            control={form.control}
+            name="detail"
+            label="Details"
+            required={type === 'InfectionControl'}
+            rows={2}
+            maxLength={500}
+            hint={DETAIL_HINT[type]}
+          />
           <FormGrid columns={2}>
             <SelectField
               control={form.control}
@@ -495,7 +636,12 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <AlertUrgentRegular />} disabled={save.isPending}>
+          <Button
+            type="submit"
+            appearance="primary"
+            icon={save.isPending ? <Spinner size="tiny" /> : <AlertUrgentRegular />}
+            disabled={save.isPending}
+          >
             Add alert
           </Button>
         </DialogActions>
@@ -553,9 +699,18 @@ export function AlertsTab({ patientId }: { patientId: string }) {
               </span>
             ),
           },
-          { key: 'severity', header: 'Level', render: (a) => <StatusBadge status={a.severity} tone={severityTone(a.severity)} /> },
+          {
+            key: 'severity',
+            header: 'Level',
+            render: (a) => <StatusBadge status={a.severity} tone={severityTone(a.severity)} />,
+          },
           { key: 'from', header: 'Since', priority: 'low', render: (a) => formatDate(a.effectiveFrom) },
-          { key: 'until', header: 'Until', priority: 'low', render: (a) => (a.expiresOn ? formatDateOnly(a.expiresOn) : '—') },
+          {
+            key: 'until',
+            header: 'Until',
+            priority: 'low',
+            render: (a) => (a.expiresOn ? formatDateOnly(a.expiresOn) : '—'),
+          },
           {
             key: 'status',
             header: 'Status',
@@ -565,7 +720,11 @@ export function AlertsTab({ patientId }: { patientId: string }) {
               ) : (
                 <span>
                   <StatusBadge status="Inactive" tone="informative" />
-                  {a.deactivationReason && <Caption1 block className={styles.muted}>{a.deactivationReason}</Caption1>}
+                  {a.deactivationReason && (
+                    <Caption1 block className={styles.muted}>
+                      {a.deactivationReason}
+                    </Caption1>
+                  )}
                 </span>
               ),
           },

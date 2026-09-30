@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -93,6 +94,7 @@ internal static partial class MigrationBaseline
             ],
             ct);
 
+    [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Constant catalogue queries; the values are parameters.")]
     private static async Task<bool> ExistsAsync(HospitalDbContext db, string sql, NpgsqlParameter[] parameters, CancellationToken ct)
     {
         await db.Database.OpenConnectionAsync(ct);
@@ -374,6 +376,7 @@ internal static partial class MigrationBaseline
         return new DatabaseCatalog(tables, columns, indexes, constraints, sequences);
     }
 
+    [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "Constant catalogue queries; the schemas are a parameter.")]
     private static async Task ReadAsync(NpgsqlConnection connection, string[] schemas, string sql, Action<NpgsqlDataReader> row, CancellationToken ct)
     {
         await using var command = new NpgsqlCommand(sql, connection);
@@ -439,6 +442,7 @@ internal static partial class MigrationBaseline
                 plan.Changes.Count == 0 ? "none" : string.Join("; ", plan.Changes));
         }
 
+        [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities", Justification = "The DDL EF Core generates from the model, and its migration-history scripts.")]
         private static async Task ExecuteAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string sql, CancellationToken ct)
         {
             await using var command = new NpgsqlCommand(sql, connection, transaction);

@@ -1,5 +1,26 @@
-import { Button, Caption1, Checkbox, Field, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, SearchBox, Tab, TabList, Text, tokens } from '@fluentui/react-components';
-import { AddRegular, LinkRegular, MoreHorizontalRegular, PersonAddRegular, StethoscopeRegular } from '@fluentui/react-icons';
+import {
+  Button,
+  Caption1,
+  Checkbox,
+  Field,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  SearchBox,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
+import {
+  AddRegular,
+  LinkRegular,
+  MoreHorizontalRegular,
+  PersonAddRegular,
+  StethoscopeRegular,
+} from '@fluentui/react-icons';
 import { formatDate, formatDateTime, todayIso, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -54,18 +75,28 @@ function ReferralsPage() {
   const unmatchedTab = search.tab === 'unmatched';
 
   const doctors = useQuery({
-    ...crmQueries.referringDoctors({ search: search.search, activeOnly: search.all ? undefined : true, from: period.from, to: period.to, page: search.page }),
+    ...crmQueries.referringDoctors({
+      search: search.search,
+      activeOnly: search.all ? undefined : true,
+      from: period.from,
+      to: period.to,
+      page: search.page,
+    }),
     enabled: !unmatchedTab,
   });
   const unmatched = useQuery({ ...crmQueries.unmatchedReferrals(period.from, period.to), enabled: unmatchedTab });
 
   useEffect(() => {
     if ((debounced || undefined) !== search.search) {
-      void navigate({ search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }), replace: true });
+      void navigate({
+        search: (prev) => ({ ...prev, search: debounced || undefined, page: undefined }),
+        replace: true,
+      });
     }
   }, [debounced, search.search, navigate]);
 
-  const set = (patch: Partial<ReferralsSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<ReferralsSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -80,7 +111,11 @@ function ReferralsPage() {
           </Button>
         }
       />
-      <TabList selectedValue={unmatchedTab ? 'unmatched' : 'doctors'} onTabSelect={(_, d) => set({ tab: d.value === 'unmatched' ? 'unmatched' : undefined })} style={{ marginBottom: 8 }}>
+      <TabList
+        selectedValue={unmatchedTab ? 'unmatched' : 'doctors'}
+        onTabSelect={(_, d) => set({ tab: d.value === 'unmatched' ? 'unmatched' : undefined })}
+        style={{ marginBottom: 8 }}
+      >
         <Tab value="doctors">Doctors</Tab>
         <Tab value="unmatched">Names not matched</Tab>
       </TabList>
@@ -93,7 +128,12 @@ function ReferralsPage() {
                 <Field label="Search" style={{ flex: '1 1 220px' }}>
                   <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name, clinic or area" />
                 </Field>
-                <Checkbox style={{ alignSelf: 'flex-end' }} checked={Boolean(search.all)} onChange={(_, d) => set({ all: d.checked ? true : undefined })} label="Include inactive" />
+                <Checkbox
+                  style={{ alignSelf: 'flex-end' }}
+                  checked={Boolean(search.all)}
+                  onChange={(_, d) => set({ all: d.checked ? true : undefined })}
+                  label="Include inactive"
+                />
               </>
             )}
           </FilterBar>
@@ -140,7 +180,11 @@ function ReferralsPage() {
             onRetry={() => void doctors.refetch()}
             getRowId={(d) => d.id}
             onRowClick={(d) =>
-              void navigate({ to: '/crm/referrals/$doctorId', params: { doctorId: d.id }, search: { preset, from: search.from, to: search.to } })
+              void navigate({
+                to: '/crm/referrals/$doctorId',
+                params: { doctorId: d.id },
+                search: { preset, from: search.from, to: search.to },
+              })
             }
             columns={[
               {
@@ -157,20 +201,38 @@ function ReferralsPage() {
                 ),
               },
               { key: 'city', header: 'Area', priority: 'low', render: (d) => d.city ?? '—' },
-              { key: 'referrals', header: 'Referrals', align: 'end', render: (d) => <Text weight="semibold">{d.referrals.toLocaleString('en-IN')}</Text> },
-              { key: 'last', header: 'Last referral', priority: 'low', render: (d) => (d.lastReferralAt ? formatDate(d.lastReferralAt) : '—') },
+              {
+                key: 'referrals',
+                header: 'Referrals',
+                align: 'end',
+                render: (d) => <Text weight="semibold">{d.referrals.toLocaleString('en-IN')}</Text>,
+              },
+              {
+                key: 'last',
+                header: 'Last referral',
+                priority: 'low',
+                render: (d) => (d.lastReferralAt ? formatDate(d.lastReferralAt) : '—'),
+              },
             ]}
             emptyTitle={search.search ? 'No doctor matches' : 'No referring doctors yet'}
             emptyDescription="Add the doctors who refer patients, with the spellings the front desk uses."
             page={search.page ?? 1}
             pageSize={25}
             totalCount={doctors.data?.totalCount}
-            onPageChange={(page) => void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })}
+            onPageChange={(page) =>
+              void navigate({ search: (prev) => ({ ...prev, page: page > 1 ? page : undefined }) })
+            }
           />
         )}
       </Section>
 
-      {drawer && <ReferringDoctorDrawer doctorId={drawer.doctorId} prefillName={drawer.prefillName} onClose={() => setDrawer(null)} />}
+      {drawer && (
+        <ReferringDoctorDrawer
+          doctorId={drawer.doctorId}
+          prefillName={drawer.prefillName}
+          onClose={() => setDrawer(null)}
+        />
+      )}
       <LinkSpellingDialog text={linking} onClose={() => setLinking(null)} />
     </Page>
   );

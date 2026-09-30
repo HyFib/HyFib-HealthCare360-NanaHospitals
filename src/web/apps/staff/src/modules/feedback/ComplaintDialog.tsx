@@ -24,13 +24,32 @@ import { UserPicker } from '@/modules/hr/shared/UserPicker';
 import type { PickedUser } from '@/modules/hr/shared/users';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { feedbackApi, feedbackKeys } from './api';
-import { ASPECTS, aspectLabel, complaintSourceLabel, MANUAL_COMPLAINT_SOURCES, type ComplaintPriority, type ComplaintSource } from './labels';
+import {
+  ASPECTS,
+  aspectLabel,
+  complaintSourceLabel,
+  MANUAL_COMPLAINT_SOURCES,
+  type ComplaintPriority,
+  type ComplaintSource,
+} from './labels';
 import { SLA_HOURS } from './rules';
 
 /** Areas offered as the complaint category (free text is allowed too). */
-const CATEGORY_SUGGESTIONS = [...ASPECTS.filter((a) => a !== 'Overall').map((a) => aspectLabel[a]), 'Waiting time', 'Staff behaviour', 'Facilities', 'Pharmacy', 'Other'];
+const CATEGORY_SUGGESTIONS = [
+  ...ASPECTS.filter((a) => a !== 'Overall').map((a) => aspectLabel[a]),
+  'Waiting time',
+  'Staff behaviour',
+  'Facilities',
+  'Pharmacy',
+  'Other',
+];
 
-type Errors = Partial<Record<'description' | 'contactPhone' | 'patientId' | 'departmentId' | 'ownerUserId' | 'category' | 'contactName', string>>;
+type Errors = Partial<
+  Record<
+    'description' | 'contactPhone' | 'patientId' | 'departmentId' | 'ownerUserId' | 'category' | 'contactName',
+    string
+  >
+>;
 
 /** Record a complaint made in person, by phone, e-mail or through the portal (low feedback scores raise one automatically). */
 export function ComplaintDialog({
@@ -46,12 +65,22 @@ export function ComplaintDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>{open && <Body onClose={onClose} onCreated={onCreated} initialPatient={patient ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
+        {open && <Body onClose={onClose} onCreated={onCreated} initialPatient={patient ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function Body({ onClose, onCreated, initialPatient }: { onClose: () => void; onCreated?: (id: string) => void; initialPatient: PickedPatient | null }) {
+function Body({
+  onClose,
+  onCreated,
+  initialPatient,
+}: {
+  onClose: () => void;
+  onCreated?: (id: string) => void;
+  initialPatient: PickedPatient | null;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments();
@@ -89,14 +118,21 @@ function Body({ onClose, onCreated, initialPatient }: { onClose: () => void; onC
         priority,
         ownerUserId: owner?.id ?? null,
       });
-      notify.success('Complaint recorded', `Resolve within ${SLA_HOURS[priority]} hours. The complaint handlers have been alerted.`);
+      notify.success(
+        'Complaint recorded',
+        `Resolve within ${SLA_HOURS[priority]} hours. The complaint handlers have been alerted.`,
+      );
       void queryClient.invalidateQueries({ queryKey: feedbackKeys.complaints });
       void queryClient.invalidateQueries({ queryKey: feedbackKeys.analytics });
       onClose();
       onCreated?.(id);
     } catch (error) {
       if (isApiError(error) && error.isValidation) {
-        setErrors(Object.fromEntries(Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? ''])) as Errors);
+        setErrors(
+          Object.fromEntries(
+            Object.entries(error.fieldErrors).map(([key, messages]) => [key, messages[0] ?? '']),
+          ) as Errors,
+        );
       } else {
         notify.error(error, 'Could not record the complaint');
       }
@@ -130,18 +166,39 @@ function Body({ onClose, onCreated, initialPatient }: { onClose: () => void; onC
             validationMessage={errors.description}
             validationState={errors.description ? 'error' : 'none'}
           >
-            <Textarea value={description} onChange={(_, d) => setDescription(d.value)} rows={4} maxLength={4000} resize="vertical" autoFocus />
+            <Textarea
+              value={description}
+              onChange={(_, d) => setDescription(d.value)}
+              rows={4}
+              maxLength={4000}
+              resize="vertical"
+              autoFocus
+            />
           </Field>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            <Field label="About (area)" validationMessage={errors.category} validationState={errors.category ? 'error' : 'none'}>
-              <Input value={category} onChange={(_, d) => setCategory(d.value)} maxLength={64} list={listId} placeholder="For example: Billing" />
+            <Field
+              label="About (area)"
+              validationMessage={errors.category}
+              validationState={errors.category ? 'error' : 'none'}
+            >
+              <Input
+                value={category}
+                onChange={(_, d) => setCategory(d.value)}
+                maxLength={64}
+                list={listId}
+                placeholder="For example: Billing"
+              />
               <datalist id={listId}>
                 {CATEGORY_SUGGESTIONS.map((c) => (
                   <option key={c} value={c} />
                 ))}
               </datalist>
             </Field>
-            <Field label="Department" validationMessage={errors.departmentId} validationState={errors.departmentId ? 'error' : 'none'}>
+            <Field
+              label="Department"
+              validationMessage={errors.departmentId}
+              validationState={errors.departmentId ? 'error' : 'none'}
+            >
               <Select value={departmentId} onChange={(_, d) => setDepartmentId(d.value)}>
                 <option value="">Not specific</option>
                 {toOptions(departments.data).map((o) => (
@@ -160,21 +217,55 @@ function Body({ onClose, onCreated, initialPatient }: { onClose: () => void; onC
             validationMessage={errors.patientId}
           />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-            <Field label="Contact name" validationMessage={errors.contactName} validationState={errors.contactName ? 'error' : 'none'}>
-              <Input value={contactName} onChange={(_, d) => setContactName(d.value)} maxLength={200} autoComplete="off" />
+            <Field
+              label="Contact name"
+              validationMessage={errors.contactName}
+              validationState={errors.contactName ? 'error' : 'none'}
+            >
+              <Input
+                value={contactName}
+                onChange={(_, d) => setContactName(d.value)}
+                maxLength={200}
+                autoComplete="off"
+              />
             </Field>
-            <Field label="Contact phone" validationMessage={errors.contactPhone} validationState={errors.contactPhone ? 'error' : 'none'}>
-              <Input type="tel" value={contactPhone} onChange={(_, d) => setContactPhone(d.value)} maxLength={20} autoComplete="off" />
+            <Field
+              label="Contact phone"
+              validationMessage={errors.contactPhone}
+              validationState={errors.contactPhone ? 'error' : 'none'}
+            >
+              <Input
+                type="tel"
+                value={contactPhone}
+                onChange={(_, d) => setContactPhone(d.value)}
+                maxLength={20}
+                autoComplete="off"
+              />
             </Field>
           </div>
-          <Field label="Priority" hint={`High: resolve within ${SLA_HOURS.High} hours. Normal: within ${SLA_HOURS.Normal} hours.`}>
-            <RadioGroup layout="horizontal" value={priority} onChange={(_, d) => setPriority(d.value as ComplaintPriority)}>
+          <Field
+            label="Priority"
+            hint={`High: resolve within ${SLA_HOURS.High} hours. Normal: within ${SLA_HOURS.Normal} hours.`}
+          >
+            <RadioGroup
+              layout="horizontal"
+              value={priority}
+              onChange={(_, d) => setPriority(d.value as ComplaintPriority)}
+            >
               <Radio value="Normal" label="Normal" />
               <Radio value="High" label="High (safety, dignity or a repeat complaint)" />
             </RadioGroup>
           </Field>
-          <UserPicker label="Owner" value={owner} onChange={setOwner} hint="Who will resolve it." validationMessage={errors.ownerUserId} />
-          <Caption1>Everyone who handles complaints is alerted with the complaint number and area only, never the description.</Caption1>
+          <UserPicker
+            label="Owner"
+            value={owner}
+            onChange={setOwner}
+            hint="Who will resolve it."
+            validationMessage={errors.ownerUserId}
+          />
+          <Caption1>
+            Everyone who handles complaints is alerted with the complaint number and area only, never the description.
+          </Caption1>
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={busy}>

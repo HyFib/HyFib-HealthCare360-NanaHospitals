@@ -25,7 +25,13 @@ import type { PortalProfile } from '@/lib/types';
 const useStyles = makeStyles({
   trigger: { minHeight: '44px', maxWidth: '200px', paddingInline: '6px' },
   triggerName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '110px' },
-  drawer: { '@media (max-width: 899px)': { maxHeight: '85dvh', borderTopLeftRadius: tokens.borderRadiusXLarge, borderTopRightRadius: tokens.borderRadiusXLarge } },
+  drawer: {
+    '@media (max-width: 899px)': {
+      maxHeight: '85dvh',
+      borderTopLeftRadius: tokens.borderRadiusXLarge,
+      borderTopRightRadius: tokens.borderRadiusXLarge,
+    },
+  },
   hint: { margin: '0 0 12px', color: tokens.colorNeutralForeground2 },
   list: { listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
   option: {
@@ -87,7 +93,15 @@ export function ProfileSwitcher({ profiles, active }: { profiles: PortalProfile[
       >
         <DrawerHeader>
           <DrawerHeaderTitle
-            action={<Button appearance="subtle" size="large" icon={<DismissRegular />} aria-label={t('common.close')} onClick={() => setOpen(false)} />}
+            action={
+              <Button
+                appearance="subtle"
+                size="large"
+                icon={<DismissRegular />}
+                aria-label={t('common.close')}
+                onClick={() => setOpen(false)}
+              />
+            }
           >
             {t('shell.profile.title')}
           </DrawerHeaderTitle>
@@ -101,7 +115,15 @@ export function ProfileSwitcher({ profiles, active }: { profiles: PortalProfile[
 }
 
 /** The family list with the current person marked; choosing someone else switches every screen to them. */
-export function ProfileList({ profiles, activeId, onDone }: { profiles: PortalProfile[]; activeId: string | null; onDone?: () => void }) {
+export function ProfileList({
+  profiles,
+  activeId,
+  onDone,
+}: {
+  profiles: PortalProfile[];
+  activeId: string | null;
+  onDone?: () => void;
+}) {
   const styles = useStyles();
   const t = useT();
   const queryClient = useQueryClient();
@@ -146,7 +168,9 @@ export function ProfileList({ profiles, activeId, onDone }: { profiles: PortalPr
                 <Avatar name={profile.fullName} size={40} color="colorful" aria-hidden />
                 <span className={styles.optionText}>
                   <span className={styles.name}>{profile.fullName}</span>
-                  <span className={styles.detail}>{[personLine(profile, t), `${t('common.uhid')} ${profile.uhid}`].filter(Boolean).join(' · ')}</span>
+                  <span className={styles.detail}>
+                    {[personLine(profile, t), `${t('common.uhid')} ${profile.uhid}`].filter(Boolean).join(' · ')}
+                  </span>
                 </span>
                 {switching === profile.id ? (
                   <Spinner size="tiny" />

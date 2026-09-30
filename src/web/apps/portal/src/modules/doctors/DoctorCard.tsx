@@ -10,10 +10,27 @@ import { describeWhen } from '@/lib/when';
 const useStyles = makeStyles({
   card: { alignItems: 'flex-start', padding: '16px' },
   body: { display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, minWidth: 0 },
-  name: { margin: 0, fontSize: tokens.fontSizeBase500, lineHeight: tokens.lineHeightBase500, fontWeight: tokens.fontWeightSemibold },
+  name: {
+    margin: 0,
+    fontSize: tokens.fontSizeBase500,
+    lineHeight: tokens.lineHeightBase500,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   line: { color: tokens.colorNeutralForeground2, overflowWrap: 'anywhere' },
-  meta: { display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorNeutralForeground2, fontSize: tokens.fontSizeBase300 },
-  next: { display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorStatusSuccessForeground1, fontWeight: tokens.fontWeightSemibold },
+  meta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: tokens.colorNeutralForeground2,
+    fontSize: tokens.fontSizeBase300,
+  },
+  next: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: tokens.colorStatusSuccessForeground1,
+    fontWeight: tokens.fontWeightSemibold,
+  },
   none: { color: tokens.colorNeutralForeground3 },
   footer: { display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', marginTop: '4px' },
   fee: { fontWeight: tokens.fontWeightSemibold },
@@ -26,10 +43,17 @@ export function DoctorCard({ doctor, video, now }: { doctor: PublicDoctor; video
   const t = useT();
   const f = useFormat();
   const next = video ? doctor.nextTelehealthAt : doctor.nextAvailableAt;
-  const specialty = [doctor.specialtyName, doctor.departmentName].filter((part, index, all) => part && all.indexOf(part) === index).join(' · ');
+  const specialty = [doctor.specialtyName, doctor.departmentName]
+    .filter((part, index, all) => part && all.indexOf(part) === index)
+    .join(' · ');
 
   return (
-    <CardLink to="/doctors/$doctorId" params={{ doctorId: doctor.id }} search={video ? { mode: 'video' } : {}} className={styles.card}>
+    <CardLink
+      to="/doctors/$doctorId"
+      params={{ doctorId: doctor.id }}
+      search={video ? { mode: 'video' } : {}}
+      className={styles.card}
+    >
       <Avatar name={doctor.name} size={56} color="colorful" aria-hidden />
       <span className={styles.body}>
         <h2 className={styles.name}>{doctor.name}</h2>

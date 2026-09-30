@@ -6,7 +6,17 @@
 /** Dosing frequency as written on Indian prescriptions (server enum `DoseFrequency`). */
 export type DoseFrequency = 'OD' | 'BD' | 'TDS' | 'QID' | 'HS' | 'SOS' | 'STAT' | 'Custom' | 'Weekly';
 
-export const DOSE_FREQUENCIES: readonly DoseFrequency[] = ['OD', 'BD', 'TDS', 'QID', 'HS', 'SOS', 'STAT', 'Weekly', 'Custom'];
+export const DOSE_FREQUENCIES: readonly DoseFrequency[] = [
+  'OD',
+  'BD',
+  'TDS',
+  'QID',
+  'HS',
+  'SOS',
+  'STAT',
+  'Weekly',
+  'Custom',
+];
 
 /** Plain-language meaning of each frequency (what the patient reads). */
 export const frequencyMeaning: Record<DoseFrequency, string> = {
@@ -23,10 +33,26 @@ export const frequencyMeaning: Record<DoseFrequency, string> = {
 
 /** "BD – twice a day": the abbreviation doctors type, with its meaning so nobody has to guess. */
 export function frequencyOptionLabel(frequency: DoseFrequency): string {
-  return frequency === 'Custom' ? 'Custom (e.g. 1-0-1, 8 hourly)' : `${frequency} – ${frequencyMeaning[frequency].toLowerCase()}`;
+  return frequency === 'Custom'
+    ? 'Custom (e.g. 1-0-1, 8 hourly)'
+    : `${frequency} – ${frequencyMeaning[frequency].toLowerCase()}`;
 }
 
-export const ROUTES = ['Oral', 'IV', 'IM', 'SC', 'Topical', 'Inhalation', 'Sublingual', 'Rectal', 'Nasal', 'Eye', 'Ear', 'Vaginal', 'Other'] as const;
+export const ROUTES = [
+  'Oral',
+  'IV',
+  'IM',
+  'SC',
+  'Topical',
+  'Inhalation',
+  'Sublingual',
+  'Rectal',
+  'Nasal',
+  'Eye',
+  'Ear',
+  'Vaginal',
+  'Other',
+] as const;
 
 export const DOSAGE_FORMS = [
   'Tablet',
@@ -46,7 +72,15 @@ export const DOSAGE_FORMS = [
   'Other',
 ] as const;
 
-export const INSTRUCTION_PRESETS = ['After food', 'Before food', 'With food', 'Empty stomach', 'At bedtime', 'Apply locally', 'Dissolve in water'] as const;
+export const INSTRUCTION_PRESETS = [
+  'After food',
+  'Before food',
+  'With food',
+  'Empty stomach',
+  'At bedtime',
+  'Apply locally',
+  'Dissolve in water',
+] as const;
 
 export const DURATION_PRESETS = [1, 3, 5, 7, 10, 14, 30] as const;
 
@@ -171,7 +205,11 @@ export function parseCustomFrequency(text: string | null | undefined): number | 
 }
 
 /** Administrations per day; null for SOS (no fixed schedule) and unreadable custom text. */
-export function dosesPerDay(frequency: DoseFrequency, customFrequency?: string | null, explicitPerDay?: number | null): number | null {
+export function dosesPerDay(
+  frequency: DoseFrequency,
+  customFrequency?: string | null,
+  explicitPerDay?: number | null,
+): number | null {
   if (explicitPerDay !== null && explicitPerDay !== undefined && explicitPerDay > 0) {
     return explicitPerDay;
   }
@@ -214,7 +252,10 @@ export function parseStrengthMg(strength: string | null | undefined): number[] {
   if (text.includes('ml')) {
     return [];
   }
-  const parts = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(mg|mcg|µg|gm|g|iu|%)?/g)].map((m) => ({ value: Number(m[1]), unit: m[2] ?? null }));
+  const parts = [...text.matchAll(/(\d+(?:\.\d+)?)\s*(mg|mcg|µg|gm|g|iu|%)?/g)].map((m) => ({
+    value: Number(m[1]),
+    unit: m[2] ?? null,
+  }));
   if (parts.length === 0 || parts.some((p) => p.unit === 'iu' || p.unit === '%')) {
     return [];
   }

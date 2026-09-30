@@ -7,7 +7,8 @@ export const recordMessages = defineMessages({
     'records.subtitle': 'A summary of what the hospital has recorded about your health.',
     'records.request': 'Request a copy of your records',
     'records.allergies': 'Allergies',
-    'records.allergies.none': 'No allergies recorded. If you are allergic to anything, tell your doctor or nurse at your next visit.',
+    'records.allergies.none':
+      'No allergies recorded. If you are allergic to anything, tell your doctor or nurse at your next visit.',
     'records.allergy.type.Drug': 'Medicine',
     'records.allergy.type.Food': 'Food',
     'records.allergy.type.Environmental': 'Dust, pollen or similar',
@@ -58,7 +59,8 @@ export const recordMessages = defineMessages({
     'discharge.investigations': 'Tests and results',
     'discharge.condition': 'Condition when discharged',
     'discharge.medications': 'Medicines to take at home',
-    'discharge.medicationsNote': 'Take your medicines exactly as written. Do not stop or change a medicine without asking your doctor.',
+    'discharge.medicationsNote':
+      'Take your medicines exactly as written. Do not stop or change a medicine without asking your doctor.',
     'discharge.advice': 'Advice',
     'discharge.followUp': 'Follow-up',
     'discharge.followUpOn': 'Please come for a follow-up visit on {date}.',
@@ -66,7 +68,8 @@ export const recordMessages = defineMessages({
     'discharge.emergency': 'If you feel unwell, contact the hospital. In an emergency, call 108.',
 
     'recordRequest.title': 'Request a copy of your records',
-    'recordRequest.lead': 'Ask the medical records department for a copy of your hospital records. They will contact you when it is ready.',
+    'recordRequest.lead':
+      'Ask the medical records department for a copy of your hospital records. They will contact you when it is ready.',
     'recordRequest.purpose': 'What do you need it for?',
     'recordRequest.purpose.PatientCopy': 'For my own records',
     'recordRequest.purpose.PatientCopy.hint': 'A copy to keep at home',
@@ -84,9 +87,11 @@ export const recordMessages = defineMessages({
     'recordRequest.detailsRequired': 'Tell us what you need.',
     'recordRequest.detailsTooLong': 'Please keep this under 1000 characters.',
     'recordRequest.submit': 'Send request',
-    'recordRequest.policy': 'Copies are given as per hospital policy and the law. Some copies may have a fee, and you may be asked for photo ID when you collect them.',
+    'recordRequest.policy':
+      'Copies are given as per hospital policy and the law. Some copies may have a fee, and you may be asked for photo ID when you collect them.',
     'recordRequest.done.title': 'Request sent',
-    'recordRequest.done.body': 'Your request number is {number}. The medical records department will contact you when your copy is ready. Please quote this number.',
+    'recordRequest.done.body':
+      'Your request number is {number}. The medical records department will contact you when your copy is ready. Please quote this number.',
     'recordRequest.done.back': 'Back to health records',
   },
   hi: {
@@ -94,7 +99,8 @@ export const recordMessages = defineMessages({
     'records.subtitle': 'अस्पताल ने आपके स्वास्थ्य के बारे में जो दर्ज किया है, उसका सारांश।',
     'records.request': 'अपने रिकॉर्ड की कॉपी माँगें',
     'records.allergies': 'एलर्जी',
-    'records.allergies.none': 'कोई एलर्जी दर्ज नहीं है। अगर आपको किसी चीज़ से एलर्जी है, तो अगली मुलाक़ात पर अपने डॉक्टर या नर्स को बताएँ।',
+    'records.allergies.none':
+      'कोई एलर्जी दर्ज नहीं है। अगर आपको किसी चीज़ से एलर्जी है, तो अगली मुलाक़ात पर अपने डॉक्टर या नर्स को बताएँ।',
     'records.allergy.type.Drug': 'दवा',
     'records.allergy.type.Food': 'खाना',
     'records.allergy.type.Environmental': 'धूल, पराग या ऐसी चीज़ें',
@@ -145,7 +151,8 @@ export const recordMessages = defineMessages({
     'discharge.investigations': 'जाँचें और नतीजे',
     'discharge.condition': 'डिस्चार्ज के समय हालत',
     'discharge.medications': 'घर पर लेने वाली दवाएँ',
-    'discharge.medicationsNote': 'दवाएँ ठीक वैसे ही लें जैसा लिखा है। डॉक्टर से पूछे बिना कोई दवा बंद न करें या न बदलें।',
+    'discharge.medicationsNote':
+      'दवाएँ ठीक वैसे ही लें जैसा लिखा है। डॉक्टर से पूछे बिना कोई दवा बंद न करें या न बदलें।',
     'discharge.advice': 'सलाह',
     'discharge.followUp': 'फ़ॉलो-अप',
     'discharge.followUpOn': 'कृपया {date} को फ़ॉलो-अप के लिए आएँ।',
@@ -153,7 +160,8 @@ export const recordMessages = defineMessages({
     'discharge.emergency': 'अगर तबीयत ठीक न लगे, तो अस्पताल से संपर्क करें। इमरजेंसी में 108 पर कॉल करें।',
 
     'recordRequest.title': 'अपने रिकॉर्ड की कॉपी माँगें',
-    'recordRequest.lead': 'मेडिकल रिकॉर्ड विभाग से अपने अस्पताल के रिकॉर्ड की कॉपी माँगें। कॉपी तैयार होने पर वे आपसे संपर्क करेंगे।',
+    'recordRequest.lead':
+      'मेडिकल रिकॉर्ड विभाग से अपने अस्पताल के रिकॉर्ड की कॉपी माँगें। कॉपी तैयार होने पर वे आपसे संपर्क करेंगे।',
     'recordRequest.purpose': 'आपको यह किसलिए चाहिए?',
     'recordRequest.purpose.PatientCopy': 'अपने रिकॉर्ड के लिए',
     'recordRequest.purpose.PatientCopy.hint': 'घर पर रखने के लिए एक कॉपी',
@@ -171,9 +179,11 @@ export const recordMessages = defineMessages({
     'recordRequest.detailsRequired': 'बताएँ कि आपको क्या चाहिए।',
     'recordRequest.detailsTooLong': 'कृपया इसे 1000 अक्षरों से कम रखें।',
     'recordRequest.submit': 'अनुरोध भेजें',
-    'recordRequest.policy': 'कॉपी अस्पताल की नीति और कानून के अनुसार दी जाती है। कुछ कॉपी के लिए शुल्क लग सकता है, और लेते समय फ़ोटो पहचान पत्र माँगा जा सकता है।',
+    'recordRequest.policy':
+      'कॉपी अस्पताल की नीति और कानून के अनुसार दी जाती है। कुछ कॉपी के लिए शुल्क लग सकता है, और लेते समय फ़ोटो पहचान पत्र माँगा जा सकता है।',
     'recordRequest.done.title': 'अनुरोध भेज दिया गया',
-    'recordRequest.done.body': 'आपका अनुरोध नंबर {number} है। कॉपी तैयार होने पर मेडिकल रिकॉर्ड विभाग आपसे संपर्क करेगा। कृपया यह नंबर बताएँ।',
+    'recordRequest.done.body':
+      'आपका अनुरोध नंबर {number} है। कॉपी तैयार होने पर मेडिकल रिकॉर्ड विभाग आपसे संपर्क करेगा। कृपया यह नंबर बताएँ।',
     'recordRequest.done.back': 'स्वास्थ्य रिकॉर्ड पर वापस जाएँ',
   },
 });

@@ -67,11 +67,22 @@ internal static class QueueEndpoints
                 orderby e.ReceivedAt
                 select new
                 {
-                    e.Id, e.PrescriptionNumber, e.PatientId, p.FullName, p.Uhid, p.Gender, p.DateOfBirth,
+                    e.Id,
+                    e.PrescriptionNumber,
+                    e.PatientId,
+                    p.FullName,
+                    p.Uhid,
+                    p.Gender,
+                    p.DateOfBirth,
                     Prescriber = db.Set<Practitioner>().Where(x => x.Id == e.PractitionerId).Select(x => x.DisplayName).FirstOrDefault(),
-                    e.IsInpatient, e.Status, LineCount = e.Lines.Count,
+                    e.IsInpatient,
+                    e.Status,
+                    LineCount = e.Lines.Count,
                     OpenLines = e.Lines.Count(l => l.Status == QueueLineStatus.Pending || l.Status == QueueLineStatus.PartiallyDispensed),
-                    e.HasControlledDrugs, IsRefill = e.RefillOfEntryId != null, e.SignedAt, e.ReceivedAt,
+                    e.HasControlledDrugs,
+                    IsRefill = e.RefillOfEntryId != null,
+                    e.SignedAt,
+                    e.ReceivedAt,
                 })
             .ToPagedResultAsync(page, ct);
 

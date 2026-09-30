@@ -33,7 +33,15 @@ const useStyles = makeStyles({
  * Pathologist bulk verification across tubes: only normal results are verified together; anything flagged, critical,
  * delta-failed or with remarks stays on the worklist for an individual look. QC lockouts still apply.
  */
-export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: readonly string[]; onClose: () => void; onDone: () => void }) {
+export function BulkVerifyDialog({
+  sampleIds,
+  onClose,
+  onDone,
+}: {
+  sampleIds: readonly string[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -42,14 +50,20 @@ export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: re
   const sheets = useQueries({ queries: sampleIds.map((id) => labQueries.sheet(id)) });
   const loading = sheets.some((sheet) => sheet.isLoading);
   const failed = sheets.filter((sheet) => sheet.error).length;
-  const plans = sheets.map((sheet) => sheet.data).filter((sheet): sheet is ResultSheet => Boolean(sheet)).map(planBulkVerification);
+  const plans = sheets
+    .map((sheet) => sheet.data)
+    .filter((sheet): sheet is ResultSheet => Boolean(sheet))
+    .map(planBulkVerification);
   const ids = plans.flatMap((plan) => plan.ready).slice(0, 200);
   const held = plans.reduce((sum, plan) => sum + plan.held, 0);
 
   const verify = useMutation({
     mutationFn: (request: VerifyResultsRequest) => labApi.verifyResults(request),
     onSuccess: (outcome) => {
-      notify.success(`${outcome.verified} normal results verified`, outcome.releasedItemIds.length ? `${outcome.releasedItemIds.length} tests released.` : undefined);
+      notify.success(
+        `${outcome.verified} normal results verified`,
+        outcome.releasedItemIds.length ? `${outcome.releasedItemIds.length} tests released.` : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.sheets });
       void queryClient.invalidateQueries({ queryKey: labKeys.worklist });
       void queryClient.invalidateQueries({ queryKey: labKeys.orders });
@@ -90,7 +104,9 @@ export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: re
               <>
                 {failed > 0 && (
                   <MessageBar intent="warning">
-                    <MessageBarBody>{failed} of the selected samples could not be opened and are left out.</MessageBarBody>
+                    <MessageBarBody>
+                      {failed} of the selected samples could not be opened and are left out.
+                    </MessageBarBody>
                   </MessageBar>
                 )}
                 {verify.error && !hasErrorCode(verify.error, 'lab.qc_lockout') && (
@@ -99,12 +115,15 @@ export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: re
                   </MessageBar>
                 )}
                 {ids.length === 0 ? (
-                  <Text>None of the selected samples has normal results waiting for verification. Open each sample to review its results.</Text>
+                  <Text>
+                    None of the selected samples has normal results waiting for verification. Open each sample to review
+                    its results.
+                  </Text>
                 ) : (
                   <>
                     <Text>
-                      {ids.length} normal {ids.length === 1 ? 'result' : 'results'} on {plans.filter((plan) => plan.ready.length > 0).length} samples will be
-                      verified.
+                      {ids.length} normal {ids.length === 1 ? 'result' : 'results'} on{' '}
+                      {plans.filter((plan) => plan.ready.length > 0).length} samples will be verified.
                     </Text>
                     <ul className={styles.list}>
                       {plans
@@ -113,7 +132,8 @@ export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: re
                           <li key={plan.sheet.sampleId}>
                             <Text weight="semibold">{plan.sheet.patientName}</Text>{' '}
                             <Caption1 className={styles.muted}>
-                              {plan.sheet.barcode} · {plan.ready.length} to verify{plan.held ? ` · ${plan.held} left for review` : ''}
+                              {plan.sheet.barcode} · {plan.ready.length} to verify
+                              {plan.held ? ` · ${plan.held} left for review` : ''}
                             </Caption1>
                           </li>
                         ))}
@@ -122,11 +142,15 @@ export function BulkVerifyDialog({ sampleIds, onClose, onDone }: { sampleIds: re
                 )}
                 {held > 0 && (
                   <Caption1 className={styles.muted}>
-                    {held} {held === 1 ? 'result is' : 'results are'} left for individual review (flagged, critical, large change from the previous result, or with
-                    remarks).
+                    {held} {held === 1 ? 'result is' : 'results are'} left for individual review (flagged, critical,
+                    large change from the previous result, or with remarks).
                   </Caption1>
                 )}
-                <Switch checked={release} onChange={(_, data) => setRelease(data.checked)} label="Release tests that become complete" />
+                <Switch
+                  checked={release}
+                  onChange={(_, data) => setRelease(data.checked)}
+                  label="Release tests that become complete"
+                />
               </>
             )}
           </DialogContent>

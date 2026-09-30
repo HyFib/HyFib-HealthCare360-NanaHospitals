@@ -62,7 +62,13 @@ export function appointmentActions(
 ): Record<AppointmentAction, ActionAvailability> {
   if (!context.canManage) {
     const noPermission = deny('You do not have permission to change appointments.');
-    return { checkIn: noPermission, confirm: noPermission, reschedule: noPermission, cancel: noPermission, noShow: noPermission };
+    return {
+      checkIn: noPermission,
+      confirm: noPermission,
+      reschedule: noPermission,
+      cancel: noPermission,
+      noShow: noPermission,
+    };
   }
 
   const { status, startsAt } = appointment;
@@ -71,16 +77,27 @@ export function appointmentActions(
   const isToday = istDate(startsAt) === context.today;
 
   return {
-    checkIn: !open ? closed : isToday ? allowed : deny("Only today's appointments can be checked in. Reschedule it to today first."),
+    checkIn: !open
+      ? closed
+      : isToday
+        ? allowed
+        : deny("Only today's appointments can be checked in. Reschedule it to today first."),
     confirm: status === 'Booked' ? allowed : status === 'Confirmed' ? deny('Already confirmed.') : closed,
     reschedule: open ? allowed : closed,
     cancel: open ? allowed : closed,
-    noShow: !open ? closed : context.now >= Date.parse(startsAt) ? allowed : deny(`A no-show can be recorded after ${formatTime(startsAt)}.`),
+    noShow: !open
+      ? closed
+      : context.now >= Date.parse(startsAt)
+        ? allowed
+        : deny(`A no-show can be recorded after ${formatTime(startsAt)}.`),
   };
 }
 
 /** The one action the desk most likely wants next, shown as the row's button. */
-export function primaryAction(appointment: { status: AppointmentStatus; startsAt: string }, context: ActionContext): AppointmentAction | null {
+export function primaryAction(
+  appointment: { status: AppointmentStatus; startsAt: string },
+  context: ActionContext,
+): AppointmentAction | null {
   const actions = appointmentActions(appointment, context);
   if (actions.checkIn.allowed) {
     return 'checkIn';

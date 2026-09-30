@@ -30,7 +30,15 @@ const view: LabReportView = {
   status: 'Released',
   isPartial: true,
   revision: 2,
-  letterhead: { facilityName: 'Nana Hospitals', address: null, phone: null, email: null, nabhNumber: null, letterheadNote: null, logoFileId: null },
+  letterhead: {
+    facilityName: 'Nana Hospitals',
+    address: null,
+    phone: null,
+    email: null,
+    nabhNumber: null,
+    letterheadNote: null,
+    logoFileId: null,
+  },
   patient: { id: 'p1', uhid: 'NH26000001', name: 'Asha Rao', gender: 'Female', age: '31Y', dateOfBirth: null },
   patientClass: 'External',
   referredBy: 'Dr. Kumar',
@@ -57,8 +65,22 @@ const view: LabReportView = {
           releasedAt: '2026-09-26T06:00:00Z',
           results: [
             result({ resultId: 'r1', autoValidated: true }),
-            result({ resultId: 'r2', name: 'Platelets', value: '42,000', flag: 'CriticalLow', unit: '/µL', referenceText: '1,50,000 - 4,10,000' }),
-            result({ resultId: 'r3', name: 'Neutrophils', groupName: 'Differential count', value: '80', flag: 'High', unit: '%' }),
+            result({
+              resultId: 'r2',
+              name: 'Platelets',
+              value: '42,000',
+              flag: 'CriticalLow',
+              unit: '/µL',
+              referenceText: '1,50,000 - 4,10,000',
+            }),
+            result({
+              resultId: 'r3',
+              name: 'Neutrophils',
+              groupName: 'Differential count',
+              value: '80',
+              flag: 'High',
+              unit: '%',
+            }),
           ],
         },
       ],
@@ -97,7 +119,15 @@ const view: LabReportView = {
   ],
   signatories: [],
   hasAutoValidatedResults: true,
-  amendments: [{ revision: 2, reason: 'Transcription error', changes: 'Platelets 4,20,000 → 42,000', amendedAt: '2026-09-26T07:00:00Z', amendedBy: 'Dr. Meena Iyer' }],
+  amendments: [
+    {
+      revision: 2,
+      reason: 'Transcription error',
+      changes: 'Platelets 4,20,000 → 42,000',
+      amendedAt: '2026-09-26T07:00:00Z',
+      amendedBy: 'Dr. Meena Iyer',
+    },
+  ],
   verificationCode: 'ABCD2345EFGH6789JKLM',
   verificationPath: '/api/v1/lab/reports/verify/ABCD2345EFGH6789JKLM',
   verificationUrl: 'https://care.nanahospitals.in/portal/verify/lab/ABCD2345EFGH6789JKLM',
@@ -131,6 +161,8 @@ describe('printed lab report', () => {
     expect(rows['Report no.']).toBe('NHLR260000045 (revision 2)');
     expect(rows['Referred by']).toBe('Dr. Kumar');
     expect(labReportNotes(view)).toHaveLength(2);
-    expect(labReportNotes({ ...view, isPartial: false, hasAutoValidatedResults: false, status: 'Amended' })[0]).toMatch(/amended/);
+    expect(labReportNotes({ ...view, isPartial: false, hasAutoValidatedResults: false, status: 'Amended' })[0]).toMatch(
+      /amended/,
+    );
   });
 });

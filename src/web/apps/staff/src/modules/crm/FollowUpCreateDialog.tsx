@@ -24,10 +24,20 @@ import { crmApi, crmKeys } from './api';
 import { FOLLOW_UP_TYPES, followUpTypeLabel, type FollowUpPriority, type FollowUpType } from './labels';
 
 /** Add a follow-up call by hand (discharge calls are created automatically two days after discharge). */
-export function FollowUpCreateDialog({ open, onClose, patient }: { open: boolean; onClose: () => void; patient?: PickedPatient | null }) {
+export function FollowUpCreateDialog({
+  open,
+  onClose,
+  patient,
+}: {
+  open: boolean;
+  onClose: () => void;
+  patient?: PickedPatient | null;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 600 }}>{open && <Body onClose={onClose} initialPatient={patient ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 600 }}>
+        {open && <Body onClose={onClose} initialPatient={patient ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -54,7 +64,15 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
     }
     setBusy(true);
     try {
-      await crmApi.createFollowUp({ patientId: patient.id, visitId: null, type, dueDate, assigneeUserId: assignee?.id ?? null, priority, notes: notes.trim() || null });
+      await crmApi.createFollowUp({
+        patientId: patient.id,
+        visitId: null,
+        type,
+        dueDate,
+        assigneeUserId: assignee?.id ?? null,
+        priority,
+        notes: notes.trim() || null,
+      });
       notify.success('Follow-up added', `${patient.fullName} · ${followUpTypeLabel[type]}`);
       void queryClient.invalidateQueries({ queryKey: crmKeys.followUps });
       onClose();
@@ -91,7 +109,12 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
             </Select>
           </Field>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Field label="Call on" required validationMessage={errors.dueDate} validationState={errors.dueDate ? 'error' : 'none'}>
+            <Field
+              label="Call on"
+              required
+              validationMessage={errors.dueDate}
+              validationState={errors.dueDate ? 'error' : 'none'}
+            >
               <Input type="date" value={dueDate} min={todayIso()} onChange={(_, d) => setDueDate(d.value)} />
             </Field>
             <Field label="Priority">
@@ -101,7 +124,12 @@ function Body({ onClose, initialPatient }: { onClose: () => void; initialPatient
               </Select>
             </Field>
           </div>
-          <UserPicker label="Assign to" value={assignee} onChange={setAssignee} hint="Leave empty for anyone on the team." />
+          <UserPicker
+            label="Assign to"
+            value={assignee}
+            onChange={setAssignee}
+            hint="Leave empty for anyone on the team."
+          />
           <Field label="Notes for the caller">
             <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} rows={2} maxLength={1000} />
           </Field>

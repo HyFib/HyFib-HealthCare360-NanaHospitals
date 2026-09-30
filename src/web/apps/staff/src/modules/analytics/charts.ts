@@ -8,7 +8,20 @@ import { formatAxisValue, formatCategory, formatKpi, formatKpiFull, formatValue 
  * ECharts options for report charts, dashboard widgets and KPI trends (pure and unit-tested). Canvas charts cannot
  * read CSS variables, so the palette is fixed and chosen to stay readable on the light and dark themes.
  */
-export const PALETTE = ['#0F6CBD', '#13A10E', '#CA5010', '#8764B8', '#038387', '#C239B3', '#986F0B', '#4F6BED', '#E3008C', '#498205', '#DA3B01', '#005B70'];
+export const PALETTE = [
+  '#0F6CBD',
+  '#13A10E',
+  '#CA5010',
+  '#8764B8',
+  '#038387',
+  '#C239B3',
+  '#986F0B',
+  '#4F6BED',
+  '#E3008C',
+  '#498205',
+  '#DA3B01',
+  '#005B70',
+];
 
 export interface ChartBuildOptions {
   /** Dashboard tiles: fewer labels, no value labels, smaller legend. */
@@ -45,7 +58,10 @@ const ADDITIVE: ReadonlySet<ReportValueType> = new Set(['Integer', 'Decimal', 'M
  * Chart views that suit a report: time series as lines/areas/bars, rankings as bars or a pie; stacked bars need two or
  * more series. Dashboards can also show the table or the headline figures.
  */
-export function availableViews(hint: ReportChartHint | null | undefined, placement: 'report' | 'dashboard'): ReportChartType[] {
+export function availableViews(
+  hint: ReportChartHint | null | undefined,
+  placement: 'report' | 'dashboard',
+): ReportChartType[] {
   const views: ReportChartType[] = [];
   if (hint && hint.type !== 'Table' && hint.type !== 'Summary') {
     views.push(hint.type);
@@ -150,7 +166,13 @@ function cartesianOption(chart: ReportChartData, options: ChartBuildOptions): Ch
 
   return {
     color: PALETTE,
-    grid: { left: 8, right: horizontal && showValueLabels ? 48 : 16, top: legend ? 36 : 16, bottom: 8, containLabel: true },
+    grid: {
+      left: 8,
+      right: horizontal && showValueLabels ? 48 : 16,
+      top: legend ? 36 : 16,
+      bottom: 8,
+      containLabel: true,
+    },
     legend: legend ? { type: 'scroll', top: 0, textStyle: { fontSize: compact ? 11 : 12 } } : undefined,
     tooltip: {
       trigger: 'axis',
@@ -179,7 +201,10 @@ function pieOption(chart: ReportChartData, options: ChartBuildOptions): ChartOpt
   const compact = options.compact ?? false;
   const series = chart.series[0];
   const data = chart.categories
-    .map((category, index) => ({ name: formatCategory(category, chart.categoryType), value: series?.values[index] ?? null }))
+    .map((category, index) => ({
+      name: formatCategory(category, chart.categoryType),
+      value: series?.values[index] ?? null,
+    }))
     .filter((item): item is { name: string; value: number } => item.value !== null && item.value > 0);
   const pie: PieSeriesOption = {
     type: 'pie',
@@ -203,7 +228,15 @@ function pieOption(chart: ReportChartData, options: ChartBuildOptions): ChartOpt
         return `${item.marker ?? ''}${escapeHtml(item.name ?? '')}: <b>${escapeHtml(formatValue(value, series?.type ?? 'Decimal', 'figure'))}</b>${percent}`;
       },
     },
-    legend: compact ? undefined : { type: 'scroll', orient: 'vertical', right: 0, top: 'middle', textStyle: { fontSize: 12, width: 160, overflow: 'truncate' } },
+    legend: compact
+      ? undefined
+      : {
+          type: 'scroll',
+          orient: 'vertical',
+          right: 0,
+          top: 'middle',
+          textStyle: { fontSize: 12, width: 160, overflow: 'truncate' },
+        },
     series: [pie],
   };
 }
@@ -229,7 +262,15 @@ export function kpiTrendOption(kpi: Pick<KpiValue, 'label' | 'unit' | 'trend'>):
         };
   const series: BarSeriesOption | LineSeriesOption = asBars
     ? { type: 'bar', name: kpi.label, data: values, barMaxWidth: 28, markLine }
-    : { type: 'line', name: kpi.label, data: values, showSymbol: points.length <= 31, symbolSize: 6, areaStyle: { opacity: 0.12 }, markLine };
+    : {
+        type: 'line',
+        name: kpi.label,
+        data: values,
+        showSymbol: points.length <= 31,
+        symbolSize: 6,
+        areaStyle: { opacity: 0.12 },
+        markLine,
+      };
   return {
     color: [PALETTE[0] ?? '#0F6CBD'],
     grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
@@ -242,7 +283,11 @@ export function kpiTrendOption(kpi: Pick<KpiValue, 'label' | 'unit' | 'trend'>):
         return `<b>${escapeHtml(item?.axisValueLabel ?? '')}</b><br/>${item?.marker ?? ''}${escapeHtml(kpi.label)}: <b>${escapeHtml(formatKpiFull(value, kpi.unit))}</b>`;
       },
     },
-    xAxis: { type: 'category', data: points.map((p) => formatCategory(p.date, 'Date')), axisLabel: { hideOverlap: true } },
+    xAxis: {
+      type: 'category',
+      data: points.map((p) => formatCategory(p.date, 'Date')),
+      axisLabel: { hideOverlap: true },
+    },
     yAxis: { type: 'value', axisLabel: { formatter: (value: number) => kpiAxisLabel(value, kpi.unit) } },
     series: [series],
   };
@@ -266,7 +311,12 @@ function kpiAxisLabel(value: number, unit: KpiUnit): string {
 // ------------------------------------------------------------------------------------------------ sparkline
 
 /** SVG paths for a tiny trend line and its shaded area inside a `width`×`height` box. */
-export function sparklinePaths(values: readonly number[], width: number, height: number, padding = 2): { line: string; area: string } | null {
+export function sparklinePaths(
+  values: readonly number[],
+  width: number,
+  height: number,
+  padding = 2,
+): { line: string; area: string } | null {
   const finite = values.filter((v) => Number.isFinite(v));
   if (finite.length < 2) {
     return null;

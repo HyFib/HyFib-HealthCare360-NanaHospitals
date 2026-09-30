@@ -57,7 +57,10 @@ function AccountPage() {
 
   return (
     <Page maxWidth={1100}>
-      <PageHeader title="My account" subtitle="Your profile, password, two-step verification, PIN and signed-in devices" />
+      <PageHeader
+        title="My account"
+        subtitle="Your profile, password, two-step verification, PIN and signed-in devices"
+      />
 
       <Section>
         <div className={styles.profile}>
@@ -118,9 +121,16 @@ function DisableMfa() {
 
   return (
     <div className={styles.stack}>
-      <Text>Two-step verification is on. You will be asked for a code from your authenticator app when you sign in.</Text>
+      <Text>
+        Two-step verification is on. You will be asked for a code from your authenticator app when you sign in.
+      </Text>
       <Field label="Password (to turn it off)">
-        <Input type="password" value={password} onChange={(_, d) => setPassword(d.value)} autoComplete="current-password" />
+        <Input
+          type="password"
+          value={password}
+          onChange={(_, d) => setPassword(d.value)}
+          autoComplete="current-password"
+        />
       </Field>
       <div>
         <Button onClick={() => disable.mutate()} disabled={!password || disable.isPending}>
@@ -135,7 +145,10 @@ function Sessions() {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [revoking, setRevoking] = useState<SessionInfo | null>(null);
-  const sessions = useQuery({ queryKey: ['auth', 'sessions'], queryFn: () => api.get<SessionInfo[]>('/api/v1/auth/sessions') });
+  const sessions = useQuery({
+    queryKey: ['auth', 'sessions'],
+    queryFn: () => api.get<SessionInfo[]>('/api/v1/auth/sessions'),
+  });
 
   const revoke = useMutation({
     mutationFn: (id: string) => api.delete(`/api/v1/auth/sessions/${id}`),

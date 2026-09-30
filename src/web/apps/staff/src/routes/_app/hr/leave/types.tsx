@@ -2,7 +2,20 @@ import { Badge, Button, Caption1, Text } from '@fluentui/react-components';
 import { AddRegular, CalendarPersonRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, DataTable, FormGrid, NumberField, Page, PageHeader, Section, SelectField, StatusBadge, SwitchField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  DataTable,
+  FormGrid,
+  NumberField,
+  Page,
+  PageHeader,
+  Section,
+  SelectField,
+  StatusBadge,
+  SwitchField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -64,8 +77,20 @@ function LeaveTypesPage() {
                 </span>
               ),
             },
-            { key: 'quota', header: 'Per year', align: 'end', width: 90, render: (t) => (t.tracksBalance ? formatDays(t.annualQuota) : '—') },
-            { key: 'carry', header: 'Carry forward up to', align: 'end', priority: 'low', render: (t) => (t.tracksBalance ? formatDays(t.carryForwardCap) : '—') },
+            {
+              key: 'quota',
+              header: 'Per year',
+              align: 'end',
+              width: 90,
+              render: (t) => (t.tracksBalance ? formatDays(t.annualQuota) : '—'),
+            },
+            {
+              key: 'carry',
+              header: 'Carry forward up to',
+              align: 'end',
+              priority: 'low',
+              render: (t) => (t.tracksBalance ? formatDays(t.carryForwardCap) : '—'),
+            },
             {
               key: 'rules',
               header: 'Rules',
@@ -98,9 +123,32 @@ function LeaveTypesPage() {
                 </span>
               ),
             },
-            { key: 'max', header: 'Max per request', align: 'end', priority: 'low', render: (t) => (t.maxDaysPerRequest ? formatDays(t.maxDaysPerRequest) : '—') },
-            { key: 'doc', header: 'Document above', align: 'end', priority: 'low', render: (t) => (t.documentRequiredAfterDays !== null ? `${formatDays(t.documentRequiredAfterDays)} days` : '—') },
-            { key: 'active', header: 'Status', width: 100, render: (t) => <StatusBadge status={t.isActive ? 'Active' : 'Inactive'} tone={t.isActive ? 'success' : 'informative'} /> },
+            {
+              key: 'max',
+              header: 'Max per request',
+              align: 'end',
+              priority: 'low',
+              render: (t) => (t.maxDaysPerRequest ? formatDays(t.maxDaysPerRequest) : '—'),
+            },
+            {
+              key: 'doc',
+              header: 'Document above',
+              align: 'end',
+              priority: 'low',
+              render: (t) =>
+                t.documentRequiredAfterDays !== null ? `${formatDays(t.documentRequiredAfterDays)} days` : '—',
+            },
+            {
+              key: 'active',
+              header: 'Status',
+              width: 100,
+              render: (t) => (
+                <StatusBadge
+                  status={t.isActive ? 'Active' : 'Inactive'}
+                  tone={t.isActive ? 'success' : 'informative'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No leave types"
           size="small"
@@ -165,7 +213,8 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
   });
 
   const save = useMutation({
-    mutationFn: (v: Values) => hrApi.saveLeaveType(type?.id ?? null, { ...v, code: v.code.toUpperCase(), version: type?.version ?? null }),
+    mutationFn: (v: Values) =>
+      hrApi.saveLeaveType(type?.id ?? null, { ...v, code: v.code.toUpperCase(), version: type?.version ?? null }),
     onSuccess: () => {
       notify.success('Leave type saved');
       void queryClient.invalidateQueries({ queryKey: hrKeys.masters });
@@ -181,17 +230,56 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
   });
 
   return (
-    <EditorDrawer open title={type ? type.name : 'Add leave type'} onClose={onClose} onSubmit={form.handleSubmit((v) => save.mutate(v))} busy={save.isPending} size="medium">
+    <EditorDrawer
+      open
+      title={type ? type.name : 'Add leave type'}
+      onClose={onClose}
+      onSubmit={form.handleSubmit((v) => save.mutate(v))}
+      busy={save.isPending}
+      size="medium"
+    >
       <FormGrid columns={2} minColumnWidth={160}>
         <TextField control={form.control} name="code" label="Code" required autoFocus maxLength={16} />
         <TextField control={form.control} name="name" label="Name" required maxLength={100} />
       </FormGrid>
       <SwitchField control={form.control} name="tracksBalance" label="Keeps a yearly balance" />
       <FormGrid columns={2} minColumnWidth={160}>
-        <NumberField control={form.control} name="annualQuota" label="Days per year" required min={0} max={366} step={0.5} />
-        <NumberField control={form.control} name="carryForwardCap" label="Carry forward up to (days)" required min={0} max={366} step={0.5} />
-        <NumberField control={form.control} name="maxDaysPerRequest" label="Most days in one request" min={0.5} max={366} step={0.5} hint="Blank: no limit" />
-        <NumberField control={form.control} name="documentRequiredAfterDays" label="Document needed above (days)" min={0} max={366} step={0.5} hint="Blank: never" />
+        <NumberField
+          control={form.control}
+          name="annualQuota"
+          label="Days per year"
+          required
+          min={0}
+          max={366}
+          step={0.5}
+        />
+        <NumberField
+          control={form.control}
+          name="carryForwardCap"
+          label="Carry forward up to (days)"
+          required
+          min={0}
+          max={366}
+          step={0.5}
+        />
+        <NumberField
+          control={form.control}
+          name="maxDaysPerRequest"
+          label="Most days in one request"
+          min={0.5}
+          max={366}
+          step={0.5}
+          hint="Blank: no limit"
+        />
+        <NumberField
+          control={form.control}
+          name="documentRequiredAfterDays"
+          label="Document needed above (days)"
+          min={0}
+          max={366}
+          step={0.5}
+          hint="Blank: never"
+        />
       </FormGrid>
       <SelectField
         control={form.control}
@@ -206,7 +294,11 @@ function LeaveTypeDrawer({ type, onClose }: { type: LeaveTypeDto | null; onClose
       />
       <SwitchField control={form.control} name="isPaid" label="Paid leave (unpaid leave is loss of pay)" />
       <SwitchField control={form.control} name="allowHalfDay" label="Can be taken in half days" />
-      <SwitchField control={form.control} name="countsNonWorkingDays" label="Counts holidays and weekly offs (calendar days, e.g. maternity)" />
+      <SwitchField
+        control={form.control}
+        name="countsNonWorkingDays"
+        label="Counts holidays and weekly offs (calendar days, e.g. maternity)"
+      />
       <SwitchField control={form.control} name="isEncashable" label="Unused days can be encashed" />
       <SwitchField control={form.control} name="isActive" label="In use" />
     </EditorDrawer>

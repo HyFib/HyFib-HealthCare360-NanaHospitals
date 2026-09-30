@@ -47,14 +47,23 @@ import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
-import { guardianRelationLabel, patientApi, patientKeys, patientQueries, type ConsentType, type PatientDetail } from '@/modules/patients/api';
+import {
+  guardianRelationLabel,
+  patientApi,
+  patientKeys,
+  patientQueries,
+  type ConsentType,
+  type PatientDetail,
+} from '@/modules/patients/api';
 import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'documents';
 
 export const Route = createFileRoute('/_app/patients/$patientId/')({
   validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({
-    tab: ['overview', 'visits', 'consents', 'documents'].includes(search.tab as string) ? (search.tab as TabId) : undefined,
+    tab: ['overview', 'visits', 'consents', 'documents'].includes(search.tab as string)
+      ? (search.tab as TabId)
+      : undefined,
   }),
   component: PatientProfilePage,
 });
@@ -116,7 +125,18 @@ function PatientProfilePage() {
     <Page>
       <PatientBannerWithPhoto
         photoFileId={p.photoFileId}
-        patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName, gender: p.gender, age: p.age, phone: p.phone, bloodGroup: p.bloodGroup, category: p.category, isVip: p.isVip, isDeceased: p.isDeceased }}
+        patient={{
+          id: p.id,
+          uhid: p.uhid,
+          fullName: p.fullName,
+          gender: p.gender,
+          age: p.age,
+          phone: p.phone,
+          bloodGroup: p.bloodGroup,
+          category: p.category,
+          isVip: p.isVip,
+          isDeceased: p.isDeceased,
+        }}
         actions={
           <>
             {canCheckIn && !p.isDeceased && (
@@ -125,7 +145,10 @@ function PatientProfilePage() {
               </Button>
             )}
             {canEdit && (
-              <Button icon={<EditRegular />} onClick={() => void navigate({ to: '/patients/$patientId/edit', params: { patientId } })}>
+              <Button
+                icon={<EditRegular />}
+                onClick={() => void navigate({ to: '/patients/$patientId/edit', params: { patientId } })}
+              >
                 Edit
               </Button>
             )}
@@ -136,26 +159,42 @@ function PatientProfilePage() {
               <MenuPopover>
                 <MenuList>
                   {canOpenChart && (
-                    <MenuItem icon={<StethoscopeRegular />} onClick={() => void navigate({ to: '/emr/patients/$patientId', params: { patientId }, search: {} })}>
+                    <MenuItem
+                      icon={<StethoscopeRegular />}
+                      onClick={() =>
+                        void navigate({ to: '/emr/patients/$patientId', params: { patientId }, search: {} })
+                      }
+                    >
                       Open clinical chart
                     </MenuItem>
                   )}
                   {canBook && !p.isDeceased && (
-                    <MenuItem icon={<CalendarLtrRegular />} onClick={() => void navigate({ to: '/scheduling/book', search: { patientId } })}>
+                    <MenuItem
+                      icon={<CalendarLtrRegular />}
+                      onClick={() => void navigate({ to: '/scheduling/book', search: { patientId } })}
+                    >
                       Book appointment
                     </MenuItem>
                   )}
                   {canAdmit && !p.isDeceased && (
-                    <MenuItem icon={<BedRegular />} onClick={() => void navigate({ to: '/inpatient/admit', search: { patientId } })}>
+                    <MenuItem
+                      icon={<BedRegular />}
+                      onClick={() => void navigate({ to: '/inpatient/admit', search: { patientId } })}
+                    >
                       Admit
                     </MenuItem>
                   )}
                   <MenuItem
                     icon={<PrintRegular />}
                     onClick={() =>
-                      void printUhidCard({ facilityName, uhid: p.uhid, fullName: p.fullName, ageSex: `${p.age ?? '—'} / ${p.gender.charAt(0)}`, phone: p.phone, registeredAt: p.registeredAt }).catch(
-                        (error: unknown) => notify.error(error, 'Printing failed'),
-                      )
+                      void printUhidCard({
+                        facilityName,
+                        uhid: p.uhid,
+                        fullName: p.fullName,
+                        ageSex: `${p.age ?? '—'} / ${p.gender.charAt(0)}`,
+                        phone: p.phone,
+                        registeredAt: p.registeredAt,
+                      }).catch((error: unknown) => notify.error(error, 'Printing failed'))
                     }
                   >
                     Print UHID card
@@ -172,7 +211,13 @@ function PatientProfilePage() {
           <MessageBarBody>
             <MessageBarTitle>Merged record</MessageBarTitle>
             This record was merged into another patient.{' '}
-            <Button appearance="transparent" size="small" onClick={() => void navigate({ to: '/patients/$patientId', params: { patientId: p.mergedIntoPatientId! } })}>
+            <Button
+              appearance="transparent"
+              size="small"
+              onClick={() =>
+                void navigate({ to: '/patients/$patientId', params: { patientId: p.mergedIntoPatientId! } })
+              }
+            >
               Open the surviving record
             </Button>
           </MessageBarBody>
@@ -181,7 +226,12 @@ function PatientProfilePage() {
 
       <Section flush>
         <div style={{ padding: '0 8px' }}>
-          <TabList selectedValue={tab} onTabSelect={(_, d) => void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })}>
+          <TabList
+            selectedValue={tab}
+            onTabSelect={(_, d) =>
+              void navigate({ search: { tab: d.value === 'overview' ? undefined : (d.value as TabId) }, replace: true })
+            }
+          >
             <Tab value="overview">Overview</Tab>
             <Tab value="visits">Visits</Tab>
             <Tab value="consents">Consents</Tab>
@@ -196,19 +246,36 @@ function PatientProfilePage() {
         </div>
       </Section>
 
-      <CheckInDialog patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName }} open={checkIn} onClose={() => setCheckIn(false)} />
+      <CheckInDialog
+        patient={{ id: p.id, uhid: p.uhid, fullName: p.fullName }}
+        open={checkIn}
+        onClose={() => setCheckIn(false)}
+      />
     </Page>
   );
 }
 
 function Overview({ patient: p }: { patient: PatientDetail }) {
   const styles = useStyles();
-  const address = [p.address.line1, p.address.line2, p.address.city, p.address.district, p.address.state, p.address.pinCode].filter(Boolean).join(', ');
+  const address = [
+    p.address.line1,
+    p.address.line2,
+    p.address.city,
+    p.address.district,
+    p.address.state,
+    p.address.pinCode,
+  ]
+    .filter(Boolean)
+    .join(', ');
   return (
     <div className={styles.details}>
-      <Detail label="Date of birth">{p.dateOfBirth ? `${formatDateOnly(p.dateOfBirth)}${p.isDateOfBirthEstimated ? ' (estimated)' : ''}` : null}</Detail>
+      <Detail label="Date of birth">
+        {p.dateOfBirth ? `${formatDateOnly(p.dateOfBirth)}${p.isDateOfBirthEstimated ? ' (estimated)' : ''}` : null}
+      </Detail>
       <Detail label="Marital status">{p.maritalStatus === 'Unknown' ? null : humanize(p.maritalStatus)}</Detail>
-      <Detail label={p.guardianRelation ? guardianRelationLabel[p.guardianRelation] : 'Guardian'}>{p.guardianName}</Detail>
+      <Detail label={p.guardianRelation ? guardianRelationLabel[p.guardianRelation] : 'Guardian'}>
+        {p.guardianName}
+      </Detail>
       <Detail label="Mobile">{p.phone ? formatPhone(p.phone) : null}</Detail>
       <Detail label="Alternate phone">{p.alternatePhone ? formatPhone(p.alternatePhone) : null}</Detail>
       <Detail label="Email">{p.email}</Detail>
@@ -324,8 +391,22 @@ function Consents({ patientId }: { patientId: string }) {
         getRowId={(c) => c.id}
         columns={[
           { key: 'type', header: 'Consent', render: (c) => humanize(c.type) },
-          { key: 'granted', header: 'Decision', render: (c) => <StatusBadge status={c.revokedAt ? 'Revoked' : c.granted ? 'Approved' : 'Rejected'} label={c.revokedAt ? 'Withdrawn' : c.granted ? 'Given' : 'Refused'} /> },
-          { key: 'by', header: 'Signed by', render: (c) => (c.signedByName ? `${c.signedByName} (${c.signedByRelation ?? 'relative'})` : 'Patient'), priority: 'low' },
+          {
+            key: 'granted',
+            header: 'Decision',
+            render: (c) => (
+              <StatusBadge
+                status={c.revokedAt ? 'Revoked' : c.granted ? 'Approved' : 'Rejected'}
+                label={c.revokedAt ? 'Withdrawn' : c.granted ? 'Given' : 'Refused'}
+              />
+            ),
+          },
+          {
+            key: 'by',
+            header: 'Signed by',
+            render: (c) => (c.signedByName ? `${c.signedByName} (${c.signedByRelation ?? 'relative'})` : 'Patient'),
+            priority: 'low',
+          },
           { key: 'at', header: 'Recorded', render: (c) => formatDateTime(c.capturedAt) },
           { key: 'version', header: 'Version', render: (c) => c.consentVersion, priority: 'low' },
         ]}
@@ -346,7 +427,11 @@ function Consents({ patientId }: { patientId: string }) {
                   ))}
                 </Select>
               </Field>
-              <Switch checked={granted} onChange={(_, d) => setGranted(d.checked)} label={granted ? 'Consent given' : 'Consent refused'} />
+              <Switch
+                checked={granted}
+                onChange={(_, d) => setGranted(d.checked)}
+                label={granted ? 'Consent given' : 'Consent refused'}
+              />
               <Field label="Signed on the patient's behalf by (relation)" hint="Leave blank if the patient signed">
                 <Input value={signedByRelation} onChange={(_, d) => setSignedByRelation(d.value)} />
               </Field>
@@ -361,7 +446,11 @@ function Consents({ patientId }: { patientId: string }) {
             </DialogContent>
             <DialogActions>
               <Button onClick={() => setOpen(false)}>Cancel</Button>
-              <Button appearance="primary" disabled={capture.isPending || (Boolean(signedByRelation) && !signedByName)} onClick={() => capture.mutate()}>
+              <Button
+                appearance="primary"
+                disabled={capture.isPending || (Boolean(signedByRelation) && !signedByName)}
+                onClick={() => capture.mutate()}
+              >
                 Save
               </Button>
             </DialogActions>
@@ -372,7 +461,18 @@ function Consents({ patientId }: { patientId: string }) {
   );
 }
 
-const DOCUMENT_TYPES = ['IdProof', 'InsuranceCard', 'ExternalReport', 'ReferralLetter', 'Consent', 'Prescription', 'DischargeSummary', 'Imaging', 'Photo', 'Other'];
+const DOCUMENT_TYPES = [
+  'IdProof',
+  'InsuranceCard',
+  'ExternalReport',
+  'ReferralLetter',
+  'Consent',
+  'Prescription',
+  'DischargeSummary',
+  'Imaging',
+  'Photo',
+  'Other',
+];
 
 function Documents({ patientId }: { patientId: string }) {
   const styles = useStyles();
@@ -439,7 +539,11 @@ function Documents({ patientId }: { patientId: string }) {
       {canUpload && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 12 }}>
           <Field label="File (PDF, JPG, PNG, max 25 MB)">
-            <input type="file" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              accept="application/pdf,image/png,image/jpeg,image/webp"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
           </Field>
           <Field label="Type">
             <Select value={type} onChange={(_, d) => setType(d.value)}>
@@ -451,15 +555,28 @@ function Documents({ patientId }: { patientId: string }) {
             </Select>
           </Field>
           <Field label="Title">
-            <Input value={title} onChange={(_, d) => setTitle(d.value)} placeholder={file?.name ?? 'e.g. MRI report from Apollo'} />
+            <Input
+              value={title}
+              onChange={(_, d) => setTitle(d.value)}
+              placeholder={file?.name ?? 'e.g. MRI report from Apollo'}
+            />
           </Field>
-          <Button icon={<ArrowUploadRegular />} appearance="primary" disabled={!file || upload.isPending} onClick={() => upload.mutate()}>
+          <Button
+            icon={<ArrowUploadRegular />}
+            appearance="primary"
+            disabled={!file || upload.isPending}
+            onClick={() => upload.mutate()}
+          >
             Attach
           </Button>
         </div>
       )}
       {documents.data && documents.data.length === 0 ? (
-        <EmptyState title="No documents" description="Scanned IDs, insurance cards and outside reports appear here." icon={<DocumentRegular />} />
+        <EmptyState
+          title="No documents"
+          description="Scanned IDs, insurance cards and outside reports appear here."
+          icon={<DocumentRegular />}
+        />
       ) : (
         <DataTable
           ariaLabel="Documents"
@@ -473,7 +590,12 @@ function Documents({ patientId }: { patientId: string }) {
             { key: 'title', header: 'Title', render: (d) => d.title },
             { key: 'type', header: 'Type', render: (d) => humanize(d.type) },
             { key: 'date', header: 'Added', render: (d) => formatDate(d.createdAt) },
-            { key: 'size', header: 'Size', render: (d) => (d.sizeBytes ? `${Math.ceil(d.sizeBytes / 1024)} KB` : '—'), priority: 'low' },
+            {
+              key: 'size',
+              header: 'Size',
+              render: (d) => (d.sizeBytes ? `${Math.ceil(d.sizeBytes / 1024)} KB` : '—'),
+              priority: 'low',
+            },
           ]}
           size="small"
         />
@@ -521,7 +643,8 @@ function BreakGlass({ patientId, onGranted }: { patientId: string; onGranted: ()
           <MessageBar intent="warning" layout="multiline">
             <MessageBarBody>
               <MessageBarTitle>Access to this patient's record is restricted</MessageBarTitle>
-              Use emergency access only when it is clinically necessary. Your name, the reason and every screen you open are recorded and reviewed.
+              Use emergency access only when it is clinically necessary. Your name, the reason and every screen you open
+              are recorded and reviewed.
             </MessageBarBody>
           </MessageBar>
           {canBreakGlass ? (
@@ -534,7 +657,11 @@ function BreakGlass({ patientId, onGranted }: { patientId: string; onGranted: ()
                 <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} />
               </Field>
               <div>
-                <Button appearance="primary" disabled={reason.trim().length < 15 || request.isPending} onClick={() => request.mutate()}>
+                <Button
+                  appearance="primary"
+                  disabled={reason.trim().length < 15 || request.isPending}
+                  onClick={() => request.mutate()}
+                >
                   Request emergency access
                 </Button>
               </div>

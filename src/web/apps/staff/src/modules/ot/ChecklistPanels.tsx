@@ -21,7 +21,15 @@ import { formatTime } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { otApi, otKeys, type ChecklistInput, type ChecklistItemDto, type ChecklistItemState, type SafetyPhase, type SurgeryDetail } from './api';
+import {
+  otApi,
+  otKeys,
+  type ChecklistInput,
+  type ChecklistItemDto,
+  type ChecklistItemState,
+  type SafetyPhase,
+  type SurgeryDetail,
+} from './api';
 import { anaesthesiaLabel, phaseLabel, phaseMoment } from './labels';
 import { phaseGate, preOpGate } from './logic';
 import { SideBadge } from './OtBadges';
@@ -40,7 +48,10 @@ const useStyles = makeStyles({
     border: `1px solid ${tokens.colorNeutralStroke2}`,
     backgroundColor: tokens.colorNeutralBackground1,
   },
-  itemDone: { backgroundColor: tokens.colorPaletteGreenBackground1, border: `1px solid ${tokens.colorPaletteGreenBorder2}` },
+  itemDone: {
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+    border: `1px solid ${tokens.colorPaletteGreenBorder2}`,
+  },
   itemNa: { backgroundColor: tokens.colorNeutralBackground3 },
   itemEdited: { border: `1px solid ${tokens.colorBrandStroke1}` },
   icon: { fontSize: '22px', display: 'flex', paddingTop: '2px' },
@@ -76,7 +87,9 @@ function stateIcon(state: ChecklistItemState, styles: ReturnType<typeof useStyle
 }
 
 function recordedText(item: ChecklistItemDto): string {
-  return item.state === 'NotApplicable' ? `Not applicable${item.remarks ? `: ${item.remarks}` : ''} — marked by` : 'Confirmed by';
+  return item.state === 'NotApplicable'
+    ? `Not applicable${item.remarks ? `: ${item.remarks}` : ''} — marked by`
+    : 'Confirmed by';
 }
 
 // ---------------------------------------------------------------- pre-operative checklist
@@ -90,7 +103,15 @@ interface PreOpEdit {
  * Pre-operative checklist (ward / pre-op holding). Items can be corrected until the WHO Sign-in, which locks it.
  * "Not applicable" is only offered where the hospital allows it and always needs a reason.
  */
-export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { booking: SurgeryDetail; canRecord: boolean; onComplete?: () => void }) {
+export function PreOpChecklistPanel({
+  booking,
+  canRecord,
+  onComplete,
+}: {
+  booking: SurgeryDetail;
+  canRecord: boolean;
+  onComplete?: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -99,12 +120,15 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
   const [edits, setEdits] = useState<Record<string, PreOpEdit>>({});
 
   const items = booking.preOpChecklist;
-  const valueOf = (item: ChecklistItemDto): PreOpEdit => edits[item.key] ?? { state: item.state, remarks: item.remarks ?? '' };
+  const valueOf = (item: ChecklistItemDto): PreOpEdit =>
+    edits[item.key] ?? { state: item.state, remarks: item.remarks ?? '' };
   const changed = items.filter((item) => {
     const edit = edits[item.key];
     return edit && (edit.state !== item.state || edit.remarks.trim() !== (item.remarks ?? ''));
   });
-  const missingReason = changed.filter((item) => valueOf(item).state === 'NotApplicable' && !valueOf(item).remarks.trim());
+  const missingReason = changed.filter(
+    (item) => valueOf(item).state === 'NotApplicable' && !valueOf(item).remarks.trim(),
+  );
   const doneCount = items.filter((item) => valueOf(item).state !== 'Pending').length;
 
   const willComplete = items.every((item) => valueOf(item).state !== 'Pending');
@@ -121,9 +145,16 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
   });
 
   const submit = () =>
-    save.mutate(changed.map((item) => ({ key: item.key, state: valueOf(item).state, remarks: valueOf(item).remarks.trim() || null })));
+    save.mutate(
+      changed.map((item) => ({
+        key: item.key,
+        state: valueOf(item).state,
+        remarks: valueOf(item).remarks.trim() || null,
+      })),
+    );
 
-  const setItem = (item: ChecklistItemDto, next: Partial<PreOpEdit>) => setEdits((current) => ({ ...current, [item.key]: { ...valueOf(item), ...next } }));
+  const setItem = (item: ChecklistItemDto, next: Partial<PreOpEdit>) =>
+    setEdits((current) => ({ ...current, [item.key]: { ...valueOf(item), ...next } }));
 
   return (
     <div className={styles.panel}>
@@ -131,7 +162,12 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
         <Text weight="semibold">
           {doneCount} of {items.length} checked{booking.preOpComplete ? ' · complete' : ''}
         </Text>
-        <ProgressBar value={items.length ? doneCount / items.length : 0} color={doneCount === items.length ? 'success' : 'brand'} thickness="large" aria-label="Pre-operative checklist progress" />
+        <ProgressBar
+          value={items.length ? doneCount / items.length : 0}
+          color={doneCount === items.length ? 'success' : 'brand'}
+          thickness="large"
+          aria-label="Pre-operative checklist progress"
+        />
       </div>
       {!gate.allowed && (
         <MessageBar intent="info" icon={<LockClosedRegular />}>
@@ -140,7 +176,9 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
       )}
       {gate.allowed && !canRecord && (
         <MessageBar intent="info">
-          <MessageBarBody>Only nurses, doctors and OT coordinators record the checklist. You can view it.</MessageBarBody>
+          <MessageBarBody>
+            Only nurses, doctors and OT coordinators record the checklist. You can view it.
+          </MessageBarBody>
         </MessageBar>
       )}
       <div className={styles.items} role="list" aria-label="Pre-operative checklist">
@@ -151,7 +189,12 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
             <div
               key={item.key}
               role="listitem"
-              className={mergeClasses(styles.item, value.state === 'Done' && styles.itemDone, value.state === 'NotApplicable' && styles.itemNa, isEdited && styles.itemEdited)}
+              className={mergeClasses(
+                styles.item,
+                value.state === 'Done' && styles.itemDone,
+                value.state === 'NotApplicable' && styles.itemNa,
+                isEdited && styles.itemEdited,
+              )}
             >
               <span className={styles.icon}>{stateIcon(value.state, styles)}</span>
               <div className={styles.itemBody}>
@@ -172,7 +215,11 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
                       <Field
                         className={styles.remarks}
                         validationState={value.state === 'NotApplicable' && !value.remarks.trim() ? 'error' : 'none'}
-                        validationMessage={value.state === 'NotApplicable' && !value.remarks.trim() ? 'Say why it does not apply.' : undefined}
+                        validationMessage={
+                          value.state === 'NotApplicable' && !value.remarks.trim()
+                            ? 'Say why it does not apply.'
+                            : undefined
+                        }
                       >
                         <Input
                           aria-label={`Remarks for ${item.text}`}
@@ -185,24 +232,35 @@ export function PreOpChecklistPanel({ booking, canRecord, onComplete }: { bookin
                     )}
                   </div>
                 )}
-                {!editable && item.state === 'NotApplicable' && item.remarks && <Caption1>Reason: {item.remarks}</Caption1>}
-                {item.state !== 'Pending' && <WhoWhen prefix={recordedText(item)} by={item.recordedBy} at={item.recordedAt} />}
+                {!editable && item.state === 'NotApplicable' && item.remarks && (
+                  <Caption1>Reason: {item.remarks}</Caption1>
+                )}
+                {item.state !== 'Pending' && (
+                  <WhoWhen prefix={recordedText(item)} by={item.recordedBy} at={item.recordedAt} />
+                )}
               </div>
             </div>
           );
         })}
       </div>
-      <ActionError error={save.error} onReload={() => void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) })} />
+      <ActionError
+        error={save.error}
+        onReload={() => void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) })}
+      />
       {editable && (
         <div className={styles.footer}>
-          <Caption1 className={styles.muted}>Your name and the time are recorded against every item you change.</Caption1>
+          <Caption1 className={styles.muted}>
+            Your name and the time are recorded against every item you change.
+          </Caption1>
           <Button
             appearance="primary"
             disabled={changed.length === 0 || missingReason.length > 0 || save.isPending}
             icon={save.isPending ? <Spinner size="tiny" /> : undefined}
             onClick={submit}
           >
-            {changed.length === 0 ? 'No changes to save' : `Save checklist (${changed.length} change${changed.length === 1 ? '' : 's'})`}
+            {changed.length === 0
+              ? 'No changes to save'
+              : `Save checklist (${changed.length} change${changed.length === 1 ? '' : 's'})`}
           </Button>
         </div>
       )}
@@ -227,9 +285,7 @@ export function IdentityCheck({ booking }: { booking: SurgeryDetail }) {
       <div>
         <Caption1 className={styles.identityLabel}>Patient</Caption1>
         <span className={styles.identityValue}>{patient?.fullName ?? '—'}</span>
-        <Caption1 block>
-          {patient ? `${patient.uhid} · ${patient.age ?? '—'} / ${patient.gender}` : ''}
-        </Caption1>
+        <Caption1 block>{patient ? `${patient.uhid} · ${patient.age ?? '—'} / ${patient.gender}` : ''}</Caption1>
       </div>
       <div>
         <Caption1 className={styles.identityLabel}>Procedure</Caption1>
@@ -237,12 +293,18 @@ export function IdentityCheck({ booking }: { booking: SurgeryDetail }) {
       </div>
       <div>
         <Caption1 className={styles.identityLabel}>Operative side</Caption1>
-        {booking.laterality === 'NotApplicable' ? <span className={styles.identityValue}>No side</span> : <SideBadge laterality={booking.laterality} size="large" />}
+        {booking.laterality === 'NotApplicable' ? (
+          <span className={styles.identityValue}>No side</span>
+        ) : (
+          <SideBadge laterality={booking.laterality} size="large" />
+        )}
       </div>
       <div>
         <Caption1 className={styles.identityLabel}>Team</Caption1>
         <Text block>Surgeon: {booking.surgeonName ?? '—'}</Text>
-        <Text block>Anaesthetist: {booking.anaesthetistName ?? (booking.anaesthesiaType === 'Local' ? 'Not needed (local)' : '—')}</Text>
+        <Text block>
+          Anaesthetist: {booking.anaesthetistName ?? (booking.anaesthesiaType === 'Local' ? 'Not needed (local)' : '—')}
+        </Text>
         <Caption1>{anaesthesiaLabel[booking.anaesthesiaType]}</Caption1>
       </div>
     </div>
@@ -274,16 +336,23 @@ export function SafetyPhasePanel({
 
   const items = phaseDto?.items ?? [];
   const pending = items.filter((item) => item.state === 'Pending');
-  const selectionOf = (key: string): PhaseSelection => selection[key] ?? { confirmed: false, notApplicable: false, remarks: '' };
+  const selectionOf = (key: string): PhaseSelection =>
+    selection[key] ?? { confirmed: false, notApplicable: false, remarks: '' };
   const chosen = pending.filter((item) => selectionOf(item.key).confirmed || selectionOf(item.key).notApplicable);
-  const missingReason = chosen.filter((item) => selectionOf(item.key).notApplicable && !selectionOf(item.key).remarks.trim());
+  const missingReason = chosen.filter(
+    (item) => selectionOf(item.key).notApplicable && !selectionOf(item.key).remarks.trim(),
+  );
   const confirmedCount = items.length - pending.length;
   const completesPhase = chosen.length === pending.length && pending.length > 0;
 
   const confirm = useMutation({
     mutationFn: (inputs: ChecklistInput[]) => otApi.confirmSafety(booking.id, phase, inputs),
     onSuccess: () => {
-      notify.success(completesPhase ? `${phaseLabel[phase]} complete` : `${chosen.length} item${chosen.length === 1 ? '' : 's'} confirmed`);
+      notify.success(
+        completesPhase
+          ? `${phaseLabel[phase]} complete`
+          : `${chosen.length} item${chosen.length === 1 ? '' : 's'} confirmed`,
+      );
       setSelection({});
       void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) });
       void queryClient.invalidateQueries({ queryKey: otKeys.calendars });
@@ -301,7 +370,8 @@ export function SafetyPhasePanel({
       }),
     );
 
-  const update = (key: string, next: Partial<PhaseSelection>) => setSelection((current) => ({ ...current, [key]: { ...selectionOf(key), ...next } }));
+  const update = (key: string, next: Partial<PhaseSelection>) =>
+    setSelection((current) => ({ ...current, [key]: { ...selectionOf(key), ...next } }));
 
   return (
     <div className={styles.panel}>
@@ -336,7 +406,9 @@ export function SafetyPhasePanel({
         </MessageBar>
       ) : !canRecord ? (
         <MessageBar intent="info">
-          <MessageBarBody>Only nurses, doctors and OT coordinators confirm checklist items. You can view them.</MessageBarBody>
+          <MessageBarBody>
+            Only nurses, doctors and OT coordinators confirm checklist items. You can view them.
+          </MessageBarBody>
         </MessageBar>
       ) : null}
 
@@ -346,7 +418,11 @@ export function SafetyPhasePanel({
         {items.map((item) => {
           if (item.state !== 'Pending') {
             return (
-              <div key={item.key} role="listitem" className={mergeClasses(styles.item, item.state === 'Done' ? styles.itemDone : styles.itemNa)}>
+              <div
+                key={item.key}
+                role="listitem"
+                className={mergeClasses(styles.item, item.state === 'Done' ? styles.itemDone : styles.itemNa)}
+              >
                 <span className={styles.icon}>{stateIcon(item.state, styles)}</span>
                 <div className={styles.itemBody}>
                   <Text weight="semibold">{item.text}</Text>
@@ -357,8 +433,14 @@ export function SafetyPhasePanel({
           }
           const s = selectionOf(item.key);
           return (
-            <div key={item.key} role="listitem" className={mergeClasses(styles.item, (s.confirmed || s.notApplicable) && styles.itemEdited)}>
-              <span className={styles.icon}>{stateIcon(s.confirmed ? 'Done' : s.notApplicable ? 'NotApplicable' : 'Pending', styles)}</span>
+            <div
+              key={item.key}
+              role="listitem"
+              className={mergeClasses(styles.item, (s.confirmed || s.notApplicable) && styles.itemEdited)}
+            >
+              <span className={styles.icon}>
+                {stateIcon(s.confirmed ? 'Done' : s.notApplicable ? 'NotApplicable' : 'Pending', styles)}
+              </span>
               <div className={styles.itemBody}>
                 <Checkbox
                   size="large"
@@ -398,11 +480,17 @@ export function SafetyPhasePanel({
         })}
       </div>
 
-      <ActionError error={confirm.error} onReload={() => void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) })} />
+      <ActionError
+        error={confirm.error}
+        onReload={() => void queryClient.invalidateQueries({ queryKey: otKeys.booking(booking.id) })}
+      />
 
       {editable && pending.length > 0 && (
         <div className={styles.footer}>
-          <Caption1 className={styles.muted}>Read each item aloud with the team. Confirmed items cannot be withdrawn; your name and the time are recorded.</Caption1>
+          <Caption1 className={styles.muted}>
+            Read each item aloud with the team. Confirmed items cannot be withdrawn; your name and the time are
+            recorded.
+          </Caption1>
           <Button
             appearance="primary"
             size="large"

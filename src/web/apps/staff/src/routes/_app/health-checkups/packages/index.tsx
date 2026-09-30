@@ -13,7 +13,14 @@ export const Route = createFileRoute('/_app/health-checkups/packages/')({
 
 function audience(p: PackageDto): string {
   const who = p.gender === 'Male' ? 'Men' : p.gender === 'Female' ? 'Women' : 'Everyone';
-  const age = p.minAgeYears !== null && p.maxAgeYears !== null ? `${p.minAgeYears}–${p.maxAgeYears} y` : p.minAgeYears !== null ? `${p.minAgeYears}+ y` : p.maxAgeYears !== null ? `≤ ${p.maxAgeYears} y` : 'all ages';
+  const age =
+    p.minAgeYears !== null && p.maxAgeYears !== null
+      ? `${p.minAgeYears}–${p.maxAgeYears} y`
+      : p.minAgeYears !== null
+        ? `${p.minAgeYears}+ y`
+        : p.maxAgeYears !== null
+          ? `≤ ${p.maxAgeYears} y`
+          : 'all ages';
   return `${who}, ${age}`;
 }
 
@@ -31,7 +38,11 @@ function PackagesPage() {
         title="Health packages"
         subtitle="Each package is also a billable service: the patient pays the package price once, the tests are not charged separately."
         actions={
-          <Button appearance="primary" icon={<AddRegular />} onClick={() => void navigate({ to: '/health-checkups/packages/$packageId', params: { packageId: 'new' } })}>
+          <Button
+            appearance="primary"
+            icon={<AddRegular />}
+            onClick={() => void navigate({ to: '/health-checkups/packages/$packageId', params: { packageId: 'new' } })}
+          >
             New package
           </Button>
         }
@@ -42,7 +53,11 @@ function PackagesPage() {
             <Field label="Search" style={{ flex: '1 1 260px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Name or code" />
             </Field>
-            <Switch checked={showInactive} onChange={(_, d) => setShowInactive(d.checked)} label="Show packages no longer offered" />
+            <Switch
+              checked={showInactive}
+              onChange={(_, d) => setShowInactive(d.checked)}
+              label="Show packages no longer offered"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -67,7 +82,13 @@ function PackagesPage() {
             },
             { key: 'for', header: 'For', render: audience },
             { key: 'items', header: 'Includes', width: 110, align: 'end', render: (p) => `${p.items.length} items` },
-            { key: 'price', header: 'Price', width: 120, align: 'end', render: (p) => formatInr(p.price, { whole: true }) },
+            {
+              key: 'price',
+              header: 'Price',
+              width: 120,
+              align: 'end',
+              render: (p) => formatInr(p.price, { whole: true }),
+            },
             {
               key: 'billing',
               header: 'Billing',
@@ -82,7 +103,18 @@ function PackagesPage() {
                   </Badge>
                 ),
             },
-            { key: 'active', header: 'Status', width: 110, render: (p) => <StatusBadge status={p.isActive ? 'Active' : 'Inactive'} tone={p.isActive ? 'success' : 'informative'} label={p.isActive ? 'Offered' : 'Not offered'} /> },
+            {
+              key: 'active',
+              header: 'Status',
+              width: 110,
+              render: (p) => (
+                <StatusBadge
+                  status={p.isActive ? 'Active' : 'Inactive'}
+                  tone={p.isActive ? 'success' : 'informative'}
+                  label={p.isActive ? 'Offered' : 'Not offered'}
+                />
+              ),
+            },
           ]}
           emptyTitle="No packages"
           emptyDescription="Create a package with its tests and consultations, then book patients on it."

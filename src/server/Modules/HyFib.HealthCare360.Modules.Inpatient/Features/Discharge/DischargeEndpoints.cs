@@ -49,8 +49,16 @@ internal static class DischargeEndpoints
                 orderby a.DischargeInitiatedAt
                 select new
                 {
-                    a.Id, a.AdmissionNumber, a.PatientId, p.Uhid, p.FullName, WardName = w != null ? w.Name : null, BedLabel = b != null ? b.Label : null,
-                    ConsultantName = pr != null ? pr.DisplayName : null, a.DischargeInitiatedAt, a.ExpectedDischargeDate,
+                    a.Id,
+                    a.AdmissionNumber,
+                    a.PatientId,
+                    p.Uhid,
+                    p.FullName,
+                    WardName = w != null ? w.Name : null,
+                    BedLabel = b != null ? b.Label : null,
+                    ConsultantName = pr != null ? pr.DisplayName : null,
+                    a.DischargeInitiatedAt,
+                    a.ExpectedDischargeDate,
                 })
             .Take(500)
             .ToListAsync(ct);

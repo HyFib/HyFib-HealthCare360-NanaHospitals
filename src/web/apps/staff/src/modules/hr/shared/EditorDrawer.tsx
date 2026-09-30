@@ -1,4 +1,12 @@
-import { Button, DrawerBody, DrawerFooter, DrawerHeader, DrawerHeaderTitle, OverlayDrawer, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  DrawerBody,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerHeaderTitle,
+  OverlayDrawer,
+  Spinner,
+} from '@fluentui/react-components';
 import { DismissRegular } from '@fluentui/react-icons';
 import type { FormEventHandler, ReactNode } from 'react';
 
@@ -31,7 +39,17 @@ export function EditorDrawer({
     <OverlayDrawer open={open} position="end" size={size} onOpenChange={(_, data) => !data.open && !busy && onClose()}>
       <form onSubmit={onSubmit} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} disabled={busy} />}>
+          <DrawerHeaderTitle
+            action={
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                aria-label="Close"
+                onClick={onClose}
+                disabled={busy}
+              />
+            }
+          >
             {title}
           </DrawerHeaderTitle>
         </DrawerHeader>

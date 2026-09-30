@@ -25,7 +25,15 @@ import {
   Textarea,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowUndoRegular, BarcodeScannerRegular, BeakerRegular, HeartPulseWarningRegular, PrintRegular, ShieldErrorRegular, WarningRegular } from '@fluentui/react-icons';
+import {
+  ArrowUndoRegular,
+  BarcodeScannerRegular,
+  BeakerRegular,
+  HeartPulseWarningRegular,
+  PrintRegular,
+  ShieldErrorRegular,
+  WarningRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatTime, isApiError, useSession, type BloodGroup } from '@hc360/core';
 import { ConfirmDialog, DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -88,7 +96,11 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
   return (
     <div className={styles.stack}>
       <div className={styles.row}>
-        <BloodGroupBadge group={grouped ? request.patientBloodGroup : 'Unknown'} size="extra-large" note="blood bank grouping" />
+        <BloodGroupBadge
+          group={grouped ? request.patientBloodGroup : 'Unknown'}
+          size="extra-large"
+          note="blood bank grouping"
+        />
         {grouped ? (
           <WhoWhen prefix="Grouped by" by={request.groupedByName} at={request.groupedAt} />
         ) : (
@@ -145,13 +157,15 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
               </Select>
             </Field>
             <Caption1 className={styles.muted}>
-              A result that disagrees with an earlier grouping is refused: it may be the wrong blood in the tube. Collect a fresh sample and investigate.
+              A result that disagrees with an earlier grouping is refused: it may be the wrong blood in the tube.
+              Collect a fresh sample and investigate.
             </Caption1>
             {discrepancy ? (
               <MessageBar intent="error" layout="multiline" politeness="assertive" icon={<ShieldErrorRegular />}>
                 <MessageBarBody>
                   <MessageBarTitle>Grouping does not match — possible wrong blood in tube</MessageBarTitle>
-                  {isApiError(record.error) ? record.error.userMessage : ''} Do not cross-match or issue until this is resolved.
+                  {isApiError(record.error) ? record.error.userMessage : ''} Do not cross-match or issue until this is
+                  resolved.
                 </MessageBarBody>
               </MessageBar>
             ) : (
@@ -162,7 +176,12 @@ function GroupDialog({ request, onClose }: { request: BloodRequestDetail; onClos
             <Button onClick={onClose} disabled={record.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!group || record.isPending} icon={record.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => record.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!group || record.isPending}
+              icon={record.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => record.mutate()}
+            >
               Save group
             </Button>
           </DialogActions>
@@ -205,7 +224,11 @@ export function CompatibleUnitsPanel({ request, now }: { request: BloodRequestDe
           { key: 'number', header: 'Unit', render: (u) => <Text className={styles.mono}>{u.unitNumber}</Text> },
           { key: 'group', header: 'Group', width: 110, render: (u) => groupLabel(u.bloodGroup) },
           { key: 'volume', header: 'Volume', width: 90, align: 'end', render: (u) => `${u.volumeMl} ml` },
-          { key: 'expiry', header: 'Expiry (use first)', render: (u) => <ExpiryText expiresAt={u.expiresAt} now={now} /> },
+          {
+            key: 'expiry',
+            header: 'Expiry (use first)',
+            render: (u) => <ExpiryText expiresAt={u.expiresAt} now={now} />,
+          },
           {
             key: 'state',
             header: 'For this request',
@@ -227,12 +250,22 @@ export function CompatibleUnitsPanel({ request, now }: { request: BloodRequestDe
         emptyTitle={`No compatible ${componentLabel[request.componentType].toLowerCase()} in stock`}
         emptyDescription="Check units in quarantine awaiting results, arrange replacement donors, or contact another blood bank."
       />
-      {crossMatching && <CrossMatchDialog request={request} unit={crossMatching} onClose={() => setCrossMatching(null)} />}
+      {crossMatching && (
+        <CrossMatchDialog request={request} unit={crossMatching} onClose={() => setCrossMatching(null)} />
+      )}
     </>
   );
 }
 
-function CrossMatchDialog({ request, unit, onClose }: { request: BloodRequestDetail; unit: CompatibleUnitDto; onClose: () => void }) {
+function CrossMatchDialog({
+  request,
+  unit,
+  onClose,
+}: {
+  request: BloodRequestDetail;
+  unit: CompatibleUnitDto;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -240,9 +273,14 @@ function CrossMatchDialog({ request, unit, onClose }: { request: BloodRequestDet
   const [result, setResult] = useState<CrossmatchResult | ''>('');
   const [remarks, setRemarks] = useState('');
   const save = useMutation({
-    mutationFn: () => bloodApi.crossMatch(request.id, unit.id, method, result || 'Incompatible', remarks.trim() || null),
+    mutationFn: () =>
+      bloodApi.crossMatch(request.id, unit.id, method, result || 'Incompatible', remarks.trim() || null),
     onSuccess: (dto) => {
-      notify.success(dto.result === 'Compatible' ? `Unit ${dto.unitNumber} compatible and reserved` : `Unit ${dto.unitNumber} incompatible`);
+      notify.success(
+        dto.result === 'Compatible'
+          ? `Unit ${dto.unitNumber} compatible and reserved`
+          : `Unit ${dto.unitNumber} incompatible`,
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
       void queryClient.invalidateQueries({ queryKey: bloodKeys.compatible(request.id) });
       void queryClient.invalidateQueries({ queryKey: bloodKeys.inventory });
@@ -256,7 +294,8 @@ function CrossMatchDialog({ request, unit, onClose }: { request: BloodRequestDet
           <DialogTitle>
             Cross-match unit {unit.unitNumber}
             <Caption1 block className={styles.muted}>
-              {groupLabel(unit.bloodGroup)} {componentShort[request.componentType]} for {request.patientName} ({groupLabel(request.patientBloodGroup)})
+              {groupLabel(unit.bloodGroup)} {componentShort[request.componentType]} for {request.patientName} (
+              {groupLabel(request.patientBloodGroup)})
             </Caption1>
           </DialogTitle>
           <DialogContent className={styles.stack}>
@@ -270,7 +309,11 @@ function CrossMatchDialog({ request, unit, onClose }: { request: BloodRequestDet
               </Select>
             </Field>
             <Field label="Result" required>
-              <RadioGroup layout="horizontal" value={result} onChange={(_, d) => setResult(d.value as CrossmatchResult)}>
+              <RadioGroup
+                layout="horizontal"
+                value={result}
+                onChange={(_, d) => setResult(d.value as CrossmatchResult)}
+              >
                 <Radio value="Compatible" label="Compatible" />
                 <Radio value="Incompatible" label="Incompatible" />
               </RadioGroup>
@@ -278,14 +321,21 @@ function CrossMatchDialog({ request, unit, onClose }: { request: BloodRequestDet
             <Field label="Remarks">
               <Textarea value={remarks} onChange={(_, d) => setRemarks(d.value)} rows={2} maxLength={500} />
             </Field>
-            <Caption1 className={styles.muted}>A compatible result reserves the unit for this patient for 72 hours.</Caption1>
+            <Caption1 className={styles.muted}>
+              A compatible result reserves the unit for this patient for 72 hours.
+            </Caption1>
             <ActionError error={save.error} />
           </DialogContent>
           <DialogActions>
             <Button onClick={onClose} disabled={save.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!result || save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => save.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!result || save.isPending}
+              icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => save.mutate()}
+            >
               Save cross-match
             </Button>
           </DialogActions>
@@ -305,9 +355,17 @@ export function CrossMatchesTable({ crossMatches, now }: { crossMatches: CrossMa
       size="small"
       columns={[
         { key: 'unit', header: 'Unit', render: (c) => <Text className={styles.mono}>{c.unitNumber}</Text> },
-        { key: 'result', header: 'Result', render: (c) => <StatusBadge status={c.result} tone={c.result === 'Compatible' ? 'success' : 'danger'} /> },
+        {
+          key: 'result',
+          header: 'Result',
+          render: (c) => <StatusBadge status={c.result} tone={c.result === 'Compatible' ? 'success' : 'danger'} />,
+        },
         { key: 'method', header: 'Method', priority: 'low', render: (c) => crossmatchMethodLabel[c.method] },
-        { key: 'when', header: 'Done', render: (c) => `${formatDateTime(c.performedAt)}${c.performedByName ? ` · ${c.performedByName}` : ''}` },
+        {
+          key: 'when',
+          header: 'Done',
+          render: (c) => `${formatDateTime(c.performedAt)}${c.performedByName ? ` · ${c.performedByName}` : ''}`,
+        },
         {
           key: 'validity',
           header: 'Valid for issue',
@@ -349,8 +407,8 @@ export function EmergencyReleasePanel({ request, canIssue }: { request: BloodReq
       <MessageBar intent="error" layout="multiline" icon={<WarningRegular />}>
         <MessageBarBody>
           <MessageBarTitle>Emergency release authorised by {request.emergencyReleaseAuthorisedBy}</MessageBarTitle>
-          {request.emergencyReleaseReason} Uncross-matched issue is limited to O Rh(D)-negative packed red cells, or AB plasma while the patient is ungrouped. Group and
-          cross-match as soon as the sample arrives.
+          {request.emergencyReleaseReason} Uncross-matched issue is limited to O Rh(D)-negative packed red cells, or AB
+          plasma while the patient is ungrouped. Group and cross-match as soon as the sample arrives.
         </MessageBarBody>
       </MessageBar>
     );
@@ -361,12 +419,17 @@ export function EmergencyReleasePanel({ request, canIssue }: { request: BloodReq
         <WarningRegular /> Life-threatening bleeding and no time to cross-match?
       </Text>
       <Text>
-        A doctor can authorise release of uncross-matched blood: only group O Rh(D)-negative packed red cells, or AB plasma if the patient is not grouped yet. The
-        decision is recorded with the doctor’s name and audited.
+        A doctor can authorise release of uncross-matched blood: only group O Rh(D)-negative packed red cells, or AB
+        plasma if the patient is not grouped yet. The decision is recorded with the doctor’s name and audited.
       </Text>
       {canIssue && (
         <div>
-          <Button appearance="primary" icon={<WarningRegular />} style={{ backgroundColor: tokens.colorPaletteRedBackground3 }} onClick={() => setOpen(true)}>
+          <Button
+            appearance="primary"
+            icon={<WarningRegular />}
+            style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
+            onClick={() => setOpen(true)}
+          >
             Authorise emergency release
           </Button>
         </div>
@@ -386,7 +449,10 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
   const authorise = useMutation({
     mutationFn: () => bloodApi.emergencyRelease(request.id, doctor.trim(), reason.trim()),
     onSuccess: () => {
-      notify.warning('Emergency release authorised', 'Issue only O Rh(D)-negative red cells or AB plasma until the patient is cross-matched.');
+      notify.warning(
+        'Emergency release authorised',
+        'Issue only O Rh(D)-negative red cells or AB plasma until the patient is cross-matched.',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
       onClose();
     },
@@ -401,17 +467,29 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
             <MessageBar intent="error" layout="multiline" icon={<WarningRegular />}>
               <MessageBarBody>
                 <MessageBarTitle>Risk of a fatal transfusion reaction</MessageBarTitle>
-                Uncross-matched blood is given only when waiting for a cross-match would endanger life. Only O Rh(D)-negative packed red cells (or AB plasma for an
-                ungrouped patient) can be issued this way. Send the patient’s sample for grouping and cross-matching at once.
+                Uncross-matched blood is given only when waiting for a cross-match would endanger life. Only O
+                Rh(D)-negative packed red cells (or AB plasma for an ungrouped patient) can be issued this way. Send the
+                patient’s sample for grouping and cross-matching at once.
               </MessageBarBody>
             </MessageBar>
             <Text>
-              Patient: <Text weight="semibold">{request.patientName}</Text> ({request.uhid}) · request {request.requestNumber}
+              Patient: <Text weight="semibold">{request.patientName}</Text> ({request.uhid}) · request{' '}
+              {request.requestNumber}
             </Text>
             <Field label="Doctor authorising the release" required>
-              <Input value={doctor} onChange={(_, d) => setDoctor(d.value)} maxLength={200} autoFocus placeholder="Name of the treating doctor" />
+              <Input
+                value={doctor}
+                onChange={(_, d) => setDoctor(d.value)}
+                maxLength={200}
+                autoFocus
+                placeholder="Name of the treating doctor"
+              />
             </Field>
-            <Field label="Clinical reason" required hint="At least 10 characters, e.g. haemorrhagic shock after trauma, BP 70/40.">
+            <Field
+              label="Clinical reason"
+              required
+              hint="At least 10 characters, e.g. haemorrhagic shock after trauma, BP 70/40."
+            >
               <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} />
             </Field>
             <Checkbox
@@ -461,13 +539,32 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
 
   const issuedIds = new Set(request.issues.filter((i) => !i.returnedAt).map((i) => i.componentId));
   const ready = request.crossMatches.filter(
-    (c) => c.result === 'Compatible' && c.isValid && crossmatchValidity(c.performedAt, now).valid && !issuedIds.has(c.componentId),
+    (c) =>
+      c.result === 'Compatible' &&
+      c.isValid &&
+      crossmatchValidity(c.performedAt, now).valid &&
+      !issuedIds.has(c.componentId),
   );
-  const latestCrossMatch = u ? request.crossMatches.filter((c) => c.componentId === u.id).sort((a, b) => Date.parse(b.performedAt) - Date.parse(a.performedAt))[0] : undefined;
-  const validCrossMatch = latestCrossMatch && latestCrossMatch.result === 'Compatible' && crossmatchValidity(latestCrossMatch.performedAt, now).valid ? latestCrossMatch : undefined;
+  const latestCrossMatch = u
+    ? request.crossMatches
+        .filter((c) => c.componentId === u.id)
+        .sort((a, b) => Date.parse(b.performedAt) - Date.parse(a.performedAt))[0]
+    : undefined;
+  const validCrossMatch =
+    latestCrossMatch &&
+    latestCrossMatch.result === 'Compatible' &&
+    crossmatchValidity(latestCrossMatch.performedAt, now).valid
+      ? latestCrossMatch
+      : undefined;
   const check = u
     ? u.componentType !== request.componentType
-      ? { allowed: false, emergency: false, reasons: [`This is ${componentLabel[u.componentType].toLowerCase()}; the request is for ${componentLabel[request.componentType].toLowerCase()}.`] }
+      ? {
+          allowed: false,
+          emergency: false,
+          reasons: [
+            `This is ${componentLabel[u.componentType].toLowerCase()}; the request is for ${componentLabel[request.componentType].toLowerCase()}.`,
+          ],
+        }
       : issueCheck({
           component: u.componentType,
           unitGroup: u.bloodGroup,
@@ -485,12 +582,19 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
     mutationFn: () => bloodApi.issue(request.id, u?.id ?? '', collector.trim()),
     onSuccess: (dto) => {
       setConfirmEmergency(false);
-      notify.success(`Unit ${dto.unitNumber} issued${dto.isEmergencyRelease ? ' under emergency release' : ''}`, 'Printing the issue slip.');
+      notify.success(
+        `Unit ${dto.unitNumber} issued${dto.isEmergencyRelease ? ' under emergency release' : ''}`,
+        'Printing the issue slip.',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       const refreshed = queryClient.getQueryData<BloodRequestDetail>(bloodKeys.request(request.id)) ?? request;
-      void printIssueSlip(facilityName, refreshed, dto, validCrossMatch ?? null, u ? { expiresAt: u.expiresAt, volumeMl: u.volumeMl, componentType: u.componentType } : null).catch(
-        (error: unknown) => notify.error(error, 'Printing the issue slip failed'),
-      );
+      void printIssueSlip(
+        facilityName,
+        refreshed,
+        dto,
+        validCrossMatch ?? null,
+        u ? { expiresAt: u.expiresAt, volumeMl: u.volumeMl, componentType: u.componentType } : null,
+      ).catch((error: unknown) => notify.error(error, 'Printing the issue slip failed'));
       setTerm('');
       setNumber('');
       setCollector('');
@@ -525,8 +629,18 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
           </div>
         </div>
       )}
-      <Field label="Scan the unit label" hint="Always scan the bag in hand: the check runs on the unit you are about to hand over.">
-        <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} onKeyDown={onKeyDown} contentBefore={<BarcodeScannerRegular />} placeholder="Unit number" aria-label="Unit number to issue" />
+      <Field
+        label="Scan the unit label"
+        hint="Always scan the bag in hand: the check runs on the unit you are about to hand over."
+      >
+        <SearchBox
+          value={term}
+          onChange={(_, d) => setTerm(d.value)}
+          onKeyDown={onKeyDown}
+          contentBefore={<BarcodeScannerRegular />}
+          placeholder="Unit number"
+          aria-label="Unit number to issue"
+        />
       </Field>
       {unit.isFetching && <Spinner size="tiny" label="Checking the unit…" labelPosition="after" />}
       {notFound && <Text className={styles.invalid}>No unit with the number {number}. Check the label.</Text>}
@@ -545,7 +659,9 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
           </div>
           <Caption1>
             Expiry: <ExpiryText expiresAt={u.expiresAt} now={now} />
-            {validCrossMatch ? ` · cross-matched compatible ${formatDateTime(validCrossMatch.performedAt)}` : ' · no valid cross-match'}
+            {validCrossMatch
+              ? ` · cross-matched compatible ${formatDateTime(validCrossMatch.performedAt)}`
+              : ' · no valid cross-match'}
           </Caption1>
           {check && !check.allowed && (
             <MessageBar intent="error" layout="multiline" politeness="assertive">
@@ -563,7 +679,8 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>Uncross-matched — emergency release</MessageBarTitle>
-                Allowed under the release authorised by {request.emergencyReleaseAuthorisedBy}. The slip is marked NOT CROSS-MATCHED.
+                Allowed under the release authorised by {request.emergencyReleaseAuthorisedBy}. The slip is marked NOT
+                CROSS-MATCHED.
               </MessageBarBody>
             </MessageBar>
           )}
@@ -574,7 +691,11 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
           )}
         </div>
       )}
-      <Field label="Handed to (ward staff collecting the unit)" required hint="Check their identity card at the counter.">
+      <Field
+        label="Handed to (ward staff collecting the unit)"
+        required
+        hint="Check their identity card at the counter."
+      >
         <Input value={collector} onChange={(_, d) => setCollector(d.value)} maxLength={200} />
       </Field>
       <ActionError error={issue.error} />
@@ -598,8 +719,9 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
         onConfirm={() => issue.mutate()}
         onCancel={() => setConfirmEmergency(false)}
       >
-        {u ? `${groupLabel(u.bloodGroup)} ${componentShort[u.componentType]} ${u.unitNumber}` : 'This unit'} goes to {request.patientName} without a cross-match, as authorised by{' '}
-        {request.emergencyReleaseAuthorisedBy}. This is recorded in the audit log.
+        {u ? `${groupLabel(u.bloodGroup)} ${componentShort[u.componentType]} ${u.unitNumber}` : 'This unit'} goes to{' '}
+        {request.patientName} without a cross-match, as authorised by {request.emergencyReleaseAuthorisedBy}. This is
+        recorded in the audit log.
       </ConfirmDialog>
     </div>
   );
@@ -624,8 +746,11 @@ export function IssuesTable({
   const [returning, setReturning] = useState<BloodIssueDto | null>(null);
 
   const reprint = (issue: BloodIssueDto) => {
-    const crossMatch = request.crossMatches.find((c) => c.componentId === issue.componentId && c.result === 'Compatible') ?? null;
-    void printIssueSlip(facilityName, request, issue, crossMatch, null).catch((error: unknown) => notify.error(error, 'Printing failed'));
+    const crossMatch =
+      request.crossMatches.find((c) => c.componentId === issue.componentId && c.result === 'Compatible') ?? null;
+    void printIssueSlip(facilityName, request, issue, crossMatch, null).catch((error: unknown) =>
+      notify.error(error, 'Printing failed'),
+    );
   };
 
   return (
@@ -637,7 +762,11 @@ export function IssuesTable({
         size="small"
         columns={[
           { key: 'unit', header: 'Unit', render: (i) => <Text className={styles.mono}>{i.unitNumber}</Text> },
-          { key: 'what', header: 'Component', render: (i) => `${componentShort[i.componentType]} · ${groupLabel(i.unitBloodGroup)}` },
+          {
+            key: 'what',
+            header: 'Component',
+            render: (i) => `${componentShort[i.componentType]} · ${groupLabel(i.unitBloodGroup)}`,
+          },
           {
             key: 'issued',
             header: 'Issued',
@@ -661,7 +790,11 @@ export function IssuesTable({
                   </Badge>
                 )}
                 {i.returnedAt ? (
-                  <StatusBadge status={i.restocked ? 'Restocked' : 'Discarded'} tone={i.restocked ? 'success' : 'danger'} label={i.restocked ? 'Returned to stock' : 'Returned, discarded'} />
+                  <StatusBadge
+                    status={i.restocked ? 'Restocked' : 'Discarded'}
+                    tone={i.restocked ? 'success' : 'danger'}
+                    label={i.restocked ? 'Returned to stock' : 'Returned, discarded'}
+                  />
                 ) : (
                   <StatusBadge status="Issued" tone="brand" label="With the patient" />
                 )}
@@ -672,7 +805,13 @@ export function IssuesTable({
         ]}
         rowActions={(i) => (
           <span style={{ display: 'inline-flex', gap: 4 }}>
-            <Button size="small" appearance="subtle" icon={<PrintRegular />} aria-label={`Print issue slip for ${i.unitNumber}`} onClick={() => reprint(i)} />
+            <Button
+              size="small"
+              appearance="subtle"
+              icon={<PrintRegular />}
+              aria-label={`Print issue slip for ${i.unitNumber}`}
+              onClick={() => reprint(i)}
+            />
             {canIssue && !i.returnedAt && (
               <Button size="small" icon={<ArrowUndoRegular />} onClick={() => setReturning(i)}>
                 Return
@@ -705,7 +844,10 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
   const accept = useMutation({
     mutationFn: () => bloodApi.returnIssue(issue.id, maintained, notes.trim() || null),
     onSuccess: (dto) => {
-      notify.success(dto.restocked ? `Unit ${dto.unitNumber} back in stock` : `Unit ${dto.unitNumber} discarded`, dto.restocked ? 'The charge was withdrawn.' : 'Recorded as wastage.');
+      notify.success(
+        dto.restocked ? `Unit ${dto.unitNumber} back in stock` : `Unit ${dto.unitNumber} discarded`,
+        dto.restocked ? 'The charge was withdrawn.' : 'Recorded as wastage.',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       onClose();
     },
@@ -721,7 +863,11 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
             </Caption1>
           </DialogTitle>
           <DialogContent className={styles.stack}>
-            <Switch checked={maintained} onChange={(_, d) => setMaintained(d.checked)} label="Kept at the right temperature (approved transport box, not left out)" />
+            <Switch
+              checked={maintained}
+              onChange={(_, d) => setMaintained(d.checked)}
+              label="Kept at the right temperature (approved transport box, not left out)"
+            />
             <MessageBar intent={outcome.restock ? 'success' : 'warning'} layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>{outcome.restock ? 'Goes back to stock' : 'Will be discarded'}</MessageBarTitle>
@@ -737,7 +883,12 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
             <Button onClick={onClose} disabled={accept.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={accept.isPending} icon={accept.isPending ? <Spinner size="tiny" /> : <ArrowUndoRegular />} onClick={() => accept.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={accept.isPending}
+              icon={accept.isPending ? <Spinner size="tiny" /> : <ArrowUndoRegular />}
+              onClick={() => accept.mutate()}
+            >
               Accept return
             </Button>
           </DialogActions>
@@ -746,4 +897,3 @@ function ReturnDialog({ issue, onClose }: { issue: BloodIssueDto; onClose: () =>
     </Dialog>
   );
 }
-

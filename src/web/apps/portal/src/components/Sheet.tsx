@@ -64,7 +64,14 @@ export function Sheet({
       <DrawerHeader>
         <DrawerHeaderTitle
           action={
-            <Button appearance="subtle" size="large" icon={<DismissRegular />} aria-label={t('common.close')} onClick={onClose} disabled={!dismissible} />
+            <Button
+              appearance="subtle"
+              size="large"
+              icon={<DismissRegular />}
+              aria-label={t('common.close')}
+              onClick={onClose}
+              disabled={!dismissible}
+            />
           }
         >
           {title}

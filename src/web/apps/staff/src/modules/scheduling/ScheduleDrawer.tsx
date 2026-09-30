@@ -18,13 +18,33 @@ import {
 import { DeleteRegular, DismissRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError } from '@hc360/core';
-import { applyServerErrors, ChoiceField, ConfirmDialog, DateField, FormGrid, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  applyServerErrors,
+  ChoiceField,
+  ConfirmDialog,
+  DateField,
+  FormGrid,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
-import { schedulingApi, schedulingQueries, WEEKDAYS, type ConsultationMode, type ScheduleDto, type ScheduleSaved, type Weekday } from './api';
+import {
+  schedulingApi,
+  schedulingQueries,
+  WEEKDAYS,
+  type ConsultationMode,
+  type ScheduleDto,
+  type ScheduleSaved,
+  type Weekday,
+} from './api';
 import { formatClock, toInputTime, toServerTime, type IsoDate } from './dates';
 import { modeLabel, weekdayShort } from './labels';
 import { findOverlaps, sessionProblem, slotsPerSession, SLOT_LENGTHS, WEEKDAY_PRESETS } from './scheduleRules';
@@ -144,13 +164,38 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
           notes: '',
         },
   });
-  const [practitionerId, departmentId, startTime, endTime, slotMinutes, capacity, weekdays, effectiveFrom, effectiveTo, isActive] = useWatch({
+  const [
+    practitionerId,
+    departmentId,
+    startTime,
+    endTime,
+    slotMinutes,
+    capacity,
+    weekdays,
+    effectiveFrom,
+    effectiveTo,
+    isActive,
+  ] = useWatch({
     control: form.control,
-    name: ['practitionerId', 'departmentId', 'startTime', 'endTime', 'slotMinutes', 'capacityPerSlot', 'weekdays', 'effectiveFrom', 'effectiveTo', 'isActive'],
+    name: [
+      'practitionerId',
+      'departmentId',
+      'startTime',
+      'endTime',
+      'slotMinutes',
+      'capacityPerSlot',
+      'weekdays',
+      'effectiveFrom',
+      'effectiveTo',
+      'isActive',
+    ],
   });
   const departments = useDepartments('Clinical');
   const doctors = usePractitioners(departmentId);
-  const doctorSessions = useQuery({ ...schedulingQueries.schedules({ practitionerId: practitionerId ?? undefined }), enabled: Boolean(practitionerId) });
+  const doctorSessions = useQuery({
+    ...schedulingQueries.schedules({ practitionerId: practitionerId ?? undefined }),
+    enabled: Boolean(practitionerId),
+  });
 
   const perSession = slotsPerSession(startTime, endTime, Number(slotMinutes));
   const clashes =
@@ -188,13 +233,20 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
         notes: v.notes || null,
       };
       if (schedule) {
-        return schedulingApi.updateSchedule(schedule.id, { ...common, weekday: v.weekdays[0]!, isActive: v.isActive, version: schedule.version });
+        return schedulingApi.updateSchedule(schedule.id, {
+          ...common,
+          weekday: v.weekdays[0]!,
+          isActive: v.isActive,
+          version: schedule.version,
+        });
       }
       await schedulingApi.createSchedules({ ...common, practitionerId: v.practitionerId!, weekdays: v.weekdays });
       return null;
     },
     onSuccess: (result, v) => {
-      notify.success(schedule ? 'Session saved' : v.weekdays.length > 1 ? `${v.weekdays.length} sessions added` : 'Session added');
+      notify.success(
+        schedule ? 'Session saved' : v.weekdays.length > 1 ? `${v.weekdays.length} sessions added` : 'Session added',
+      );
       void queryClient.invalidateQueries({ queryKey: ['scheduling'] });
       onSaved(result);
       onClose();
@@ -220,7 +272,9 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
-        <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+        <DrawerHeaderTitle
+          action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+        >
           {schedule ? `${schedule.practitionerName} · ${schedule.weekday}` : 'Add OPD session'}
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -234,7 +288,14 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
               </MessageBarBody>
             </MessageBar>
           )}
-          <SelectField control={form.control} name="departmentId" label="Department" required placeholder="Choose department" options={toOptions(departments.data)} />
+          <SelectField
+            control={form.control}
+            name="departmentId"
+            label="Department"
+            required
+            placeholder="Choose department"
+            options={toOptions(departments.data)}
+          />
           <SelectField
             control={form.control}
             name="practitionerId"
@@ -242,13 +303,22 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
             required
             disabled={Boolean(schedule)}
             placeholder={departmentId ? 'Choose doctor' : 'Choose a department first'}
-            options={schedule && !doctors.data?.some((d) => d.id === schedule.practitionerId) ? [{ value: schedule.practitionerId, label: schedule.practitionerName }, ...toOptions(doctors.data)] : toOptions(doctors.data)}
+            options={
+              schedule && !doctors.data?.some((d) => d.id === schedule.practitionerId)
+                ? [{ value: schedule.practitionerId, label: schedule.practitionerName }, ...toOptions(doctors.data)]
+                : toOptions(doctors.data)
+            }
           />
           <Controller
             control={form.control}
             name="weekdays"
             render={({ field, fieldState }) => (
-              <Field label={schedule ? 'Day' : 'Days'} required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+              <Field
+                label={schedule ? 'Day' : 'Days'}
+                required
+                validationMessage={fieldState.error?.message}
+                validationState={fieldState.error ? 'error' : 'none'}
+              >
                 <div className={styles.days} role="group" aria-label="Weekdays">
                   {WEEKDAYS.map((day) => (
                     <Checkbox
@@ -256,7 +326,13 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
                       label={weekdayShort[day]}
                       checked={field.value.includes(day)}
                       onChange={(_, d) => {
-                        const next: Weekday[] = schedule ? (d.checked ? [day] : field.value) : d.checked ? [...field.value, day] : field.value.filter((x) => x !== day);
+                        const next: Weekday[] = schedule
+                          ? d.checked
+                            ? [day]
+                            : field.value
+                          : d.checked
+                            ? [...field.value, day]
+                            : field.value.filter((x) => x !== day);
                         field.onChange(WEEKDAYS.filter((w) => next.includes(w)));
                       }}
                     />
@@ -265,7 +341,12 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
                 {!schedule && (
                   <div className={styles.presets}>
                     {WEEKDAY_PRESETS.map((preset) => (
-                      <Button key={preset.label} size="small" appearance="outline" onClick={() => field.onChange(preset.days)}>
+                      <Button
+                        key={preset.label}
+                        size="small"
+                        appearance="outline"
+                        onClick={() => field.onChange(preset.days)}
+                      >
                         {preset.label}
                       </Button>
                     ))}
@@ -284,41 +365,77 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
               required
               options={SLOT_LENGTHS.map((m) => ({ value: String(m), label: `${m} minutes` }))}
             />
-            <NumberField control={form.control} name="capacityPerSlot" label="Patients per slot" required min={1} max={20} />
+            <NumberField
+              control={form.control}
+              name="capacityPerSlot"
+              label="Patients per slot"
+              required
+              min={1}
+              max={20}
+            />
           </FormGrid>
           <Caption1 className={styles.muted}>
             {perSession > 0
               ? `${perSession} slots from ${formatClock(startTime)} to ${formatClock(endTime)} · up to ${perSession * (capacity ?? 1)} patients per session`
               : 'Choose the start, end and slot length.'}
           </Caption1>
-          <ChoiceField control={form.control} name="mode" label="Consultation" options={MODES.map((m) => ({ value: m, label: modeLabel[m] }))} />
+          <ChoiceField
+            control={form.control}
+            name="mode"
+            label="Consultation"
+            options={MODES.map((m) => ({ value: m, label: modeLabel[m] }))}
+          />
           <FormGrid columns={2} minColumnWidth={150}>
             <TextField control={form.control} name="room" label="Room" maxLength={32} placeholder="e.g. OPD 3" />
             <div />
             <DateField control={form.control} name="effectiveFrom" label="From" required />
-            <DateField control={form.control} name="effectiveTo" label="Until (optional)" min={effectiveFrom ?? undefined} />
+            <DateField
+              control={form.control}
+              name="effectiveTo"
+              label="Until (optional)"
+              min={effectiveFrom ?? undefined}
+            />
           </FormGrid>
-          {schedule && <SwitchField control={form.control} name="isActive" label="Session is active" hint="Inactive sessions produce no slots; existing bookings stay." />}
+          {schedule && (
+            <SwitchField
+              control={form.control}
+              name="isActive"
+              label="Session is active"
+              hint="Inactive sessions produce no slots; existing bookings stay."
+            />
+          )}
           <TextAreaField control={form.control} name="notes" label="Notes (optional)" rows={2} maxLength={500} />
           {clashes.length > 0 && (
             <MessageBar intent="warning" layout="multiline">
               <MessageBarBody>
                 <MessageBarTitle>Overlaps another session</MessageBarTitle>
-                {clashes.map((c) => `${c.weekday} ${formatClock(c.startTime)}–${formatClock(c.endTime)}${c.departmentName ? ` (${c.departmentName})` : ''}`).join(', ')}. A doctor
-                cannot run two sessions at the same time; change the times or days.
+                {clashes
+                  .map(
+                    (c) =>
+                      `${c.weekday} ${formatClock(c.startTime)}–${formatClock(c.endTime)}${c.departmentName ? ` (${c.departmentName})` : ''}`,
+                  )
+                  .join(', ')}
+                . A doctor cannot run two sessions at the same time; change the times or days.
               </MessageBarBody>
             </MessageBar>
           )}
           {schedule && (
             <MessageBar intent="info">
-              <MessageBarBody>Appointments that no longer fit after this change are listed after saving so they can be rescheduled.</MessageBarBody>
+              <MessageBarBody>
+                Appointments that no longer fit after this change are listed after saving so they can be rescheduled.
+              </MessageBarBody>
             </MessageBar>
           )}
         </div>
       </DrawerBody>
       <DrawerFooter>
         <div className={styles.footer}>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {schedule ? 'Save' : weekdays.length > 1 ? `Add ${weekdays.length} sessions` : 'Add session'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>
@@ -339,7 +456,8 @@ function ScheduleForm({ schedule, defaults, today, onClose, onSaved }: ScheduleD
         onConfirm={() => remove.mutate()}
         onCancel={() => setConfirmDelete(false)}
       >
-        No new appointments can be booked in it. Future appointments already booked in this session are listed next so you can reschedule them.
+        No new appointments can be booked in it. Future appointments already booked in this session are listed next so
+        you can reschedule them.
       </ConfirmDialog>
     </form>
   );

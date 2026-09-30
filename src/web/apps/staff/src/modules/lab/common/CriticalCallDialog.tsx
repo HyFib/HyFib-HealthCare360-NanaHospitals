@@ -60,7 +60,11 @@ const schema = z
       ctx.addIssue({ code: 'custom', path: ['informedAt'], message: 'The call time cannot be in the future.' });
     }
     if (!values.readBackConfirmed) {
-      ctx.addIssue({ code: 'custom', path: ['readBackConfirmed'], message: 'Ask the person to read the value back to you, then tick this box.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['readBackConfirmed'],
+        message: 'Ask the person to read the value back to you, then tick this box.',
+      });
     }
   });
 
@@ -145,8 +149,11 @@ export function CriticalCallDialog({
             <DialogContent className={styles.content}>
               <MessageBar intent="error" layout="multiline" icon={<CallRegular />}>
                 <MessageBarBody>
-                  <MessageBarTitle>{findings.length === 1 ? 'Critical result' : `${findings.length} critical results`}</MessageBarTitle>
-                  {intro ?? 'Call the treating doctor now. Read out the result and ask them to read it back before you save.'}
+                  <MessageBarTitle>
+                    {findings.length === 1 ? 'Critical result' : `${findings.length} critical results`}
+                  </MessageBarTitle>
+                  {intro ??
+                    'Call the treating doctor now. Read out the result and ask them to read it back before you save.'}
                   <ul className={styles.list}>
                     {findings.map((finding) => (
                       <li key={finding.id}>
@@ -162,7 +169,12 @@ export function CriticalCallDialog({
                   control={form.control}
                   name="informedPersonName"
                   render={({ field, fieldState }) => (
-                    <Field label="Person informed" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                    <Field
+                      label="Person informed"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
                       <Input {...field} autoFocus placeholder="e.g. Dr. Meena Iyer" maxLength={200} />
                     </Field>
                   )}
@@ -192,7 +204,13 @@ export function CriticalCallDialog({
                     <Input {...field} placeholder="e.g. Treating doctor" maxLength={100} />
                     <div className={styles.roles}>
                       {ROLES.map((role) => (
-                        <Button key={role} size="small" shape="circular" appearance={field.value === role ? 'primary' : 'outline'} onClick={() => field.onChange(role)}>
+                        <Button
+                          key={role}
+                          size="small"
+                          shape="circular"
+                          appearance={field.value === role ? 'primary' : 'outline'}
+                          onClick={() => field.onChange(role)}
+                        >
                           {role}
                         </Button>
                       ))}
@@ -207,7 +225,11 @@ export function CriticalCallDialog({
                   name="method"
                   render={({ field }) => (
                     <Field label="How">
-                      <RadioGroup layout="horizontal" value={field.value} onChange={(_, data) => field.onChange(data.value)}>
+                      <RadioGroup
+                        layout="horizontal"
+                        value={field.value}
+                        onChange={(_, data) => field.onChange(data.value)}
+                      >
                         {METHODS.map((method) => (
                           <Radio key={method.value} value={method.value} label={method.label} />
                         ))}
@@ -219,9 +241,20 @@ export function CriticalCallDialog({
                   control={form.control}
                   name="informedAt"
                   render={({ field, fieldState }) => (
-                    <Field label="When (hospital time)" required validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                    <Field
+                      label="When (hospital time)"
+                      required
+                      validationMessage={fieldState.error?.message}
+                      validationState={fieldState.error ? 'error' : 'none'}
+                    >
                       <div className={styles.timeRow}>
-                        <Input type="datetime-local" value={field.value} onChange={(_, data) => field.onChange(data.value)} onBlur={field.onBlur} style={{ flex: 1 }} />
+                        <Input
+                          type="datetime-local"
+                          value={field.value}
+                          onChange={(_, data) => field.onChange(data.value)}
+                          onBlur={field.onBlur}
+                          style={{ flex: 1 }}
+                        />
                         <Button onClick={() => field.onChange(toZonedInput(new Date()))}>Now</Button>
                       </div>
                     </Field>
@@ -233,7 +266,10 @@ export function CriticalCallDialog({
                 control={form.control}
                 name="readBackConfirmed"
                 render={({ field, fieldState }) => (
-                  <Field validationMessage={fieldState.error?.message} validationState={fieldState.error ? 'error' : 'none'}>
+                  <Field
+                    validationMessage={fieldState.error?.message}
+                    validationState={fieldState.error ? 'error' : 'none'}
+                  >
                     <div className={styles.readBack}>
                       <Checkbox
                         checked={field.value}
@@ -250,7 +286,13 @@ export function CriticalCallDialog({
                 name="notes"
                 render={({ field }) => (
                   <Field label="Notes">
-                    <Textarea {...field} rows={2} maxLength={1000} resize="vertical" placeholder="e.g. Doctor will review the patient now" />
+                    <Textarea
+                      {...field}
+                      rows={2}
+                      maxLength={1000}
+                      resize="vertical"
+                      placeholder="e.g. Doctor will review the patient now"
+                    />
                   </Field>
                 )}
               />
@@ -259,7 +301,12 @@ export function CriticalCallDialog({
               <Button onClick={onCancel} disabled={busy}>
                 {cancelLabel}
               </Button>
-              <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <CallRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={busy}
+                icon={busy ? <Spinner size="tiny" /> : <CallRegular />}
+              >
                 {submitLabel}
               </Button>
             </DialogActions>
@@ -271,7 +318,13 @@ export function CriticalCallDialog({
 }
 
 /** Optional link to the doctor's record in the system (fills the name when it is still empty). */
-function PractitionerSearch({ value, onChange }: { value: string | null; onChange: (item: LookupItem | null) => void }) {
+function PractitionerSearch({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (item: LookupItem | null) => void;
+}) {
   const [term, setTerm] = useState('');
   const [selected, setSelected] = useState<LookupItem | null>(null);
   const search = useDebouncedValue(term.trim(), 250);

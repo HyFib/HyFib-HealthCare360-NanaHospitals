@@ -20,7 +20,8 @@ export const reportMessages = defineMessages({
     'reports.released': 'Released {date}',
     'reports.number': 'Report no. {number}',
     'reports.numberLabel': 'Report number',
-    'reports.doctorNote': 'Your doctor will explain what these results mean for you. If you feel unwell, do not wait for your appointment: contact the hospital.',
+    'reports.doctorNote':
+      'Your doctor will explain what these results mean for you. If you feel unwell, do not wait for your appointment: contact the hospital.',
     'reports.critical':
       'This report has a result that needs prompt medical attention. The hospital has been told. If your doctor has not contacted you, please call the hospital now.',
     'reports.referredBy': 'Referred by',
@@ -166,7 +167,8 @@ export const reportMessages = defineMessages({
     'reports.released': '{date} को जारी',
     'reports.number': 'रिपोर्ट नं. {number}',
     'reports.numberLabel': 'रिपोर्ट नंबर',
-    'reports.doctorNote': 'इन परिणामों का आपके लिए क्या मतलब है, यह आपके डॉक्टर बताएँगे। तबीयत ठीक न लगे तो अपॉइंटमेंट का इंतज़ार न करें: अस्पताल से संपर्क करें।',
+    'reports.doctorNote':
+      'इन परिणामों का आपके लिए क्या मतलब है, यह आपके डॉक्टर बताएँगे। तबीयत ठीक न लगे तो अपॉइंटमेंट का इंतज़ार न करें: अस्पताल से संपर्क करें।',
     'reports.critical':
       'इस रिपोर्ट में ऐसा परिणाम है जिस पर जल्दी डॉक्टरी ध्यान देना ज़रूरी है। अस्पताल को इसकी जानकारी है। अगर डॉक्टर ने आपसे संपर्क नहीं किया है, तो कृपया अभी अस्पताल को कॉल करें।',
     'reports.referredBy': 'रेफ़र करने वाले डॉक्टर',

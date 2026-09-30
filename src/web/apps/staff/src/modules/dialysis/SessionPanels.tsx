@@ -16,7 +16,17 @@ import {
 import { AddRegular, BroomRegular, CheckmarkRegular, PlayRegular, SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, formatNumber, formatTime } from '@hc360/core';
-import { ConfirmDialog, DataTable, FormGrid, FullRow, LoadingState, NumberField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  ConfirmDialog,
+  DataTable,
+  FormGrid,
+  FullRow,
+  LoadingState,
+  NumberField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -26,7 +36,14 @@ import { applyFormErrors } from '@/modules/ot/shared/errors';
 import { ActionError, Detail, DetailGrid } from '@/modules/ot/shared/feedback';
 import { CheckboxGroupField, DateTimeField } from '@/modules/ot/shared/fields';
 import { TrendChart } from '@/modules/ot/shared/TrendChart';
-import { COMPLICATIONS, dialysisApi, dialysisKeys, dialysisQueries, type DialysisSessionDetail, type DialyzerDto } from './api';
+import {
+  COMPLICATIONS,
+  dialysisApi,
+  dialysisKeys,
+  dialysisQueries,
+  type DialysisSessionDetail,
+  type DialyzerDto,
+} from './api';
 import { MachinePicker } from './DialysisBadges';
 import { DisinfectionDialog } from './DialysisDialogs';
 import { complicationLabel } from './labels';
@@ -37,9 +54,18 @@ const useStyles = makeStyles({
   row: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   footer: { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
-  readings: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '8px 12px', alignItems: 'end' },
+  readings: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
+    gap: '8px 12px',
+    alignItems: 'end',
+  },
   wide: { gridColumn: 'span 2' },
-  dialyzer: { padding: '8px 10px', borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}` },
+  dialyzer: {
+    padding: '8px 10px',
+    borderRadius: tokens.borderRadiusMedium,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   blocked: { backgroundColor: tokens.colorNeutralBackground3 },
   reason: { color: tokens.colorPaletteRedForeground1, paddingLeft: '28px', display: 'block' },
 });
@@ -74,7 +100,11 @@ const preSchema = z
       ctx.addIssue({ code: 'custom', path: ['temperatureC'], message: 'Enter a temperature between 30 and 45 °C.' });
     }
     if (!inRange(v.targetUfMl, 0, 6000)) {
-      ctx.addIssue({ code: 'custom', path: ['targetUfMl'], message: 'Target ultrafiltration must be between 0 and 6000 ml.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetUfMl'],
+        message: 'Target ultrafiltration must be between 0 and 6000 ml.',
+      });
     }
   });
 
@@ -124,11 +154,19 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
     return session.preAssessedAt ? (
       <DetailGrid>
         <Detail label="Weight">{session.preWeightKg !== null ? `${session.preWeightKg} kg` : null}</Detail>
-        <Detail label="Above dry weight">{weightAboveDry(session.preWeightKg, session.dryWeightKg) !== null ? `${weightAboveDry(session.preWeightKg, session.dryWeightKg)} kg` : null}</Detail>
-        <Detail label="Blood pressure">{session.preSystolic ? `${session.preSystolic}/${session.preDiastolic} mmHg` : null}</Detail>
+        <Detail label="Above dry weight">
+          {weightAboveDry(session.preWeightKg, session.dryWeightKg) !== null
+            ? `${weightAboveDry(session.preWeightKg, session.dryWeightKg)} kg`
+            : null}
+        </Detail>
+        <Detail label="Blood pressure">
+          {session.preSystolic ? `${session.preSystolic}/${session.preDiastolic} mmHg` : null}
+        </Detail>
         <Detail label="Pulse">{session.prePulse ? `${session.prePulse}/min` : null}</Detail>
         <Detail label="Temperature">{session.preTemperatureC !== null ? `${session.preTemperatureC} °C` : null}</Detail>
-        <Detail label="Target UF">{session.targetUfMl !== null ? `${formatNumber(session.targetUfMl)} ml` : null}</Detail>
+        <Detail label="Target UF">
+          {session.targetUfMl !== null ? `${formatNumber(session.targetUfMl)} ml` : null}
+        </Detail>
         <Detail label="Recorded">{formatDateTime(session.preAssessedAt)}</Detail>
       </DetailGrid>
     ) : (
@@ -139,15 +177,34 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate className={styles.stack}>
       <FormGrid columns={3}>
-        <NumberField control={form.control} name="weightKg" label="Weight before (kg)" required min={0.5} max={350} step={0.1} />
+        <NumberField
+          control={form.control}
+          name="weightKg"
+          label="Weight before (kg)"
+          required
+          min={0.5}
+          max={350}
+          step={0.1}
+        />
         <NumberField control={form.control} name="systolic" label="Systolic BP" required min={40} max={300} />
         <NumberField control={form.control} name="diastolic" label="Diastolic BP" required min={20} max={200} />
         <NumberField control={form.control} name="pulse" label="Pulse (/min)" required min={20} max={250} />
         <NumberField control={form.control} name="temperatureC" label="Temperature (°C)" min={30} max={45} step={0.1} />
         <div>
-          <NumberField control={form.control} name="targetUfMl" label="Target ultrafiltration (ml)" min={0} max={6000} step={100} />
+          <NumberField
+            control={form.control}
+            name="targetUfMl"
+            label="Target ultrafiltration (ml)"
+            min={0}
+            max={6000}
+            step={100}
+          />
           {suggestion !== null && (
-            <Button size="small" appearance="subtle" onClick={() => form.setValue('targetUfMl', suggestion, { shouldDirty: true })}>
+            <Button
+              size="small"
+              appearance="subtle"
+              onClick={() => form.setValue('targetUfMl', suggestion, { shouldDirty: true })}
+            >
               Use {formatNumber(suggestion)} ml
             </Button>
           )}
@@ -155,11 +212,19 @@ export function PreAssessmentPanel({ session, canRecord }: { session: DialysisSe
       </FormGrid>
       <Caption1 className={styles.muted}>
         {session.dryWeightKg !== null ? `Dry weight ${session.dryWeightKg} kg` : 'Dry weight not set'}
-        {gain !== null ? ` · ${gain >= 0 ? `${gain} kg above` : `${Math.abs(gain)} kg below`} dry weight (1 kg ≈ 1,000 ml)` : ''}. The goal is a clinical decision.
+        {gain !== null
+          ? ` · ${gain >= 0 ? `${gain} kg above` : `${Math.abs(gain)} kg below`} dry weight (1 kg ≈ 1,000 ml)`
+          : ''}
+        . The goal is a clinical decision.
       </Caption1>
       <ActionError error={save.error} />
       <div className={styles.footer}>
-        <Button type="submit" appearance="primary" icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />} disabled={save.isPending}>
+        <Button
+          type="submit"
+          appearance="primary"
+          icon={save.isPending ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={save.isPending}
+        >
           Save pre-dialysis assessment
         </Button>
       </div>
@@ -205,7 +270,12 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
         dialyzerId: dialyzer && dialyzer !== 'new' ? dialyzer : null,
         newDialyzer:
           dialyzer === 'new'
-            ? { serialNumber: newSerial.trim().toUpperCase(), brand: newBrand.trim() || null, model: newModel.trim() || null, surfaceAreaM2: newArea ? Number(newArea) : null }
+            ? {
+                serialNumber: newSerial.trim().toUpperCase(),
+                brand: newBrand.trim() || null,
+                model: newModel.trim() || null,
+                surfaceAreaM2: newArea ? Number(newArea) : null,
+              }
             : null,
         heparinLoadingUnits: heparinLoading ? Number(heparinLoading) : null,
         heparinHourlyUnits: heparinHourly ? Number(heparinHourly) : null,
@@ -232,24 +302,44 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
 
   const areaValid = !newArea || (Number(newArea) >= 0.1 && Number(newArea) <= 3);
   const heparinValid =
-    (!heparinLoading || (Number(heparinLoading) >= 0 && Number(heparinLoading) <= 10000)) && (!heparinHourly || (Number(heparinHourly) >= 0 && Number(heparinHourly) <= 5000));
+    (!heparinLoading || (Number(heparinLoading) >= 0 && Number(heparinLoading) <= 10000)) &&
+    (!heparinHourly || (Number(heparinHourly) >= 0 && Number(heparinHourly) <= 5000));
   const ready =
-    Boolean(chosenMachine?.check.eligible) && dialyzer !== null && (dialyzer !== 'new' || (newSerial.trim().length > 0 && areaValid)) && heparinValid;
+    Boolean(chosenMachine?.check.eligible) &&
+    dialyzer !== null &&
+    (dialyzer !== 'new' || (newSerial.trim().length > 0 && areaValid)) &&
+    heparinValid;
 
   return (
     <div className={styles.stack}>
-      <Field label="Machine" hint="Only a machine of the patient's sero category that is free and disinfected can be connected.">
+      <Field
+        label="Machine"
+        hint="Only a machine of the patient's sero category that is free and disinfected can be connected."
+      >
         <MachinePicker choices={choices} value={machineId} onChange={setMachineId} />
       </Field>
-      {chosenMachine && !chosenMachine.check.eligible && chosenMachine.check.seroMatch && chosenMachine.check.blockers.some((b) => b.includes('disinfection')) && (
-        <div>
-          <Button icon={<BroomRegular />} onClick={() => setDisinfecting({ id: chosenMachine.id, code: chosenMachine.code })}>
-            Record disinfection of {chosenMachine.code}
-          </Button>
-        </div>
-      )}
+      {chosenMachine &&
+        !chosenMachine.check.eligible &&
+        chosenMachine.check.seroMatch &&
+        chosenMachine.check.blockers.some((b) => b.includes('disinfection')) && (
+          <div>
+            <Button
+              icon={<BroomRegular />}
+              onClick={() => setDisinfecting({ id: chosenMachine.id, code: chosenMachine.code })}
+            >
+              Record disinfection of {chosenMachine.code}
+            </Button>
+          </div>
+        )}
 
-      <Field label="Dialyzer" hint={singleUse ? 'Single use for this patient (HBsAg positive or single-use policy): register a new dialyzer.' : 'Reuse the patient’s own dialyzer, or register a new one.'}>
+      <Field
+        label="Dialyzer"
+        hint={
+          singleUse
+            ? 'Single use for this patient (HBsAg positive or single-use policy): register a new dialyzer.'
+            : 'Reuse the patient’s own dialyzer, or register a new one.'
+        }
+      >
         <RadioGroup value={dialyzer ?? ''} onChange={(_, d) => setDialyzer(d.value)} aria-label="Dialyzer">
           {usable.map((d: DialyzerDto) => {
             const check = checkDialyzer(d, session.patientId);
@@ -280,7 +370,11 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
           <Field label="Model">
             <InputLike value={newModel} onChange={setNewModel} />
           </Field>
-          <Field label="Surface area (m²)" validationState={areaValid ? 'none' : 'error'} validationMessage={areaValid ? undefined : 'Between 0.1 and 3 m².'}>
+          <Field
+            label="Surface area (m²)"
+            validationState={areaValid ? 'none' : 'error'}
+            validationMessage={areaValid ? undefined : 'Between 0.1 and 3 m².'}
+          >
             <InputLike value={newArea} onChange={setNewArea} type="number" />
           </Field>
         </FormGrid>
@@ -290,14 +384,24 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
         <Field label="Heparin loading dose (units)">
           <InputLike value={heparinLoading} onChange={setHeparinLoading} type="number" />
         </Field>
-        <Field label="Heparin per hour (units)" validationState={heparinValid ? 'none' : 'error'} validationMessage={heparinValid ? undefined : 'Loading 0–10,000; hourly 0–5,000 units.'}>
+        <Field
+          label="Heparin per hour (units)"
+          validationState={heparinValid ? 'none' : 'error'}
+          validationMessage={heparinValid ? undefined : 'Loading 0–10,000; hourly 0–5,000 units.'}
+        >
           <InputLike value={heparinHourly} onChange={setHeparinHourly} type="number" />
         </Field>
       </FormGrid>
 
       <ActionError error={start.error} />
       <div className={styles.footer}>
-        <Button appearance="primary" size="large" icon={start.isPending ? <Spinner size="tiny" /> : <PlayRegular />} disabled={!ready || start.isPending} onClick={() => start.mutate()}>
+        <Button
+          appearance="primary"
+          size="large"
+          icon={start.isPending ? <Spinner size="tiny" /> : <PlayRegular />}
+          disabled={!ready || start.isPending}
+          onClick={() => start.mutate()}
+        >
           Connect and start dialysis
         </Button>
       </div>
@@ -307,7 +411,17 @@ export function StartPanel({ session, canRecord }: { session: DialysisSessionDet
 }
 
 /** A controlled text or number input for the few start-panel fields kept in local state. */
-function InputLike({ value, onChange, type = 'text', placeholder }: { value: string; onChange: (value: string) => void; type?: 'text' | 'number'; placeholder?: string }) {
+function InputLike({
+  value,
+  onChange,
+  type = 'text',
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  type?: 'text' | 'number';
+  placeholder?: string;
+}) {
   return <Input value={value} onChange={(_, data) => onChange(data.value)} type={type} placeholder={placeholder} />;
 }
 
@@ -375,7 +489,8 @@ export function ReadingsPanel({ session, canRecord }: { session: DialysisSession
   const form = useForm<ReadingValues>({ resolver: zodResolver(readingSchema), defaultValues: emptyReading() });
 
   const add = useMutation({
-    mutationFn: (v: ReadingValues) => dialysisApi.addReadings(session.id, [{ ...v, at: fromIstInput(v.at) ?? '', notes: v.notes || null }]),
+    mutationFn: (v: ReadingValues) =>
+      dialysisApi.addReadings(session.id, [{ ...v, at: fromIstInput(v.at) ?? '', notes: v.notes || null }]),
     onSuccess: () => {
       form.reset(emptyReading());
       notify.success('Reading added');
@@ -408,19 +523,37 @@ export function ReadingsPanel({ session, canRecord }: { session: DialysisSession
             <NumberField control={form.control} name="bloodFlowMlMin" label="Blood flow (ml/min)" min={0} max={600} />
             <NumberField control={form.control} name="ufRateMlHr" label="UF rate (ml/h)" min={0} max={3000} />
             <NumberField control={form.control} name="venousPressure" label="Venous pressure" min={-500} max={500} />
-            <NumberField control={form.control} name="arterialPressure" label="Arterial pressure" min={-500} max={500} />
+            <NumberField
+              control={form.control}
+              name="arterialPressure"
+              label="Arterial pressure"
+              min={-500}
+              max={500}
+            />
             <NumberField control={form.control} name="transmembranePressure" label="TMP" min={-500} max={800} />
             <div className={styles.wide}>
               <TextField control={form.control} name="notes" label="Notes" maxLength={300} />
             </div>
-            <Button type="submit" appearance="primary" icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />} disabled={add.isPending}>
+            <Button
+              type="submit"
+              appearance="primary"
+              icon={add.isPending ? <Spinner size="tiny" /> : <AddRegular />}
+              disabled={add.isPending}
+            >
               Add reading
             </Button>
           </div>
           <ActionError error={add.error} />
         </form>
       )}
-      {readings.length > 1 && <TrendChart series={series} ariaLabel="Intra-dialytic blood pressure, pulse and venous pressure" yName="mmHg / bpm" height={240} />}
+      {readings.length > 1 && (
+        <TrendChart
+          series={series}
+          ariaLabel="Intra-dialytic blood pressure, pulse and venous pressure"
+          yName="mmHg / bpm"
+          height={240}
+        />
+      )}
       <DataTable
         ariaLabel="Intra-dialytic readings"
         rows={readings}
@@ -428,7 +561,12 @@ export function ReadingsPanel({ session, canRecord }: { session: DialysisSession
         size="small"
         columns={[
           { key: 'at', header: 'Time', width: 100, render: (r) => formatTime(r.at) },
-          { key: 'bp', header: 'BP', align: 'end', render: (r) => (r.systolic || r.diastolic ? `${r.systolic ?? '—'}/${r.diastolic ?? '—'}` : '—') },
+          {
+            key: 'bp',
+            header: 'BP',
+            align: 'end',
+            render: (r) => (r.systolic || r.diastolic ? `${r.systolic ?? '—'}/${r.diastolic ?? '—'}` : '—'),
+          },
           { key: 'pulse', header: 'Pulse', align: 'end', render: (r) => r.pulse ?? '—' },
           { key: 'bfr', header: 'Blood flow', align: 'end', render: (r) => r.bloodFlowMlMin ?? '—' },
           { key: 'uf', header: 'UF rate', align: 'end', render: (r) => r.ufRateMlHr ?? '—' },
@@ -473,7 +611,11 @@ const completeSchema = z
       ctx.addIssue({ code: 'custom', path: ['ufAchievedMl'], message: 'Between 0 and 8000 ml.' });
     }
     if (v.complications.includes('Other') && !v.complicationNotes) {
-      ctx.addIssue({ code: 'custom', path: ['complicationNotes'], message: "Describe the complication marked as 'Other'." });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['complicationNotes'],
+        message: "Describe the complication marked as 'Other'.",
+      });
     }
   });
 
@@ -487,7 +629,15 @@ export function CompletePanel({ session, canRecord }: { session: DialysisSession
   const [confirming, setConfirming] = useState<CompleteValues | null>(null);
   const form = useForm<CompleteValues>({
     resolver: zodResolver(completeSchema),
-    defaultValues: { weightKg: null, systolic: null, diastolic: null, pulse: null, ufAchievedMl: null, complications: [], complicationNotes: '' },
+    defaultValues: {
+      weightKg: null,
+      systolic: null,
+      diastolic: null,
+      pulse: null,
+      ufAchievedMl: null,
+      complications: [],
+      complicationNotes: '',
+    },
   });
   const [weightKg] = useWatch({ control: form.control, name: ['weightKg'] });
   const lost = weightLossMl(session.preWeightKg, weightKg);
@@ -521,7 +671,15 @@ export function CompletePanel({ session, canRecord }: { session: DialysisSession
   return (
     <form onSubmit={form.handleSubmit((v) => setConfirming(v))} noValidate className={styles.stack}>
       <FormGrid columns={3}>
-        <NumberField control={form.control} name="weightKg" label="Weight after (kg)" required min={0.5} max={350} step={0.1} />
+        <NumberField
+          control={form.control}
+          name="weightKg"
+          label="Weight after (kg)"
+          required
+          min={0.5}
+          max={350}
+          step={0.1}
+        />
         <NumberField control={form.control} name="systolic" label="Systolic BP" required min={40} max={300} />
         <NumberField control={form.control} name="diastolic" label="Diastolic BP" required min={20} max={200} />
         <NumberField control={form.control} name="pulse" label="Pulse (/min)" min={20} max={250} />
@@ -532,7 +690,11 @@ export function CompletePanel({ session, canRecord }: { session: DialysisSession
           min={0}
           max={8000}
           step={50}
-          hint={lost !== null ? `Leave blank to use the weight lost: ${formatNumber(lost)} ml.` : 'From the machine; blank uses the weight lost.'}
+          hint={
+            lost !== null
+              ? `Leave blank to use the weight lost: ${formatNumber(lost)} ml.`
+              : 'From the machine; blank uses the weight lost.'
+          }
         />
         <FullRow>
           <CheckboxGroupField
@@ -544,12 +706,24 @@ export function CompletePanel({ session, canRecord }: { session: DialysisSession
           />
         </FullRow>
         <FullRow>
-          <TextAreaField control={form.control} name="complicationNotes" label="Notes on complications" rows={2} maxLength={1000} />
+          <TextAreaField
+            control={form.control}
+            name="complicationNotes"
+            label="Notes on complications"
+            rows={2}
+            maxLength={1000}
+          />
         </FullRow>
       </FormGrid>
       <ActionError error={complete.error} />
       <div className={styles.footer}>
-        <Button type="submit" appearance="primary" size="large" icon={<CheckmarkRegular />} disabled={complete.isPending}>
+        <Button
+          type="submit"
+          appearance="primary"
+          size="large"
+          icon={<CheckmarkRegular />}
+          disabled={complete.isPending}
+        >
           Complete dialysis
         </Button>
       </div>
@@ -576,23 +750,33 @@ export function SessionSummary({ session }: { session: DialysisSessionDetail }) 
       <Detail label="Ended">{session.endedAt ? formatDateTime(session.endedAt) : null}</Detail>
       <Detail label="Duration">{session.durationMinutes !== null ? `${session.durationMinutes} min` : null}</Detail>
       <Detail label="Weight before / after">
-        {session.preWeightKg !== null && session.postWeightKg !== null ? `${session.preWeightKg} → ${session.postWeightKg} kg` : null}
+        {session.preWeightKg !== null && session.postWeightKg !== null
+          ? `${session.preWeightKg} → ${session.postWeightKg} kg`
+          : null}
       </Detail>
       <Detail label="Fluid removed">
-        {session.ufAchievedMl !== null ? `${formatNumber(session.ufAchievedMl)} ml${session.targetUfMl !== null ? ` of ${formatNumber(session.targetUfMl)} ml target` : ''}` : null}
+        {session.ufAchievedMl !== null
+          ? `${formatNumber(session.ufAchievedMl)} ml${session.targetUfMl !== null ? ` of ${formatNumber(session.targetUfMl)} ml target` : ''}`
+          : null}
       </Detail>
       <Detail label="Weight lost">{lost !== null ? `${formatNumber(lost)} ml` : null}</Detail>
-      <Detail label="BP after">{session.postSystolic ? `${session.postSystolic}/${session.postDiastolic} mmHg` : null}</Detail>
+      <Detail label="BP after">
+        {session.postSystolic ? `${session.postSystolic}/${session.postDiastolic} mmHg` : null}
+      </Detail>
       <Detail label="Pulse after">{session.postPulse ? `${session.postPulse}/min` : null}</Detail>
       <Detail label="Dialyzer">
-        {session.dialyzerSerial ? `${session.dialyzerSerial} · use ${session.dialyzerUseNumber ?? '—'} of ${session.dialyzerMaxUses ?? '—'}` : null}
+        {session.dialyzerSerial
+          ? `${session.dialyzerSerial} · use ${session.dialyzerUseNumber ?? '—'} of ${session.dialyzerMaxUses ?? '—'}`
+          : null}
       </Detail>
       <Detail label="Heparin">
         {session.heparinLoadingUnits !== null || session.heparinHourlyUnits !== null
           ? `${session.heparinLoadingUnits ?? 0} units loading · ${session.heparinHourlyUnits ?? 0} units/h`
           : null}
       </Detail>
-      <Detail label="Complications">{session.complications.length ? session.complications.map((c) => complicationLabel[c]).join(', ') : 'None'}</Detail>
+      <Detail label="Complications">
+        {session.complications.length ? session.complications.map((c) => complicationLabel[c]).join(', ') : 'None'}
+      </Detail>
       <Detail label="Complication notes">{session.complicationNotes}</Detail>
       <Detail label="Performed by">{session.performedByName}</Detail>
       <Detail label="Kt/V">Not recorded (pre and post urea are not captured)</Detail>

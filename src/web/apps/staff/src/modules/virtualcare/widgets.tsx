@@ -72,7 +72,10 @@ export function TelehealthTodayWidget() {
       ) : (
         <>
           <div className={styles.counts}>
-            <Badge appearance={waiting.length > 0 ? 'filled' : 'tint'} color={waiting.length > 0 ? 'danger' : 'informative'}>
+            <Badge
+              appearance={waiting.length > 0 ? 'filled' : 'tint'}
+              color={waiting.length > 0 ? 'danger' : 'informative'}
+            >
               {waiting.length} waiting
             </Badge>
             <Badge appearance="tint" color="brand">
@@ -84,7 +87,9 @@ export function TelehealthTodayWidget() {
             </Badge>
           </div>
           {shown.length === 0 ? (
-            <Text className={styles.muted}>{sessions.isLoading ? 'Loading…' : 'No more video consultations today.'}</Text>
+            <Text className={styles.muted}>
+              {sessions.isLoading ? 'Loading…' : 'No more video consultations today.'}
+            </Text>
           ) : (
             <div className={styles.rows}>
               {shown.map((s) => (
@@ -96,7 +101,9 @@ export function TelehealthTodayWidget() {
                     <Caption1 className={s.status === 'WaitingRoom' ? styles.waiting : styles.muted}>
                       {formatTime(s.scheduledStartAt)}
                       {mine ? '' : ` · ${s.practitionerName}`}
-                      {s.status === 'WaitingRoom' && s.patientWaitingSince ? ` · waiting ${formatDuration(minutesSince(s.patientWaitingSince, now))}` : ''}
+                      {s.status === 'WaitingRoom' && s.patientWaitingSince
+                        ? ` · waiting ${formatDuration(minutesSince(s.patientWaitingSince, now))}`
+                        : ''}
                     </Caption1>
                   </span>
                   {canConsult && isSessionOpen(s.status) ? (
@@ -109,7 +116,11 @@ export function TelehealthTodayWidget() {
                       Join
                     </Button>
                   ) : (
-                    <StatusBadge status={s.status} tone={sessionStatusText[s.status].tone} label={sessionStatusText[s.status].label} />
+                    <StatusBadge
+                      status={s.status}
+                      tone={sessionStatusText[s.status].tone}
+                      label={sessionStatusText[s.status].label}
+                    />
                   )}
                 </div>
               ))}
@@ -140,12 +151,20 @@ export function RpmAlertsWidget() {
       }
     >
       {dashboard.error || alerts.error ? (
-        <ErrorState error={dashboard.error ?? alerts.error} onRetry={() => void Promise.all([dashboard.refetch(), alerts.refetch()])} />
+        <ErrorState
+          error={dashboard.error ?? alerts.error}
+          onRetry={() => void Promise.all([dashboard.refetch(), alerts.refetch()])}
+        />
       ) : (
         <>
           <div className={styles.counts}>
-            <Badge appearance={d && d.unacknowledgedCritical > 0 ? 'filled' : 'tint'} color="danger" icon={<AlertUrgentRegular />}>
-              {d ? d.criticalAlerts : '…'} critical{d && d.unacknowledgedCritical > 0 ? ` (${d.unacknowledgedCritical} unseen)` : ''}
+            <Badge
+              appearance={d && d.unacknowledgedCritical > 0 ? 'filled' : 'tint'}
+              color="danger"
+              icon={<AlertUrgentRegular />}
+            >
+              {d ? d.criticalAlerts : '…'} critical
+              {d && d.unacknowledgedCritical > 0 ? ` (${d.unacknowledgedCritical} unseen)` : ''}
             </Badge>
             <Badge appearance="tint" color="warning" icon={<WarningRegular />}>
               {d ? d.openAlerts : '…'} open
@@ -163,10 +182,20 @@ export function RpmAlertsWidget() {
                   key={a.id}
                   type="button"
                   className={styles.alertRow}
-                  onClick={() => void navigate({ to: '/rpm/enrollments/$enrollmentId', params: { enrollmentId: a.enrollmentId }, search: { alert: a.id } })}
+                  onClick={() =>
+                    void navigate({
+                      to: '/rpm/enrollments/$enrollmentId',
+                      params: { enrollmentId: a.enrollmentId },
+                      search: { alert: a.id },
+                    })
+                  }
                 >
                   <span>
-                    <StatusBadge status={a.severity} tone={alertSeverityText[a.severity].tone} label={alertSeverityText[a.severity].label} />{' '}
+                    <StatusBadge
+                      status={a.severity}
+                      tone={alertSeverityText[a.severity].tone}
+                      label={alertSeverityText[a.severity].label}
+                    />{' '}
                     <Text weight="semibold">{a.patientName}</Text>
                   </span>
                   <Caption1>{a.message}</Caption1>

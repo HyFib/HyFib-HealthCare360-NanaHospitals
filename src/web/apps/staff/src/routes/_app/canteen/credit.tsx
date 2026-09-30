@@ -13,7 +13,13 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowDownloadRegular, DismissRegular, MoneyRegular, PeopleRegular, WalletRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownloadRegular,
+  DismissRegular,
+  MoneyRegular,
+  PeopleRegular,
+  WalletRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatInr } from '@hc360/core';
 import { DataTable, EmptyState, FilterBar, KpiCard, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -62,7 +68,8 @@ function StaffCreditPage() {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     },
-    onSuccess: () => notify.success(`Payroll file for ${monthLabel(exportPeriod)} downloaded`, 'Send it to HR for salary deduction.'),
+    onSuccess: () =>
+      notify.success(`Payroll file for ${monthLabel(exportPeriod)} downloaded`, 'Send it to HR for salary deduction.'),
     onError: (error) => notify.error(error, 'Could not download the payroll file'),
   });
 
@@ -75,7 +82,9 @@ function StaffCreditPage() {
   }
 
   const needle = term.trim().toLowerCase();
-  const rows = (balances.data ?? []).filter((b) => !needle || b.employeeCode.toLowerCase().includes(needle) || b.employeeName?.toLowerCase().includes(needle));
+  const rows = (balances.data ?? []).filter(
+    (b) => !needle || b.employeeCode.toLowerCase().includes(needle) || b.employeeName?.toLowerCase().includes(needle),
+  );
   const owed = (balances.data ?? []).filter((b) => b.balance > 0);
   const total = owed.reduce((sum, b) => sum + b.balance, 0);
 
@@ -97,7 +106,12 @@ function StaffCreditPage() {
         }
       />
       <div className={styles.kpis}>
-        <KpiCard label="Owed by staff" value={balances.data ? formatInr(total) : '…'} icon={<WalletRegular />} hint={balances.data ? `${owed.length} employees` : undefined} />
+        <KpiCard
+          label="Owed by staff"
+          value={balances.data ? formatInr(total) : '…'}
+          icon={<WalletRegular />}
+          hint={balances.data ? `${owed.length} employees` : undefined}
+        />
       </div>
       <Section title="Payroll file" description="CSV of each employee's balance for HR's salary deduction">
         <div className={styles.monthEnd}>
@@ -121,7 +135,11 @@ function StaffCreditPage() {
             <Field label="Find" style={{ flex: '1 1 240px' }}>
               <SearchBox value={term} onChange={(_, d) => setTerm(d.value)} placeholder="Employee code or name" />
             </Field>
-            <Switch checked={outstandingOnly} onChange={(_, d) => setOutstandingOnly(d.checked)} label="Only employees with a balance" />
+            <Switch
+              checked={outstandingOnly}
+              onChange={(_, d) => setOutstandingOnly(d.checked)}
+              label="Only employees with a balance"
+            />
           </FilterBar>
         </div>
         <DataTable
@@ -148,9 +166,17 @@ function StaffCreditPage() {
               header: 'Balance',
               width: 140,
               align: 'end',
-              render: (b) => <span className={b.balance > 0 ? styles.owes : styles.credit}>{formatInr(b.balance)}</span>,
+              render: (b) => (
+                <span className={b.balance > 0 ? styles.owes : styles.credit}>{formatInr(b.balance)}</span>
+              ),
             },
-            { key: 'last', header: 'Last entry', width: 140, priority: 'low', render: (b) => formatDateOnly(b.lastEntryDate) },
+            {
+              key: 'last',
+              header: 'Last entry',
+              width: 140,
+              priority: 'low',
+              render: (b) => formatDateOnly(b.lastEntryDate),
+            },
           ]}
           rowActions={(b) =>
             b.balance > 0 ? (
@@ -167,7 +193,16 @@ function StaffCreditPage() {
       {selected && (
         <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && setSelected(null)}>
           <DrawerHeader>
-            <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={() => setSelected(null)} />}>
+            <DrawerHeaderTitle
+              action={
+                <Button
+                  appearance="subtle"
+                  icon={<DismissRegular />}
+                  aria-label="Close"
+                  onClick={() => setSelected(null)}
+                />
+              }
+            >
               {selected.employeeName ?? selected.employeeCode}
             </DrawerHeaderTitle>
             <Caption1>

@@ -32,12 +32,29 @@ import { compareCounts } from './rules';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  tray: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: tokens.borderRadiusLarge, border: `1px solid ${tokens.colorNeutralStroke2}` },
+  tray: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    padding: '12px',
+    borderRadius: tokens.borderRadiusLarge,
+    border: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
   trayHead: { display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' },
-  counts: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 70px 90px 90px', gap: '6px 8px', alignItems: 'center' },
+  counts: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 70px 90px 90px',
+    gap: '6px 8px',
+    alignItems: 'center',
+  },
   head: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
   short: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
-  row: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  row: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: '12px',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
 });
 
 interface CountRow {
@@ -56,7 +73,13 @@ interface Tray {
 }
 
 function rowsFor(set: InstrumentSetDto | undefined): CountRow[] {
-  return (set?.items ?? []).map((item) => ({ itemName: item.name, expected: item.quantity, received: item.quantity, damaged: 0, extra: false }));
+  return (set?.items ?? []).map((item) => ({
+    itemName: item.name,
+    expected: item.quantity,
+    received: item.quantity,
+    damaged: 0,
+    extra: false,
+  }));
 }
 
 const num = (value: number | '') => (value === '' ? 0 : value);
@@ -77,7 +100,9 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
   const [trays, setTrays] = useState<Tray[]>([]);
   const [nextKey, setNextKey] = useState(1);
   const issues = useQuery({ ...cssdQueries.issues({ departmentId, pageSize: 100 }), enabled: Boolean(departmentId) });
-  const openIssues = (issues.data?.items ?? []).filter((i) => i.status === 'Issued' || i.status === 'Used' || i.status === 'Recalled');
+  const openIssues = (issues.data?.items ?? []).filter(
+    (i) => i.status === 'Issued' || i.status === 'Used' || i.status === 'Recalled',
+  );
   const setById = new Map((sets.data ?? []).map((s) => [s.id, s]));
 
   const addTray = (setId: string) => {
@@ -87,19 +112,28 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
     setTrays((current) => [...current, { key: nextKey, setId, issueId: '', rows: rowsFor(setById.get(setId)) }]);
     setNextKey(nextKey + 1);
   };
-  const updateTray = (key: number, patch: Partial<Tray>) => setTrays((current) => current.map((t) => (t.key === key ? { ...t, ...patch } : t)));
+  const updateTray = (key: number, patch: Partial<Tray>) =>
+    setTrays((current) => current.map((t) => (t.key === key ? { ...t, ...patch } : t)));
   const updateRow = (key: number, index: number, patch: Partial<CountRow>) =>
-    setTrays((current) => current.map((t) => (t.key === key ? { ...t, rows: t.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)) } : t)));
+    setTrays((current) =>
+      current.map((t) =>
+        t.key === key ? { ...t, rows: t.rows.map((r, i) => (i === index ? { ...r, ...patch } : r)) } : t,
+      ),
+    );
 
   const checks = trays.map((tray) => ({
     tray,
     check: compareCounts(
       (setById.get(tray.setId)?.items ?? []).map((i) => ({ name: i.name, quantity: i.quantity })),
-      tray.rows.filter((r) => r.itemName.trim()).map((r) => ({ itemName: r.itemName, received: num(r.received), damaged: num(r.damaged) })),
+      tray.rows
+        .filter((r) => r.itemName.trim())
+        .map((r) => ({ itemName: r.itemName, received: num(r.received), damaged: num(r.damaged) })),
     ),
   }));
   const anyDiscrepancy = checks.some((c) => c.check.hasDiscrepancy);
-  const invalidRow = trays.some((t) => t.rows.some((r) => num(r.damaged) > num(r.received) || (r.extra && !r.itemName.trim())));
+  const invalidRow = trays.some((t) =>
+    t.rows.some((r) => num(r.damaged) > num(r.received) || (r.extra && !r.itemName.trim())),
+  );
   const valid = Boolean(departmentId) && trays.length > 0 && !invalidRow;
 
   const receive = useMutation({
@@ -111,7 +145,9 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
         lines: trays.map((t) => ({
           instrumentSetId: t.setId,
           setIssueId: t.issueId || null,
-          counts: t.rows.filter((r) => r.itemName.trim()).map((r) => ({ itemName: r.itemName.trim(), received: num(r.received), damaged: num(r.damaged) })),
+          counts: t.rows
+            .filter((r) => r.itemName.trim())
+            .map((r) => ({ itemName: r.itemName.trim(), received: num(r.received), damaged: num(r.damaged) })),
         })),
       }),
     onSuccess: (receipt) => {
@@ -157,7 +193,12 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                   </Select>
                 </Field>
                 <Field label="Handed over by">
-                  <Input value={handedOverBy} onChange={(_, d) => setHandedOverBy(d.value)} maxLength={200} placeholder="e.g. OT nurse Latha" />
+                  <Input
+                    value={handedOverBy}
+                    onChange={(_, d) => setHandedOverBy(d.value)}
+                    maxLength={200}
+                    placeholder="e.g. OT nurse Latha"
+                  />
                 </Field>
               </div>
 
@@ -178,7 +219,13 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                             Count matches ({check.received}/{check.expected})
                           </Badge>
                         )}
-                        <Button size="small" appearance="subtle" icon={<DeleteRegular />} aria-label={`Remove ${set?.name ?? 'tray'}`} onClick={() => setTrays(trays.filter((t) => t.key !== tray.key))} />
+                        <Button
+                          size="small"
+                          appearance="subtle"
+                          icon={<DeleteRegular />}
+                          aria-label={`Remove ${set?.name ?? 'tray'}`}
+                          onClick={() => setTrays(trays.filter((t) => t.key !== tray.key))}
+                        />
                       </span>
                     </div>
                     {departmentId && trayIssues.length > 0 && (
@@ -230,7 +277,11 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                               aria-label={`Received ${row.itemName}`}
                               className={short ? styles.short : undefined}
                               value={String(row.received)}
-                              onChange={(_, d) => updateRow(tray.key, index, { received: d.value === '' ? '' : Math.max(0, Number(d.value)) })}
+                              onChange={(_, d) =>
+                                updateRow(tray.key, index, {
+                                  received: d.value === '' ? '' : Math.max(0, Number(d.value)),
+                                })
+                              }
                             />
                             <Input
                               type="number"
@@ -238,7 +289,11 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                               max={500}
                               aria-label={`Damaged ${row.itemName}`}
                               value={String(row.damaged)}
-                              onChange={(_, d) => updateRow(tray.key, index, { damaged: d.value === '' ? '' : Math.max(0, Number(d.value)) })}
+                              onChange={(_, d) =>
+                                updateRow(tray.key, index, {
+                                  damaged: d.value === '' ? '' : Math.max(0, Number(d.value)),
+                                })
+                              }
                             />
                           </div>
                         );
@@ -249,13 +304,19 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
                         size="small"
                         appearance="subtle"
                         icon={<AddRegular />}
-                        onClick={() => updateTray(tray.key, { rows: [...tray.rows, { itemName: '', expected: 0, received: 1, damaged: 0, extra: true }] })}
+                        onClick={() =>
+                          updateTray(tray.key, {
+                            rows: [...tray.rows, { itemName: '', expected: 0, received: 1, damaged: 0, extra: true }],
+                          })
+                        }
                       >
                         Instrument not on the sheet
                       </Button>
                     </div>
                     {check.hasDiscrepancy && (
-                      <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{check.discrepancies.join(' · ')}</Caption1>
+                      <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>
+                        {check.discrepancies.join(' · ')}
+                      </Caption1>
                     )}
                   </section>
                 );
@@ -274,18 +335,25 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
               <Field label="Notes">
                 <Textarea value={notes} onChange={(_, d) => setNotes(d.value)} maxLength={500} rows={2} />
               </Field>
-              {invalidRow && <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>Damaged pieces are part of the received count, and extra instruments need a name.</Caption1>}
+              {invalidRow && (
+                <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>
+                  Damaged pieces are part of the received count, and extra instruments need a name.
+                </Caption1>
+              )}
               {anyDiscrepancy && (
                 <MessageBar intent="warning" layout="multiline">
                   <MessageBarBody>
                     <MessageBarTitle>Count differences</MessageBarTitle>
-                    Recount before saving. If an instrument is really missing after surgery, inform the OT in charge now: it may be retained in a patient.
+                    Recount before saving. If an instrument is really missing after surgery, inform the OT in charge
+                    now: it may be retained in a patient.
                   </MessageBarBody>
                 </MessageBar>
               )}
               {receive.error && (
                 <MessageBar intent="error">
-                  <MessageBarBody>{isApiError(receive.error) ? receive.error.userMessage : 'The receipt could not be saved.'}</MessageBarBody>
+                  <MessageBarBody>
+                    {isApiError(receive.error) ? receive.error.userMessage : 'The receipt could not be saved.'}
+                  </MessageBarBody>
                 </MessageBar>
               )}
             </DialogContent>
@@ -293,7 +361,12 @@ export function SoiledReceiptDialog({ onClose }: { onClose: () => void }) {
               <Button onClick={onClose} disabled={receive.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={!valid || receive.isPending} icon={receive.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={!valid || receive.isPending}
+                icon={receive.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 {anyDiscrepancy ? 'Receive with differences' : 'Receive trays'}
               </Button>
             </DialogActions>

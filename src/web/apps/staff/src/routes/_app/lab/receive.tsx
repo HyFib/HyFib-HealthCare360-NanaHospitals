@@ -71,7 +71,10 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusLarge,
     boxShadow: tokens.shadow4,
   },
-  ok: { backgroundColor: tokens.colorPaletteGreenBackground1, borderLeft: `6px solid ${tokens.colorPaletteGreenBorder2}` },
+  ok: {
+    backgroundColor: tokens.colorPaletteGreenBackground1,
+    borderLeft: `6px solid ${tokens.colorPaletteGreenBorder2}`,
+  },
   bad: { backgroundColor: tokens.colorPaletteRedBackground1, borderLeft: `6px solid ${tokens.colorPaletteRedBorder2}` },
   info: { backgroundColor: tokens.colorNeutralBackground1, borderLeft: `6px solid ${tokens.colorBrandStroke1}` },
   lastIcon: { fontSize: '36px', display: 'flex' },
@@ -87,7 +90,13 @@ const useStyles = makeStyles({
     borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
     '@media (max-width: 760px)': { gridTemplateColumns: '28px minmax(0, 1fr)' },
   },
-  rowActions: { display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end', '@media (max-width: 760px)': { gridColumn: '1 / -1' } },
+  rowActions: {
+    display: 'flex',
+    gap: '6px',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    '@media (max-width: 760px)': { gridColumn: '1 / -1' },
+  },
   mono: { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightSemibold },
   muted: { color: tokens.colorNeutralForeground3 },
   green: { color: tokens.colorPaletteGreenForeground1 },
@@ -130,14 +139,22 @@ function ReceivePage() {
   const focusInput = () => setTimeout(() => inputRef.current?.focus(), 0);
 
   const update = (barcodes: readonly string[], patch: (row: ScanRow) => Partial<ScanRow>) =>
-    setRows((current) => current.map((row) => (barcodes.includes(row.barcode) && row.state === 'sending' ? { ...row, ...patch(row) } : row)));
+    setRows((current) =>
+      current.map((row) =>
+        barcodes.includes(row.barcode) && row.state === 'sending' ? { ...row, ...patch(row) } : row,
+      ),
+    );
 
   const attachLookups = async (barcodes: readonly string[]) => {
     await Promise.all(
       barcodes.map(async (barcode) => {
         try {
           const sample = await queryClient.fetchQuery({ ...labQueries.sampleByBarcode(barcode), staleTime: 0 });
-          setRows((current) => current.map((row) => (row.barcode === barcode && !row.sample ? { ...row, sample, sampleId: row.sampleId ?? sample.id } : row)));
+          setRows((current) =>
+            current.map((row) =>
+              row.barcode === barcode && !row.sample ? { ...row, sample, sampleId: row.sampleId ?? sample.id } : row,
+            ),
+          );
         } catch {
           // Unknown barcodes stay without details; the outcome message already says why.
         }
@@ -172,7 +189,10 @@ function ReceivePage() {
       void queryClient.invalidateQueries({ queryKey: labKeys.samples });
       void attachLookups(batch);
     } catch (error) {
-      update(batch, () => ({ state: 'problem', message: `Not sent: ${errorMessage(error, 'the server could not be reached')}. Scan again or use Retry.` }));
+      update(batch, () => ({
+        state: 'problem',
+        message: `Not sent: ${errorMessage(error, 'the server could not be reached')}. Scan again or use Retry.`,
+      }));
       if (sound) {
         beep('problem');
       }
@@ -190,7 +210,10 @@ function ReceivePage() {
     } catch (error) {
       update([barcode], () => ({
         state: 'problem',
-        message: isApiError(error) && error.status === 404 ? 'No sample has this barcode.' : errorMessage(error, 'Could not look the sample up.'),
+        message:
+          isApiError(error) && error.status === 404
+            ? 'No sample has this barcode.'
+            : errorMessage(error, 'Could not look the sample up.'),
       }));
       if (sound) {
         beep('problem');
@@ -206,7 +229,16 @@ function ReceivePage() {
     const at = new Date().toISOString();
     setRows((current) =>
       [
-        ...codes.map((barcode) => ({ key: crypto.randomUUID(), barcode, mode: scanMode, state: 'sending' as const, message: null, sampleId: null, sample: null, at })),
+        ...codes.map((barcode) => ({
+          key: crypto.randomUUID(),
+          barcode,
+          mode: scanMode,
+          state: 'sending' as const,
+          message: null,
+          sampleId: null,
+          sample: null,
+          at,
+        })),
         ...current,
       ].slice(0, MAX_ROWS),
     );
@@ -237,7 +269,10 @@ function ReceivePage() {
     setRecollecting(row.key);
     try {
       const result = await labApi.recollect(row.sampleId);
-      notify.success('New sample requested', result.recollectionBarcode ? `New tube ${result.recollectionBarcode} is on the collection list.` : undefined);
+      notify.success(
+        'New sample requested',
+        result.recollectionBarcode ? `New tube ${result.recollectionBarcode} is on the collection list.` : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.samples });
     } catch (error) {
       notify.error(error, 'Could not request a new sample');
@@ -265,7 +300,10 @@ function ReceivePage() {
 
       <Section>
         <div className={styles.scanBox}>
-          <Field label={mode === 'receive' && canReceive ? 'Scan to receive' : 'Scan to check (not received)'} className={styles.input}>
+          <Field
+            label={mode === 'receive' && canReceive ? 'Scan to receive' : 'Scan to check (not received)'}
+            className={styles.input}
+          >
             <Input
               ref={inputRef}
               className={styles.big}
@@ -350,7 +388,11 @@ function ReceivePage() {
         flush
       >
         {rows.length === 0 ? (
-          <EmptyState icon={<BarcodeScannerRegular />} title="No samples scanned yet" description="Scan the first tube. Received tubes appear on the result entry worklist straight away." />
+          <EmptyState
+            icon={<BarcodeScannerRegular />}
+            title="No samples scanned yet"
+            description="Scan the first tube. Received tubes appear on the result entry worklist straight away."
+          />
         ) : (
           <div className={styles.list} role="log" aria-live="polite" aria-label="Scanned samples">
             {rows.map((row) => (
@@ -371,7 +413,14 @@ function ReceivePage() {
                     {row.barcode}
                   </Text>
                   <Caption1 className={styles.muted}>
-                    {formatTime(row.at)} · {row.state === 'sending' ? 'Sending…' : row.state === 'received' ? 'Received' : row.state === 'checked' ? 'Checked' : 'Not received'}
+                    {formatTime(row.at)} ·{' '}
+                    {row.state === 'sending'
+                      ? 'Sending…'
+                      : row.state === 'received'
+                        ? 'Received'
+                        : row.state === 'checked'
+                          ? 'Checked'
+                          : 'Not received'}
                   </Caption1>
                 </span>
                 <span>
@@ -383,7 +432,8 @@ function ReceivePage() {
                       </Caption1>{' '}
                       <PriorityBadge priority={row.sample.priority} /> <SampleStatusBadge status={row.sample.status} />
                       <Caption1 block>
-                        <TubeChip container={row.sample.container} /> {sectionLabel[row.sample.section]} · {row.sample.tests.join(', ')}
+                        <TubeChip container={row.sample.container} /> {sectionLabel[row.sample.section]} ·{' '}
+                        {row.sample.tests.join(', ')}
                       </Caption1>
                     </>
                   ) : null}
@@ -409,7 +459,12 @@ function ReceivePage() {
                       size="small"
                       icon={<BeakerDismissRegular />}
                       onClick={() =>
-                        setRejecting({ sampleId: row.sample!.id, barcode: row.barcode, patientName: row.sample!.patientName, tests: row.sample!.tests })
+                        setRejecting({
+                          sampleId: row.sample!.id,
+                          barcode: row.barcode,
+                          patientName: row.sample!.patientName,
+                          tests: row.sample!.tests,
+                        })
                       }
                     >
                       Reject
@@ -425,11 +480,19 @@ function ReceivePage() {
                       Request new sample
                     </Button>
                   )}
-                  {canEnter && row.sampleId && (row.state === 'received' || row.sample?.status === 'Received' || row.sample?.status === 'InProcess') && (
-                    <Button size="small" appearance="subtle" onClick={() => void navigate({ to: '/lab/worklist', search: { sampleId: row.sampleId! } })}>
-                      Results
-                    </Button>
-                  )}
+                  {canEnter &&
+                    row.sampleId &&
+                    (row.state === 'received' ||
+                      row.sample?.status === 'Received' ||
+                      row.sample?.status === 'InProcess') && (
+                      <Button
+                        size="small"
+                        appearance="subtle"
+                        onClick={() => void navigate({ to: '/lab/worklist', search: { sampleId: row.sampleId! } })}
+                      >
+                        Results
+                      </Button>
+                    )}
                 </span>
               </div>
             ))}
@@ -446,7 +509,11 @@ function ReceivePage() {
           }}
           onDone={() => {
             setRows((current) =>
-              current.map((row) => (row.barcode === rejecting.barcode && row.sample ? { ...row, sample: { ...row.sample, status: 'Rejected' } } : row)),
+              current.map((row) =>
+                row.barcode === rejecting.barcode && row.sample
+                  ? { ...row, sample: { ...row.sample, status: 'Rejected' } }
+                  : row,
+              ),
             );
           }}
         />
@@ -474,7 +541,13 @@ function LastScan({ row }: { row: ScanRow }) {
       </span>
       <span>
         <Text weight="semibold" size={500}>
-          {row.state === 'received' ? 'Received' : row.state === 'problem' ? 'Not received' : row.state === 'sending' ? 'Sending…' : 'Checked'}{' '}
+          {row.state === 'received'
+            ? 'Received'
+            : row.state === 'problem'
+              ? 'Not received'
+              : row.state === 'sending'
+                ? 'Sending…'
+                : 'Checked'}{' '}
           <span className={styles.mono}>{row.barcode}</span>
         </Text>
         {row.sample && (
@@ -483,7 +556,9 @@ function LastScan({ row }: { row: ScanRow }) {
             {row.sample.priority !== 'Routine' && (
               <>
                 {' '}
-                <Badge color={row.sample.priority === 'Stat' ? 'danger' : 'warning'}>{row.sample.priority === 'Stat' ? 'STAT' : 'Urgent'}</Badge>
+                <Badge color={row.sample.priority === 'Stat' ? 'danger' : 'warning'}>
+                  {row.sample.priority === 'Stat' ? 'STAT' : 'Urgent'}
+                </Badge>
               </>
             )}
           </Text>

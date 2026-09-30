@@ -12,10 +12,20 @@ import { currentMonth } from './shared/dates';
  * HR applies leave for an employee (a phone call from a sick nurse, a long leave letter). The request then follows the
  * normal approval; nobody can approve their own request.
  */
-export function LeaveOnBehalfDialog({ open, onClose, employee }: { open: boolean; onClose: () => void; employee?: PickedEmployee | null }) {
+export function LeaveOnBehalfDialog({
+  open,
+  onClose,
+  employee,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employee?: PickedEmployee | null;
+}) {
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 680 }}>{open && <Body onClose={onClose} employee={employee ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 680 }}>
+        {open && <Body onClose={onClose} employee={employee ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }

@@ -43,10 +43,16 @@ describe('incident rules', () => {
     const base = { isSentinel: false, rcaCompleted: false, capaCount: 0, openCapaCount: 0 };
     expect(transitionBlocker('Reported', 'Investigation', base)).toBe('This move is not allowed.');
     expect(transitionBlocker('Investigation', 'Closed', base)).toBe('Complete the root-cause analysis first.');
-    expect(transitionBlocker('UnderReview', 'Closed', { ...base, isSentinel: true })).toBe('A sentinel event can be closed only after a completed root-cause analysis.');
+    expect(transitionBlocker('UnderReview', 'Closed', { ...base, isSentinel: true })).toBe(
+      'A sentinel event can be closed only after a completed root-cause analysis.',
+    );
     expect(transitionBlocker('Reported', 'Closed', { ...base, isSentinel: true })).toBeNull();
-    expect(transitionBlocker('UnderReview', 'CapaInProgress', base)).toBe('Add at least one corrective or preventive action first.');
-    expect(transitionBlocker('CapaInProgress', 'Closed', { ...base, rcaCompleted: true, capaCount: 2, openCapaCount: 1 })).toBe('1 action(s) are still open.');
+    expect(transitionBlocker('UnderReview', 'CapaInProgress', base)).toBe(
+      'Add at least one corrective or preventive action first.',
+    );
+    expect(
+      transitionBlocker('CapaInProgress', 'Closed', { ...base, rcaCompleted: true, capaCount: 2, openCapaCount: 1 }),
+    ).toBe('1 action(s) are still open.');
     expect(transitionBlocker('UnderReview', 'Investigation', base)).toBeNull();
   });
 

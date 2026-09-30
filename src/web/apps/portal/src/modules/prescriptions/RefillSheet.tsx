@@ -24,9 +24,14 @@ function refillSchema(t: Translate, today: string) {
   return z.object({
     preferredPickupDate: z
       .string()
-      .refine((value) => value === '' || (/^\d{4}-\d{2}-\d{2}$/.test(value) && daysBetween(today, value) >= 0 && daysBetween(today, value) <= 30), {
-        error: t('rx.refill.dateInvalid'),
-      }),
+      .refine(
+        (value) =>
+          value === '' ||
+          (/^\d{4}-\d{2}-\d{2}$/.test(value) && daysBetween(today, value) >= 0 && daysBetween(today, value) <= 30),
+        {
+          error: t('rx.refill.dateInvalid'),
+        },
+      ),
     notes: z.string().trim().max(500),
   });
 }
@@ -34,7 +39,15 @@ function refillSchema(t: Translate, today: string) {
 type RefillForm = z.infer<ReturnType<typeof refillSchema>>;
 
 /** Asks the hospital pharmacy to refill a chronic prescription (it checks and approves it). */
-export function RefillSheet({ open, onClose, refill }: { open: boolean; onClose: () => void; refill: RefillablePrescription }) {
+export function RefillSheet({
+  open,
+  onClose,
+  refill,
+}: {
+  open: boolean;
+  onClose: () => void;
+  refill: RefillablePrescription;
+}) {
   const styles = useStyles();
   const t = useT();
   const f = useFormat();
@@ -43,7 +56,10 @@ export function RefillSheet({ open, onClose, refill }: { open: boolean; onClose:
   const [today] = useState(() => istDateOf(Date.now()));
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(() => refillSchema(t, today), [t, today]);
-  const form = useForm<RefillForm>({ resolver: zodResolver(schema), defaultValues: { preferredPickupDate: '', notes: '' } });
+  const form = useForm<RefillForm>({
+    resolver: zodResolver(schema),
+    defaultValues: { preferredPickupDate: '', notes: '' },
+  });
   const busy = form.formState.isSubmitting;
 
   const close = () => {
@@ -78,7 +94,13 @@ export function RefillSheet({ open, onClose, refill }: { open: boolean; onClose:
       dismissible={!busy}
       footer={
         <>
-          <Button appearance="primary" size="large" onClick={() => void submit()} disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            appearance="primary"
+            size="large"
+            onClick={() => void submit()}
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             {t('rx.refill.submit')}
           </Button>
           <Button size="large" onClick={close} disabled={busy}>
@@ -116,7 +138,15 @@ export function RefillSheet({ open, onClose, refill }: { open: boolean; onClose:
               validationState={fieldState.error ? 'error' : 'none'}
               validationMessage={fieldState.error?.message}
             >
-              <Input type="date" size="large" value={field.value} min={today} max={addDays(today, 30)} onChange={(_, data) => field.onChange(data.value)} disabled={busy} />
+              <Input
+                type="date"
+                size="large"
+                value={field.value}
+                min={today}
+                max={addDays(today, 30)}
+                onChange={(_, data) => field.onChange(data.value)}
+                disabled={busy}
+              />
             </Field>
           )}
         />
@@ -125,7 +155,14 @@ export function RefillSheet({ open, onClose, refill }: { open: boolean; onClose:
           name="notes"
           render={({ field }) => (
             <Field label={`${t('rx.refill.notes')} ${t('common.optional')}`}>
-              <Textarea {...field} value={field.value ?? ''} rows={2} maxLength={500} resize="vertical" disabled={busy} />
+              <Textarea
+                {...field}
+                value={field.value ?? ''}
+                rows={2}
+                maxLength={500}
+                resize="vertical"
+                disabled={busy}
+              />
             </Field>
           )}
         />

@@ -1,4 +1,16 @@
-import { Badge, Button, CounterBadge, makeStyles, SearchBox, Subtitle2, Tab, TabList, Text, tokens, Tooltip } from '@fluentui/react-components';
+import {
+  Badge,
+  Button,
+  CounterBadge,
+  makeStyles,
+  SearchBox,
+  Subtitle2,
+  Tab,
+  TabList,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
 import { BoardRegular, DocumentTableRegular, LockClosedRegular, MailClockRegular } from '@fluentui/react-icons';
 import { useDebouncedValue } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
@@ -79,7 +91,11 @@ function ReportCataloguePage() {
   if (catalogue.error || !catalogue.data) {
     return (
       <Page maxWidth={900}>
-        <ErrorState error={catalogue.error} onRetry={() => void catalogue.refetch()} title="Could not load the reports" />
+        <ErrorState
+          error={catalogue.error}
+          onRetry={() => void catalogue.refetch()}
+          title="Could not load the reports"
+        />
       </Page>
     );
   }
@@ -99,7 +115,10 @@ function ReportCataloguePage() {
         title="MIS reports"
         icon={<DocumentTableRegular />}
         subtitle={`${data.reports.length} reports you can open · figures from the ${data.dataSource.toLowerCase()} · every report exports to Excel`}
-        breadcrumbs={[{ label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) }, { label: 'MIS reports' }]}
+        breadcrumbs={[
+          { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
+          { label: 'MIS reports' },
+        ]}
         actions={
           <>
             <Button icon={<BoardRegular />} onClick={() => void navigate({ to: '/analytics/dashboards' })}>
@@ -127,7 +146,12 @@ function ReportCataloguePage() {
           <TabList
             size="small"
             selectedValue={search.category ?? 'all'}
-            onTabSelect={(_, d) => void navigate({ search: (prev) => ({ ...prev, category: d.value === 'all' ? undefined : (d.value as ReportCategory) }), replace: true })}
+            onTabSelect={(_, d) =>
+              void navigate({
+                search: (prev) => ({ ...prev, category: d.value === 'all' ? undefined : (d.value as ReportCategory) }),
+                replace: true,
+              })
+            }
             aria-label="Report areas"
           >
             <Tab value="all">All ({matches.length})</Tab>
@@ -202,7 +226,10 @@ function ReportCard({ report }: { report: ReportCatalogueItem }) {
       <span className={styles.cardHead}>
         <Subtitle2>{report.title}</Subtitle2>
         {report.containsPatientIdentifiers && (
-          <Tooltip content="Lists patients: every view and export is recorded in the audit log" relationship="description">
+          <Tooltip
+            content="Lists patients: every view and export is recorded in the audit log"
+            relationship="description"
+          >
             <span className={styles.lock} aria-label="Lists patients">
               <LockClosedRegular />
             </span>

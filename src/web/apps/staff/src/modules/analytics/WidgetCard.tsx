@@ -28,7 +28,14 @@ import {
 import { ErrorState } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { analyticsQueries, type ReportCatalogueItem, type ReportChartType, type ReportInputs, type ReportResult, type WidgetWidth } from './api';
+import {
+  analyticsQueries,
+  type ReportCatalogueItem,
+  type ReportChartType,
+  type ReportInputs,
+  type ReportResult,
+  type WidgetWidth,
+} from './api';
 import { describeRange } from './format';
 import { ReportTable } from './ReportTable';
 import { ReportChart, SummaryFigures } from './ReportView';
@@ -51,10 +58,21 @@ const useStyles = makeStyles({
   header: { display: 'flex', alignItems: 'flex-start', gap: '8px', padding: '12px 12px 4px 16px' },
   titles: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
   title: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  subtitle: { color: tokens.colorNeutralForeground3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  subtitle: {
+    color: tokens.colorNeutralForeground3,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  },
   body: { flex: 1, padding: '4px 16px 14px', minHeight: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
   progress: { height: '2px' },
-  locked: { display: 'flex', alignItems: 'center', gap: '8px', color: tokens.colorNeutralForeground3, padding: '24px 0' },
+  locked: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    color: tokens.colorNeutralForeground3,
+    padding: '24px 0',
+  },
   actions: { display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 },
   note: { color: tokens.colorNeutralForeground3 },
   iconLink: {
@@ -99,24 +117,42 @@ function widgetHeight(width: WidgetWidth): number {
  * A dashboard tile: runs its report with its saved inputs (or the dashboard-wide period) and shows it as a chart, a short
  * table or headline figures, with a link to the full report.
  */
-export function WidgetCard({ widget, report, inputs, editing }: { widget: WidgetConfig; report: ReportCatalogueItem | undefined; inputs: ReportInputs; editing?: WidgetEditActions }) {
+export function WidgetCard({
+  widget,
+  report,
+  inputs,
+  editing,
+}: {
+  widget: WidgetConfig;
+  report: ReportCatalogueItem | undefined;
+  inputs: ReportInputs;
+  editing?: WidgetEditActions;
+}) {
   const styles = useStyles();
   const runnable = widget.canView && report !== undefined;
   const run = useQuery({
-    ...analyticsQueries.run(widget.reportId, inputs, { page: 1, pageSize: widget.view === 'Table' ? 8 : 1, chart: widget.view }),
+    ...analyticsQueries.run(widget.reportId, inputs, {
+      page: 1,
+      pageSize: widget.view === 'Table' ? 8 : 1,
+      chart: widget.view,
+    }),
     enabled: runnable,
   });
   const result = run.data;
 
   return (
     <article className={mergeClasses(styles.card, editing && styles.editing)} aria-label={widget.title}>
-      <div className={styles.progress}>{run.isFetching && result && <ProgressBar thickness="medium" aria-label="Refreshing" />}</div>
+      <div className={styles.progress}>
+        {run.isFetching && result && <ProgressBar thickness="medium" aria-label="Refreshing" />}
+      </div>
       <header className={styles.header}>
         <div className={styles.titles}>
           <Subtitle2 as="h3" className={styles.title} title={widget.title}>
             {widget.title}
           </Subtitle2>
-          <Caption1 className={styles.subtitle}>{result ? coverage(result) : report ? report.categoryLabel : ' '}</Caption1>
+          <Caption1 className={styles.subtitle}>
+            {result ? coverage(result) : report ? report.categoryLabel : ' '}
+          </Caption1>
         </div>
         <div className={styles.actions}>
           {runnable && (
@@ -141,9 +177,17 @@ export function WidgetCard({ widget, report, inputs, editing }: { widget: Widget
             <Caption1>You do not have access to this report. Ask the dashboard owner or your administrator.</Caption1>
           </div>
         ) : !report ? (
-          <Caption1 className={styles.note}>This report is no longer available. Remove the tile or choose another report.</Caption1>
+          <Caption1 className={styles.note}>
+            This report is no longer available. Remove the tile or choose another report.
+          </Caption1>
         ) : (
-          <WidgetBody widget={widget} result={result} error={run.error} loading={run.isPending} onRetry={() => void run.refetch()} />
+          <WidgetBody
+            widget={widget}
+            result={result}
+            error={run.error}
+            loading={run.isPending}
+            onRetry={() => void run.refetch()}
+          />
         )}
       </div>
     </article>
@@ -152,9 +196,17 @@ export function WidgetCard({ widget, report, inputs, editing }: { widget: Widget
 
 function EditMenu({ widget, editing }: { widget: WidgetConfig; editing: WidgetEditActions }) {
   return (
-    <Menu checkedValues={{ width: [String(widget.width)] }} onCheckedValueChange={(_, data) => editing.onResize(Number(data.checkedItems[0]) as WidgetWidth)}>
+    <Menu
+      checkedValues={{ width: [String(widget.width)] }}
+      onCheckedValueChange={(_, data) => editing.onResize(Number(data.checkedItems[0]) as WidgetWidth)}
+    >
       <MenuTrigger disableButtonEnhancement>
-        <Button appearance="subtle" size="small" icon={<MoreHorizontalRegular />} aria-label={`Change ${widget.title}`} />
+        <Button
+          appearance="subtle"
+          size="small"
+          icon={<MoreHorizontalRegular />}
+          aria-label={`Change ${widget.title}`}
+        />
       </MenuTrigger>
       <MenuPopover>
         <MenuList>
@@ -219,7 +271,9 @@ export function WidgetBody({
   }
   return (
     <>
-      {widget.view === 'Summary' && <Caption1 className={styles.note}>This report has no headline figures, so the table is shown.</Caption1>}
+      {widget.view === 'Summary' && (
+        <Caption1 className={styles.note}>This report has no headline figures, so the table is shown.</Caption1>
+      )}
       <ReportTable result={result} compact maxRows={8} />
     </>
   );

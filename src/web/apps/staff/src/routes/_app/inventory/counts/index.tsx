@@ -24,7 +24,13 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { inventoryApi, inventoryKeys, inventoryQueries, type CountListItem } from '@/modules/inventory/api';
-import { COUNT_STATUSES, ITEM_TYPES, itemTypeLabel, type ItemType, type StockCountStatus } from '@/modules/inventory/labels';
+import {
+  COUNT_STATUSES,
+  ITEM_TYPES,
+  itemTypeLabel,
+  type ItemType,
+  type StockCountStatus,
+} from '@/modules/inventory/labels';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { StorePicker } from '@/modules/inventory/StorePicker';
 import { DocStatus } from '@/modules/inventory/StockBits';
@@ -47,7 +53,12 @@ export const Route = createFileRoute('/_app/inventory/counts/')({
   component: CountsPage,
 });
 
-const STATUS_LABEL: Record<StockCountStatus, string> = { InProgress: 'Counting', Submitted: 'Submitted', Adjusted: 'Adjusted', Cancelled: 'Cancelled' };
+const STATUS_LABEL: Record<StockCountStatus, string> = {
+  InProgress: 'Counting',
+  Submitted: 'Submitted',
+  Adjusted: 'Adjusted',
+  Cancelled: 'Cancelled',
+};
 
 /** Physical stock counts (INV-07): print or open the count sheet, enter what is on the shelf, submit the differences. */
 function CountsPage() {
@@ -55,8 +66,11 @@ function CountsPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const canCount = usePermission(S.counts);
   const working = useWorkingStore('inventory');
-  const counts = useQuery(inventoryQueries.counts({ storeId: search.storeId, status: search.status, page: search.page }));
-  const set = (patch: Partial<CountSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const counts = useQuery(
+    inventoryQueries.counts({ storeId: search.storeId, status: search.status, page: search.page }),
+  );
+  const set = (patch: Partial<CountSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
 
   return (
     <Page>
@@ -74,9 +88,17 @@ function CountsPage() {
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
-            <StorePicker stores={working.stores} value={search.storeId ?? null} onChange={(id) => set({ storeId: id ?? undefined })} allowAll />
+            <StorePicker
+              stores={working.stores}
+              value={search.storeId ?? null}
+              onChange={(id) => set({ storeId: id ?? undefined })}
+              allowAll
+            />
             <Field label="Status">
-              <Select value={search.status ?? ''} onChange={(_, d) => set({ status: (d.value || undefined) as StockCountStatus | undefined })}>
+              <Select
+                value={search.status ?? ''}
+                onChange={(_, d) => set({ status: (d.value || undefined) as StockCountStatus | undefined })}
+              >
                 <option value="">All</option>
                 {COUNT_STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -109,12 +131,24 @@ function CountsPage() {
                   <Caption1>
                     {c.countedLines} of {c.lineCount} batches
                   </Caption1>
-                  <ProgressBar value={c.lineCount ? c.countedLines / c.lineCount : 0} aria-label={`${c.countedLines} of ${c.lineCount} counted`} />
+                  <ProgressBar
+                    value={c.lineCount ? c.countedLines / c.lineCount : 0}
+                    aria-label={`${c.countedLines} of ${c.lineCount} counted`}
+                  />
                 </div>
               ),
             },
-            { key: 'submitted', header: 'Submitted', priority: 'low', render: (c) => (c.submittedAt ? formatDateTime(c.submittedAt) : '—') },
-            { key: 'status', header: 'Status', render: (c) => <DocStatus status={c.status} label={STATUS_LABEL[c.status]} /> },
+            {
+              key: 'submitted',
+              header: 'Submitted',
+              priority: 'low',
+              render: (c) => (c.submittedAt ? formatDateTime(c.submittedAt) : '—'),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (c) => <DocStatus status={c.status} label={STATUS_LABEL[c.status]} />,
+            },
           ]}
           emptyTitle="No stock counts yet"
           emptyDescription={canCount ? 'Start a count to check the shelves against the books.' : undefined}
@@ -135,7 +169,15 @@ function CountsPage() {
   );
 }
 
-function StartCountDialog({ defaultStoreId, onClose, onStarted }: { defaultStoreId: string | null; onClose: () => void; onStarted: (id: string) => void }) {
+function StartCountDialog({
+  defaultStoreId,
+  onClose,
+  onStarted,
+}: {
+  defaultStoreId: string | null;
+  onClose: () => void;
+  onStarted: (id: string) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const working = useWorkingStore('inventory');
@@ -146,7 +188,12 @@ function StartCountDialog({ defaultStoreId, onClose, onStarted }: { defaultStore
   const [remarks, setRemarks] = useState('');
   const start = useMutation({
     mutationFn: () =>
-      inventoryApi.startCount({ storeId: storeId!, itemType: (itemType || null) as ItemType | null, categoryId: categoryId || null, remarks: remarks.trim() || null }),
+      inventoryApi.startCount({
+        storeId: storeId!,
+        itemType: (itemType || null) as ItemType | null,
+        categoryId: categoryId || null,
+        remarks: remarks.trim() || null,
+      }),
     onSuccess: (result) => {
       notify.success(`Count ${result.number} started`, 'The book quantities are frozen as of now.');
       void queryClient.invalidateQueries({ queryKey: inventoryKeys.counts });
@@ -181,11 +228,19 @@ function StartCountDialog({ defaultStoreId, onClose, onStarted }: { defaultStore
               </Select>
             </Field>
             <Field label="Remarks">
-              <Textarea value={remarks} rows={2} maxLength={1000} onChange={(_, d) => setRemarks(d.value)} placeholder="e.g. Quarterly audit, rack A to D" />
+              <Textarea
+                value={remarks}
+                rows={2}
+                maxLength={1000}
+                onChange={(_, d) => setRemarks(d.value)}
+                placeholder="e.g. Quarterly audit, rack A to D"
+              />
             </Field>
             {start.error && (
               <MessageBar intent="error">
-                <MessageBarBody>{isApiError(start.error) ? start.error.userMessage : 'Could not start the count.'}</MessageBarBody>
+                <MessageBarBody>
+                  {isApiError(start.error) ? start.error.userMessage : 'Could not start the count.'}
+                </MessageBarBody>
               </MessageBar>
             )}
           </DialogContent>
@@ -193,7 +248,12 @@ function StartCountDialog({ defaultStoreId, onClose, onStarted }: { defaultStore
             <Button onClick={onClose} disabled={start.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!storeId || start.isPending} icon={start.isPending ? <Spinner size="tiny" /> : undefined} onClick={() => start.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!storeId || start.isPending}
+              icon={start.isPending ? <Spinner size="tiny" /> : undefined}
+              onClick={() => start.mutate()}
+            >
               Start count
             </Button>
           </DialogActions>

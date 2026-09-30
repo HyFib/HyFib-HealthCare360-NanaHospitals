@@ -59,7 +59,9 @@ function ReportLoader({ kind, reportId, back }: { kind: ReportKindSegment; repor
 
   if (kind === 'lab' && lab.data) {
     const report = lab.data;
-    const title = report.sections.flatMap((section) => section.tests.map((test) => test.name)).join(', ') || t('reports.kind.Laboratory');
+    const title =
+      report.sections.flatMap((section) => section.tests.map((test) => test.name)).join(', ') ||
+      t('reports.kind.Laboratory');
     return (
       <OwnerGuard ownerId={report.patient.id}>
         <PortalPage

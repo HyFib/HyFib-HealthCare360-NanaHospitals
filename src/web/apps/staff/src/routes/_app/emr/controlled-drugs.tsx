@@ -25,19 +25,34 @@ function ControlledDrugRegisterPage() {
   const from = search.from ?? addDaysIso(today, -30);
   const to = search.to ?? today;
   const register = useQuery(prescriptionQueries.register(from, to, search.page ?? 1));
-  const set = (patch: { from?: string; to?: string; page?: number }) => void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+  const set = (patch: { from?: string; to?: string; page?: number }) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
 
   return (
     <Page>
-      <PageHeader title="Controlled drug register" subtitle="Schedule H1 and X medicines prescribed, with the confirming doctor (Drugs and Cosmetics Rules)." />
+      <PageHeader
+        title="Controlled drug register"
+        subtitle="Schedule H1 and X medicines prescribed, with the confirming doctor (Drugs and Cosmetics Rules)."
+      />
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="From">
-              <Input type="date" value={from} max={to} onChange={(_, d) => set({ from: d.value || undefined, page: undefined })} />
+              <Input
+                type="date"
+                value={from}
+                max={to}
+                onChange={(_, d) => set({ from: d.value || undefined, page: undefined })}
+              />
             </Field>
             <Field label="To">
-              <Input type="date" value={to} min={from} max={today} onChange={(_, d) => set({ to: d.value || undefined, page: undefined })} />
+              <Input
+                type="date"
+                value={to}
+                min={from}
+                max={today}
+                onChange={(_, d) => set({ to: d.value || undefined, page: undefined })}
+              />
             </Field>
           </FilterBar>
         </div>
@@ -48,12 +63,23 @@ function ControlledDrugRegisterPage() {
           error={register.error}
           onRetry={() => void register.refetch()}
           getRowId={(r) => r.id}
-          onRowClick={(r) => void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: r.prescriptionId } })}
+          onRowClick={(r) =>
+            void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: r.prescriptionId } })
+          }
           size="small"
           columns={[
             { key: 'date', header: 'Signed', width: 170, render: (r) => formatDateTime(r.prescribedAt) },
-            { key: 'rx', header: 'Prescription', width: 150, render: (r) => <Text font="monospace">{r.prescriptionNumber}</Text> },
-            { key: 'patient', header: 'Patient', render: (r) => `${r.patientName ?? '—'}${r.uhid ? ` · ${r.uhid}` : ''}` },
+            {
+              key: 'rx',
+              header: 'Prescription',
+              width: 150,
+              render: (r) => <Text font="monospace">{r.prescriptionNumber}</Text>,
+            },
+            {
+              key: 'patient',
+              header: 'Patient',
+              render: (r) => `${r.patientName ?? '—'}${r.uhid ? ` · ${r.uhid}` : ''}`,
+            },
             { key: 'drug', header: 'Medicine', render: (r) => `${r.drugName}${r.strength ? ` ${r.strength}` : ''}` },
             { key: 'schedule', header: 'Schedule', width: 90, render: (r) => r.schedule ?? '—' },
             { key: 'qty', header: 'Quantity', width: 90, align: 'end', render: (r) => r.quantity },

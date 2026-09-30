@@ -40,7 +40,12 @@ describe('census date ranges', () => {
 describe('census helpers', () => {
   it('sums transfers across days', () => {
     const day = { date: today, admissions: 0, discharges: 0, deaths: 0, midnightCensus: 0 };
-    expect(sumTransfers([{ ...day, transfersIn: 2, transfersOut: 1 }, { ...day, transfersIn: 1, transfersOut: 3 }])).toEqual({ transfersIn: 3, transfersOut: 4 });
+    expect(
+      sumTransfers([
+        { ...day, transfersIn: 2, transfersOut: 1 },
+        { ...day, transfersIn: 1, transfersOut: 3 },
+      ]),
+    ).toEqual({ transfersIn: 3, transfersOut: 4 });
   });
 
   it('formats short axis dates without shifting the day', () => {

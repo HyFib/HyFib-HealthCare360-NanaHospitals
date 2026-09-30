@@ -26,7 +26,8 @@ export const profileMessages = defineMessages({
       '{hospital} uses your personal data to care for you. This notice explains in simple words what the patient portal does with it, and your rights under the Digital Personal Data Protection Act, 2023.',
     'privacy.what.title': 'What we use',
     'privacy.what.1': 'Your mobile number, to send you sign-in codes and to find the records registered with it.',
-    'privacy.what.2': 'What the hospital already holds about you and your family: registration details, appointments, reports, prescriptions, bills and health records.',
+    'privacy.what.2':
+      'What the hospital already holds about you and your family: registration details, appointments, reports, prescriptions, bills and health records.',
     'privacy.what.3': 'What you give us here: bookings, payments, feedback and requests.',
     'privacy.what.4': 'Security records, such as sign-in times and network addresses, to protect your account.',
     'privacy.why.title': 'Why we use it',
@@ -37,7 +38,8 @@ export const profileMessages = defineMessages({
     'privacy.share.body':
       'Hospital staff who care for you or handle your bills. The payment partner sees only what it needs to take a payment, and SMS and WhatsApp partners see only the messages they deliver. The hospital does not sell your data or use it for advertising.',
     'privacy.keep.title': 'How long it is kept',
-    'privacy.keep.body': 'Medical records are kept for as long as the law and medical rules require. Security records are kept for a limited time and then deleted.',
+    'privacy.keep.body':
+      'Medical records are kept for as long as the law and medical rules require. Security records are kept for a limited time and then deleted.',
     'privacy.family.title': 'Family members',
     'privacy.family.body':
       'Everyone registered at the hospital with your mobile number appears in your portal. If someone should not be linked to your number, ask the front desk to change it.',
@@ -78,25 +80,29 @@ export const profileMessages = defineMessages({
       '{hospital} आपकी देखभाल के लिए आपके निजी डेटा का उपयोग करता है। यह सूचना आसान शब्दों में बताती है कि मरीज़ पोर्टल उसके साथ क्या करता है, और डिजिटल व्यक्तिगत डेटा संरक्षण अधिनियम, 2023 के तहत आपके अधिकार क्या हैं।',
     'privacy.what.title': 'हम क्या उपयोग करते हैं',
     'privacy.what.1': 'आपका मोबाइल नंबर, साइन-इन कोड भेजने और उससे जुड़े रिकॉर्ड ढूँढने के लिए।',
-    'privacy.what.2': 'अस्पताल के पास आपके और आपके परिवार के बारे में पहले से मौजूद जानकारी: पंजीकरण विवरण, अपॉइंटमेंट, रिपोर्ट, पर्चे, बिल और स्वास्थ्य रिकॉर्ड।',
+    'privacy.what.2':
+      'अस्पताल के पास आपके और आपके परिवार के बारे में पहले से मौजूद जानकारी: पंजीकरण विवरण, अपॉइंटमेंट, रिपोर्ट, पर्चे, बिल और स्वास्थ्य रिकॉर्ड।',
     'privacy.what.3': 'जो आप यहाँ देते हैं: बुकिंग, भुगतान, फ़ीडबैक और अनुरोध।',
     'privacy.what.4': 'सुरक्षा रिकॉर्ड, जैसे साइन-इन का समय और नेटवर्क पता, आपके खाते की सुरक्षा के लिए।',
     'privacy.why.title': 'हम इसका उपयोग क्यों करते हैं',
-    'privacy.why.1': 'आपको आपके रिकॉर्ड दिखाने, और अपॉइंटमेंट व वीडियो परामर्श बुक करने, बदलने और उनका भुगतान करने के लिए।',
+    'privacy.why.1':
+      'आपको आपके रिकॉर्ड दिखाने, और अपॉइंटमेंट व वीडियो परामर्श बुक करने, बदलने और उनका भुगतान करने के लिए।',
     'privacy.why.2': 'वे संदेश भेजने के लिए जिनकी आपने सहमति दी है, जैसे रिमाइंडर और "आपकी रिपोर्ट तैयार है"।',
     'privacy.why.3': 'पोर्टल को सुरक्षित रखने, और कानून के अनुसार ज़रूरी रिकॉर्ड रखने के लिए।',
     'privacy.share.title': 'इसे कौन देखता है',
     'privacy.share.body':
       'अस्पताल के वे कर्मचारी जो आपकी देखभाल करते हैं या आपके बिल देखते हैं। पेमेंट पार्टनर केवल वही देखता है जो भुगतान लेने के लिए ज़रूरी है, और SMS व WhatsApp पार्टनर केवल वे संदेश देखते हैं जो वे पहुँचाते हैं। अस्पताल आपका डेटा न बेचता है और न ही विज्ञापन के लिए उपयोग करता है।',
     'privacy.keep.title': 'इसे कितने समय तक रखा जाता है',
-    'privacy.keep.body': 'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। सुरक्षा रिकॉर्ड सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
+    'privacy.keep.body':
+      'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। सुरक्षा रिकॉर्ड सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
     'privacy.family.title': 'परिवार के सदस्य',
     'privacy.family.body':
       'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
     'privacy.rights.title': 'आपके अधिकार',
     'privacy.rights.1': 'अपनी जानकारी देखना: यह इस पोर्टल में है, और आप अपने रिकॉर्ड की कॉपी माँग सकते हैं।',
     'privacy.rights.2': 'इसे ठीक करवाना: जो भी गलत या पुराना हो, उसे फ्रंट डेस्क से ठीक करवाएँ।',
-    'privacy.rights.3': 'जिन संदेशों की सहमति दी है उन्हें बंद करना: अपनी पसंद कभी भी बदलें। आपकी देखभाल पर कोई असर नहीं पड़ता।',
+    'privacy.rights.3':
+      'जिन संदेशों की सहमति दी है उन्हें बंद करना: अपनी पसंद कभी भी बदलें। आपकी देखभाल पर कोई असर नहीं पड़ता।',
     'privacy.rights.4':
       'शिकायत करना: फ्रंट डेस्क के ज़रिए अस्पताल के शिकायत अधिकारी से बात करें। संतुष्ट न हों, तो आप भारतीय डेटा संरक्षण बोर्ड से संपर्क कर सकते हैं।',
     'privacy.device.title': 'इस फ़ोन या कंप्यूटर पर',

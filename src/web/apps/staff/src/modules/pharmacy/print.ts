@@ -20,12 +20,19 @@ export interface GstRateSummary {
 }
 
 /** GST summary by rate from the invoice lines exactly as the server priced them (no recalculation). */
-export function gstSummaryByRate(items: readonly { gstRate: number; taxableAmount: number; cgstAmount: number; sgstAmount: number }[]): GstRateSummary[] {
+export function gstSummaryByRate(
+  items: readonly { gstRate: number; taxableAmount: number; cgstAmount: number; sgstAmount: number }[],
+): GstRateSummary[] {
   const rates = Array.from(new Set(items.map((i) => i.gstRate))).sort((a, b) => a - b);
   return rates.map((rate) => {
     const lines = items.filter((i) => i.gstRate === rate);
     const add = (pick: (i: (typeof lines)[number]) => number) => toNumber(sum(lines.map((i) => dec(pick(i)))));
-    return { rate, taxable: add((i) => i.taxableAmount), cgst: add((i) => i.cgstAmount), sgst: add((i) => i.sgstAmount) };
+    return {
+      rate,
+      taxable: add((i) => i.taxableAmount),
+      cgst: add((i) => i.cgstAmount),
+      sgst: add((i) => i.sgstAmount),
+    };
   });
 }
 
@@ -53,8 +60,14 @@ const RECEIPT_STYLES = `
   .cancelled { border: 2px solid #b00; color: #b00; font-weight: 800; text-align: center; margin: 4px 0; }`;
 
 /** 80 mm GST invoice / cash memo for a pharmacy sale (OP dispensing or counter sale). */
-export function buildReceiptHtml(sale: PharmacySaleDetail, letterhead: Letterhead, options: { copyLabel?: string } = {}): string {
-  const customer = sale.customerName ? `${escapeHtml(sale.customerName)}${sale.patientUhid ? ` (${escapeHtml(sale.patientUhid)})` : ''}` : 'Walk-in customer';
+export function buildReceiptHtml(
+  sale: PharmacySaleDetail,
+  letterhead: Letterhead,
+  options: { copyLabel?: string } = {},
+): string {
+  const customer = sale.customerName
+    ? `${escapeHtml(sale.customerName)}${sale.patientUhid ? ` (${escapeHtml(sale.patientUhid)})` : ''}`
+    : 'Walk-in customer';
   const rows = sale.items
     .map(
       (item) => `
@@ -67,7 +80,10 @@ export function buildReceiptHtml(sale: PharmacySaleDetail, letterhead: Letterhea
   const substituted = sale.items.filter((i) => i.isSubstitution);
   const gst = gstSummaryByRate(sale.items);
   const payments = sale.payments
-    .map((p) => `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`)
+    .map(
+      (p) =>
+        `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`,
+    )
     .join('');
   const body = `
     <div class="receipt">
@@ -129,7 +145,13 @@ export interface DrugLabel {
 }
 
 /** Plain directions from the prescription line: "1 tab · twice a day · 5 days · after food". */
-export function directionsText(line: { dose?: string | null; frequency?: string | null; durationDays?: number | null; route?: string | null; instructions?: string | null }): string {
+export function directionsText(line: {
+  dose?: string | null;
+  frequency?: string | null;
+  durationDays?: number | null;
+  route?: string | null;
+  instructions?: string | null;
+}): string {
   const days = line.durationDays ? `${line.durationDays} ${line.durationDays === 1 ? 'day' : 'days'}` : null;
   return [line.dose, line.frequency, days, line.route, line.instructions]
     .map((part) => (typeof part === 'string' ? part.trim() : part))
@@ -162,10 +184,17 @@ export function buildLabelsHtml(labels: readonly DrugLabel[], hospitalName: stri
 }
 
 /** A5 slip for medicines sent to the ward (charged to the IP account). */
-export function buildIpIssueSlipHtml(issue: IpIssueDetail, letterhead: Letterhead, ward?: { wardName?: string | null; bedLabel?: string | null }): string {
+export function buildIpIssueSlipHtml(
+  issue: IpIssueDetail,
+  letterhead: Letterhead,
+  ward?: { wardName?: string | null; bedLabel?: string | null },
+): string {
   const rows = issue.lines
     .map(
-      (l, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
+      (
+        l,
+        index,
+      ) => `<tr><td>${index + 1}</td><td>${escapeHtml(l.itemName)}</td><td>${escapeHtml(l.batchNumber)}</td><td>${escapeHtml(formatExpiry(l.expiryDate))}</td>
         <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.unitMrp))}</td><td class="right">${escapeHtml(formatInr(l.amount))}</td></tr>`,
     )
     .join('');
@@ -188,7 +217,11 @@ export function buildIpIssueSlipHtml(issue: IpIssueDetail, letterhead: Letterhea
 }
 
 /** Counter receipt: silent on HC360 Desktop (default receipt printer), print dialog in a browser. */
-export async function printReceipt(sale: PharmacySaleDetail, letterhead: Letterhead, copyLabel?: string): Promise<void> {
+export async function printReceipt(
+  sale: PharmacySaleDetail,
+  letterhead: Letterhead,
+  copyLabel?: string,
+): Promise<void> {
   await printHtml(buildReceiptHtml(sale, letterhead, { copyLabel }), { pageSize: 'Receipt80', silent: true });
 }
 
@@ -199,15 +232,32 @@ export async function printLabels(labels: readonly DrugLabel[], hospitalName: st
   await printHtml(buildLabelsHtml(labels, hospitalName), { pageSize: 'Label50x25', silent: true });
 }
 
-export async function printIpIssueSlip(issue: IpIssueDetail, letterhead: Letterhead, ward?: { wardName?: string | null; bedLabel?: string | null }): Promise<void> {
+export async function printIpIssueSlip(
+  issue: IpIssueDetail,
+  letterhead: Letterhead,
+  ward?: { wardName?: string | null; bedLabel?: string | null },
+): Promise<void> {
   await printHtml(buildIpIssueSlipHtml(issue, letterhead, ward), { pageSize: 'A5' });
 }
 
 /** One-line address from the facility master. */
-export function addressLine(address: { line1?: string | null; line2?: string | null; city?: string | null; state?: string | null; pinCode?: string | null } | null | undefined): string | null {
+export function addressLine(
+  address:
+    | {
+        line1?: string | null;
+        line2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        pinCode?: string | null;
+      }
+    | null
+    | undefined,
+): string | null {
   if (!address) {
     return null;
   }
-  const text = [address.line1, address.line2, address.city, address.state, address.pinCode].filter((part) => part && part.trim()).join(', ');
+  const text = [address.line1, address.line2, address.city, address.state, address.pinCode]
+    .filter((part) => part && part.trim())
+    .join(', ');
   return text || null;
 }

@@ -2,7 +2,17 @@ import { Button, Checkbox, makeStyles, MessageBar, MessageBarBody, Spinner, toke
 import { SaveRegular, ShieldKeyholeRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { humanize, useHotkey } from '@hc360/core';
-import { ChoiceField, DateField, FormGrid, LookupField, Section, SelectField, SwitchField, TextAreaField, TextField } from '@hc360/ui';
+import {
+  ChoiceField,
+  DateField,
+  FormGrid,
+  LookupField,
+  Section,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, type ReactNode } from 'react';
 import { Controller, useForm, useWatch, type Control, type UseFormReturn } from 'react-hook-form';
@@ -11,7 +21,14 @@ import { usePermission } from '@/lib/permissions';
 import { hrQueries } from './api';
 import { EmployeePicker } from './EmployeePicker';
 import { employeeFormSchema, type EmployeeFormValues } from './employeeModel';
-import { EDITABLE_EMPLOYEE_STATUSES, EMPLOYMENT_TYPES, employeeStatusLabel, PAYMENT_MODES, TITLES, WEEKDAYS } from './labels';
+import {
+  EDITABLE_EMPLOYEE_STATUSES,
+  EMPLOYMENT_TYPES,
+  employeeStatusLabel,
+  PAYMENT_MODES,
+  TITLES,
+  WEEKDAYS,
+} from './labels';
 import { UserPicker } from './shared/UserPicker';
 import { USER_DIRECTORY_PERMISSION, useUserName } from './shared/users';
 
@@ -49,7 +66,11 @@ export interface EmployeeFormProps {
 /** Employee master form (HR-01). Keyboard first: Tab moves field to field, Ctrl+S saves. */
 export function EmployeeForm(props: EmployeeFormProps) {
   const styles = useStyles();
-  const form = useForm<EmployeeFormValues>({ resolver: zodResolver(employeeFormSchema), defaultValues: props.defaultValues, mode: 'onTouched' });
+  const form = useForm<EmployeeFormValues>({
+    resolver: zodResolver(employeeFormSchema),
+    defaultValues: props.defaultValues,
+    mode: 'onTouched',
+  });
   const { control, handleSubmit } = form;
   const [paymentMode, isNew, removePan] = useWatch({ control, name: ['paymentMode', 'isNew', 'removePan'] });
   const departments = useDepartments();
@@ -65,7 +86,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
     <form onSubmit={handleSubmit(props.onSubmit)} noValidate className={styles.form} autoComplete="off">
       <Section title="Personal details">
         <FormGrid columns={4}>
-          <SelectField control={control} name="title" label="Title" placeholder="—" options={TITLES.map((t) => ({ value: t, label: t }))} />
+          <SelectField
+            control={control}
+            name="title"
+            label="Title"
+            placeholder="—"
+            options={TITLES.map((t) => ({ value: t, label: t }))}
+          />
           <TextField control={control} name="firstName" label="First name" required autoFocus maxLength={100} />
           <TextField control={control} name="middleName" label="Middle name" maxLength={100} />
           <TextField control={control} name="lastName" label="Last name / surname" maxLength={100} />
@@ -81,7 +108,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
             ]}
           />
           <DateField control={control} name="dateOfBirth" label="Date of birth" min="1930-01-01" />
-          <TextField control={control} name="phone" label="Mobile number" type="tel" hint="10 digits; staff alerts use this number" />
+          <TextField
+            control={control}
+            name="phone"
+            label="Mobile number"
+            type="tel"
+            hint="10 digits; staff alerts use this number"
+          />
           <TextField control={control} name="email" label="Email" type="email" />
         </FormGrid>
       </Section>
@@ -101,7 +134,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
 
       <Section title="Job">
         <FormGrid columns={3}>
-          <SelectField control={control} name="departmentId" label="Department" placeholder={departments.isLoading ? 'Loading…' : 'Choose'} options={toOptions(departments.data)} />
+          <SelectField
+            control={control}
+            name="departmentId"
+            label="Department"
+            placeholder={departments.isLoading ? 'Loading…' : 'Choose'}
+            options={toOptions(departments.data)}
+          />
           <SelectField
             control={control}
             name="designationId"
@@ -109,7 +148,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
             placeholder={designations.isLoading ? 'Loading…' : 'Choose'}
             options={(designations.data ?? []).map((d) => ({ value: d.id, label: d.name }))}
           />
-          <SelectField control={control} name="employmentType" label="Employment type" required options={EMPLOYMENT_TYPES.map((t) => ({ value: t, label: t }))} />
+          <SelectField
+            control={control}
+            name="employmentType"
+            label="Employment type"
+            required
+            options={EMPLOYMENT_TYPES.map((t) => ({ value: t, label: t }))}
+          />
           <SelectField
             control={control}
             name="status"
@@ -129,13 +174,32 @@ export function EmployeeForm(props: EmployeeFormProps) {
             options={(shifts.data ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))}
             hint="Used on days without a roster entry."
           />
-          <SelectField control={control} name="weeklyOff" label="Fixed weekly off" placeholder="None (rostered)" options={WEEKDAYS.map((d) => ({ value: d, label: d }))} />
-          <TextField control={control} name="biometricPin" label="Attendance terminal PIN" maxLength={24} hint="Exactly as enrolled on the fingerprint terminal." />
-          <SwitchField control={control} name="isAttendanceExempt" label="Exempt from attendance (consultants, senior staff)" />
+          <SelectField
+            control={control}
+            name="weeklyOff"
+            label="Fixed weekly off"
+            placeholder="None (rostered)"
+            options={WEEKDAYS.map((d) => ({ value: d, label: d }))}
+          />
+          <TextField
+            control={control}
+            name="biometricPin"
+            label="Attendance terminal PIN"
+            maxLength={24}
+            hint="Exactly as enrolled on the fingerprint terminal."
+          />
+          <SwitchField
+            control={control}
+            name="isAttendanceExempt"
+            label="Exempt from attendance (consultants, senior staff)"
+          />
         </FormGrid>
       </Section>
 
-      <Section title="Sign-in and doctor link" description="Link the employee to their HealthCare360 sign-in for self-service, and to the doctors' master if they see patients.">
+      <Section
+        title="Sign-in and doctor link"
+        description="Link the employee to their HealthCare360 sign-in for self-service, and to the doctors' master if they see patients."
+      >
         <FormGrid columns={2}>
           {canPickUsers || props.defaultValues.user ? (
             <LinkedUserField control={control} disabled={!canPickUsers} />
@@ -144,7 +208,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
               <MessageBarBody>An administrator with access to the staff list can link the sign-in.</MessageBarBody>
             </MessageBar>
           )}
-          <LookupField control={control} name="practitionerId" label="Doctor / practitioner" load={searchPractitioners} hint="Only for clinicians in the doctors' master." />
+          <LookupField
+            control={control}
+            name="practitionerId"
+            label="Doctor / practitioner"
+            load={searchPractitioners}
+            hint="Only for clinicians in the doctors' master."
+          />
         </FormGrid>
       </Section>
 
@@ -153,7 +223,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
         description="PAN is stored encrypted and shown masked everywhere. It is never displayed in full after saving."
       >
         <FormGrid columns={4}>
-          <SelectField control={control} name="paymentMode" label="Salary paid by" required options={PAYMENT_MODES.map((m) => ({ value: m, label: humanize(m) }))} />
+          <SelectField
+            control={control}
+            name="paymentMode"
+            label="Salary paid by"
+            required
+            options={PAYMENT_MODES.map((m) => ({ value: m, label: humanize(m) }))}
+          />
           <TextField
             control={control}
             name="pan"
@@ -171,18 +247,46 @@ export function EmployeeForm(props: EmployeeFormProps) {
           <Controller
             control={control}
             name="removePan"
-            render={({ field }) => <Checkbox checked={field.value} onChange={(_, data) => field.onChange(Boolean(data.checked))} label="Remove the PAN on file" />}
+            render={({ field }) => (
+              <Checkbox
+                checked={field.value}
+                onChange={(_, data) => field.onChange(Boolean(data.checked))}
+                label="Remove the PAN on file"
+              />
+            )}
           />
         )}
       </Section>
 
       {isNew && paymentMode === 'BankTransfer' && (
-        <Section title="Salary bank account" description="Typed twice to avoid mistakes. After saving only the last four digits are shown; later changes are audited and the employee is notified.">
+        <Section
+          title="Salary bank account"
+          description="Typed twice to avoid mistakes. After saving only the last four digits are shown; later changes are audited and the employee is notified."
+        >
           <FormGrid columns={4}>
             <TextField control={control} name="bankName" label="Bank name" autoComplete="off" />
-            <TextField control={control} name="accountNumber" label="Account number" type="password" autoComplete="off" />
-            <TextField control={control} name="confirmAccountNumber" label="Account number again" type="password" autoComplete="off" />
-            <TextField control={control} name="ifsc" label="IFSC" maxLength={11} autoComplete="off" hint="e.g. SBIN0001234" />
+            <TextField
+              control={control}
+              name="accountNumber"
+              label="Account number"
+              type="password"
+              autoComplete="off"
+            />
+            <TextField
+              control={control}
+              name="confirmAccountNumber"
+              label="Account number again"
+              type="password"
+              autoComplete="off"
+            />
+            <TextField
+              control={control}
+              name="ifsc"
+              label="IFSC"
+              maxLength={11}
+              autoComplete="off"
+              hint="e.g. SBIN0001234"
+            />
           </FormGrid>
         </Section>
       )}
@@ -193,7 +297,13 @@ export function EmployeeForm(props: EmployeeFormProps) {
 
       <div className={styles.footer}>
         {props.secondaryActions}
-        <Button type="submit" appearance="primary" size="large" icon={props.busy ? <Spinner size="tiny" /> : <SaveRegular />} disabled={props.busy}>
+        <Button
+          type="submit"
+          appearance="primary"
+          size="large"
+          icon={props.busy ? <Spinner size="tiny" /> : <SaveRegular />}
+          disabled={props.busy}
+        >
           {props.submitLabel}
         </Button>
       </div>
@@ -210,7 +320,9 @@ function ManagerField({ control, employeeId }: { control: Control<EmployeeFormVa
         <EmployeePicker
           label="Reporting manager"
           value={field.value ? { id: field.value.id, code: '', name: field.value.name } : null}
-          onChange={(picked) => field.onChange(picked && picked.id !== employeeId ? { id: picked.id, name: picked.name } : null)}
+          onChange={(picked) =>
+            field.onChange(picked && picked.id !== employeeId ? { id: picked.id, name: picked.name } : null)
+          }
           hint="Approves this employee's leave and attendance corrections."
           validationMessage={fieldState.error?.message}
         />

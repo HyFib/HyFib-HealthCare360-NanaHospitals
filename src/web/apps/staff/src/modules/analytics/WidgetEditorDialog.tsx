@@ -22,7 +22,14 @@ import { isApiError } from '@hc360/core';
 import { EmptyState } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { analyticsQueries, type ReportCatalogue, type ReportCatalogueItem, type ReportChartType, type ReportInputs, type WidgetWidth } from './api';
+import {
+  analyticsQueries,
+  type ReportCatalogue,
+  type ReportCatalogueItem,
+  type ReportChartType,
+  type ReportInputs,
+  type WidgetWidth,
+} from './api';
 import { availableViews, defaultView } from './charts';
 import { CATEGORY_ICONS } from './icons';
 import { CATEGORY_ORDER, WIDGET_WIDTHS } from './labels';
@@ -34,9 +41,22 @@ import { WidgetBody } from './WidgetCard';
 const useStyles = makeStyles({
   surface: { width: 'min(1000px, 96vw)', maxWidth: 'min(1000px, 96vw)' },
   picker: { display: 'flex', flexDirection: 'column', gap: '12px', minHeight: '360px' },
-  list: { display: 'flex', flexDirection: 'column', gap: '14px', maxHeight: '52vh', overflowY: 'auto', paddingRight: '4px' },
+  list: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '14px',
+    maxHeight: '52vh',
+    overflowY: 'auto',
+    paddingRight: '4px',
+  },
   group: { display: 'flex', flexDirection: 'column', gap: '2px' },
-  groupTitle: { display: 'flex', alignItems: 'center', gap: '6px', color: tokens.colorNeutralForeground3, padding: '4px 0' },
+  groupTitle: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    color: tokens.colorNeutralForeground3,
+    padding: '4px 0',
+  },
   option: {
     display: 'flex',
     flexDirection: 'column',
@@ -53,7 +73,12 @@ const useStyles = makeStyles({
     ':focus-visible': { outline: `2px solid ${tokens.colorStrokeFocus2}` },
   },
   muted: { color: tokens.colorNeutralForeground3 },
-  layout: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)', gap: '20px', '@media (max-width: 860px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.1fr)',
+    gap: '20px',
+    '@media (max-width: 860px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   column: { display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 },
   chosen: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' },
   preview: {
@@ -116,14 +141,22 @@ export function WidgetEditorDialog({
     ...analyticsQueries.run(reportId ?? '', values, { page: 1, pageSize: view === 'Table' ? 8 : 1, chart: view }),
     enabled: Boolean(report),
   });
-  const fieldErrors = isApiError(preview.error) && preview.error.isValidation ? firstMessages(preview.error.fieldErrors) : {};
+  const fieldErrors =
+    isApiError(preview.error) && preview.error.isValidation ? firstMessages(preview.error.fieldErrors) : {};
   const invalid = Object.keys(fieldErrors).length > 0;
 
   const save = () => {
     if (!report || invalid) {
       return;
     }
-    onSave({ id: initial?.id ?? newId, reportId: report.id, title: title.trim() || report.title, view, width, parameters: values });
+    onSave({
+      id: initial?.id ?? newId,
+      reportId: report.id,
+      title: title.trim() || report.title,
+      view,
+      width,
+      parameters: values,
+    });
   };
 
   return (
@@ -149,13 +182,22 @@ export function WidgetEditorDialog({
                     </Button>
                   </div>
                   <Field label="Tile title">
-                    <Input value={title} maxLength={80} placeholder={report.title} onChange={(_, data) => setTitle(data.value)} />
+                    <Input
+                      value={title}
+                      maxLength={80}
+                      placeholder={report.title}
+                      onChange={(_, data) => setTitle(data.value)}
+                    />
                   </Field>
                   <Field label="Show as">
                     <ViewSwitcher views={availableViews(report.chart, 'dashboard')} value={view} onChange={setView} />
                   </Field>
                   <Field label="Width">
-                    <RadioGroup layout="horizontal" value={String(width)} onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}>
+                    <RadioGroup
+                      layout="horizontal"
+                      value={String(width)}
+                      onChange={(_, data) => setWidth(Number(data.value) as WidgetWidth)}
+                    >
                       {WIDGET_WIDTHS.map((option) => (
                         <Radio key={option.value} value={String(option.value)} label={option.label} />
                       ))}
@@ -179,7 +221,13 @@ export function WidgetEditorDialog({
                 </div>
                 <div className={styles.preview} aria-label="Preview">
                   <Subtitle2>{title.trim() || report.title}</Subtitle2>
-                  <WidgetBody widget={{ title: title || report.title, view, width }} result={preview.data} error={invalid ? null : preview.error} loading={preview.isPending} onRetry={() => void preview.refetch()} />
+                  <WidgetBody
+                    widget={{ title: title || report.title, view, width }}
+                    result={preview.data}
+                    error={invalid ? null : preview.error}
+                    loading={preview.isPending}
+                    onRetry={() => void preview.refetch()}
+                  />
                 </div>
               </div>
             )}
@@ -201,19 +249,38 @@ function firstMessages(errors: Record<string, string[]>): Record<string, string>
 }
 
 /** Searchable, grouped list of the reports that can go on a dashboard. */
-function ReportPicker({ catalogue, onChoose }: { catalogue: ReportCatalogue; onChoose: (report: ReportCatalogueItem) => void }) {
+function ReportPicker({
+  catalogue,
+  onChoose,
+}: {
+  catalogue: ReportCatalogue;
+  onChoose: (report: ReportCatalogueItem) => void;
+}) {
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const words = term.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const eligible = catalogue.reports.filter((r) => !r.containsPatientIdentifiers);
-  const matches = eligible.filter((r) => words.every((w) => `${r.title} ${r.description} ${r.categoryLabel}`.toLowerCase().includes(w)));
+  const matches = eligible.filter((r) =>
+    words.every((w) => `${r.title} ${r.description} ${r.categoryLabel}`.toLowerCase().includes(w)),
+  );
   const hidden = catalogue.reports.length - eligible.length;
 
   return (
     <div className={styles.picker}>
-      <SearchBox value={term} onChange={(_, data) => setTerm(data.value)} placeholder="Search reports, e.g. occupancy, revenue, TAT" autoFocus aria-label="Search reports" />
+      <SearchBox
+        value={term}
+        onChange={(_, data) => setTerm(data.value)}
+        placeholder="Search reports, e.g. occupancy, revenue, TAT"
+        autoFocus
+        aria-label="Search reports"
+      />
       <div className={styles.list}>
-        {matches.length === 0 && <EmptyState title="No report matches" description="Try another word, such as census, revenue or turnaround." />}
+        {matches.length === 0 && (
+          <EmptyState
+            title="No report matches"
+            description="Try another word, such as census, revenue or turnaround."
+          />
+        )}
         {CATEGORY_ORDER.map((category) => {
           const reports = matches.filter((r) => r.category === category);
           if (reports.length === 0) {
@@ -238,7 +305,8 @@ function ReportPicker({ catalogue, onChoose }: { catalogue: ReportCatalogue; onC
       </div>
       {hidden > 0 && (
         <Caption1 className={styles.muted}>
-          <LockClosedRegular aria-hidden /> Reports that list patients cannot be put on dashboards; open them from MIS reports.
+          <LockClosedRegular aria-hidden /> Reports that list patients cannot be put on dashboards; open them from MIS
+          reports.
         </Caption1>
       )}
     </div>

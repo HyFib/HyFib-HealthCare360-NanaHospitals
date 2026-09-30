@@ -66,7 +66,9 @@ export function RadiologyReportView({ report }: { report: RadiologyReport }) {
           <ul className={styles.addenda}>
             {report.addenda.map((addendum) => (
               <li key={addendum.id}>
-                <span className={styles.addendumMeta}>{[f.dateTime(addendum.addedAt), addendum.addedBy].filter(Boolean).join(' · ')}</span>
+                <span className={styles.addendumMeta}>
+                  {[f.dateTime(addendum.addedAt), addendum.addedBy].filter(Boolean).join(' · ')}
+                </span>
                 <p className={styles.text}>{addendum.text}</p>
               </li>
             ))}
@@ -78,7 +80,10 @@ export function RadiologyReportView({ report }: { report: RadiologyReport }) {
         <InfoRegular aria-hidden style={{ flexShrink: 0, marginTop: 3 }} />
         {t('rad.imagesNote')}
       </p>
-      <VerificationCode code={report.verificationCode} url={reportVerifyUrl('radiology', report, window.location.origin)} />
+      <VerificationCode
+        code={report.verificationCode}
+        url={reportVerifyUrl('radiology', report, window.location.origin)}
+      />
     </>
   );
 }
@@ -124,7 +129,10 @@ export function CardiologyReportView({ report }: { report: CardiologyReport }) {
         </ReportCard>
       )}
       <Signatories signatories={report.signatories} />
-      <VerificationCode code={report.verificationCode} url={reportVerifyUrl('cardiology', report, window.location.origin)} />
+      <VerificationCode
+        code={report.verificationCode}
+        url={reportVerifyUrl('cardiology', report, window.location.origin)}
+      />
     </>
   );
 }

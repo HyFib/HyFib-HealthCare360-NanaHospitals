@@ -112,7 +112,11 @@ export function monthKeyLabel(key: string, short = true): string {
 /** "Mon 14" style header for grids. */
 export function dayHeader(iso: string): { weekday: string; day: number; month: string } {
   const date = toUtc(iso);
-  return { weekday: WEEKDAY_SHORT[date.getUTCDay()] ?? '', day: date.getUTCDate(), month: MONTH_NAMES[date.getUTCMonth()]?.slice(0, 3) ?? '' };
+  return {
+    weekday: WEEKDAY_SHORT[date.getUTCDay()] ?? '',
+    day: date.getUTCDate(),
+    month: MONTH_NAMES[date.getUTCMonth()]?.slice(0, 3) ?? '',
+  };
 }
 
 /** Year and month (1-12) of today in IST. */

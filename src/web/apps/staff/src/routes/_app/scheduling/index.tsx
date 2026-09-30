@@ -1,5 +1,24 @@
-import { Badge, Button, Caption1, Field, Input, makeStyles, mergeClasses, SearchBox, Select, Text, tokens, Tooltip } from '@fluentui/react-components';
-import { CalendarAddRegular, CalendarLtrRegular, ChevronLeftRegular, ChevronRightRegular, VideoRegular } from '@fluentui/react-icons';
+import {
+  Badge,
+  Button,
+  Caption1,
+  Field,
+  Input,
+  makeStyles,
+  mergeClasses,
+  SearchBox,
+  Select,
+  Text,
+  tokens,
+  Tooltip,
+} from '@fluentui/react-components';
+import {
+  CalendarAddRegular,
+  CalendarLtrRegular,
+  ChevronLeftRegular,
+  ChevronRightRegular,
+  VideoRegular,
+} from '@fluentui/react-icons';
 import { formatInr, formatTime, useDebouncedValue, useHotkey, useRealtimeEvent, useSession } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -108,7 +127,14 @@ function AppointmentsDeskPage() {
   const debounced = useDebouncedValue(term.trim(), 300);
   const searchBox = useRef<HTMLInputElement>(null);
 
-  const filters = { date, departmentId: search.departmentId, practitionerId: search.practitionerId, status: search.status, q: search.q, page: search.page };
+  const filters = {
+    date,
+    departmentId: search.departmentId,
+    practitionerId: search.practitionerId,
+    status: search.status,
+    q: search.q,
+    page: search.page,
+  };
   const appointments = useQuery(schedulingQueries.appointments(filters));
   const summary = useQuery(schedulingQueries.summary(date, search.departmentId));
 
@@ -127,17 +153,27 @@ function AppointmentsDeskPage() {
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'appointments.changed', refresh);
   useRealtimeEvent(facilityId ? `facility:${facilityId}` : null, 'visits.changed', refresh);
 
-  const set = (patch: Partial<DeskSearch>) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
+  const set = (patch: Partial<DeskSearch>) =>
+    void navigate({ search: (prev) => ({ ...prev, ...patch, page: undefined }) });
   const setDate = (value: string) => set({ date: value === today ? undefined : value });
   const book = () =>
-    canBook && void navigate({ to: '/scheduling/book', search: { departmentId: search.departmentId, practitionerId: search.practitionerId, date: date > today ? date : undefined } });
+    canBook &&
+    void navigate({
+      to: '/scheduling/book',
+      search: {
+        departmentId: search.departmentId,
+        practitionerId: search.practitionerId,
+        date: date > today ? date : undefined,
+      },
+    });
 
   useHotkey('f2', book, { allowInInputs: true });
   useHotkey('alt+arrowleft', () => setDate(addDays(date, -1)));
   useHotkey('alt+arrowright', () => setDate(addDays(date, 1)));
   useHotkey('/', () => searchBox.current?.focus());
 
-  const openAppointment = (id: string | undefined) => void navigate({ search: (prev) => ({ ...prev, open: id }), replace: true });
+  const openAppointment = (id: string | undefined) =>
+    void navigate({ search: (prev) => ({ ...prev, open: id }), replace: true });
 
   return (
     <Page>
@@ -146,7 +182,19 @@ function AppointmentsDeskPage() {
         subtitle={`${formatDayLong(date)}${date === today ? ' · updates live' : ''}`}
         actions={
           <>
-            <Button icon={<CalendarLtrRegular />} onClick={() => void navigate({ to: '/scheduling/calendar', search: { date: search.date, departmentId: search.departmentId, practitionerId: search.practitionerId } })}>
+            <Button
+              icon={<CalendarLtrRegular />}
+              onClick={() =>
+                void navigate({
+                  to: '/scheduling/calendar',
+                  search: {
+                    date: search.date,
+                    departmentId: search.departmentId,
+                    practitionerId: search.practitionerId,
+                  },
+                })
+              }
+            >
               Calendar
             </Button>
             {canBook && (
@@ -180,7 +228,10 @@ function AppointmentsDeskPage() {
               )}
             </div>
             <Field label="Department">
-              <Select value={search.departmentId ?? ''} onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}>
+              <Select
+                value={search.departmentId ?? ''}
+                onChange={(_, d) => set({ departmentId: d.value || undefined, practitionerId: undefined })}
+              >
                 <option value="">All departments</option>
                 {toOptions(departments.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -190,7 +241,10 @@ function AppointmentsDeskPage() {
               </Select>
             </Field>
             <Field label="Doctor">
-              <Select value={search.practitionerId ?? ''} onChange={(_, d) => set({ practitionerId: d.value || undefined })}>
+              <Select
+                value={search.practitionerId ?? ''}
+                onChange={(_, d) => set({ practitionerId: d.value || undefined })}
+              >
                 <option value="">All doctors</option>
                 {toOptions(doctors.data).map((o) => (
                   <option key={o.value} value={o.value}>
@@ -206,7 +260,10 @@ function AppointmentsDeskPage() {
                 onChange={(_, d) => setTerm(d.value)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
-                    void navigate({ search: (prev) => ({ ...prev, q: term.trim() || undefined, page: undefined }), replace: true });
+                    void navigate({
+                      search: (prev) => ({ ...prev, q: term.trim() || undefined, page: undefined }),
+                      replace: true,
+                    });
                   }
                 }}
                 placeholder="Name, UHID, mobile or appointment number ( / )"
@@ -277,7 +334,9 @@ function AppointmentsDeskPage() {
               render: (a) => (
                 <span className={styles.cellStack}>
                   <Text truncate>{a.practitionerName}</Text>
-                  <Caption1 className={styles.muted}>{[a.departmentName, a.room ? `Room ${a.room}` : null].filter(Boolean).join(' · ')}</Caption1>
+                  <Caption1 className={styles.muted}>
+                    {[a.departmentName, a.room ? `Room ${a.room}` : null].filter(Boolean).join(' · ')}
+                  </Caption1>
                 </span>
               ),
             },
@@ -290,7 +349,13 @@ function AppointmentsDeskPage() {
                   <Text>
                     {visitTypeLabel[a.visitType]}
                     {a.isTelehealth && (
-                      <Badge size="small" appearance="tint" color="brand" icon={<VideoRegular />} style={{ marginLeft: 6 }}>
+                      <Badge
+                        size="small"
+                        appearance="tint"
+                        color="brand"
+                        icon={<VideoRegular />}
+                        style={{ marginLeft: 6 }}
+                      >
                         Video
                       </Badge>
                     )}
@@ -315,7 +380,13 @@ function AppointmentsDeskPage() {
               key: 'status',
               header: 'Status',
               width: 130,
-              render: (a) => <StatusBadge status={a.status} tone={appointmentStatusText[a.status].tone} label={appointmentStatusText[a.status].label} />,
+              render: (a) => (
+                <StatusBadge
+                  status={a.status}
+                  tone={appointmentStatusText[a.status].tone}
+                  label={appointmentStatusText[a.status].label}
+                />
+              ),
             },
           ]}
           rowActions={(a) => <AppointmentRowActions appointment={a} desk={desk} />}
@@ -326,7 +397,11 @@ function AppointmentsDeskPage() {
                 ? 'No appointments today'
                 : `No appointments on ${relativeDayLabel(date, today)}`
           }
-          emptyDescription={canBook ? 'Book an appointment, or change the filters above.' : 'Change the filters above to see other days or doctors.'}
+          emptyDescription={
+            canBook
+              ? 'Book an appointment, or change the filters above.'
+              : 'Change the filters above to see other days or doctors.'
+          }
           emptyAction={
             canBook ? (
               <Button appearance="primary" icon={<CalendarAddRegular />} onClick={book}>
@@ -342,7 +417,12 @@ function AppointmentsDeskPage() {
         />
       </Section>
 
-      <AppointmentDrawer appointmentId={search.open ?? null} onClose={() => openAppointment(undefined)} onOpenAppointment={openAppointment} desk={desk} />
+      <AppointmentDrawer
+        appointmentId={search.open ?? null}
+        onClose={() => openAppointment(undefined)}
+        onOpenAppointment={openAppointment}
+        desk={desk}
+      />
       {desk.dialogs}
     </Page>
   );

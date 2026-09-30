@@ -2,7 +2,14 @@ import type { Gender } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
-export const TELEHEALTH_STATUSES = ['Scheduled', 'WaitingRoom', 'InProgress', 'Completed', 'Cancelled', 'Missed'] as const;
+export const TELEHEALTH_STATUSES = [
+  'Scheduled',
+  'WaitingRoom',
+  'InProgress',
+  'Completed',
+  'Cancelled',
+  'Missed',
+] as const;
 export type TelehealthStatus = (typeof TELEHEALTH_STATUSES)[number];
 export type TelehealthRole = 'Clinician' | 'Patient' | 'Guest';
 
@@ -172,7 +179,8 @@ export const telehealthQueries = {
   sessions: (filters: SessionFilters) =>
     queryOptions({
       queryKey: [...telehealthKeys.sessions, filters],
-      queryFn: ({ signal }) => api.get<TelehealthSessionListItem[]>(`${BASE}/sessions`, { query: { ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<TelehealthSessionListItem[]>(`${BASE}/sessions`, { query: { ...filters }, signal }),
       placeholderData: keepPreviousData,
       refetchInterval: 60_000,
     }),
@@ -192,9 +200,13 @@ export const telehealthQueries = {
 export const telehealthApi = {
   create: (request: CreateTelehealthSessionRequest) => api.post<TelehealthLinkIssued>(`${BASE}/sessions`, request),
   start: (id: string) => api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/start`),
-  end: (id: string, qualityNotes: string | null) => api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/end`, { qualityNotes }),
-  cancel: (id: string, reason: string) => api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/cancel`, { reason }),
+  end: (id: string, qualityNotes: string | null) =>
+    api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/end`, { qualityNotes }),
+  cancel: (id: string, reason: string) =>
+    api.post<TelehealthSessionDetail>(`${BASE}/sessions/${id}/cancel`, { reason }),
   resendLink: (id: string) => api.post<TelehealthLinkIssued>(`${BASE}/sessions/${id}/resend-link`),
-  recordingConsent: (id: string, granted: boolean) => api.post<void>(`${BASE}/sessions/${id}/recording-consent`, { granted }),
-  postMessage: (id: string, text: string) => api.post<TelehealthMessageDto>(`${BASE}/sessions/${id}/messages`, { text }),
+  recordingConsent: (id: string, granted: boolean) =>
+    api.post<void>(`${BASE}/sessions/${id}/recording-consent`, { granted }),
+  postMessage: (id: string, text: string) =>
+    api.post<TelehealthMessageDto>(`${BASE}/sessions/${id}/messages`, { text }),
 };

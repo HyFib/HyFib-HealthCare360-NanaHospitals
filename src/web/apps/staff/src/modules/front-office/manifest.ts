@@ -9,12 +9,42 @@ const manifest: ModuleManifest = {
   icon: ConferenceRoomRegular,
   order: 20,
   links: [
-    { label: 'Overview', to: '/front-office', permission: 'frontoffice.dashboard', keywords: ['dashboard', 'reception'] },
-    { label: "Today's visits", to: '/front-office/visits', permission: 'visits.read', keywords: ['op', 'check-in', 'visit list'] },
-    { label: 'Queue', to: '/front-office/queue', permission: ['queue.manage', 'visits.read'], keywords: ['token', 'call next', 'waiting'] },
-    { label: 'Enquiries', to: '/front-office/enquiries', permission: 'frontoffice.enquiries', keywords: ['help desk', 'phone'] },
-    { label: 'Visitor passes', to: '/front-office/visitors', permission: 'frontoffice.visitors', keywords: ['attendant', 'gate pass'] },
-    { label: 'Queue display board', to: '/display/queue', permission: 'queue.display', keywords: ['tv', 'token screen'] },
+    {
+      label: 'Overview',
+      to: '/front-office',
+      permission: 'frontoffice.dashboard',
+      keywords: ['dashboard', 'reception'],
+    },
+    {
+      label: "Today's visits",
+      to: '/front-office/visits',
+      permission: 'visits.read',
+      keywords: ['op', 'check-in', 'visit list'],
+    },
+    {
+      label: 'Queue',
+      to: '/front-office/queue',
+      permission: ['queue.manage', 'visits.read'],
+      keywords: ['token', 'call next', 'waiting'],
+    },
+    {
+      label: 'Enquiries',
+      to: '/front-office/enquiries',
+      permission: 'frontoffice.enquiries',
+      keywords: ['help desk', 'phone'],
+    },
+    {
+      label: 'Visitor passes',
+      to: '/front-office/visitors',
+      permission: 'frontoffice.visitors',
+      keywords: ['attendant', 'gate pass'],
+    },
+    {
+      label: 'Queue display board',
+      to: '/display/queue',
+      permission: 'queue.display',
+      keywords: ['tv', 'token screen'],
+    },
   ],
   quickActions: [
     {

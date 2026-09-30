@@ -6,7 +6,15 @@ import type { DocumentCreated } from '@/modules/inventory/api';
 export const REQUISITION_STATUSES = ['Submitted', 'Approved', 'Rejected', 'Ordered', 'Cancelled'] as const;
 export type RequisitionStatus = (typeof REQUISITION_STATUSES)[number];
 
-export const ORDER_STATUSES = ['Draft', 'Submitted', 'Approved', 'Sent', 'PartiallyReceived', 'Closed', 'Cancelled'] as const;
+export const ORDER_STATUSES = [
+  'Draft',
+  'Submitted',
+  'Approved',
+  'Sent',
+  'PartiallyReceived',
+  'Closed',
+  'Cancelled',
+] as const;
 export type PurchaseOrderStatus = (typeof ORDER_STATUSES)[number];
 export const orderStatusLabel: Record<PurchaseOrderStatus, string> = {
   Draft: 'Draft',
@@ -58,7 +66,10 @@ export interface VendorDetail {
   version: number;
 }
 
-export type SaveVendorRequest = Omit<VendorDetail, 'id' | 'version' | 'address'> & { address: Address | null; version: number | null };
+export type SaveVendorRequest = Omit<VendorDetail, 'id' | 'version' | 'address'> & {
+  address: Address | null;
+  version: number | null;
+};
 
 // ---------------------------------------------------------------------------------------------- requisitions
 
@@ -309,7 +320,8 @@ export const purchaseQueries = {
   vendors: (filters: { search?: string; includeInactive?: boolean; page?: number; pageSize?: number }) =>
     queryOptions({
       queryKey: ['purchase', 'vendors', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<VendorListItem>>(`${BASE}/vendors`, { query: { pageSize: PAGE_SIZE, ...filters }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<VendorListItem>>(`${BASE}/vendors`, { query: { pageSize: PAGE_SIZE, ...filters }, signal }),
       placeholderData: keepPreviousData,
     }),
   vendor: (id: string) =>
@@ -320,7 +332,11 @@ export const purchaseQueries = {
   requisitions: (filters: { status?: RequisitionStatus; storeId?: string; search?: string; page?: number }) =>
     queryOptions({
       queryKey: ['purchase', 'requisitions', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<RequisitionListItem>>(`${BASE}/requisitions`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<RequisitionListItem>>(`${BASE}/requisitions`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   requisition: (id: string) =>
@@ -331,7 +347,11 @@ export const purchaseQueries = {
   orders: (filters: OrderFilters) =>
     queryOptions({
       queryKey: ['purchase', 'orders', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<PurchaseOrderListItem>>(`${BASE}/orders`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<PurchaseOrderListItem>>(`${BASE}/orders`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   order: (id: string) =>
@@ -339,10 +359,22 @@ export const purchaseQueries = {
       queryKey: ['purchase', 'order', id],
       queryFn: ({ signal }) => api.get<PurchaseOrderDetail>(`${BASE}/orders/${id}`, { signal }),
     }),
-  grns: (filters: { status?: GoodsReceiptStatus; vendorId?: string; storeId?: string; from?: string; to?: string; search?: string; page?: number }) =>
+  grns: (filters: {
+    status?: GoodsReceiptStatus;
+    vendorId?: string;
+    storeId?: string;
+    from?: string;
+    to?: string;
+    search?: string;
+    page?: number;
+  }) =>
     queryOptions({
       queryKey: ['purchase', 'grns', filters],
-      queryFn: ({ signal }) => api.get<PagedResult<GoodsReceiptListItem>>(`${BASE}/grns`, { query: { ...filters, pageSize: PAGE_SIZE }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<GoodsReceiptListItem>>(`${BASE}/grns`, {
+          query: { ...filters, pageSize: PAGE_SIZE },
+          signal,
+        }),
       placeholderData: keepPreviousData,
     }),
   grn: (id: string) =>
@@ -354,7 +386,8 @@ export const purchaseQueries = {
   count: (kind: 'requisitions' | 'orders' | 'grns', status: string) =>
     queryOptions({
       queryKey: ['purchase', 'count', kind, status],
-      queryFn: ({ signal }) => api.get<PagedResult<unknown>>(`${BASE}/${kind}`, { query: { status, pageSize: 1 }, signal }),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<unknown>>(`${BASE}/${kind}`, { query: { status, pageSize: 1 }, signal }),
       select: (result) => result.totalCount,
       refetchInterval: 120_000,
     }),
@@ -362,9 +395,12 @@ export const purchaseQueries = {
 
 export const purchaseApi = {
   saveVendor: async (id: string | null, body: SaveVendorRequest): Promise<string> =>
-    id ? (await api.put<void>(`${BASE}/vendors/${id}`, body), id) : (await api.post<{ id: string }>(`${BASE}/vendors`, body)).id,
+    id
+      ? (await api.put<void>(`${BASE}/vendors/${id}`, body), id)
+      : (await api.post<{ id: string }>(`${BASE}/vendors`, body)).id,
   createRequisition: (body: CreateRequisitionRequest) => api.post<DocumentCreated>(`${BASE}/requisitions`, body),
-  requisitionFromReorder: (storeId: string) => api.post<DocumentCreated>(`${BASE}/requisitions/from-reorder`, undefined, { query: { storeId } }),
+  requisitionFromReorder: (storeId: string) =>
+    api.post<DocumentCreated>(`${BASE}/requisitions/from-reorder`, undefined, { query: { storeId } }),
   approveRequisition: (id: string) => api.post<void>(`${BASE}/requisitions/${id}/approve`),
   rejectRequisition: (id: string, reason: string) => api.post<void>(`${BASE}/requisitions/${id}/reject`, { reason }),
   cancelRequisition: (id: string, reason: string) => api.post<void>(`${BASE}/requisitions/${id}/cancel`, { reason }),

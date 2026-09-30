@@ -5,13 +5,21 @@ import { DataTable, FilterBar, KpiCard, Page, PageHeader, Section, StatusBadge, 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { bedApi, HOUSEKEEPING_TRIGGER_LABEL, inpatientKeys, inpatientQueries, type HousekeepingTaskDto } from '@/modules/inpatient/api';
+import {
+  bedApi,
+  HOUSEKEEPING_TRIGGER_LABEL,
+  inpatientKeys,
+  inpatientQueries,
+  type HousekeepingTaskDto,
+} from '@/modules/inpatient/api';
 import { useInpatientPermissions, useInpatientRealtime, useNow } from '@/modules/inpatient/hooks';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
 import { formatDuration, minutesSince } from '@/modules/inpatient/time';
 
 export const Route = createFileRoute('/_app/inpatient/housekeeping')({
-  validateSearch: (s: Record<string, unknown>): { wardId?: string } => ({ wardId: typeof s.wardId === 'string' && s.wardId ? s.wardId : undefined }),
+  validateSearch: (s: Record<string, unknown>): { wardId?: string } => ({
+    wardId: typeof s.wardId === 'string' && s.wardId ? s.wardId : undefined,
+  }),
   component: HousekeepingPage,
 });
 
@@ -44,9 +52,13 @@ function HousekeepingPage() {
     },
   });
   const complete = useMutation({
-    mutationFn: ({ task, notes }: { task: HousekeepingTaskDto; notes: string }) => bedApi.completeCleaning(task.id, notes || null),
+    mutationFn: ({ task, notes }: { task: HousekeepingTaskDto; notes: string }) =>
+      bedApi.completeCleaning(task.id, notes || null),
     onSuccess: (task) => {
-      notify.success(`${task.bedLabel} is clean and vacant`, task.turnaroundMinutes !== null ? `Turnaround ${formatDuration(task.turnaroundMinutes)}.` : undefined);
+      notify.success(
+        `${task.bedLabel} is clean and vacant`,
+        task.turnaroundMinutes !== null ? `Turnaround ${formatDuration(task.turnaroundMinutes)}.` : undefined,
+      );
       setCompleting(null);
       refresh();
     },
@@ -62,17 +74,29 @@ function HousekeepingPage() {
 
   return (
     <Page>
-      <PageHeader title="Housekeeping" icon={<BroomRegular />} subtitle="Beds waiting for terminal cleaning, oldest first. Target: clean within 60 minutes." />
+      <PageHeader
+        title="Housekeeping"
+        icon={<BroomRegular />}
+        subtitle="Beds waiting for terminal cleaning, oldest first. Target: clean within 60 minutes."
+      />
       <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
         <KpiCard label="Waiting" value={tasks.data ? pending : '…'} icon={<BroomRegular />} hint="Not started" />
         <KpiCard label="Being cleaned" value={tasks.data ? inProgress : '…'} icon={<PlayRegular />} />
-        <KpiCard label="Over 60 minutes" value={tasks.data ? delayed : '…'} icon={<BroomRegular />} hint={delayed ? 'Clean these first' : 'All within target'} />
+        <KpiCard
+          label="Over 60 minutes"
+          value={tasks.data ? delayed : '…'}
+          icon={<BroomRegular />}
+          hint={delayed ? 'Clean these first' : 'All within target'}
+        />
       </div>
       <Section flush>
         <div style={{ padding: '0 16px 12px' }}>
           <FilterBar>
             <Field label="Ward">
-              <Select value={search.wardId ?? ''} onChange={(_, d) => void navigate({ search: { wardId: d.value || undefined }, replace: true })}>
+              <Select
+                value={search.wardId ?? ''}
+                onChange={(_, d) => void navigate({ search: { wardId: d.value || undefined }, replace: true })}
+              >
                 <option value="">All wards</option>
                 {wards.data?.map((w) => (
                   <option key={w.id} value={w.id}>
@@ -100,8 +124,19 @@ function HousekeepingPage() {
                 </span>
               ),
             },
-            { key: 'why', header: 'Reason', priority: 'low', render: (t) => HOUSEKEEPING_TRIGGER_LABEL[t.trigger] ?? t.trigger },
-            { key: 'requested', header: 'Requested', width: 110, priority: 'low', render: (t) => formatTime(t.requestedAt) },
+            {
+              key: 'why',
+              header: 'Reason',
+              priority: 'low',
+              render: (t) => HOUSEKEEPING_TRIGGER_LABEL[t.trigger] ?? t.trigger,
+            },
+            {
+              key: 'requested',
+              header: 'Requested',
+              width: 110,
+              priority: 'low',
+              render: (t) => formatTime(t.requestedAt),
+            },
             {
               key: 'waiting',
               header: 'Waiting',
@@ -137,14 +172,21 @@ function HousekeepingPage() {
                     {t.status === 'Pending' && (
                       <Button
                         size="small"
-                        icon={start.isPending && start.variables?.id === t.id ? <Spinner size="tiny" /> : <PlayRegular />}
+                        icon={
+                          start.isPending && start.variables?.id === t.id ? <Spinner size="tiny" /> : <PlayRegular />
+                        }
                         disabled={start.isPending}
                         onClick={() => start.mutate(t)}
                       >
                         Start
                       </Button>
                     )}
-                    <Button size="small" appearance="primary" icon={<CheckmarkCircleRegular />} onClick={() => setCompleting(t)}>
+                    <Button
+                      size="small"
+                      appearance="primary"
+                      icon={<CheckmarkCircleRegular />}
+                      onClick={() => setCompleting(t)}
+                    >
                       Mark clean
                     </Button>
                   </span>
@@ -156,7 +198,9 @@ function HousekeepingPage() {
         />
       </Section>
       {!canWork && tasks.data && rows.length > 0 && (
-        <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>Only housekeeping staff can start and complete cleaning.</Caption1>
+        <Caption1 style={{ color: tokens.colorNeutralForeground3 }}>
+          Only housekeeping staff can start and complete cleaning.
+        </Caption1>
       )}
       <ReasonDialog
         open={completing !== null}

@@ -26,8 +26,28 @@ import {
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, DismissCircleRegular, DismissRegular, DropRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateOnly, formatDateTime, formatTime, isIndianMobile, normalizePhone, todayIso, type BloodGroup } from '@hc360/core';
-import { ChoiceField, DateField, FormGrid, FullRow, LoadingState, NumberField, SelectField, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatTime,
+  isIndianMobile,
+  normalizePhone,
+  todayIso,
+  type BloodGroup,
+} from '@hc360/core';
+import {
+  ChoiceField,
+  DateField,
+  FormGrid,
+  FullRow,
+  LoadingState,
+  NumberField,
+  SelectField,
+  SwitchField,
+  TextAreaField,
+  TextField,
+  useNotify,
+} from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -58,7 +78,12 @@ import { bagTypeLabel, donationTypeLabel, groupLabel } from './labels';
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  layout: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(260px, 1fr)', gap: '16px', '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' } },
+  layout: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1.4fr) minmax(260px, 1fr)',
+    gap: '16px',
+    '@media (max-width: 900px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
+  },
   vitals: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '8px 12px' },
   check: { display: 'inline-flex', gap: '4px', alignItems: 'center', fontSize: tokens.fontSizeBase200 },
   pass: { color: tokens.colorPaletteGreenForeground1 },
@@ -74,7 +99,10 @@ const useStyles = makeStyles({
     borderRadius: tokens.borderRadiusMedium,
     border: `1px solid ${tokens.colorNeutralStroke2}`,
   },
-  questionYes: { border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`, backgroundColor: tokens.colorPaletteDarkOrangeBackground1 },
+  questionYes: {
+    border: `1px solid ${tokens.colorPaletteDarkOrangeBorder2}`,
+    backgroundColor: tokens.colorPaletteDarkOrangeBackground1,
+  },
   preview: { position: 'sticky', top: 0, display: 'flex', flexDirection: 'column', gap: '8px' },
   reasons: { margin: 0, paddingLeft: '18px' },
 });
@@ -105,7 +133,11 @@ const donorSchema = z
       ctx.addIssue({ code: 'custom', path: ['dateOfBirth'], message: 'Enter a valid date of birth.' });
     }
     if (!isIndianMobile(v.phone)) {
-      ctx.addIssue({ code: 'custom', path: ['phone'], message: 'A 10-digit mobile number is needed to recall the donor.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['phone'],
+        message: 'A 10-digit mobile number is needed to recall the donor.',
+      });
     }
     if (v.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email)) {
       ctx.addIssue({ code: 'custom', path: ['email'], message: 'Enter a valid email address.' });
@@ -118,7 +150,15 @@ const donorSchema = z
 type DonorValues = z.infer<typeof donorSchema>;
 
 /** Registers a donor or edits their details. The self-reported group is replaced by the lab group after grouping. */
-export function DonorDrawer({ donor, onClose, onSaved }: { donor: DonorDetail | null; onClose: () => void; onSaved?: (id: string) => void }) {
+export function DonorDrawer({
+  donor,
+  onClose,
+  onSaved,
+}: {
+  donor: DonorDetail | null;
+  onClose: () => void;
+  onSaved?: (id: string) => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -154,7 +194,14 @@ export function DonorDrawer({ donor, onClose, onSaved }: { donor: DonorDetail | 
         bloodGroup: (v.bloodGroup as BloodGroup | null) ?? null,
         phone: normalizePhone(v.phone) ?? v.phone,
         email: v.email || null,
-        address: { line1: v.line1 || null, city: v.city || null, district: v.district || null, state: v.state, pinCode: v.pinCode || null, country: 'India' },
+        address: {
+          line1: v.line1 || null,
+          city: v.city || null,
+          district: v.district || null,
+          state: v.state,
+          pinCode: v.pinCode || null,
+          country: 'India',
+        },
         occupation: v.occupation || null,
         consentToNotify: v.consentToNotify,
         notes: v.notes || null,
@@ -176,14 +223,23 @@ export function DonorDrawer({ donor, onClose, onSaved }: { donor: DonorDetail | 
     <OverlayDrawer open position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
       <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
         <DrawerHeader>
-          <DrawerHeaderTitle action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}>
+          <DrawerHeaderTitle
+            action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
+          >
             {donor ? `${donor.fullName} · ${donor.donorNumber}` : 'Register donor'}
           </DrawerHeaderTitle>
         </DrawerHeader>
         <DrawerBody>
           <div className={styles.form}>
             <FormGrid columns={2}>
-              <TextField control={form.control} name="firstName" label="First name" required autoFocus maxLength={100} />
+              <TextField
+                control={form.control}
+                name="firstName"
+                label="First name"
+                required
+                autoFocus
+                maxLength={100}
+              />
               <TextField control={form.control} name="lastName" label="Last name" maxLength={100} />
               <ChoiceField
                 control={form.control}
@@ -197,14 +253,23 @@ export function DonorDrawer({ donor, onClose, onSaved }: { donor: DonorDetail | 
                 ]}
               />
               <DateField control={form.control} name="dateOfBirth" label="Date of birth" required max={todayIso()} />
-              <TextField control={form.control} name="phone" label="Mobile number" required type="tel" hint="Used to call the donor back (for example after a reactive test)." />
+              <TextField
+                control={form.control}
+                name="phone"
+                label="Mobile number"
+                required
+                type="tel"
+                hint="Used to call the donor back (for example after a reactive test)."
+              />
               <SelectField
                 control={form.control}
                 name="bloodGroup"
                 label="Blood group (as told by the donor)"
                 placeholder="Not known"
                 options={KNOWN_GROUPS.map((g) => ({ value: g, label: groupLabel(g) }))}
-                hint={donor?.bloodGroupConfirmed ? 'Confirmed by the laboratory.' : 'Confirmed later by the laboratory.'}
+                hint={
+                  donor?.bloodGroupConfirmed ? 'Confirmed by the laboratory.' : 'Confirmed later by the laboratory.'
+                }
                 disabled={donor?.bloodGroupConfirmed}
               />
               <TextField control={form.control} name="email" label="Email" type="email" />
@@ -214,17 +279,32 @@ export function DonorDrawer({ donor, onClose, onSaved }: { donor: DonorDetail | 
               </FullRow>
               <TextField control={form.control} name="city" label="City / town" maxLength={100} />
               <TextField control={form.control} name="district" label="District" maxLength={100} />
-              <SelectField control={form.control} name="state" label="State" placeholder="—" options={INDIAN_STATES.map((s) => ({ value: s, label: s }))} />
+              <SelectField
+                control={form.control}
+                name="state"
+                label="State"
+                placeholder="—"
+                options={INDIAN_STATES.map((s) => ({ value: s, label: s }))}
+              />
               <TextField control={form.control} name="pinCode" label="PIN code" maxLength={6} />
             </FormGrid>
-            <SwitchField control={form.control} name="consentToNotify" label="Donor agrees to be contacted for future donation drives" />
+            <SwitchField
+              control={form.control}
+              name="consentToNotify"
+              label="Donor agrees to be contacted for future donation drives"
+            />
             <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
             {donor && <SwitchField control={form.control} name="isActive" label="Active donor" />}
             <ActionError error={save.error} />
           </div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             {donor ? 'Save' : 'Register donor'}
           </Button>
           <Button onClick={onClose}>Cancel</Button>
@@ -267,7 +347,15 @@ function Check({ ok, rule }: { ok: boolean | null; rule: string }) {
  * Donor screening (NBTC 2017): haemoglobin, weight, BP, pulse and temperature, and the questionnaire. Every value
  * shows pass or fail as it is typed and the likely outcome with its reasons; the server records the decision.
  */
-export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDetail; onClose: () => void; onCollect?: (screening: DonorScreeningDto) => void }) {
+export function ScreeningDialog({
+  donor,
+  onClose,
+  onCollect,
+}: {
+  donor: DonorDetail;
+  onClose: () => void;
+  onCollect?: (screening: DonorScreeningDto) => void;
+}) {
   const styles = useStyles();
   const queryClient = useQueryClient();
   const questions = useQuery(bloodQueries.donorQuestions());
@@ -275,7 +363,14 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
   const [result, setResult] = useState<DonorScreeningDto | null>(null);
   const form = useForm<ScreeningValues>({
     resolver: zodResolver(screeningSchema),
-    defaultValues: { haemoglobinGdl: null, weightKg: null, systolic: null, diastolic: null, pulse: null, temperatureC: null },
+    defaultValues: {
+      haemoglobinGdl: null,
+      weightKg: null,
+      systolic: null,
+      diastolic: null,
+      pulse: null,
+      temperatureC: null,
+    },
   });
   const values = useWatch({ control: form.control });
   const vitals: PartialVitals = {
@@ -353,7 +448,9 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                 <MessageBar intent={result.outcome === 'PermanentlyDeferred' ? 'error' : 'warning'} layout="multiline">
                   <MessageBarBody>
                     <MessageBarTitle>
-                      {result.outcome === 'PermanentlyDeferred' ? 'Permanently deferred' : `Deferred until ${formatDateOnly(result.deferredUntil)}`}
+                      {result.outcome === 'PermanentlyDeferred'
+                        ? 'Permanently deferred'
+                        : `Deferred until ${formatDateOnly(result.deferredUntil)}`}
                     </MessageBarTitle>
                     <ul className={styles.reasons}>
                       {result.reasons.map((reason) => (
@@ -380,7 +477,8 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
               <DialogTitle>
                 Screen donor · {donor.fullName}
                 <Caption1 block className={styles.muted}>
-                  {donor.donorNumber} · {donor.age} · {donor.gender} · {donor.donationCount === 0 ? 'first donation' : `${donor.donationCount} earlier donations`}
+                  {donor.donorNumber} · {donor.age} · {donor.gender} ·{' '}
+                  {donor.donationCount === 0 ? 'first donation' : `${donor.donationCount} earlier donations`}
                   {donor.lastDonationAt ? ` · last donated ${formatDateOnly(istDate(donor.lastDonationAt))}` : ''}
                 </Caption1>
               </DialogTitle>
@@ -409,7 +507,13 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                                         : `${check.label} (mmHg)`
                               }
                               required
-                              step={check.key === 'haemoglobinGdl' || check.key === 'weightKg' || check.key === 'temperatureC' ? 0.1 : 1}
+                              step={
+                                check.key === 'haemoglobinGdl' ||
+                                check.key === 'weightKg' ||
+                                check.key === 'temperatureC'
+                                  ? 0.1
+                                  : 1
+                              }
                             />
                             <Check ok={check.ok} rule={check.rule} />
                           </div>
@@ -418,11 +522,18 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                       <Text weight="semibold">Questionnaire (ask each question)</Text>
                       <div className={styles.questions}>
                         {applicable.map((q) => (
-                          <div key={q.key} className={mergeClasses(styles.question, answers[q.key] === true && styles.questionYes)}>
+                          <div
+                            key={q.key}
+                            className={mergeClasses(styles.question, answers[q.key] === true && styles.questionYes)}
+                          >
                             <span>
                               <Text>{q.text}</Text>
                               <Caption1 block className={styles.muted}>
-                                Yes means {q.permanentDeferral ? 'permanent deferral' : `deferral for ${q.deferralDays} day${q.deferralDays === 1 ? '' : 's'}`}.
+                                Yes means{' '}
+                                {q.permanentDeferral
+                                  ? 'permanent deferral'
+                                  : `deferral for ${q.deferralDays} day${q.deferralDays === 1 ? '' : 's'}`}
+                                .
                               </Caption1>
                             </span>
                             <RadioGroup
@@ -442,7 +553,9 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                       <Text weight="semibold">Likely outcome</Text>
                       {!preview ? (
                         <Caption1 className={styles.muted}>
-                          {missing.length > 0 ? `${missing.length} question${missing.length === 1 ? '' : 's'} still to answer.` : 'Enter every measurement.'}
+                          {missing.length > 0
+                            ? `${missing.length} question${missing.length === 1 ? '' : 's'} still to answer.`
+                            : 'Enter every measurement.'}
                         </Caption1>
                       ) : preview.outcome === 'Eligible' ? (
                         <MessageBar intent="success">
@@ -452,10 +565,15 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                           </MessageBarBody>
                         </MessageBar>
                       ) : (
-                        <MessageBar intent={preview.outcome === 'PermanentlyDeferred' ? 'error' : 'warning'} layout="multiline">
+                        <MessageBar
+                          intent={preview.outcome === 'PermanentlyDeferred' ? 'error' : 'warning'}
+                          layout="multiline"
+                        >
                           <MessageBarBody>
                             <MessageBarTitle>
-                              {preview.outcome === 'PermanentlyDeferred' ? 'Permanent deferral' : `Deferral until ${formatDateOnly(preview.deferredUntil)}`}
+                              {preview.outcome === 'PermanentlyDeferred'
+                                ? 'Permanent deferral'
+                                : `Deferral until ${formatDateOnly(preview.deferredUntil)}`}
                             </MessageBarTitle>
                             <ul className={styles.reasons}>
                               {preview.reasons.map((reason) => (
@@ -465,7 +583,9 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                           </MessageBarBody>
                         </MessageBar>
                       )}
-                      <Caption1 className={styles.muted}>A deferral is recorded on the donor when you save. The server makes the final decision.</Caption1>
+                      <Caption1 className={styles.muted}>
+                        A deferral is recorded on the donor when you save. The server makes the final decision.
+                      </Caption1>
                     </aside>
                   </div>
                 )}
@@ -475,7 +595,12 @@ export function ScreeningDialog({ donor, onClose, onCollect }: { donor: DonorDet
                 <Button onClick={onClose} disabled={screen.isPending}>
                   Cancel
                 </Button>
-                <Button type="submit" appearance="primary" disabled={!complete || screen.isPending} icon={screen.isPending ? <Spinner size="tiny" /> : undefined}>
+                <Button
+                  type="submit"
+                  appearance="primary"
+                  disabled={!complete || screen.isPending}
+                  icon={screen.isPending ? <Spinner size="tiny" /> : undefined}
+                >
                   Save screening
                 </Button>
               </DialogActions>
@@ -502,10 +627,18 @@ const collectSchema = z
   })
   .superRefine((v, ctx) => {
     if (v.bagNumber && !/^[A-Za-z0-9-]+$/.test(v.bagNumber)) {
-      ctx.addIssue({ code: 'custom', path: ['bagNumber'], message: 'Scan or type the bag barcode (letters, digits and hyphens).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['bagNumber'],
+        message: 'Scan or type the bag barcode (letters, digits and hyphens).',
+      });
     }
     if (v.type === 'Replacement' && !v.patient) {
-      ctx.addIssue({ code: 'custom', path: ['patient'], message: 'Choose the patient this replacement donation is for.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['patient'],
+        message: 'Choose the patient this replacement donation is for.',
+      });
     }
     const at = fromIstInput(v.collectedAt);
     if (v.collectedAt && !at) {
@@ -516,7 +649,15 @@ const collectSchema = z
 type CollectValues = z.infer<typeof collectSchema>;
 
 /** Records the collection against an eligible screening (valid 12 hours); 450 ml only for donors of 55 kg or more. */
-export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetail; screening: DonorScreeningDto; onClose: () => void }) {
+export function CollectDialog({
+  donor,
+  screening,
+  onClose,
+}: {
+  donor: DonorDetail;
+  screening: DonorScreeningDto;
+  onClose: () => void;
+}) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
@@ -527,7 +668,16 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
   const stale = now > validUntil;
   const form = useForm<CollectValues>({
     resolver: zodResolver(collectSchema),
-    defaultValues: { bagNumber: '', bagType: 'Triple', volumeMl: maxVolume >= 450 ? '450' : '350', type: 'Voluntary', patient: null, collectedAt: null, donorReaction: '', notes: '' },
+    defaultValues: {
+      bagNumber: '',
+      bagType: 'Triple',
+      volumeMl: maxVolume >= 450 ? '450' : '350',
+      type: 'Voluntary',
+      patient: null,
+      collectedAt: null,
+      donorReaction: '',
+      notes: '',
+    },
   });
   const [type] = useWatch({ control: form.control, name: ['type'] });
 
@@ -545,7 +695,10 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
         notes: v.notes || null,
       }),
     onSuccess: (created) => {
-      notify.success('Donation recorded', 'Separate the components and send the samples for grouping and TTI screening.');
+      notify.success(
+        'Donation recorded',
+        'Separate the components and send the samples for grouping and TTI screening.',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       onClose();
       void navigate({ to: '/blood-bank/donations/$id', params: { id: created.id } });
@@ -563,18 +716,33 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
             <DialogTitle>
               Collect donation · {donor.fullName}
               <Caption1 block className={styles.muted}>
-                Screened {formatDateTime(screening.screenedAt)} · valid until {formatTime(new Date(validUntil).toISOString())} · up to {maxVolume} ml
+                Screened {formatDateTime(screening.screenedAt)} · valid until{' '}
+                {formatTime(new Date(validUntil).toISOString())} · up to {maxVolume} ml
               </Caption1>
             </DialogTitle>
             <DialogContent className={styles.body}>
               {stale && (
                 <MessageBar intent="error">
-                  <MessageBarBody>The screening is older than 12 hours. Screen the donor again before collecting.</MessageBarBody>
+                  <MessageBarBody>
+                    The screening is older than 12 hours. Screen the donor again before collecting.
+                  </MessageBarBody>
                 </MessageBar>
               )}
               <FormGrid columns={2}>
-                <TextField control={form.control} name="bagNumber" label="Bag number" autoFocus maxLength={24} hint="Scan the pre-printed bag barcode, or leave blank to generate a number." />
-                <SelectField control={form.control} name="bagType" label="Bag" options={BAG_TYPES.map((b) => ({ value: b, label: `${bagTypeLabel[b]} bag` }))} />
+                <TextField
+                  control={form.control}
+                  name="bagNumber"
+                  label="Bag number"
+                  autoFocus
+                  maxLength={24}
+                  hint="Scan the pre-printed bag barcode, or leave blank to generate a number."
+                />
+                <SelectField
+                  control={form.control}
+                  name="bagType"
+                  label="Bag"
+                  options={BAG_TYPES.map((b) => ({ value: b, label: `${bagTypeLabel[b]} bag` }))}
+                />
                 <Controller
                   control={form.control}
                   name="volumeMl"
@@ -587,20 +755,42 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
                     </Field>
                   )}
                 />
-                <ChoiceField control={form.control} name="type" label="Donation" options={DONATION_TYPES.map((t) => ({ value: t, label: donationTypeLabel[t] }))} />
+                <ChoiceField
+                  control={form.control}
+                  name="type"
+                  label="Donation"
+                  options={DONATION_TYPES.map((t) => ({ value: t, label: donationTypeLabel[t] }))}
+                />
                 {type === 'Replacement' && (
                   <FullRow>
                     <Controller
                       control={form.control}
                       name="patient"
                       render={({ field, fieldState }) => (
-                        <PatientPicker value={field.value} onChange={field.onChange} label="Replacement for patient" required validationMessage={fieldState.error?.message} />
+                        <PatientPicker
+                          value={field.value}
+                          onChange={field.onChange}
+                          label="Replacement for patient"
+                          required
+                          validationMessage={fieldState.error?.message}
+                        />
                       )}
                     />
                   </FullRow>
                 )}
-                <DateTimeField control={form.control} name="collectedAt" label="Collected at" hint="Leave blank for now." />
-                <TextField control={form.control} name="donorReaction" label="Donor reaction" maxLength={500} placeholder="e.g. mild vasovagal, recovered" />
+                <DateTimeField
+                  control={form.control}
+                  name="collectedAt"
+                  label="Collected at"
+                  hint="Leave blank for now."
+                />
+                <TextField
+                  control={form.control}
+                  name="donorReaction"
+                  label="Donor reaction"
+                  maxLength={500}
+                  placeholder="e.g. mild vasovagal, recovered"
+                />
                 <FullRow>
                   <TextAreaField control={form.control} name="notes" label="Notes" rows={2} maxLength={1000} />
                 </FullRow>
@@ -611,7 +801,12 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
               <Button onClick={onClose} disabled={collect.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={stale || collect.isPending} icon={collect.isPending ? <Spinner size="tiny" /> : <DropRegular />}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={stale || collect.isPending}
+                icon={collect.isPending ? <Spinner size="tiny" /> : <DropRegular />}
+              >
                 Record donation
               </Button>
             </DialogActions>
@@ -625,10 +820,18 @@ export function CollectDialog({ donor, screening, onClose }: { donor: DonorDetai
 // ---------------------------------------------------------------- deferral
 
 const deferSchema = z
-  .object({ permanent: z.boolean(), until: z.string().nullable(), reason: z.string().trim().min(3, 'Give the reason.').max(500) })
+  .object({
+    permanent: z.boolean(),
+    until: z.string().nullable(),
+    reason: z.string().trim().min(3, 'Give the reason.').max(500),
+  })
   .superRefine((v, ctx) => {
     if (!v.permanent && (!v.until || v.until <= todayIso())) {
-      ctx.addIssue({ code: 'custom', path: ['until'], message: 'Give a future date until which the donor is deferred.' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['until'],
+        message: 'Give a future date until which the donor is deferred.',
+      });
     }
   });
 
@@ -639,7 +842,10 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const form = useForm<DeferValues>({ resolver: zodResolver(deferSchema), defaultValues: { permanent: false, until: null, reason: '' } });
+  const form = useForm<DeferValues>({
+    resolver: zodResolver(deferSchema),
+    defaultValues: { permanent: false, until: null, reason: '' },
+  });
   const [permanent] = useWatch({ control: form.control, name: ['permanent'] });
   const defer = useMutation({
     mutationFn: (v: DeferValues) => bloodApi.deferDonor(donor.id, v.permanent ? null : v.until, v.permanent, v.reason),
@@ -660,7 +866,9 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
             <DialogTitle>Defer {donor.fullName}</DialogTitle>
             <DialogContent className={styles.body}>
               <SwitchField control={form.control} name="permanent" label="Permanent deferral" />
-              {!permanent && <DateField control={form.control} name="until" label="Deferred until" required min={todayIso(1)} />}
+              {!permanent && (
+                <DateField control={form.control} name="until" label="Deferred until" required min={todayIso(1)} />
+              )}
               <TextAreaField control={form.control} name="reason" label="Reason" required rows={3} maxLength={500} />
               <ActionError error={defer.error} />
             </DialogContent>
@@ -668,7 +876,12 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
               <Button onClick={onClose} disabled={defer.isPending}>
                 Cancel
               </Button>
-              <Button type="submit" appearance="primary" disabled={defer.isPending} icon={defer.isPending ? <Spinner size="tiny" /> : undefined}>
+              <Button
+                type="submit"
+                appearance="primary"
+                disabled={defer.isPending}
+                icon={defer.isPending ? <Spinner size="tiny" /> : undefined}
+              >
                 Defer donor
               </Button>
             </DialogActions>

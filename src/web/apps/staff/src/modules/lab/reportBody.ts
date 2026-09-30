@@ -8,7 +8,11 @@ import type { LabReportResultLine, LabReportTest, LabReportView } from './api';
 import { flagDisplay } from './flags';
 import { sectionLabel, specimenLabel } from './labels';
 
-const interpretationWord: Record<string, string> = { Sensitive: 'Sensitive (S)', Intermediate: 'Intermediate (I)', Resistant: 'Resistant (R)' };
+const interpretationWord: Record<string, string> = {
+  Sensitive: 'Sensitive (S)',
+  Intermediate: 'Intermediate (I)',
+  Resistant: 'Resistant (R)',
+};
 
 function flagCell(line: LabReportResultLine): string {
   const display = flagDisplay(line.flag);
@@ -32,27 +36,38 @@ function valueCell(line: LabReportResultLine, releasedOnly: boolean): string {
 function cultureHtml(line: LabReportResultLine): string {
   const parts: string[] = [];
   if (line.organism) {
-    parts.push(`<div>Organism isolated: <strong>${escapeHtml(line.organism)}</strong>${line.colonyCount ? ` · Colony count ${escapeHtml(line.colonyCount)}` : ''}</div>`);
+    parts.push(
+      `<div>Organism isolated: <strong>${escapeHtml(line.organism)}</strong>${line.colonyCount ? ` · Colony count ${escapeHtml(line.colonyCount)}` : ''}</div>`,
+    );
   }
   if (line.susceptibilities.length > 0) {
-    parts.push(`<table class="abg"><thead><tr><th>Antibiotic</th><th>Interpretation</th><th>MIC</th></tr></thead><tbody>${line.susceptibilities
-      .map(
-        (s) =>
-          `<tr><td>${escapeHtml(s.antibiotic)}</td><td class="${s.interpretation === 'Resistant' ? 'abn' : ''}">${escapeHtml(interpretationWord[s.interpretation] ?? s.interpretation)}</td><td>${escapeHtml(s.mic ?? '')}</td></tr>`,
-      )
-      .join('')}</tbody></table>`);
+    parts.push(
+      `<table class="abg"><thead><tr><th>Antibiotic</th><th>Interpretation</th><th>MIC</th></tr></thead><tbody>${line.susceptibilities
+        .map(
+          (s) =>
+            `<tr><td>${escapeHtml(s.antibiotic)}</td><td class="${s.interpretation === 'Resistant' ? 'abn' : ''}">${escapeHtml(interpretationWord[s.interpretation] ?? s.interpretation)}</td><td>${escapeHtml(s.mic ?? '')}</td></tr>`,
+        )
+        .join('')}</tbody></table>`,
+    );
   }
   return parts.join('');
 }
 
 function testHtml(test: LabReportTest, releasedOnly: boolean): string {
-  const meta = [specimenLabel[test.specimenType], test.method ? `Method: ${test.method}` : null, test.referralLabName ? `Tested at ${test.referralLabName}` : null]
+  const meta = [
+    specimenLabel[test.specimenType],
+    test.method ? `Method: ${test.method}` : null,
+    test.referralLabName ? `Tested at ${test.referralLabName}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
   let lastGroup: string | null = null;
   const rows = test.results
     .map((line) => {
-      const groupRow = line.groupName && line.groupName !== lastGroup ? `<tr><td colspan="5"><strong>${escapeHtml(line.groupName)}</strong></td></tr>` : '';
+      const groupRow =
+        line.groupName && line.groupName !== lastGroup
+          ? `<tr><td colspan="5"><strong>${escapeHtml(line.groupName)}</strong></td></tr>`
+          : '';
       lastGroup = line.groupName;
       // Organism, antibiogram and remarks are part of the result: never shown before verification on a released copy.
       const printable = line.status === 'Verified' || (!releasedOnly && line.status !== 'Pending');
@@ -67,7 +82,10 @@ function testHtml(test: LabReportTest, releasedOnly: boolean): string {
       </tr>${culture ? `<tr><td></td><td colspan="4">${culture}</td></tr>` : ''}`;
     })
     .join('');
-  const status = test.status === 'Released' ? '' : ` <span class="small">(${test.status === 'Verified' ? 'verified, not yet released' : 'in progress'})</span>`;
+  const status =
+    test.status === 'Released'
+      ? ''
+      : ` <span class="small">(${test.status === 'Verified' ? 'verified, not yet released' : 'in progress'})</span>`;
   return `
     <h3>${escapeHtml(test.name)}${status}</h3>
     ${meta ? `<div class="small">${escapeHtml(meta)}</div>` : ''}
@@ -81,7 +99,10 @@ function testHtml(test: LabReportTest, releasedOnly: boolean): string {
 /** Result section of the printed report. `releasedOnly` prints only verified values (patient/clinician copies). */
 export function labReportBodyHtml(view: LabReportView, releasedOnly = false): string {
   const sections = view.sections
-    .map((section) => `<h2>${escapeHtml(sectionLabel[section.section])}</h2>${section.tests.map((test) => testHtml(test, releasedOnly)).join('')}`)
+    .map(
+      (section) =>
+        `<h2>${escapeHtml(sectionLabel[section.section])}</h2>${section.tests.map((test) => testHtml(test, releasedOnly)).join('')}`,
+    )
     .join('');
   const amendments = view.amendments.length
     ? `<h2>Amendments</h2><table><thead><tr><th>Revision</th><th>When</th><th>By</th><th>Reason and changes</th></tr></thead><tbody>${view.amendments
@@ -124,7 +145,9 @@ export function labReportNotes(view: LabReportView): string[] {
     notes.push('Partial report: some tests are still in progress and will follow in an updated report.');
   }
   if (view.hasAutoValidatedResults) {
-    notes.push('* Verified automatically under the laboratory auto-validation rules (in range, QC accepted, delta check passed).');
+    notes.push(
+      '* Verified automatically under the laboratory auto-validation rules (in range, QC accepted, delta check passed).',
+    );
   }
   if (view.status === 'Amended') {
     notes.push('This report was amended after release. The amendments and their reasons are listed above.');

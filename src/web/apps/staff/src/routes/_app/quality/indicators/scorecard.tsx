@@ -1,7 +1,18 @@
 import { Button, Caption1, Field, Select, Text } from '@fluentui/react-components';
 import { PrintRegular, TableRegular } from '@fluentui/react-icons';
 import { useSession } from '@hc360/core';
-import { DataTable, EmptyState, ErrorState, KpiCard, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
+import {
+  DataTable,
+  EmptyState,
+  ErrorState,
+  KpiCard,
+  LoadingState,
+  Page,
+  PageHeader,
+  Section,
+  StatusBadge,
+  useNotify,
+} from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { monthLabel, MONTH_NAMES, previousMonth, yearOptions } from '@/modules/hr/shared/dates';
@@ -48,13 +59,20 @@ function ScorecardPage() {
         title="Quality scorecard"
         subtitle={`All active indicators for ${title}, for the quality committee`}
         icon={<TableRegular />}
-        breadcrumbs={[{ label: 'Quality indicators', onClick: () => void navigate({ to: '/quality/indicators' }) }, { label: 'Scorecard' }]}
+        breadcrumbs={[
+          { label: 'Quality indicators', onClick: () => void navigate({ to: '/quality/indicators' }) },
+          { label: 'Scorecard' },
+        ]}
         actions={
           <Button
             appearance="primary"
             icon={<PrintRegular />}
             disabled={rows.length === 0}
-            onClick={() => void printScorecard(rows, facilityName, title).catch((error: unknown) => notify.error(error, 'Printing failed'))}
+            onClick={() =>
+              void printScorecard(rows, facilityName, title).catch((error: unknown) =>
+                notify.error(error, 'Printing failed'),
+              )
+            }
           >
             Print
           </Button>
@@ -63,7 +81,10 @@ function ScorecardPage() {
       <FilterPad>
         <Toolbar spaced={false}>
           <Field label="Month">
-            <Select value={String(month)} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, month: Number(d.value) }) })}>
+            <Select
+              value={String(month)}
+              onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, month: Number(d.value) }) })}
+            >
               {MONTH_NAMES.map((name, index) => (
                 <option key={name} value={index + 1}>
                   {name}
@@ -72,7 +93,10 @@ function ScorecardPage() {
             </Select>
           </Field>
           <Field label="Year">
-            <Select value={String(year)} onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, year: Number(d.value) }) })}>
+            <Select
+              value={String(year)}
+              onChange={(_, d) => void navigate({ search: (prev) => ({ ...prev, year: Number(d.value) }) })}
+            >
               {yearOptions(4, 0).map((y) => (
                 <option key={y} value={y}>
                   {y}
@@ -102,7 +126,9 @@ function ScorecardPage() {
                 ariaLabel={`${category} scorecard`}
                 rows={rows.filter((r) => r.category === category)}
                 getRowId={(r) => r.indicatorId}
-                onRowClick={(r) => void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: r.indicatorId } })}
+                onRowClick={(r) =>
+                  void navigate({ to: '/quality/indicators/$indicatorId', params: { indicatorId: r.indicatorId } })
+                }
                 columns={[
                   {
                     key: 'name',
@@ -114,13 +140,22 @@ function ScorecardPage() {
                     ),
                   },
                   { key: 'period', header: 'Period', width: 120, render: (r) => r.periodLabel },
-                  { key: 'value', header: 'Value', align: 'end', width: 140, render: (r) => formatIndicatorValue(r.value, r.unit) },
+                  {
+                    key: 'value',
+                    header: 'Value',
+                    align: 'end',
+                    width: 140,
+                    render: (r) => formatIndicatorValue(r.value, r.unit),
+                  },
                   {
                     key: 'target',
                     header: 'Target',
                     align: 'end',
                     width: 150,
-                    render: (r) => (r.target === null ? '—' : `${r.direction === 'HigherIsBetter' ? '≥' : '≤'} ${formatIndicatorValue(r.target, r.unit)}`),
+                    render: (r) =>
+                      r.target === null
+                        ? '—'
+                        : `${r.direction === 'HigherIsBetter' ? '≥' : '≤'} ${formatIndicatorValue(r.target, r.unit)}`,
                   },
                   {
                     key: 'status',
@@ -132,7 +167,11 @@ function ScorecardPage() {
                       ) : r.meetsTarget === null ? (
                         <StatusBadge status="None" tone="informative" label="No target" />
                       ) : (
-                        <StatusBadge status={r.meetsTarget ? 'Met' : 'Missed'} tone={r.meetsTarget ? 'success' : 'danger'} label={r.meetsTarget ? 'On target' : 'Off target'} />
+                        <StatusBadge
+                          status={r.meetsTarget ? 'Met' : 'Missed'}
+                          tone={r.meetsTarget ? 'success' : 'danger'}
+                          label={r.meetsTarget ? 'On target' : 'Off target'}
+                        />
                       ),
                   },
                 ]}

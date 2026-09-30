@@ -41,10 +41,20 @@ export function PeriodFields({
       {preset === 'custom' && (
         <>
           <Field label="From">
-            <Input type="date" value={from} max={to} onChange={(_, d) => d.value && onChange({ preset, from: d.value, to })} />
+            <Input
+              type="date"
+              value={from}
+              max={to}
+              onChange={(_, d) => d.value && onChange({ preset, from: d.value, to })}
+            />
           </Field>
           <Field label="To">
-            <Input type="date" value={to} min={from} onChange={(_, d) => d.value && onChange({ preset, from, to: d.value })} />
+            <Input
+              type="date"
+              value={to}
+              min={from}
+              onChange={(_, d) => d.value && onChange({ preset, from, to: d.value })}
+            />
           </Field>
         </>
       )}

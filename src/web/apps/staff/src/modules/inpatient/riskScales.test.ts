@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { bradenScore, morseScore, painScore, painScoreOptions, riskTone, type BradenInput, type MorseInput } from './riskScales';
+import {
+  bradenScore,
+  morseScore,
+  painScore,
+  painScoreOptions,
+  riskTone,
+  type BradenInput,
+  type MorseInput,
+} from './riskScales';
 
 const noRisk: MorseInput = {
   historyOfFalling: false,
@@ -36,7 +44,14 @@ describe('Morse fall scale', () => {
 });
 
 describe('Braden scale', () => {
-  const best: BradenInput = { sensoryPerception: 4, moisture: 4, activity: 4, mobility: 4, nutrition: 4, frictionShear: 3 };
+  const best: BradenInput = {
+    sensoryPerception: 4,
+    moisture: 4,
+    activity: 4,
+    mobility: 4,
+    nutrition: 4,
+    frictionShear: 3,
+  };
 
   it('scores 23 and no risk for a fully independent patient', () => {
     expect(bradenScore(best)).toMatchObject({ score: 23, risk: 'None' });

@@ -98,13 +98,21 @@ const lineSchema = z
   })
   .superRefine((line, ctx) => {
     if (line.frequency === 'Custom' && !line.customFrequency.trim()) {
-      ctx.addIssue({ code: 'custom', path: ['customFrequency'], message: 'Write the frequency (e.g. 1-0-1 or 8 hourly).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customFrequency'],
+        message: 'Write the frequency (e.g. 1-0-1 or 8 hourly).',
+      });
     }
     if (line.frequency !== 'STAT' && line.durationDays === null) {
       ctx.addIssue({ code: 'custom', path: ['durationDays'], message: 'Enter the number of days.' });
     }
     if (effectiveQuantity(line) === null) {
-      ctx.addIssue({ code: 'custom', path: ['quantity'], message: 'Enter the quantity to dispense (it cannot be calculated for this dose).' });
+      ctx.addIssue({
+        code: 'custom',
+        path: ['quantity'],
+        message: 'Enter the quantity to dispense (it cannot be calculated for this dose).',
+      });
     }
   });
 
@@ -151,13 +159,15 @@ export function toItemRequest(line: RxLineValues): ItemRequest {
     quantity: line.quantity !== null && line.quantity > 0 ? line.quantity : null,
     instructions: text(line.instructions),
     isControlledDrug: line.isControlledDrug,
-    controlledSchedule: line.isControlledDrug ? text(line.controlledSchedule)?.toUpperCase() ?? null : null,
+    controlledSchedule: line.isControlledDrug ? (text(line.controlledSchedule)?.toUpperCase() ?? null) : null,
   };
 }
 
 /** True when the form holds anything worth keeping (a medicine, advice or a note). */
 export function hasRxContent(values: RxFormValues): boolean {
-  return values.lines.some((line) => !isBlankLine(line)) || Boolean(values.advice.trim()) || Boolean(values.notes.trim());
+  return (
+    values.lines.some((line) => !isBlankLine(line)) || Boolean(values.advice.trim()) || Boolean(values.notes.trim())
+  );
 }
 
 /** Same prescription content (row keys, blank rows and surrounding spaces ignored). */
@@ -215,7 +225,12 @@ export function fromSavedItem(item: SavedItem): RxLineValues {
 }
 
 /** Editor values from a saved draft (an empty draft still gets one blank row to type into). */
-export function toRxFormValues(saved: { items: readonly SavedItem[]; advice: string | null; notes: string | null; refillsAllowed: number }): RxFormValues {
+export function toRxFormValues(saved: {
+  items: readonly SavedItem[];
+  advice: string | null;
+  notes: string | null;
+  refillsAllowed: number;
+}): RxFormValues {
   return {
     lines: saved.items.length > 0 ? saved.items.map(fromSavedItem) : [emptyLine()],
     advice: saved.advice ?? '',
@@ -313,7 +328,14 @@ export function applyDefaults(line: RxLineValues, defaults: MedicineDefaults): R
 }
 
 /** Row from a medicine the patient is currently taking ("continue"); unknown frequency text is kept as custom. */
-export function fromCurrentMedication(m: { drugName: string; genericName: string | null; strength: string | null; dose: string; frequency: string; durationDays: number }): RxLineValues {
+export function fromCurrentMedication(m: {
+  drugName: string;
+  genericName: string | null;
+  strength: string | null;
+  dose: string;
+  frequency: string;
+  durationDays: number;
+}): RxLineValues {
   const known = (DOSE_FREQUENCIES as readonly string[]).includes(m.frequency) && m.frequency !== 'Custom';
   return applyDefaults(emptyLine(), {
     drugName: m.drugName,
@@ -328,7 +350,10 @@ export function fromCurrentMedication(m: { drugName: string; genericName: string
 
 /** Row defaults from a drug-master pick: the server decides what is controlled (Schedule H1/X or NDPS) and its schedule. */
 export function drugMasterDefaults(
-  drug: Pick<PrescribableDrug, 'id' | 'name' | 'genericName' | 'strength' | 'dosageForm' | 'isControlled' | 'controlledSchedule'>,
+  drug: Pick<
+    PrescribableDrug,
+    'id' | 'name' | 'genericName' | 'strength' | 'dosageForm' | 'isControlled' | 'controlledSchedule'
+  >,
 ): MedicineDefaults {
   return {
     drugItemId: drug.id,
@@ -358,7 +383,17 @@ export interface DrugOptionView {
 }
 
 export function drugOptionView(
-  drug: Pick<PrescribableDrug, 'genericName' | 'strength' | 'dosageForm' | 'isControlled' | 'controlledSchedule' | 'isColdChain' | 'baseUnit' | 'available'>,
+  drug: Pick<
+    PrescribableDrug,
+    | 'genericName'
+    | 'strength'
+    | 'dosageForm'
+    | 'isControlled'
+    | 'controlledSchedule'
+    | 'isColdChain'
+    | 'baseUnit'
+    | 'available'
+  >,
 ): DrugOptionView {
   const flags: DrugFlag[] = [];
   if (drug.isControlled) {
@@ -369,8 +404,14 @@ export function drugOptionView(
   }
   const available = drug.available ?? null;
   const outOfStock = available !== null && available <= 0;
-  const stock = available === null ? null : outOfStock ? 'Out of stock' : `In stock: ${formatNumber(available)} ${drug.baseUnit}`;
-  return { detail: [drug.genericName, drug.strength, drug.dosageForm].filter(Boolean).join(' · '), stock, outOfStock, flags };
+  const stock =
+    available === null ? null : outOfStock ? 'Out of stock' : `In stock: ${formatNumber(available)} ${drug.baseUnit}`;
+  return {
+    detail: [drug.genericName, drug.strength, drug.dosageForm].filter(Boolean).join(' · '),
+    stock,
+    outOfStock,
+    flags,
+  };
 }
 
 /** Row defaults from a speciality template's medicine. */

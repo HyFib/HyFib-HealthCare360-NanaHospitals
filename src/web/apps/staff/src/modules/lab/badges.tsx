@@ -3,7 +3,15 @@ import { StatusBadge } from '@hc360/ui';
 import type { OrderPriority, PatientClass } from './common/types';
 import type { ContainerType, LabOrderItemStatus, LabReportStatus, QcOutcome, ResultFlag, SampleStatus } from './api';
 import { flagDisplay } from './flags';
-import { containerInfo, itemStatusLabel, patientClassLabel, priorityLabel, qcOutcomeLabel, reportStatusLabel, sampleStatusLabel } from './labels';
+import {
+  containerInfo,
+  itemStatusLabel,
+  patientClassLabel,
+  priorityLabel,
+  qcOutcomeLabel,
+  reportStatusLabel,
+  sampleStatusLabel,
+} from './labels';
 
 const useStyles = makeStyles({
   tube: { display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' },
@@ -23,7 +31,11 @@ export function PriorityBadge({ priority, showRoutine }: { priority: OrderPriori
     return null;
   }
   return (
-    <Badge appearance={priority === 'Stat' ? 'filled' : 'tint'} color={priority === 'Stat' ? 'danger' : priority === 'Urgent' ? 'warning' : 'informative'} shape="rounded">
+    <Badge
+      appearance={priority === 'Stat' ? 'filled' : 'tint'}
+      color={priority === 'Stat' ? 'danger' : priority === 'Urgent' ? 'warning' : 'informative'}
+      shape="rounded"
+    >
       {priorityLabel[priority]}
     </Badge>
   );
@@ -46,7 +58,13 @@ export function TubeChip({ container, detail }: { container: ContainerType; deta
   );
 }
 
-const TONE_COLOR = { normal: 'success', low: 'warning', high: 'warning', abnormal: 'warning', critical: 'danger' } as const;
+const TONE_COLOR = {
+  normal: 'success',
+  low: 'warning',
+  high: 'warning',
+  abnormal: 'warning',
+  critical: 'danger',
+} as const;
 
 /**
  * Result flag (H, L, HH, LL, A, C). A preview (not yet saved) is shown as an outline so staff can tell it apart from
@@ -74,19 +92,47 @@ export function FlagChip({ flag, preview }: { flag: ResultFlag | null | undefine
 }
 
 export function SampleStatusBadge({ status }: { status: SampleStatus }) {
-  const tone = status === 'Pending' ? 'warning' : status === 'Rejected' || status === 'Cancelled' ? 'danger' : status === 'Completed' ? 'success' : 'brand';
+  const tone =
+    status === 'Pending'
+      ? 'warning'
+      : status === 'Rejected' || status === 'Cancelled'
+        ? 'danger'
+        : status === 'Completed'
+          ? 'success'
+          : 'brand';
   return <StatusBadge status={status} tone={tone} label={sampleStatusLabel[status]} />;
 }
 
 export function ItemStatusBadge({ status }: { status: LabOrderItemStatus }) {
   const tone =
-    status === 'Released' ? 'success' : status === 'Cancelled' ? 'danger' : status === 'Ordered' ? 'warning' : status === 'Verified' ? 'success' : 'brand';
+    status === 'Released'
+      ? 'success'
+      : status === 'Cancelled'
+        ? 'danger'
+        : status === 'Ordered'
+          ? 'warning'
+          : status === 'Verified'
+            ? 'success'
+            : 'brand';
   return <StatusBadge status={status} tone={tone} label={itemStatusLabel[status]} />;
 }
 
 export function ReportStatusBadge({ status, partial }: { status: LabReportStatus; partial?: boolean }) {
-  const tone = status === 'Draft' ? 'informative' : status === 'Verified' ? 'warning' : status === 'Amended' ? 'important' : 'success';
-  return <StatusBadge status={status} tone={tone} label={`${reportStatusLabel[status]}${partial && status !== 'Draft' ? ' (partial)' : ''}`} />;
+  const tone =
+    status === 'Draft'
+      ? 'informative'
+      : status === 'Verified'
+        ? 'warning'
+        : status === 'Amended'
+          ? 'important'
+          : 'success';
+  return (
+    <StatusBadge
+      status={status}
+      tone={tone}
+      label={`${reportStatusLabel[status]}${partial && status !== 'Draft' ? ' (partial)' : ''}`}
+    />
+  );
 }
 
 export function QcOutcomeBadge({ outcome }: { outcome: QcOutcome | null }) {
@@ -99,7 +145,11 @@ export function QcOutcomeBadge({ outcome }: { outcome: QcOutcome | null }) {
 
 export function PatientClassBadge({ patientClass }: { patientClass: PatientClass }) {
   return (
-    <Badge appearance="outline" shape="rounded" color={patientClass === 'Emergency' ? 'danger' : patientClass === 'InPatient' ? 'brand' : 'informative'}>
+    <Badge
+      appearance="outline"
+      shape="rounded"
+      color={patientClass === 'Emergency' ? 'danger' : patientClass === 'InPatient' ? 'brand' : 'informative'}
+    >
       {patientClassLabel[patientClass]}
     </Badge>
   );

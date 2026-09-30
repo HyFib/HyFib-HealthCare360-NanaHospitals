@@ -38,11 +38,20 @@ const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Enter your current password.'),
     // Length is checked here for instant feedback; the server also rejects common and personal passwords.
-    newPassword: z.string().min(12, 'Use at least 12 characters. A short sentence works well.').max(128, 'Use at most 128 characters.'),
+    newPassword: z
+      .string()
+      .min(12, 'Use at least 12 characters. A short sentence works well.')
+      .max(128, 'Use at most 128 characters.'),
     confirmPassword: z.string(),
   })
-  .refine((v) => v.newPassword === v.confirmPassword, { path: ['confirmPassword'], message: 'The passwords do not match.' })
-  .refine((v) => v.newPassword !== v.currentPassword, { path: ['newPassword'], message: 'Choose a password you have not used here.' });
+  .refine((v) => v.newPassword === v.confirmPassword, {
+    path: ['confirmPassword'],
+    message: 'The passwords do not match.',
+  })
+  .refine((v) => v.newPassword !== v.currentPassword, {
+    path: ['newPassword'],
+    message: 'Choose a password you have not used here.',
+  });
 
 type PasswordForm = z.infer<typeof passwordSchema>;
 
@@ -57,7 +66,10 @@ export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
 
   const save = useMutation({
     mutationFn: (values: PasswordForm) =>
-      api.post<AuthResult>('/api/v1/auth/change-password', { currentPassword: values.currentPassword, newPassword: values.newPassword }),
+      api.post<AuthResult>('/api/v1/auth/change-password', {
+        currentPassword: values.currentPassword,
+        newPassword: values.newPassword,
+      }),
     onSuccess: (result) => {
       auth.apply(result);
       form.reset();
@@ -73,7 +85,14 @@ export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
 
   return (
     <form className={styles.form} onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
-      <TextField control={form.control} name="currentPassword" label="Current password" type="password" autoComplete="current-password" required />
+      <TextField
+        control={form.control}
+        name="currentPassword"
+        label="Current password"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
       <TextField
         control={form.control}
         name="newPassword"
@@ -83,9 +102,21 @@ export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
         hint="At least 12 characters. A short sentence you can remember works well."
         required
       />
-      <TextField control={form.control} name="confirmPassword" label="Confirm new password" type="password" autoComplete="new-password" required />
+      <TextField
+        control={form.control}
+        name="confirmPassword"
+        label="Confirm new password"
+        type="password"
+        autoComplete="new-password"
+        required
+      />
       <div>
-        <Button type="submit" appearance="primary" disabled={save.isPending} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+        <Button
+          type="submit"
+          appearance="primary"
+          disabled={save.isPending}
+          icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+        >
           Change password
         </Button>
       </div>
@@ -118,8 +149,8 @@ export function MfaSetup({ onDone }: { onDone?: () => void }) {
     return (
       <div className={styles.form}>
         <Body1>
-          Two-step verification asks for a 6-digit code from an authenticator app on your phone when you sign in, so a stolen password
-          alone cannot open patient records.
+          Two-step verification asks for a 6-digit code from an authenticator app on your phone when you sign in, so a
+          stolen password alone cannot open patient records.
         </Body1>
         <div>
           <Button appearance="primary" onClick={() => begin.mutate()} disabled={begin.isPending}>
@@ -139,10 +170,20 @@ export function MfaSetup({ onDone }: { onDone?: () => void }) {
       <Caption1 className={styles.muted}>Can't scan? Enter this key in the app instead:</Caption1>
       <div className={styles.row}>
         <Text className={styles.secret}>{begin.data.secret.replace(/(.{4})/g, '$1 ').trim()}</Text>
-        <Button size="small" icon={<CopyRegular />} onClick={() => void navigator.clipboard?.writeText(begin.data.secret)} aria-label="Copy key" />
+        <Button
+          size="small"
+          icon={<CopyRegular />}
+          onClick={() => void navigator.clipboard?.writeText(begin.data.secret)}
+          aria-label="Copy key"
+        />
       </div>
       <Field label="2. Enter the 6-digit code the app shows">
-        <Input value={code} onChange={(_, d) => setCode(d.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" />
+        <Input
+          value={code}
+          onChange={(_, d) => setCode(d.value.replace(/\D/g, '').slice(0, 6))}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+        />
       </Field>
       <div>
         <Button appearance="primary" disabled={code.length !== 6 || enable.isPending} onClick={() => enable.mutate()}>
@@ -168,7 +209,10 @@ export function PinForm() {
   const styles = useStyles();
   const notify = useNotify();
   const hasPin = useSession((s) => s.user?.hasPin);
-  const form = useForm<PinForm>({ resolver: zodResolver(pinSchema), defaultValues: { pin: '', confirmPin: '', password: '' } });
+  const form = useForm<PinForm>({
+    resolver: zodResolver(pinSchema),
+    defaultValues: { pin: '', confirmPin: '', password: '' },
+  });
 
   const save = useMutation({
     mutationFn: (values: PinForm) => api.post('/api/v1/auth/pin', { pin: values.pin, password: values.password }),
@@ -186,9 +230,30 @@ export function PinForm() {
 
   return (
     <form className={styles.form} onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
-      <TextField control={form.control} name="pin" label={hasPin ? 'New PIN' : 'PIN'} type="password" autoComplete="off" required />
-      <TextField control={form.control} name="confirmPin" label="Confirm PIN" type="password" autoComplete="off" required />
-      <TextField control={form.control} name="password" label="Your password" type="password" autoComplete="current-password" required />
+      <TextField
+        control={form.control}
+        name="pin"
+        label={hasPin ? 'New PIN' : 'PIN'}
+        type="password"
+        autoComplete="off"
+        required
+      />
+      <TextField
+        control={form.control}
+        name="confirmPin"
+        label="Confirm PIN"
+        type="password"
+        autoComplete="off"
+        required
+      />
+      <TextField
+        control={form.control}
+        name="password"
+        label="Your password"
+        type="password"
+        autoComplete="current-password"
+        required
+      />
       <div>
         <Button type="submit" appearance="primary" disabled={save.isPending}>
           {hasPin ? 'Change PIN' : 'Set PIN'}

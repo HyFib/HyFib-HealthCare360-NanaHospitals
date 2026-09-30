@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -200,6 +201,6 @@ public sealed class OutboxDispatcher(
 
         // 10s, 20s, 40s … capped at 1h, plus jitter so a recovered WiFi/internet link is not stampeded.
         var backoff = TimeSpan.FromSeconds(Math.Min(10 * Math.Pow(2, message.Attempts - 1), 3600));
-        message.NextAttemptAt = now + backoff + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 3000));
+        message.NextAttemptAt = now + backoff + TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, 3000));
     }
 }

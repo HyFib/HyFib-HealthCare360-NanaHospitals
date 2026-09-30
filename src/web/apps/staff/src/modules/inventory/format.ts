@@ -100,7 +100,12 @@ export function bestItemMatch<T extends { code: string }>(items: readonly T[], t
   return items.find((i) => i.code.toUpperCase() === upper) ?? items[0];
 }
 
-const istDateFormat = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+const istDateFormat = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 
 /** Calendar date in IST ("yyyy-MM-dd") of an instant, e.g. to tell whether an invoice was raised today. */
 export function istDateOf(iso: string): string {

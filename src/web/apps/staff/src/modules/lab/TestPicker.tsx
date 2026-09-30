@@ -1,4 +1,14 @@
-import { Button, Caption1, Field, makeStyles, mergeClasses, SearchBox, Spinner, Text, tokens } from '@fluentui/react-components';
+import {
+  Button,
+  Caption1,
+  Field,
+  makeStyles,
+  mergeClasses,
+  SearchBox,
+  Spinner,
+  Text,
+  tokens,
+} from '@fluentui/react-components';
 import { CheckmarkRegular, InfoRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
@@ -28,7 +38,10 @@ const useStyles = makeStyles({
     borderBottom: `1px solid ${tokens.colorNeutralStroke3}`,
     ':hover': { backgroundColor: tokens.colorNeutralBackground1Hover },
   },
-  active: { backgroundColor: tokens.colorBrandBackground2, ':hover': { backgroundColor: tokens.colorBrandBackground2Hover } },
+  active: {
+    backgroundColor: tokens.colorBrandBackground2,
+    ':hover': { backgroundColor: tokens.colorBrandBackground2Hover },
+  },
   chosen: { color: tokens.colorNeutralForeground3, cursor: 'default' },
   meta: { display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', color: tokens.colorNeutralForeground3 },
   price: { textAlign: 'end', fontWeight: tokens.fontWeightSemibold },
@@ -37,7 +50,18 @@ const useStyles = makeStyles({
 });
 
 /** Common counter tests offered as one-click chips (shown only when they exist in the test master). */
-const QUICK_CODES = ['LAB-CBC', 'LAB-FBS', 'LAB-PPBS', 'LAB-HBA1C', 'LAB-LIPID', 'LAB-LFT', 'LAB-KFT', 'LAB-TFT', 'LAB-URINE-RE', 'LAB-CRP'];
+const QUICK_CODES = [
+  'LAB-CBC',
+  'LAB-FBS',
+  'LAB-PPBS',
+  'LAB-HBA1C',
+  'LAB-LIPID',
+  'LAB-LFT',
+  'LAB-KFT',
+  'LAB-TFT',
+  'LAB-URINE-RE',
+  'LAB-CRP',
+];
 
 const CATALOG_SIZE = 200;
 
@@ -75,8 +99,14 @@ export function TestPicker({
 
   const words = term.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const results: LabTestListItem[] =
-    words.length === 0 ? [] : complete ? (catalog.data?.items ?? []).filter((test) => matches(test, words)).slice(0, 20) : (remote.data?.items ?? []);
-  const quick = QUICK_CODES.map((code) => catalog.data?.items.find((test) => test.code === code)).filter((test): test is LabTestListItem => Boolean(test));
+    words.length === 0
+      ? []
+      : complete
+        ? (catalog.data?.items ?? []).filter((test) => matches(test, words)).slice(0, 20)
+        : (remote.data?.items ?? []);
+  const quick = QUICK_CODES.map((code) => catalog.data?.items.find((test) => test.code === code)).filter(
+    (test): test is LabTestListItem => Boolean(test),
+  );
   const highlighted = Math.min(active, Math.max(results.length - 1, 0));
 
   const add = (test: LabTestListItem | undefined) => {
@@ -151,7 +181,9 @@ export function TestPicker({
         <ul id={listId} role="listbox" aria-label="Matching tests" className={styles.list}>
           {results.length === 0 ? (
             <li className={styles.empty} role="presentation">
-              {catalog.isLoading || remote.isFetching ? 'Searching…' : 'No orderable test matches. Check the spelling or search by code.'}
+              {catalog.isLoading || remote.isFetching
+                ? 'Searching…'
+                : 'No orderable test matches. Check the spelling or search by code.'}
             </li>
           ) : (
             results.map((test, index) => {
@@ -163,7 +195,11 @@ export function TestPicker({
                   role="option"
                   aria-selected={index === highlighted}
                   aria-disabled={chosen}
-                  className={mergeClasses(styles.option, index === highlighted && styles.active, chosen && styles.chosen)}
+                  className={mergeClasses(
+                    styles.option,
+                    index === highlighted && styles.active,
+                    chosen && styles.chosen,
+                  )}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => add(test)}
                 >
@@ -176,7 +212,9 @@ export function TestPicker({
                       </Caption1>
                     )}
                   </span>
-                  <span className={styles.price}>{test.price !== null ? formatInr(test.price, { whole: true }) : '—'}</span>
+                  <span className={styles.price}>
+                    {test.price !== null ? formatInr(test.price, { whole: true }) : '—'}
+                  </span>
                   <span className={styles.meta}>
                     <span>{sectionLabel[test.section]}</span>
                     <TubeChip container={test.container} />

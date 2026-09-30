@@ -36,11 +36,15 @@ interface Props {
 
 /** Plain-words help for the reasons the server refuses a link. */
 const REFUSALS: Record<string, string> = {
-  'feedback.no_consent': 'The patient has not agreed to SMS updates, so no link can be sent. You can record their feedback by phone instead.',
-  'feedback.no_phone': 'The patient has no mobile number on record. Update the registration, or record their feedback by phone instead.',
+  'feedback.no_consent':
+    'The patient has not agreed to SMS updates, so no link can be sent. You can record their feedback by phone instead.',
+  'feedback.no_phone':
+    'The patient has no mobile number on record. Update the registration, or record their feedback by phone instead.',
   'feedback.already_invited': 'A feedback link has already been sent for this visit. Each visit gets one link.',
-  'feedback.no_form': 'There is no active feedback form for this kind of visit. A feedback manager can add one under Feedback › Forms.',
-  'feedback.no_portal_url': "The hospital's portal address is not set up yet, so links cannot be built. Ask an administrator to set 'portal.baseUrl'.",
+  'feedback.no_form':
+    'There is no active feedback form for this kind of visit. A feedback manager can add one under Feedback › Forms.',
+  'feedback.no_portal_url':
+    "The hospital's portal address is not set up yet, so links cannot be built. Ask an administrator to set 'portal.baseUrl'.",
   'feedback.patient_inactive': 'Feedback links are not sent for this patient record.',
 };
 
@@ -51,12 +55,22 @@ const REFUSALS: Record<string, string> = {
 export function SendFeedbackLinkDialog({ open, onClose, patient, visitId }: Props) {
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 560 }}>{open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 560 }}>
+        {open && <Body onClose={onClose} fixedPatient={patient ?? null} fixedVisitId={visitId ?? null} />}
+      </DialogSurface>
     </Dialog>
   );
 }
 
-function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fixedPatient: PickedPatient | null; fixedVisitId: string | null }) {
+function Body({
+  onClose,
+  fixedPatient,
+  fixedVisitId,
+}: {
+  onClose: () => void;
+  fixedPatient: PickedPatient | null;
+  fixedVisitId: string | null;
+}) {
   const notify = useNotify();
   const forms = useQuery({ ...feedbackQueries.forms({ activeOnly: true }), retry: false });
   const [patient, setPatient] = useState<PickedPatient | null>(fixedPatient);
@@ -79,7 +93,10 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
     setBusy(true);
     try {
       await feedbackApi.sendLink(patient.id, chosenVisit, formId || null);
-      notify.success('Feedback link sent', `${patient.fullName} will get the link by SMS. It can be used once, within 14 days.`);
+      notify.success(
+        'Feedback link sent',
+        `${patient.fullName} will get the link by SMS. It can be used once, within 14 days.`,
+      );
       onClose();
     } catch (error) {
       if (isApiError(error) && error.code && REFUSALS[error.code]) {
@@ -109,7 +126,8 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
         <DialogTitle>Send a feedback link</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <Caption1>
-            The patient gets a personal link by SMS. It works once and expires after 14 days. Links go only to patients who agreed to SMS updates.
+            The patient gets a personal link by SMS. It works once and expires after 14 days. Links go only to patients
+            who agreed to SMS updates.
           </Caption1>
           {fixedPatient ? (
             <Body1>
@@ -128,10 +146,19 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
             />
           )}
           {patient && !fixedVisitId && (
-            <VisitSelect patientId={patient.id} value={visit?.id ?? null} onChange={setVisit} required validationMessage={errors.visitId} />
+            <VisitSelect
+              patientId={patient.id}
+              value={visit?.id ?? null}
+              onChange={setVisit}
+              required
+              validationMessage={errors.visitId}
+            />
           )}
           {available.length > 0 && (
-            <Field label="Feedback form" hint="Automatic uses the hospital's form for the kind of visit (in-patient or out-patient).">
+            <Field
+              label="Feedback form"
+              hint="Automatic uses the hospital's form for the kind of visit (in-patient or out-patient)."
+            >
               <Select value={formId} onChange={(_, d) => setFormId(d.value)}>
                 <option value="">Automatic</option>
                 {available.map((f) => (
@@ -152,7 +179,12 @@ function Body({ onClose, fixedPatient, fixedVisitId }: { onClose: () => void; fi
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : <SendRegular />}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy}
+            icon={busy ? <Spinner size="tiny" /> : <SendRegular />}
+          >
             Send link
           </Button>
         </DialogActions>

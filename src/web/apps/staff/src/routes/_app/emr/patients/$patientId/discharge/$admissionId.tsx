@@ -35,7 +35,8 @@ function DischargeSummaryPage() {
     return <ChartLoadError patientId={patientId} error={summary.error} onRetry={() => void summary.refetch()} />;
   }
 
-  const toChart = () => void navigate({ to: '/emr/patients/$patientId', params: { patientId }, search: { tab: 'admissions' } });
+  const toChart = () =>
+    void navigate({ to: '/emr/patients/$patientId', params: { patientId }, search: { tab: 'admissions' } });
   const subtitle = admission
     ? `${admission.admissionNumber} · admitted ${formatDateTime(admission.admittedAt)}${admission.dischargedAt ? ` · discharged ${formatDateTime(admission.dischargedAt)}` : ' · still admitted'}${admission.consultantName ? ` · ${admission.consultantName}` : ''}`
     : 'In-patient stay';
@@ -46,16 +47,30 @@ function DischargeSummaryPage() {
       <PageHeader
         title="Discharge summary"
         subtitle={subtitle}
-        breadcrumbs={[{ label: 'Chart', onClick: toChart }, { label: 'Admissions', onClick: toChart }, { label: 'Discharge summary' }]}
+        breadcrumbs={[
+          { label: 'Chart', onClick: toChart },
+          { label: 'Admissions', onClick: toChart },
+          { label: 'Discharge summary' },
+        ]}
       />
       {discharge.isLoading ? (
         <LoadingState />
       ) : discharge.error ? (
         <ErrorState error={discharge.error} onRetry={() => void discharge.refetch()} />
       ) : discharge.data === null && !canWrite ? (
-        <EmptyState title="No discharge summary yet" description="The treating doctor writes it before discharge. It appears here once saved." />
+        <EmptyState
+          title="No discharge summary yet"
+          description="The treating doctor writes it before discharge. It appears here once saved."
+        />
       ) : (
-        <DischargeSummaryEditor key={admissionId} patientId={patientId} admissionId={admissionId} admission={admission} summary={discharge.data ?? null} facilityName={facilityName} />
+        <DischargeSummaryEditor
+          key={admissionId}
+          patientId={patientId}
+          admissionId={admissionId}
+          admission={admission}
+          summary={discharge.data ?? null}
+          facilityName={facilityName}
+        />
       )}
     </Page>
   );

@@ -9,7 +9,17 @@ import {
   summarizeFluids,
   type FluidEntryInput,
 } from './fluidBalance';
-import { addDays, atIst, dutyDate, formatDuration, formatTimeOfDay, fromIstInput, previousMonth, shiftAt, toIstInput } from './time';
+import {
+  addDays,
+  atIst,
+  dutyDate,
+  formatDuration,
+  formatTimeOfDay,
+  fromIstInput,
+  previousMonth,
+  shiftAt,
+  toIstInput,
+} from './time';
 
 /** IST wall-clock → ISO instant, for readable fixtures. */
 const ist = (date: string, hh: number, mm = 0) => atIst(date, hh, mm);

@@ -25,7 +25,11 @@ const NOTHING_HEARD = 'Nothing was heard. Try again, a little closer to the micr
  * recording sent to the server's speech-to-text. The recognised text goes to `onText` for the user to check and edit;
  * it is never logged or stored.
  */
-export function useVoiceCapture(mode: VoiceMode | null, patientId: string | null, onText: (text: string) => void): VoiceCapture {
+export function useVoiceCapture(
+  mode: VoiceMode | null,
+  patientId: string | null,
+  onText: (text: string) => void,
+): VoiceCapture {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState(0);
@@ -100,7 +104,10 @@ export function useVoiceCapture(mode: VoiceMode | null, patientId: string | null
     }
   };
 
-  const seconds = phase === 'listening' && mode === 'server' && startedAt > 0 ? Math.min(MAX_RECORDING_MS / 1000, Math.max(0, Math.floor((now - startedAt) / 1000))) : 0;
+  const seconds =
+    phase === 'listening' && mode === 'server' && startedAt > 0
+      ? Math.min(MAX_RECORDING_MS / 1000, Math.max(0, Math.floor((now - startedAt) / 1000)))
+      : 0;
 
   return {
     phase,

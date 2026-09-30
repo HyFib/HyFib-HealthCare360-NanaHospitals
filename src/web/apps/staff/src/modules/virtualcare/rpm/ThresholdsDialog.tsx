@@ -37,7 +37,12 @@ const useStyles = makeStyles({
     backgroundColor: tokens.colorNeutralBackground2,
   },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' },
-  inputs: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', '@media (max-width: 600px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' } },
+  inputs: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: '8px',
+    '@media (max-width: 600px)': { gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
   error: { color: tokens.colorPaletteRedForeground1 },
 });
@@ -61,17 +66,32 @@ const toText = (value: number | null) => (value === null ? '' : String(value));
 const toNumber = (value: string): number | null => (value.trim() === '' ? null : Number(value));
 
 function limitsOf(row: LimitRow): Limits {
-  return { min: toNumber(row.min), max: toNumber(row.max), criticalMin: toNumber(row.criticalMin), criticalMax: toNumber(row.criticalMax) };
+  return {
+    min: toNumber(row.min),
+    max: toNumber(row.max),
+    criticalMin: toNumber(row.criticalMin),
+    criticalMax: toNumber(row.criticalMax),
+  };
 }
 
 /**
  * The patient's own limits (RPM-03). Readings outside the normal range raise a warning, beyond the critical limits a
  * critical alert. The programme's defaults are a starting point that the doctor should review for every patient.
  */
-export function ThresholdsDialog({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail | null; onClose: () => void }) {
+export function ThresholdsDialog({
+  enrollment,
+  onClose,
+}: {
+  enrollment: RpmEnrollmentDetail | null;
+  onClose: () => void;
+}) {
   return (
     <Dialog open={enrollment !== null} onOpenChange={(_, d) => !d.open && onClose()}>
-      <DialogSurface style={{ maxWidth: 720 }}>{enrollment && <ThresholdsContent key={`${enrollment.id}-${enrollment.version}`} enrollment={enrollment} onClose={onClose} />}</DialogSurface>
+      <DialogSurface style={{ maxWidth: 720 }}>
+        {enrollment && (
+          <ThresholdsContent key={`${enrollment.id}-${enrollment.version}`} enrollment={enrollment} onClose={onClose} />
+        )}
+      </DialogSurface>
     </Dialog>
   );
 }
@@ -81,7 +101,13 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<LimitRow[]>(() =>
-    enrollment.thresholds.map((t) => ({ type: t.type, min: toText(t.min), max: toText(t.max), criticalMin: toText(t.criticalMin), criticalMax: toText(t.criticalMax) })),
+    enrollment.thresholds.map((t) => ({
+      type: t.type,
+      min: toText(t.min),
+      max: toText(t.max),
+      criticalMin: toText(t.criticalMin),
+      criticalMax: toText(t.criticalMax),
+    })),
   );
   const [problem, setProblem] = useState<string | null>(null);
   const available = READING_TYPES.filter((type) => !rows.some((row) => row.type === type));
@@ -95,7 +121,12 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
   });
 
   const save = useMutation({
-    mutationFn: () => rpmApi.setThresholds(enrollment.id, rows.map((row) => ({ type: row.type, ...limitsOf(row) })), enrollment.version),
+    mutationFn: () =>
+      rpmApi.setThresholds(
+        enrollment.id,
+        rows.map((row) => ({ type: row.type, ...limitsOf(row) })),
+        enrollment.version,
+      ),
     onSuccess: () => {
       notify.success('Limits saved', 'New readings are checked against them.');
       void queryClient.invalidateQueries({ queryKey: rpmKeys.all });
@@ -133,7 +164,11 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
           </Caption1>
         </DialogTitle>
         <DialogContent className={styles.form}>
-          {rows.length === 0 && <Text className={styles.muted}>No limits: readings are stored but never raise alerts. Add limits below.</Text>}
+          {rows.length === 0 && (
+            <Text className={styles.muted}>
+              No limits: readings are stored but never raise alerts. Add limits below.
+            </Text>
+          )}
           {rows.map((row, index) => {
             const info = readingTypeInfo[row.type];
             return (
@@ -153,7 +188,13 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
                 <div className={styles.inputs}>
                   {FIELDS.map((field) => (
                     <Field key={field.key} label={field.label} size="small">
-                      <Input type="number" inputMode="decimal" size="small" value={row[field.key]} onChange={(_, d) => setValue(row.type, field.key, d.value)} />
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        size="small"
+                        value={row[field.key]}
+                        onChange={(_, d) => setValue(row.type, field.key, d.value)}
+                      />
                     </Field>
                   ))}
                 </div>
@@ -173,7 +214,10 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
                 value=""
                 onChange={(_, d) => {
                   if (d.value) {
-                    setRows((current) => [...current, { type: d.value as RpmReadingType, min: '', max: '', criticalMin: '', criticalMax: '' }]);
+                    setRows((current) => [
+                      ...current,
+                      { type: d.value as RpmReadingType, min: '', max: '', criticalMin: '', criticalMax: '' },
+                    ]);
                   }
                 }}
               >
@@ -196,7 +240,12 @@ function ThresholdsContent({ enrollment, onClose }: { enrollment: RpmEnrollmentD
           <Button onClick={onClose} disabled={save.isPending}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={save.isPending || problems.some((p) => p !== null)} icon={save.isPending ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={save.isPending || problems.some((p) => p !== null)}
+            icon={save.isPending ? <Spinner size="tiny" /> : undefined}
+          >
             Save limits
           </Button>
         </DialogActions>

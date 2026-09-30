@@ -29,8 +29,21 @@ interface PaletteItem {
 }
 
 const useStyles = makeStyles({
-  surface: { padding: 0, maxWidth: '640px', width: 'calc(100vw - 32px)', overflow: 'hidden', alignSelf: 'flex-start', marginTop: '10vh' },
-  input: { width: '100%', border: 'none', borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: 0, padding: '8px 12px' },
+  surface: {
+    padding: 0,
+    maxWidth: '640px',
+    width: 'calc(100vw - 32px)',
+    overflow: 'hidden',
+    alignSelf: 'flex-start',
+    marginTop: '10vh',
+  },
+  input: {
+    width: '100%',
+    border: 'none',
+    borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+    borderRadius: 0,
+    padding: '8px 12px',
+  },
   list: { maxHeight: '60vh', overflowY: 'auto', padding: '6px', margin: 0, listStyle: 'none' },
   group: { padding: '8px 10px 4px', color: tokens.colorNeutralForeground3 },
   option: {
@@ -44,7 +57,13 @@ const useStyles = makeStyles({
   active: { backgroundColor: tokens.colorNeutralBackground1Selected },
   optionText: { display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 },
   muted: { color: tokens.colorNeutralForeground3 },
-  footer: { display: 'flex', gap: '16px', padding: '8px 14px', borderTop: `1px solid ${tokens.colorNeutralStroke2}`, color: tokens.colorNeutralForeground3 },
+  footer: {
+    display: 'flex',
+    gap: '16px',
+    padding: '8px 14px',
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+    color: tokens.colorNeutralForeground3,
+  },
   empty: { padding: '24px', textAlign: 'center', color: tokens.colorNeutralForeground3 },
 });
 
@@ -72,13 +91,17 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const listId = useId();
 
   const screens = useMemo(
-    () => visibleModules(user, moduleManifests).flatMap((module) => [...module.links, ...(module.quickActions ?? [])].map((link) => ({ ...link, module: module.title }))),
+    () =>
+      visibleModules(user, moduleManifests).flatMap((module) =>
+        [...module.links, ...(module.quickActions ?? [])].map((link) => ({ ...link, module: module.title })),
+      ),
     [user],
   );
 
   const patients = useQuery({
     queryKey: ['palette', 'patients', debounced],
-    queryFn: ({ signal }) => api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { search: debounced, pageSize: 6 }, signal }),
+    queryFn: ({ signal }) =>
+      api.get<PagedResult<PatientListItem>>('/api/v1/patients', { query: { search: debounced, pageSize: 6 }, signal }),
     enabled: open && canSearchPatients && debounced.length >= 3,
     staleTime: 10_000,
   });
@@ -87,7 +110,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     const screenItems = screens
       .filter((link) => !term.trim() || matches(link, term.trim()))
       .slice(0, term.trim() ? 8 : 6)
-      .map((link) => ({ id: `screen:${link.to}:${link.label}`, kind: 'screen' as const, title: link.label, subtitle: link.module, to: link.to }));
+      .map((link) => ({
+        id: `screen:${link.to}:${link.label}`,
+        kind: 'screen' as const,
+        title: link.label,
+        subtitle: link.module,
+        to: link.to,
+      }));
     const patientItems = (patients.data?.items ?? []).map((p) => ({
       id: `patient:${p.id}`,
       kind: 'patient' as const,
@@ -135,7 +164,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           className={styles.input}
           size="large"
           appearance="underline"
-          placeholder={canSearchPatients ? 'Search patients by UHID, mobile or name, or jump to a screen' : 'Jump to a screen'}
+          placeholder={
+            canSearchPatients ? 'Search patients by UHID, mobile or name, or jump to a screen' : 'Jump to a screen'
+          }
           contentBefore={<SearchRegular />}
           contentAfter={patients.isFetching ? <Spinner size="tiny" /> : undefined}
           value={term}
@@ -156,7 +187,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         <ul className={styles.list} id={listId} role="listbox" aria-label="Results">
           {items.length === 0 && (
             <li className={styles.empty} role="presentation">
-              {debounced.length >= 3 && patients.isFetching ? 'Searching…' : 'No matches. Try a UHID, a 10-digit mobile number or part of a name.'}
+              {debounced.length >= 3 && patients.isFetching
+                ? 'Searching…'
+                : 'No matches. Try a UHID, a 10-digit mobile number or part of a name.'}
             </li>
           )}
           {items.map((item, index) => (
