@@ -431,7 +431,8 @@ internal abstract class NotificationDeliveryHandler(HospitalDbContext db, Notifi
         {
             log.Status = result.Success ? NotificationStatus.Sent : NotificationStatus.Failed;
             log.ProviderMessageId = result.ProviderMessageId;
-            log.Error = result.Error;
+            // Providers quote the recipient back in their errors (Twilio: "The 'To' number +91… is not valid").
+            log.Error = SensitiveText.RedactOrNull(result.Error);
             log.SentAt = result.Success ? time.GetUtcNow() : null;
             await db.SaveChangesAsync(cancellationToken);
         }

@@ -42,24 +42,29 @@ platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).
 
 builder.Services.AddWindowsService(options => options.ServiceName = "HyFib HealthCare360");
 
+// Every sink writes through RedactingFormatter: phone, Aadhaar and ABHA numbers, e-mail addresses and secrets are masked
+// in the finished line, including exception text.
 builder.Services.AddSerilog((services, logger) =>
 {
     logger.ReadFrom.Configuration(builder.Configuration)
         .ReadFrom.Services(services)
         .Enrich.FromLogContext()
         .Enrich.WithProperty("Application", "HC360.Server")
-        .WriteTo.Console(restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
+        .WriteTo.Console(
+            new RedactingFormatter("[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"),
+            restrictedToMinimumLevel: builder.Environment.IsDevelopment() ? LogEventLevel.Debug : LogEventLevel.Information)
         .WriteTo.File(
+            new RedactingFormatter("{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}"),
             Path.Combine(directories.Logs, "hc360-server-.log"),
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 60,
             fileSizeLimitBytes: 100 * 1024 * 1024,
-            rollOnFileSizeLimit: true,
-            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {SourceContext} {CorrelationId} {Message:lj}{NewLine}{Exception}");
+            rollOnFileSizeLimit: true);
 
     if (OperatingSystem.IsWindows() && !builder.Environment.IsDevelopment())
     {
-        logger.WriteTo.EventLog("HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
+        logger.WriteTo.EventLog(
+            new RedactingFormatter("{Message:lj}{NewLine}{Exception}"), "HyFib HealthCare360", manageEventSource: false, restrictedToMinimumLevel: LogEventLevel.Error);
     }
 });
 

@@ -94,7 +94,7 @@ internal sealed partial class IntegrationLogger(
                 Reference = entry.Reference,
                 Request = Sanitize(entry.Request),
                 Response = Sanitize(entry.Response),
-                Error = Truncate(entry.Error, 2000),
+                Error = Truncate(SensitiveText.RedactOrNull(entry.Error), 2000),
                 FacilityId = currentUser.FacilityId,
                 CorrelationId = currentUser.CorrelationId,
             });
