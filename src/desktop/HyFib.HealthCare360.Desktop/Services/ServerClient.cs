@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -86,6 +87,7 @@ internal sealed class ServerClient(Uri baseUri, ServerTrust trust) : IDisposable
     /// cannot be verified yet, so the result is only accepted after its fingerprint matches the one advertised over
     /// mDNS / set by IT policy, or the one an administrator confirms on screen.
     /// </summary>
+    [SuppressMessage("Security", "CA5359:Do not disable certificate validation", Justification = "Trust on first use: the CA is not trusted until its fingerprint matches IT policy or an administrator confirms it (SetupWindow).")]
     public static async Task<(string Pem, string Fingerprint)> FetchCaCertificateAsync(Uri baseUri, CancellationToken cancellationToken)
     {
         using var handler = new SocketsHttpHandler

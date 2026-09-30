@@ -1,6 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Text;
 
+// Native libraries are loaded from System32 only, never from the application or current directory (DLL planting).
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+
 namespace HyFib.HealthCare360.Desktop.Bridge;
 
 /// <summary>

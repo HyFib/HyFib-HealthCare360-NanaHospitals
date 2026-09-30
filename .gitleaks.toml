@@ -1,0 +1,29 @@
+# Secret scan (gitleaks), run by CI over every commit with the default rules. The values below were reviewed and are not
+# secrets. A new finding is either a real secret (revoke it at the provider first, then remove it from the history) or,
+# once reviewed, a value added here with where it comes from.
+title = "HC360 secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fixed fake credentials in the tests"
+regexes = [
+  '''Abcdefghijklmnop_123''',             # src/web/apps/portal/src/app.test.tsx
+  '''Rx_token-0123456789ab''',            # src/web/apps/portal/src/app.test.tsx
+  '''k3P9xLr0bPz7Kd2Nf5Hs''',             # src/web/apps/portal/src/modules/modules.test.ts
+  '''q3W9xLr0bPz7Kd2Nf5Hs8Tv1Yc4Ma6Je''', # tests/HyFib.HealthCare360.Platform.Tests/LoggedPathTests.cs
+  '''Zk3_9aB-qR7tLm2xWv5c''',             # tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests/PrescriptionVerificationLinksTests.cs
+  '''test-security-token-0001''',         # tests/HyFib.HealthCare360.Integrations.Tests/Pos/PineLabsPosTerminalTests.cs
+  '''auth-token-123''',                   # tests/HyFib.HealthCare360.Integrations.Tests/Sms/TwilioSmsProviderTests.cs
+]
+
+[[allowlists]]
+description = "Code and documents that only look like keys"
+regexes = [
+  '''^PBKDF2-SHA512$''', # docs/requirements/SRS.md: the password-hashing algorithm
+  '''^ProviderKeys\.''', # Integrations: names of settings keys
+  '''^crmKeys\.''',      # staff app: query keys
+  '''^pregnancy_12m$''', # staff app: a blood-donor deferral rule
+  '''^Control\+''',      # staff app: keyboard shortcuts
+]

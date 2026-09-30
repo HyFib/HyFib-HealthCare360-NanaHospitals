@@ -2,6 +2,9 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 
+// Native libraries are loaded from System32 only, never from the application or current directory (DLL planting).
+[assembly: DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+
 namespace HyFib.HealthCare360.WindowsInterop;
 
 /// <summary>Security posture of a WiFi association, simplified for alerting.</summary>

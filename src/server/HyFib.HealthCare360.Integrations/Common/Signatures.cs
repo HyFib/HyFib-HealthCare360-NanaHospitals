@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -10,6 +11,8 @@ namespace HyFib.HealthCare360.Integrations.Common;
 /// </summary>
 internal static class Signatures
 {
+    private const string TwilioMandatesSha1 = "Twilio signs its webhooks with HMAC-SHA1; the algorithm is the provider's, not ours.";
+
     public static byte[] HmacSha256(string secret, ReadOnlySpan<byte> payload) =>
         HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), payload);
 
@@ -31,9 +34,11 @@ internal static class Signatures
         VerifyHmacSha256Hex(secret, Encoding.UTF8.GetBytes(payload), providedHex);
 
     /// <summary>Base64 HMAC-SHA1 — the algorithm Twilio mandates for <c>X-Twilio-Signature</c>.</summary>
+    [SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms", Justification = TwilioMandatesSha1)]
     public static string HmacSha1Base64(string secret, string payload) =>
         Convert.ToBase64String(HMACSHA1.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload)));
 
+    [SuppressMessage("Security", "CA5350:Do Not Use Weak Cryptographic Algorithms", Justification = TwilioMandatesSha1)]
     public static bool VerifyHmacSha1Base64(string? secret, string payload, string? providedBase64)
     {
         if (string.IsNullOrEmpty(secret) || string.IsNullOrWhiteSpace(providedBase64))

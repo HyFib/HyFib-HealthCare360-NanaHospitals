@@ -7,6 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Every security rule, including those off by default (native library loading, TLS, crypto, SQL text). A reviewed
+         exception is a [SuppressMessage] with its justification next to the code; see docs/security/SECURITY.md. -->
+    <AnalysisModeSecurity>All</AnalysisModeSecurity>
     <Deterministic>true</Deterministic>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -20,6 +23,13 @@
 
     <!-- CS1591: public XML docs are not mandatory; NU1507: multiple package sources are fine in dev. -->
     <NoWarn>$(NoWarn);CS1591;NU1507</NoWarn>
+
+    <!-- A package with a known vulnerability, direct or transitive and of any severity, fails restore: NU1901–NU1904 are
+         warnings, and warnings are errors. An advisory reviewed as not applying is listed as a NuGetAuditSuppress item in
+         Directory.Packages.props with the reason; see docs/security/SECURITY.md. -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

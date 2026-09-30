@@ -47,6 +47,11 @@ dotnet_diagnostic.CA1812.severity = none
 dotnet_diagnostic.CA1515.severity = none      # public types in app assemblies are intentional (tests/modules)
 dotnet_diagnostic.CA1062.severity = none
 
+# Test code never ships: throwaway databases are named in SQL text, and test data may use Random.
+[tests/**/*.cs]
+dotnet_diagnostic.CA2100.severity = none
+dotnet_diagnostic.CA5394.severity = none
+
 [*.{json,yml,yaml,md}]
 indent_size = 2
 
