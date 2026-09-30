@@ -125,6 +125,10 @@ public sealed class RetentionService(
             return Result.Success();
         }
 
+        // One transaction: Clinical's handler moves the chart dates with a set-based update while the change is being
+        // saved, before the save's own transaction would start. The dates, the setting, the change and its audit entry
+        // commit together or not at all, so a failed save never leaves the charts moved and a retry never moves them twice.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         db.Add(RetentionChange.Record(rule, previous, value, currentUser.UserId, time.GetUtcNow()));
         audit.Add(new AuditEntry(AuditCategories.Admin, "privacy.retention.changed",
             string.Create(CultureInfo.InvariantCulture, $"Retention for {rule.Title}: {previous} → {value} {rule.Unit.ToString().ToLowerInvariant()}"))
@@ -134,8 +138,8 @@ public sealed class RetentionService(
             Details = new { rule.Key, previous, value },
         });
 
-        // SetAsync saves the unit of work: the change, its audit entry and Clinical's chart dates commit together.
         await settings.SetAsync(rule.SettingKey, value, null, false, ct);
+        await transaction.CommitAsync(ct);
         return Result.Success();
     }
 
