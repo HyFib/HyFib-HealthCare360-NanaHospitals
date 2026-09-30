@@ -22,8 +22,8 @@ public static class SchedulePolicy
         var prescriptionOnly = items.Where(i => i.RequiresPrescription).Select(i => i.ItemName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         if (prescriptionOnly.Count > 0 && !hasPrescription)
         {
-            return Error.Rule("pharmacy.prescription_required", $"A prescription is required to sell {string.Join(", ", prescriptionOnly)} (Schedule H/H1/X).")
-                with { Data = new { items = prescriptionOnly } };
+            var required = Error.Rule("pharmacy.prescription_required", $"A prescription is required to sell {string.Join(", ", prescriptionOnly)} (Schedule H/H1/X).");
+            return required with { Data = new { items = prescriptionOnly } };
         }
 
         if (items.Any(i => i.RequiresRegister) && !hasBuyerIdentity)
@@ -37,10 +37,13 @@ public static class SchedulePolicy
     public static Result CheckControlledConfirmation(IReadOnlyCollection<SaleCandidate> items, bool confirmed)
     {
         var controlled = items.Where(i => i.RequiresRegister).Select(i => i.ItemName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        return controlled.Count == 0 || confirmed
-            ? Result.Success()
-            : Error.Rule("pharmacy.controlled_confirmation_required", $"Confirm the controlled medicines before dispensing: {string.Join(", ", controlled)}.")
-                with { Data = new { items = controlled } };
+        if (controlled.Count == 0 || confirmed)
+        {
+            return Result.Success();
+        }
+
+        var unconfirmed = Error.Rule("pharmacy.controlled_confirmation_required", $"Confirm the controlled medicines before dispensing: {string.Join(", ", controlled)}.");
+        return unconfirmed with { Data = new { items = controlled } };
     }
 }
 

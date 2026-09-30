@@ -268,10 +268,8 @@ internal sealed class WifiMonitor(
                     WifiEventKind.WeakSignal => AuditSeverity.Warning,
                     _ => AuditSeverity.Info,
                 };
-                audit.Add(new AuditEntry(
-                    wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork ? AuditCategories.Security : AuditCategories.Admin,
-                    $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}",
-                    wifiEvent.Message) { Severity = severity });
+                var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork ? AuditCategories.Security : AuditCategories.Admin;
+                audit.Add(new AuditEntry(category, $"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", wifiEvent.Message) { Severity = severity });
 
                 if (wifiEvent.Kind is not WifiEventKind.AccessPointChanged)
                 {

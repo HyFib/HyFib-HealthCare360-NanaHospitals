@@ -135,11 +135,10 @@ internal sealed class LabResultService(
 
             if (string.IsNullOrWhiteSpace(request.QcOverrideReason))
             {
-                return Error.Rule(
+                var qcFailed = Error.Rule(
                     "lab.qc_lockout",
-                    $"Today's QC failed for {string.Join(", ", lockouts.Select(l => l.TestName))}. Resolve QC, or verify with an override reason.")
-                    with
-                    { Data = new { lockouts } };
+                    $"Today's QC failed for {string.Join(", ", lockouts.Select(l => l.TestName))}. Resolve QC, or verify with an override reason.");
+                return qcFailed with { Data = new { lockouts } };
             }
 
             overrides += await qc.RecordOverridesAsync(lockouts, request.QcOverrideReason, ct);
@@ -157,11 +156,10 @@ internal sealed class LabResultService(
         {
             if (request.CriticalCall is null)
             {
-                return Error.Rule(
+                var callRequired = Error.Rule(
                     "lab.critical_call_required",
-                    $"Critical values need a documented call before verification: {string.Join(", ", needCall.Select(r => $"{r.TestName} {r.Describe()}"))}.")
-                    with
-                    { Data = new { results = needCall.Select(r => new { r.Id, r.TestName, value = r.Describe(), r.Flag }).ToList() } };
+                    $"Critical values need a documented call before verification: {string.Join(", ", needCall.Select(r => $"{r.TestName} {r.Describe()}"))}.");
+                return callRequired with { Data = new { results = needCall.Select(r => new { r.Id, r.TestName, value = r.Describe(), r.Flag }).ToList() } };
             }
 
             foreach (var result in needCall)

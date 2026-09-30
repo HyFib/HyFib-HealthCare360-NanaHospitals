@@ -155,8 +155,7 @@ internal static class FlagEndpoints
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
-            { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: NoKnownAllergiesStatementConfiguration.OnePerPatientIndex })
+        catch (DbUpdateException ex) when (IsAlreadyRecorded(ex))
         {
             // Recorded from another desk a moment ago; the outcome is the same, so answer with that statement.
             db.ChangeTracker.Clear();
@@ -167,6 +166,9 @@ internal static class FlagEndpoints
         await realtime.PublishAsync(Topics.Patient(patientId), "clinical.flags.changed", new { statement.Id }, ct);
         return TypedResults.Ok(ToDto(statement));
     }
+
+    private static bool IsAlreadyRecorded(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: NoKnownAllergiesStatementConfiguration.OnePerPatientIndex };
 
     private static async Task<IResult> UpdateAllergy(Guid id, UpdateAllergyRequest request, ClinicalAccess access, HospitalDbContext db,
         IRealtimePublisher realtime, CancellationToken ct)

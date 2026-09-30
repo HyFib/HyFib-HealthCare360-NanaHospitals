@@ -52,17 +52,16 @@ internal sealed class WhatsAppInboundStore(HospitalDbContext db, IOutbox outbox,
             await db.SaveChangesAsync(cancellationToken);
             return received.Count;
         }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException
-                                           {
-                                               SqlState: PostgresErrorCodes.UniqueViolation,
-                                               ConstraintName: InboundWhatsAppMessageConfiguration.ProviderMessageIdIndex,
-                                           })
+        catch (DbUpdateException ex) when (IsDuplicateDelivery(ex))
         {
             // A concurrent redelivery stored the same messages first and acted on their keywords; nothing is lost. Any
             // other conflict fails the request, so that Meta delivers the webhook again.
             return 0;
         }
     }
+
+    private static bool IsDuplicateDelivery(DbUpdateException ex) =>
+        ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: InboundWhatsAppMessageConfiguration.ProviderMessageIdIndex };
 
     /// <summary>The messages not stored yet, each once, with their keywords classified but not acted on.</summary>
     internal static List<InboundWhatsAppMessage> NewMessages(

@@ -10,6 +10,8 @@ trim_trailing_whitespace = true
 
 [*.{cs,csx}]
 indent_size = 4
+# A braced case block sits at the case's indent: case X: / { / …statements… / }
+csharp_indent_case_contents_when_block = false
 dotnet_sort_system_directives_first = true
 csharp_style_namespace_declarations = file_scoped:warning
 csharp_style_var_for_built_in_types = true:suggestion
@@ -46,6 +48,10 @@ dotnet_diagnostic.CA1805.severity = none
 dotnet_diagnostic.CA1812.severity = none
 dotnet_diagnostic.CA1515.severity = none      # public types in app assemblies are intentional (tests/modules)
 dotnet_diagnostic.CA1062.severity = none
+
+# EF Core writes the migrations; they are not hand-formatted and `dotnet format` leaves them alone.
+[src/server/HyFib.HealthCare360.Server/Persistence/Migrations/*.cs]
+generated_code = true
 
 # Test code never ships: throwaway databases are named in SQL text, and test data may use Random.
 [tests/**/*.cs]
