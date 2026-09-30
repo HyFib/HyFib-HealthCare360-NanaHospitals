@@ -21,6 +21,12 @@ public sealed class SensitiveTextTests
     [InlineData("Authorization: Bearer abcdefgh.ijklmnop", "Authorization: Bearer ***")]
     [InlineData("jwt eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl rejected", "jwt [token] rejected")]
     [InlineData("otp: 123456", "otp: ***")]
+    [InlineData("{\"password\":\"correct horse battery staple\",\"user\":\"nurse\"}", "{\"password\":\"***\",\"user\":\"nurse\"}")]
+    [InlineData("{\"password\": \"P@ss,word;x\"}", "{\"password\": \"***\"}")]
+    [InlineData("{\"client_secret\":\"a\\\"b c\",\"id\":7}", "{\"client_secret\":\"***\",\"id\":7}")]
+    [InlineData("login password='two words' refused", "login password='***' refused")]
+    [InlineData("{\"password\":\"never closed, and more", "{\"password\":\"***\"")]
+    [InlineData("Host=db;Password=S3cret;Database=hc360", "Host=db;Password=***;Database=hc360")]
     public void Secrets_are_removed_entirely(string text, string expected) =>
         SensitiveText.Redact(text).ShouldBe(expected);
 

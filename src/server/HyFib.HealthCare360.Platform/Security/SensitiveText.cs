@@ -24,7 +24,7 @@ public static partial class SensitiveText
 
         var redacted = Jwt().Replace(text, "[token]");
         redacted = AuthorizationValue().Replace(redacted, "${scheme} ***");
-        redacted = SecretValue().Replace(redacted, "${name}${sep}${quote}***");
+        redacted = SecretValue().Replace(redacted, "${name}${sep}${quote}***${quote}");
         redacted = Email().Replace(redacted, m => m.Value[0] + "***@" + m.Groups["domain"].Value);
         redacted = AbhaAddress().Replace(redacted, "***@${domain}");
         // Longest first, and mobiles before Aadhaar: +91 and a mobile number is twelve digits too.
@@ -51,8 +51,11 @@ public static partial class SensitiveText
     private static partial Regex AuthorizationValue();
 
     // name=value, name: value or "name":"value" for the names secrets travel under (query strings, forms, JSON, headers).
+    // A quoted value runs to its closing quote, escaped quotes included, so a secret with spaces or commas goes whole (to
+    // the end of the line if the quote never closes). An unquoted value ends at the delimiters between values in query
+    // strings, forms, headers and connection strings.
     [GeneratedRegex(
-        @"(?<name>\b(?:access_token|refresh_token|id_token|token|api_?key|apikey|key_secret|client_secret|secret|password|passwd|pwd|auth_token|signature|sig|otp)\b""?)(?<sep>\s*[=:]\s*)(?<quote>[""']?)[^\s&""',;}]+",
+        @"(?<name>\b(?:access_token|refresh_token|id_token|token|api_?key|apikey|key_secret|client_secret|secret|password|passwd|pwd|auth_token|signature|sig|otp)\b""?)(?<sep>\s*[=:]\s*)(?:(?<quote>"")(?:\\.|[^""\\\r\n])*""?|(?<quote>')(?:\\.|[^'\\\r\n])*'?|[^\s&""',;}]+)",
         RegexOptions.IgnoreCase, 1000)]
     private static partial Regex SecretValue();
 
