@@ -74,6 +74,7 @@ internal sealed class BreachConfiguration : IEntityTypeConfiguration<Breach>
         b.Property(x => x.Mitigation).HasMaxLength(4000);
         b.Property(x => x.PrincipalSteps).HasMaxLength(4000);
         b.Property(x => x.Cause).HasMaxLength(4000);
+        b.Property(x => x.Findings).HasMaxLength(4000);
         b.Property(x => x.Remediation).HasMaxLength(4000);
         b.Property(x => x.PrincipalNotice).HasMaxLength(320);
         b.Property(x => x.BoardReference).HasMaxLength(100);

@@ -58,6 +58,7 @@ public sealed class PrivacyTests(HospitalServer server)
         listed.IdentityVerified.ShouldBeTrue("The patient asked for themselves after signing in with a code sent to their number.");
         listed.Uhid.ShouldBe(patient.Uhid);
 
+        (await officer.GetAsync<List<PrivacyOfficer>>("/api/v1/privacy/officers")).ShouldContain(o => o.DisplayName.Length > 0);
         await officer.PostAsync($"/api/v1/privacy/requests/{created.Id}/start");
         await officer.PostAsync($"/api/v1/privacy/requests/{created.Id}/corrections",
             new DecideCorrectionsRequest([new CorrectionDecisionInput(0, CorrectionDecision.Accepted, null)]));
@@ -133,10 +134,11 @@ public sealed class PrivacyTests(HospitalServer server)
         var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var aware = DateTimeOffset.UtcNow.AddHours(-2);
 
-        var created = await officer.PostAsync<JsonElement>("/api/v1/privacy/breaches", new SaveBreachRequest(
+        var created = await officer.PostAsync<BreachCreated>("/api/v1/privacy/breaches", new SaveBreachRequest(
             "Report e-mailed to the wrong address", "A lab report was e-mailed to another patient.", aware, aware.AddHours(-1), null,
-            [BreachNature.Confidentiality], "Laboratory e-mail", [BreachDataCategory.Health], 1, null, null, null, null, null, null, null));
-        var breachId = created.GetGuid();
+            [BreachNature.Confidentiality], "Laboratory e-mail", [BreachDataCategory.Health], 1, null, null, null, null, null, null, null, null));
+        var breachId = created.Id;
+        created.BreachNumber.ShouldStartWith("DPB");
 
         var added = await officer.PostAsync<AddAffectedResult>($"/api/v1/privacy/breaches/{breachId}/affected",
             new AddAffectedRequest(null, [patient.Uhid.ToLowerInvariant(), "NOSUCHUHID1"]));
@@ -166,12 +168,14 @@ public sealed class PrivacyTests(HospitalServer server)
         var register = await officer.GetAsync<PagedResult<BreachListItem>>("/api/v1/privacy/breaches?openOnly=true");
         register.Items.Single(b => b.Id == breachId).ShouldSatisfyAllConditions(
             b => b.Status.ShouldBe(BreachStatus.ReportSubmitted),
+            b => b.ReportSubmittedAt.ShouldNotBeNull(),
             b => b.AffectedListed.ShouldBe(1),
             b => b.Notified.ShouldBe(1));
         var report = await officer.GetAsync<BreachReport>($"/api/v1/privacy/breaches/{breachId}/report");
         report.Breach.Status.ShouldBe(BreachStatus.ReportSubmitted);
         report.Breach.BoardReference.ShouldBe("DPB/TEST/1");
         report.Breach.Notified.ShouldBe(1);
+        report.Breach.Findings.ShouldBe("A member of staff chose the wrong patient's address from the list.");
     }
 
     [Fact]
@@ -346,7 +350,8 @@ public sealed class PrivacyTests(HospitalServer server)
     private static SaveBreachRequest Complete(BreachDetail detail) => new(
         detail.Title, detail.Description, detail.AwareAt, detail.OccurredFrom, detail.OccurredTo, detail.Nature, detail.Location, detail.DataCategories,
         detail.EstimatedAffected, "Someone may know about your test results.", "We asked the recipient to delete the e-mail, and they confirmed it.",
-        "No action is needed; be careful of calls about your results.", "The e-mail address was typed wrongly.", "Addresses are now checked before sending.",
+        "No action is needed; be careful of calls about your results.", "The e-mail address was typed wrongly.",
+        "A member of staff chose the wrong patient's address from the list.", "Addresses are now checked before sending.",
         "A lab report of yours was e-mailed to another patient, who deleted it.", detail.Version);
 
     private async Task<List<string>> QueuedTemplatesAsync(string phone)

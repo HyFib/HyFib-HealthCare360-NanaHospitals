@@ -18,6 +18,8 @@ internal static class RequestEndpoints
         group.MapGet("/overview", async (DataRequestService requests, CancellationToken ct) => TypedResults.Ok(await requests.OverviewAsync(ct)))
             .RequirePermission(PrivacyPermissions.RequestsRead);
         group.MapGet("/requests", List).RequirePermission(PrivacyPermissions.RequestsRead);
+        group.MapGet("/officers", async (DataRequestService requests, CancellationToken ct) => TypedResults.Ok(await requests.OfficersAsync(ct)))
+            .RequirePermission(PrivacyPermissions.RequestsManage);
         group.MapGet("/requests/{id:guid}", Get).RequirePermission(PrivacyPermissions.RequestsRead);
         group.MapPost("/requests", Create).RequirePermission(PrivacyPermissions.RequestsLog).WithValidation<CreateDataRequestRequest>();
         group.MapPost("/requests/{id:guid}/start", async (Guid id, DataRequestService requests, CancellationToken ct) =>

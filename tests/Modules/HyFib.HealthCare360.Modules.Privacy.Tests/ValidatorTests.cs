@@ -125,7 +125,7 @@ public sealed class ValidatorTests
     {
         var aware = new DateTimeOffset(2026, 9, 28, 9, 0, 0, TimeSpan.Zero);
         var valid = new SaveBreachRequest("Laptop stolen", "A laptop was stolen.", aware, aware.AddDays(-1), aware.AddHours(-20), [BreachNature.Confidentiality],
-            null, [BreachDataCategory.Health], 120, null, null, null, null, null, null, null);
+            null, [BreachDataCategory.Health], 120, null, null, null, null, null, null, null, null);
 
         new SaveBreachRequestValidator().Validate(valid).IsValid.ShouldBeTrue();
         new SaveBreachRequestValidator().Validate(valid with { Title = "" }).IsValid.ShouldBeFalse();

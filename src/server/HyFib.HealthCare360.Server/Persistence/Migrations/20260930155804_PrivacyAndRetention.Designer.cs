@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20260930141147_PrivacyAndRetention")]
+    [Migration("20260930155804_PrivacyAndRetention")]
     partial class PrivacyAndRetention
     {
         /// <inheritdoc />
@@ -20484,6 +20484,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("ExtendedUntil")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("extended_until");
+
+                    b.Property<string>("Findings")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("findings");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")

@@ -249,7 +249,7 @@ public sealed class DataRequestService(
         return rows.Map(x => new DataRequestListItem(
             x.Request.Id, x.Request.RequestNumber, x.Request.Type, x.Request.Status, x.Request.Channel, x.Request.PatientId, x.Uhid,
             x.Request.PrincipalName, x.Request.RequestedBy, x.Request.ReceivedAt, x.Request.DueAt, x.Request.IsOverdue(now),
-            x.Request.IsIdentityVerified, x.Request.AssignedToUserId, x.Assignee));
+            x.Request.IsIdentityVerified, x.Request.AssignedToUserId, x.Assignee, x.Request.ClosedAt));
     }
 
     public async Task<DataRequestDetail?> DetailAsync(Guid id, CancellationToken ct)
@@ -278,6 +278,25 @@ public sealed class DataRequestService(
             Name(names, request.ClosedByUserId), request.ErasedItems, request.RetainedUntil, request.RetainedPermanently, request.SummarySnapshot is not null,
             [.. request.Events.OrderBy(e => e.At).Select(e => new DataRequestEventDto(e.At, e.Kind, e.Text, Name(names, e.UserId), e.IsPublic))],
             request.Version);
+    }
+
+    /// <summary>
+    /// Who a request can be given to: active staff holding <c>privacy.requests.manage</c> (or all access) through a role,
+    /// who work in the current facility or in all of them.
+    /// </summary>
+    public async Task<IReadOnlyList<PrivacyOfficer>> OfficersAsync(CancellationToken ct)
+    {
+        var roleIds = db.Set<RolePermission>()
+            .Where(rp => rp.Permission == PrivacyPermissions.RequestsManage || rp.Permission == PermissionRegistry.Wildcard)
+            .Select(rp => rp.RoleId);
+        var users = db.Set<User>().AsNoTracking()
+            .Where(u => u.IsActive && u.Type == UserType.Staff && u.Roles.Any(r => roleIds.Contains(r.RoleId)));
+        if (currentUser.FacilityId is { } facilityId)
+        {
+            users = users.Where(u => u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == facilityId));
+        }
+
+        return await users.OrderBy(u => u.DisplayName).Select(u => new PrivacyOfficer(u.Id, u.DisplayName)).Take(200).ToListAsync(ct);
     }
 
     public async Task<PrivacyOverview> OverviewAsync(CancellationToken ct)

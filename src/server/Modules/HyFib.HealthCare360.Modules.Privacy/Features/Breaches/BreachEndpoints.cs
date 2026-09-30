@@ -15,7 +15,7 @@ internal static class BreachEndpoints
         group.MapGet("/{id:guid}", async (Guid id, BreachService breaches, CancellationToken ct) =>
             await breaches.DetailAsync(id, ct) is { } detail ? TypedResults.Ok(detail) : Error.NotFound(nameof(Breach), id).ToProblem());
         group.MapPost("/", async (SaveBreachRequest r, BreachService breaches, CancellationToken ct) =>
-                (await breaches.CreateAsync(r, ct)).ToCreated(id => $"/api/v1/privacy/breaches/{id}"))
+                (await breaches.CreateAsync(r, ct)).ToCreated(created => $"/api/v1/privacy/breaches/{created.Id}"))
             .WithValidation<SaveBreachRequest>();
         group.MapPut("/{id:guid}", async (Guid id, SaveBreachRequest r, BreachService breaches, CancellationToken ct) =>
                 (await breaches.UpdateAsync(id, r, ct)).ToNoContent())

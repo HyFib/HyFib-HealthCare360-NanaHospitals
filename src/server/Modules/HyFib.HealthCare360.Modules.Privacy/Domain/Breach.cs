@@ -80,8 +80,11 @@ public sealed class Breach : AuditableEntity
     /// <summary>What the people affected can do to protect themselves.</summary>
     public string? PrincipalSteps { get; set; }
 
-    /// <summary>The events, circumstances and reasons that led to the breach, and any findings about who caused it.</summary>
+    /// <summary>The events, circumstances and reasons that led to the breach (rule 7(2)(b)(i)).</summary>
     public string? Cause { get; set; }
+
+    /// <summary>Any findings about the person who caused the breach (rule 7(2)(b)(iii)); there may be none.</summary>
+    public string? Findings { get; set; }
 
     /// <summary>What has been done so it does not happen again.</summary>
     public string? Remediation { get; set; }

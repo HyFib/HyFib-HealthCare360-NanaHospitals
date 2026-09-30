@@ -18,7 +18,11 @@ public sealed record DataRequestListItem(
     bool IsOverdue,
     bool IdentityVerified,
     Guid? AssignedToUserId,
-    string? AssignedToName);
+    string? AssignedToName,
+    DateTimeOffset? ClosedAt);
+
+/// <summary>A member of staff a request can be given to: holds <c>privacy.requests.manage</c> in the facility.</summary>
+public sealed record PrivacyOfficer(Guid Id, string DisplayName);
 
 public sealed record DataRequestDetail(
     Guid Id,

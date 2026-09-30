@@ -30,6 +30,14 @@ Patients use the portal with `portal.access`, limited to the patients registered
 (`PortalPatientScope`). Opening a request, a data summary or an erasure assessment is patient-record access: it is
 audited, and a restricted (VIP) record needs `patients.restricted.read` or break-the-glass.
 
+Two things the default roles leave to the hospital:
+- **Restricted (VIP) patients.** Only a HospitalAdmin can open their requests by default: QualityManager and MrdOfficer
+  have neither `patients.restricted.read` nor break-the-glass. Give the grievance officer's role
+  `patients.restricted.read` if they are to handle them.
+- **Correcting registration details** needs `patients.register`, which the front desk and HospitalAdmin have and
+  QualityManager and MrdOfficer do not. The officer decides the correction; the desk or an administrator makes it in
+  the patient record.
+
 ## Requests (`/api/v1/privacy`)
 
 Types: `Access`, `Correction`, `Erasure`, `Grievance`. Statuses: `Submitted` → `InProgress` → `Completed`,
@@ -40,7 +48,8 @@ Types: `Access`, `Correction`, `Erasure`, `Grievance`. Statuses: `Submitted` →
 | Method | Path | Permission | Body → Response |
 |---|---|---|---|
 | GET | `/overview` | requests.read | → `PrivacyOverview {open, overdue, dueThisWeek, awaitingIdentityCheck, openBreaches, breachReportsOverdue}` |
-| GET | `/requests` | requests.read | `page, pageSize, search` (request number), `status, type, patientId, assignedToUserId, mine, openOnly, overdueOnly` → `PagedResult<DataRequestListItem {id, requestNumber, type, status, channel, patientId, uhid, principalName, requestedBy, receivedAt, dueAt, isOverdue, identityVerified, assignedToUserId, assignedToName}>`, open first by deadline |
+| GET | `/requests` | requests.read | `page, pageSize, search` (request number), `status, type, patientId, assignedToUserId, mine, openOnly, overdueOnly` → `PagedResult<DataRequestListItem {id, requestNumber, type, status, channel, patientId, uhid, principalName, requestedBy, receivedAt, dueAt, isOverdue, identityVerified, assignedToUserId, assignedToName, closedAt}>`, open first by deadline |
+| GET | `/officers` | requests.manage | → `PrivacyOfficer[] {id, displayName}`: active staff holding `privacy.requests.manage` in the current facility, to assign requests to |
 | GET | `/requests/{id}` | requests.read | → `DataRequestDetail {…list fields, contactPhone, contactEmail, requesterName, details, corrections[{index, field, fieldLabel, currentValue, requestedValue, decision, note}], identityCheck, identityNote, identityVerifiedAt, identityVerifiedBy, response, closedAt, closedBy, erasedItems[], retainedUntil, retainedPermanently, hasSummary, events[{at, kind, text, by, isPublic}], version}` |
 | POST | `/requests` | requests.log | `CreateDataRequestRequest {type, channel (not Portal), patientId?, principalName?, contactPhone?, contactEmail?, requestedBy, requesterName?, details?, corrections?[{field, requestedValue}], identityCheck?, identityNote?}` → 201 `{id, requestNumber, dueAt}`. Without a patient: a name and a phone or e-mail to reply to |
 | POST | `/requests/{id}/start` | requests.manage | Submitted → InProgress; the person starting it becomes the owner if it has none |
@@ -144,9 +153,9 @@ Availability`. Data categories: `Identity, Contact, Health, Financial, Governmen
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/` | `openOnly, search, page, pageSize` → `PagedResult<BreachListItem {id, breachNumber, title, status, awareAt, reportDueAt, reportOverdue, estimatedAffected, affectedListed, notified}>` |
-| GET | `/{id}` | → `BreachDetail {…, description, occurredFrom, occurredTo, nature[], location, dataCategories[], consequences, mitigation, principalSteps, cause, remediation, principalNotice, boardInformedAt, reportDueAt, extendedUntil, reportSubmittedAt, boardReference, closedAt, closingNote, notifiedAt, withoutContact, missingForReport[], missingForNotice[], version}` |
-| POST | `/` | `SaveBreachRequest {title, description, awareAt, occurredFrom?, occurredTo?, nature[], location?, dataCategories[], estimatedAffected?, consequences?, mitigation?, principalSteps?, cause?, remediation?, principalNotice? (≤ 320, the SMS), version?}` → 201 id; alerts every holder |
+| GET | `/` | `openOnly, search, page, pageSize` → `PagedResult<BreachListItem {id, breachNumber, title, status, awareAt, reportDueAt, reportOverdue, estimatedAffected, affectedListed, notified, boardInformedAt, reportSubmittedAt}>` |
+| GET | `/{id}` | → `BreachDetail {…, description, occurredFrom, occurredTo, nature[], location, dataCategories[], consequences, mitigation, principalSteps, cause, findings, remediation, principalNotice, boardInformedAt, reportDueAt, extendedUntil, reportSubmittedAt, boardReference, closedAt, closingNote, notifiedAt, withoutContact, missingForReport[], missingForNotice[], version}` |
+| POST | `/` | `SaveBreachRequest {title, description, awareAt, occurredFrom?, occurredTo?, nature[], location?, dataCategories[], estimatedAffected?, consequences?, mitigation?, principalSteps?, cause?, findings?, remediation?, principalNotice? (≤ 320, the SMS), version?}` → 201 `{id, breachNumber}`; alerts every holder. `cause` is rule 7(2)(b)(i) (the events and reasons), `findings` rule 7(2)(b)(iii) (any findings about who caused it) |
 | PUT | `/{id}` | same, with `version` |
 | POST | `/{id}/board-informed` | `{at, reference?}`: the Board was told |
 | POST | `/{id}/extension` | `{until, reference?}`: the Board allowed more time (after the 72 hours) |
@@ -156,7 +165,7 @@ Availability`. Data categories: `Identity, Contact, Health, Financial, Governmen
 | GET | `/{id}/affected` | → `PagedResult<AffectedPatientItem {patientId, uhid, fullName, phone (masked), hasEmail, addedAt, notifiedAt, noticeChannels}>` |
 | POST | `/{id}/affected` | `{patientIds?[], uhids?[]}` (up to 5,000; a merged record counts as the one it was merged into) → `{added, alreadyListed, notFound[]}` |
 | DELETE | `/{id}/affected/{patientId}` | only before the patient was notified |
-| POST | `/{id}/notify` | needs `missingForNotice` empty → `{queued, withoutContact, alreadyNotified}` |
+| POST | `/{id}/notify` | needs `missingForNotice` empty and the breach not closed → `{queued, withoutContact, alreadyNotified}` |
 
 **The 72-hour clock** starts at `awareAt`. `reportDueAt` = `awareAt` + 72 h, or the extension. `reportOverdue` is
 true until the report is recorded.
@@ -188,7 +197,7 @@ true until the report is recorded.
 |---|---|---|
 | GET | `/` | → `RetentionRuleDto[] {key, title, description, basis, action: Delete\|Review\|Keep, unit: Days\|Years, value, defaultValue, minimumValue, maximumValue, editable, lastRemoved, lastRunAt}` |
 | PUT | `/{key}` | `{value}` within the allowed range; changing a medical records period moves the retention date of every completed chart of that kind (Clinical handles `RecordRetentionChanged` in the same transaction) |
-| GET | `/runs?take=` | → `RetentionRunDto[] {id, startedAt, finishedAt, trigger, startedByUserId, totalRemoved, results[{key, removed, before}], error}` |
+| GET | `/runs?take=` | → `RetentionRunDto[] {id, startedAt, finishedAt, trigger, startedByUserId, startedByName, totalRemoved, results[{key, removed, before}], error}` |
 | GET | `/preview` | → what a clean-up would remove now, per key |
 | POST | `/run` | → 202: queues a clean-up; the job runs it within minutes |
 | GET | `/review` | → `RetentionReview {outpatientChartsDue, inpatientChartsDue, erasureHolds[{requestId, requestNumber, patientId, uhid, principalName, retainedUntil, retainedPermanently, isDue}]}` |

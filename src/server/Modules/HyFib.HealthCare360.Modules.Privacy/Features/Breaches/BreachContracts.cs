@@ -13,7 +13,11 @@ public sealed record BreachListItem(
     bool ReportOverdue,
     int? EstimatedAffected,
     int AffectedListed,
-    int Notified);
+    int Notified,
+    DateTimeOffset? BoardInformedAt,
+    DateTimeOffset? ReportSubmittedAt);
+
+public sealed record BreachCreated(Guid Id, string BreachNumber);
 
 public sealed record BreachDetail(
     Guid Id,
@@ -32,6 +36,7 @@ public sealed record BreachDetail(
     string? Mitigation,
     string? PrincipalSteps,
     string? Cause,
+    string? Findings,
     string? Remediation,
     string? PrincipalNotice,
     DateTimeOffset? BoardInformedAt,
@@ -65,6 +70,7 @@ public sealed record SaveBreachRequest(
     string? Mitigation,
     string? PrincipalSteps,
     string? Cause,
+    string? Findings,
     string? Remediation,
     string? PrincipalNotice,
     uint? Version);
@@ -121,6 +127,7 @@ public sealed class SaveBreachRequestValidator : AbstractValidator<SaveBreachReq
         RuleFor(x => x.Mitigation).SafeText(4000);
         RuleFor(x => x.PrincipalSteps).SafeText(4000);
         RuleFor(x => x.Cause).SafeText(4000);
+        RuleFor(x => x.Findings).SafeText(4000);
         RuleFor(x => x.Remediation).SafeText(4000);
         RuleFor(x => x.PrincipalNotice).SafeText(320);
     }

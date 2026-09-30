@@ -35,6 +35,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     mitigation = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
                     principal_steps = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
                     cause = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
+                    findings = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
                     remediation = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true),
                     principal_notice = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                     status = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),

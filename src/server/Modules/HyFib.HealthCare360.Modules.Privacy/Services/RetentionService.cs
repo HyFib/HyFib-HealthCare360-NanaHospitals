@@ -37,6 +37,7 @@ public sealed record RetentionRunDto(
     DateTimeOffset? FinishedAt,
     RetentionRunTrigger Trigger,
     Guid? StartedByUserId,
+    string? StartedByName,
     int TotalRemoved,
     IReadOnlyList<RetentionRunResult> Results,
     string? Error);
@@ -146,7 +147,10 @@ public sealed class RetentionService(
     public async Task<IReadOnlyList<RetentionRunDto>> RunsAsync(int take, CancellationToken ct)
     {
         var runs = await db.Set<RetentionRun>().AsNoTracking().OrderByDescending(r => r.StartedAt).Take(Math.Clamp(take, 1, 100)).ToListAsync(ct);
-        return [.. runs.Select(r => new RetentionRunDto(r.Id, r.StartedAt, r.FinishedAt, r.Trigger, r.StartedByUserId, r.TotalRemoved, r.Results, r.Error))];
+        var starters = runs.Select(r => r.StartedByUserId).OfType<Guid>().Distinct().ToList();
+        var names = await db.Set<User>().IgnoreQueryFilters().Where(u => starters.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        return [.. runs.Select(r => new RetentionRunDto(r.Id, r.StartedAt, r.FinishedAt, r.Trigger, r.StartedByUserId,
+            r.StartedByUserId is { } id ? names.GetValueOrDefault(id) : null, r.TotalRemoved, r.Results, r.Error))];
     }
 
     /// <summary>How many records the clean-up would remove now, without removing anything.</summary>

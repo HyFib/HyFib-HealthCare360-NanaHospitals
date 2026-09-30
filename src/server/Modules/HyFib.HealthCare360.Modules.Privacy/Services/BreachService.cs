@@ -74,7 +74,8 @@ public sealed class BreachService(
             })
             .ToPagedResultAsync(page, ct);
         return rows.Map(x => new BreachListItem(x.Breach.Id, x.Breach.BreachNumber, x.Breach.Title, x.Breach.Status, x.Breach.AwareAt,
-            x.Breach.ReportDueAt, x.Breach.IsReportOverdue(now), x.Breach.EstimatedAffected, x.Listed, x.Notified));
+            x.Breach.ReportDueAt, x.Breach.IsReportOverdue(now), x.Breach.EstimatedAffected, x.Listed, x.Notified, x.Breach.BoardInformedAt,
+            x.Breach.ReportSubmittedAt));
     }
 
     public async Task<BreachDetail?> DetailAsync(Guid id, CancellationToken ct)
@@ -83,7 +84,7 @@ public sealed class BreachService(
         return breach is null ? null : await ToDetailAsync(breach, ct);
     }
 
-    public async Task<Result<Guid>> CreateAsync(SaveBreachRequest request, CancellationToken ct)
+    public async Task<Result<BreachCreated>> CreateAsync(SaveBreachRequest request, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         if (request.AwareAt > now)
@@ -109,7 +110,7 @@ public sealed class BreachService(
             $"Personal data breach {breach.BreachNumber} recorded",
             $"Tell the Data Protection Board without delay. The detailed report is due by {LocalTime(breach.ReportDueAt)}.",
             $"/privacy/breaches/{breach.Id}", "privacy", "warning", ct);
-        return breach.Id;
+        return new BreachCreated(breach.Id, breach.BreachNumber);
     }
 
     public async Task<Result> UpdateAsync(Guid id, SaveBreachRequest request, CancellationToken ct)
@@ -257,6 +258,11 @@ public sealed class BreachService(
         if (breach is null)
         {
             return Error.NotFound(nameof(Breach), id);
+        }
+
+        if (breach.Status == BreachStatus.Closed)
+        {
+            return Error.Rule("privacy.breach_closed", "A closed breach cannot send notices.");
         }
 
         var missing = breach.MissingForNotice();
@@ -424,7 +430,8 @@ public sealed class BreachService(
         return new BreachDetail(
             breach.Id, breach.BreachNumber, breach.Title, breach.Description, breach.Status, breach.AwareAt, breach.OccurredFrom, breach.OccurredTo,
             Parse<BreachNature>(breach.Nature), breach.Location, Parse<BreachDataCategory>(breach.DataCategories), breach.EstimatedAffected,
-            breach.Consequences, breach.Mitigation, breach.PrincipalSteps, breach.Cause, breach.Remediation, breach.PrincipalNotice, breach.BoardInformedAt,
+            breach.Consequences, breach.Mitigation, breach.PrincipalSteps, breach.Cause, breach.Findings, breach.Remediation, breach.PrincipalNotice,
+            breach.BoardInformedAt,
             breach.ReportDueAt, breach.ExtendedUntil, breach.ReportSubmittedAt, breach.BoardReference, breach.ClosedAt, breach.ClosingNote, breach.NotifiedAt,
             breach.IsReportOverdue(time.GetUtcNow()), listed, notified, withoutContact,
             breach.MissingForReport(), breach.MissingForNotice(), breach.Version);
@@ -445,6 +452,7 @@ public sealed class BreachService(
         breach.Mitigation = Clean(request.Mitigation);
         breach.PrincipalSteps = Clean(request.PrincipalSteps);
         breach.Cause = Clean(request.Cause);
+        breach.Findings = Clean(request.Findings);
         breach.Remediation = Clean(request.Remediation);
         breach.PrincipalNotice = Clean(request.PrincipalNotice);
     }
