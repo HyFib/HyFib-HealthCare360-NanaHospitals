@@ -258,5 +258,6 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 * **End-to-end journeys (SRS §9)** run in `HyFib.HealthCare360.IntegrationTests`.
   * They host the real server composition (`ServerComposition`: every module, the middleware, authorization and endpoints) on an in-memory test server.
   * The database is a new PostgreSQL database, built by the real migrations and seeded with the demonstration data and staff accounts.
-  * Each journey signs in as the role that does each step: front office, doctor, lab, pharmacist, billing, nurse.
+  * Each journey signs in as the role that does each step: front office, doctor, lab, pharmacist, billing, nurse. The demonstration data has no pathologist, so the test host has the hospital administrator create that account through the admin API the first time a journey needs it.
+  * `OutpatientJourneyTests`: register → appointment → consult → lab → pharmacy → bill.
   * CI runs them on the runner's own PostgreSQL. Locally they use Docker or `HC360_TEST_DATABASE` (see the README).

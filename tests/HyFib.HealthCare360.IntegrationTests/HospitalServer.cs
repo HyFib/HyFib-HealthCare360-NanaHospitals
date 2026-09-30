@@ -2,7 +2,9 @@ using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -18,12 +20,18 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// The whole HC360 server for the end-to-end journeys: every module with its real middleware, authorization and
 /// endpoints (<see cref="ServerComposition"/>, as in production), on an in-memory test server over a new PostgreSQL
 /// database. The real migrations create the database, and the seeders fill it with the demonstration data and the staff
-/// accounts in <see cref="Users"/>. One server is shared by every test and tests run one at a time, so each journey
-/// registers its own patients rather than relying on another test's.
+/// accounts in <see cref="Users"/> (roles the seed has no account for are created on first use). One server is shared by
+/// every test and tests run one at a time, so each journey registers its own patients rather than relying on another test's.
 /// </summary>
 public sealed class HospitalServer : IAsyncLifetime
 {
-    // A test-only password for the seeded accounts, new for every run.
+    /// <summary>Accounts the demonstration seed does not create, with their role (see <see cref="CreateAccountAsync"/>).</summary>
+    private static readonly Dictionary<string, string> RolesCreatedOnFirstUse = new(StringComparer.Ordinal)
+    {
+        [Users.Pathologist] = SystemRoles.Pathologist,
+    };
+
+    // A test-only password for the staff accounts, new for every run.
     private readonly string _password = "It-" + Guid.NewGuid().ToString("N");
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-" + Guid.NewGuid().ToString("N"));
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
@@ -78,7 +86,7 @@ public sealed class HospitalServer : IAsyncLifetime
     public ApiClient Anonymous() => new(CreateHttpClient());
 
     /// <summary>
-    /// A caller signed in as one of the seeded staff accounts (<see cref="Users"/>), with that role's real permissions.
+    /// A caller signed in as one of the staff accounts in <see cref="Users"/>, with that role's real permissions.
     /// Each account signs in once per run: sign-in is rate-limited, and every test-server request has the same address.
     /// </summary>
     public async Task<ApiClient> SignInAsync(string userName)
@@ -89,13 +97,9 @@ public sealed class HospitalServer : IAsyncLifetime
         }
 
         var http = CreateHttpClient();
-        using var response = await http.PostAsJsonAsync("/api/v1/auth/login", new { userName, password = _password }, ApiClient.Json);
-        var result = await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
-        if (result.AccessToken is not { Length: > 0 } token || result.MfaRequired || result.Restriction is not null)
-        {
-            throw new InvalidOperationException($"'{userName}' could not sign in fully (MFA required: {result.MfaRequired}, restriction: {result.Restriction}).");
-        }
-
+        var token = RolesCreatedOnFirstUse.TryGetValue(userName, out var role)
+            ? await CreateAccountAsync(http, userName, role)
+            : FullAccess(userName, await LogInAsync(http, userName, _password));
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         return _signedIn.GetOrAdd(userName, new ApiClient(http));
     }
@@ -119,6 +123,45 @@ public sealed class HospitalServer : IAsyncLifetime
         }
     }
 
+    private static async Task<SignInResult> LogInAsync(HttpClient http, string userName, string password)
+    {
+        using var response = await http.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(userName, password), ApiClient.Json, TestContext.Current.CancellationToken);
+        return await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+    }
+
+    private static string FullAccess(string userName, SignInResult result) =>
+        result.AccessToken is { Length: > 0 } token && !result.MfaRequired && result.Restriction is null
+            ? token
+            : throw new InvalidOperationException($"'{userName}' could not sign in fully (MFA required: {result.MfaRequired}, restriction: {result.Restriction}).");
+
+    /// <summary>
+    /// An account for a role the demonstration seed has none for. The hospital administrator creates it through the admin
+    /// API with a temporary password, and the first sign-in, which may do nothing else, sets the run's password — as a new
+    /// member of staff would.
+    /// </summary>
+    private async Task<string> CreateAccountAsync(HttpClient http, string userName, string role)
+    {
+        var admin = await SignInAsync(Users.HospitalAdmin);
+        var roleId = (await admin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == role).Id;
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
+                         ?? throw new InvalidOperationException("The hospital administrator has no facility.");
+        var temporary = "It-first-" + Guid.NewGuid().ToString("N");
+        await admin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users", new CreateUserRequest(
+            userName, $"Demo {role}", Email: null, Phone: null, [roleId], [facilityId], facilityId, PractitionerId: null, temporary));
+
+        var first = await LogInAsync(http, userName, temporary);
+        if (first.Restriction != AuthService.RestrictionPasswordChange || first.AccessToken is not { Length: > 0 } restricted)
+        {
+            throw new InvalidOperationException($"The new account '{userName}' should first have to change its password (restriction: {first.Restriction}).");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/change-password");
+        request.Content = JsonContent.Create(new ChangePasswordRequest(temporary, _password), options: ApiClient.Json);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", restricted);
+        using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+        return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
+    }
+
     private HttpClient CreateHttpClient()
     {
         var http = App.GetTestClient();
@@ -126,7 +169,7 @@ public sealed class HospitalServer : IAsyncLifetime
         return http;
     }
 
-    /// <summary>The staff accounts the demonstration seed creates, one per role.</summary>
+    /// <summary>The staff accounts: one per role the demonstration seed creates, and those created on first use.</summary>
     public static class Users
     {
         public const string FrontOffice = "frontoffice";
@@ -137,6 +180,12 @@ public sealed class HospitalServer : IAsyncLifetime
         public const string Billing = "billing";
         public const string HospitalAdmin = "hospitaladmin";
         public const string Admin = "admin";
+
+        /// <summary>
+        /// Verifies and releases lab reports (the lab technician enters results but cannot sign them off). The demonstration
+        /// seed has no pathologist, so the hospital administrator creates this account the first time a test signs in.
+        /// </summary>
+        public const string Pathologist = "pathologist";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);
