@@ -2,6 +2,7 @@
 
 HC360 holds the most sensitive data a hospital has. This document explains how it is protected, what the hospital must
 do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS.md` (SEC-*, PRV-*, DED-*).
+[ASVS-L2.md](ASVS-L2.md) checks HC360 against every OWASP ASVS 5.0 Level 2 requirement and plans the open gaps.
 
 ## 1. Threats we design for
 
@@ -21,7 +22,9 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - **HC360 Desktop pins the hospital CA**:
   - The server's certificate must chain to exactly that CA and name the host being contacted.
   - The public Windows trust store is not consulted.
-  - The CA fingerprint is confirmed by a person, or pre-set by IT policy, when a workstation is set up.
+  - The CA fingerprint is confirmed by a person, or pre-set by IT policy, when a workstation is set up. A certificate
+    that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
+- Browsers keep to HTTPS for a year after their first visit (HSTS).
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
   localhost only.
 
@@ -30,7 +33,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - At least 12 characters.
   - Checked against a list of common passwords and the user's own name.
   - Stored with PBKDF2-SHA512 (210 000 iterations).
-  - Accounts lock after 5 failures for 15 minutes.
+  - Accounts lock after 5 failures for 15 minutes. A locked account gets the same answer as a wrong password, so a
+    response never confirms that an account exists.
 - **Two-step verification (TOTP)**, required for administrator roles.
 - Access tokens:
   - ES256-signed, valid for 10 minutes, held only in memory.
@@ -38,7 +42,9 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - The staff app and the patient portal share one origin but keep separate refresh cookies (`hc360_rt` and
     `hc360_prt`), so signing in to one never replaces the other's session. A cookie renews only its own app's
     sessions.
-  - Re-using an old refresh token ends the whole session family.
+  - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
+    60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
+    copy was being replayed, the real client's next refresh ends the session for both.
 - Sessions:
   - End after 12 hours, or after 2 hours idle.
   - Workstations **lock after 10 minutes** of inactivity; staff unlock with a PIN.
@@ -56,6 +62,14 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
   An architecture test checks every endpoint and holds both lists, so a new exception is a reviewed change. A request
   whose endpoint states nothing still requires sign-in.
+- **Administrators cannot hand themselves more power.** Administrative permissions (`admin.*`, and the Super
+  Administrator's all-access) are:
+  - given only by someone who holds them;
+  - protected on accounts that hold them: only an administrator with the same administrative permissions may edit such
+    an account, reset its password or two-step verification, unlock it or end its sessions. A hospital administrator
+    cannot take over a Super Administrator.
+
+  The Patient role cannot be edited, so no staff permission can reach every portal account.
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review.
@@ -64,8 +78,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
   - **ABHA numbers**: encrypted with AES-256-GCM.
   - Uploaded documents: encrypted at rest.
-- Masking: lists show masked phone numbers. Logs contain no patient-identifiable data, and integration logs strip
-  PHI and secrets.
+- Masking:
+  - Lists show masked phone numbers.
+  - Every server log line is masked as it is written, exception text included: phone, Aadhaar and ABHA numbers keep only
+    their last digits, e-mail and ABHA addresses only their domain, and tokens and passwords are removed.
+  - Provider error text is masked the same way before it is stored, and integration logs strip PHI and secrets from
+    payloads.
 - Patient links carry their secret in the address (feedback and unsubscribe tokens, verification codes). Request
   logs, error logs, traces and idempotency records hold the route template for those endpoints and for portal
   pages, for example `/api/v1/public/unsubscribe/{token}`, never the token itself (`LoggedPath`,
@@ -86,8 +104,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - Staff need the module's permission and may follow only their own facility's topics (lab, pharmacy, bed board, OT)
     and records (wards, department queues, telehealth sessions).
   - Restricted patients' topics need restricted-record access.
-  - Portal users may follow only their own record and their own consultations.
-  - Tokens limited to a mandatory step (MFA enrolment, password change) may follow nothing.
+  - Portal users may follow only their own record and their own consultations. They never join a facility's channel,
+    and cannot switch into a facility.
+  - Tokens limited to a mandatory step (MFA enrolment, password change) may follow nothing and join no consultation.
+  - An events connection lasts only as long as the token it opened with; a signed-out or revoked session cannot
+    reconnect. (Video-consultation connections stay until the call ends.)
 
 ### Integrity and audit
 - **Tamper-evident audit log**:
@@ -103,17 +124,28 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 
 ### Application hardening
 - Security headers:
-  - Content-Security-Policy: scripts only from the server. The one exception is patient-portal pages, which may load
-    Razorpay Standard Checkout (`checkout.razorpay.com` and `cdn.razorpay.com` scripts, and the `api.razorpay.com`
-    payment frame). Their opener policy allows the pop-ups some payment methods open.
+  - Content-Security-Policy:
+    - Scripts come only from the server, and pages connect only to the server, so injected script has nowhere to send
+      what it reads.
+    - The one exception is patient-portal pages, which may load Razorpay Standard Checkout: the `checkout.razorpay.com`
+      and `cdn.razorpay.com` scripts, the `api.razorpay.com` payment frame, and the checkout's calls to
+      `api.razorpay.com` and `lumberjack.razorpay.com`. Their opener policy allows the pop-ups some payment methods open.
   - X-Frame-Options through `frame-ancestors 'none'`.
   - `nosniff`, a strict referrer policy, and a Permissions-Policy that allows only camera/microphone for video consults.
   - `no-store` on API responses.
   - They apply to every response, including the staff and portal pages and their static assets, not just API calls.
-- Rate limits on sign-in, OTP and public endpoints.
-- Input validation on every request, with parameterised SQL through EF Core only.
+- Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
+- Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
+  never runs without it.
+- Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM), and their stored name takes the matching
+  extension, so a download can never produce a program or a web page.
+- Calls to outside services follow no redirects and need TLS 1.2 or later.
+- The API reference is off by default. If IT turns it on, it answers only on the server machine.
 - The embedded browser in HC360 Desktop:
   - Opens only the hospital server; other sites open in the default browser.
+  - Answers bridge calls (printing, device identity, notifications) only from the staff app's pages, not from the
+    patient portal or the API docs, which run third-party script.
+  - Saves only document types HC360 produces, and only from the server.
   - Denies permissions other than camera, microphone, clipboard and notifications.
   - Disables password autosave and autofill.
   - Disables DevTools unless IT enables them.
@@ -173,12 +205,14 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
-| CA5398, fixed TLS versions | `Program.cs` (server) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
+| CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
 
 ## 3. What the hospital must do
 
 1. Use WPA2/WPA3-Enterprise for the clinical SSID. Keep guests on a separate network that cannot reach the server.
-2. Keep the Server Node patched (Windows Update during a maintenance window), physically secured, and on a UPS.
+2. Keep the Server Node patched (Windows Update during a maintenance window), physically secured, and on a UPS. Turn on
+   BitLocker, with the TPM, for every disk that holds HC360 data, backups or the database: the keys that decrypt the
+   stored data live on the same disk (SRS SEC-05).
 3. Give each person their own account and the smallest set of roles. Review users and roles every quarter, and
    deactivate leavers the same day.
 4. Turn on two-step verification for everyone who handles finance or administration, not only administrators.

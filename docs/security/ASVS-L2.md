@@ -1,0 +1,500 @@
+# HC360 against OWASP ASVS 5.0, Level 2
+
+This checklist maps HC360 to the OWASP Application Security Verification Standard (ASVS) 5.0.0 at Level 2: the 70
+Level 1 and 183 Level 2 requirements, 253 in all. Each was checked against the code on 30 September 2026, and each
+row says how HC360 meets the requirement, or what is missing, with the files that show it.
+
+- **Met**: the code does it.
+- **Partial**: some of it is done; the row says what is missing.
+- **Gap**: not done.
+- **N/A**: does not apply to HC360; the row says why.
+
+The requirement texts are in [the ASVS](https://github.com/OWASP/ASVS/tree/master/5.0) (CC BY-SA 4.0). The topics
+below are short paraphrases, not the standard's wording.
+
+**Keeping it current:** a change that affects security updates its rows in the same pull request. The whole list is
+reviewed again once a year, and before each major release.
+
+## Summary
+
+| Chapter | Met | Partial | Gap | N/A |
+|---|---:|---:|---:|---:|
+| [V1 Encoding and Sanitization](#v1-encoding-and-sanitization) | 20 | 0 | 0 | 7 |
+| [V2 Validation and Business Logic](#v2-validation-and-business-logic) | 6 | 5 | 0 | 0 |
+| [V3 Web Frontend Security](#v3-web-frontend-security) | 14 | 4 | 1 | 0 |
+| [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
+| [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
+| [V6 Authentication](#v6-authentication) | 14 | 14 | 2 | 5 |
+| [V7 Session Management](#v7-session-management) | 5 | 9 | 1 | 3 |
+| [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
+| [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
+| [V10 OAuth and OIDC](#v10-oauth-and-oidc) | 1 | 0 | 0 | 28 |
+| [V11 Cryptography](#v11-cryptography) | 7 | 4 | 2 | 1 |
+| [V12 Secure Communication](#v12-secure-communication) | 2 | 6 | 0 | 1 |
+| [V13 Configuration](#v13-configuration) | 6 | 5 | 2 | 0 |
+| [V14 Data Protection](#v14-data-protection) | 3 | 3 | 3 | 0 |
+| [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
+| [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 10 | 2 | 0 |
+| [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
+| **Total** | **112** | **70** | **17** | **54** |
+
+## Fixed while making this checklist
+
+The review found these problems, now fixed:
+
+- **Account takeover by a less privileged administrator** (V8.2.2, V6.4.3, V6.4.4).
+  - A hospital administrator could reset a Super Administrator's password and two-step verification, and so take the
+    account over.
+  - Now only an administrator holding every administrative permission an account has may change it or reset its
+    credentials.
+  - Nobody can give a role or permission carrying administrative rights they do not hold.
+  - The Patient role cannot be edited.
+  - An MFA reset also ends the account's sessions.
+- **Patients and facility-wide live events** (V8.2.2, V9.2.2). A portal patient could switch into a facility and
+  receive its live events (bills, orders, admissions, with patient IDs). Patients now get no facility, and the events hub
+  joins a facility's channel only for full staff sessions.
+- **Restricted tokens on the telehealth hub** (V9.2.2). A token that only allows finishing sign-in (a pending password
+  change or MFA enrolment) could join video consultations. Both hub joins now refuse it.
+- **Replayed refresh tokens** (V7, V10.4.5).
+  - A stolen refresh token replayed within the 60-second grace could quietly sign the real user out and keep the
+    session.
+  - A token presented after it was spent or retired now ends the session for everyone holding its tokens, and is
+    audited.
+  - The grace no longer stretches with each retry.
+- **HC360 Desktop** (V3.5.4, V5.4.1, V12.3.4):
+  - Setup now refuses a certificate that contradicts the fingerprint the server announced; it was only a warning.
+  - A confirmation given for one server no longer carries over to another.
+  - The bridge answers only the staff app's pages, not the patient portal or API docs, which run third-party script.
+  - Downloads are limited to document types HC360 produces, from the server.
+- **Uploaded files** (V5.2.2, V5.4.1). A file's stored name now takes the extension of what the file really is. A PDF
+  uploaded as `results.hta` is kept as `results.pdf`.
+- **Browser protections** (V3.4.1, V3.4.3, V3.5.2):
+  - `connect-src` no longer allows any https or wss host.
+  - `base-uri` is `'none'`.
+  - HSTS lasts a year.
+  - Logout, like refresh, needs the header a cross-site page cannot send.
+- **Live connections after sign-out** (V7.4.1). Events-hub connections now close when their token expires, so a revoked
+  session loses them within 10 minutes.
+- **Personal data in logs** (V16.2.5, SRS SEC-10). Every server log line, and every provider error kept in the database,
+  is masked:
+  - phone, Aadhaar and ABHA numbers;
+  - e-mail and ABHA addresses;
+  - tokens and passwords.
+- **Smaller fixes:**
+  - Per-user rate limits now key on the user, not the address (V2.4.1, V15.2.2).
+  - Request validation fails closed (V2.2.1).
+  - Very large page numbers no longer overflow (V1.4.2).
+  - Outbound calls follow no redirects and need TLS 1.2 or later (V15.3.2, V12.1.1).
+  - The API reference, when enabled, answers only on the server machine (V13.4.5).
+  - A locked account no longer reveals that it exists (V6.3.1).
+  - Leftover backup dumps are removed (V14.2.2).
+  - Text responses declare their charset (V4.1.1).
+  - The morbidity CSV neutralises formulas (V1.3.3).
+
+## Open gaps and plan
+
+The remaining Gap and Partial rows, in the order they should be closed. Each item names the rows it closes.
+
+### Priority 1
+
+- **Serve the patient portal and the API docs on their own host or port**, with their own refresh cookie. Script on a
+  portal page, such as the payment checkout, then cannot reach a staff session. (V3.5.4)
+- **Protect secrets at rest and check disk encryption** (V13.3.1, V14.2.4, V13.2.1):
+  - DPAPI-protect the database and certificate passwords in `hc360.settings.json` (SRS SEC-07);
+  - check BitLocker at install and in System health (SEC-05);
+  - keep bind values out of PostgreSQL's slow-query log.
+- **Key management** (V11.1.1, V11.1.2, V11.2.2, V13.3.2):
+  - a field master key ring, with a rotation command and job;
+  - a backup recovery key separate from the master key;
+  - a token signing-key set with key IDs and an overlap period;
+  - a written key-management policy and cryptographic inventory.
+- **Sign-in strength** (V6.3.3, V6.3.4, V6.1.3):
+  - require two-step verification beyond the two administrator roles (at least finance, and anyone holding
+    administrative permissions);
+  - decide the enrolled-device defaults;
+  - list every sign-in pathway with its strength.
+
+### Priority 2
+
+- **Sessions** (V7.1.1, V7.1.2, V7.2.4, V7.3.1, V7.4.3, V7.4.5, V7.5.1, V7.5.2):
+  - an idle timeout and lock enforced on the server, with refresh only after user activity;
+  - "sign out everywhere" for users and for administrators;
+  - re-authentication before MFA changes;
+  - a concurrent-session policy.
+- **Passwords and lockout** (V6.1.1, V6.1.2, V6.2.4, V6.2.11, V6.2.12, V6.3.1, V6.3.2, V6.4.1, V6.4.3, V6.4.4, V6.5.5):
+  - a deny list of 3,000+ passwords long enough for the policy, and an offline breached-password set;
+  - context words matched anywhere in a password;
+  - a cap on TOTP failures, and lockouts that decay;
+  - temporary passwords that expire, and notifications on credential changes;
+  - no fixed bootstrap password outside development.
+- **Patient portal sign-in:** verify the mobile number at registration, before records are linked, and offer an
+  optional stronger factor. (V6.6.1)
+- **Data in the browser, and data classes** (V14.1.1, V14.1.2, V14.3.1, V14.3.3, V8.1.2):
+  - encrypt form drafts, or keep them on the server, and purge them when the app starts without a session;
+  - classify sensitive data, with protection rules per class and a field-access matrix.
+- **Telehealth** (V17.1.1, V17.3.1, V4.4.3, V7.4.1):
+  - per-connection and per-method limits on the telehealth hub;
+  - short-lived TURN credentials, relaying only to public addresses;
+  - close telehealth connections when their token expires.
+
+### Priority 3
+
+- **Uploads:** scan with Windows AMSI or Defender before storing, re-encode images, and document each upload's types and
+  sizes. (V5.4.3, V5.1.1, V3.2.1)
+- **Network** (V11.2.3, V11.4.1, V11.5.1, V12.1.1, V12.1.2, V12.2.2, V12.3.1, V12.3.3, V12.3.4, V13.2.2, V13.2.4, V13.2.5):
+  - an outbound host allowlist, and egress firewall rules;
+  - PostgreSQL over TLS or SSPI, with separate database owner and application roles;
+  - name constraints on the hospital CA, and a stronger server key;
+  - hardened SChannel suites, and a TLS floor for SMTP;
+  - a public certificate path for the internet-facing portal.
+- **Logging** (V16.1.1, V16.2.1–V16.2.4, V16.3.1–V16.3.4, V16.4.1–V16.4.3):
+  - a log inventory;
+  - structured logs carrying correlation, user and address;
+  - audit 403s, OTP failures, rate-limit rejections and bypass attempts;
+  - forward logs off the server, key the audit hash chain, and check time sync.
+- **Supply chain and production features** (V15.1.2, V15.1.3, V15.2.3):
+  - SBOMs in releases, NuGet lock files and package source mapping;
+  - refuse simulator providers in production, and leave development settings out of the release.
+- **Validation and web details** (V2.1.1–V2.1.3, V2.2.1, V2.4.1, V3.3.1, V3.3.3, V3.4.3, V4.4.2, V7.4.4, V8.2.3, V13.1.1,
+  V15.2.2, V15.3.4):
+  - validators for the remaining request bodies, and written validation rules and business limits;
+  - `__Host-` cookies, and an Origin check on hub handshakes;
+  - limits on report exports and SignalR calls.
+
+## V1 Encoding and Sanitization
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V1.1.1 | L2 | Input decoded to canonical form once, before validation | Met | The framework or one helper decodes input once, then it is validated. ICD titles are HTML-decoded after tag stripping, then re-encoded on output. | [DeepLinks.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/DeepLinks.cs), [verification.ts](../../src/web/apps/portal/src/modules/verify/verification.ts) |
+| V1.1.2 | L2 | Output encoded as the last step, or by the interpreter | Met | Values are encoded where they are inserted: React JSX, escapeHtml per template value, HtmlEncode per e-mail placeholder, URL/JSON encoding for gateway templates. | [print.ts](../../src/web/apps/staff/src/modules/billing/print.ts), [Notifications.cs](../../src/server/HyFib.HealthCare360.Platform/Notifications/Notifications.cs) |
+| V1.2.1 | L1 | Output encoding fits its context (HTML, attributes, CSS, headers) | Met | escapeHtml covers element and quoted-attribute contexts in print templates; ESLint no-unsanitized guards DOM sinks; CSP blocks inline script. | [print.ts](../../src/web/packages/core/src/print/print.ts), [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs) |
+| V1.2.2 | L1 | Data in built URLs encoded; only safe URL schemes | Met | Free-text path and query parts are encoded. Opened links are limited to https (http/mailto/tel in Desktop). Redirects go through safeRedirect. | [payments.ts](../../src/web/apps/portal/src/lib/payments.ts), [QidoQuery.cs](../../src/server/HyFib.HealthCare360.Integrations/Pacs/QidoQuery.cs) |
+| V1.2.3 | L1 | Encoding when building JavaScript or JSON | Met | JSON is built with System.Text.Json or JsonEncodedText. Integration-log summaries concatenate values but are stored as text and never parsed. | [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs), [TemplateRenderer.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/TemplateRenderer.cs) |
+| V1.2.4 | L1 | Parameterised database queries | Met | EF LINQ; raw SQL is interpolated (parameterised) or constant; CA2100 is a build error outside tests; sort keys are allow-listed. | [Outbox.cs](../../src/server/HyFib.HealthCare360.Platform/Messaging/Outbox.cs), [Directory.Build.props](../../Directory.Build.props) |
+| V1.2.5 | L1 | No OS command injection | Met | pg_dump and pg_restore start with ArgumentList, no shell, and the password in the environment. Desktop shell-opens only parsed http/https/mailto/tel URIs. | [PostgresTools.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/PostgresTools.cs), [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs) |
+| V1.2.6 | L2 | No LDAP injection | N/A | No LDAP or directory integration. | – |
+| V1.2.7 | L2 | No XPath injection | N/A | No XPath. The only XML (Tally replies) is read with LINQ to XML by constant element names. | – |
+| V1.2.8 | L2 | LaTeX processors locked down | N/A | No LaTeX processing. | – |
+| V1.2.9 | L2 | User data escaped in regular expressions | Met | Regex patterns built from data use Regex.Escape with match timeouts. Client RegExp objects are built only from code constants. | [PhiRedactor.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/Services/Privacy/PhiRedactor.cs), [TemplateRenderer.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/TemplateRenderer.cs) |
+| V1.3.1 | L1 | Rich-text (WYSIWYG) HTML sanitised | N/A | No WYSIWYG, rich-text or HTML input. Clinical text is plain and encoded on output. E-mail templates may hold HTML written by administrators. | – |
+| V1.3.2 | L1 | No eval or other dynamic code execution | Met | ESLint fails on eval, new Function, implied eval and javascript: URLs. The server has no scripting engines; the Desktop print view runs with scripts off. | [eslint.config.js](../../src/web/eslint.config.js), [PrintService.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/PrintService.cs) |
+| V1.3.3 | L2 | Data for dangerous contexts restricted and trimmed | Met | SafeText, ZPL/TSPL/HL7/ASTM escaping, QIDO wildcard stripping, file-name cleaning, and formula neutralising in every CSV export (the morbidity export included). | [morbidity.ts](../../src/web/apps/staff/src/modules/mrd/morbidity.ts), [Validation.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Validation.cs), [ZplLabelBuilder.cs](../../src/server/HyFib.HealthCare360.Integrations/Labels/ZplLabelBuilder.cs) |
+| V1.3.4 | L2 | User-supplied SVG sanitised | Met | Uploads are accepted by magic bytes only (PDF, PNG, JPEG, WebP, DICOM), so SVG is refused. QR SVG made by the page is filtered before printing. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [print.ts](../../src/web/apps/portal/src/lib/print.ts) |
+| V1.3.5 | L2 | User templates, Markdown or CSS sanitised or disabled | N/A | No Markdown, BBCode, user CSS or XSL. Print styles are code constants. | – |
+| V1.3.6 | L2 | Server-side request forgery (SSRF) prevented | Met | Only administrators set outbound targets (scheme checked, no userinfo). Untrusted IDs are regex-checked or escaped. No host allowlist pins provider domains (see V13.2.4). | [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [RazorpayGateway.cs](../../src/server/HyFib.HealthCare360.Integrations/Payments/RazorpayGateway.cs) |
+| V1.3.7 | L2 | No templates built from untrusted input | Met | Editable templates support only {{name}} substitution, with no engine or expressions. Values are encoded for HTML, URL or JSON. | [Notifications.cs](../../src/server/HyFib.HealthCare360.Platform/Notifications/Notifications.cs), [TemplateRenderer.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/TemplateRenderer.cs) |
+| V1.3.8 | L2 | No JNDI injection | N/A | .NET and TypeScript stack; no JNDI. | – |
+| V1.3.9 | L2 | No memcache injection | N/A | No memcache. Redis, when configured, only carries the SignalR backplane. | – |
+| V1.3.10 | L2 | No format-string injection | Met | No user-controlled String.Format. Admin number formats use a fixed token regex with a width of at most two digits. | [NumberSeries.cs](../../src/server/HyFib.HealthCare360.Platform/Numbering/NumberSeries.cs) |
+| V1.3.11 | L2 | No SMTP/IMAP injection | Met | Recipients are parsed by MailAddress.TryCreate and subject line breaks are replaced. System.Net.Mail refuses CR/LF in headers. Body placeholders are HTML-encoded. | [SmtpEmailProvider.cs](../../src/server/HyFib.HealthCare360.Integrations/Email/SmtpEmailProvider.cs) |
+| V1.4.1 | L2 | Memory-safe string and buffer handling | Met | Managed code with unsafe blocks disabled. P/Invoke buffers are length-checked (4 MB print cap, SSID at most 32 bytes); stackalloc sizes are fixed. | [HyFib.HealthCare360.WindowsInterop.csproj](../../src/shared/HyFib.HealthCare360.WindowsInterop/HyFib.HealthCare360.WindowsInterop.csproj), [RawPrinter.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/RawPrinter.cs) |
+| V1.4.2 | L2 | Integer overflows prevented | Met | Amounts and quantities are range-checked and money is decimal. Page numbers are capped at 10,000, so page × size can no longer overflow. | [Paging.cs](../../src/server/HyFib.HealthCare360.SharedKernel/Paging.cs), [BillingValidation.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Billing/Features/BillingValidation.cs) |
+| V1.4.3 | L2 | Resources released; no use after free | Met | Memory is GC-managed. Native handles and buffers are freed in finally blocks, disposables are scoped with using, and client blob URLs are revoked. | [WlanClient.cs](../../src/shared/HyFib.HealthCare360.WindowsInterop/WlanClient.cs), [RawPrinter.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/RawPrinter.cs) |
+| V1.5.1 | L1 | XML parsers without external entities (XXE) | Met | The only XML parser (Tally replies) prohibits DTDs and has no resolver. FHIR is JSON-only; HL7 and ASTM are delimiter formats. | [TallyResponseParser.cs](../../src/server/HyFib.HealthCare360.Integrations/Tally/TallyResponseParser.cs) |
+| V1.5.2 | L2 | Safe deserialisation of untrusted data | Met | System.Text.Json deserialises into fixed types only. No type metadata, BinaryFormatter or Newtonsoft. Webhook JSON depth is limited. | [PaymentGatewayService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Billing/Services/PaymentGatewayService.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
+
+## V2 Validation and Business Logic
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V2.1.1 | L1 | Input validation rules documented | Partial | The docs name the shared rules and some body limits, but the formats (names, Aadhaar, ABHA, phone) exist only in code. | [MODULE-GUIDE.md](../../docs/architecture/MODULE-GUIDE.md), [SRS.md](../../docs/requirements/SRS.md) |
+| V2.1.2 | L2 | Rules for combinations of data documented | Partial | Some cross-field rules are documented (PAN inside GSTIN, dialysis sero matching, PACS patient match), but not systematically. | [supplychain.md](../../docs/modules/supplychain.md), [specialtycare.md](../../docs/modules/specialtycare.md) |
+| V2.1.3 | L2 | Business-logic limits documented | Partial | Per-user AI quotas, discount limits and booking windows are documented. Global limits (request bucket, sign-in, OTP per number, page caps) are not. | [ai.md](../../docs/modules/ai.md), [billing.md](../../docs/modules/billing.md) |
+| V2.2.1 | L1 | Positive validation against business rules | Partial | Validators are strong allowlists, and the filter now fails closed; an architecture test proves every endpoint that asks for validation has a validator. Some endpoints with bodies (settings JSON, templates, auth) still have none. | [Validation.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Validation.cs), [RequestValidationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/RequestValidationTests.cs), [FrontOfficeEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Features/FrontOffice/FrontOfficeEndpoints.cs) |
+| V2.2.2 | L1 | Validation enforced on the server | Met | FluentValidation filters and domain rules run on the server. The client's Zod schemas only mirror them for usability. | [Validation.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Validation.cs), [ARCHITECTURE.md](../../docs/architecture/ARCHITECTURE.md) |
+| V2.2.3 | L2 | Combinations of related data checked | Met | Cross-field checks exist: PAN inside GSTIN, salvage at most cost, DOB or age required, a charge must match the bill's patient, dialysis sero status. | [VendorEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.SupplyChain/Features/Vendors/VendorEndpoints.cs), [AssetContracts.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.SupplyChain/Features/Assets/AssetContracts.cs) |
+| V2.3.1 | L1 | Business steps enforced in order | Met | Aggregates enforce order: bills draft to finalised to paid, lab results entered then verified, check-in before consultation, beds follow allowed moves. | [BedStateMachine.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Inpatient/Domain/BedStateMachine.cs), [Bills.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Billing/Domain/Bills.cs) |
+| V2.3.2 | L2 | Business-logic limits enforced | Met | Documented limits are enforced: discount authority with approval, hourly/daily AI quotas, booking window and cut-off, OTP cap per number. | [DiscountService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Billing/Services/DiscountService.cs), [AiQuota.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/Services/AiQuota.cs) |
+| V2.3.3 | L2 | Business operations are all-or-nothing | Met | Multi-step operations run in database transactions. Domain events, audit and outbox rows commit with the change; idempotency keys stop duplicate retries. | [BillingDb.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Billing/Services/BillingDb.cs), [UnitOfWorkInterceptor.cs](../../src/server/HyFib.HealthCare360.Platform/Persistence/UnitOfWorkInterceptor.cs) |
+| V2.3.4 | L2 | Limited resources cannot be double-booked | Met | Advisory locks on slots and theatres, partial unique indexes and xmin concurrency on stock prevent double allocation. | [AdvisoryLocks.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Scheduling/Services/AdvisoryLocks.cs), [AdmissionConfigurations.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Inpatient/Persistence/AdmissionConfigurations.cs) |
+| V2.4.1 | L2 | Anti-automation against excessive use | Partial | Sign-in, OTP, public, device and AI limits exist, and the limiter now runs after authentication, so per-user buckets key on the user. Report exports have no throttle of their own. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+
+## V3 Web Frontend Security
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V3.2.1 | L1 | Responses cannot render in the wrong context | Partial | Stored files are fetched with a bearer token and shown through blob URLs of their sniffed type, and their names now carry the extension of what they really are. Nothing checks Sec-Fetch headers. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
+| V3.2.2 | L1 | Text rendered as text, not HTML | Met | React escapes output everywhere. The raw-HTML sinks (print innerHTML/srcdoc) use escapeHtml templates, enforced by eslint no-unsanitized. srcdoc frames inherit script-src 'self'. | [eslint.config.js](../../src/web/eslint.config.js), [print.ts](../../src/web/packages/core/src/print/print.ts) |
+| V3.3.1 | L1 | Cookies Secure, with a __Secure- or __Host- prefix | Partial | The refresh cookies are set Secure, but the names hc360_rt and hc360_prt carry neither the __Host- nor the __Secure- prefix. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V3.3.2 | L2 | Cookie SameSite set for its purpose | Met | The only cookies (staff and portal refresh) are SameSite=Strict when set and when deleted. This fits their same-origin XHR use. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V3.3.3 | L2 | Cookies use the __Host- prefix | Gap | No __Host- prefix. The cookie path would have to change from /api/v1/auth to / to allow it; otherwise use __Secure- at minimum. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V3.3.4 | L2 | Session cookies HttpOnly | Met | The refresh token travels only in an HttpOnly Set-Cookie. JSON bodies return only the 10-minute access token, never the refresh token. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V3.4.1 | L1 | HSTS on every response (at least a year) | Met | HSTS on every response outside development: one year, with includeSubDomains (names under the server's own; there are none by default). | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V3.4.2 | L1 | CORS origin fixed or allow-listed | Met | There are no CORS services or middleware and no hand-written Access-Control headers, so cross-origin read access is never granted. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V3.4.3 | L2 | Content-Security-Policy | Partial | Allowlist CSP with object-src 'none' and base-uri 'none'. connect-src is 'self' (plus Razorpay's two hosts on portal pages), so injected script has nowhere to send data. Styles still allow 'unsafe-inline' (Fluent UI injects them at run time). | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
+| V3.4.4 | L2 | X-Content-Type-Options: nosniff | Met | An OnStarting hook adds nosniff to every response through the pipeline, including static assets and SPA shells. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs), [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
+| V3.4.5 | L2 | Referrer policy | Met | Every response sends Referrer-Policy: no-referrer. The portal shell repeats it in a meta tag and loads Razorpay with no-referrer. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs), [index.html](../../src/web/apps/portal/index.html) |
+| V3.4.6 | L2 | CSP frame-ancestors on every response | Met | All three CSP variants (app, portal, docs) include frame-ancestors 'none', plus X-Frame-Options DENY. Nothing overrides the policy. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs), [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
+| V3.5.1 | L1 | Cross-origin requests to sensitive functions refused (CSRF) | Met | The API authenticates with the Authorization bearer header, not ambient cookies. The cookie-based refresh requires the non-safelisted X-HC360-Client header. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V3.5.2 | L1 | CORS preflight cannot be sidestepped | Met | JSON bodies and custom headers force preflights, and both cookie endpoints (refresh and logout) require the X-HC360-Client header, which a cross-site page cannot send. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs) |
+| V3.5.3 | L1 | No state changes on safe methods (GET) | Met | State changes use POST/PUT/DELETE. GET handlers, including the public patient-link endpoints, are explicitly read-only. | [PublicFeedbackEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Engagement/Features/Feedback/PublicFeedbackEndpoints.cs), [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs) |
+| V3.5.4 | L2 | Separate applications on separate hostnames | Partial | The staff app, patient portal and API docs still share one origin. HC360 Desktop's bridge now refuses messages from /portal and /docs pages, which run third-party script; a separate host for the portal is planned. | [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V3.5.5 | L2 | postMessage origin and syntax checked | Met | Desktop ignores bridge messages that are not from the pinned server origin and rejects malformed JSON-RPC. The page listens only on chrome.webview. | [BridgeHost.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Bridge/BridgeHost.cs), [bridge.ts](../../src/web/packages/core/src/bridge/bridge.ts) |
+| V3.7.1 | L2 | Only supported client-side technologies | Met | React 19, Vite 8 and evergreen WebView2. No Flash, ActiveX, Java applets, NPAPI plugins or object/embed elements. | [package.json](../../src/web/apps/staff/package.json), [HyFib.HealthCare360.Desktop.csproj](../../src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj) |
+| V3.7.2 | L2 | Redirects to other domains only by allowlist | Met | After sign-in, redirects go only to paths inside the app. The one off-site redirect is the https payment link the server issues; there is no explicit host allowlist. | [redirect.ts](../../src/web/apps/staff/src/lib/redirect.ts), [payments.ts](../../src/web/apps/portal/src/lib/payments.ts) |
+
+## V4 API and Web Service
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V4.1.1 | L1 | Correct Content-Type, with charset | Met | Every text response declares utf-8: JSON, FHIR, the app pages and their static HTML, JS, CSS and JSON files, and every CSV and XML export. The attendance devices' plain-text protocol answers get it from the framework. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ReportExporter.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Analytics/Reports/Export/ReportExporter.cs), [PayrollEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.HR/Features/Payroll/PayrollEndpoints.cs) |
+| V4.1.2 | L2 | Only user-facing endpoints redirect HTTP to HTTPS | Partial | There is no HTTP listener by default. If HttpRedirectPort is enabled, UseHttpsRedirection silently redirects every path, including /api, /fhir and /hubs. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V4.1.3 | L2 | Headers set by intermediaries cannot be overridden | Met | No proxy or forwarded-headers support. The client address comes from the socket, X-Forwarded-*/X-Real-IP are never read, and correlation IDs are validated. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [WebhookRequests.cs](../../src/server/HyFib.HealthCare360.Integrations/Features/Webhooks/WebhookRequests.cs) |
+| V4.2.1 | L2 | Consistent HTTP message boundaries (request smuggling) | Met | Kestrel is the only HTTP component (no proxy or load balancer) and enforces standard HTTP/1.1 and HTTP/2 message framing. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V4.3.1 | L2 | GraphQL query cost limits | N/A | There is no GraphQL or expression-language API. The FHIR search facade caps _count at 100. | – |
+| V4.3.2 | L2 | GraphQL introspection off in production | N/A | No GraphQL endpoint exists in the server or clients. | – |
+| V4.4.1 | L1 | WebSockets only over TLS | Met | Hubs are served only on the HTTPS listener (the optional HTTP port just redirects). Clients use same-origin https URLs, so connections use wss. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [DesktopSettings.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/DesktopSettings.cs) |
+| V4.4.2 | L2 | WebSocket handshake Origin checked | Gap | Hub handshakes never check Origin (no CORS or WebSocket allowed-origins list). Risk is lower because auth uses bearer or join tokens, not cookies. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [VirtualCareModule.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/VirtualCareModule.cs) |
+| V4.4.3 | L2 | Dedicated WebSocket tokens follow session rules | Partial | Hubs reuse session JWTs, and telehealth guests get hashed, expiring join tokens. The events hub now closes a connection when its token expires; the telehealth hub does not yet. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [TelehealthSession.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Domain/TelehealthSession.cs) |
+| V4.4.4 | L2 | WebSocket tokens come from the authenticated session | Met | Hub tokens are access tokens from the HTTPS sign-in/refresh flow. Session activity is checked when the connection authenticates. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [realtime.tsx](../../src/web/packages/core/src/realtime/realtime.tsx) |
+
+## V5 File Handling
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V5.1.1 | L2 | Upload types and sizes documented | Partial | Voice upload types and size are documented. For /api/v1/files, the accepted types, the 25 MB limit and malicious-file handling are not documented anywhere. | [ai.md](../../docs/modules/ai.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V5.2.1 | L1 | Upload size limits | Met | Kestrel caps bodies at 30 MB. Uploads are capped at 26 MB (the store rejects over 25 MB), audio 10 MB, webhooks 256 KB, payroll CSV 1 MB. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs) |
+| V5.2.2 | L1 | Upload extension and content checked | Met | Magic bytes decide what a file is (PDF, PNG, JPEG, WebP, DICOM); anything else is refused. The stored name's extension is set to match, so a PDF uploaded as results.hta is kept as results.pdf. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [StoredFileNameTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/StoredFileNameTests.cs) |
+| V5.2.3 | L2 | Archive expansion limits (zip bombs) | N/A | No archive or OOXML uploads are accepted (only PDF, PNG, JPEG, WebP, DICOM and audio). Backup restore is an offline admin CLI. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs) |
+| V5.3.1 | L1 | Uploaded files never executed | Met | Uploads are stored AES-GCM-encrypted as GUID-named .bin files in the ProgramData data folder, outside wwwroot, so they are never served as static files. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
+| V5.3.2 | L1 | File paths not built from user file names | Met | Storage paths are built from the date and a GUID. User file names are stored as metadata only, with directories, invalid and control characters removed. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs) |
+| V5.4.1 | L2 | Download names set by the server | Met | Downloads carry the server's cleaned name, whose extension always matches the file's real type. HC360 Desktop saves only document types HC360 produces, from the server. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [DownloadPolicy.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/DownloadPolicy.cs), [files.ts](../../src/web/apps/staff/src/modules/hr/shared/files.ts) |
+| V5.4.2 | L2 | File names encoded in headers (RFC 6266) | Met | Names are stripped of control and invalid characters, and ASP.NET Core encodes Content-Disposition (RFC 6266/5987). WhatsApp and export file names use only safe characters. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs), [MetaWhatsAppProvider.cs](../../src/server/HyFib.HealthCare360.Integrations/WhatsApp/MetaWhatsAppProvider.cs) |
+| V5.4.3 | L2 | Untrusted files scanned for malware | Gap | Uploads get no antivirus or AMSI scan. Because files are encrypted at rest, the host's antivirus cannot inspect them either. | [FileStore.cs](../../src/server/HyFib.HealthCare360.Platform/Files/FileStore.cs) |
+
+## V6 Authentication
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V6.1.1 | L1 | Brute-force and credential-stuffing defences documented | Partial | The docs mention lockout and "rate limits" only. They don't give thresholds, per-IP/per-phone scope, the 24 h escalation, admin unlock, or how malicious lockout is prevented. | [SECURITY.md](../../docs/security/SECURITY.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V6.1.2 | L2 | Context-specific banned words documented | Partial | A few context words (nana, hyfib, hc360, hospital, doctor, nurse) sit in the deny-list file. There is no documented list, and department, role and system names are missing. | [common-passwords.txt](../../src/server/HyFib.HealthCare360.Platform/Security/Resources/common-passwords.txt) |
+| V6.1.3 | L2 | All sign-in pathways documented | Partial | An architecture test lists every pathway and the docs summarise them. No document states each pathway's authentication strength or the controls they must share. | [SECURITY.md](../../docs/security/SECURITY.md), [EndpointAuthorizationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/EndpointAuthorizationTests.cs) |
+| V6.2.1 | L1 | Passwords of at least 8 characters (15 recommended) | Met | Minimum is 12 characters by default. The setting has no lower bound, so configuration could weaken it. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V6.2.2 | L1 | Users can change their password | Met | Staff change their password under Account › Password. Patients have no passwords (OTP only). | [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs), [account.tsx](../../src/web/apps/staff/src/routes/_app/account.tsx) |
+| V6.2.3 | L1 | Change needs the current and new password | Met | The server checks the current password before accepting the new one. The form asks for current, new and confirmation. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
+| V6.2.4 | L1 | Common passwords rejected | Partial | The deny list has 173 entries, only 19 of them 12+ characters: far below 3,000 policy-compliant passwords. Matching on letters only helps a little. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [common-passwords.txt](../../src/server/HyFib.HealthCare360.Platform/Security/Resources/common-passwords.txt) |
+| V6.2.5 | L1 | No composition rules | Met | No character-class rules. The only extra rule is five distinct characters, which is not a composition rule. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V6.2.6 | L1 | Password fields masked | Met | All password and PIN fields use type=password. Sign-in has a show/hide toggle. | [login.tsx](../../src/web/apps/staff/src/routes/login.tsx), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
+| V6.2.7 | L1 | Paste and password managers allowed | Partial | Web forms allow paste and set autocomplete. HC360 Desktop turns off WebView2 password saving and autofill; paste still works, and the reason is not documented. | [MainWindow.xaml.cs](../../src/desktop/HyFib.HealthCare360.Desktop/MainWindow.xaml.cs), [login.tsx](../../src/web/apps/staff/src/routes/login.tsx) |
+| V6.2.8 | L1 | Password checked exactly as typed | Met | The password reaches PBKDF2 unchanged; only the username is trimmed and lower-cased. Passwords over 128 characters are rejected, never truncated. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V6.2.9 | L2 | Passwords of 64+ characters allowed | Met | API and UI accept up to 128 characters. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
+| V6.2.10 | L2 | No forced periodic password changes | Met | PasswordChangedAt is only recorded. There is no expiry or rotation setting. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
+| V6.2.11 | L2 | Context-specific words rejected | Partial | Context words are blocked only as the whole password or its letters-only form, so "NanaHospitalsChennai" passes. Username and name checks work. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V6.2.12 | L2 | Breached passwords rejected | Gap | No breached-password set, online or offline. The SRS promises a breached list; the code has only the small embedded list. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [SRS.md](../../docs/requirements/SRS.md) |
+| V6.3.1 | L1 | Brute-force and credential-stuffing defences in place | Partial | Per-account lockout and per-address limits exist, and a locked account now gets the same answer (and the same work) as a wrong password. TOTP guesses have no per-account cap, and the failure count never decays. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V6.3.2 | L1 | No default accounts | Partial | A well-known "admin" account is always created (random one-time password, forced change). Config can set a fixed, unchecked password, skip the change, or seed demo users; nothing blocks this in production. | [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs), [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
+| V6.3.3 | L2 | Multi-factor authentication required | Partial | TOTP is enforced only for the SuperAdmin and HospitalAdmin role names. Clinicians, billing and custom admin roles sign in with a password only; device binding is off; patients use SMS only. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.3.4 | L2 | No undocumented sign-in pathways | Partial | Every anonymous endpoint is listed, so none are hidden. Strength varies and is not documented: ADMS terminals are accepted on serial number alone (IP pin optional). | [EndpointAuthorizationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/EndpointAuthorizationTests.cs), [BiometricIngestionService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.HR/Services/BiometricIngestionService.cs) |
+| V6.4.1 | L1 | Initial passwords and activation codes random and short-lived | Partial | Temporary passwords are 12 random characters (CSPRNG) and force a change. But they never expire, admins may choose them, and the bootstrap password file is not deleted automatically. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
+| V6.4.2 | L1 | No password hints or secret questions | Met | No hints or secret questions anywhere. Forgotten passwords go through the IT help desk. | [login.tsx](../../src/web/apps/staff/src/routes/login.tsx), [IdentityEntities.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentityEntities.cs) |
+| V6.4.3 | L2 | Password reset keeps MFA | Partial | Admin reset keeps MFA, forces a change and ends sessions, and only an administrator holding every administrative permission of the account may reset it. The temporary password never expires and the user is not notified. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [login.tsx](../../src/web/apps/staff/src/routes/login.tsx) |
+| V6.4.4 | L2 | Identity checked again when an MFA factor is lost | Partial | A lost authenticator needs an audited admin reset, which now ends the account's sessions and cannot be done by a less privileged administrator. No identity check, reason or second approver is recorded. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Permissions.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Permissions.cs) |
+| V6.5.1 | L2 | One-time codes usable once | Met | A TOTP must be newer than the last accepted one, and OTP/MFA challenges are marked used. The user row's concurrency token stops parallel reuse. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.5.2 | L2 | Low-entropy lookup secrets stored hashed | N/A | There are no lookup secrets (no recovery or backup codes). OTPs and enrolment codes are stored as SHA-256 hashes. | – |
+| V6.5.3 | L2 | Codes and TOTP seeds from a secure random generator | Met | The 160-bit TOTP seed comes from a CSPRNG key generator; OTP digits come from RandomNumberGenerator. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
+| V6.5.4 | L2 | Codes of at least 20 bits of entropy | Met | The portal OTP is six random digits (about 20 bits). | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
+| V6.5.5 | L2 | Codes and TOTPs have a set lifetime | Partial | OTP and MFA challenges expire after 5 minutes. The TOTP step is 30 s, but a ±1-step window keeps each code valid for about 60 s. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.6.1 | L2 | SMS codes only for verified numbers, with alternatives | Gap | The portal relies only on SMS OTP. Registration phone numbers are never verified before records are linked, and there is no stronger option or SMS-risk information. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PatientQueries.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientQueries.cs) |
+| V6.6.2 | L2 | Out-of-band codes bound to their request | Met | The code hash includes its challenge ID and is looked up by that ID. MFA challenges are tied to the user, device and facility. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.6.3 | L2 | Out-of-band codes rate limited | Met | Five guesses per code, three codes per number per 15 minutes, and per-address request limits. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V6.8.1 | L2 | Identity not spoofable across identity providers | N/A | Local accounts only; no external identity providers. | – |
+| V6.8.2 | L2 | Signatures on authentication assertions checked | N/A | No IdP assertions are consumed. HC360 checks the signature of its own ES256 JWTs and accepts only that algorithm. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V6.8.3 | L2 | SAML assertions used once | N/A | No SAML. | – |
+| V6.8.4 | L2 | Authentication strength from an IdP checked | N/A | No separate IdP; authentication strength is decided locally. | – |
+
+## V7 Session Management
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V7.1.1 | L2 | Session timeouts documented | Partial | The docs give 12 h absolute, 2 h idle and a 10-min lock. There is no reasoning against NIST 800-63B (AAL2 30-min idle) and no rationale per client. | [SECURITY.md](../../docs/security/SECURITY.md), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
+| V7.1.2 | L2 | Concurrent-session policy documented | Gap | Nothing says how many sessions one account may hold at once or what happens at a limit. The code allows unlimited sessions per user. | – |
+| V7.1.3 | L2 | Federated session systems documented | N/A | No SSO or federated identity; every session is a local HC360 session. | – |
+| V7.2.1 | L1 | Session tokens verified on the server | Met | The server's JwtBearer handler checks each JWT and whether its session is still active. Refresh tokens are checked against hashed DB rows. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.2.2 | L1 | Dynamic session tokens, not static keys | Met | Each sign-in gets its own ES256 access token and rotating opaque refresh token. No static keys represent user sessions. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.2.3 | L1 | Reference tokens random (128+ bits) | Met | Refresh tokens are 32 bytes (256 bits) from RandomNumberGenerator and are stored only as SHA-256 hashes. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.2.4 | L1 | New session token at every sign-in | Partial | Sign-in creates a new session, but an earlier session in the same browser is not revoked. Unlock, password change and MFA enrolment keep the same session. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.3.1 | L2 | Inactivity timeout | Partial | The 2 h idle limit counts time between refreshes, but the SPA refreshes about every 9 min whether or not anyone is active. The staff 10-min lock is UI-only. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
+| V7.3.2 | L2 | Absolute session lifetime | Met | Session expiry is set at sign-in (12 h) and never extended. Every request and refresh checks it, and refresh tokens cannot outlive it. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
+| V7.4.1 | L1 | Ended sessions cannot be used again | Partial | Logout or revocation marks the session revoked and access tokens fail at once. Open events-hub connections now close within the token's 10 minutes; telehealth connections stay until the call ends. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.4.2 | L1 | Sessions end when an account is disabled | Met | Deactivating a user revokes all their sessions, and inactive users get no permissions. Users cannot be hard-deleted. Open hub connections have the same gap as V7.4.1. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
+| V7.4.3 | L2 | Other sessions can be ended after a credential change | Partial | Password change, admin password reset and admin MFA reset end the other sessions. Turning one's own MFA on or off neither ends sessions nor offers to. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.4.4 | L2 | Sign-out visible on every page | Partial | The staff shell, lock and restricted screens, and portal navigation all show Sign out. The signed-in /display/queue TV page has none. | [UserMenu.tsx](../../src/web/apps/staff/src/shell/UserMenu.tsx), [Navigation.tsx](../../src/web/apps/portal/src/shell/Navigation.tsx) |
+| V7.4.5 | L2 | Administrators can end sessions | Partial | Admins can revoke all sessions of one user. There is no way to end every user's sessions, and portal accounts do not appear in the admin user list. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs) |
+| V7.5.1 | L2 | Re-authentication before changing sign-in attributes | Partial | Password change, MFA disable and PIN setup ask for the password. MFA setup and enable ask for nothing. Staff cannot edit their own email or phone. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.5.2 | L2 | Users can see and end their sessions | Partial | Staff can list sessions and end them one at a time, with no re-authentication. There is no "end all", and the portal has no sessions screen. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [account.tsx](../../src/web/apps/staff/src/routes/_app/account.tsx) |
+| V7.6.1 | L2 | RP and IdP session lifetimes coordinated | N/A | No identity provider or relying-party federation. | – |
+| V7.6.2 | L2 | Sessions created only by an explicit user action | N/A | No federation or silent SSO. Sessions start only from an explicit password (plus TOTP) or OTP sign-in. | – |
+
+## V8 Authorization
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V8.1.1 | L1 | Function- and data-level access rules documented | Met | Documented: deny by default, permission per endpoint, restricted records, facility scope and portal own-or-family rules. Module docs list each endpoint's permission. | [SECURITY.md](../../docs/security/SECURITY.md), [clinical.md](../../docs/modules/clinical.md) |
+| V8.1.2 | L2 | Field-level access rules documented | Partial | Only general statements (masked identifiers, role-scoped field visibility). No field-by-field read or write rules by permission or record state. | [SRS.md](../../docs/requirements/SRS.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V8.2.1 | L1 | Function-level access needs an explicit permission | Met | Every endpoint declares a permission or a reviewed exception, and a test enforces this. The fallback policy requires sign-in. | [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs), [EndpointAuthorizationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/EndpointAuthorizationTests.cs) |
+| V8.2.2 | L1 | Data-level access checked (no IDOR) | Met | Patient, VIP, portal and facility checks are enforced on the server. An administrator cannot change an account holding administrative permissions they lack, and patients get no facility, so no facility-wide live events. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AccessControlTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/AccessControlTests.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V8.2.3 | L2 | Field-level access checked | Partial | Explicit request/response types prevent mass assignment, and a few fields depend on permission (VIP names, overbooking, discounts). Most fields are all-or-nothing per endpoint. | [BedBoardService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Inpatient/Services/BedBoardService.cs), [PatientEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Features/Patients/PatientEndpoints.cs) |
+| V8.3.1 | L1 | Authorization enforced on the server | Met | All decisions are made on the server (policies, guards, scopes). The SPA's permission check only hides UI. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
+| V8.4.1 | L2 | Cross-tenant isolation | N/A | One hospital, one tenant. A facility filter separates branches; staff with no facility assignment can use every facility. | [ModelConventions.cs](../../src/server/HyFib.HealthCare360.Platform/Persistence/ModelConventions.cs) |
+
+## V9 Self-contained Tokens
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V9.1.1 | L1 | Token signatures validated | Met | JwtBearer checks the ES256 signature with the server's own key before any claim is used. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V9.1.2 | L1 | Token algorithms allow-listed | Met | Only ES256 is issued and accepted: no 'none' and no symmetric keys. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
+| V9.1.3 | L1 | Token keys only from trusted configuration | Met | One key, generated locally and protected with DPAPI, is set directly. No Authority or JWKS is configured, so jku, x5u and jwk headers are never used. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V9.2.1 | L1 | Token validity period enforced | Met | exp and nbf are issued and validated, with 30 s clock skew and a 10-minute lifetime. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
+| V9.2.2 | L2 | Token type and purpose checked | Met | Only access tokens exist. Tokens restricted to finishing sign-in (rst) are refused by endpoint policies, topic checks, the events hub's facility join and both telehealth joins. | [TelehealthHub.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Hubs/TelehealthHub.cs), [RealtimeTopics.cs](../../src/server/HyFib.HealthCare360.Platform/Realtime/RealtimeTopics.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
+| V9.2.3 | L2 | Token audience checked | Met | Issuer and audience ("hc360") are checked on every token. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
+| V9.2.4 | L2 | Audience restriction when one key serves several audiences | N/A | The key signs tokens for one audience only (the HC360 API). Staff and portal tokens are told apart by the user-type claim and permissions. | – |
+
+## V10 OAuth and OIDC
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V10.1.1 | L2 | Tokens only sent where needed | Met | The ICD token stays in server memory and is sent only to the configured HTTPS API host. Links in responses are cut down to paths. | [WhoIcdApiClient.cs](../../src/server/HyFib.HealthCare360.Integrations/Icd/WhoIcdApiClient.cs), [IcdResponseParser.cs](../../src/server/HyFib.HealthCare360.Integrations/Icd/IcdResponseParser.cs) |
+| V10.1.2 | L2 | Authorization responses bound to their flow | N/A | Client credentials only: no authorization code, state, nonce or browser flow. | – |
+| V10.2.1 | L2 | OAuth client protected against CSRF (code flow) | N/A | No authorization-code flow. | – |
+| V10.2.2 | L2 | Mix-up attacks defended (several authorization servers) | N/A | One authorization server (WHO) with client credentials, so there are no authorization responses to mix up. | – |
+| V10.3.1 | L2 | Resource server checks the token audience | N/A | HC360 is not an OAuth resource server. Audience checks on its own JWTs are covered in V9.2.3. | – |
+| V10.3.2 | L2 | Resource server enforces delegated claims | N/A | Not an OAuth resource server; no delegated scopes. | – |
+| V10.3.3 | L2 | Resource server identifies users by issuer and subject | N/A | Not an OAuth resource server. HC360's own tokens identify users by sub, a user GUID that is never reassigned. | – |
+| V10.3.4 | L2 | Resource server checks authentication strength | N/A | Not an OAuth resource server; acr, amr and auth_time are not used. | – |
+| V10.4.1 | L1 | Redirect URIs matched exactly against an allowlist | N/A | Not an authorization server. | – |
+| V10.4.2 | L1 | Authorization codes single-use | N/A | Not an authorization server. | – |
+| V10.4.3 | L1 | Authorization codes short-lived | N/A | Not an authorization server. | – |
+| V10.4.4 | L1 | Clients limited to the grants they need | N/A | Not an authorization server. The ICD client uses only client_credentials. | – |
+| V10.4.5 | L1 | Refresh-token replay protection for public clients | N/A | Not an authorization server. HC360's own refresh tokens rotate, and a token presented after it was spent or retired ends the session (tested end to end). | [SessionTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/SessionTests.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V10.4.6 | L2 | PKCE required | N/A | Not an authorization server. | – |
+| V10.4.7 | L2 | Dynamic client registration safeguarded | N/A | Not an authorization server; no dynamic client registration. | – |
+| V10.4.8 | L2 | Refresh tokens expire absolutely | N/A | Not an authorization server. HC360's own refresh tokens end with the 12-hour session. | – |
+| V10.4.9 | L2 | Users can revoke refresh tokens | N/A | Not an authorization server. | – |
+| V10.4.10 | L2 | Confidential clients authenticated on the back channel | N/A | This applies to the authorization server. The ICD client does authenticate its token request with client id and secret over HTTPS. | [WhoIcdApiClient.cs](../../src/server/HyFib.HealthCare360.Integrations/Icd/WhoIcdApiClient.cs) |
+| V10.4.11 | L2 | Clients get only the scopes they need | N/A | Authorization-server configuration. The ICD client asks only for the icdapi_access scope. | [WhoIcdApiClient.cs](../../src/server/HyFib.HealthCare360.Integrations/Icd/WhoIcdApiClient.cs) |
+| V10.5.1 | L2 | ID-token replay prevented (nonce) | N/A | Not an OIDC relying party. | – |
+| V10.5.2 | L2 | Users identified by a stable subject claim | N/A | Not an OIDC relying party. | – |
+| V10.5.3 | L2 | Authorization-server metadata issuer checked | N/A | Not an OIDC relying party; no metadata discovery. | – |
+| V10.5.4 | L2 | ID-token audience checked | N/A | Not an OIDC relying party. | – |
+| V10.5.5 | L2 | Back-channel logout safeguarded | N/A | Not an OIDC relying party; no back-channel logout. | – |
+| V10.6.1 | L2 | OpenID Provider response modes restricted | N/A | Not an OpenID Provider. | – |
+| V10.6.2 | L2 | OpenID Provider forced-logout protection | N/A | Not an OpenID Provider. | – |
+| V10.7.1 | L2 | User consent for each authorization | N/A | Not an authorization server; no consent flows. | – |
+| V10.7.2 | L2 | Clear consent information | N/A | Not an authorization server; no consent flows. | – |
+| V10.7.3 | L2 | Users can review and revoke consent | N/A | Not an authorization server; no consent flows. | – |
+
+## V11 Cryptography
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V11.1.1 | L2 | Key management policy and lifecycle documented | Gap | No key-management policy or lifecycle (cryptoperiods, rotation, revocation, destruction). The recovery key opens every backup, and any SuperAdmin can display it again. | [SECURITY.md](../../docs/security/SECURITY.md), [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs) |
+| V11.1.2 | L2 | Cryptographic inventory kept | Partial | The main algorithms are named, but no inventory lists every key and certificate with its location, owner, permitted uses and the data it protects. | [SECURITY.md](../../docs/security/SECURITY.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V11.2.1 | L2 | Industry-validated crypto implementations | Met | Uses .NET CNG/SChannel primitives, the ASP.NET Core Identity hasher, Data Protection, Microsoft.IdentityModel and Otp.NET. No home-grown primitives. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V11.2.2 | L2 | Crypto agility (algorithms replaceable) | Gap | Only a format version byte and password rehash exist. The single field master key and the backup, file and blind-index keys derived from it cannot be rotated. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs) |
+| V11.2.3 | L2 | At least 128-bit security | Partial | AES-256, P-256, SHA-256+, HMAC and the RSA-3072 CA all reach 128 bits. The LAN server certificate key is RSA-2048 (about 112 bits). | [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs) |
+| V11.3.1 | L1 | No ECB or weak padding | Met | No ECB and no RSA encryption. AES-256-GCM with random 96-bit nonces; Data Protection uses AES-CBC with HMAC. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [BackupEncryption.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/BackupEncryption.cs) |
+| V11.3.2 | L1 | Approved ciphers and modes (such as AES-GCM) | Met | Application code uses only AES-256-GCM. Key wrapping uses the Data Protection/DPAPI defaults (AES-256 with HMAC). | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V11.3.3 | L2 | Encrypted data protected against tampering | Met | All encryption is authenticated: GCM with the purpose as associated data. Backup chunks bind header, index and final flag, so reordering or truncation fails. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [BackupEncryption.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/BackupEncryption.cs) |
+| V11.4.1 | L1 | Approved hash functions only | Partial | No MD5; SHA-256 or better elsewhere. HMAC-SHA1 is used for Twilio webhook signatures and TOTP, both set by the outside party. | [Signatures.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/Signatures.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V11.4.2 | L2 | Passwords stored with a slow password-hashing function | Met | PBKDF2-HMAC-SHA512 at 210,000 iterations (the current OWASP figure), rehashed at sign-in when settings change. PINs use the same hasher. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
+| V11.4.3 | L2 | Collision-resistant hashes for integrity | Met | SHA-256 for ES256 tokens, certificate signatures, the audit hash chain and backup/file digests. Nothing shorter is used for integrity. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [Audit.cs](../../src/server/HyFib.HealthCare360.Platform/Auditing/Audit.cs) |
+| V11.4.4 | L2 | Keys from passwords derived with key stretching | N/A | No key is derived from a password. The recovery key is a raw random 256-bit key, and key files are DPAPI-wrapped. | [ServerCli.cs](../../src/server/HyFib.HealthCare360.Server/ServerCli.cs) |
+| V11.5.1 | L2 | Unguessable values from a secure random generator | Partial | CSPRNG everywhere (no System.Random) and most tokens are 128-256 bits. Report verification codes carry 100 bits and device enrolment codes about 40 (short-lived, single-use). | [VerificationCode.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics/Domain/VerificationCode.cs), [DeviceEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/DeviceEndpoints.cs) |
+| V11.6.1 | L2 | Approved algorithms for key generation and signatures | Met | CNG generates the RSA and P-256 keys and ES256 signs tokens. Certificates use RSA-SHA256 PKCS#1 v1.5 (approved; ECDSA or PSS would be better). | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs) |
+
+## V12 Secure Communication
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V12.1.1 | L1 | Only TLS 1.2 and 1.3, preferring 1.3 | Partial | Kestrel and every outbound HTTP client (providers, speech, Claude) accept only TLS 1.2 and 1.3. The SMTP client still uses the operating system's defaults. | [OutboundHttp.cs](../../src/server/HyFib.HealthCare360.Platform/Http/OutboundHttp.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs) |
+| V12.1.2 | L2 | Only recommended cipher suites | Partial | Cipher suites are left to Windows SChannel defaults. Nothing disables the TLS_RSA suites without forward secrecy or the CBC suites, or sets a preference order. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V12.1.3 | L2 | mTLS client certificates validated | N/A | No mutual TLS or client-certificate authentication is used. | – |
+| V12.2.1 | L1 | TLS for external HTTP services, without fallback | Met | Listens on HTTPS only by default, sends HSTS outside Development, and the optional HTTP port only redirects. Patient links are forced to https. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V12.2.2 | L1 | Publicly trusted certificates for external services | Partial | The default certificate chains to the private hospital CA. The internet-facing portal and webhooks need a public certificate; only one admin PFX is supported, and that path is not documented. | [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs), [PortalAddress.cs](../../src/server/HyFib.HealthCare360.Platform/Settings/PortalAddress.cs) |
+| V12.3.1 | L2 | Encrypted protocols for all connections | Partial | PostgreSQL traffic is unencrypted loopback (host, not hostssl). Lab MLLP/ASTM listeners are plain TCP. SMTP, Tally, PACS and speech can run in cleartext (STARTTLS optional). | [Install-PostgreSQL.ps1](../../deploy/windows/Install-PostgreSQL.ps1), [LabInstrumentListener.cs](../../src/server/HyFib.HealthCare360.Integrations/Laboratory/LabInstrumentListener.cs) |
+| V12.3.2 | L2 | TLS clients validate certificates | Met | Server HttpClients keep default chain and name validation. Desktop checks the pinned CA and host name; only the CA download, confirmed by fingerprint, skips validation. | [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [ServerTrust.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/ServerTrust.cs) |
+| V12.3.3 | L2 | TLS between internal HTTP services | Partial | HC360's own endpoints are TLS-only. LAN HTTP services (Tally, PACS DICOMweb, on-prem speech, generic SMS gateway) accept http:// URLs. | [TallyPrimeExporter.cs](../../src/server/HyFib.HealthCare360.Integrations/Tally/TallyPrimeExporter.cs), [AiSettings.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/Services/AiSettings.cs) |
+| V12.3.4 | L2 | Trusted certificates between internal services | Partial | Desktop pins the hospital CA, but tablets install it as a trusted root with no name constraints. The server trusts internal peers through the Windows store. | [ServerTrust.cs](../../src/desktop/HyFib.HealthCare360.Desktop/Services/ServerTrust.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs) |
+
+## V13 Configuration
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V13.1.1 | L2 | Communication needs documented | Partial | Each integration and its admin-set URLs are documented. No single inventory covers ports, directions, internet exposure (portal, webhooks) and lab TCP ports. | [integrations.md](../../docs/modules/integrations.md), [DEPLOYMENT.md](../../docs/deployment/DEPLOYMENT.md) |
+| V13.2.1 | L2 | Backend components authenticate each other | Partial | Dedicated non-superuser DB role, but it signs in with a static password (no SSPI or certificate). Lab listeners accept any client when no allow-list is set. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [LabInstrumentListener.cs](../../src/server/HyFib.HealthCare360.Integrations/Laboratory/LabInstrumentListener.cs) |
+| V13.2.2 | L2 | Backend components use least-privilege accounts | Partial | The service runs as a virtual account, but its DB role owns the database (full DDL at runtime) and the service can modify its own config folder. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
+| V13.2.3 | L2 | No default service credentials | Met | Random 192-bit app DB password; postgres password chosen at install, at least 12 characters; random first admin password that must be changed. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
+| V13.2.4 | L2 | Allowlist of external systems | Gap | No outbound allowlist. Admin-entered integration URLs can point at any host, and the installer creates inbound firewall rules only. | [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
+| V13.2.5 | L2 | Server allowlist for outbound requests | Gap | Nothing limits which hosts, URLs or UNC paths the server may call or write to (integrations, speech, OTLP, secondary backup folder). | [GenericHttpSmsProvider.cs](../../src/server/HyFib.HealthCare360.Integrations/Sms/GenericHttpSmsProvider.cs), [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs) |
+| V13.3.1 | L2 | Secrets kept in a secrets manager | Partial | Integration secrets are AES-GCM-encrypted and keys DPAPI-wrapped. The DB and PFX passwords are plaintext in hc360.settings.json; the first admin password is in a text file. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [Settings.cs](../../src/server/HyFib.HealthCare360.Platform/Settings/Settings.cs) |
+| V13.3.2 | L2 | Least-privilege access to secrets | Partial | Data folder is limited to SYSTEM, Administrators and the service, and DPAPI is machine-scope. Any SuperAdmin can display the recovery key that opens every backup. | [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1), [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs) |
+| V13.4.1 | L1 | No source-control metadata deployed | Met | The release zip holds only dotnet publish output and scripts (no .git, no PDBs). Web assets are built without source maps. | [Publish-HC360.ps1](../../deploy/windows/Publish-HC360.ps1), [vite.config.ts](../../src/web/apps/staff/vite.config.ts) |
+| V13.4.2 | L2 | Debug modes off in production | Met | Detailed EF/SignalR errors only in Development. Production returns a generic problem with a reference ID. Demo seed and API docs are off by default. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs) |
+| V13.4.3 | L2 | No directory listings | Met | Only default and static files from wwwroot. Directory browsing is not configured anywhere. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V13.4.4 | L2 | HTTP TRACE not supported | Met | Nothing implements or echoes TRACE; catch-all routes answer it with 404 or the app shell. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
+| V13.4.5 | L2 | Internal documentation and monitoring endpoints not exposed | Met | OpenAPI and the API reference are off by default; when IT turns them on outside development they answer only on the server machine. Health probes are anonymous but show status only. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [ServerComposition.cs](../../src/server/HyFib.HealthCare360.Server/ServerComposition.cs) |
+
+## V14 Data Protection
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V14.1.1 | L2 | Sensitive data identified and classified | Gap | No data inventory and no protection levels. Only Aadhaar, ABHA and documents are named; readable JWT payloads (names, patient IDs) are not considered. | [SECURITY.md](../../docs/security/SECURITY.md), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
+| V14.1.2 | L2 | Protection requirements per data class | Gap | No per-level requirements for encryption, integrity, retention, logging or masking. The SRS items are high-level and partly unimplemented. | [SRS.md](../../docs/requirements/SRS.md) |
+| V14.2.1 | L1 | No sensitive data in URLs | Partial | Access tokens go in the SignalR query string, the SMS webhook uses ?token=, and patient search (phone, Aadhaar, ABHA) uses ?search=. Link tokens in paths are redacted from logs. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [PageQuery.cs](../../src/server/HyFib.HealthCare360.Platform/Http/PageQuery.cs) |
+| V14.2.2 | L2 | Sensitive data not cached on the server side | Met | Stored idempotency responses are encrypted and purged after 24 h. A backup's temporary database dump is deleted when the backup ends, and one left by an interrupted backup is removed before the next. | [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs), [Idempotency.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Idempotency.cs) |
+| V14.2.3 | L2 | No sensitive data sent to trackers or third parties | Met | No trackers or analytics; the only third-party script is Razorpay's checkout on portal pages, and connect-src now limits pages to the server (and Razorpay's hosts there). AI text is PHI-redacted. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs), [PhiRedactor.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/Services/Privacy/PhiRedactor.cs) |
+| V14.2.4 | L2 | Encryption, retention and logging rules for sensitive data | Partial | Field encryption and masking exist. BitLocker (SRS SEC-05) is never checked, the DB password is not DPAPI-protected (SEC-07), and slow-query logs record bind values. | [Install-PostgreSQL.ps1](../../deploy/windows/Install-PostgreSQL.ps1), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
+| V14.3.1 | L1 | Client-side data cleared at sign-out | Partial | Drafts and the query cache are cleared at sign-out, even offline. No Clear-Site-Data, and PHI drafts remain if a session expires while the app is closed. | [session.ts](../../src/web/packages/core/src/auth/session.ts), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
+| V14.3.2 | L2 | Cache-Control: no-store for sensitive responses | Met | All /api and /fhir responses carry Cache-Control: no-store and Pragma: no-cache. The app shells are no-cache. | [SecurityHeaders.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SecurityHeaders.cs) |
+| V14.3.3 | L2 | No sensitive data in browser storage | Gap | Registration forms, clinical notes, lab result edits and AI note drafts are saved to localStorage as plaintext PHI. | [useFormDraft.ts](../../src/web/apps/staff/src/lib/useFormDraft.ts), [ResultSheet.tsx](../../src/web/apps/staff/src/modules/lab/ResultSheet.tsx) |
+
+## V15 Secure Coding and Architecture
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V15.1.1 | L1 | Patch time frames for components documented | Met | SEC-11 sets a 7-day window for critical patches and 30 days otherwise. SECURITY.md sets weekly Dependabot updates and dated, justified advisory acceptances. | [SRS.md](../../docs/requirements/SRS.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V15.1.2 | L2 | Inventory (SBOM) of third-party components | Partial | NuGet versions are pinned centrally and pnpm has a lockfile. No SBOM is generated or shipped, and there are no NuGet lock files or package source mapping. | [Directory.Packages.props](../../Directory.Packages.props), [release.yml](../../.github/workflows/release.yml) |
+| V15.1.3 | L2 | Resource-intensive functions documented | Partial | Limits are scattered across module docs (timeouts, report ranges, batch rates). Nothing lists the heavy functions, the availability strategy or client-timeout risks in one place. | [integrations.md](../../docs/modules/integrations.md), [engagement.md](../../docs/modules/engagement.md) |
+| V15.2.1 | L1 | Components patched within the time frames | Met | NuGet and pnpm audits fail CI on any advisory, a weekly job re-audits, and nothing is suppressed. PostgreSQL and WebView2 patching sit outside this gate. | [Directory.Build.props](../../Directory.Build.props), [ci.yml](../../.github/workflows/ci.yml) |
+| V15.2.2 | L2 | Resource-intensive functions protected | Partial | Rate limiters (now per user after sign-in), body caps and command timeouts exist. SignalR calls are not throttled. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V15.2.3 | L2 | No test or extraneous functionality in production | Partial | API docs, demo data and sourcemaps are dev-only. But the simulator providers (payments captured at once) ship and can be selected in production, and appsettings.Development.json lands in the Release output. | [IntegrationsServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Integrations/IntegrationsServiceCollectionExtensions.cs), [IntegrationAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Integrations/Features/Admin/IntegrationAdminEndpoints.cs) |
+| V15.3.1 | L1 | Responses return only the fields needed | Met | Endpoints return purpose-built DTO records, never entities. Lists mask phones, ABHA is masked, Aadhaar is last-4 only, and telehealth guests see only a first name. | [PatientContracts.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Features/Patients/PatientContracts.cs), [PatientEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Features/Patients/PatientEndpoints.cs) |
+| V15.3.2 | L2 | Outbound calls follow redirects only when intended | Met | Outbound HTTP clients (integrations, speech, the Claude SDK) share one handler that follows no redirects. | [OutboundHttp.cs](../../src/server/HyFib.HealthCare360.Platform/Http/OutboundHttp.cs), [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [AIModule.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.AI/AIModule.cs) |
+| V15.3.3 | L2 | Mass assignment prevented | Met | Each action binds its own request record and fields are mapped by hand (ADR-009). No entity binding or JSON Patch found. | [PatientContracts.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Features/Patients/PatientContracts.cs), [PatientRegistrationService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientRegistrationService.cs) |
+| V15.3.4 | L2 | Client IP taken only from trusted proxy headers | Partial | Uses the TCP peer address, which cannot be spoofed and is right on the LAN. No trusted-proxy setup for a published portal behind a reverse proxy, and request logs omit client IP. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V15.3.5 | L2 | Strict types and comparisons | Met | C# is strictly typed with nullable checks and warnings-as-errors, and binding is typed. TypeScript enforces strict equality (ESLint eqeqeq). | [eslint.config.js](../../src/web/eslint.config.js), [Directory.Build.props](../../Directory.Build.props) |
+| V15.3.6 | L2 | No prototype pollution | Met | No deep-merge libraries. URL-derived keys are regex-checked (rejects __proto__), and the dotted-path setter only takes paths defined in code. | [params.ts](../../src/web/apps/staff/src/modules/analytics/params.ts), [settingsForms.ts](../../src/web/apps/staff/src/modules/admin/settingsForms.ts) |
+| V15.3.7 | L2 | HTTP parameter pollution handled | Met | Minimal APIs bind each parameter from one declared source (route, query or JSON body). Cookies and headers are read explicitly, so sources never mix. | [AuditEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Auditing/AuditEndpoints.cs), [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs) |
+
+## V16 Security Logging and Error Handling
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V16.1.1 | L2 | Logging inventory | Gap | No log inventory, only fragments (OBS-01; SEC-04 keeps audit 10 years). File-log retention, the integration, notification and desktop logs, formats and access rules are undocumented. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [SRS.md](../../docs/requirements/SRS.md) |
+| V16.2.1 | L2 | Log entries say when, where, who and what | Partial | Audit rows record who, what, when, IP, device and session. Serilog lines lack user and IP, and the correlation scope ends before request and exception logs are written. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V16.2.2 | L2 | Synchronised clocks; timestamps in UTC | Partial | File logs include the UTC offset and audit times are UTC. Neither the installer nor the health checks set up or check Windows time sync. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [Audit.cs](../../src/server/HyFib.HealthCare360.Platform/Auditing/Audit.cs) |
+| V16.2.3 | L2 | Logs go only where documented | Partial | The sinks in code (console, file, Event Log, optional OTLP) match the architecture notes. Site config can add undocumented sinks, and there is no inventory to check against. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V16.2.4 | L2 | Logs in a common, parseable format | Partial | One consistent text line format (time, level, source, correlation ID), but not structured JSON, and no log processor or SIEM is defined. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V16.2.5 | L2 | Sensitive data logged only as its class allows | Met | Every server log line (file, console, Event Log) is written through a formatter that masks phone, Aadhaar and ABHA numbers, e-mail addresses and secrets, exception text included; provider error text is masked before it is stored. | [SensitiveText.cs](../../src/server/HyFib.HealthCare360.Platform/Security/SensitiveText.cs), [RedactingFormatter.cs](../../src/server/HyFib.HealthCare360.Server/RedactingFormatter.cs), [LoggedPath.cs](../../src/server/HyFib.HealthCare360.Platform/Http/LoggedPath.cs), [Notifications.cs](../../src/server/HyFib.HealthCare360.Platform/Notifications/Notifications.cs) |
+| V16.3.1 | L2 | Authentication events logged | Partial | Staff sign-ins, wrong passwords, lockouts and TOTP failures are audited. Portal OTP failures, OTP throttling, device-required refusals and wrong current passwords are not; the factor used is not recorded. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V16.3.2 | L2 | Failed authorization logged | Partial | Only FHIR denials are audited. Other 403s (permission, restricted record) appear only as request-log status lines with no user. | [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs), [appsettings.json](../../src/server/HyFib.HealthCare360.Server/appsettings.json) |
+| V16.3.3 | L2 | Security events and bypass attempts logged | Partial | SEC-04 events (logins, PHI reads, changes, break-glass) are logged. Rate-limit rejections, validation failures and idempotency-key tampering are not. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Idempotency.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Idempotency.cs) |
+| V16.3.4 | L2 | Unexpected errors and security failures logged | Partial | Unhandled exceptions go to the file and Event Log. Outbound TLS or certificate failures become a generic "could not reach" message, so they cannot be told apart. | [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs), [IntegrationException.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationException.cs) |
+| V16.4.1 | L2 | Log injection prevented | Partial | The correlation header is checked and most logged values are typed IDs. But the text sink writes strings raw and nothing strips CR/LF. | [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V16.4.2 | L2 | Logs protected against reading and change | Partial | Audit triggers enforce append-only and the log folder is ACL-restricted. But the app's DB role owns the tables and could disable triggers, and the hash chain has no key and skips some columns. | [DatabaseInitializer.cs](../../src/server/HyFib.HealthCare360.Platform/Persistence/DatabaseInitializer.cs), [Install-HC360Server.ps1](../../deploy/windows/Install-HC360Server.ps1) |
+| V16.4.3 | L2 | Logs sent to a separate system | Gap | All logs stay on the Server Node (file, local Event Log, audit in the same DB); the optional OTLP export carries only traces and metrics. | [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs), [Program.cs](../../src/server/HyFib.HealthCare360.Server/Program.cs) |
+| V16.5.1 | L2 | Generic error messages | Met | The global handler returns a generic problem response with a reference ID, DB errors map to neutral 409/422, and detailed errors are Development-only. | [ErrorHandling.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ErrorHandling.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V16.5.2 | L2 | Safe operation when external resources fail | Met | Outbound calls have timeouts and a circuit breaker; writes are never retried at the HTTP layer. A transactional outbox retries with backoff and dead-letters. | [IntegrationHttp.cs](../../src/server/HyFib.HealthCare360.Integrations/Common/IntegrationHttp.cs), [Outbox.cs](../../src/server/HyFib.HealthCare360.Platform/Messaging/Outbox.cs) |
+| V16.5.3 | L2 | Fails closed on errors | Met | Default-deny policy, session check fails closed, validation stops the handler, saves are single transactions, 5xx responses are not cached. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [Validation.cs](../../src/server/HyFib.HealthCare360.Platform/Http/Validation.cs) |
+
+## V17 WebRTC
+
+| ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
+|---|---|---|---|---|---|
+| V17.1.1 | L2 | TURN relays only to public addresses | Gap | No TURN deployment or peer-IP restrictions are documented. Static long-term TURN credentials from settings go to every portal user and guest. | [IceServers.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Domain/IceServers.cs), [TelehealthEndpoints.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Features/Telehealth/TelehealthEndpoints.cs) |
+| V17.2.1 | L2 | DTLS key managed under the key policy | N/A | Calls are peer-to-peer with no media server. Browsers create a short-lived DTLS certificate per connection, so there is no server-side DTLS key. | [TelehealthHub.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Hubs/TelehealthHub.cs), [PatientCall.ts](../../src/web/apps/portal/src/modules/video/PatientCall.ts) |
+| V17.2.2 | L2 | Approved DTLS cipher suites and SRTP profile | N/A | No media server. The browsers' WebRTC stacks negotiate the DTLS cipher suites and SRTP profiles. | – |
+| V17.2.3 | L2 | SRTP authentication checked at the media server | N/A | No media server. The browsers enforce SRTP authentication end to end. | – |
+| V17.2.4 | L2 | Media server survives malformed SRTP | N/A | No media server handles SRTP. Malformed packets are handled by the browsers' WebRTC stacks. | – |
+| V17.3.1 | L2 | Signalling survives floods | Gap | Anyone can connect to the hub, and it has no per-connection or per-method rate limits and no connection caps. Chat messages and joins write a DB row each call. | [TelehealthHub.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Hubs/TelehealthHub.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
+| V17.3.2 | L2 | Signalling survives malformed messages | Met | Hub parameters are typed, SDP and ICE candidates have length caps, chat and quality values are bounded, and messages are capped at 32 KB. | [TelehealthHub.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Hubs/TelehealthHub.cs), [TelehealthPresence.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare/Domain/TelehealthPresence.cs) |

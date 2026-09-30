@@ -201,9 +201,9 @@ sequenceDiagram
 * **Authorisation:** permission strings (`billing.op.create`, `clinical.notes.sign`, …) are declared by modules and grouped into seeded roles. Endpoints enforce them with a dynamic policy provider. Every query is facility-scoped by default.
 * **Break-the-glass:** restricted-record access needs a reason and is time-boxed, flagged in the audit log and surfaced to the privacy officer.
 * **Transport:** TLS everywhere, including on the LAN, with HSTS. The Desktop shell pins the server certificate fingerprint captured at enrolment and blocks navigation outside the server origin.
-* **At rest:** BitLocker on the Server Node (installer check), AES-GCM field encryption, an encrypted document store, and encrypted backups. Data Protection keys are protected with machine DPAPI.
+* **At rest:** AES-GCM field encryption, an encrypted document store, and encrypted backups. Data Protection keys are protected with machine DPAPI. BitLocker on the Server Node is the hospital's responsibility (SRS SEC-05); nothing checks it yet, and an installer check is planned (`docs/security/ASVS-L2.md`).
 * **Web hardening:** strict CSP, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` (camera/microphone only for self), `frame-ancestors 'none'`, rate limiting, request size limits, and output encoding (React).
-* **Logging hygiene:** Serilog destructuring policies redact PHI-tagged properties. Errors returned to clients are generic and carry a correlation ID.
+* **Logging hygiene:** every Serilog sink writes through `RedactingFormatter`, which masks the finished line with `SensitiveText` (phone, Aadhaar and ABHA numbers, e-mail and ABHA addresses, tokens and passwords, exception text included); provider error text is masked the same way before it is stored. Errors returned to clients are generic and carry a correlation ID.
 * See [../security/SECURITY.md](../security/SECURITY.md) for the threat model.
 
 ---
