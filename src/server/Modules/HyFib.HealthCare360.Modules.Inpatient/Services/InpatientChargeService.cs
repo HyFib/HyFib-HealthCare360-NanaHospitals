@@ -31,6 +31,22 @@ public sealed class InpatientChargeService(
     /// </summary>
     public async Task<int> PostDueBedDaysAsync(Guid admissionId, DateTimeOffset? closingAt, CancellationToken ct)
     {
+        var count = await StageDueBedDaysAsync(admissionId, closingAt, ct);
+        if (count > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Like <see cref="PostDueBedDaysAsync"/>, but only stages the charges and their ledger rows: the caller's save commits
+    /// them with its own change. Discharge initiation relies on this so that Billing's DischargeInitiated handler, which
+    /// runs inside that save, drafts the final bill with the days.
+    /// </summary>
+    internal async Task<int> StageDueBedDaysAsync(Guid admissionId, DateTimeOffset? closingAt, CancellationToken ct)
+    {
         var admission = await db.Set<Admission>().FirstOrDefaultAsync(a => a.Id == admissionId, ct);
         if (admission is null || admission.Status == AdmissionStatus.Cancelled)
         {
@@ -74,11 +90,6 @@ public sealed class InpatientChargeService(
             {
                 count++;
             }
-        }
-
-        if (count > 0)
-        {
-            await db.SaveChangesAsync(ct);
         }
 
         return count;
