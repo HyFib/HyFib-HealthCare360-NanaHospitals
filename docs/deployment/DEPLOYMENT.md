@@ -102,7 +102,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - WhatsApp: to send the PDF on WhatsApp, register the `lab_report_ready` template in WhatsApp Manager **with a
      document header**. Then, in Administration › Notification templates, tick "Document header" on that template.
      Without the tick, the WhatsApp message is text only and the patient finds the report on the portal.
-   - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`.
+   - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
+     WhatsApp template without a document header (untick "Document header"). A template with a header can't go
+     without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
 7. **Administration › System health**: everything should be green, and the WiFi signal above 60%.
 
 ## 5. Install HC360 Desktop on workstations

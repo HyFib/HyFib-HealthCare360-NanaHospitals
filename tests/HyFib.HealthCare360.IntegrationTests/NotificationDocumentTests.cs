@@ -85,6 +85,24 @@ public sealed class NotificationDocumentTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_whatsapp_template_with_a_document_header_is_skipped_when_the_message_has_no_document()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var (key, kind) = await TemplatesAsync(scope, whatsAppHeader: true);
+        var whatsApp = new FakeWhatsApp();
+        var (delivery, logId) = await DeliveryAsync(scope, key, NotificationChannel.WhatsApp, "+919876543210", kind);
+
+        // As when report PDFs are switched off (diagnostics.reports.sendPdf) but the template keeps its header: Meta
+        // would refuse it, so it is skipped with the reason, not sent and retried.
+        await WhatsApp(scope, whatsApp, Source(kind, _ => Report)).HandleAsync(Message(NotificationService.WhatsAppType, delivery with { Document = null }), Ct);
+
+        whatsApp.Sent.ShouldBeEmpty();
+        var log = await LogAsync(scope, logId);
+        log.Status.ShouldBe(NotificationStatus.Skipped);
+        log.Error.ShouldNotBeNull().ShouldContain("Document header");
+    }
+
+    [Fact]
     public async Task A_whatsapp_template_without_a_document_header_never_carries_one()
     {
         await using var scope = server.Services.CreateAsyncScope();

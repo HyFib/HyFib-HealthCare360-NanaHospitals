@@ -29,6 +29,11 @@ public enum NotificationStatus
     Queued = 0,
     Sent,
     Failed,
+
+    /// <summary>
+    /// Not attempted, and never retried: there are no contact details for the channel, or the WhatsApp template needs a
+    /// document the message does not carry (the log's error says which).
+    /// </summary>
     Skipped,
 
     /// <summary>The provider confirmed delivery to the handset or inbox (delivery receipt).</summary>
@@ -443,6 +448,9 @@ internal abstract class NotificationDeliveryHandler(
     // can go without it is sent without it: the patient still hears that the report is ready.
     private const int DocumentAttempts = 3;
 
+    internal const string NoDocumentForHeader =
+        "Not sent: the WhatsApp template has a document header, and this message carries no document. Untick \"Document header\" on the template to send it without one.";
+
     public abstract string Type { get; }
 
     protected HospitalDbContext Db => db;
@@ -465,6 +473,22 @@ internal abstract class NotificationDeliveryHandler(
         }
 
         var (template, subject, body) = await renderer.RenderAsync(delivery, cancellationToken);
+        if (NeedsDocument(template) && delivery.Document is null)
+        {
+            // Meta refuses a template approved with a document header when there is no document, so sending would only
+            // fail and be retried (say, report PDFs are switched off but the template still has its header). It is
+            // skipped instead, and the log says how to fix it. The message's other channels still go.
+            if (log is not null)
+            {
+                log.Status = NotificationStatus.Skipped;
+                log.Error = NoDocumentForHeader;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            logger.LogWarning("Notification {TemplateKey} via {Channel} not sent: its template needs a document", delivery.TemplateKey, delivery.Channel);
+            return;
+        }
+
         var (file, missing) = await DocumentAsync(delivery, template, message.Attempts, cancellationToken);
 
         var result = await SendAsync(delivery, template, subject, body, file, cancellationToken);

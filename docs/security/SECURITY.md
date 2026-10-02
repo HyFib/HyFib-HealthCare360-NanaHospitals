@@ -144,8 +144,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   data catalogue, so the data summary cannot fall behind the database.
 - **Reports sent to patients.** The "report ready" e-mail carries the report's PDF, and so does the WhatsApp message
   when its template has a document header (LIS-07). E-mail is not end-to-end encrypted. Hospitals that do not want
-  reports to travel that way set `diagnostics.reports.sendPdf` to `false`: patients are then told the report is
-  ready and open it on the portal, after signing in with a one-time code. The PDFs are made when the message is sent
+  reports to travel that way set `diagnostics.reports.sendPdf` to `false`, with a WhatsApp template that has no
+  document header: patients are then told the report is ready and open it on the portal, after signing in with a
+  one-time code. The PDFs are made when the message is sent
   and are never stored, so they add no copy of the data to keep track of.
 
 ### Integrity and audit
