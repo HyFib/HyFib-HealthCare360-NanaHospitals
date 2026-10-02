@@ -16,7 +16,7 @@ import {
   useArrowNavigationGroup,
 } from '@fluentui/react-components';
 import { ChevronLeftRegular, ChevronRightRegular } from '@fluentui/react-icons';
-import type { KeyboardEvent, ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { EmptyState, ErrorState } from '../feedback/feedback';
 
 export interface Column<T> {
@@ -76,12 +76,67 @@ const useStyles = makeStyles({
 });
 
 /**
+ * Width of the actions column: the widest row's buttons at their natural width, plus the cell's padding. Undefined
+ * when there is nothing to measure (no row has buttons, or the table is not on screen).
+ */
+function actionsColumnWidth(table: HTMLTableElement): number | undefined {
+  const contents = Array.from(table.querySelectorAll<HTMLElement>(':scope > tbody > tr > td > [data-row-actions]'));
+  // A row's buttons fill their cell, so that a table can line them up at its end. They are measured at their natural
+  // width instead, so that the column narrows again when the widest buttons go.
+  for (const content of contents) {
+    content.style.width = 'max-content';
+  }
+  const widest = Math.max(0, ...contents.map((content) => parseFloat(getComputedStyle(content).width) || 0));
+  for (const content of contents) {
+    content.style.width = '';
+  }
+  const cell = contents[0]?.parentElement;
+  if (!cell || widest === 0) {
+    return undefined;
+  }
+  const padding = getComputedStyle(cell);
+  return Math.ceil(widest) + parseFloat(padding.paddingLeft) + parseFloat(padding.paddingRight);
+}
+
+/**
+ * The table takes its column widths from the header row (fixed layout), whatever the cells hold, so the actions
+ * header is given the width that the row buttons need. It is measured when the rows or their buttons change, and when
+ * the table is resized or comes into view.
+ */
+function useActionsColumnWidth(rows: unknown, rowActions: unknown) {
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const [width, setWidth] = useState<number>();
+
+  useLayoutEffect(() => {
+    if (tableRef.current) {
+      setWidth(actionsColumnWidth(tableRef.current));
+    }
+  }, [rows, rowActions]);
+
+  const ref = useCallback((table: HTMLTableElement | null) => {
+    tableRef.current = table;
+    if (!table || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(() => setWidth(actionsColumnWidth(table)));
+    observer.observe(table);
+    return () => {
+      observer.disconnect();
+      tableRef.current = null;
+    };
+  }, []);
+
+  return [ref, width] as const;
+}
+
+/**
  * Server-paged table with sorting, keyboard navigation (arrow keys between cells, Enter opens the row),
- * skeleton loading, empty and error states (SRS UX-02/07/12).
+ * skeleton loading, empty and error states (SRS UX-02/07/12). Row buttons get a column as wide as they need.
  */
 export function DataTable<T>(props: DataTableProps<T>) {
   const styles = useStyles();
   const navigation = useArrowNavigationGroup({ axis: 'grid' });
+  const [tableRef, actionsWidth] = useActionsColumnWidth(props.rows, props.rowActions);
   const { columns, rows, loading, error } = props;
 
   if (error && !rows) {
@@ -103,6 +158,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
     <div>
       <div className={styles.wrapper}>
         <Table
+          ref={tableRef}
           aria-label={props.ariaLabel}
           size={props.size ?? 'medium'}
           sortable={Boolean(props.onSortChange)}
@@ -128,7 +184,13 @@ export function DataTable<T>(props: DataTableProps<T>) {
                   </TableHeaderCell>
                 );
               })}
-              {props.rowActions && <TableHeaderCell className={styles.actionsCell} aria-label="Actions" />}
+              {props.rowActions && (
+                <TableHeaderCell
+                  className={styles.actionsCell}
+                  style={actionsWidth === undefined ? undefined : { width: actionsWidth, boxSizing: 'border-box' }}
+                  aria-label="Actions"
+                />
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -161,7 +223,7 @@ export function DataTable<T>(props: DataTableProps<T>) {
                   ))}
                   {props.rowActions && (
                     <TableCell className={styles.actionsCell} onClick={(event) => event.stopPropagation()}>
-                      {props.rowActions(row)}
+                      <div data-row-actions="">{props.rowActions(row)}</div>
                     </TableCell>
                   )}
                 </TableRow>
