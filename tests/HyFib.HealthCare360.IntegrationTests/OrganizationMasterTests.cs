@@ -64,6 +64,14 @@ public sealed class OrganizationMasterTests(HospitalServer server)
             (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("300 KB");
         }
 
+        // A patient's photo is stored without a patient id on the file; only an image uploaded as a logo is accepted.
+        var patientStylePhoto = await UploadAsync(admin, TinyPng, category: "photo");
+        using (var notALogo = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/masters/facilities/{facility.Id}", Edit(saved) with { LogoFileId = patientStylePhoto }))
+        {
+            notALogo.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+            (await notALogo.Content.ReadAsStringAsync(Ct)).ShouldContain("only an image uploaded for it");
+        }
+
         var logo = await UploadAsync(admin, TinyPng);
         var preview = await admin.PostAsync<PrintableDocumentDto>("/api/v1/masters/facilities/letterhead-preview", new LetterheadPreviewRequest(
             name, null, saved.Address, null, null, null, null, null, null, null, "NABH accredited", logo));
@@ -108,13 +116,13 @@ public sealed class OrganizationMasterTests(HospitalServer server)
         f.Code, f.Name, f.LegalName, f.Address, f.Phone, f.Email, f.Website, f.Gstin, f.Pan, f.RegistrationNumber, f.NabhNumber, f.HfrId,
         f.LetterheadNote, f.LogoFileId, f.IsActive, f.Version);
 
-    private static async Task<Guid> UploadAsync(ApiClient client, byte[] png)
+    private static async Task<Guid> UploadAsync(ApiClient client, byte[] png, string category = MasterImages.Logo)
     {
         using var form = new MultipartFormDataContent();
         var file = new ByteArrayContent(png);
         file.Headers.ContentType = new MediaTypeHeaderValue("image/png");
         form.Add(file, "file", "logo.png");
-        form.Add(new StringContent("logo"), "category");
+        form.Add(new StringContent(category), "category");
         using var response = await client.Http.PostAsync("/api/v1/files", form, Ct);
         response.StatusCode.ShouldBe(HttpStatusCode.Created);
         return (await response.Content.ReadFromJsonAsync<Created>(ApiClient.Json, Ct))!.Id;

@@ -182,6 +182,17 @@ public sealed class SaveServiceItemRequestValidator : AbstractValidator<SaveServ
     }
 }
 
+/// <summary>
+/// The file store categories of the masters' images. The staff app uploads each image with its category, and a save accepts
+/// only an image of the right one, so no other stored file (a patient's photo or document) can be put on a letterhead.
+/// </summary>
+public static class MasterImages
+{
+    public const string Logo = "logo";
+    public const string Photo = "staff-photo";
+    public const string Signature = "signature";
+}
+
 /// <summary>Rules the organisation masters share.</summary>
 public static class MasterRules
 {
@@ -335,6 +346,9 @@ internal static class OrganizationEndpoints
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Facility facility;
+
+        // Taking a facility out of use checks the others in use and saves in one transaction (see TakingOutOfUseProblemAsync).
+        await using var transaction = id is not null && !request.IsActive ? await db.Database.BeginTransactionAsync(ct) : null;
         if (id is { } existingId)
         {
             var found = await db.Set<Facility>().FirstOrDefaultAsync(f => f.Id == existingId, ct);
@@ -370,7 +384,7 @@ internal static class OrganizationEndpoints
         }
 
         var problems = new FieldProblems();
-        problems.Add("logoFileId", await ImageProblemAsync(db, request.LogoFileId, id is null ? null : facility.LogoFileId, ct));
+        problems.Add("logoFileId", await ImageProblemAsync(db, request.LogoFileId, id is null ? null : facility.LogoFileId, MasterImages.Logo, ct));
         if (problems.ToError() is { } invalid)
         {
             return invalid.ToProblem();
@@ -397,12 +411,18 @@ internal static class OrganizationEndpoints
         facility.IsActive = request.IsActive;
 
         await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+
         return id is null ? TypedResults.Created($"/api/v1/masters/facilities/{facility.Id}", new { facility.Id }) : TypedResults.NoContent();
     }
 
     /// <summary>
     /// Staff sign in to a facility, and only to one in use: the facility the user is signed in to, and the last one in use,
-    /// stay in use.
+    /// stay in use. The facilities in use are locked until the caller's transaction ends, so two administrators taking out
+    /// the last two at the same moment are served one after the other, and the second sees the first one's change.
     /// </summary>
     private static async Task<Error?> TakingOutOfUseProblemAsync(Facility facility, HospitalDbContext db, ICurrentUser user, CancellationToken ct)
     {
@@ -411,7 +431,10 @@ internal static class OrganizationEndpoints
             return Error.Rule("facility.current", "You are signed in to this facility. Sign in to another facility to take this one out of use.");
         }
 
-        return await db.Set<Facility>().AnyAsync(f => f.IsActive && f.Id != facility.Id, ct)
+        var inUse = await db.Database
+            .SqlQuery<Guid>($"SELECT id AS \"Value\" FROM org.facilities WHERE is_active AND NOT is_deleted FOR UPDATE")
+            .ToListAsync(ct);
+        return inUse.Any(other => other != facility.Id)
             ? null
             : Error.Rule("facility.last_active", "At least one facility must stay in use, because staff sign in to a facility.");
     }
@@ -422,7 +445,7 @@ internal static class OrganizationEndpoints
     /// </summary>
     private static async Task<IResult> PreviewLetterhead(LetterheadPreviewRequest request, HospitalDbContext db, DocumentAssets assets, CancellationToken ct)
     {
-        var logo = await ImageProblemAsync(db, request.LogoFileId, null, ct) is null ? await assets.ImageAsync(request.LogoFileId, ct) : null;
+        var logo = await ImageProblemAsync(db, request.LogoFileId, null, MasterImages.Logo, ct) is null ? await assets.ImageAsync(request.LogoFileId, ct) : null;
         var name = Clean(request.Name) ?? "Hospital name";
         var letterhead = new DocumentLetterhead(
             name,
@@ -699,8 +722,8 @@ internal static class OrganizationEndpoints
         problems.Add("specialtyId", await SpecialtyProblemAsync(db, request.SpecialtyId, id is null ? null : practitioner.SpecialtyId, ct));
         problems.Add("departmentId", await DepartmentProblemAsync(db, request.DepartmentId, id is null ? null : practitioner.DepartmentId, ct));
         problems.Add("facilityIds", await FacilitiesProblemAsync(db, facilityIds, id is null ? [] : practitioner.FacilityIds, ct));
-        problems.Add("photoFileId", await ImageProblemAsync(db, request.PhotoFileId, id is null ? null : practitioner.PhotoFileId, ct));
-        problems.Add("signatureFileId", await ImageProblemAsync(db, request.SignatureFileId, id is null ? null : practitioner.SignatureFileId, ct));
+        problems.Add("photoFileId", await ImageProblemAsync(db, request.PhotoFileId, id is null ? null : practitioner.PhotoFileId, MasterImages.Photo, ct));
+        problems.Add("signatureFileId", await ImageProblemAsync(db, request.SignatureFileId, id is null ? null : practitioner.SignatureFileId, MasterImages.Signature, ct));
         if (problems.ToError() is { } invalid)
         {
             return invalid.ToProblem();
@@ -875,10 +898,12 @@ internal static class OrganizationEndpoints
     }
 
     /// <summary>
-    /// A logo, photo or signature must be an image uploaded for it (not a patient's document) that documents can embed: PNG,
-    /// JPEG or WebP of at most <see cref="DocumentAssets.MaxImageBytes"/>.
+    /// A logo, photo or signature must be an image uploaded as one (file category <paramref name="category"/>, see
+    /// <see cref="MasterImages"/>) that documents can embed: PNG, JPEG or WebP of at most <see cref="DocumentAssets.MaxImageBytes"/>.
+    /// The category is what keeps out every other stored image, including patients' photos, which carry no patient id on
+    /// the file itself.
     /// </summary>
-    internal static async Task<string?> ImageProblemAsync(HospitalDbContext db, Guid? id, Guid? current, CancellationToken ct)
+    internal static async Task<string?> ImageProblemAsync(HospitalDbContext db, Guid? id, Guid? current, string category, CancellationToken ct)
     {
         if (id is not { } value || value == current)
         {
@@ -886,12 +911,12 @@ internal static class OrganizationEndpoints
         }
 
         var file = await db.Set<StoredFile>().AsNoTracking().Where(f => f.Id == value)
-            .Select(f => new { f.ContentType, f.SizeBytes, f.PatientId })
+            .Select(f => new { f.ContentType, f.SizeBytes, f.PatientId, f.Category })
             .FirstOrDefaultAsync(ct);
         return file switch
         {
             null => "The image was not found. Upload it again.",
-            { PatientId: not null } => "Upload the image here: a patient's document can't be used.",
+            _ when file.PatientId is not null || file.Category != category => "Upload the image here: only an image uploaded for it can be used.",
             _ when !ImageTypes.Contains(file.ContentType) => "Use a PNG, JPEG or WebP image.",
             _ when file.SizeBytes > DocumentAssets.MaxImageBytes => "Use an image of 300 KB or less: documents leave out bigger images.",
             _ => null,
