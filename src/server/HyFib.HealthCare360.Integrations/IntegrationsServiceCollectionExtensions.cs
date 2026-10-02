@@ -90,6 +90,7 @@ internal static class IntegrationsServiceCollectionExtensions
     {
         services.AddIntegrationHttpClient<TallyPrimeExporter>(TallyTimeout, TallyTimeout);
         services.AddScoped<IAccountingProvider>(sp => sp.GetRequiredService<TallyPrimeExporter>());
+        services.AddScoped<SimulatedTallyCompany>();
         services.AddScoped<IAccountingProvider, SimulatorAccountingExporter>();
         services.AddScoped<IAccountingExporter, AccountingExporterRouter>();
 
