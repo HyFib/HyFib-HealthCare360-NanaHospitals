@@ -156,6 +156,11 @@ import { Route as AppSchedulingBookRouteImport } from './routes/_app/scheduling/
 import { Route as AppSchedulingCalendarRouteImport } from './routes/_app/scheduling/calendar'
 import { Route as AppSchedulingSchedulesRouteImport } from './routes/_app/scheduling/schedules'
 import { Route as AppSchedulingWaitlistRouteImport } from './routes/_app/scheduling/waitlist'
+import { Route as AppSetupDepartmentsRouteImport } from './routes/_app/setup/departments'
+import { Route as AppSetupFacilitiesRouteImport } from './routes/_app/setup/facilities'
+import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/practitioners'
+import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
+import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
 import { Route as AppAdminIntegrationsIndexRouteImport } from './routes/_app/admin/integrations/index'
@@ -1030,6 +1035,31 @@ const AppSchedulingWaitlistRoute = AppSchedulingWaitlistRouteImport.update({
   path: '/scheduling/waitlist',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSetupDepartmentsRoute = AppSetupDepartmentsRouteImport.update({
+  id: '/setup/departments',
+  path: '/setup/departments',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSetupFacilitiesRoute = AppSetupFacilitiesRouteImport.update({
+  id: '/setup/facilities',
+  path: '/setup/facilities',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSetupPractitionersRoute = AppSetupPractitionersRouteImport.update({
+  id: '/setup/practitioners',
+  path: '/setup/practitioners',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSetupServicesRoute = AppSetupServicesRouteImport.update({
+  id: '/setup/services',
+  path: '/setup/services',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSetupSpecialtiesRoute = AppSetupSpecialtiesRouteImport.update({
+  id: '/setup/specialties',
+  path: '/setup/specialties',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppTelehealthIndexRoute = AppTelehealthIndexRouteImport.update({
   id: '/telehealth/',
   path: '/telehealth/',
@@ -1893,6 +1923,11 @@ export interface FileRoutesByFullPath {
   '/scheduling/calendar': typeof AppSchedulingCalendarRoute
   '/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
+  '/setup/departments': typeof AppSetupDepartmentsRoute
+  '/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/setup/services': typeof AppSetupServicesRoute
+  '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/analytics/': typeof AppAnalyticsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
@@ -2178,6 +2213,11 @@ export interface FileRoutesByTo {
   '/scheduling/calendar': typeof AppSchedulingCalendarRoute
   '/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
+  '/setup/departments': typeof AppSetupDepartmentsRoute
+  '/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/setup/services': typeof AppSetupServicesRoute
+  '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/analytics': typeof AppAnalyticsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
@@ -2465,6 +2505,11 @@ export interface FileRoutesById {
   '/_app/scheduling/calendar': typeof AppSchedulingCalendarRoute
   '/_app/scheduling/schedules': typeof AppSchedulingSchedulesRoute
   '/_app/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
+  '/_app/setup/departments': typeof AppSetupDepartmentsRoute
+  '/_app/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/_app/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/_app/setup/services': typeof AppSetupServicesRoute
+  '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
   '/_app/analytics/': typeof AppAnalyticsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
@@ -2752,6 +2797,11 @@ export interface FileRouteTypes {
     | '/scheduling/calendar'
     | '/scheduling/schedules'
     | '/scheduling/waitlist'
+    | '/setup/departments'
+    | '/setup/facilities'
+    | '/setup/practitioners'
+    | '/setup/services'
+    | '/setup/specialties'
     | '/telehealth/$sessionId'
     | '/analytics/'
     | '/assets/'
@@ -3037,6 +3087,11 @@ export interface FileRouteTypes {
     | '/scheduling/calendar'
     | '/scheduling/schedules'
     | '/scheduling/waitlist'
+    | '/setup/departments'
+    | '/setup/facilities'
+    | '/setup/practitioners'
+    | '/setup/services'
+    | '/setup/specialties'
     | '/telehealth/$sessionId'
     | '/analytics'
     | '/assets'
@@ -3323,6 +3378,11 @@ export interface FileRouteTypes {
     | '/_app/scheduling/calendar'
     | '/_app/scheduling/schedules'
     | '/_app/scheduling/waitlist'
+    | '/_app/setup/departments'
+    | '/_app/setup/facilities'
+    | '/_app/setup/practitioners'
+    | '/_app/setup/services'
+    | '/_app/setup/specialties'
     | '/_app/telehealth/$sessionId'
     | '/_app/analytics/'
     | '/_app/assets/'
@@ -4531,6 +4591,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSchedulingWaitlistRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/setup/departments': {
+      id: '/_app/setup/departments'
+      path: '/setup/departments'
+      fullPath: '/setup/departments'
+      preLoaderRoute: typeof AppSetupDepartmentsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/setup/facilities': {
+      id: '/_app/setup/facilities'
+      path: '/setup/facilities'
+      fullPath: '/setup/facilities'
+      preLoaderRoute: typeof AppSetupFacilitiesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/setup/practitioners': {
+      id: '/_app/setup/practitioners'
+      path: '/setup/practitioners'
+      fullPath: '/setup/practitioners'
+      preLoaderRoute: typeof AppSetupPractitionersRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/setup/services': {
+      id: '/_app/setup/services'
+      path: '/setup/services'
+      fullPath: '/setup/services'
+      preLoaderRoute: typeof AppSetupServicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/setup/specialties': {
+      id: '/_app/setup/specialties'
+      path: '/setup/specialties'
+      fullPath: '/setup/specialties'
+      preLoaderRoute: typeof AppSetupSpecialtiesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/telehealth/': {
       id: '/_app/telehealth/'
       path: '/telehealth'
@@ -5606,6 +5701,11 @@ interface AppRouteChildren {
   AppSchedulingCalendarRoute: typeof AppSchedulingCalendarRoute
   AppSchedulingSchedulesRoute: typeof AppSchedulingSchedulesRoute
   AppSchedulingWaitlistRoute: typeof AppSchedulingWaitlistRoute
+  AppSetupDepartmentsRoute: typeof AppSetupDepartmentsRoute
+  AppSetupFacilitiesRoute: typeof AppSetupFacilitiesRoute
+  AppSetupPractitionersRoute: typeof AppSetupPractitionersRoute
+  AppSetupServicesRoute: typeof AppSetupServicesRoute
+  AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
   AppAnalyticsIndexRoute: typeof AppAnalyticsIndexRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
@@ -5890,6 +5990,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppSchedulingCalendarRoute: AppSchedulingCalendarRoute,
   AppSchedulingSchedulesRoute: AppSchedulingSchedulesRoute,
   AppSchedulingWaitlistRoute: AppSchedulingWaitlistRoute,
+  AppSetupDepartmentsRoute: AppSetupDepartmentsRoute,
+  AppSetupFacilitiesRoute: AppSetupFacilitiesRoute,
+  AppSetupPractitionersRoute: AppSetupPractitionersRoute,
+  AppSetupServicesRoute: AppSetupServicesRoute,
+  AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
   AppAnalyticsIndexRoute: AppAnalyticsIndexRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,
