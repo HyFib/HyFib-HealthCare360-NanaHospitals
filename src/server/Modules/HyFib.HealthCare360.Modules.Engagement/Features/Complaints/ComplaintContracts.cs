@@ -15,7 +15,8 @@ public sealed record ComplaintListItem(
     DateTimeOffset RaisedAt,
     DateTimeOffset DueAt,
     bool IsOverdue,
-    double? TurnaroundHours);
+    double? TurnaroundHours,
+    DateTimeOffset? EscalatedAt);
 
 public sealed record ComplaintDetail(
     Guid Id,
@@ -38,6 +39,7 @@ public sealed record ComplaintDetail(
     DateTimeOffset? ClosedAt,
     int ReopenCount,
     bool IsOverdue,
+    DateTimeOffset? EscalatedAt,
     uint Version);
 
 /// <summary>A complaint recorded by staff (walk-in, phone, e-mail).</summary>

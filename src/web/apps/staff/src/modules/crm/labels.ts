@@ -116,7 +116,9 @@ export const FOLLOW_UP_OUTCOMES = [
   'Other',
 ] as const;
 export type FollowUpOutcome = (typeof FOLLOW_UP_OUTCOMES)[number];
-export const followUpOutcomeLabel: Record<FollowUpOutcome, string> = {
+/** What a task records: a call outcome, or "Visited" when the patient came back and no call was needed. */
+export type RecordedFollowUpOutcome = FollowUpOutcome | 'Visited';
+export const followUpOutcomeLabel: Record<RecordedFollowUpOutcome, string> = {
   Reached: 'Spoke to the patient',
   AppointmentBooked: 'Appointment booked',
   NotInterested: 'Not interested',
@@ -125,9 +127,15 @@ export const followUpOutcomeLabel: Record<FollowUpOutcome, string> = {
   NotReachable: 'Not reachable',
   CallBackLater: 'Asked to call back later',
   Other: 'Other',
+  Visited: 'Came back, no call needed',
 };
 
 export type FollowUpSource = 'Manual' | 'Discharge' | 'System';
+export const followUpSourceLabel: Record<FollowUpSource, string> = {
+  Manual: 'By staff',
+  Discharge: 'Automatically, after discharge',
+  System: 'Automatically',
+};
 
 export const CAMPAIGN_CHANNELS = ['Sms', 'WhatsApp'] as const;
 export type CampaignChannel = (typeof CAMPAIGN_CHANNELS)[number];

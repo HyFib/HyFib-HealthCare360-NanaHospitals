@@ -15,7 +15,8 @@ public sealed record FollowUpListItem(
     Guid? AssigneeUserId,
     int Attempts,
     FollowUpOutcome? Outcome,
-    bool IsOverdue);
+    bool IsOverdue,
+    DateTimeOffset? ReminderSentAt);
 
 /// <summary>Task detail with the patient's full phone number (viewing it is audited as PHI access).</summary>
 public sealed record FollowUpDetail(
@@ -38,6 +39,7 @@ public sealed record FollowUpDetail(
     DateTimeOffset? CompletedAt,
     FollowUpSource Source,
     bool IsOverdue,
+    DateTimeOffset? ReminderSentAt,
     uint Version);
 
 public sealed record CreateFollowUpRequest(
@@ -71,7 +73,11 @@ public sealed class UpdateFollowUpRequestValidator : AbstractValidator<UpdateFol
 
 public sealed class FollowUpAttemptRequestValidator : AbstractValidator<FollowUpAttemptRequest>
 {
-    public FollowUpAttemptRequestValidator() => RuleFor(x => x.Notes).SafeText(1000);
+    public FollowUpAttemptRequestValidator()
+    {
+        RuleFor(x => x.Outcome).IsInEnum().NotEqual(FollowUpOutcome.Visited).WithMessage("Choose what happened on the call.");
+        RuleFor(x => x.Notes).SafeText(1000);
+    }
 }
 
 public sealed class CancelFollowUpRequestValidator : AbstractValidator<CancelFollowUpRequest>

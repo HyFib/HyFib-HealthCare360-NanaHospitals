@@ -281,7 +281,9 @@ function ComplaintsPage() {
             {
               key: 'status',
               header: 'Stage',
-              render: (c) => <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} />,
+              render: (c) => (
+                <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} escalated={c.escalatedAt !== null} />
+              ),
             },
           ]}
           emptyTitle={

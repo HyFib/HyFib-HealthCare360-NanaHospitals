@@ -64,6 +64,7 @@ internal static class ImmunizationEndpoints
             Notes = request.Notes?.Trim(),
         };
         db.Add(immunization);
+        immunization.MarkRecorded(user.FacilityId);
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/v1/emr/patients/{patientId}/immunizations", ToDto(immunization));
     }

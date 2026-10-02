@@ -9,7 +9,9 @@ namespace HyFib.HealthCare360.Modules.Engagement.Services.Handlers;
 /// A booked appointment closes the loop on CRM work (CRM-01/02) in two ways:
 /// <list type="bullet">
 /// <item>Open leads for the same person (same mobile and matching name) are marked converted.</item>
-/// <item>Open "come back" follow-ups (review, vaccination, chronic review, check-up due) are completed as booked.</item>
+/// <item>Open "come back" follow-ups (review, vaccination, chronic review, check-up due) are completed as booked when
+/// the appointment is near or after their due date (<see cref="FollowUpAutomation.FulfilmentWindowDays"/>). An earlier
+/// appointment, likely for something else, leaves them open.</item>
 /// </list>
 /// Post-discharge, payment and feedback calls stay open, because they are still needed.
 /// </summary>
@@ -41,7 +43,8 @@ internal sealed class AppointmentBookedHandler(HospitalDbContext db, TimeProvide
             .Where(t => t.PatientId == booked.PatientId && (t.Status == FollowUpStatus.Open || t.Status == FollowUpStatus.InProgress))
             .ToListAsync(cancellationToken);
         var note = $"Appointment booked for {EngagementClock.ToLocal(booked.StartsAt).ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture)} ({booked.Channel}).";
-        foreach (var task in tasks.Where(t => FollowUpTask.ClosesOnBooking(t.Type)))
+        var bookedFor = EngagementClock.LocalDate(booked.StartsAt);
+        foreach (var task in tasks.Where(t => FollowUpTask.ClosesOnBooking(t.Type) && FollowUpAutomation.IsAround(t.DueDate, bookedFor)))
         {
             task.CompleteAsBooked(note, now);
         }

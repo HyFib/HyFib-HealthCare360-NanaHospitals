@@ -31,6 +31,10 @@ public sealed class Immunization : AuditableEntity
     public bool IsEnteredInError { get; private set; }
     public string? EnteredInErrorReason { get; private set; }
 
+    /// <summary>Announces a newly recorded dose, recorded at <paramref name="facilityId"/> (the next dose's reminder, CRM-02).</summary>
+    public void MarkRecorded(Guid? facilityId) =>
+        Raise(new ImmunizationRecorded(Id, PatientId, facilityId, EncounterId, VaccineName, VaccineCode, DoseNumber, AdministeredOn, NextDueOn));
+
     public Result MarkEnteredInError(string reason)
     {
         if (IsEnteredInError)
@@ -40,6 +44,22 @@ public sealed class Immunization : AuditableEntity
 
         IsEnteredInError = true;
         EnteredInErrorReason = reason.Trim();
+        Raise(new ImmunizationEnteredInError(Id, PatientId));
         return Result.Success();
     }
 }
+
+/// <summary>A dose was recorded, given here or transcribed from the patient's card.</summary>
+public sealed record ImmunizationRecorded(
+    Guid ImmunizationId,
+    Guid PatientId,
+    Guid? FacilityId,
+    Guid? EncounterId,
+    string VaccineName,
+    string? VaccineCode,
+    int? DoseNumber,
+    DateOnly AdministeredOn,
+    DateOnly? NextDueOn) : DomainEvent;
+
+/// <summary>A recorded dose was marked as entered in error.</summary>
+public sealed record ImmunizationEnteredInError(Guid ImmunizationId, Guid PatientId) : DomainEvent;
