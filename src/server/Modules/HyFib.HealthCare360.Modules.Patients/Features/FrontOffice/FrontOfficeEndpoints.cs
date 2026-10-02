@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
@@ -21,9 +22,11 @@ public sealed record IssueVisitorPassRequest(
     Guid? PatientId, string VisitorName, string? Phone, string? Relation, string? IdProofType, string? IdProofNumber, string? Purpose,
     string? Location, bool IsAttendant, int ValidHours);
 
+/// <summary>A consent and its history: who recorded it, and, once withdrawn, when, by whom and why.</summary>
 public sealed record ConsentDto(
-    Guid Id, ConsentType Type, string ConsentVersion, bool Granted, DateTimeOffset CapturedAt, string? WitnessName, string? SignedByRelation,
-    string? SignedByName, Guid? DocumentFileId, DateTimeOffset? RevokedAt, string? RevokedReason, string? Notes, bool IsActive);
+    Guid Id, ConsentType Type, string ConsentVersion, bool Granted, DateTimeOffset CapturedAt, string? CapturedByName, string? WitnessName,
+    string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, DateTimeOffset? RevokedAt, string? RevokedReason, string? RevokedByName,
+    string? Notes, bool IsActive);
 
 public sealed record CaptureConsentRequest(
     ConsentType Type, string? ConsentVersion, bool Granted, string? WitnessName, string? SignedByRelation, string? SignedByName, Guid? DocumentFileId, string? Notes);
@@ -74,8 +77,11 @@ public sealed class CaptureConsentRequestValidator : AbstractValidator<CaptureCo
 {
     public CaptureConsentRequestValidator()
     {
-        RuleFor(x => x.ConsentVersion).MaximumLength(16);
-        RuleFor(x => x.WitnessName).MaximumLength(200);
+        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.ConsentVersion).SafeText(16);
+        RuleFor(x => x.WitnessName).SafeText(200);
+        RuleFor(x => x.SignedByRelation).SafeText(64);
+        RuleFor(x => x.SignedByName).SafeText(200);
         RuleFor(x => x.SignedByName).NotEmpty().When(x => !string.IsNullOrWhiteSpace(x.SignedByRelation))
             .WithMessage("Enter the name of the person consenting on the patient's behalf.");
         RuleFor(x => x.Notes).SafeText(1000);
@@ -330,19 +336,37 @@ internal static class FrontOfficeEndpoints
 
     // ------------------------------------------------------------------ consents
 
-    private static async Task<IResult> ListConsents(Guid patientId, HospitalDbContext db, CancellationToken ct) =>
-        TypedResults.Ok(await db.Set<PatientConsent>().AsNoTracking()
+    // Restricted (VIP) records: consents need the same access as the demographics (the guard answers 404 for no patient).
+
+    private static async Task<IResult> ListConsents(Guid patientId, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
+    {
+        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var users = db.Set<User>();
+        var consents = await db.Set<PatientConsent>().AsNoTracking()
             .Where(c => c.PatientId == patientId)
             .OrderByDescending(c => c.CapturedAt)
-            .Select(c => new ConsentDto(c.Id, c.Type, c.ConsentVersion, c.Granted, c.CapturedAt, c.WitnessName, c.SignedByRelation, c.SignedByName,
-                c.DocumentFileId, c.RevokedAt, c.RevokedReason, c.Notes, c.Granted && c.RevokedAt == null))
-            .ToListAsync(ct));
+            .Select(c => new ConsentDto(c.Id, c.Type, c.ConsentVersion, c.Granted, c.CapturedAt,
+                users.Where(u => u.Id == c.CapturedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                c.WitnessName, c.SignedByRelation, c.SignedByName, c.DocumentFileId, c.RevokedAt, c.RevokedReason,
+                users.Where(u => u.Id == c.RevokedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                c.Notes, c.Granted && c.RevokedAt == null))
+            .ToListAsync(ct);
+        await audit.PatientRecordAccessedAsync(patientId, "Viewed consents", ct);
+        return TypedResults.Ok(consents);
+    }
 
-    private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, ICurrentUser user, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> CaptureConsent(Guid patientId, CaptureConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
+        ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
-        if (!await db.Set<Patient>().AnyAsync(p => p.Id == patientId, ct))
+        var access = await guard.EnsureCanOpenAsync(patientId, ct);
+        if (access.IsFailure)
         {
-            return Error.NotFound(nameof(Patient), patientId).ToProblem();
+            return access.Error!.ToProblem();
         }
 
         var consent = new PatientConsent
@@ -360,11 +384,26 @@ internal static class FrontOfficeEndpoints
             Notes = request.Notes?.Trim(),
         };
         db.Add(consent);
+
+        // A refusal of a standing permission ends the earlier grants, as the checks that use it already read it.
+        if (!consent.Granted && PatientConsent.IsStandingPermission(consent.Type))
+        {
+            await RevokeStandingAsync(db, patientId, consent.Type, null, RefusedLaterReason, user.UserId, consent.CapturedAt, ct);
+        }
+
         await db.SaveChangesAsync(ct);
         return TypedResults.Created($"/api/v1/patients/{patientId}/consents", new { consent.Id });
     }
 
-    private static async Task<IResult> RevokeConsent(Guid consentId, RevokeConsentRequest request, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    private const string RefusedLaterReason = "The patient refused when asked again.";
+
+    /// <summary>
+    /// Withdraws a consent (DPDP Act 2023 s6(4): as easy as giving it). It takes effect at once wherever the consent is
+    /// checked: record sharing with other providers, campaigns, feedback requests and follow-up reminders. For a standing
+    /// permission it withdraws every grant of the type, so no older copy keeps it in force.
+    /// </summary>
+    private static async Task<IResult> RevokeConsent(Guid consentId, RevokeConsentRequest request, HospitalDbContext db, PatientAccessGuard guard,
+        ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         var consent = await db.Set<PatientConsent>().FirstOrDefaultAsync(c => c.Id == consentId, ct);
         if (consent is null)
@@ -372,15 +411,39 @@ internal static class FrontOfficeEndpoints
             return Error.NotFound("Consent", consentId).ToProblem();
         }
 
-        if (consent.RevokedAt is not null)
+        var access = await guard.EnsureCanOpenAsync(consent.PatientId, ct);
+        if (access.IsFailure)
         {
-            return Error.Rule("consent.revoked", "This consent is already revoked.").ToProblem();
+            return access.Error!.ToProblem();
         }
 
-        consent.RevokedAt = time.GetUtcNow();
-        consent.RevokedReason = request.Reason.Trim();
+        var now = time.GetUtcNow();
+        var revoked = consent.Revoke(request.Reason, user.UserId, now);
+        if (revoked.IsFailure)
+        {
+            return revoked.Error!.ToProblem();
+        }
+
+        if (PatientConsent.IsStandingPermission(consent.Type))
+        {
+            await RevokeStandingAsync(db, consent.PatientId, consent.Type, consent.Id, request.Reason, user.UserId, now, ct);
+        }
+
         await db.SaveChangesAsync(ct);
         return TypedResults.NoContent();
+    }
+
+    /// <summary>Withdraws the patient's other standing grants of <paramref name="type"/> (the caller saves).</summary>
+    private static async Task RevokeStandingAsync(HospitalDbContext db, Guid patientId, ConsentType type, Guid? exceptId, string reason, Guid? userId,
+        DateTimeOffset at, CancellationToken ct)
+    {
+        var standing = await db.Set<PatientConsent>()
+            .Where(c => c.PatientId == patientId && c.Type == type && c.Granted && c.RevokedAt == null && c.Id != exceptId)
+            .ToListAsync(ct);
+        foreach (var grant in standing)
+        {
+            grant.Revoke(reason, userId, at);
+        }
     }
 
     // ------------------------------------------------------------------ documents

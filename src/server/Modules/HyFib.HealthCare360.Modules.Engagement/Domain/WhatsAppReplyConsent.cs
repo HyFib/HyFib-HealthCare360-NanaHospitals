@@ -44,8 +44,7 @@ public static class WhatsAppReplyConsent
 
             foreach (var grant in marketingHistory.Where(c => c.Granted && c.RevokedAt is null))
             {
-                grant.RevokedAt = repliedAt;
-                grant.RevokedReason = StopNotes;
+                grant.Revoke(StopNotes, capturedByUserId, repliedAt);
             }
 
             return Record(patientId, granted: false, repliedAt, StopNotes, capturedByUserId);

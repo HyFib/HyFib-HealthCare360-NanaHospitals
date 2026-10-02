@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHART_TABS,
+  chartTabLabel,
   groupByDay,
   istDay,
   parseChartTab,
@@ -82,7 +84,16 @@ describe('navigation', () => {
 
   it('parses chart tabs from the URL', () => {
     expect(parseChartTab('vitals')).toBe('vitals');
+    expect(parseChartTab('consents')).toBe('consents');
     expect(parseChartTab('secrets')).toBeUndefined();
+  });
+
+  it('lists the consents next to the documents', () => {
+    expect(CHART_TABS.slice(CHART_TABS.indexOf('documents'), CHART_TABS.indexOf('documents') + 2)).toEqual([
+      'documents',
+      'consents',
+    ]);
+    expect(chartTabLabel.consents).toBe('Consents');
   });
 
   it('writes encounter titles in plain words', () => {
