@@ -12,6 +12,7 @@ import {
   MessageBar,
   MessageBarActions,
   MessageBarBody,
+  MessageBarTitle,
   Spinner,
   Text,
   tokens,
@@ -22,6 +23,7 @@ import {
   CheckmarkCircleRegular,
   DocumentArrowLeftRegular,
   EditRegular,
+  MicSparkleRegular,
   PrintRegular,
   SaveRegular,
   SignatureRegular,
@@ -31,13 +33,22 @@ import { formatDateOnly, formatDateTime, formatRelative, todayIso, useSession } 
 import { ConfirmDialog, ErrorState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { aiQueries } from '@/lib/ai';
 import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
-import { emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
+import { emrKeys, emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
 import { LatestVitals } from '@/modules/emr/ChartSummary';
 import { BannerSkeleton, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
 import { EncounterDiagnoses } from '@/modules/emr/DiagnosisPanel';
+import { DictationDialog, type DictationInserted } from '@/modules/emr/dictation/DictationDialog';
+import {
+  insertedToast,
+  notAddedSummary,
+  notePlaceholders,
+  placeholderSignWarning,
+  type NotAdded,
+} from '@/modules/emr/dictation/dictation';
 import {
   AmendDialog,
   AmendmentHistory,
@@ -157,16 +168,17 @@ function WorkspaceSection({
   );
 }
 
-function jumpTo(id: SectionId) {
+function jumpTo(id: SectionId, focus = 'input, textarea, select, button') {
   const element = document.getElementById(`enc-${id}`);
   element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  element?.querySelector<HTMLElement>('input, textarea, select, button')?.focus({ preventScroll: true });
+  element?.querySelector<HTMLElement>(focus)?.focus({ preventScroll: true });
 }
 
 /**
  * The encounter workspace (EMR-02..07): complaint and history with templates, vitals with live flags, examination,
  * ICD-coded diagnoses, orders, the e-prescription with safety checks, notes, follow-up and referral. Alt+1…8 jumps
- * between sections; Ctrl+S saves the note; signing locks it and later changes are amendments with a reason.
+ * between sections; Ctrl+S saves the note; signing locks it and later changes are amendments with a reason. "Dictate
+ * with AI" (AIV-04..06) drafts the SOAP note from speech or typed text for the doctor to check and insert.
  */
 function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const styles = useStyles();
@@ -197,6 +209,12 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const [amendOpen, setAmendOpen] = useState(false);
   const isDirty = note.form.formState.isDirty;
   const signed = encounter.status !== 'InProgress';
+  const canDictate = usePermission('ai.dictation.use') && canWrite;
+  const aiStatus = useQuery({ ...aiQueries.status(), enabled: canDictate && !note.locked });
+  const [dictating, setDictating] = useState(false);
+  const [codesNotAdded, setCodesNotAdded] = useState<NotAdded[]>([]);
+  // Where to take the doctor once the dictation dialog has gone: focus cannot leave it while it is still closing.
+  const jumpAfterDictation = useRef<SectionId | null>(null);
 
   // Alt+1…8 jumps between sections (works while typing, like the rest of the desktop shortcuts).
   useEffect(() => {
@@ -281,12 +299,42 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
     setSignOpen(true);
   };
 
+  const dictationInserted = (result: DictationInserted) => {
+    jumpAfterDictation.current =
+      result.fields.length > 0 ? 'complaint' : result.diagnosesAdded > 0 ? 'diagnoses' : null;
+    setDictating(false);
+    setCodesNotAdded(result.notAdded);
+    if (result.diagnosesAdded + result.notAdded.length > 0) {
+      void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
+    }
+    const toast = insertedToast(result.fields.length, result.diagnosesAdded, note.amending);
+    notify[toast.intent](toast.title, toast.body);
+  };
+
+  const afterDictation = () => {
+    const section = jumpAfterDictation.current;
+    jumpAfterDictation.current = null;
+    if (section) {
+      jumpTo(section, section === 'complaint' ? 'textarea' : undefined);
+    }
+  };
+
   return (
     <Page>
       <ClinicalBanner
         summary={s}
         actions={
           <>
+            {canDictate && !note.locked && aiStatus.data?.enabled && (
+              <Tooltip
+                content="Speak or type the consultation; AI drafts the note for you to check"
+                relationship="description"
+              >
+                <Button icon={<MicSparkleRegular />} onClick={() => setDictating(true)}>
+                  Dictate with AI
+                </Button>
+              </Tooltip>
+            )}
             {!signed && canWrite && (
               <Tooltip content="Save the note (Ctrl+S)" relationship="description">
                 <Button
@@ -401,6 +449,21 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
             <Button onClick={note.draft.restore}>Restore them</Button>
             <Button appearance="subtle" onClick={note.draft.discard}>
               Discard
+            </Button>
+          </MessageBarActions>
+        </MessageBar>
+      )}
+
+      {codesNotAdded.length > 0 && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Some codes from the AI draft were not added</MessageBarTitle>
+            {notAddedSummary(codesNotAdded)}
+          </MessageBarBody>
+          <MessageBarActions>
+            <Button onClick={() => jumpTo('diagnoses')}>Go to Diagnoses</Button>
+            <Button appearance="subtle" onClick={() => setCodesNotAdded([])}>
+              Dismiss
             </Button>
           </MessageBarActions>
         </MessageBar>
@@ -549,6 +612,20 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
         onConfirm={(reason) => note.amend.mutate(reason, { onSettled: () => setAmendOpen(false) })}
         onCancel={() => setAmendOpen(false)}
       />
+      {canDictate && (
+        <DictationDialog
+          open={dictating && !note.locked}
+          patientId={patientId}
+          encounterId={encounter.id}
+          departmentName={encounter.departmentName}
+          form={note.form}
+          diagnoses={diagnoses.data}
+          aiStatus={aiStatus.data}
+          onClose={() => setDictating(false)}
+          onInserted={dictationInserted}
+          onClosed={afterDictation}
+        />
+      )}
       <ConfirmDialog
         open={blocker.status === 'blocked'}
         title="Leave without saving the note?"
@@ -590,6 +667,7 @@ function SignDialog({
     </li>
   );
   const errorCount = Object.keys(note.form.formState.errors).length;
+  const placeholders = open ? notePlaceholders(note.form.getValues()) : [];
   return (
     <ConfirmDialog
       open={open}
@@ -601,6 +679,7 @@ function SignDialog({
     >
       <Text>Signing saves and locks the note. Later corrections are recorded as amendments with a reason.</Text>
       <ul className={styles.checklist}>
+        {placeholders.length > 0 && item(false, placeholderSignWarning(placeholders))}
         {item(
           diagnosisCount > 0,
           diagnosisCount > 0

@@ -64,6 +64,23 @@ public sealed class ClaudeTextServiceTests
         _clients.DidNotReceiveWithAnyArgs().GetClient(default!, default);
     }
 
+    [Fact]
+    public async Task The_whole_call_retries_included_ends_at_the_configured_timeout()
+    {
+        CancellationToken passed = default;
+        _client.Beta.Messages.Create(Arg.Any<MessageCreateParams>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                passed = call.Arg<CancellationToken>();
+                return Task.Delay(Timeout.Infinite, passed).ContinueWith<BetaMessage>(_ => throw new TaskCanceledException(), TaskScheduler.Default);
+            });
+
+        var completion = await Service.CompleteAsync(Request, Settings with { Timeout = TimeSpan.FromMilliseconds(200) }, Ct);
+
+        completion.Error.ShouldBe("The AI service did not respond in time.");
+        passed.IsCancellationRequested.ShouldBeTrue("The SDK is handed a token that ends at the deadline.");
+    }
+
     [Theory]
     [InlineData("unauthorized", "The AI service rejected the configured API key.")]
     [InlineData("not-found", "The AI model 'claude-opus-5' is not available to this account.")]

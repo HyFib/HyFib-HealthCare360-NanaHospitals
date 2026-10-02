@@ -3,7 +3,8 @@ import { isApiError } from '@hc360/core';
 /**
  * Plain-language text for assistant and voice failures (never a raw error). The AI endpoints answer with Problem
  * Details carrying a machine-readable `code`: ai.disabled, ai.speech_disabled, ai.quota, ai.provider_failed; the
- * `ai` rate limit (20 requests a minute per user) answers 429 without one.
+ * `ai` rate limit (20 requests a minute per user) answers 429 without one. An automatic retry after a dropped
+ * connection gets idempotency.answer_not_kept: the server answered, but AI answers are not stored.
  */
 export function assistantErrorMessage(error: unknown): string {
   if (!isApiError(error)) {
@@ -18,6 +19,8 @@ export function assistantErrorMessage(error: unknown): string {
       return 'You have reached your AI usage limit for now. Everyday commands still work; AI help is available again later.';
     case 'ai.provider_failed':
       return 'The AI service could not help this time. Please try again, or type the command.';
+    case 'idempotency.answer_not_kept':
+      return 'The connection dropped before the answer arrived. Please ask again.';
     default:
       break;
   }

@@ -47,6 +47,7 @@ import {
 } from '@/modules/emr/timeline';
 import { TimelinePanel } from '@/modules/emr/TimelinePanel';
 import { RecordVitalsDialog, VitalsTab } from '@/modules/emr/VitalsPanel';
+import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -239,6 +240,7 @@ function PatientChartPage() {
           {tab === 'orders' && <OrdersTab patientId={patientId} />}
           {tab === 'prescriptions' && <PrescriptionsList patientId={patientId} />}
           {tab === 'documents' && <DocumentsTab patientId={patientId} />}
+          {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
           {tab === 'admissions' && <AdmissionsTab patientId={patientId} />}
         </div>
       </Section>

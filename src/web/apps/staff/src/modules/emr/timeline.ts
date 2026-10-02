@@ -65,6 +65,7 @@ export const CHART_TABS = [
   'orders',
   'prescriptions',
   'documents',
+  'consents',
   'admissions',
 ] as const;
 
@@ -82,6 +83,7 @@ export const chartTabLabel: Record<ChartTab, string> = {
   orders: 'Orders',
   prescriptions: 'Prescriptions',
   documents: 'Documents',
+  consents: 'Consents',
   admissions: 'Admissions',
 };
 

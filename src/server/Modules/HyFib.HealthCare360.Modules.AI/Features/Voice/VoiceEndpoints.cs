@@ -15,6 +15,7 @@ internal static partial class VoiceEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost("/api/v1/ai/voice/transcribe", Transcribe)
+            .WithoutStoredResponse()
             .WithTags("AI assistant")
             .RequireAnyPermission(AIPermissions.DictationUse, AIPermissions.AssistantUse)
             .RequireRateLimiting(AiRateLimits.Policy)

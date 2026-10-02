@@ -10,6 +10,7 @@ internal static class ClinicalNoteEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost("/api/v1/ai/clinical/structure-note", StructureNote)
+            .WithoutStoredResponse()
             .WithTags("AI assistant")
             .RequirePermission(AIPermissions.DictationUse)
             .RequireRateLimiting(AiRateLimits.Policy)

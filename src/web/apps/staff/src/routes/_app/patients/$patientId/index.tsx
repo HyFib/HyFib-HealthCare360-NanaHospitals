@@ -19,7 +19,6 @@ import {
   MessageBarBody,
   MessageBarTitle,
   Select,
-  Switch,
   Tab,
   TabList,
   Text,
@@ -35,7 +34,6 @@ import {
   EditRegular,
   MoreHorizontalRegular,
   PrintRegular,
-  ShieldErrorRegular,
   StethoscopeRegular,
 } from '@fluentui/react-icons';
 import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
@@ -53,9 +51,9 @@ import {
   patientApi,
   patientKeys,
   patientQueries,
-  type ConsentType,
   type PatientDetail,
 } from '@/modules/patients/api';
+import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'documents';
@@ -243,7 +241,7 @@ function PatientProfilePage() {
         <div style={{ padding: 16 }}>
           {tab === 'overview' && <Overview patient={p} />}
           {tab === 'visits' && <Visits patientId={patientId} />}
-          {tab === 'consents' && <Consents patientId={patientId} />}
+          {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
           {tab === 'documents' && <Documents patientId={patientId} />}
         </div>
       </Section>
@@ -329,139 +327,6 @@ function Visits({ patientId }: { patientId: string }) {
       onPageChange={setPage}
       size="small"
     />
-  );
-}
-
-const CONSENT_TYPES: ConsentType[] = [
-  'GeneralTreatment',
-  'DataSharing',
-  'SmsWhatsAppUpdates',
-  'Telehealth',
-  'Photography',
-  'Research',
-  'MarketingCommunication',
-  'HighRiskProcedure',
-  'Anaesthesia',
-  'BloodTransfusion',
-];
-
-function Consents({ patientId }: { patientId: string }) {
-  const notify = useNotify();
-  const queryClient = useQueryClient();
-  const canCapture = usePermission('patients.consents');
-  const consents = useQuery(patientQueries.consents(patientId));
-  const [open, setOpen] = useState(false);
-  const [type, setType] = useState<ConsentType>('GeneralTreatment');
-  const [granted, setGranted] = useState(true);
-  const [signedByRelation, setSignedByRelation] = useState('');
-  const [signedByName, setSignedByName] = useState('');
-  const [witnessName, setWitnessName] = useState('');
-
-  const capture = useMutation({
-    mutationFn: () =>
-      api.post(`/api/v1/patients/${patientId}/consents`, {
-        type,
-        consentVersion: null,
-        granted,
-        witnessName: witnessName || null,
-        signedByRelation: signedByRelation || null,
-        signedByName: signedByName || null,
-        documentFileId: null,
-        notes: null,
-      }),
-    onSuccess: () => {
-      setOpen(false);
-      notify.success('Consent recorded');
-      void queryClient.invalidateQueries({ queryKey: patientKeys.consents(patientId) });
-    },
-    onError: (error) => notify.error(error, 'Could not record the consent'),
-  });
-
-  return (
-    <>
-      {canCapture && (
-        <div style={{ marginBottom: 12 }}>
-          <Button icon={<ShieldErrorRegular />} onClick={() => setOpen(true)}>
-            Record consent
-          </Button>
-        </div>
-      )}
-      <DataTable
-        ariaLabel="Consents"
-        rows={consents.data}
-        loading={consents.isLoading}
-        error={consents.error}
-        onRetry={() => void consents.refetch()}
-        getRowId={(c) => c.id}
-        columns={[
-          { key: 'type', header: 'Consent', render: (c) => humanize(c.type) },
-          {
-            key: 'granted',
-            header: 'Decision',
-            render: (c) => (
-              <StatusBadge
-                status={c.revokedAt ? 'Revoked' : c.granted ? 'Approved' : 'Rejected'}
-                label={c.revokedAt ? 'Withdrawn' : c.granted ? 'Given' : 'Refused'}
-              />
-            ),
-          },
-          {
-            key: 'by',
-            header: 'Signed by',
-            render: (c) => (c.signedByName ? `${c.signedByName} (${c.signedByRelation ?? 'relative'})` : 'Patient'),
-            priority: 'low',
-          },
-          { key: 'at', header: 'Recorded', render: (c) => formatDateTime(c.capturedAt) },
-          { key: 'version', header: 'Version', render: (c) => c.consentVersion, priority: 'low' },
-        ]}
-        emptyTitle="No consents recorded"
-        size="small"
-      />
-      <Dialog open={open} onOpenChange={(_, d) => setOpen(d.open)}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Record consent</DialogTitle>
-            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Field label="Consent">
-                <Select value={type} onChange={(_, d) => setType(d.value as ConsentType)}>
-                  {CONSENT_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {humanize(t)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Switch
-                checked={granted}
-                onChange={(_, d) => setGranted(d.checked)}
-                label={granted ? 'Consent given' : 'Consent refused'}
-              />
-              <Field label="Signed on the patient's behalf by (relation)" hint="Leave blank if the patient signed">
-                <Input value={signedByRelation} onChange={(_, d) => setSignedByRelation(d.value)} />
-              </Field>
-              {signedByRelation && (
-                <Field label="Name of the person signing" required>
-                  <Input value={signedByName} onChange={(_, d) => setSignedByName(d.value)} />
-                </Field>
-              )}
-              <Field label="Witness">
-                <Input value={witnessName} onChange={(_, d) => setWitnessName(d.value)} />
-              </Field>
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setOpen(false)}>Cancel</Button>
-              <Button
-                appearance="primary"
-                disabled={capture.isPending || (Boolean(signedByRelation) && !signedByName)}
-                onClick={() => capture.mutate()}
-              >
-                Save
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-    </>
   );
 }
 

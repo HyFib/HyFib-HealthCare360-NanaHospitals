@@ -18151,6 +18151,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("revoked_at");
 
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("revoked_by_user_id");
+
                     b.Property<string>("RevokedReason")
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)")

@@ -5,18 +5,22 @@ import {
   Field,
   Input,
   makeStyles,
+  mergeClasses,
   Select,
+  Tab,
+  TabList,
   Text,
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
 import {
-  AlertUrgentRegular,
   ArrowForwardRegular,
+  BedRegular,
+  CalendarLtrRegular,
   CheckmarkRegular,
   MegaphoneLoudRegular,
+  PeopleQueueRegular,
   PlayRegular,
-  WarningRegular,
 } from '@fluentui/react-icons';
 import {
   formatDateOnly,
@@ -37,23 +41,41 @@ import {
   emrKeys,
   emrQueries,
   noteTypeLabel,
+  type WorklistAppointment,
   type WorklistParams,
   type WorklistQueueEntry,
   type WorklistResult,
 } from '@/modules/emr/api';
 import { ResultReviewDialog } from '@/modules/emr/ResultReviewDialog';
 import { useStartEncounter } from '@/modules/emr/useStartEncounter';
+import { WardRoundList } from '@/modules/emr/WardRoundList';
+import {
+  appointmentSummaryText,
+  parseWorklistView,
+  summariseAppointments,
+  summariseRound,
+  type WorklistView,
+} from '@/modules/emr/worklist';
+import { WorklistAppointments } from '@/modules/emr/WorklistAppointments';
+import { WorklistPatient } from '@/modules/emr/WorklistParts';
 import { queueApi } from '@/modules/front-office/api';
+import { inpatientQueries } from '@/modules/inpatient/api';
+import { useNow } from '@/modules/inpatient/hooks';
 import { deficiencyLabel, mrdApi } from '@/modules/mrd/api';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+interface WorklistSearch extends WorklistParams {
+  view?: WorklistView;
+}
+
 export const Route = createFileRoute('/_app/emr/')({
-  validateSearch: (s: Record<string, unknown>): WorklistParams => ({
+  validateSearch: (s: Record<string, unknown>): WorklistSearch => ({
     date: typeof s.date === 'string' && DATE.test(s.date) ? s.date : undefined,
     practitionerId: typeof s.practitionerId === 'string' && s.practitionerId ? s.practitionerId : undefined,
     departmentId: typeof s.departmentId === 'string' && s.departmentId ? s.departmentId : undefined,
+    view: parseWorklistView(s.view),
   }),
   component: WorklistPage,
 });
@@ -61,7 +83,7 @@ export const Route = createFileRoute('/_app/emr/')({
 const useStyles = makeStyles({
   layout: {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) minmax(300px, 380px)',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 340px)',
     gap: '16px',
     alignItems: 'start',
     '@media (max-width: 1100px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
@@ -80,9 +102,10 @@ const useStyles = makeStyles({
   },
   itemRow: { display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
-  badges: { display: 'inline-flex', gap: '4px', marginLeft: '6px', verticalAlign: 'middle', flexWrap: 'wrap' },
   waitLong: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
   finder: { minWidth: '280px', flex: '1 1 280px' },
+  tabs: { padding: '4px 8px 0', borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  listCaption: { display: 'block', padding: '12px 16px 8px' },
 });
 
 function ClickItem({ onOpen, children }: { onOpen: () => void; children: ReactNode }) {
@@ -105,7 +128,10 @@ function ClickItem({ onOpen, children }: { onOpen: () => void; children: ReactNo
   );
 }
 
-/** The physician desktop home (EMR-01): today's queue, results to review and everything still to sign. */
+/**
+ * The physician desktop home (EMR-01): today's queue, the doctor's appointments and ward round, results to review and
+ * everything still to sign.
+ */
 function WorklistPage() {
   const styles = useStyles();
   const notify = useNotify();
@@ -115,6 +141,10 @@ function WorklistPage() {
   const userPractitionerId = useSession((s) => s.user?.practitionerId ?? undefined);
   const canQueue = usePermission('queue.manage');
   const canWrite = usePermission('clinical.emr.write');
+  const canSeeRounds = usePermission('inpatient.admissions.read');
+  const canRecordVisit = usePermission('nursing.chart');
+  const userName = useSession((s) => s.user?.displayName ?? null);
+  const now = useNow();
   const today = todayIso();
   const params: WorklistParams = {
     date: search.date,
@@ -125,6 +155,16 @@ function WorklistPage() {
   const departments = useDepartments('Clinical');
   const departmentId = search.departmentId ?? worklist.data?.departmentId ?? undefined;
   const practitioners = usePractitioners(departmentId ?? null);
+  // The round is the chosen doctor's (the signed-in one by default), or the department's when there is no doctor.
+  const roundDoctorId = search.practitionerId ?? userPractitionerId;
+  const rounds = useQuery({
+    ...inpatientQueries.rounds({
+      practitionerId: search.practitionerId,
+      departmentId: roundDoctorId ? undefined : departmentId,
+    }),
+    enabled: canSeeRounds && Boolean(roundDoctorId ?? departmentId),
+  });
+  const view: WorklistView = search.view === 'rounds' && !canSeeRounds ? 'queue' : (search.view ?? 'queue');
   const start = useStartEncounter();
   const [reviewing, setReviewing] = useState<WorklistResult | null>(null);
 
@@ -132,7 +172,7 @@ function WorklistPage() {
     void queryClient.invalidateQueries({ queryKey: ['emr', 'worklist'] });
   });
 
-  const set = (patch: Partial<WorklistParams>) =>
+  const set = (patch: Partial<WorklistSearch>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['emr', 'worklist'] });
 
@@ -168,6 +208,17 @@ function WorklistPage() {
 
   useHotkey('f2', () => canQueue && departmentId && !callNext.isPending && callNext.mutate(), { allowInInputs: true });
 
+  const consultAppointment = (appointment: WorklistAppointment) => {
+    const entry = queue.find((q) => q.visitId === appointment.visitId);
+    if (entry) {
+      consult(entry);
+    } else if (appointment.encounterId) {
+      void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: appointment.encounterId } });
+    } else if (appointment.visitId) {
+      start.mutate({ patientId: appointment.patientId, visitId: appointment.visitId });
+    }
+  };
+
   const consult = (entry: WorklistQueueEntry) => {
     if (entry.encounterId) {
       void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: entry.encounterId } });
@@ -184,12 +235,31 @@ function WorklistPage() {
   const queue = w?.queue ?? [];
   const waiting = queue.filter((q) => q.tokenStatus === 'Waiting').length;
   const isToday = !search.date || search.date === today;
+  const roundPatients = rounds.data?.patients ?? [];
+  const notSeen = summariseRound(roundPatients).notSeen;
+  const roundDoctor =
+    roundDoctorId && roundDoctorId === userPractitionerId
+      ? { id: roundDoctorId, code: '', name: userName ?? 'Me' }
+      : (practitioners.data?.find((p) => p.id === roundDoctorId) ?? null);
+  const subtitle = [
+    isToday ? 'Today' : formatDateOnly(search.date),
+    `${waiting} waiting`,
+    canSeeRounds && roundPatients.length > 0
+      ? notSeen > 0
+        ? `${notSeen} of ${roundPatients.length} in-patients to see`
+        : `all ${roundPatients.length} in-patients seen`
+      : null,
+    `${w?.resultsToReview.length ?? 0} ${w?.resultsToReview.length === 1 ? 'result' : 'results'} to review`,
+    canQueue ? 'F2 calls the next patient' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <Page>
       <PageHeader
         title="My worklist"
-        subtitle={`${isToday ? 'Today' : formatDateOnly(search.date)} · ${waiting} waiting · ${w?.resultsToReview.length ?? 0} results to review${canQueue ? ' · F2 calls the next patient' : ''}`}
+        subtitle={subtitle}
         actions={
           canQueue &&
           isToday && (
@@ -253,140 +323,187 @@ function WorklistPage() {
         <ErrorState error={worklist.error} onRetry={() => void worklist.refetch()} />
       ) : (
         <div className={styles.layout}>
-          <Section
-            title={`Queue (${queue.length})`}
-            description="In service first, then called, then waiting by priority."
-            flush
-          >
-            <DataTable
-              ariaLabel="Today's queue"
-              rows={w?.queue}
-              loading={worklist.isLoading}
-              getRowId={(e) => e.tokenId}
-              onRowClick={(e) => openChart(e.patientId)}
-              size="small"
-              columns={[
-                {
-                  key: 'token',
-                  header: 'Token',
-                  width: 80,
-                  render: (e) => <Text weight="semibold">{e.tokenLabel}</Text>,
-                },
-                {
-                  key: 'patient',
-                  header: 'Patient',
-                  render: (e) => (
-                    <span>
-                      <Text weight="semibold">{e.patientName}</Text>{' '}
-                      <Caption1>
-                        ({e.age ?? '—'} / {e.gender.charAt(0)}) · {e.uhid}
-                      </Caption1>
-                      <span className={styles.badges}>
-                        {e.hasActiveAllergies && (
-                          <Tooltip content="Has active allergies" relationship="label">
-                            <Badge size="small" color="danger" icon={<WarningRegular />}>
-                              Allergy
-                            </Badge>
-                          </Tooltip>
-                        )}
-                        {e.hasCriticalAlerts && (
-                          <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="label">
-                            <Badge size="small" color="important" icon={<AlertUrgentRegular />}>
-                              Alert
-                            </Badge>
-                          </Tooltip>
-                        )}
-                        {e.priority !== 'Normal' && (
-                          <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'}>
-                            {e.priority}
-                          </Badge>
-                        )}
-                        {e.isFollowUp && (
-                          <Badge size="small" appearance="outline">
-                            Follow-up
-                          </Badge>
-                        )}
-                      </span>
-                    </span>
-                  ),
-                },
-                { key: 'reason', header: 'Reason', priority: 'low', render: (e) => e.chiefComplaint ?? '—' },
-                {
-                  key: 'wait',
-                  header: 'Waiting',
-                  width: 90,
-                  priority: 'low',
-                  render: (e) =>
-                    e.tokenStatus === 'Waiting' ? (
-                      <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>
-                        {e.waitingMinutes} min
-                      </span>
-                    ) : (
-                      formatTime(e.issuedAt)
-                    ),
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  width: 120,
-                  render: (e) =>
-                    e.encounterStatus ? (
-                      <StatusBadge
-                        status={e.encounterStatus === 'InProgress' ? 'InProgress' : 'Completed'}
-                        label={e.encounterStatus === 'InProgress' ? 'Note open' : 'Note signed'}
-                      />
-                    ) : (
-                      <StatusBadge status={e.tokenStatus} />
-                    ),
-                },
-              ]}
-              rowActions={(e) => (
-                <span style={{ display: 'inline-flex', gap: 4 }}>
-                  {canQueue && e.tokenStatus === 'Waiting' && (
-                    <Tooltip content="Call to the room" relationship="label">
-                      <Button
-                        size="small"
-                        icon={<MegaphoneLoudRegular />}
-                        onClick={() => queueAction.mutate({ action: 'call', entry: e })}
-                        disabled={queueAction.isPending}
-                      >
-                        Call
-                      </Button>
-                    </Tooltip>
-                  )}
-                  {canWrite && !['Completed', 'Cancelled', 'NoShow'].includes(e.tokenStatus) && (
-                    <Button
-                      size="small"
-                      appearance="primary"
-                      icon={<PlayRegular />}
-                      onClick={() => consult(e)}
-                      disabled={start.isPending}
-                    >
-                      {e.encounterId ? 'Continue' : 'Start'}
-                    </Button>
-                  )}
-                  {canWrite && e.encounterId && ['Completed', 'Cancelled', 'NoShow'].includes(e.tokenStatus) && (
-                    <Button size="small" onClick={() => consult(e)}>
-                      Open note
-                    </Button>
-                  )}
-                  {canQueue && e.tokenStatus === 'InService' && (
-                    <Tooltip content="Consultation over: free the queue for the next patient" relationship="label">
-                      <Button
-                        size="small"
-                        icon={<CheckmarkRegular />}
-                        onClick={() => queueAction.mutate({ action: 'complete', entry: e })}
-                        disabled={queueAction.isPending}
-                      >
-                        Finish
-                      </Button>
-                    </Tooltip>
-                  )}
-                </span>
+          <Section flush>
+            <TabList
+              className={styles.tabs}
+              selectedValue={view}
+              onTabSelect={(_, d) => set({ view: d.value === 'queue' ? undefined : (d.value as WorklistView) })}
+              aria-label="Worklist"
+            >
+              <Tab value="queue" icon={<PeopleQueueRegular />}>
+                Queue ({queue.length})
+              </Tab>
+              <Tab value="appointments" icon={<CalendarLtrRegular />}>
+                Appointments ({w?.appointments.length ?? 0})
+              </Tab>
+              {canSeeRounds && (
+                <Tab value="rounds" icon={<BedRegular />}>
+                  Ward round{rounds.data ? ` (${roundPatients.length})` : ''}
+                </Tab>
               )}
-              emptyTitle={isToday ? 'No one in your queue yet' : 'No queue on this day'}
-              emptyDescription="Checked-in patients for your department appear here automatically. Use the patient finder above to open any chart."
-            />
+            </TabList>
+            {view === 'queue' && (
+              <>
+                <Caption1 className={mergeClasses(styles.listCaption, styles.muted)}>
+                  In service first, then called, then waiting by priority.
+                </Caption1>
+                <DataTable
+                  ariaLabel="Today's queue"
+                  actionsWidth={160}
+                  rows={w?.queue}
+                  loading={worklist.isLoading}
+                  getRowId={(e) => e.tokenId}
+                  onRowClick={(e) => openChart(e.patientId)}
+                  size="small"
+                  columns={[
+                    {
+                      key: 'token',
+                      header: 'Token',
+                      width: 72,
+                      render: (e) => <Text weight="semibold">{e.tokenLabel}</Text>,
+                    },
+                    {
+                      key: 'patient',
+                      header: 'Patient',
+                      render: (e) => (
+                        <WorklistPatient
+                          name={e.patientName}
+                          age={e.age}
+                          gender={e.gender}
+                          uhid={e.uhid}
+                          hasActiveAllergies={e.hasActiveAllergies}
+                          hasCriticalAlerts={e.hasCriticalAlerts}
+                          isRestricted={e.isRestricted}
+                        >
+                          {e.priority !== 'Normal' && (
+                            <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'}>
+                              {e.priority}
+                            </Badge>
+                          )}
+                          {e.isFollowUp && (
+                            <Badge size="small" appearance="outline">
+                              Follow-up
+                            </Badge>
+                          )}
+                        </WorklistPatient>
+                      ),
+                    },
+                    { key: 'reason', header: 'Reason', priority: 'low', render: (e) => e.chiefComplaint ?? '—' },
+                    {
+                      key: 'wait',
+                      header: 'Waiting',
+                      width: 84,
+                      priority: 'low',
+                      render: (e) =>
+                        e.tokenStatus === 'Waiting' ? (
+                          <span className={e.waitingMinutes >= 45 ? styles.waitLong : undefined}>
+                            {e.waitingMinutes} min
+                          </span>
+                        ) : (
+                          formatTime(e.issuedAt)
+                        ),
+                    },
+                    {
+                      key: 'status',
+                      header: 'Status',
+                      width: 112,
+                      render: (e) =>
+                        e.encounterStatus ? (
+                          <StatusBadge
+                            status={e.encounterStatus === 'InProgress' ? 'InProgress' : 'Completed'}
+                            label={e.encounterStatus === 'InProgress' ? 'Note open' : 'Note signed'}
+                          />
+                        ) : (
+                          <StatusBadge status={e.tokenStatus} />
+                        ),
+                    },
+                  ]}
+                  rowActions={(e) => (
+                    <span style={{ display: 'inline-flex', gap: 4 }}>
+                      {canQueue && e.tokenStatus === 'Waiting' && (
+                        <Tooltip content="Call to the room" relationship="label">
+                          <Button
+                            size="small"
+                            icon={<MegaphoneLoudRegular />}
+                            onClick={() => queueAction.mutate({ action: 'call', entry: e })}
+                            disabled={queueAction.isPending}
+                          >
+                            Call
+                          </Button>
+                        </Tooltip>
+                      )}
+                      {canWrite && !['Completed', 'Cancelled', 'NoShow'].includes(e.tokenStatus) && (
+                        <Button
+                          size="small"
+                          appearance="primary"
+                          icon={<PlayRegular />}
+                          onClick={() => consult(e)}
+                          disabled={start.isPending}
+                        >
+                          {e.encounterId ? 'Continue' : 'Start'}
+                        </Button>
+                      )}
+                      {canWrite && e.encounterId && ['Completed', 'Cancelled', 'NoShow'].includes(e.tokenStatus) && (
+                        <Button size="small" onClick={() => consult(e)}>
+                          Open note
+                        </Button>
+                      )}
+                      {canQueue && e.tokenStatus === 'InService' && (
+                        <Tooltip content="Consultation over: free the queue for the next patient" relationship="label">
+                          <Button
+                            size="small"
+                            icon={<CheckmarkRegular />}
+                            onClick={() => queueAction.mutate({ action: 'complete', entry: e })}
+                            disabled={queueAction.isPending}
+                          >
+                            Finish
+                          </Button>
+                        </Tooltip>
+                      )}
+                    </span>
+                  )}
+                  emptyTitle={isToday ? 'No one in your queue yet' : 'No queue on this day'}
+                  emptyDescription="Checked-in patients for your department appear here automatically. Use the patient finder above to open any chart."
+                />
+              </>
+            )}
+            {view === 'appointments' && (
+              <>
+                <Caption1 className={mergeClasses(styles.listCaption, styles.muted)} aria-live="polite">
+                  {w ? appointmentSummaryText(summariseAppointments(w.appointments)) : ' '}
+                </Caption1>
+                <WorklistAppointments
+                  appointments={w?.appointments}
+                  loading={worklist.isLoading}
+                  isToday={isToday}
+                  showDoctor={!roundDoctorId}
+                  canWrite={canWrite}
+                  busy={start.isPending}
+                  now={new Date(now)}
+                  onOpenChart={openChart}
+                  onConsult={consultAppointment}
+                  onOpenVideo={() => void navigate({ to: '/telehealth' })}
+                />
+              </>
+            )}
+            {view === 'rounds' &&
+              (roundDoctorId || departmentId ? (
+                <WardRoundList
+                  round={rounds.data}
+                  loading={rounds.isLoading}
+                  error={rounds.error}
+                  onRetry={() => void rounds.refetch()}
+                  isToday={isToday}
+                  isDepartment={!roundDoctorId}
+                  canRecordVisit={canRecordVisit}
+                  practitioner={roundDoctor}
+                  onOpenChart={openChart}
+                />
+              ) : (
+                <Caption1 className={mergeClasses(styles.listCaption, styles.muted)}>
+                  Choose a department or a doctor above to see their in-patients.
+                </Caption1>
+              ))}
           </Section>
 
           <div className={styles.side}>

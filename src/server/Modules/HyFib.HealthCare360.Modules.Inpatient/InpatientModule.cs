@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 
 namespace HyFib.HealthCare360.Modules.Inpatient;
@@ -44,8 +45,8 @@ public static class InpatientPermissions
 
 /// <summary>
 /// In-patient care: admission/discharge/transfer, ward and bed management with a live bed board, housekeeping,
-/// occupancy and census statistics, automatic bed/nursing/consultant-visit charges, and nursing documentation
-/// including the medication administration record (SRS WB-01..06, IPB auto charges, PH-03 MAR feed).
+/// occupancy and census statistics, automatic bed/nursing/consultant-visit charges, nursing documentation including the
+/// medication administration record, and the doctor's ward round (SRS WB-01..06, IPB auto charges, PH-03 MAR feed, EMR-01).
 /// </summary>
 public sealed class InpatientModule : IModule
 {
@@ -64,6 +65,7 @@ public sealed class InpatientModule : IModule
         services.AddScoped<InpatientChargeService>();
         services.AddScoped<MarService>();
         services.AddScoped<AdmissionAccess>();
+        services.AddScoped<WardRoundQueries>();
         services.AddHostedService<BedDayChargeJob>();
     }
 
@@ -76,5 +78,6 @@ public sealed class InpatientModule : IModule
         CensusEndpoints.Map(endpoints);
         NursingEndpoints.Map(endpoints);
         MarEndpoints.Map(endpoints);
+        RoundEndpoints.Map(endpoints);
     }
 }

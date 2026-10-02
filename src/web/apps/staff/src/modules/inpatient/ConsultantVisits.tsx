@@ -21,7 +21,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateTime, isApiError, useSession, type LookupItem } from '@hc360/core';
 import { applyServerErrors, DataTable, LookupField, TextAreaField, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { searchPractitioners } from '@/lib/lookups';
@@ -158,14 +158,18 @@ export function ConsultantVisits({
   );
 }
 
-function RecordVisitDialog({
+/** Records a consultant's ward-round visit, which charges the visit to the patient's in-patient bill. */
+export function RecordVisitDialog({
   admissionId,
   defaultPractitioner,
+  description,
   onClose,
   onSaved,
 }: {
   admissionId: string;
   defaultPractitioner: LookupItem | null;
+  /** Who and where, when the dialog opens away from the admission (the ward round). */
+  description?: ReactNode;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -209,6 +213,7 @@ function RecordVisitDialog({
           <DialogBody>
             <DialogTitle>Record consultant visit</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {description}
               <LookupField
                 control={form.control}
                 name="practitionerId"

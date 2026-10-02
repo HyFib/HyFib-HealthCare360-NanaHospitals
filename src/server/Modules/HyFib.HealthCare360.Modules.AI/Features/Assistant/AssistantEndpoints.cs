@@ -9,6 +9,7 @@ internal static class AssistantEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost("/api/v1/ai/assistant/command", Command)
+            .WithoutStoredResponse()
             .WithTags("AI assistant")
             .RequirePermission(AIPermissions.AssistantUse)
             .RequireRateLimiting(AiRateLimits.Policy)

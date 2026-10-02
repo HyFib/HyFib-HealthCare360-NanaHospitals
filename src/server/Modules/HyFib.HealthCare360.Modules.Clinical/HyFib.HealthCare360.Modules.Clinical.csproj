@@ -6,6 +6,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- The doctor's appointments on the worklist (read-only; booking stays in Scheduling). -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Scheduling\HyFib.HealthCare360.Modules.Scheduling.csproj" />
     <!-- Drug master search for prescribers (items and pharmacy stock are read-only here). -->
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.SupplyChain\HyFib.HealthCare360.Modules.SupplyChain.csproj" />
   </ItemGroup>

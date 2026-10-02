@@ -16,6 +16,7 @@ import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Secti
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
+import { aiQueries } from '@/lib/ai';
 import { usePermission } from '@/lib/permissions';
 import {
   AI_PURPOSES,
@@ -31,7 +32,6 @@ import { formatDuration, isIsoDay, pageFromUrl } from '@/modules/admin/integrati
 import { NoAccess } from '@/modules/admin/NoAccess';
 import { SettingsForm } from '@/modules/admin/SettingsForm';
 import { AI_SETTINGS } from '@/modules/admin/settingsForms';
-import { aiQueries } from '@/shell/assistant/api';
 
 interface AiSearch {
   tab?: 'settings';
