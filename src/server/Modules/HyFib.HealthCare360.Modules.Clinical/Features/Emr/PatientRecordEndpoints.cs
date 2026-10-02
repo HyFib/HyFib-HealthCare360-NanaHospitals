@@ -4,7 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Services;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Emr;
 
-/// <summary>/api/v1/emr/patients/{patientId} — banner summary, EHR timeline, current medicines and encounter history.</summary>
+/// <summary>/api/v1/emr/patients/{patientId} — banner summary and flags, EHR timeline, current medicines and encounter history.</summary>
 internal static class PatientRecordEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
@@ -12,6 +12,7 @@ internal static class PatientRecordEndpoints
         var group = app.MapGroup("/api/v1/emr/patients/{patientId:guid}").WithTags("EMR");
 
         group.MapGet("/summary", Summary).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/flags", Flags).RequireAnyPermission(ClinicalPermissions.FlagsRead, ClinicalPermissions.EmrRead);
         group.MapGet("/timeline", Timeline).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapGet("/medications", Medications).RequirePermission(ClinicalPermissions.EmrRead);
         group.MapGet("/encounters", Encounters).RequirePermission(ClinicalPermissions.EmrRead);
@@ -27,6 +28,16 @@ internal static class PatientRecordEndpoints
 
         var summary = await queries.SummaryAsync(patientId, ct);
         return summary is null ? Error.NotFound("Patient", patientId).ToProblem() : TypedResults.Ok(summary);
+    }
+
+    /// <summary>
+    /// Allergies and alerts for the banner on every clinical screen (EHR-03), for staff who may see the flags without the
+    /// chart. Restricted records stay behind the same guard as the chart, and each read is recorded like any other.
+    /// </summary>
+    private static async Task<IResult> Flags(Guid patientId, ClinicalAccess access, PatientRecordQueries queries, CancellationToken ct)
+    {
+        var opened = await access.OpenAsync(patientId, "Viewed allergies and alerts", ct);
+        return opened.IsFailure ? opened.Error!.ToProblem() : TypedResults.Ok(await queries.FlagsAsync(patientId, ct));
     }
 
     /// <summary><c>types</c> is a comma-separated list of <see cref="TimelineEntryType"/> names; dates are IST calendar dates.</summary>

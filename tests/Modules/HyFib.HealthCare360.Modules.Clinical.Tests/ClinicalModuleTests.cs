@@ -40,6 +40,32 @@ public sealed class ClinicalModuleTests
         nurse.ShouldNotContain(ClinicalPermissions.OrdersPlace);
     }
 
+    [Theory]
+    [InlineData(SystemRoles.LabTechnician)]
+    [InlineData(SystemRoles.Pharmacist)]
+    [InlineData(SystemRoles.Radiographer)]
+    [InlineData(SystemRoles.OtCoordinator)]
+    [InlineData(SystemRoles.DialysisTechnician)]
+    [InlineData(SystemRoles.Physiotherapist)]
+    [InlineData(SystemRoles.BloodBankOfficer)]
+    [InlineData(SystemRoles.Dietitian)]
+    public void Staff_who_treat_or_test_the_patient_see_the_banner_flags_without_the_chart(string role)
+    {
+        string[] granted = [.. ClinicalPermissions.All.Where(p => p.DefaultRoles!.Contains(role)).Select(p => p.Name)];
+
+        granted.ShouldContain(ClinicalPermissions.FlagsRead);
+        granted.ShouldNotContain(ClinicalPermissions.EmrRead);
+    }
+
+    [Theory]
+    [InlineData(SystemRoles.FrontOffice)]
+    [InlineData(SystemRoles.Billing)]
+    [InlineData(SystemRoles.Cashier)]
+    [InlineData(SystemRoles.InsuranceDesk)]
+    [InlineData(SystemRoles.CrmExecutive)]
+    public void Desk_and_billing_staff_do_not_see_clinical_flags_by_default(string role) =>
+        ClinicalPermissions.All.Single(p => p.Name == ClinicalPermissions.FlagsRead).DefaultRoles!.ShouldNotContain(role);
+
     [Fact]
     public void Coding_belongs_to_the_mrd_officer() =>
         ClinicalPermissions.All.Single(p => p.Name == ClinicalPermissions.MrdCoding).DefaultRoles!.ShouldBe([SystemRoles.MrdOfficer]);
