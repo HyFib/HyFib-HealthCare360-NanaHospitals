@@ -9,10 +9,17 @@ public static class IntegrationsPermissions
     /// <summary>Build raw ZPL/TSPL for UHID cards, wristbands, sample, pharmacy and asset labels (INT-BAR).</summary>
     public const string LabelsPrint = "integrations.labels.print";
 
+    /// <summary>
+    /// Change which printer a workstation uses for labels, wristbands, receipts and documents. The printers are kept by
+    /// HC360 Desktop on the workstation; the server checks this permission and records the change before it is saved.
+    /// </summary>
+    public const string PrintersSetup = "integrations.printers.setup";
+
     // Integration administration itself uses the platform's admin.integrations.manage permission.
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(LabelsPrint, "Integrations", "Print barcode/QR labels (UHID cards, wristbands, sample, pharmacy and asset tags)", PlatformPermissions.AllStaff),
+        new(PrintersSetup, "Integrations", "Choose the printers a workstation uses for labels, wristbands, receipts and documents", [SystemRoles.HospitalAdmin]),
     ];
 }
 

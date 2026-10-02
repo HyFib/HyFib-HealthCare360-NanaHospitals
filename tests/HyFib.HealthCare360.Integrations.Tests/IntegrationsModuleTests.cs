@@ -29,8 +29,13 @@ public sealed class IntegrationsModuleTests
     public void Module_key_is_integrations() => new IntegrationsModule().Name.ShouldBe("integrations");
 
     [Fact]
-    public void Declares_the_label_printing_permission() =>
-        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe([IntegrationsPermissions.LabelsPrint]);
+    public void Declares_the_label_printing_and_printer_setup_permissions() =>
+        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe([IntegrationsPermissions.LabelsPrint, IntegrationsPermissions.PrintersSetup]);
+
+    [Fact]
+    public void Only_hospital_administrators_set_up_workstation_printers_until_others_are_given_it() =>
+        new IntegrationsModule().Permissions.Single(p => p.Name == IntegrationsPermissions.PrintersSetup).DefaultRoles
+            .ShouldBe([HyFib.HealthCare360.Platform.Security.SystemRoles.HospitalAdmin]);
 
     [Theory]
     [InlineData(typeof(ISmsSender), typeof(SmsRouter))]

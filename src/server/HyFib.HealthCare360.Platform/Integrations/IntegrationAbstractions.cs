@@ -182,11 +182,12 @@ public enum LabelSymbology
     QrCode,
 }
 
-public sealed record LabelRequest(string Value, LabelSymbology Symbology, IReadOnlyList<string> TextLines, int WidthMm = 50, int HeightMm = 25, int Copies = 1);
+/// <param name="Dpi">The label printer's resolution: 203 or 300 dots per inch.</param>
+public sealed record LabelRequest(string Value, LabelSymbology Symbology, IReadOnlyList<string> TextLines, int WidthMm = 50, int HeightMm = 25, int Copies = 1, int Dpi = 203);
 
 public interface ILabelPrinterService
 {
-    /// <summary>Raw printer language (ZPL for Zebra, TSPL for TSC) sent through the Desktop bridge.</summary>
+    /// <summary>Raw printer language (ZPL for Zebra, TSPL for TSC) that HC360 Desktop sends to the label printer.</summary>
     string Build(LabelRequest request, string language);
 }
 
