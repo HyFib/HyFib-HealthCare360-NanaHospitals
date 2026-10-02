@@ -12,7 +12,7 @@ import { useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import { isGuid } from '@/lib/ids';
 import type { DischargeSummaryDto } from '@/lib/types';
-import { recordQueries } from '@/modules/records/api';
+import { dischargeSummaryPdfPath, recordQueries } from '@/modules/records/api';
 import { splitLines } from '@/modules/records/labels';
 import { dischargeSummaryDocument } from '@/modules/records/print';
 import { ReportCard } from '@/modules/reports/ReportParts';
@@ -112,6 +112,7 @@ function DischargeSummaryView({ summary, back }: { summary: DischargeSummaryDto;
               patient: { fullName: profile.fullName, uhid: profile.uhid },
             })
           }
+          pdf={dischargeSummaryPdfPath(summary.id)}
         />
       }
     >

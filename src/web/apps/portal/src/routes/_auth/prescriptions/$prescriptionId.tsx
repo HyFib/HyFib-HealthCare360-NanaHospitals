@@ -15,7 +15,7 @@ import { useLanguage, useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import { isGuid } from '@/lib/ids';
 import type { PortalPrescriptionDetail } from '@/lib/types';
-import { prescriptionQueries } from '@/modules/prescriptions/api';
+import { prescriptionPdfPath, prescriptionQueries } from '@/modules/prescriptions/api';
 import { frequencyText, medicineName, RX_STATUS } from '@/modules/prescriptions/labels';
 import { prescriptionDocument } from '@/modules/prescriptions/print';
 import { RefillSheet } from '@/modules/prescriptions/RefillSheet';
@@ -122,6 +122,7 @@ function PrescriptionDetail({ rx, back }: { rx: PortalPrescriptionDetail; back: 
               verifyUrl,
             })
           }
+          pdf={prescriptionPdfPath(rx.id)}
         />
       }
     >

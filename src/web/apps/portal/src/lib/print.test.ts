@@ -1,9 +1,17 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranslator } from '@/i18n';
 import { formattersFor } from '@/i18n/useFormat';
 import { billDocument, receiptDocument } from '@/modules/bills/print';
 import { dischargeSummaryDocument } from '@/modules/records/print';
-import { escapeMultiline, safeFileName, safeSvgMarkup, scopeStyles } from './print';
+import { catchDownloads } from '@/test/downloads';
+import {
+  downloadPortalDocument,
+  escapeMultiline,
+  safeFileName,
+  safeSvgMarkup,
+  scopeStyles,
+  standaloneHtml,
+} from './print';
 import type { DischargeSummaryDto, PortalBillDetail } from './types';
 
 const t = createTranslator('en');
@@ -34,6 +42,49 @@ describe('print helpers', () => {
     expect(safeSvgMarkup('<svg><a href="javascript:alert(1)"/></svg>')).toBeNull();
     expect(safeSvgMarkup('<div></div>')).toBeNull();
     expect(safeSvgMarkup(null)).toBeNull();
+  });
+});
+
+describe('downloaded copies ("Download a copy")', () => {
+  const doc = {
+    title: 'Bill <OP/1>',
+    body: '<h1>Bill</h1>',
+    styles: '\n.head { color: #045E80; }\n',
+    fileName: 'bill-OP/1',
+  };
+  const styleSheet = (html: string) => /<style>([\s\S]*)<\/style>/.exec(html)?.[1] ?? '';
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keep the font rule and the document styles, and every rule keeps its selector', () => {
+    const css = styleSheet(standaloneHtml(doc, 'en'));
+    expect(css).toMatch(/\nbody \{ font-family: "Segoe UI", [^}]*; font-size: 11pt; line-height: 1\.4; \}/);
+    expect(css).toContain('body th, body td {');
+    expect(css).toContain('.head { color: #045E80; }');
+    // A "{" right after the start, another rule or a declaration would be a rule without a selector.
+    expect(css).not.toMatch(/(^|[{};])\s*\{/);
+    expect(css).not.toContain('hc360-print-root');
+  });
+
+  it('say which language they are in', () => {
+    expect(standaloneHtml(doc, 'en')).toContain('<html lang="en-IN">');
+    expect(standaloneHtml(doc, 'hi')).toContain('<html lang="hi-IN">');
+  });
+
+  it('escape the title', () => {
+    expect(standaloneHtml(doc, 'en')).toContain('<title>Bill &lt;OP/1&gt;</title>');
+  });
+
+  it('are saved as an HTML file under a safe name, in the language being read', async () => {
+    const saved = catchDownloads();
+    downloadPortalDocument(doc, 'hi');
+    expect(saved.map((file) => file.name)).toEqual(['bill-OP-1.html']);
+    expect(saved[0]?.blob.type).toBe('text/html;charset=utf-8');
+    const html = (await saved[0]?.blob.text()) ?? '';
+    expect(html).toContain('<html lang="hi-IN">');
+    expect(html).toContain('<body><h1>Bill</h1></body>');
   });
 });
 

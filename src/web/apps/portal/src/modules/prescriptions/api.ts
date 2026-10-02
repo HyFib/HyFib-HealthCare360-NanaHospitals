@@ -12,6 +12,11 @@ import type {
 const PAGE_SIZE = 20;
 const id = (value: string) => encodeURIComponent(value);
 
+/** The hospital's official PDF of a prescription. */
+export function prescriptionPdfPath(prescriptionId: string): string {
+  return `/api/v1/portal/prescriptions/${id(prescriptionId)}/pdf`;
+}
+
 export const prescriptionQueries = {
   list: (patientId: string) =>
     infiniteQueryOptions({

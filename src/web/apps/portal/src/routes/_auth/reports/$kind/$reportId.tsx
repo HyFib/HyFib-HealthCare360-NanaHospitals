@@ -9,7 +9,7 @@ import { ErrorBlock, Notice, PageSpinner } from '@/components/States';
 import { useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
 import { isGuid } from '@/lib/ids';
-import { isReportKind, reportQueries, type ReportKindSegment } from '@/modules/reports/api';
+import { isReportKind, reportPdfPath, reportQueries, type ReportKindSegment } from '@/modules/reports/api';
 import { CardiologyReportView, RadiologyReportView } from '@/modules/reports/ImagingReportViews';
 import { CARDIOLOGY_TYPE_KEY } from '@/modules/reports/labResults';
 import { LabReportView } from '@/modules/reports/LabReportView';
@@ -45,6 +45,7 @@ function ReportLoader({ kind, reportId, back }: { kind: ReportKindSegment; repor
   const query = kind === 'lab' ? lab : kind === 'radiology' ? radiology : cardiology;
   // The printed copy carries the same QR code as the screen (copied from the page when printing).
   const printContext = () => ({ t, f, printedAt: new Date().toISOString(), qrSvg: renderedReportQr() });
+  const pdf = reportPdfPath(kind, reportId);
 
   if (query.isPending) {
     return <PageSpinner />;
@@ -68,7 +69,7 @@ function ReportLoader({ kind, reportId, back }: { kind: ReportKindSegment; repor
           title={title}
           subtitle={`${t('reports.kind.Laboratory')} · ${t('reports.released', { date: f.date(report.releasedAt) })}`}
           back={back}
-          actions={<DocumentActions build={() => labReportDocument(report, printContext())} />}
+          actions={<DocumentActions build={() => labReportDocument(report, printContext())} pdf={pdf} />}
         >
           <LabReportView report={report} />
         </PortalPage>
@@ -83,7 +84,7 @@ function ReportLoader({ kind, reportId, back }: { kind: ReportKindSegment; repor
           title={report.studyName}
           subtitle={`${t('reports.kind.Radiology')} · ${t('reports.released', { date: f.date(report.releasedAt) })}`}
           back={back}
-          actions={<DocumentActions build={() => radiologyReportDocument(report, printContext())} />}
+          actions={<DocumentActions build={() => radiologyReportDocument(report, printContext())} pdf={pdf} />}
         >
           <RadiologyReportView report={report} />
         </PortalPage>
@@ -98,7 +99,7 @@ function ReportLoader({ kind, reportId, back }: { kind: ReportKindSegment; repor
           title={report.studyName || t(CARDIOLOGY_TYPE_KEY[report.studyType])}
           subtitle={`${t(CARDIOLOGY_TYPE_KEY[report.studyType])} · ${t('reports.released', { date: f.date(report.releasedAt) })}`}
           back={back}
-          actions={<DocumentActions build={() => cardiologyReportDocument(report, printContext())} />}
+          actions={<DocumentActions build={() => cardiologyReportDocument(report, printContext())} pdf={pdf} />}
         >
           <CardiologyReportView report={report} />
         </PortalPage>

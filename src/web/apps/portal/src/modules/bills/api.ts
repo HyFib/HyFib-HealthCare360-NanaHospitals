@@ -6,6 +6,11 @@ import type { PortalBillDetail, PortalBillListItem, PortalPaymentOrder, PortalPa
 const PAGE_SIZE = 50;
 const id = (value: string) => encodeURIComponent(value);
 
+/** The hospital's official PDF of a bill. */
+export function billPdfPath(billId: string): string {
+  return `/api/v1/portal/bills/${id(billId)}/pdf`;
+}
+
 export const billQueries = {
   all: (patientId: string) => ['portal', patientId, 'bills'] as const,
 

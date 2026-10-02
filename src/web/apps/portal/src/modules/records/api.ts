@@ -2,6 +2,11 @@ import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { DischargeSummaryDto, PortalHealthRecord, PortalRecordRequest, RecordRequestCreated } from '@/lib/types';
 
+/** The hospital's official PDF of a discharge summary. */
+export function dischargeSummaryPdfPath(summaryId: string): string {
+  return `/api/v1/portal/discharge-summaries/${encodeURIComponent(summaryId)}/pdf`;
+}
+
 export const recordQueries = {
   summary: (patientId: string) =>
     queryOptions({

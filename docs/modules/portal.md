@@ -22,7 +22,7 @@ i18n is a small typed dictionary.
 | `src/modules/<feature>` | API query options, labels, pure helpers, feature components, print templates |
 | `src/components` | Shared building blocks: links, list rows, notices, sheets, choice cards, document actions |
 | `src/i18n` | `messages/<feature>.ts` (English and Hindi side by side), formatters in hospital time (IST) with Indian digit grouping |
-| `src/lib` | API client (`clientType: 'portal'`), session, errors, payments, printing, link tokens |
+| `src/lib` | API client (`clientType: 'portal'`), session, errors, payments, printing, PDF downloads, link tokens |
 
 Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, proxies `/api`, `/hubs` and `/health` to
 `HC360_SERVER` or `https://localhost:7360`), `build`, `typecheck`, `test`, and `npx eslint apps/portal`.
@@ -55,10 +55,10 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/appointments`, `/appointments/{id}` | yes | Upcoming and past, waiting list, pay, reschedule, cancel, join video |
 | `/video`, `/video/{sessionId}` | yes | Video consultations: device check, waiting room, call, chat, audio-only |
 | `/telehealth/{sessionId}?t={joinToken}` | no | The SMS or WhatsApp join link (guest join) |
-| `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Print or save as PDF, or download |
-| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; print; refill requests |
-| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment, receipts (print) |
-| `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (print), request a copy of records |
+| `/reports`, `/reports/{lab\|radiology\|cardiology}/{id}` | yes | Lab values with ranges and flags in plain words, and radiology and cardiology text. Download PDF (the hospital's official copy) or print |
+| `/prescriptions`, `/prescriptions/{id}` | yes | Prescriptions with verification QR code; Download PDF or print; refill requests |
+| `/bills`, `/bills/{id}` | yes | Bills, amount due, online payment; Download PDF or print a bill; receipts (print) |
+| `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
 | `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out |
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
@@ -94,10 +94,10 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Appointments | `GET /api/v1/portal/appointments?scope=upcoming\|past`, `GET …/{id}`, `POST /api/v1/portal/appointments`, `POST …/{id}/cancel`, `POST …/{id}/reschedule`, `POST …/{id}/payment`, `POST …/{id}/payment/confirm` |
 | Waiting list | `GET /api/v1/portal/waitlist`, `POST /api/v1/portal/waitlist`, `POST /api/v1/portal/waitlist/{id}/cancel` |
 | Video | `GET /api/v1/portal/telehealth/sessions`, `GET …/sessions/{id}/join`, and hub `/hubs/telehealth` |
-| Reports | `GET /api/v1/portal/reports?patientId=`, `GET /api/v1/portal/reports/{lab\|radiology\|cardiology}/{id}` |
-| Prescriptions | `GET /api/v1/portal/prescriptions?patientId=`, `GET …/{id}`, `GET /api/v1/portal/refills`, `POST /api/v1/portal/refills` |
-| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
-| Records | `GET /api/v1/portal/health-records?patientId=`, `GET /api/v1/portal/discharge-summaries/{id}`, `POST /api/v1/portal/record-requests` |
+| Reports | `GET /api/v1/portal/reports?patientId=`, `GET /api/v1/portal/reports/{lab\|radiology\|cardiology}/{id}`, `GET …/{id}/pdf` (the id is the lab report id, or the scan or heart test's study id) |
+| Prescriptions | `GET /api/v1/portal/prescriptions?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `GET /api/v1/portal/refills`, `POST /api/v1/portal/refills` |
+| Bills | `GET /api/v1/portal/bills?patientId=`, `GET …/{id}`, `GET …/{id}/pdf`, `POST …/{id}/pay`, `POST …/{id}/payments/{orderRowId}/verify` |
+| Records | `GET /api/v1/portal/health-records?patientId=`, `GET /api/v1/portal/discharge-summaries/{id}`, `GET …/{id}/pdf`, `POST /api/v1/portal/record-requests` |
 | Feedback | `GET /api/v1/portal/feedback/forms`, `GET /api/v1/portal/feedback?patientId=`, `POST /api/v1/portal/feedback` |
 | Preferences | `GET` and `PUT /api/v1/portal/communication-preferences` |
 | Privacy | `GET /api/v1/portal/privacy/status?patientId=`, `GET …/summary?patientId=`, `GET …/requests?patientId=`, `GET …/requests/{id}`, `POST …/requests`, `POST …/requests/{id}/withdraw`, `GET`, `PUT` and `DELETE …/nominee`, `GET …/notices?patientId=`, `GET …/notices/{id}`; public `GET /api/v1/public/privacy` (see [privacy.md](privacy.md)) |
@@ -139,9 +139,21 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 
 ## Printing and downloads
 
-Reports and prescriptions (each with its verification QR code), bills, receipts and discharge summaries are printed
-from the page itself; "Save as PDF" in the print dialog gives a PDF. They can also be downloaded as self-contained HTML files.
-Every value in a template is escaped. The QR code SVG is the only markup accepted, and it is checked first.
+* **Download PDF.** Reports, prescriptions, discharge summaries and bills come with the hospital's official PDF. It is
+  the same English document the hospital prints and sends, with the letterhead, signatures and QR check. The page
+  fetches it from the document's `…/pdf` endpoint and saves it under the file name the server gives
+  (Content-Disposition). This works on Android Chrome and on iPhone Safari, which asks first. The button says
+  "Preparing your PDF…" while the server makes the PDF, and takes one tap at a time. When the server cannot make PDFs
+  right now (503, code `pdf.unavailable`), the page says so in the patient's language and offers Print instead. Other
+  failures show the usual error message. An answer that is not a PDF is never saved.
+* **Print.** Every document can also be printed from the page itself, in the language the patient is reading. Reports
+  and prescriptions carry their verification QR code. Next to the buttons, one line explains the difference; in Hindi
+  it also says that the PDF is in English.
+* **Documents without a server PDF.** Receipts and the privacy data summary are printed from the page, and "Save as PDF"
+  in the print dialog gives a PDF. The data summary can also be downloaded as a self-contained HTML file, marked with
+  the language it is in.
+
+Every value in a page template is escaped. The QR code SVG is the only markup accepted, and it is checked first.
 
 ## Security and privacy
 
@@ -166,6 +178,10 @@ Every value in a template is escaped. The QR code SVG is the only markup accepte
 * **Slots and date strip**, **lab ranges and flags**, **camera errors and join problems**.
 * **Document-check input parsing** and **feedback rules**.
 * **Print escaping:** bill, receipt, discharge summary and the privacy data summary.
+* **Downloads:** the PDF helper (the server's file name from Content-Disposition, safe names, "cannot make PDFs right
+  now" without retries, other failures, never saving a web page as a PDF); Download PDF end to end in jsdom on the lab,
+  scan and heart test reports, the prescription, the discharge summary and the bill (the busy button, the 503 message,
+  the usual error message, Hindi, printing the page's copy); and the downloaded HTML copy (its font rule and language).
 * **The privacy centre:** request-form checks and the body it sends, server errors mapped to fields, retention in the
   patient's language from the server's periods, and the pages end to end in jsdom (hub, data summary, a new request,
   a request's detail and withdrawal, the nominee, a breach notice).
@@ -182,4 +198,6 @@ Every value in a template is escaped. The QR code SVG is the only markup accepte
   comes back from the gateway's page.
 * **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
   only and are shown as sent.
-* **No server PDFs.** Documents are printed from the page; the server offers no PDF endpoints for patients.
+* **Official PDFs in English.** The hospital's PDF of a report, prescription, discharge summary or bill is the English
+  document it prints and sends. Patients reading in Hindi are told so next to the button, and Print gives them the
+  page's copy in Hindi. Receipts and the privacy data summary have no server PDF; they are printed from the page.

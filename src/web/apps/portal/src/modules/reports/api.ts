@@ -16,6 +16,11 @@ export function isReportKind(value: unknown): value is ReportKindSegment {
 
 const id = (value: string) => encodeURIComponent(value);
 
+/** The hospital's official PDF of a released report (the lab report id, or the scan or heart test's study id). */
+export function reportPdfPath(kind: ReportKindSegment, reportId: string): string {
+  return `/api/v1/portal/reports/${kind}/${id(reportId)}/pdf`;
+}
+
 export const reportQueries = {
   list: (patientId: string) =>
     queryOptions({

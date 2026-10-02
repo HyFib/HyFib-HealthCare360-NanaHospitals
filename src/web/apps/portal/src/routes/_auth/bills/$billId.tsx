@@ -18,7 +18,7 @@ import { clearPendingPayment, isTrainingGateway, peekPendingPayment, runCheckout
 import { printPortalDocument } from '@/lib/print';
 import { useToast } from '@/lib/toast';
 import type { PortalBillDetail } from '@/lib/types';
-import { billApi, billQueries } from '@/modules/bills/api';
+import { billApi, billPdfPath, billQueries } from '@/modules/bills/api';
 import { BILL_STATUS, BILL_TYPE, isDue, RECEIPT_PURPOSE } from '@/modules/bills/labels';
 import { billDocument, receiptDocument } from '@/modules/bills/print';
 import { ReportCard } from '@/modules/reports/ReportParts';
@@ -186,7 +186,13 @@ function BillDetail({ bill, back }: { bill: PortalBillDetail; back: ReactNode })
       title={t('bills.number', { number })}
       subtitle={[t(BILL_TYPE[bill.type]), f.date(bill.billedAt)].filter(Boolean).join(' · ')}
       back={back}
-      actions={<DocumentActions build={() => billDocument(bill, printContext())} />}
+      actions={
+        <DocumentActions
+          build={() => billDocument(bill, printContext())}
+          pdf={billPdfPath(bill.id)}
+          quiet={isDue(bill.dueAmount) && !paidNow}
+        />
+      }
     >
       <div>
         <StatusPill tone={status.tone}>{t(status.key)}</StatusPill>
