@@ -4,6 +4,7 @@ import { authMessages } from './messages/auth';
 import { billMessages } from './messages/bills';
 import { common } from './messages/common';
 import { doctorMessages } from './messages/doctors';
+import { featureMessages } from './messages/features';
 import { feedbackMessages } from './messages/feedback';
 import { homeMessages } from './messages/home';
 import { myPrivacyMessages } from './messages/myPrivacy';
@@ -20,6 +21,7 @@ import { videoMessages } from './messages/video';
  */
 export const MESSAGE_SETS = {
   common,
+  features: featureMessages,
   auth: authMessages,
   doctors: doctorMessages,
   appointments: appointmentMessages,

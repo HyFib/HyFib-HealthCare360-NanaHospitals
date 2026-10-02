@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useId, useMemo, useState, type KeyboardEvent } from 'react';
 import { api } from '@/lib/api';
+import { useFeatureSwitches } from '@/lib/features';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { visibleModules, type NavLink } from '@/lib/modules';
 import { usePermission } from '@/lib/permissions';
@@ -84,6 +85,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const styles = useStyles();
   const navigate = useNavigate();
   const user = useSession((s) => s.user);
+  const features = useFeatureSwitches();
   const canSearchPatients = usePermission('patients.read');
   const [term, setTerm] = useState('');
   const [active, setActive] = useState(0);
@@ -92,10 +94,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const screens = useMemo(
     () =>
-      visibleModules(user, moduleManifests).flatMap((module) =>
+      visibleModules(user, moduleManifests, features).flatMap((module) =>
         [...module.links, ...(module.quickActions ?? [])].map((link) => ({ ...link, module: module.title })),
       ),
-    [user],
+    [user, features],
   );
 
   const patients = useQuery({

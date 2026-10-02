@@ -2,14 +2,17 @@ import { makeStyles, tokens } from '@fluentui/react-components';
 import { ClockRegular, PersonFeedbackRegular, PillRegular } from '@fluentui/react-icons';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { VideoUnavailable } from '@/components/FeatureOff';
 import { BackLink, ButtonLink } from '@/components/links';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, Notice, PageSpinner } from '@/components/States';
 import { useT } from '@/i18n';
 import { formatCountdown } from '@/i18n/format';
 import { useFormat } from '@/i18n/useFormat';
+import { usePortalFeatures } from '@/lib/features';
 import { useNow } from '@/lib/hooks';
 import { isGuid } from '@/lib/ids';
+import { useCallActivity } from '@/lib/sessionEnd';
 import { videoQueries } from '@/modules/video/api';
 import { isClosedSession } from '@/modules/video/labels';
 import { VideoConsultation } from '@/modules/video/VideoConsultation';
@@ -46,9 +49,13 @@ function VideoSessionPage() {
   const t = useT();
   const f = useFormat();
   const { profile } = useActiveProfile();
+  // Turned off by the hospital: nobody joins, but a call already running is never cut off.
+  const { video } = usePortalFeatures();
+  const inCall = useCallActivity((s) => s.inCall);
+  const videoOff = !video && !inCall;
   const info = useQuery({
     ...videoQueries.joinInfo(profile.id, sessionId),
-    enabled: isGuid(sessionId),
+    enabled: isGuid(sessionId) && !videoOff,
     // Poll only while waiting for the join window; once joinable, nothing may disturb the call on screen.
     refetchInterval: (query) =>
       query.state.data && !query.state.data.canJoinNow && !isClosedSession(query.state.data.status) ? 30_000 : false,
@@ -57,6 +64,13 @@ function VideoSessionPage() {
   const now = useNow(1000, waiting);
   const back = <BackLink to="/video">{t('video.title')}</BackLink>;
 
+  if (videoOff) {
+    return (
+      <PortalPage title={t('video.title')} back={back} width="narrow">
+        <VideoUnavailable />
+      </PortalPage>
+    );
+  }
   if (!isGuid(sessionId)) {
     return (
       <PortalPage title={t('video.title')} back={back} width="narrow">

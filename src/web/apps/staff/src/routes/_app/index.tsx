@@ -1,8 +1,9 @@
 import { Caption1, makeStyles, Text, tokens } from '@fluentui/react-components';
-import { hasPermission, HOSPITAL_TIME_ZONE, useSession } from '@hc360/core';
+import { HOSPITAL_TIME_ZONE, useSession } from '@hc360/core';
 import { EmptyState, Page, PageHeader } from '@hc360/ui';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { Suspense, useMemo } from 'react';
+import { useFeatureSwitches } from '@/lib/features';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { visibleModules } from '@/lib/modules';
 import { ErrorBoundary } from '@/shell/ErrorBoundary';
@@ -56,15 +57,12 @@ function greeting(): string {
 function Dashboard() {
   const styles = useStyles();
   const user = useSession((s) => s.user);
-  const modules = useMemo(() => visibleModules(user, moduleManifests), [user]);
+  const features = useFeatureSwitches();
+  // Quick actions and widgets come filtered by permission and by the feature switches.
+  const modules = useMemo(() => visibleModules(user, moduleManifests, features), [user, features]);
 
-  const quickActions = modules
-    .flatMap((m) => m.quickActions ?? [])
-    .filter((action) => hasPermission(user, action.permission));
-  const widgets = modules
-    .flatMap((m) => m.widgets ?? [])
-    .filter((widget) => hasPermission(user, widget.permission))
-    .sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
+  const quickActions = modules.flatMap((m) => m.quickActions ?? []);
+  const widgets = modules.flatMap((m) => m.widgets ?? []).sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 
   const firstName = user?.displayName.replace(/^(Dr\.?|Mr\.?|Ms\.?|Mrs\.?)\s+/i, '').split(' ')[0] ?? '';
   const today = new Intl.DateTimeFormat('en-IN', {

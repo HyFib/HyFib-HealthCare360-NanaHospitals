@@ -27,6 +27,7 @@ export function WorklistAppointments({
   onOpenChart,
   onConsult,
   onOpenVideo,
+  video = true,
 }: {
   appointments: WorklistAppointment[] | undefined;
   loading: boolean;
@@ -39,6 +40,8 @@ export function WorklistAppointments({
   onOpenChart: (patientId: string) => void;
   onConsult: (appointment: WorklistAppointment) => void;
   onOpenVideo: () => void;
+  /** Video consultations are switched on: video bookings offer the way into the call. */
+  video?: boolean;
 }) {
   const styles = useStyles();
   return (
@@ -126,7 +129,7 @@ export function WorklistAppointments({
         },
       ]}
       rowActions={(a) => {
-        switch (appointmentAction(a, { canWrite, isToday })) {
+        switch (appointmentAction(a, { canWrite, isToday, video })) {
           case 'consult':
             return (
               <Button

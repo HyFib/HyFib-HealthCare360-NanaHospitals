@@ -3,6 +3,7 @@ import { VideoRegular } from '@fluentui/react-icons';
 import { EmptyState } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { VideoUnavailable } from '@/components/FeatureOff';
 import { ButtonLink } from '@/components/links';
 import { ListRow } from '@/components/ListRow';
 import { PortalPage } from '@/components/PortalPage';
@@ -11,6 +12,7 @@ import { StatusPill } from '@/components/StatusPill';
 import { useT } from '@/i18n';
 import { formatCountdown } from '@/i18n/format';
 import { useFormat } from '@/i18n/useFormat';
+import { usePortalFeatures } from '@/lib/features';
 import { useNow } from '@/lib/hooks';
 import type { PortalTelehealthSession } from '@/lib/types';
 import { describeWhen } from '@/lib/when';
@@ -45,10 +47,19 @@ function VideoListPage() {
   const styles = useStyles();
   const t = useT();
   const { profile } = useActiveProfile();
-  const sessions = useQuery(videoQueries.sessions(profile.id));
+  const { video } = usePortalFeatures();
+  const sessions = useQuery({ ...videoQueries.sessions(profile.id), enabled: video });
   const rows = sessions.data ?? [];
   const upcoming = rows.filter((session) => !isClosedSession(session.status));
   const earlier = rows.filter((session) => isClosedSession(session.status)).reverse();
+
+  if (!video) {
+    return (
+      <PortalPage title={t('video.title')}>
+        <VideoUnavailable />
+      </PortalPage>
+    );
+  }
 
   return (
     <PortalPage

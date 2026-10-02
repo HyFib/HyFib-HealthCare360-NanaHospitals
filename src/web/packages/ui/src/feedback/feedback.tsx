@@ -24,7 +24,7 @@ import {
   useToastController,
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, DocumentSearchRegular } from '@fluentui/react-icons';
-import { humanize, isApiError } from '@hc360/core';
+import { humanize, isApiError, isFeatureDisabled } from '@hc360/core';
 import type { ReactNode } from 'react';
 import { statusTone, type StatusTone } from './status';
 
@@ -82,18 +82,25 @@ export function LoadingState({ label = 'Loading…' }: { label?: string }) {
   );
 }
 
-/** Friendly error with retry and the support reference ID (never raw stack traces). */
+/**
+ * Friendly error with retry and the support reference ID (never raw stack traces). A feature an administrator switched
+ * off is not a failure: it is explained calmly, without a retry that could only be refused again.
+ */
 export function ErrorState({ error, onRetry, title }: { error: unknown; onRetry?: () => void; title?: string }) {
   const message = isApiError(error) ? error.userMessage : 'Something went wrong while loading this page.';
   const reference = isApiError(error) ? error.referenceId : undefined;
+  const switchedOff = isFeatureDisabled(error);
   return (
-    <MessageBar intent={isApiError(error) && error.isNetworkError ? 'warning' : 'error'} layout="multiline">
+    <MessageBar
+      intent={switchedOff ? 'info' : isApiError(error) && error.isNetworkError ? 'warning' : 'error'}
+      layout="multiline"
+    >
       <MessageBarBody>
         <MessageBarTitle>{title ?? (isApiError(error) ? error.title : 'Could not load')}</MessageBarTitle>
         {message}
-        {reference && <Caption1 block>Reference: {reference}</Caption1>}
+        {reference && !switchedOff && <Caption1 block>Reference: {reference}</Caption1>}
       </MessageBarBody>
-      {onRetry && (
+      {onRetry && !switchedOff && (
         <Button appearance="transparent" icon={<ArrowClockwiseRegular />} onClick={onRetry}>
           Retry
         </Button>

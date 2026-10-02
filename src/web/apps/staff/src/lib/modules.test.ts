@@ -1,5 +1,6 @@
 import type { AuthUser } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
+import { featureSwitches, isFeatureOn } from './featureSwitches';
 import { matchLink, visibleModules, type ModuleManifest } from './modules';
 import { safeRedirect } from './redirect';
 
@@ -90,5 +91,81 @@ describe('visibleModules quick actions', () => {
       (m) => m.id === 'admin',
     );
     expect(admin?.quickActions?.map((a) => a.label)).toEqual(['Add user']);
+  });
+});
+
+describe('visibleModules feature switches', () => {
+  const Widget = () => null;
+  const virtualCare: ModuleManifest = {
+    id: 'virtualcare',
+    title: 'Virtual care',
+    section: 'virtual',
+    icon: Icon,
+    links: [
+      {
+        label: 'Video consultations',
+        to: '/telehealth',
+        permission: 'telehealth.sessions.read',
+        feature: 'telehealth',
+      },
+      { label: 'Remote monitoring', to: '/rpm', permission: 'rpm.read' },
+    ],
+    quickActions: [{ label: 'Video consultations', to: '/telehealth', icon: Icon, feature: 'telehealth' }],
+    widgets: [
+      { id: 'telehealth-today', permission: 'telehealth.sessions.read', feature: 'telehealth', component: Widget },
+      { id: 'rpm-alerts', permission: 'rpm.read', component: Widget },
+    ],
+  };
+  const videoOnly: ModuleManifest = {
+    id: 'video',
+    title: 'Video',
+    section: 'virtual',
+    icon: Icon,
+    links: [{ label: 'Video consultations', to: '/telehealth', feature: 'telehealth' }],
+  };
+
+  it('hides the links, quick actions and widgets of a feature that is switched off', () => {
+    const [care] = visibleModules(user(['*']), [virtualCare], { telehealth: false });
+    expect(care!.links.map((l) => l.to)).toEqual(['/rpm']);
+    expect(care!.quickActions).toEqual([]);
+    expect(care!.widgets?.map((w) => w.id)).toEqual(['rpm-alerts']);
+  });
+
+  it('shows them while the feature is on, or before the switches are known', () => {
+    for (const features of [{ telehealth: true }, {}, undefined]) {
+      const [care] = visibleModules(user(['*']), [virtualCare], features);
+      expect(care!.links).toHaveLength(2);
+      expect(care!.quickActions).toHaveLength(1);
+      expect(care!.widgets).toHaveLength(2);
+    }
+  });
+
+  it('drops a module whose every link is switched off', () => {
+    expect(visibleModules(user(['*']), [videoOnly], { telehealth: false })).toEqual([]);
+    expect(visibleModules(user(['*']), [videoOnly], { patientPortal: false })).toHaveLength(1);
+  });
+
+  it('still needs the permission when the feature is on', () => {
+    const [care] = visibleModules(user(['rpm.read']), [virtualCare], { telehealth: true });
+    expect(care!.links.map((l) => l.to)).toEqual(['/rpm']);
+    expect(care!.widgets?.map((w) => w.id)).toEqual(['rpm-alerts']);
+  });
+});
+
+describe('featureSwitches', () => {
+  it('reads true and false from the public settings and nothing else', () => {
+    expect(
+      featureSwitches({ 'features.telehealth': false, 'features.patientPortal': true, 'ui.idleLockMinutes': 10 }),
+    ).toEqual({ telehealth: false, patientPortal: true });
+    expect(featureSwitches({ 'features.telehealth': 'false', 'features.patientPortal': null })).toEqual({});
+    expect(featureSwitches(undefined)).toEqual({});
+  });
+
+  it('counts a feature as on unless it is known to be off', () => {
+    expect(isFeatureOn({ telehealth: false }, 'telehealth')).toBe(false);
+    expect(isFeatureOn({ telehealth: true }, 'telehealth')).toBe(true);
+    expect(isFeatureOn({}, 'telehealth')).toBe(true);
+    expect(isFeatureOn(undefined, 'patientPortal')).toBe(true);
+    expect(isFeatureOn({ telehealth: false }, undefined)).toBe(true);
   });
 });

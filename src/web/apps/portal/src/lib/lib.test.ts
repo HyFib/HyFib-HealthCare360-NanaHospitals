@@ -2,7 +2,9 @@ import { ApiError } from '@hc360/core';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTranslator } from '@/i18n';
 import { formattersFor } from '@/i18n/useFormat';
+import { NAV_ITEMS, visibleNavItems } from '@/shell/navItems';
 import { describeError } from './errors';
+import { isPortalFeatureOn, useFeatureRefusals } from './featureSwitches';
 import { forgetLinkToken, isWellFormedLinkToken, keepLinkToken, linkTokenFor, TOKEN_PLACEHOLDER } from './linkToken';
 import { isGuid } from './ids';
 import {
@@ -238,5 +240,40 @@ describe('describeError', () => {
   it('shows a business rule as the server wrote it', () => {
     const error = new ApiError({ status: 422, title: 'Rule', detail: 'This slot was just taken.' });
     expect(describeError(error, t)).toMatchObject({ message: 'This slot was just taken.', retryable: false });
+  });
+});
+
+describe('feature switches', () => {
+  afterEach(() => useFeatureRefusals.getState().clear());
+
+  it('counts a feature as on unless the server says it is off', () => {
+    const on = { features: { patientPortal: true, telehealth: true } };
+    expect(isPortalFeatureOn(on, {}, 'patientPortal')).toBe(true);
+    expect(isPortalFeatureOn({ features: { patientPortal: false, telehealth: true } }, {}, 'patientPortal')).toBe(
+      false,
+    );
+    expect(isPortalFeatureOn({ features: { patientPortal: true, telehealth: false } }, {}, 'telehealth')).toBe(false);
+    // An older server, or the answer still loading.
+    expect(isPortalFeatureOn({}, {}, 'telehealth')).toBe(true);
+    expect(isPortalFeatureOn(undefined, {}, 'patientPortal')).toBe(true);
+    // Refused since the page loaded, whatever the server said before.
+    expect(isPortalFeatureOn(on, { telehealth: true }, 'telehealth')).toBe(false);
+    expect(isPortalFeatureOn(on, { telehealth: true }, 'patientPortal')).toBe(true);
+  });
+
+  it('remembers which feature the server refused; an answer that names none is the portal', () => {
+    useFeatureRefusals.getState().refuse('telehealth');
+    expect(useFeatureRefusals.getState().refused).toEqual({ telehealth: true });
+    useFeatureRefusals.getState().refuse(undefined);
+    expect(useFeatureRefusals.getState().refused).toEqual({ telehealth: true, patientPortal: true });
+    useFeatureRefusals.getState().clear();
+    expect(useFeatureRefusals.getState().refused).toEqual({});
+  });
+
+  it('leaves video consultations out of the menu while they are off', () => {
+    const withoutVideo = visibleNavItems((feature) => feature !== 'telehealth');
+    expect(withoutVideo.map((item) => item.to)).not.toContain('/video');
+    expect(withoutVideo).toHaveLength(NAV_ITEMS.length - 1);
+    expect(visibleNavItems(() => true)).toEqual(NAV_ITEMS);
   });
 });

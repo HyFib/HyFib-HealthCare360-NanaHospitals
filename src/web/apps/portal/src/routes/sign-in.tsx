@@ -19,14 +19,17 @@ import {
   QrCodeRegular,
   VideoRegular,
 } from '@fluentui/react-icons';
-import { auth, isApiError } from '@hc360/core';
+import { auth, featureOf, isApiError, isFeatureDisabled } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
+import { PortalUnavailable } from '@/components/FeatureOff';
 import { TextLink } from '@/components/links';
 import { formatCountdown } from '@/i18n/format';
 import { useT } from '@/i18n';
 import { describeError, errorCode, fieldError } from '@/lib/errors';
+import { usePortalFeatures } from '@/lib/features';
+import { useFeatureRefusals } from '@/lib/featureSwitches';
 import { useNow } from '@/lib/hooks';
 import {
   isValidMobile,
@@ -195,6 +198,8 @@ function SignInPage() {
   const hospital = useHospitalName();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // The hospital may have turned the portal (or video consultations) off: then there is nothing to sign in to.
+  const features = usePortalFeatures();
 
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
@@ -240,6 +245,10 @@ function SignInPage() {
         codeInput.current?.focus();
       }
     } catch (err) {
+      if (isFeatureDisabled(err)) {
+        useFeatureRefusals.getState().refuse(featureOf(err));
+        return;
+      }
       const throttled = errorCode(err) === 'auth.otp_throttled' || (isApiError(err) && err.status === 429);
       if (throttled) {
         setResendAt(Date.now() + THROTTLED_COOLDOWN_SECONDS * 1000);
@@ -284,6 +293,10 @@ function SignInPage() {
       }
       await navigate({ href: safeRedirect(target), replace: true });
     } catch (err) {
+      if (isFeatureDisabled(err)) {
+        useFeatureRefusals.getState().refuse(featureOf(err));
+        return;
+      }
       setCode('');
       const expired = errorCode(err) === 'auth.challenge_expired' || (isApiError(err) && err.status === 401);
       setError(
@@ -346,12 +359,14 @@ function SignInPage() {
               </span>
               {t('nav.appointments')} · {t('nav.findDoctor')}
             </li>
-            <li className={styles.benefit}>
-              <span className={styles.benefitIcon}>
-                <VideoRegular />
-              </span>
-              {t('nav.video')}
-            </li>
+            {features.video && (
+              <li className={styles.benefit}>
+                <span className={styles.benefitIcon}>
+                  <VideoRegular />
+                </span>
+                {t('nav.video')}
+              </li>
+            )}
             <li className={styles.benefit}>
               <span className={styles.benefitIcon}>
                 <DocumentTextRegular />
@@ -381,7 +396,12 @@ function SignInPage() {
           </div>
 
           <div className={styles.card}>
-            {step === 'phone' || !challenge ? (
+            {!features.portal ? (
+              <>
+                <h1 className={styles.title}>{t('app.fullName', { hospital })}</h1>
+                <PortalUnavailable />
+              </>
+            ) : step === 'phone' || !challenge ? (
               <>
                 <div className={styles.heading}>
                   <h1 className={styles.title}>{t('auth.welcome', { hospital })}</h1>
@@ -504,16 +524,18 @@ function SignInPage() {
                 </form>
               </>
             )}
-            <div className={styles.links}>
-              <Caption1 className={styles.small}>
-                <LockClosedRegular aria-hidden />
-                {t('auth.secure')}
-              </Caption1>
-              <span className={styles.linkRow}>
-                <QrCodeRegular aria-hidden />
-                <TextLink to="/verify">{t('auth.checkDocument')}</TextLink>
-              </span>
-            </div>
+            {features.portal && (
+              <div className={styles.links}>
+                <Caption1 className={styles.small}>
+                  <LockClosedRegular aria-hidden />
+                  {t('auth.secure')}
+                </Caption1>
+                <span className={styles.linkRow}>
+                  <QrCodeRegular aria-hidden />
+                  <TextLink to="/verify">{t('auth.checkDocument')}</TextLink>
+                </span>
+              </div>
+            )}
           </div>
           <p className={styles.emergency}>{t('shell.emergency')}</p>
         </main>

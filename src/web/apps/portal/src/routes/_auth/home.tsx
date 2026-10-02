@@ -18,6 +18,7 @@ import { ErrorBlock, LoadingCards } from '@/components/States';
 import { useT, type MessageKey } from '@/i18n';
 import { firstName } from '@/i18n/format';
 import { useFormat } from '@/i18n/useFormat';
+import { usePortalFeatures } from '@/lib/features';
 import { useNow } from '@/lib/hooks';
 import { AppointmentCard } from '@/modules/appointments/AppointmentCard';
 import { appointmentQueries } from '@/modules/appointments/api';
@@ -103,6 +104,7 @@ interface QuickAction {
   icon: ComponentType<{ className?: string }>;
 }
 
+/** Video consultations are left out while the hospital has them switched off. */
 const QUICK_ACTIONS: QuickAction[] = [
   { to: '/doctors', label: 'home.quick.book', icon: CalendarAddRegular },
   { to: '/video', label: 'home.quick.video', icon: VideoRegular },
@@ -117,8 +119,10 @@ function HomePage() {
   const t = useT();
   const now = useNow(60_000);
   const { profile, profiles } = useActiveProfile();
-  const sessions = useQuery(videoQueries.sessions(profile.id));
-  const ready = (sessions.data ?? []).find((session) => session.canJoinNow);
+  const { video } = usePortalFeatures();
+  const sessions = useQuery({ ...videoQueries.sessions(profile.id), enabled: video });
+  const ready = video ? (sessions.data ?? []).find((session) => session.canJoinNow) : undefined;
+  const quickActions = QUICK_ACTIONS.filter((action) => video || action.to !== '/video');
 
   return (
     <PortalPage
@@ -151,7 +155,7 @@ function HomePage() {
           {t('home.quick')}
         </h2>
         <nav className={styles.quick} aria-labelledby="home-quick">
-          {QUICK_ACTIONS.map((action) => {
+          {quickActions.map((action) => {
             const Icon = action.icon;
             return (
               <CardLink key={action.to} to={action.to} className={styles.quickItem}>

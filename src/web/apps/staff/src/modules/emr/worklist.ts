@@ -52,16 +52,18 @@ export type AppointmentAction = 'consult' | 'note' | 'video';
 
 /**
  * The one thing to do with a booking: open the signed note once seen; join a video booking from the video
- * consultations (today, until it is over); otherwise start or continue an arrived patient's consultation.
+ * consultations (today, until it is over); otherwise start or continue an arrived patient's consultation. While video
+ * consultations are switched off (`video` false) a video booking has no video action: a patient who came in is
+ * consulted like any other.
  */
 export function appointmentAction(
   appointment: Pick<WorklistAppointment, 'status' | 'visitId' | 'encounterId' | 'isTelehealth'>,
-  { canWrite, isToday }: { canWrite: boolean; isToday: boolean },
+  { canWrite, isToday, video = true }: { canWrite: boolean; isToday: boolean; video?: boolean },
 ): AppointmentAction | null {
   if (appointment.status === 'Completed') {
     return canWrite && appointment.encounterId ? 'note' : null;
   }
-  if (appointment.isTelehealth) {
+  if (appointment.isTelehealth && video) {
     return isToday && appointment.status !== 'NoShow' ? 'video' : null;
   }
   return canWrite && canConsult(appointment) ? 'consult' : null;

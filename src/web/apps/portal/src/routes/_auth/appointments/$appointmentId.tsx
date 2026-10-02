@@ -18,6 +18,7 @@ import { ErrorBlock, Notice, PageSpinner } from '@/components/States';
 import { StatusPill } from '@/components/StatusPill';
 import { useLanguage, useT } from '@/i18n';
 import { useFormat } from '@/i18n/useFormat';
+import { usePortalFeatures } from '@/lib/features';
 import { isGuid } from '@/lib/ids';
 import { useToast } from '@/lib/toast';
 import type { PortalAppointment } from '@/lib/types';
@@ -102,7 +103,13 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
   const [paymentNote, setPaymentNote] = useState<string | null>(null);
 
   const open = isOpenAppointment(appointment.status);
-  const sessions = useQuery({ ...videoQueries.sessions(profile.id), enabled: appointment.isTelehealth && open });
+  // While the hospital has video consultations turned off, a video appointment can only be cancelled here.
+  const { video } = usePortalFeatures();
+  const videoOff = appointment.isTelehealth && !video;
+  const sessions = useQuery({
+    ...videoQueries.sessions(profile.id),
+    enabled: appointment.isTelehealth && open && video,
+  });
   const session = sessions.data?.find((item) => item.appointmentNumber === appointment.number);
   const status = APPOINTMENT_STATUS[appointment.status];
   const payment = PAYMENT_STATUS[appointment.paymentStatus];
@@ -190,11 +197,13 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
       </section>
 
       {paymentNote && <Notice intent="warning">{paymentNote}</Notice>}
+      {open && videoOff && <Notice intent="info">{t('features.videoOff.booked')}</Notice>}
       {changeClosed && <Notice intent="info">{t('appointment.changeClosed')}</Notice>}
 
       {open && (
         <div className={styles.actions}>
           {appointment.isTelehealth &&
+            !videoOff &&
             (session ? (
               <ButtonLink
                 appearance="primary"
@@ -220,7 +229,7 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
               {busy === 'pay' ? t('payment.opening') : t('appointment.pay', { amount: f.inr(appointment.feeAmount) })}
             </Button>
           )}
-          {appointment.canReschedule && (
+          {appointment.canReschedule && !videoOff && (
             <ButtonLink
               appearance="secondary"
               icon={<CalendarEditRegular />}
@@ -245,7 +254,7 @@ function AppointmentDetail({ appointment, back }: { appointment: PortalAppointme
         </div>
       )}
 
-      {open && (
+      {open && !videoOff && (
         <p className={styles.tip}>
           <InfoRegular aria-hidden />
           {appointment.isTelehealth ? t('appointment.videoTip') : t('appointment.arrive')}

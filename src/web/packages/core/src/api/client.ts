@@ -1,4 +1,4 @@
-import { ApiError, toApiError } from './errors';
+import { ApiError, featureOf, isFeatureDisabled, toApiError } from './errors';
 
 export type ClientType = 'web' | 'desktop' | 'portal';
 
@@ -22,6 +22,11 @@ export interface ApiClientConfig {
   onSessionExpired: () => void;
   /** Reports reachability so the UI can show the WiFi/server banner. */
   onReachability?: (reachable: boolean) => void;
+  /**
+   * Called when the server refuses a request because an administrator switched its feature off (`feature.disabled`),
+   * with the feature it names, so the app can explain instead of showing an error. The request still fails.
+   */
+  onFeatureDisabled?: (feature: string | undefined) => void;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -126,7 +131,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       }
 
       if (!response.ok) {
-        throw await toApiError(response);
+        const error = await toApiError(response);
+        if (isFeatureDisabled(error)) {
+          config.onFeatureDisabled?.(featureOf(error));
+        }
+        throw error;
       }
 
       return response;
@@ -194,9 +203,10 @@ export function buildUrl(base: string, path: string, query?: Record<string, Quer
 }
 
 /**
- * A 5xx from HC360 itself that names a problem code (for example `ai.provider_failed` or `ai.disabled`) is the server's
- * answer, not a dropped connection: retrying would only repeat it (and spend quota). Proxy and gateway failures carry
- * no such problem body and are still retried.
+ * A 5xx from HC360 itself that names a problem code (for example `ai.provider_failed`, `ai.disabled`, or
+ * `feature.disabled` for a feature an administrator switched off) is the server's answer, not a dropped connection:
+ * retrying would only repeat it (and spend quota). Proxy and gateway failures carry no such problem body and are still
+ * retried.
  */
 async function isServerDecision(response: Response): Promise<boolean> {
   if (!(response.headers.get('content-type') ?? '').includes('application/problem+json')) {

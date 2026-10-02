@@ -18,6 +18,7 @@ import { HomeRegular, SearchRegular } from '@fluentui/react-icons';
 import { useHotkey, useIdle, useSession } from '@hc360/core';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useFeatureSwitches } from '@/lib/features';
 import { usePublicSettings } from '@/lib/lookups';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { matchLink, NAV_SECTIONS, visibleModules } from '@/lib/modules';
@@ -91,8 +92,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const settings = usePublicSettings();
+  const features = useFeatureSwitches();
 
-  const modules = useMemo(() => visibleModules(user, moduleManifests), [user]);
+  const modules = useMemo(() => visibleModules(user, moduleManifests, features), [user, features]);
   const current = useMemo(() => matchLink(pathname, modules), [pathname, modules]);
   const [openCategories, setOpenCategories] = useState<string[]>([]);
 

@@ -33,6 +33,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { useFeatureOn } from '@/lib/features';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
@@ -137,6 +138,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
   const notify = useNotify();
   const queryClient = useQueryClient();
   const today = useToday();
+  const videoOn = useFeatureOn('telehealth');
   const [schema] = useState(() => waitlistSchema(today));
   const from = defaults?.from && defaults.from > today ? defaults.from : today;
   const form = useForm<WaitlistValues>({
@@ -148,7 +150,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
       preferredFrom: from,
       preferredTo: addDays(from, 13),
       preferredSession: 'Any',
-      isTelehealth: defaults?.isTelehealth ?? false,
+      isTelehealth: videoOn && (defaults?.isTelehealth ?? false),
       channel: 'Phone',
       notes: '',
     },
@@ -165,7 +167,7 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
         preferredFrom: v.preferredFrom!,
         preferredTo: v.preferredTo!,
         preferredSession: v.preferredSession,
-        isTelehealth: v.isTelehealth,
+        isTelehealth: videoOn && v.isTelehealth,
         channel: v.channel,
         notes: v.notes || null,
       }),
@@ -247,12 +249,14 @@ function AddToWaitlistContent({ defaults, onClose }: { defaults?: WaitlistDefaul
                 options={STAFF_CHANNELS.map((c) => ({ value: c, label: channelLabel[c] }))}
               />
             </FormGrid>
-            <SwitchField
-              control={form.control}
-              name="isTelehealth"
-              label="Video consultation"
-              hint="Only for doctors who offer video consultations"
-            />
+            {videoOn && (
+              <SwitchField
+                control={form.control}
+                name="isTelehealth"
+                label="Video consultation"
+                hint="Only for doctors who offer video consultations"
+              />
+            )}
             <TextAreaField control={form.control} name="notes" label="Notes (optional)" rows={2} maxLength={500} />
           </div>
         </DialogContent>
@@ -308,6 +312,8 @@ function BookFromWaitlistContent({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canManage = usePermission('scheduling.appointments.manage');
+  const videoOn = useFeatureOn('telehealth');
+  const videoOff = entry.isTelehealth && !videoOn;
   const today = useToday();
   const first = maxDate(today, entry.preferredFrom);
   const offeredDate = entry.offeredSlotStartsAt ? istDate(entry.offeredSlotStartsAt) : null;
@@ -366,7 +372,14 @@ function BookFromWaitlistContent({
                 </MessageBarBody>
               </MessageBar>
             )}
-            {expired ? (
+            {videoOff ? (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  Video consultations are turned off, so this request can't be booked as one. Book the patient an
+                  in-person appointment instead, then cancel this request.
+                </MessageBarBody>
+              </MessageBar>
+            ) : expired ? (
               <MessageBar intent="warning">
                 <MessageBarBody>
                   The patient's preferred dates have passed. Book a new appointment for them instead.
@@ -417,7 +430,7 @@ function BookFromWaitlistContent({
           <Button
             type="submit"
             appearance="primary"
-            disabled={!slot || book.isPending || expired}
+            disabled={!slot || book.isPending || expired || videoOff}
             icon={book.isPending ? <Spinner size="tiny" /> : undefined}
           >
             {slot ? `Book ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a slot'}

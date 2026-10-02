@@ -41,6 +41,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useFeatureOn } from '@/lib/features';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { patientQueries } from '@/modules/patients/api';
@@ -174,6 +175,8 @@ function BookAppointmentPage() {
   const queryClient = useQueryClient();
   const desk = useAppointmentDesk();
   const canManage = usePermission('scheduling.appointments.manage');
+  // While video consultations are switched off, every booking is in person.
+  const videoOn = useFeatureOn('telehealth');
   const today = useToday();
   const date = search.date && search.date >= today ? search.date : today;
   const departments = useDepartments('Clinical');
@@ -206,7 +209,7 @@ function BookAppointmentPage() {
   // One doctor in the department: choose them straight away.
   const practitionerId = search.practitionerId ?? (doctors.length === 1 ? doctors[0]!.practitionerId : undefined);
   const doctor = doctors.find((d) => d.practitionerId === practitionerId);
-  const offersVideo = Boolean(doctor?.offersTelehealth);
+  const offersVideo = videoOn && Boolean(doctor?.offersTelehealth);
   const mode: VisitMode = offersVideo && search.video ? 'Telehealth' : 'InPerson';
 
   const [slot, setSlot] = useState<SlotDto | null>(null);
@@ -386,6 +389,7 @@ function BookAppointmentPage() {
                 error={departmentDoctors.error}
                 selectedId={practitionerId}
                 mode={mode}
+                showVideo={videoOn}
                 onSelect={(id) => {
                   setSlot(null);
                   set({ practitionerId: id, startsAt: undefined });
@@ -583,6 +587,7 @@ function DoctorCards({
   error,
   selectedId,
   mode,
+  showVideo,
   onSelect,
 }: {
   doctors: PractitionerAvailability[];
@@ -590,6 +595,8 @@ function DoctorCards({
   error: unknown;
   selectedId: string | undefined;
   mode: VisitMode;
+  /** Video consultations are switched on: mark the doctors who offer them. */
+  showVideo: boolean;
   onSelect: (id: string) => void;
 }) {
   const styles = useStyles();
@@ -649,7 +656,7 @@ function DoctorCards({
                     : `${free} free on this day`}
               </Caption1>
             </span>
-            {d.offersTelehealth && <VideoRegular aria-label="Offers video consultations" />}
+            {showVideo && d.offersTelehealth && <VideoRegular aria-label="Offers video consultations" />}
           </button>
         );
       })}

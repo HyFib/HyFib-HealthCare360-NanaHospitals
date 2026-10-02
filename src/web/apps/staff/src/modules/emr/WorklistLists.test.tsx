@@ -140,6 +140,19 @@ describe('WorklistAppointments', () => {
     expect(onOpenVideo).toHaveBeenCalled();
   });
 
+  it('offers no way into a call while video consultations are switched off', () => {
+    wrap(
+      <WorklistAppointments
+        {...props}
+        video={false}
+        appointments={[appointment({ patientName: 'Ravi', isTelehealth: true, startsAt: '2026-10-02T06:00:00Z' })]}
+      />,
+    );
+
+    expect(screen.getByText('Ravi')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open video consultations for Ravi' })).not.toBeInTheDocument();
+  });
+
   it('badges a restricted record, which the server has already unnamed', () => {
     wrap(
       <WorklistAppointments

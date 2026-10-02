@@ -4,6 +4,7 @@ import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useFeatureRefusals } from './lib/featureSwitches';
 import { createPortalRouter } from './router';
 
 /**
@@ -12,6 +13,7 @@ import { createPortalRouter } from './router';
  */
 
 const TOKEN = 'Abcdefghijklmnop_123';
+const SESSION_ID = '0199b0c4-4b1c-7c3e-9d2f-2a1b3c4d5e6f';
 const RX_TOKEN = 'Rx_token-0123456789ab';
 const LAB_CODE = 'ABCDEFGHJKLMNPQRSTUV';
 
@@ -33,6 +35,12 @@ const requests: { method: string; url: string }[] = [];
 /** Set by a test to make the anonymous privacy contact endpoint fail (it is rate-limited in production). */
 let privacyContactFails = false;
 
+/** The hospital's feature switches, as `GET /api/v1/system/info` reports them. */
+let switches = { patientPortal: true, telehealth: true };
+
+/** Set by a test: the portal was turned off after the page loaded, so sign-in is refused. */
+let signInRefused = false;
+
 /** The first page of a run also loads its lazily split route code. */
 const SLOW = { timeout: 8000 };
 
@@ -40,11 +48,23 @@ const fakeServer = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): P
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
   requests.push({ method, url });
+  if (url.includes('/api/v1/auth/otp/request') && signInRefused) {
+    return new Response(
+      JSON.stringify({
+        title: 'The patient portal is turned off',
+        status: 503,
+        detail: 'The patient portal is not available right now. Please contact the hospital.',
+        code: 'feature.disabled',
+        data: { feature: 'patientPortal' },
+      }),
+      { status: 503, headers: { 'content-type': 'application/problem+json' } },
+    );
+  }
   if (url.includes('/api/v1/auth/')) {
     return json({ title: 'Sign in' }, 401);
   }
   if (url.includes('/api/v1/system/info')) {
-    return json({ facilityName: 'Nana Hospitals' });
+    return json({ facilityName: 'Nana Hospitals', features: switches });
   }
   if (url.includes(`/api/v1/public/feedback/invitations/${TOKEN}`)) {
     return method === 'GET' ? json(FORM) : json({ thankYou: 'Thank you for your feedback.', complaintNumber: null });
@@ -100,6 +120,9 @@ beforeAll(() => {
 beforeEach(() => {
   requests.length = 0;
   privacyContactFails = false;
+  switches = { patientPortal: true, telehealth: true };
+  signInRefused = false;
+  useFeatureRefusals.getState().clear();
   vi.stubGlobal('fetch', fakeServer);
 });
 
@@ -206,5 +229,76 @@ describe('public pages', () => {
     const history = openAt('/portal/bills');
     expect(await screen.findByRole('button', { name: /code/i }, SLOW)).toBeInTheDocument();
     expect(history.location.pathname).toBe('/portal/sign-in');
+  });
+});
+
+describe('when the hospital turns the portal or video consultations off', () => {
+  const unavailable = 'The patient portal is not available right now';
+
+  it('explains, instead of offering sign-in, that the portal is not available', async () => {
+    switches = { patientPortal: false, telehealth: true };
+    openAt('/portal/sign-in');
+
+    expect(await screen.findByText(unavailable, {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Nana Hospitals patient portal', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('Please contact the hospital.')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Mobile number/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Check a document' })).toBeInTheDocument();
+    expect(requests.some((request) => request.url.includes('/otp/'))).toBe(false);
+  });
+
+  it('gives a signed-out visitor of a signed-in page the same explanation', async () => {
+    switches = { patientPortal: false, telehealth: true };
+    const history = openAt('/portal/bills');
+
+    expect(await screen.findByText(unavailable, {}, SLOW)).toBeInTheDocument();
+    expect(history.location.pathname).toBe('/portal/sign-in');
+  });
+
+  it('keeps online booking closed', async () => {
+    switches = { patientPortal: false, telehealth: true };
+    openAt('/portal/doctors');
+
+    expect(await screen.findByText(unavailable, {}, SLOW)).toBeInTheDocument();
+    expect(requests.some((request) => request.url.includes('/api/v1/public/doctors'))).toBe(false);
+  });
+
+  it('still checks the QR code printed on a prescription', async () => {
+    switches = { patientPortal: false, telehealth: false };
+    openAt(`/portal/verify/prescription/${RX_TOKEN}`);
+
+    expect(await screen.findByText('Genuine document', {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByText(unavailable)).not.toBeInTheDocument();
+  });
+
+  it('explains when sign-in is refused because the portal was just turned off', async () => {
+    signInRefused = true;
+    openAt('/portal/sign-in');
+
+    await userEvent.type(await screen.findByRole('textbox', { name: /Mobile number/ }, SLOW), '9876543210');
+    await userEvent.click(screen.getByRole('button', { name: 'Send code' }));
+
+    expect(await screen.findByText(unavailable, {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: /Mobile number/ })).not.toBeInTheDocument();
+  });
+
+  it('offers sign-in again once the hospital turns the portal back on', async () => {
+    switches = { patientPortal: false, telehealth: true };
+    openAt('/portal/sign-in');
+    expect(await screen.findByText(unavailable, {}, SLOW)).toBeInTheDocument();
+
+    switches = { patientPortal: true, telehealth: true };
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(await screen.findByRole('textbox', { name: /Mobile number/ }, SLOW)).toBeInTheDocument();
+    expect(screen.queryByText(unavailable)).not.toBeInTheDocument();
+  });
+
+  it('says video consultations are not available on a join link while they are off', async () => {
+    switches = { patientPortal: true, telehealth: false };
+    openAt(`/portal/telehealth/${SESSION_ID}?t=${TOKEN}`);
+
+    expect(await screen.findByText('Video consultations are not available right now', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('Please contact the hospital to see the doctor in person.')).toBeInTheDocument();
   });
 });

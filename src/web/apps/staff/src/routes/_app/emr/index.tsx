@@ -35,6 +35,7 @@ import { DataTable, ErrorState, FilterBar, Page, PageHeader, Section, StatusBadg
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
+import { useFeatureOn } from '@/lib/features';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import {
@@ -143,6 +144,7 @@ function WorklistPage() {
   const canWrite = usePermission('clinical.emr.write');
   const canSeeRounds = usePermission('inpatient.admissions.read');
   const canRecordVisit = usePermission('nursing.chart');
+  const videoOn = useFeatureOn('telehealth');
   const userName = useSession((s) => s.user?.displayName ?? null);
   const now = useNow();
   const today = todayIso();
@@ -482,6 +484,7 @@ function WorklistPage() {
                   onOpenChart={openChart}
                   onConsult={consultAppointment}
                   onOpenVideo={() => void navigate({ to: '/telehealth' })}
+                  video={videoOn}
                 />
               </>
             )}

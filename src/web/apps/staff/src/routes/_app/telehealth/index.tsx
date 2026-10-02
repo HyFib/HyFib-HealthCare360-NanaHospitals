@@ -26,11 +26,12 @@ import {
   SendRegular,
   VideoRegular,
 } from '@fluentui/react-icons';
-import { formatTime, useRealtimeEvent, useSession } from '@hc360/core';
+import { formatTime, isFeatureDisabled, useRealtimeEvent, useSession } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useFeatureOn } from '@/lib/features';
 import { toOptions, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { addDays, formatDuration, istDate, minutesSince, relativeDayLabel } from '@/modules/scheduling/dates';
@@ -46,6 +47,7 @@ import {
 import { isSessionOpen, sessionStatusText } from '@/modules/virtualcare/telehealth/labels';
 import { LinkIssuedDialog, NewSessionDialog } from '@/modules/virtualcare/telehealth/SessionDialogs';
 import { useSessionActions } from '@/modules/virtualcare/telehealth/useSessionActions';
+import { VideoOffPage } from '@/modules/virtualcare/telehealth/VideoOffPage';
 
 type Range = 'today' | 'upcoming' | 'past';
 
@@ -63,7 +65,7 @@ export const Route = createFileRoute('/_app/telehealth/')({
     practitionerId: typeof s.practitionerId === 'string' && s.practitionerId ? s.practitionerId : undefined,
     status: TELEHEALTH_STATUSES.includes(s.status as TelehealthStatus) ? (s.status as TelehealthStatus) : undefined,
   }),
-  component: TelehealthPage,
+  component: TelehealthRoute,
 });
 
 const useStyles = makeStyles({
@@ -73,6 +75,11 @@ const useStyles = makeStyles({
   waiting: { color: tokens.colorPaletteRedForeground1, fontWeight: tokens.fontWeightSemibold },
   actions: { display: 'flex', gap: '4px', justifyContent: 'flex-end', alignItems: 'center' },
 });
+
+/** Video consultations, or a plain explanation while an administrator has switched them off. */
+function TelehealthRoute() {
+  return useFeatureOn('telehealth') ? <TelehealthPage /> : <VideoOffPage />;
+}
 
 /** Today's and upcoming video consultations (TEL-01): who is waiting, links, and the way into each call. */
 function TelehealthPage() {
@@ -115,6 +122,11 @@ function TelehealthPage() {
     void navigate({ to: '/telehealth/$sessionId', params: { sessionId: s.id } });
   const rows = sessions.data ?? [];
   const waiting = rows.filter((s) => s.status === 'WaitingRoom');
+
+  // Switched off since the menu last looked: the server says so.
+  if (isFeatureDisabled(sessions.error)) {
+    return <VideoOffPage />;
+  }
 
   return (
     <Page>

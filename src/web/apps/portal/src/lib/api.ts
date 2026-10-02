@@ -1,4 +1,5 @@
 import { auth, createApiClient, useConnection, useSession, type ClientType } from '@hc360/core';
+import { useFeatureRefusals } from './featureSwitches';
 
 export const clientType: ClientType = 'portal';
 
@@ -13,4 +14,6 @@ export const api = createApiClient({
   refreshAccessToken: () => auth.refresh(),
   onSessionExpired: () => useSession.getState().clear(),
   onReachability: (reachable) => useConnection.getState().setReachable(reachable),
+  // The hospital turned the portal or video consultations off while this page was open: explain, don't fail.
+  onFeatureDisabled: (feature) => useFeatureRefusals.getState().refuse(feature),
 });

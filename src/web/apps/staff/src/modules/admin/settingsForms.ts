@@ -88,6 +88,21 @@ export type Scope = 'global' | 'facility';
 export type SecretStatus = 'set' | 'inherited' | 'not-set';
 export type SettingRow = Pick<SettingDto, 'key' | 'facilityId' | 'value' | 'hasValue'>;
 
+// ---------------------------------------------------------------------------------------------------- keys
+
+/**
+ * A setting name the server accepts (`PUT /api/v1/admin/settings/{key}`): 1 to 128 letters, digits, dots, dashes or
+ * underscores, such as `ui.idleLockMinutes` or `pharmacy.discount.max_percent`.
+ */
+export function isValidSettingKey(key: string): boolean {
+  return /^[A-Za-z0-9._-]{1,128}$/.test(key);
+}
+
+/** A feature switch: changed on Hospital setup > Features, which explains what each one turns off. */
+export function isFeatureSettingKey(key: string): boolean {
+  return key.startsWith('features.');
+}
+
 // ---------------------------------------------------------------------------------------------------- ids
 
 const safeId = (text: string) => text.replace(/[^A-Za-z0-9]/g, '_');

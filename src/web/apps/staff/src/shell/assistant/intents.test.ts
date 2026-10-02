@@ -9,6 +9,7 @@ import {
   planAssistantAction,
   planDictatedNote,
   resolveScreen,
+  switchedOffFeature,
   type PlanEnvironment,
 } from './intents';
 
@@ -109,6 +110,20 @@ describe('screens', () => {
     expect(canOpenPath('/scheduling/book', links, has)).toBe(true);
     expect(canOpenPath('/', links, has)).toBe(true);
   });
+
+  it('keeps a screen closed while its feature is switched off', () => {
+    const links = [
+      { to: '/telehealth', permission: 'telehealth.sessions.read', feature: 'telehealth' as const },
+      { to: '/rpm', permission: 'rpm.read' },
+    ];
+    const videoOff = (feature: string | undefined) => feature !== 'telehealth';
+    expect(canOpenPath('/telehealth', links, () => true, videoOff)).toBe(false);
+    expect(canOpenPath('/rpm', links, () => true, videoOff)).toBe(true);
+    expect(canOpenPath('/telehealth', links, () => true)).toBe(true);
+    expect(switchedOffFeature('/telehealth', links, videoOff)).toBe('telehealth');
+    expect(switchedOffFeature('/rpm', links, videoOff)).toBeNull();
+    expect(switchedOffFeature('/telehealth', links, () => true)).toBeNull();
+  });
 });
 
 describe('planAssistantAction', () => {
@@ -123,6 +138,14 @@ describe('planAssistantAction', () => {
     expect(
       planAssistantAction(answer('navigate', { route: '/queue', label: 'Queue' }, 'Opening Queue.'), env()),
     ).toMatchObject({ kind: 'navigate', href: '/front-office/queue' });
+  });
+
+  it('says when a screen is switched off rather than that the user may not open it', () => {
+    const plan = planAssistantAction(
+      answer('navigate', { route: '/billing', label: 'Billing' }, 'Opening Billing.'),
+      env({ canOpen: () => false, switchedOff: () => 'Video consultations are turned off.' }),
+    );
+    expect(plan).toEqual({ kind: 'message', tone: 'info', message: 'Video consultations are turned off.' });
   });
 
   it('explains when the user may not open the screen', () => {
