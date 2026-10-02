@@ -19,6 +19,7 @@ internal sealed class LabResultService(
     LabReportService reports,
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
+    AnalyserOrders analyserOrders,
     IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time)
@@ -237,6 +238,9 @@ internal sealed class LabResultService(
 
         var now = time.GetUtcNow();
         await workflow.RefreshAsync([result.LabOrderId], now, ct);
+
+        // Bidirectional analysers that run the test are asked to run it again.
+        await analyserOrders.ResultReopenedAsync(result, ct);
         await db.SaveChangesAsync(ct);
         await realtime.PublishAsync(result.FacilityId, "lab.results.reopened", new { result.LabOrderId, ResultId = result.Id }, ct);
         return Result.Success();
