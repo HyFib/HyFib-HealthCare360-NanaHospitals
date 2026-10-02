@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace HyFib.HealthCare360.Platform.Numbering;
 
@@ -167,6 +168,54 @@ public static class NumberFormatRules
     }
 
     /// <summary>
+    /// How the numbers of <paramref name="format"/> read with every run of digits (the date parts, the running number and
+    /// digits in the fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read
+    /// "{FAC}OB#". Two formats that read alike can make the same number: once a running number outgrows its padding
+    /// ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}.
+    /// </summary>
+    public static string Outline(string format)
+    {
+        var outline = new StringBuilder();
+        void Digits()
+        {
+            if (outline.Length == 0 || outline[^1] != '#')
+            {
+                outline.Append('#');
+            }
+        }
+
+        foreach (var part in NumberFormat.Parse(format))
+        {
+            switch (part.Kind)
+            {
+                case NumberFormatPartKind.Year or NumberFormatPartKind.ShortYear or NumberFormatPartKind.Month
+                    or NumberFormatPartKind.Day or NumberFormatPartKind.Sequence:
+                    Digits();
+                    break;
+                case NumberFormatPartKind.Text:
+                    foreach (var c in part.Text)
+                    {
+                        if (char.IsAsciiDigit(c))
+                        {
+                            Digits();
+                        }
+                        else
+                        {
+                            outline.Append(c);
+                        }
+                    }
+
+                    break;
+                default:
+                    outline.Append(part.Text);
+                    break;
+            }
+        }
+
+        return outline.ToString();
+    }
+
+    /// <summary>
     /// The largest next number <paramref name="format"/> allows: as many digits as the running number is measured with,
     /// or for a locked series its padding, so that its numbers keep the shape other systems read. Null when the format
     /// has no single, valid running number.
@@ -235,15 +284,20 @@ public static class NumberFormatRules
                 Add(FormatField, TooLong(series, parts, length));
             }
 
-            // Two series with one format would issue the same numbers (OP and IP bills share a table). Two defaults that
-            // look alike were chosen that way and are kept apart by their tables, so restoring a default is always allowed.
+            // Two series whose formats read alike can issue the same numbers (OP and IP bills share a table). Two defaults
+            // that look alike were chosen that way and are kept apart by their tables, so restoring a default is always
+            // allowed.
+            var outline = Outline(change.Format);
             var same = formatChanged
-                ? change.OtherFormats.FirstOrDefault(other => string.Equals(other.Format, change.Format, StringComparison.Ordinal)
+                ? change.OtherFormats.FirstOrDefault(other => string.Equals(Outline(other.Format), outline, StringComparison.Ordinal)
                                                               && !(other.IsDefault && string.Equals(change.Format, series.DefaultFormat, StringComparison.Ordinal)))
                 : null;
             if (same is not null)
             {
-                Add(FormatField, $"{same.Name} already uses this format. Change the fixed text so the two kinds of number can be told apart.");
+                Add(FormatField, string.Equals(same.Format, change.Format, StringComparison.Ordinal)
+                    ? $"{same.Name} already uses this format. Change the fixed text so the two kinds of number can be told apart."
+                    : $"{same.Name} uses {same.Format}, which can make the same numbers: the two differ only in digits, dates or " +
+                      "the length of the running number. Change the letters, - or / so the two kinds of number can be told apart.");
             }
         }
 

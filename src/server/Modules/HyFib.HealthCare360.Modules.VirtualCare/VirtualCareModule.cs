@@ -66,8 +66,9 @@ public sealed class VirtualCareModule : IModule
         RpmDeviceEndpoints.Map(endpoints);
         RpmAlertEndpoints.Map(endpoints);
         RpmIngestEndpoints.Map(endpoints);
-        // Negotiating and connecting are refused while video consultations are off; the join methods check again for a
-        // connection opened before the switch.
-        endpoints.MapHub<TelehealthHub>(TelehealthHub.Path).RequireFeature(FeatureKeys.Telehealth);
+        // No switch on the hub itself: guests and patients connect without a facility, so a gate here could only read the
+        // hospital-wide switch. Every way to join checks video consultations for the consultation's own facility, and
+        // nothing else works without joining.
+        endpoints.MapHub<TelehealthHub>(TelehealthHub.Path);
     }
 }

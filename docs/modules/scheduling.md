@@ -39,7 +39,8 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
   window, one open booking per doctor per day; portal cancel/reschedule closes at the cut-off.
 * While video consultations are switched off ([features.md](features.md)), nothing is booked, rescheduled or added
   to the waitlist as a video consultation, from any channel: 422 `feature.disabled`. The switch is read for the
-  facility the booking is made from, else hospital-wide. Video appointments already booked stay; rescheduling one with
+  facility of the slot booked (a waitlist request: the facility it waits at), so an online booking at a branch with
+  video switched off is refused too. Video appointments already booked stay; rescheduling one with
   `isTelehealth: false` moves it to an in-person visit, and cancelling works as always.
 * Rescheduling books the new slot and marks the old row `Rescheduled` in the same transaction; online prepayment moves
   to the new booking; the freed slot is offered to the waitlist.

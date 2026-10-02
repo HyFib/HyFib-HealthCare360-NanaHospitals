@@ -6,9 +6,10 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 
 /// <summary>
 /// The feature switches cover what the Features screen says they do: every patient-portal API, the portal's sign-in and
-/// the public booking directory stop with the patient portal; every video consultation endpoint and the telehealth hub
-/// stop with video consultations. A new portal or telehealth endpoint gets its switch, or these tests fail. What must
-/// keep working whatever is switched off (QR checks, provider callbacks, SMS links, staff screens) has no switch.
+/// the public booking directory stop with the patient portal; every video consultation endpoint stops with video
+/// consultations, and the telehealth hub checks them for the consultation's facility whenever someone joins. A new portal
+/// or telehealth endpoint gets its switch, or these tests fail. What must keep working whatever is switched off (QR
+/// checks, provider callbacks, SMS links, staff screens) has no switch.
 /// </summary>
 public sealed class FeatureSwitchTests
 {
@@ -58,17 +59,27 @@ public sealed class FeatureSwitchTests
     }
 
     [Fact]
-    public void Every_video_consultation_endpoint_and_the_hub_stop_with_video_consultations()
+    public void Every_video_consultation_endpoint_stops_with_video_consultations()
     {
         var video = Endpoints.Value.Where(e => e.Route.StartsWith("/api/v1/telehealth/", StringComparison.Ordinal)
-                                               || e.Route.StartsWith("/api/v1/portal/telehealth/", StringComparison.Ordinal)
-                                               || e.Route.StartsWith("/hubs/telehealth", StringComparison.Ordinal)).ToList();
+                                               || e.Route.StartsWith("/api/v1/portal/telehealth/", StringComparison.Ordinal)).ToList();
 
         video.Count.ShouldBeGreaterThan(10);
         video.Where(e => !OpenWhileVideoIsOff.Contains(e.Key) && !e.AlwaysNeeds(FeatureKeys.Telehealth)).Select(e => e.Key).Order()
             .ShouldBeEmpty("Add .RequireFeature(FeatureKeys.Telehealth) to these video consultation endpoints");
         video.Where(e => OpenWhileVideoIsOff.Contains(e.Key)).Select(e => e.Key).Order().ShouldBe(OpenWhileVideoIsOff.Order());
         video.Where(e => OpenWhileVideoIsOff.Contains(e.Key)).ShouldAllBe(e => e.Requirements.Count == 0);
+    }
+
+    [Fact]
+    public void The_hub_has_no_switch_because_every_join_checks_the_consultations_facility()
+    {
+        // Guests and portal patients connect without a facility, so a switch on the hub could only read the hospital-wide
+        // one. TelehealthHub's join methods check the consultation's facility instead; nothing else works without joining.
+        var hub = Endpoints.Value.Where(e => e.Route.StartsWith("/hubs/telehealth", StringComparison.Ordinal)).ToList();
+
+        hub.ShouldNotBeEmpty();
+        hub.ShouldAllBe(e => e.Requirements.Count == 0);
     }
 
     [Theory]

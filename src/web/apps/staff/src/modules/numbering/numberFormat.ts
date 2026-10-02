@@ -167,7 +167,8 @@ export function renderNumber(format: string, value: number, facilityCode: string
         case 'day':
           return two(date.day);
         case 'sequence':
-          return String(value).padStart(part.width ?? 0, '0');
+          // A width the rules refuse (saved before they existed) pads no further than they allow.
+          return String(value).padStart(Math.min(part.width ?? 0, MAX_SEQUENCE_WIDTH), '0');
         default:
           return part.text;
       }
@@ -399,19 +400,62 @@ function lengthOf(change: FormatChange): NumberLength {
 }
 
 /**
- * The other series a changed format would be confused with. Two defaults that look alike were chosen that way (they
- * are kept in different tables), so restoring a default is always allowed.
+ * How the numbers of `format` read with every run of digits (the date parts, the running number and digits in the
+ * fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read "{FAC}OB#". Two
+ * formats that read alike can make the same number: once a running number outgrows its padding ({SEQ:6} reaching
+ * 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}.
  */
-function sameFormatAs(change: FormatChange): OtherFormat | undefined {
-  return change.format === change.currentFormat
-    ? undefined
-    : change.otherFormats.find(
-        (other) => other.format === change.format && !(other.isDefault && change.format === change.defaultFormat),
-      );
+export function outline(format: string): string {
+  let result = '';
+  const digits = () => {
+    if (!result.endsWith('#')) {
+      result += '#';
+    }
+  };
+  for (const part of parseFormat(format)) {
+    switch (part.kind) {
+      case 'year':
+      case 'shortYear':
+      case 'month':
+      case 'day':
+      case 'sequence':
+        digits();
+        break;
+      case 'text':
+        for (const c of part.text) {
+          if (/^[0-9]$/.test(c)) {
+            digits();
+          } else {
+            result += c;
+          }
+        }
+        break;
+      default:
+        result += part.text;
+    }
+  }
+  return result;
 }
 
-const sameFormatMessage = (other: OtherFormat) =>
-  `${other.name} already uses this format. Change the fixed text so the two kinds of number can be told apart.`;
+/**
+ * The other series a changed format would be confused with: one whose format reads alike. Two defaults that look
+ * alike were chosen that way (they are kept in different tables), so restoring a default is always allowed.
+ */
+function sameFormatAs(change: FormatChange): OtherFormat | undefined {
+  if (change.format === change.currentFormat) {
+    return undefined;
+  }
+  const shape = outline(change.format);
+  return change.otherFormats.find(
+    (other) => outline(other.format) === shape && !(other.isDefault && change.format === change.defaultFormat),
+  );
+}
+
+const sameFormatMessage = (other: OtherFormat, format: string) =>
+  other.format === format
+    ? `${other.name} already uses this format. Change the fixed text so the two kinds of number can be told apart.`
+    : `${other.name} uses ${other.format}, which can make the same numbers: the two differ only in digits, dates or ` +
+      'the length of the running number. Change the letters, - or / so the two kinds of number can be told apart.';
 
 /**
  * Everything that stops the change from being saved, by field (empty when it can be saved). The format is checked in
@@ -442,7 +486,7 @@ export function checkChange(change: FormatChange): FormatErrors {
     }
     const same = sameFormatAs(change);
     if (same) {
-      add('format', sameFormatMessage(same));
+      add('format', sameFormatMessage(same, change.format));
     }
   }
 
@@ -515,7 +559,7 @@ export function formatChecks(change: FormatChange): FormatCheck[] {
   const same = sameFormatAs(change);
   checks.push(
     same
-      ? { ok: false, text: sameFormatMessage(same) }
+      ? { ok: false, text: sameFormatMessage(same, change.format) }
       : { ok: true, text: 'Different from the other number formats.' },
   );
   return checks;

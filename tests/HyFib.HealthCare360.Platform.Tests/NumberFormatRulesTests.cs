@@ -122,6 +122,40 @@ public sealed class NumberFormatRulesTests
         ]);
     }
 
+    [Theory]
+    [InlineData("{FAC}OB{YY}{SEQ:7}", "{FAC}OB#")]
+    [InlineData("{FAC}OB{SEQ:9}", "{FAC}OB#")]
+    [InlineData("{FAC}OB26{SEQ}", "{FAC}OB#")]
+    [InlineData("{FAC}/OP/{YYYY}/{SEQ:6}", "{FAC}/OP/#/#")]
+    [InlineData("B{YY}X{SEQ}", "B#X#")]
+    public void A_format_reads_with_each_run_of_digits_as_one_place(string format, string outline) =>
+        NumberFormatRules.Outline(format).ShouldBe(outline);
+
+    [Theory]
+    [InlineData("{FAC}OB{YY}{SEQ:1}", "{FAC}OB{YY}{SEQ}")]
+    [InlineData("{FAC}OB{YY}{SEQ:06}", "{FAC}OB{YY}{SEQ:6}")]
+    [InlineData("{FAC}OB{YY}{SEQ:8}", "{FAC}OB{YY}{SEQ:6}")]
+    [InlineData("{FAC}OB{YY}{SEQ:4}", "{FAC}OB{YY}0{SEQ:3}")]
+    [InlineData("{FAC}OB{YY}{SEQ:6}", "{FAC}OB26{SEQ:6}")]
+    public void A_format_that_can_make_another_series_numbers_is_refused(string format, string other)
+    {
+        // {SEQ:1} and {SEQ}, or {SEQ:06} and {SEQ:6}, make the same numbers; {SEQ:6} reaching 10000000 makes {SEQ:8}'s.
+        var change = Change(OpBill, format) with { OtherFormats = [new OtherNumberFormat("IP bill", other, IsDefault: false)] };
+
+        NumberFormatRules.Check(change)[NumberFormatRules.FormatField].ShouldBe([
+            $"IP bill uses {other}, which can make the same numbers: the two differ only in digits, dates or the length of " +
+            "the running number. Change the letters, - or / so the two kinds of number can be told apart.",
+        ]);
+    }
+
+    [Theory]
+    [InlineData("{FAC}/OP/{YY}/{SEQ:5}", "{FAC}/IP/{YY}/{SEQ:5}")]
+    [InlineData("{FAC}OB{YYYY}{SEQ:6}", "{FAC}OB-{YY}{SEQ:7}")]
+    [InlineData("{FAC}B{YY}X{SEQ:5}", "{FAC}BX{YY}{SEQ:5}")]
+    public void Formats_whose_letters_differ_can_be_used_together(string format, string other) =>
+        NumberFormatRules.Check(Change(OpBill, format) with { OtherFormats = [new OtherNumberFormat("IP bill", other, IsDefault: false)] })
+            .ShouldBeEmpty();
+
     [Fact]
     public void Restoring_a_default_that_looks_like_another_default_is_allowed()
     {

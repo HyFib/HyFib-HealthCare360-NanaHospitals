@@ -9,6 +9,7 @@ import {
   lastIssuedText,
   longestNumber,
   nextRestart,
+  outline,
   parseFormat,
   renderNumber,
   resetProblem,
@@ -67,6 +68,12 @@ describe('renderNumber', () => {
     expect(renderNumber('{FAC}AS{SEQ:3}', 12345, 'NH', october2)).toBe('NHAS12345');
     expect(renderNumber('{FAC}-{XYZ}-{SEQ:2}-{YY', 5, 'NH', october2)).toBe('NH-{XYZ}-05-{YY');
     expect(renderNumber('{FAC}DN{SEQ:6}', 9, null, october2)).toBe('DN000009');
+  });
+
+  it('caps a padding the rules refuse rather than building it', () => {
+    // Saved before the rules existed: padding 999999999 digits would crash the page.
+    expect(renderNumber('{FAC}AS{SEQ:999999999}', 42, 'NH', october2)).toBe('NHAS000000000042');
+    expect(renderNumber('{FAC}AS{SEQ:13}', 42, 'NH', october2)).toBe('NHAS000000000042');
   });
 
   it('splits a format into its parts', () => {
@@ -215,6 +222,42 @@ describe('checkChange', () => {
         otherFormats: [{ name: 'Credit note', format: '{FAC}RF{YY}{SEQ:6}', isDefault: false }],
       }),
     ).toHaveProperty('format');
+  });
+
+  it.each([
+    ['{FAC}OB{YY}{SEQ:7}', '{FAC}OB#'],
+    ['{FAC}OB{SEQ:9}', '{FAC}OB#'],
+    ['{FAC}OB26{SEQ}', '{FAC}OB#'],
+    ['{FAC}/OP/{YYYY}/{SEQ:6}', '{FAC}/OP/#/#'],
+    ['B{YY}X{SEQ}', 'B#X#'],
+  ])('reads %s with each run of digits as one place', (format, expected) => {
+    expect(outline(format)).toBe(expected);
+  });
+
+  // {SEQ:1} and {SEQ}, or {SEQ:06} and {SEQ:6}, make the same numbers; {SEQ:6} reaching 10000000 makes {SEQ:8}'s.
+  it.each([
+    ['{FAC}OB{YY}{SEQ:1}', '{FAC}OB{YY}{SEQ}'],
+    ['{FAC}OB{YY}{SEQ:06}', '{FAC}OB{YY}{SEQ:6}'],
+    ['{FAC}OB{YY}{SEQ:8}', '{FAC}OB{YY}{SEQ:6}'],
+    ['{FAC}OB{YY}{SEQ:4}', '{FAC}OB{YY}0{SEQ:3}'],
+    ['{FAC}OB{YY}{SEQ:6}', '{FAC}OB26{SEQ:6}'],
+  ])('refuses %s while another series uses %s', (format, other) => {
+    expect(
+      checkChange(change({ format, otherFormats: [{ name: 'IP bill', format: other, isDefault: false }] })).format,
+    ).toEqual([
+      `IP bill uses ${other}, which can make the same numbers: the two differ only in digits, dates or the length of ` +
+        'the running number. Change the letters, - or / so the two kinds of number can be told apart.',
+    ]);
+  });
+
+  it.each([
+    ['{FAC}/OP/{YY}/{SEQ:5}', '{FAC}/IP/{YY}/{SEQ:5}'],
+    ['{FAC}OB{YYYY}{SEQ:6}', '{FAC}OB-{YY}{SEQ:7}'],
+    ['{FAC}B{YY}X{SEQ:5}', '{FAC}BX{YY}{SEQ:5}'],
+  ])('lets %s be used beside %s, whose letters differ', (format, other) => {
+    expect(
+      checkChange(change({ format, otherFormats: [{ name: 'IP bill', format: other, isDefault: false }] })),
+    ).toEqual({});
   });
 
   it('checks only the next number when the format and reset stay as they are', () => {

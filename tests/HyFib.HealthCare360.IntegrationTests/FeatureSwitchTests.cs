@@ -4,6 +4,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Appointments;
+using HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Identity;
@@ -69,12 +70,6 @@ public sealed class FeatureSwitchTests(HospitalServer server)
                 problem.GetProperty("title").GetString().ShouldBe("Video consultations are turned off");
             }
 
-            // The call itself: the hub refuses to negotiate a connection.
-            using (var negotiate = await doctor.SendRawAsync(HttpMethod.Post, "/hubs/telehealth/negotiate?negotiateVersion=1"))
-            {
-                negotiate.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
-            }
-
             // Nothing new is booked as a video consultation.
             using (var booking = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/scheduling/appointments", new BookAppointmentRequest(
                        patient.Id, practitionerId, DateTimeOffset.UtcNow.AddDays(1), AppointmentChannel.Phone, AppointmentVisitType.New,
@@ -87,8 +82,36 @@ public sealed class FeatureSwitchTests(HospitalServer server)
             await SwitchAsync(FeatureKeys.Telehealth, enabled: true);
 
             (await doctor.GetAsync<JsonElement>(Sessions)).ValueKind.ShouldBe(JsonValueKind.Array);
-            using var again = await doctor.SendRawAsync(HttpMethod.Post, "/hubs/telehealth/negotiate?negotiateVersion=1");
-            again.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SwitchAsync(FeatureKeys.Telehealth, enabled: true);
+        }
+    }
+
+    [Fact]
+    public async Task While_video_consultations_are_off_nobody_joins_one_on_the_hub()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var practitionerId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
+        var patient = await RegisterPatientAsync(frontOffice);
+        var slot = await TeleconsultationJourneyTests.FreeVideoSlotAsync(frontOffice, practitionerId);
+        var appointment = await frontOffice.PostAsync<AppointmentDetail>("/api/v1/scheduling/appointments", new BookAppointmentRequest(
+            patient.Id, practitionerId, slot.StartsAt, AppointmentChannel.Phone, AppointmentVisitType.New, IsTelehealth: true,
+            "Review over video", Notes: null));
+        var day = DateOnly.FromDateTime(slot.StartsAt.ToOffset(TimeSpan.FromMinutes(330)).DateTime);
+        var sessionId = (await doctor.GetAsync<List<TelehealthSessionListItem>>($"/api/v1/telehealth/sessions?date={day:O}&practitionerId={practitionerId}"))
+            .Single(s => s.AppointmentId == appointment.Id).Id;
+        try
+        {
+            await SwitchAsync(FeatureKeys.Telehealth, enabled: false);
+
+            // The hub itself has no switch: guests and patients connect without a facility, so joining checks the
+            // consultation's facility instead, and nothing works in a consultation without joining it.
+            await using var hub = await LongPollingHub.ConnectAsync(doctor, "/hubs/telehealth");
+            (await hub.InvokeAsync("JoinAsClinician", sessionId)).ShouldNotBeNull().ShouldContain("Video consultations are turned off");
+            (await hub.InvokeAsync("SendChat", sessionId, "Can you hear me?")).ShouldNotBeNull();
         }
         finally
         {

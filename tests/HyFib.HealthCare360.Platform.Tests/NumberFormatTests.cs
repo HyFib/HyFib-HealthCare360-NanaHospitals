@@ -25,6 +25,14 @@ public sealed class NumberFormatTests
         NumberFormat.Render("{FAC}AS{SEQ:3}", 12345, "NH", October2).ShouldBe("NHAS12345");
 
     [Fact]
+    public void A_padding_the_rules_refuse_is_capped_rather_than_built()
+    {
+        // Saved before the rules existed: padding 999999999 digits would exhaust the server's memory.
+        NumberFormat.Render("{FAC}AS{SEQ:999999999}", 42, "NH", October2).ShouldBe("NHAS000000000042");
+        NumberFormat.Render("{FAC}AS{SEQ:13}", 42, "NH", October2).ShouldBe("NHAS000000000042");
+    }
+
+    [Fact]
     public void Anything_a_format_may_not_contain_is_written_as_it_is() =>
         NumberFormat.Render("{FAC}-{XYZ}-{SEQ:2}-{YY", 5, "NH", October2).ShouldBe("NH-{XYZ}-05-{YY");
 
