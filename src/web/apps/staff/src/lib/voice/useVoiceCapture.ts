@@ -15,7 +15,11 @@ export interface VoiceCapture {
   start: () => void;
   /** Ends a browser recording early; the audio is then transcribed. */
   stop: () => void;
-  /** Stops and discards a browser recording (panel closed). Desktop dictation cannot be interrupted from the page. */
+  /**
+   * Abandons the capture (panel closed): a browser recording is stopped and discarded, also one whose microphone is
+   * still opening, and text or a failure that arrives later is dropped. Desktop dictation cannot be interrupted from
+   * the page; its text is dropped.
+   */
   cancel: () => void;
 }
 
@@ -38,11 +42,20 @@ export function useVoiceCapture(
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(0);
   const recording = useRef<Recording | null>(null);
+  // The capture whose outcome is still wanted. Cancelling moves it on, so a microphone that opens after the panel
+  // closed (the browser was still asking for permission) is closed again at once, and late text is dropped.
+  const wanted = useRef(0);
   const maxSeconds = Math.round(use.maxRecordingMs / 1000);
 
+  const abandon = () => {
+    wanted.current += 1;
+    recording.current?.cancel();
+    recording.current = null;
+  };
+
   // Release the microphone if the panel goes away mid-recording (sign-out, lock).
-  const discardRecording = useEffectEvent(() => recording.current?.cancel());
-  useEffect(() => () => discardRecording(), []);
+  const abandonOnUnmount = useEffectEvent(abandon);
+  useEffect(() => () => abandonOnUnmount(), []);
 
   // A ticking clock while the browser records, for "12 s of 30".
   useEffect(() => {
@@ -62,37 +75,62 @@ export function useVoiceCapture(
     }
   };
 
-  const dictateOnDesktop = () => {
+  const dictateOnDesktop = (capture: number) => {
+    const isWanted = () => capture === wanted.current;
     setPhase('listening');
     bridge
       .dictate('en-IN')
-      .then((result) => deliver(result.text))
-      .catch(() => setError('Voice input did not work. Check the microphone and try again, or type instead.'))
-      .finally(() => setPhase('idle'));
+      .then((result) => {
+        if (isWanted()) {
+          deliver(result.text);
+        }
+      })
+      .catch(() => {
+        if (isWanted()) {
+          setError('Voice input did not work. Check the microphone and try again, or type instead.');
+        }
+      })
+      .finally(() => {
+        if (isWanted()) {
+          setPhase('idle');
+        }
+      });
   };
 
-  const recordAndTranscribe = async () => {
+  const recordAndTranscribe = async (capture: number) => {
+    const isWanted = () => capture === wanted.current;
     setPhase('starting');
     try {
       const session = await startRecording(use);
+      if (!isWanted()) {
+        session.cancel();
+        return;
+      }
       recording.current = session;
       const started = Date.now();
       setStartedAt(started);
       setNow(started);
       setPhase('listening');
       const clip = await session.result;
-      recording.current = null;
-      if (!clip) {
+      if (!clip || !isWanted()) {
         return;
       }
+      recording.current = null;
       setPhase('transcribing');
       const response = await transcribeAudio(clip.blob, clip.fileName, patientId);
-      deliver(response.text);
+      if (isWanted()) {
+        deliver(response.text);
+      }
     } catch (problem) {
-      setError(problem instanceof VoiceError ? problem.message : use.describeError(problem));
+      if (isWanted()) {
+        setError(problem instanceof VoiceError ? problem.message : use.describeError(problem));
+      }
     } finally {
-      recording.current = null;
-      setPhase('idle');
+      // A later capture owns the recording and the phase once this one has been abandoned.
+      if (isWanted()) {
+        recording.current = null;
+        setPhase('idle');
+      }
     }
   };
 
@@ -101,10 +139,11 @@ export function useVoiceCapture(
       return;
     }
     setError(null);
+    const capture = ++wanted.current;
     if (mode === 'desktop') {
-      dictateOnDesktop();
+      dictateOnDesktop(capture);
     } else {
-      void recordAndTranscribe();
+      void recordAndTranscribe(capture);
     }
   };
 
@@ -120,6 +159,9 @@ export function useVoiceCapture(
     maxSeconds,
     start,
     stop: () => recording.current?.stop(),
-    cancel: () => recording.current?.cancel(),
+    cancel: () => {
+      abandon();
+      setPhase('idle');
+    },
   };
 }
