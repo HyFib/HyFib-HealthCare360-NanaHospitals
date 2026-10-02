@@ -110,7 +110,9 @@ public sealed class ConsentTests(HospitalServer server)
             revoke.StatusCode.ShouldBe(HttpStatusCode.Forbidden, "Withdrawing needs the same access as reading.");
         }
 
-        (await admin.GetAsync<List<ConsentDto>>(path)).ShouldHaveSingleItem().IsActive.ShouldBeTrue();
+        // Registration also records the SMS/WhatsApp updates consent, so the list holds more than this one.
+        var consents = await admin.GetAsync<List<ConsentDto>>(path);
+        consents.Single(c => c.Id == given.Id).IsActive.ShouldBeTrue("The nurse's withdrawal was refused, so the consent stands.");
     }
 
     [Fact]
