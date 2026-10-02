@@ -7,6 +7,7 @@ import type {
   CampaignStatus,
   FollowUpOutcome,
   FollowUpPriority,
+  RecordedFollowUpOutcome,
   FollowUpSource,
   FollowUpStatus,
   FollowUpType,
@@ -153,8 +154,10 @@ export interface FollowUpListItem {
   priority: FollowUpPriority;
   assigneeUserId: string | null;
   attempts: number;
-  outcome: FollowUpOutcome | null;
+  outcome: RecordedFollowUpOutcome | null;
   isOverdue: boolean;
+  /** When the "follow-up due" SMS was queued, by staff or the reminder job. */
+  reminderSentAt: string | null;
 }
 
 export interface FollowUpDetail {
@@ -172,11 +175,12 @@ export interface FollowUpDetail {
   assigneeUserId: string | null;
   notes: string | null;
   attempts: number;
-  outcome: FollowUpOutcome | null;
+  outcome: RecordedFollowUpOutcome | null;
   outcomeNotes: string | null;
   completedAt: string | null;
   source: FollowUpSource;
   isOverdue: boolean;
+  reminderSentAt: string | null;
   version: number;
 }
 

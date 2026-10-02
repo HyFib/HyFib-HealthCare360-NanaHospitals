@@ -179,7 +179,7 @@ function ComplaintView({
         title={
           <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontFamily: tokens.fontFamilyMonospace }}>{c.complaintNumber}</span>
-            <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} />
+            <ComplaintStatusBadge status={c.status} isOverdue={c.isOverdue} escalated={c.escalatedAt !== null} />
             <PriorityBadge priority={c.priority} />
           </span>
         }
@@ -254,6 +254,7 @@ function ComplaintView({
                 <Detail label="Turnaround">{turnaround === null ? null : turnaroundText(turnaround)}</Detail>
               )}
               <Detail label="Allowed">{SLA_HOURS[c.priority]} hours</Detail>
+              {c.escalatedAt && <Detail label="Escalated">{formatDateTime(c.escalatedAt)}</Detail>}
               {c.closedAt && <Detail label="Closed">{formatDateTime(c.closedAt)}</Detail>}
               {c.reopenCount > 0 && (
                 <Detail label="Reopened">{c.reopenCount === 1 ? 'Once' : `${c.reopenCount} times`}</Detail>

@@ -7,13 +7,22 @@ export function SentimentBadge({ sentiment }: { sentiment: Sentiment }) {
   return <StatusBadge status={sentiment} tone={sentimentTone(sentiment)} />;
 }
 
-export function ComplaintStatusBadge({ status, isOverdue }: { status: ComplaintStatus; isOverdue?: boolean }) {
+export function ComplaintStatusBadge({
+  status,
+  isOverdue,
+  escalated,
+}: {
+  status: ComplaintStatus;
+  isOverdue?: boolean;
+  escalated?: boolean;
+}) {
   const tone = isOverdue ? 'danger' : status === 'Open' ? 'warning' : status === 'InProgress' ? 'brand' : 'success';
+  const late = escalated ? 'overdue, escalated' : 'overdue';
   return (
     <StatusBadge
       status={status}
       tone={tone}
-      label={isOverdue ? `${complaintStatusLabel[status]} · overdue` : complaintStatusLabel[status]}
+      label={isOverdue ? `${complaintStatusLabel[status]} · ${late}` : complaintStatusLabel[status]}
     />
   );
 }
