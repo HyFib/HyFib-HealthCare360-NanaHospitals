@@ -9,7 +9,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 |---|---|
 | EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
 | EHR-02 timeline by type/department/date | `GET /emr/patients/{id}/timeline?types=&from=&to=&departmentId=` |
-| EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags), `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
+| EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module; every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites |
@@ -25,6 +25,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | Permission | Purpose | Default roles |
 |---|---|---|
 | `clinical.emr.read` | Read the clinical record | Doctor, Nurse, MrdOfficer |
+| `clinical.flags.read` | See allergies and alerts on the patient banner, without the chart | Doctor, Nurse, MrdOfficer, Pharmacist, LabTechnician, Pathologist, Radiographer, Radiologist, CardiologyTechnician, Cardiologist, OtCoordinator, DialysisTechnician, Physiotherapist, BloodBankOfficer, Dietitian |
 | `clinical.emr.write` | Encounters, diagnoses, notes, referrals, checkup summaries, result acknowledgement | Doctor |
 | `clinical.encounters.sign` | Sign/amend encounters, sign notes | Doctor |
 | `clinical.vitals.record` | Record vitals | Doctor, Nurse |
@@ -50,6 +51,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional) |
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
+| GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
 | GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result) |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
@@ -137,6 +139,24 @@ patient, and removed statements stay soft-deleted as history. The status shown o
 The statement cannot be recorded while an active allergy exists (409 `allergy.active_exist`). Recording an allergy, or
 re-activating one, soft-deletes the statement in the same save. A patient merge keeps at most one live statement (the
 surviving record's first) and none when either record has an active allergy.
+
+#### Banner flags on every clinical screen
+
+The chart reads its banner from the summary. Every other clinical screen, whose staff often may not read the chart,
+reads `GET /emr/patients/{id}/flags` with `clinical.flags.read`, so the lab, imaging, pharmacy, theatre, dialysis,
+physiotherapy, blood bank and dietitians see the same allergies and alerts as the doctor. The front office, billing,
+insurance and CRM desks do not hold the permission by default (data minimisation); administrators can grant it.
+
+In the staff app, `PatientBannerWithFlags` (`src/modules/emr`) adds the flags to a screen's own banner. It is used on lab
+orders, sample result entry and reports, imaging and cardiology studies, pharmacy dispensing and ward indents, the
+nursing station, admissions, OT bookings, dialysis, physiotherapy, blood requests, teleconsultations, remote monitoring,
+health checkups, the patient profile and the billing banners. `PatientFlagsStrip` shows the flags alone where a dialog
+or counter acts on a patient without a banner: sample collection, the pharmacy counter and diet orders. Both:
+* say "Checking allergies…" while loading, and "Allergies and alerts hidden: restricted record" or "… could not be
+  loaded" when they cannot be had, so a missing flag is never read as "no allergies";
+* show the clinical alerts toned by severity (critical in red), ahead of the screen's own (bed alerts, MLC, emergency),
+  without repeating a label;
+* refresh on `clinical.flags.changed` (topic `patient:{id}`, which every staff member may follow).
 
 #### Drug search
 

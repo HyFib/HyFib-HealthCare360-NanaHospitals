@@ -49,11 +49,12 @@ import {
   useRealtimeEvent,
   useSession,
 } from '@hc360/core';
-import { EmptyState, ErrorState, LoadingState, Page, PatientBanner, Section, StatusBadge, useNotify } from '@hc360/ui';
+import { EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { sumNumbers } from '@/modules/inventory/decimal';
 import type { BatchStock } from '@/modules/inventory/api';
 import { dispensingShelfLifeDays, usableQuantity } from '@/modules/inventory/fefo';
@@ -566,7 +567,8 @@ function EntryScreen({
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={entry.patient.id}
         patient={{
           id: entry.patient.id,
           uhid: entry.patient.uhid,

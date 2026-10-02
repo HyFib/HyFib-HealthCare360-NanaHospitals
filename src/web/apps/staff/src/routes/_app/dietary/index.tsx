@@ -106,6 +106,7 @@ function DietOrdersPage() {
 
   const admissionOf = (o: DietOrderDto): DietAdmission => ({
     admissionId: o.admissionId,
+    patientId: o.patientId,
     patientName: o.patientName ?? 'Patient',
     place: [o.wardName, o.bedLabel ? `bed ${o.bedLabel}` : null].filter(Boolean).join(', '),
   });
@@ -294,6 +295,7 @@ function DietOrdersPage() {
                     setEditing({
                       admission: {
                         admissionId: picked.admissionId,
+                        patientId: picked.patientId,
                         patientName: picked.patientName,
                         place: [picked.wardName, picked.bedLabel ? `bed ${picked.bedLabel}` : null]
                           .filter(Boolean)

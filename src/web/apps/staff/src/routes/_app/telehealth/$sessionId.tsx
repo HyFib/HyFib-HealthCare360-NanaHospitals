@@ -18,11 +18,12 @@ import {
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, DocumentTextRegular, PersonRegular, PillRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError, useRealtimeEvent, useSession } from '@hc360/core';
-import { ErrorState, LoadingState, Page, PageHeader, PatientBanner, Section, useNotify } from '@hc360/ui';
+import { ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { hubErrorMessage } from '@hc360/core';
 import {
   telehealthApi,
@@ -126,7 +127,8 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
           { label: 'Consultation' },
         ]}
       />
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={s.patientId}
         patient={{
           id: s.patientId,
           uhid: s.uhid,

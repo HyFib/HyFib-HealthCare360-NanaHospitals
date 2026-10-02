@@ -37,6 +37,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
 import { sumNumbers } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { requiresRegister } from '@/modules/inventory/labels';
@@ -496,11 +497,14 @@ function CounterSalePage() {
                 <Radio value="patient" label="Registered patient" />
               </RadioGroup>
               {customerKind === 'patient' ? (
-                <PatientPicker
-                  value={patient}
-                  onChange={setPatient}
-                  hint="Registered patients can pay later (credit) and appear in their medication history."
-                />
+                <>
+                  <PatientPicker
+                    value={patient}
+                    onChange={setPatient}
+                    hint="Registered patients can pay later (credit) and appear in their medication history."
+                  />
+                  {patient && <PatientFlagsStrip patientId={patient.id} />}
+                </>
               ) : (
                 <div className={styles.grid2}>
                   <Field

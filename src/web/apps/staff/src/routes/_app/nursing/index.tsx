@@ -23,13 +23,14 @@ import {
   PillRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, genderShort } from '@hc360/core';
-import { EmptyState, ErrorState, Page, PageHeader, PatientBanner, Section } from '@hc360/ui';
+import { EmptyState, ErrorState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { inpatientQueries, PAYER_LABEL, type BedBoardItem, type BedOccupant } from '@/modules/inpatient/api';
-import { bedAlertInfo } from '@/modules/inpatient/bedState';
+import { bedAlertBadge, bedAlertInfo } from '@/modules/inpatient/bedState';
 import { BedAlertBadges } from '@/modules/inpatient/BedTile';
 import { useStoredState, useWardRealtime } from '@/modules/inpatient/hooks';
 import { Assessments } from '@/modules/inpatient/nursing/Assessments';
@@ -367,7 +368,8 @@ function PatientChart({
       <Button className={styles.backButton} appearance="subtle" icon={<ArrowLeftRegular />} onClick={onBack}>
         All patients
       </Button>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={occupant.patientId}
         patient={{
           id: occupant.patientId,
           uhid: occupant.uhid,
@@ -375,7 +377,7 @@ function PatientChart({
           gender: occupant.gender,
           age: occupant.age,
           payer: `Bed ${bed.label} · Day ${occupant.lengthOfStayDays}${occupant.consultantName ? ` · ${occupant.consultantName}` : ''} · ${PAYER_LABEL[occupant.payerType]}`,
-          alerts: bed.alerts.map((a) => bedAlertInfo(a).label),
+          alerts: bed.alerts.map(bedAlertBadge),
         }}
         actions={
           <Button icon={<OpenRegular />} onClick={onOpenAdmission}>

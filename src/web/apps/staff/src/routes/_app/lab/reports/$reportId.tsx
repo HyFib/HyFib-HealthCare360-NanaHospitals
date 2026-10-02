@@ -1,11 +1,12 @@
 import { Button, Spinner, Text } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, DocumentBulletListRegular, EditRegular, PrintRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
-import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, PatientBanner, useNotify } from '@hc360/ui';
+import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
 import { LAB_PERMISSIONS, labApi, labKeys, labQueries, type LabReportView } from '@/modules/lab/api';
 import { ReportStatusBadge } from '@/modules/lab/badges';
@@ -95,7 +96,8 @@ function LabReportPage() {
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={view.patient.id}
         patient={{
           id: view.patient.id,
           uhid: view.patient.uhid,

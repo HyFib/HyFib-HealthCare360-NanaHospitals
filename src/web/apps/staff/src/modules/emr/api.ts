@@ -197,6 +197,16 @@ export interface AlertSummary {
   expiresOn: string | null;
 }
 
+/**
+ * The patient banner's safety flags alone (`GET /emr/patients/{id}/flags`, EHR-03): the same allergy status, active
+ * allergies and current alerts as the summary, for staff who may see the flags but not the chart.
+ */
+export interface PatientFlags {
+  allergyStatus: AllergyRecordingStatus;
+  allergies: AllergySummary[];
+  alerts: AlertSummary[];
+}
+
 export interface ProblemSummary {
   id: string;
   icdCode: string | null;
@@ -728,6 +738,8 @@ export const emrKeys = {
   worklist: (params: WorklistParams) => ['emr', 'worklist', params] as const,
   patient: (patientId: string) => ['emr', 'patient', patientId] as const,
   summary: (patientId: string) => ['emr', 'patient', patientId, 'summary'] as const,
+  /** Under the patient key, so every allergy or alert change made on the chart refreshes the banners too. */
+  flags: (patientId: string) => ['emr', 'patient', patientId, 'flags'] as const,
   timeline: (patientId: string, filters: TimelineFilters) =>
     ['emr', 'patient', patientId, 'timeline', filters] as const,
   encounters: (patientId: string, page: number) => ['emr', 'patient', patientId, 'encounters', page] as const,
@@ -767,6 +779,14 @@ export const emrQueries = {
       queryKey: emrKeys.summary(patientId),
       queryFn: ({ signal }) => api.get<PatientClinicalSummary>(`/api/v1/emr/patients/${patientId}/summary`, { signal }),
       staleTime: 15_000,
+    }),
+  flags: (patientId: string) =>
+    queryOptions({
+      queryKey: emrKeys.flags(patientId),
+      queryFn: ({ signal }) => api.get<PatientFlags>(`/api/v1/emr/patients/${patientId}/flags`, { signal }),
+      // Changes arrive at once over real time; each fetch is an audited read, so moving between a patient's screens or
+      // back to the window within a minute reuses the last answer.
+      staleTime: 60_000,
     }),
   timeline: (patientId: string, filters: TimelineFilters) =>
     queryOptions({

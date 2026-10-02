@@ -17,21 +17,14 @@ import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { patientApi } from '@/modules/patients/api';
 import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
-import { bannerAllergyStatus } from './allergyStatus';
 import type { PatientClinicalSummary } from './api';
+import { flagFields } from './flags';
 import { isRestricted } from './hooks';
 
 const useStyles = makeStyles({
   skeleton: { display: 'flex', gap: '12px', padding: '12px 16px' },
   breakGlass: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '560px' },
 });
-
-/** "Penicillin (anaphylaxis)" — severity is shown for the reactions that matter most. */
-function allergyText(allergy: PatientClinicalSummary['allergies'][number]): string {
-  return allergy.severity === 'Severe' || allergy.severity === 'Anaphylaxis'
-    ? `${allergy.allergen} (${allergy.severity.toLowerCase()})`
-    : allergy.allergen;
-}
 
 function bannerData(summary: PatientClinicalSummary): PatientBannerData {
   const p = summary.patient;
@@ -45,10 +38,8 @@ function bannerData(summary: PatientClinicalSummary): PatientBannerData {
     category: p.category === 'General' ? null : humanize(p.category),
     isVip: p.isVip,
     isDeceased: p.isDeceased,
-    allergies: summary.allergies.map(allergyText),
-    // "No known allergies" only when a clinician recorded it; an empty list alone shows "Allergies not recorded".
-    allergyStatus: bannerAllergyStatus(summary.allergyStatus),
-    alerts: summary.alerts.map((alert) => (alert.detail ? `${alert.title}: ${alert.detail}` : alert.title)),
+    // The summary carries the same flags as the other screens' banners, so it is shown the same way.
+    ...flagFields(summary),
   };
 }
 

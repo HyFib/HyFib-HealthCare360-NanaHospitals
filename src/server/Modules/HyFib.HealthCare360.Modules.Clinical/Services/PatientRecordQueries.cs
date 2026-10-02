@@ -20,8 +20,7 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
         }
 
         var allergies = await db.Set<Allergy>().AsNoTracking().Where(a => a.PatientId == patientId).ToListAsync(ct);
-        var noKnownAllergies = await db.Set<NoKnownAllergiesStatement>().AsNoTracking().AnyAsync(s => s.PatientId == patientId, ct);
-        var alerts = await db.Set<PatientAlert>().AsNoTracking().Where(a => a.PatientId == patientId && a.IsActive).ToListAsync(ct);
+        var flags = await FlagsOfAsync(patientId, allergies.Where(a => a.IsActive), today, ct);
         var problems = await db.Set<Diagnosis>().AsNoTracking()
             .Where(d => d.PatientId == patientId && d.Type != DiagnosisType.Differential && (d.Status == DiagnosisStatus.Active || d.Status == DiagnosisStatus.Chronic))
             .OrderByDescending(d => d.RecordedAt)
@@ -38,20 +37,42 @@ public sealed class PatientRecordQueries(HospitalDbContext db, TimeProvider time
         return new PatientClinicalSummary(
             patient,
             allergies.Any(a => a.Status != AllergyStatus.EnteredInError),
-            NoKnownAllergiesStatement.StatusOf(allergies.Any(a => a.IsActive), noKnownAllergies),
-            allergies.Where(a => a.IsActive)
-                .OrderByDescending(a => a.Severity)
-                .Select(a => new AllergySummary(a.Id, a.Allergen, a.Type, a.Severity, a.Reaction))
-                .ToList(),
-            alerts.Where(a => a.IsCurrent(today))
-                .OrderByDescending(a => a.Severity)
-                .Select(a => new AlertSummary(a.Id, a.Type, a.Title, a.Detail, a.Severity, a.ExpiresOn))
-                .ToList(),
+            flags.AllergyStatus,
+            flags.Allergies,
+            flags.Alerts,
             problems,
             await CurrentMedicationsAsync(patientId, ct),
             vitals is null ? null : Snapshot(vitals, patient.DateOfBirth, today),
             await RecentEncountersAsync(patientId, 5, ct),
             pendingResults);
+    }
+
+    /// <summary>The banner's safety flags (EHR-03). The caller has checked that the patient exists (the access guard does).</summary>
+    public async Task<PatientFlags> FlagsAsync(Guid patientId, CancellationToken ct)
+    {
+        var active = await db.Set<Allergy>().AsNoTracking().Where(a => a.PatientId == patientId && a.Status == AllergyStatus.Active).ToListAsync(ct);
+        return await FlagsOfAsync(patientId, active, time.Today(), ct);
+    }
+
+    /// <summary>
+    /// One rule for the summary and the flags: active allergies most severe first, "no known allergies" only when a clinician
+    /// recorded it and no active allergy contradicts it, and the alerts in force today, most severe first.
+    /// </summary>
+    private async Task<PatientFlags> FlagsOfAsync(Guid patientId, IEnumerable<Allergy> activeAllergies, DateOnly today, CancellationToken ct)
+    {
+        var active = activeAllergies.ToList();
+        var noKnownAllergies = await db.Set<NoKnownAllergiesStatement>().AsNoTracking().AnyAsync(s => s.PatientId == patientId, ct);
+        var alerts = await db.Set<PatientAlert>().AsNoTracking().Where(a => a.PatientId == patientId && a.IsActive).ToListAsync(ct);
+
+        return new PatientFlags(
+            NoKnownAllergiesStatement.StatusOf(active.Count > 0, noKnownAllergies),
+            active.OrderByDescending(a => a.Severity)
+                .Select(a => new AllergySummary(a.Id, a.Allergen, a.Type, a.Severity, a.Reaction))
+                .ToList(),
+            alerts.Where(a => a.IsCurrent(today))
+                .OrderByDescending(a => a.Severity)
+                .Select(a => new AlertSummary(a.Id, a.Type, a.Title, a.Detail, a.Severity, a.ExpiresOn))
+                .ToList());
     }
 
     /// <summary>Medicines the patient should currently be taking: signed prescriptions whose course has not ended.</summary>

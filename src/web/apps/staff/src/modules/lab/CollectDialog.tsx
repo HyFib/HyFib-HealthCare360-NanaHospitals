@@ -23,6 +23,7 @@ import { CheckmarkCircleRegular, InfoRegular, PrintRegular } from '@fluentui/rea
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
 import { fromZonedInput, isInFuture, toZonedInput } from './common/datetime';
 import { errorData, errorMessage, hasErrorCode } from './common/errors';
 import type { OrderPriority } from './common/types';
@@ -53,6 +54,8 @@ export interface CollectTube {
 export interface CollectTarget {
   orderId: string;
   accessionNumber: string;
+  /** Whose allergies and alerts (infection control above all) the collector sees before drawing blood. */
+  patientId: string;
   patientName: string;
   uhid: string;
   ageSex?: string | null;
@@ -232,6 +235,7 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                 </div>
               </DialogTitle>
               <DialogContent className={styles.content}>
+                <PatientFlagsStrip patientId={target.patientId} />
                 {unpaid && (
                   <MessageBar intent="error" layout="multiline">
                     <MessageBarBody>

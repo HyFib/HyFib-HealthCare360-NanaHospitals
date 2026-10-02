@@ -7,6 +7,13 @@ namespace HyFib.HealthCare360.Modules.Clinical;
 public static class ClinicalPermissions
 {
     public const string EmrRead = "clinical.emr.read";
+
+    /// <summary>
+    /// The patient banner's safety flags alone (allergies and current alerts, EHR-03), for the clinical staff who treat or
+    /// test the patient without reading the chart: lab, imaging, pharmacy, theatre, dialysis, physiotherapy, blood bank, diet.
+    /// </summary>
+    public const string FlagsRead = "clinical.flags.read";
+
     public const string EmrWrite = "clinical.emr.write";
     public const string EncountersSign = "clinical.encounters.sign";
     public const string VitalsRecord = "clinical.vitals.record";
@@ -34,10 +41,19 @@ public static class ClinicalPermissions
     private const string Records = "Medical Records";
     private const string Checkups = "Health Checkups";
 
+    /// <summary>Everyone who treats, tests, feeds or supplies the patient, and so must see allergies and alerts.</summary>
+    private static readonly string[] ClinicalStaff =
+    [
+        SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer, SystemRoles.Pharmacist, SystemRoles.LabTechnician, SystemRoles.Pathologist,
+        SystemRoles.Radiographer, SystemRoles.Radiologist, SystemRoles.CardiologyTechnician, SystemRoles.Cardiologist, SystemRoles.OtCoordinator,
+        SystemRoles.DialysisTechnician, SystemRoles.Physiotherapist, SystemRoles.BloodBankOfficer, SystemRoles.Dietitian,
+    ];
+
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(EmrRead, Emr, "View the clinical record: encounters, vitals, allergies, problems, orders, prescriptions and timeline",
             [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.MrdOfficer]),
+        new(FlagsRead, Emr, "See the patient's allergies and alerts (DNR, isolation, infection control…) on the patient banner", ClinicalStaff),
         new(EmrWrite, Emr, "Write encounters (SOAP), diagnoses, clinical notes, referrals and health-checkup summaries", [SystemRoles.Doctor]),
         new(EncountersSign, Emr, "Sign and amend encounters and clinical notes", [SystemRoles.Doctor]),
         new(VitalsRecord, Emr, "Record vital signs", [SystemRoles.Doctor, SystemRoles.Nurse]),

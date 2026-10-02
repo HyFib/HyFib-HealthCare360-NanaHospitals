@@ -45,6 +45,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { printUhidCard } from '@/lib/print';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import {
@@ -55,7 +56,6 @@ import {
   type ConsentType,
   type PatientDetail,
 } from '@/modules/patients/api';
-import { PatientBannerWithPhoto } from '@/modules/patients/PatientBannerWithPhoto';
 import { PatientPrivacyCard } from '@/modules/privacy/PatientPrivacyCard';
 
 type TabId = 'overview' | 'visits' | 'consents' | 'documents';
@@ -124,7 +124,8 @@ function PatientProfilePage() {
 
   return (
     <Page>
-      <PatientBannerWithPhoto
+      <PatientBannerWithFlags
+        patientId={p.id}
         photoFileId={p.photoFileId}
         patient={{
           id: p.id,

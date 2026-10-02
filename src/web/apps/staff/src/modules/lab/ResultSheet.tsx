@@ -34,11 +34,12 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { draftStorageKey, formatDate, formatTime, useHotkey, useSession } from '@hc360/core';
-import { ErrorState, LoadingState, PatientBanner, Section, useNotify } from '@hc360/ui';
+import { ErrorState, LoadingState, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { parseAgeSex } from './common/banner';
 import { CriticalCallDialog, type CriticalFinding } from './common/CriticalCallDialog';
 import { errorData, hasErrorCode, indexedFieldErrors } from './common/errors';
@@ -766,7 +767,8 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
 
   return (
     <div className={styles.root}>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={sheet.patientId}
         patient={{
           id: sheet.patientId,
           uhid: sheet.uhid,

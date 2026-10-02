@@ -7,6 +7,13 @@ public sealed record AllergySummary(Guid Id, string Allergen, AllergyType Type, 
 
 public sealed record AlertSummary(Guid Id, PatientAlertType Type, string Title, string? Detail, AlertSeverity Severity, DateOnly? ExpiresOn);
 
+/// <summary>
+/// The patient banner's safety flags alone (EHR-03): what may be claimed about allergies, the active allergies (most
+/// severe first) and the current alerts (most severe first). The same values as in <see cref="PatientClinicalSummary"/>,
+/// for screens whose staff may see the flags but not the chart.
+/// </summary>
+public sealed record PatientFlags(AllergyRecordingStatus AllergyStatus, IReadOnlyList<AllergySummary> Allergies, IReadOnlyList<AlertSummary> Alerts);
+
 public sealed record ProblemSummary(Guid Id, string? IcdCode, string Title, DiagnosisType Type, DiagnosisStatus Status, DateOnly? OnsetDate);
 
 public sealed record CurrentMedication(

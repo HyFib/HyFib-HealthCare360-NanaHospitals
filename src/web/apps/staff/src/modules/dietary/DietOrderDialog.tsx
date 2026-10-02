@@ -27,6 +27,7 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { searchPractitioners } from '@/lib/lookups';
+import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
 import { addDays } from '@/modules/inpatient/time';
 import { dietaryApi, dietaryKeys, dietaryQueries, DIET_CATEGORY_LABEL, type DietOrderDto } from './api';
 import {
@@ -57,6 +58,8 @@ const useStyles = makeStyles({
 
 export interface DietAdmission {
   admissionId: string;
+  /** Whose chart allergies (food ones above all) the dialog shows next to the diet. */
+  patientId: string;
   patientName: string;
   place?: string | null;
 }
@@ -161,6 +164,7 @@ export function DietOrderDialog({
               )}
             </DialogTitle>
             <DialogContent className={styles.stack}>
+              <PatientFlagsStrip patientId={admission.patientId} />
               <div className={styles.two}>
                 <Field label="Diet" required hint={type ? DIET_CATEGORY_LABEL[type.category] : undefined}>
                   <Select
