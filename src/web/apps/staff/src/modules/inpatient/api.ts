@@ -524,6 +524,64 @@ export interface ConsultantVisitDto {
   chargeError: string | null;
 }
 
+/** How worrying the latest vital signs are (the EMR's age-aware flags, NEWS2-aligned for adults). */
+export type VitalsSeverity = 'Abnormal' | 'Critical';
+
+/**
+ * One in-patient on the ward round (GET /api/v1/inpatient/rounds). Visits, notes and results are the doctor's own on a
+ * doctor's round, and anyone's on a department's.
+ */
+export interface WardRoundPatient {
+  admissionId: string;
+  admissionNumber: string;
+  patientId: string;
+  uhid: string;
+  patientName: string;
+  gender: Gender;
+  age: string | null;
+  wardId: string | null;
+  wardName: string | null;
+  bedLabel: string | null;
+  isCriticalCare: boolean;
+  status: AdmissionStatus;
+  admittedAt: string;
+  dayOfStay: number;
+  expectedDischargeDate: string | null;
+  provisionalDiagnosis: string | null;
+  isMlc: boolean;
+  /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", no diagnosis or vital-sign details. */
+  isRestricted: boolean;
+  consultantId: string | null;
+  consultantName: string | null;
+  /** False when the doctor follows the patient for another consultant (visited during this stay). */
+  isPrimaryConsultant: boolean;
+  hasActiveAllergies: boolean;
+  hasCriticalAlerts: boolean;
+  lastVisitAt: string | null;
+  seenToday: boolean;
+  lastNoteAt: string | null;
+  /** Results of this stay not yet reviewed by a doctor, whoever ordered them. */
+  resultsToReview: number;
+  hasCriticalResults: boolean;
+  vitalsAt: string | null;
+  vitalsSeverity: VitalsSeverity | null;
+  /** Up to three plain-language flags, most serious first. */
+  vitalsFlags: string[];
+}
+
+/** The doctor's (or the department's) in-patients, in the bed board's order. */
+export interface WardRound {
+  date: string;
+  practitionerId: string | null;
+  departmentId: string | null;
+  patients: WardRoundPatient[];
+}
+
+export interface WardRoundParams {
+  practitionerId?: string;
+  departmentId?: string;
+}
+
 export interface DailyChargeDto {
   chargeDate: string;
   kind: DailyChargeKind;
@@ -649,6 +707,8 @@ export const inpatientKeys = {
   census: (from: string, to: string, wardId?: string | null) =>
     ['inpatient', 'census', from, to, wardId ?? 'all'] as const,
   patientAdmissions: (patientId: string) => ['inpatient', 'patient-admissions', patientId] as const,
+  rounds: (params: WardRoundParams) => ['inpatient', 'rounds', params] as const,
+  roundsAll: ['inpatient', 'rounds'] as const,
 };
 
 export const inpatientQueries = {
@@ -744,6 +804,13 @@ export const inpatientQueries = {
       queryFn: ({ signal }) =>
         api.get<DischargeClearanceDto>(`/api/v1/inpatient/admissions/${id}/discharge/clearance`, { signal }),
       staleTime: 0,
+    }),
+  /** The ward round; it follows visits recorded elsewhere within a minute. */
+  rounds: (params: WardRoundParams) =>
+    queryOptions({
+      queryKey: inpatientKeys.rounds(params),
+      queryFn: ({ signal }) => api.get<WardRound>('/api/v1/inpatient/rounds', { query: { ...params }, signal }),
+      refetchInterval: 60_000,
     }),
   pendingDischarges: (wardId?: string | null) =>
     queryOptions({

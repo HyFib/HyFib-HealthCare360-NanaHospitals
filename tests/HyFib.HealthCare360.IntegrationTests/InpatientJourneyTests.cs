@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Beds;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
+using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
@@ -118,6 +119,15 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         (await billing.GetAsync<IpAccountDetail>($"/api/v1/billing/ip-accounts/{account.Id}")).BedServiceCode
             .ShouldBe("BED-SEMI", "billing follows the transfer to price later services by the new room category");
 
+        // Doctor: his ward round lists him in the new bed, on day 3 of the stay, not yet seen today.
+        var onRound = (await doctor.GetAsync<WardRound>("/api/v1/inpatient/rounds")).Patients.Single(p => p.AdmissionId == admission.Id);
+        onRound.WardName.ShouldBe(semiPrivateWard.Name);
+        onRound.IsPrimaryConsultant.ShouldBeTrue();
+        onRound.DayOfStay.ShouldBe(3);
+        onRound.ProvisionalDiagnosis.ShouldBe("Cellulitis of the left leg with fever");
+        onRound.SeenToday.ShouldBeFalse();
+        onRound.LastVisitAt.ShouldBeNull();
+
         // Doctor: sees him on the ward round (a consultant-visit charge) and orders a dressing of the leg (a procedure,
         // which Billing prices when it is ordered).
         var visit = await doctor.PostAsync<ConsultantVisitDto>($"/api/v1/inpatient/admissions/{admission.Id}/consultant-visits",
@@ -125,6 +135,14 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         visit.PractitionerId.ShouldBe(consultantId);
         visit.ServiceCode.ShouldBe("VISIT-DR");
         visit.IsCharged.ShouldBeTrue(visit.ChargeError);
+        (await doctor.GetAsync<WardRound>("/api/v1/inpatient/rounds")).Patients.Single(p => p.AdmissionId == admission.Id)
+            .SeenToday.ShouldBeTrue("the recorded visit shows on the round");
+
+        // The billing counter can see admissions, but not the round's clinical picture.
+        using (var refused = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/inpatient/rounds"))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
 
         var dressing = await ServiceAsync(doctor, "PROC-DRESS");
         var order = await doctor.PostAsync<OrderDto>("/api/v1/clinical/orders", new PlaceOrderRequest(

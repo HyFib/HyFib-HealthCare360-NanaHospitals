@@ -156,6 +156,14 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         (await doctor.PostAsync<QueueTokenDto>($"/api/v1/queue/{patient.TokenId}/call", new CallTokenRequest(patient.Room)))
             .Status.ShouldBe(TokenStatus.Called);
 
+        // The worklist shows the booking among the doctor's appointments: checked in, with its visit and queue token.
+        var booked = (await doctor.GetAsync<EmrWorklist>("/api/v1/emr/worklist")).Appointments.Single(a => a.Id == patient.AppointmentId);
+        booked.Status.ShouldBe(AppointmentStatus.CheckedIn);
+        booked.PatientId.ShouldBe(patient.PatientId);
+        booked.VisitId.ShouldBe(patient.VisitId);
+        booked.TokenLabel.ShouldNotBeNullOrWhiteSpace();
+        booked.EncounterId.ShouldBeNull("No note has been started yet.");
+
         // Opens the encounter from the visit: the visit and the appointment are now in consultation.
         var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
             patient.PatientId, patient.VisitId, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null,

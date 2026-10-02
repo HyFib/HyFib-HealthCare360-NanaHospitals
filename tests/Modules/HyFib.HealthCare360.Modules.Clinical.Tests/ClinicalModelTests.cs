@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Persistence;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Scheduling;
 using HyFib.HealthCare360.Modules.SupplyChain;
 using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -39,7 +40,7 @@ public sealed class ClinicalModelTests
             .UseNpgsql("Host=localhost;Database=hc360_model_check")
             .UseSnakeCaseNamingConvention()
             .Options;
-        return new HospitalDbContext(options, new ModuleCatalog([new PatientsModule(), new SupplyChainModule(), new ClinicalModule()]));
+        return new HospitalDbContext(options, new ModuleCatalog([new PatientsModule(), new SchedulingModule(), new SupplyChainModule(), new ClinicalModule()]));
     }
 
     private static List<IEntityType> ClinicalEntities =>
