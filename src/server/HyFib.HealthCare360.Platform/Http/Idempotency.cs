@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -58,6 +59,28 @@ internal sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<
 }
 
 /// <summary>
+/// Endpoint metadata: the answer must not be kept, because it is clinical text the hospital does not store (a dictation
+/// transcript, an AI draft, an interpreted voice command). Such endpoints write nothing, so a repeated request only
+/// repeats the work; the <c>Idempotency-Key</c> is ignored and nothing about the request is recorded.
+/// </summary>
+public sealed class NoStoredResponseMetadata
+{
+    public static readonly NoStoredResponseMetadata Instance = new();
+
+    private NoStoredResponseMetadata()
+    {
+    }
+}
+
+public static class IdempotencyEndpointConventions
+{
+    /// <summary>Keeps the endpoint's answers out of the idempotency store (see <see cref="NoStoredResponseMetadata"/>).</summary>
+    public static TBuilder WithoutStoredResponse<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder =>
+        builder.WithMetadata(NoStoredResponseMetadata.Instance);
+}
+
+/// <summary>
 /// Implements the <c>Idempotency-Key</c> contract (ADR-007): the first request with a key executes and
 /// its response is stored for 24 h; retries with the same key and payload get the stored response;
 /// the same key with a different payload is rejected with 422. Stored responses are encrypted (AES-256-GCM,
@@ -81,7 +104,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
     {
         if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method)
             || !context.Request.Headers.TryGetValue(HeaderName, out var keyValues)
-            || !context.Request.Path.StartsWithSegments("/api"))
+            || !context.Request.Path.StartsWithSegments("/api")
+            || context.GetEndpoint()?.Metadata.GetMetadata<NoStoredResponseMetadata>() is not null)
         {
             await next(context);
             return;

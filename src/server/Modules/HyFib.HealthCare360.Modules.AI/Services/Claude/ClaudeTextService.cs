@@ -26,9 +26,14 @@ internal sealed class ClaudeTextService(IAnthropicClientProvider clients, ILogge
         }
 
         var client = clients.GetClient(settings.ApiKey!, settings.Timeout);
+
+        // ai.timeoutSeconds bounds the whole call, the SDK's retries included, so a screen that waits a little longer
+        // (the status endpoint tells it how long) always gets the answer instead of giving up while this still runs.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(settings.Timeout);
         try
         {
-            var response = await client.Beta.Messages.Create(parameters, cancellationToken);
+            var response = await client.Beta.Messages.Create(parameters, deadline.Token);
             return ClaudeResponseMapper.Map(response);
         }
         catch (AnthropicUnauthorizedException)
