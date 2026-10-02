@@ -1,13 +1,16 @@
+using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Portal;
 
 /// <summary>
-/// /api/v1/portal/bills — the patient portal's bills (PP-02) and "pay now" (PP-03). Every call is limited to the patients
-/// linked to the signed-in mobile number (<see cref="PortalPatientScope"/>); drafts and cancelled bills are never shown.
+/// /api/v1/portal/bills — the patient portal's bills (PP-02), their PDFs, and "pay now" (PP-03). Every call is limited to
+/// the patients linked to the signed-in mobile number (<see cref="PortalPatientScope"/>); drafts and cancelled bills are
+/// never shown.
 /// </summary>
 internal static class PortalBillEndpoints
 {
@@ -18,6 +21,7 @@ internal static class PortalBillEndpoints
         var group = app.MapGroup("/api/v1/portal/bills").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
         group.MapGet("/", List);
         group.MapGet("/{id:guid}", Get);
+        group.MapGet("/{id:guid}/pdf", Pdf);
         group.MapPost("/{id:guid}/pay", Pay);
         group.MapPost("/{id:guid}/payments/{orderId:guid}/verify", Verify);
     }
@@ -66,6 +70,27 @@ internal static class PortalBillEndpoints
                     l.NetAmount, l.ServiceDate, IsReturn: l.GrossAmount < 0))
                 .ToList(),
             receipts.Select(BillQueries.ToSummary).ToList()));
+    }
+
+    /// <summary>The bill as a PDF: the same A4 document the counter prints, for the bills the patient can see above.</summary>
+    private static async Task<IResult> Pdf(
+        Guid id, PortalPatientScope scope, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IAuditLogger audit, TimeProvider time,
+        CancellationToken ct)
+    {
+        var bill = await FindVisibleAsync(db, scope, id, ct);
+        if (bill.IsFailure)
+        {
+            return bill.Error!.ToProblem();
+        }
+
+        var detail = await BillQueries.DetailAsync(db, id, time, ct);
+        if (detail is null)
+        {
+            return Error.NotFound(nameof(Bill), id).ToProblem();
+        }
+
+        await audit.PatientRecordAccessedAsync(detail.PatientId, $"Downloaded bill {detail.BillNumber} as a PDF (patient portal)", ct);
+        return await (await BillDocument.BuildAsync(detail, assets, ct)).ToPdfAsync(renderer, ct);
     }
 
     /// <summary>Creates a hosted-checkout order for the bill's balance.</summary>

@@ -1,17 +1,17 @@
-import { Button, Spinner, Text } from '@fluentui/react-components';
-import { CheckmarkCircleRegular, DocumentBulletListRegular, EditRegular, PrintRegular } from '@fluentui/react-icons';
+import { Button, Text } from '@fluentui/react-components';
+import { CheckmarkCircleRegular, DocumentBulletListRegular, EditRegular } from '@fluentui/react-icons';
 import { isApiError } from '@hc360/core';
 import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AmendReportDialog } from '@/modules/lab/AmendReportDialog';
-import { LAB_PERMISSIONS, labApi, labKeys, labQueries, type LabReportView } from '@/modules/lab/api';
+import { LAB_PERMISSIONS, labApi, labKeys, labQueries, labReportDocument, type LabReportView } from '@/modules/lab/api';
 import { ReportStatusBadge } from '@/modules/lab/badges';
 import { LabReportPreview } from '@/modules/lab/LabReportPreview';
-import { printLabReport } from '@/modules/lab/print';
 import { useLabLive } from '@/modules/lab/useLabLive';
 
 export const Route = createFileRoute('/_app/lab/reports/$reportId')({
@@ -33,7 +33,10 @@ function releasedTests(view: LabReportView): number {
   );
 }
 
-/** The lab report with release, amendment and A4 printing with QR verification (SRS LIS-07). */
+/**
+ * The lab report with release, amendment, and the A4 report with QR verification (SRS LIS-07) to print or download as a
+ * PDF: the server makes both from the same template as the copy the patient receives.
+ */
 function LabReportPage() {
   const { reportId } = Route.useParams();
   const notify = useNotify();
@@ -43,7 +46,6 @@ function LabReportPage() {
   const report = useQuery(labQueries.report(reportId));
   const [confirmRelease, setConfirmRelease] = useState(false);
   const [amending, setAmending] = useState(false);
-  const [printing, setPrinting] = useState(false);
   useLabLive();
 
   const release = useMutation({
@@ -83,17 +85,6 @@ function LabReportPage() {
   const view = report.data;
   const waiting = releasableTests(view);
 
-  const print = async () => {
-    setPrinting(true);
-    try {
-      await printLabReport(view);
-    } catch (error) {
-      notify.error(error, 'The report could not be printed');
-    } finally {
-      setPrinting(false);
-    }
-  };
-
   return (
     <Page>
       <PatientBannerWithFlags
@@ -128,14 +119,10 @@ function LabReportPage() {
                 Release {waiting.length} {waiting.length === 1 ? 'test' : 'tests'}
               </Button>
             )}
-            <Button
-              appearance={canVerify && waiting.length > 0 ? 'secondary' : 'primary'}
-              icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-              disabled={printing}
-              onClick={() => void print()}
-            >
-              Print
-            </Button>
+            <DocumentButtons
+              path={labReportDocument(reportId)}
+              printAppearance={canVerify && waiting.length > 0 ? 'secondary' : 'primary'}
+            />
             {canVerify && releasedTests(view) > 0 && (
               <Button icon={<EditRegular />} onClick={() => setAmending(true)}>
                 Amend

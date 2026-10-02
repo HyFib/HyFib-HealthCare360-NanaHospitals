@@ -34,6 +34,13 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
 - The network profile on the server must be **Private**; the installer warns if it is Public.
 - Guest / patient WiFi must not be able to reach the server.
 
+**Microsoft Edge on the server.** Reports, prescriptions, discharge summaries, bills and MIS reports are made into PDFs
+on the server by headless Microsoft Edge, so that the copy downloaded or sent to the patient is the same as the printed
+one. Windows 10/11 and Windows Server 2022 come with Edge; keep it installed and updating. On Windows Server Core, or if
+Edge was removed, install Edge (or Google Chrome) for all users, or set its path in the configuration
+(`HealthCare360:Pdf:BrowserPath`). Without it, everything else works and Administration › System health says that PDFs
+can't be made.
+
 **You need**: `HC360-Server-<version>-win-x64.zip` and `HC360-Desktop-<version>-win-x64.zip` from the release. Check them
 against `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`).
 
@@ -83,7 +90,20 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
-6. **Administration › System health**: everything should be green, and the WiFi signal above 60%.
+6. **Documents and the messages that carry them** (reports, prescriptions, bills):
+   - The facility record holds what the letterhead prints: legal name, address, registration, NABH, GSTIN, PAN, a
+     letterhead line, and the logo (PNG or JPEG under 300 KB; a bigger one is left off documents). There is no screen
+     for the logo yet: upload the image to `POST /api/v1/files`, then set its id as `logoFileId` on
+     `PUT /api/v1/masters/facilities/{id}`. Doctors' signature images work the same way (`signatureFileId` on the
+     practitioner). Documents print without them until they are set.
+   - Set `portal.baseUrl` (the patient portal's public https address). Documents then carry a QR code that anyone can
+     scan to check the report is genuine. Without it they print only the verification code.
+   - E-mail (`integrations.email`): the "report ready" e-mail carries the report's PDF.
+   - WhatsApp: to send the PDF on WhatsApp, register the `lab_report_ready` template in WhatsApp Manager **with a
+     document header**. Then, in Administration › Notification templates, tick "Document header" on that template.
+     Without the tick, the WhatsApp message is text only and the patient finds the report on the portal.
+   - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`.
+7. **Administration › System health**: everything should be green, and the WiFi signal above 60%.
 
 ## 5. Install HC360 Desktop on workstations
 
@@ -178,5 +198,8 @@ distribution tool).
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
+| "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
+| A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
+| WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.

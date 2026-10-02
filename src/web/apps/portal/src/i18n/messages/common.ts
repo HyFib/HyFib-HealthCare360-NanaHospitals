@@ -61,6 +61,16 @@ export const common = defineMessages({
     'common.changedOn': 'Changed on {date}',
     'common.goHome': 'Go to home',
 
+    'document.downloadPdf': 'Download PDF',
+    'document.preparingPdf': 'Preparing your PDF…',
+    'document.print': 'Print',
+    'document.pdfHint':
+      "Download PDF gives you the hospital's official copy. Print gives you a copy of what you see on this page.",
+    'document.pdfSaved': 'The PDF was saved to your downloads.',
+    'document.pdfFailed': 'Could not download the PDF',
+    'document.pdfUnavailable.title': 'We cannot make the PDF right now',
+    'document.pdfUnavailable.body': 'Please try again in a little while. You can print this page now instead.',
+
     'gender.Male': 'Male',
     'gender.Female': 'Female',
     'gender.Other': 'Other',
@@ -188,6 +198,16 @@ export const common = defineMessages({
     'common.copied': 'कॉपी हो गया',
     'common.changedOn': '{date} को बदला गया',
     'common.goHome': 'होम पर जाएँ',
+
+    'document.downloadPdf': 'PDF डाउनलोड करें',
+    'document.preparingPdf': 'आपका PDF तैयार हो रहा है…',
+    'document.print': 'प्रिंट करें',
+    'document.pdfHint':
+      'PDF डाउनलोड करने पर आपको अस्पताल की आधिकारिक प्रति मिलती है, जो अंग्रेज़ी में होती है। प्रिंट करने पर इस पेज की प्रति हिंदी में मिलती है।',
+    'document.pdfSaved': 'PDF आपके डाउनलोड में सहेज दिया गया है।',
+    'document.pdfFailed': 'PDF डाउनलोड नहीं हो सका',
+    'document.pdfUnavailable.title': 'अभी हम PDF नहीं बना पा रहे हैं',
+    'document.pdfUnavailable.body': 'थोड़ी देर बाद फिर से कोशिश करें। अभी के लिए आप यह पेज प्रिंट कर सकते हैं।',
 
     'gender.Male': 'पुरुष',
     'gender.Female': 'महिला',

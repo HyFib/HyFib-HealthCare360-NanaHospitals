@@ -811,6 +811,12 @@ export const billingApi = {
   refreshPaymentLink: (id: string) => api.post<GatewayOrderDto>(`/api/v1/billing/payment-links/${id}/refresh`),
 };
 
+/**
+ * The A4 bill (tax invoice or bill of supply with GST details; an estimate while it is a draft) as the server prints it
+ * and makes its PDF (see `@/lib/documents`).
+ */
+export const billDocument = (billId: string) => `/api/v1/billing/bills/${billId}`;
+
 /** Catalogue search for the "add service" box (active services, at most 50). */
 export function searchServices(search: string, category?: ServiceCategory): Promise<ServiceItemDto[]> {
   return api.get<ServiceItemDto[]>('/api/v1/masters/lookups/services', { query: { search, category } });

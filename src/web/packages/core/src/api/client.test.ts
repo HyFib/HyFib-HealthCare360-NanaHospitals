@@ -84,6 +84,53 @@ describe('api client', () => {
     expect(fileNameFromDisposition(null)).toBeNull();
   });
 
+  it('downloads a file with the name the server gave it', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response('%PDF-1.7', {
+        status: 200,
+        headers: {
+          'content-type': 'application/pdf',
+          'content-disposition': `attachment; filename=bill-NHOB260000001.pdf; filename*=UTF-8''bill-NHOB260000001.pdf`,
+          'x-report-notice': 'The PDF lists the first 2,000 of 2,345 rows.',
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient(baseConfig);
+    const file = await client.download('/api/v1/billing/bills/b1/pdf');
+
+    expect(file.fileName).toBe('bill-NHOB260000001.pdf');
+    expect(await file.blob.text()).toBe('%PDF-1.7');
+    expect(file.headers.get('X-Report-Notice')).toBe('The PDF lists the first 2,000 of 2,345 rows.');
+    expect(new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers).get('Authorization')).toBe(
+      'Bearer token-1',
+    );
+  });
+
+  it('reports why a PDF could not be made, without retrying', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          title: 'The PDF could not be made',
+          status: 503,
+          detail: 'Microsoft Edge is not installed on the server.',
+          code: 'pdf.unavailable',
+        }),
+        { status: 503, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient(baseConfig);
+    const error = await client.download('/api/v1/lab/reports/r1/pdf').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).code).toBe('pdf.unavailable');
+    expect((error as ApiError).userMessage).toBe('Microsoft Edge is not installed on the server.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('refreshes once on 401 and replays the request', async () => {
     const fetchMock = vi
       .fn()

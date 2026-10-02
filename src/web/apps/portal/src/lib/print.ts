@@ -1,11 +1,14 @@
-import { escapeHtml, printDocument } from '@hc360/core';
+import { escapeHtml } from '@hc360/core';
+import { LOCALES, type Language } from '@/i18n';
 
 /**
- * Printing and saving documents (reports, prescriptions, bills, receipts, discharge summaries).
+ * Printing and saving documents (reports, prescriptions, bills, receipts, discharge summaries, the privacy summary).
  *
  * The portal prints in the page itself rather than through a hidden iframe: iPhone Safari prints the whole page
- * instead of an iframe, and the in-page copy works the same on Android, iPhone and computers. The print dialog's
- * "Save as PDF" gives the patient a PDF. "Download a copy" saves the same document as a self-contained HTML file.
+ * instead of an iframe, and the in-page copy works the same on Android, iPhone and computers. The copy is in the
+ * patient's language. Reports, prescriptions, discharge summaries and bills also have the hospital's official PDF,
+ * made by the server (see `pdf.ts`). For the other documents the print dialog's "Save as PDF" gives a PDF, and
+ * "Download a copy" saves the same document as a self-contained HTML file.
  *
  * Every value placed in a template (each module's print.ts) goes through `escapeHtml`; nothing else is inserted.
  */
@@ -23,22 +26,27 @@ export interface PrintableDocument {
 
 const ROOT_ID = 'hc360-print-root';
 
-/** Base styles, applied only when printing (so they can never affect the app on screen). */
-const BASE_STYLES = `
+/**
+ * The base styles of every document. `root` is the element that holds the document: the print root in the page
+ * (so the styles can never affect the app on screen), or `body` in a downloaded copy.
+ */
+function baseStyles(root: string): string {
+  return `
 @page { size: A4; margin: 12mm; }
-#${ROOT_ID} { font-family: "Segoe UI", "Noto Sans", "Noto Sans Devanagari", system-ui, sans-serif; color: #111; font-size: 11pt; line-height: 1.4; }
-#${ROOT_ID} h1 { font-size: 16pt; margin: 0 0 4px; }
-#${ROOT_ID} h2 { font-size: 12.5pt; margin: 14px 0 6px; }
-#${ROOT_ID} h3 { font-size: 11.5pt; margin: 10px 0 4px; }
-#${ROOT_ID} table { width: 100%; border-collapse: collapse; }
-#${ROOT_ID} th, #${ROOT_ID} td { text-align: left; padding: 4px 6px; vertical-align: top; border-bottom: 1px solid #ddd; }
-#${ROOT_ID} th { font-size: 9.5pt; color: #444; }
-#${ROOT_ID} .muted { color: #555; }
-#${ROOT_ID} .right { text-align: right; }
-#${ROOT_ID} .small { font-size: 9pt; }
-#${ROOT_ID} .rule { border-top: 1px solid #999; margin: 8px 0; }
-#${ROOT_ID} .avoid-break { break-inside: avoid; }
+${root} { font-family: "Segoe UI", "Noto Sans", "Noto Sans Devanagari", system-ui, sans-serif; color: #111; font-size: 11pt; line-height: 1.4; }
+${root} h1 { font-size: 16pt; margin: 0 0 4px; }
+${root} h2 { font-size: 12.5pt; margin: 14px 0 6px; }
+${root} h3 { font-size: 11.5pt; margin: 10px 0 4px; }
+${root} table { width: 100%; border-collapse: collapse; }
+${root} th, ${root} td { text-align: left; padding: 4px 6px; vertical-align: top; border-bottom: 1px solid #ddd; }
+${root} th { font-size: 9.5pt; color: #444; }
+${root} .muted { color: #555; }
+${root} .right { text-align: right; }
+${root} .small { font-size: 9pt; }
+${root} .rule { border-top: 1px solid #999; margin: 8px 0; }
+${root} .avoid-break { break-inside: avoid; }
 `;
+}
 
 function ensureRoot(): HTMLElement {
   let root = document.getElementById(ROOT_ID);
@@ -55,7 +63,7 @@ function ensureRoot(): HTMLElement {
 export function printPortalDocument(doc: PrintableDocument): void {
   const root = ensureRoot();
   // eslint-disable-next-line no-unsanitized/property -- the modules' templates escape every value, and the styles are their constants
-  root.innerHTML = `<style>@media print {${BASE_STYLES}${scopeStyles(doc.styles ?? '')}}</style>${doc.body}`;
+  root.innerHTML = `<style>@media print {${baseStyles(`#${ROOT_ID}`)}${scopeStyles(doc.styles ?? '')}}</style>${doc.body}`;
   const previousTitle = document.title;
   document.title = doc.title;
   let cleaned = false;
@@ -74,22 +82,47 @@ export function printPortalDocument(doc: PrintableDocument): void {
   window.print();
 }
 
-/** Saves the document as a self-contained HTML file (opens in any browser, prints the same way). */
-export function downloadPortalDocument(doc: PrintableDocument): void {
-  const html = printDocument(doc.body, {
-    title: doc.title,
-    pageSize: 'A4',
-    styles: `${BASE_STYLES.replaceAll(`#${ROOT_ID} `, '')}${doc.styles ?? ''}`,
-  });
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+/**
+ * The document as a page of its own, marked with the language it was written in (screen readers pick the right
+ * voice, browsers the right font). It opens in any browser, phones included, and prints like the in-page copy.
+ */
+export function standaloneHtml(doc: PrintableDocument, language: Language): string {
+  return `<!doctype html>
+<html lang="${LOCALES[language]}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(doc.title)}</title>
+<style>
+body { margin: 16px; }
+@media print { body { margin: 0; } }
+${baseStyles('body')}${doc.styles ?? ''}
+</style>
+</head>
+<body>${doc.body}</body>
+</html>`;
+}
+
+/** Saves the document as a self-contained HTML file in the patient's language ("Download a copy"). */
+export function downloadPortalDocument(doc: PrintableDocument, language: Language): void {
+  const html = standaloneHtml(doc, language);
+  saveBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), `${safeFileName(doc.fileName)}.html`);
+}
+
+/**
+ * Hands a file to the browser's downloads: Android Chrome saves it at once, iPhone Safari first asks whether to
+ * download it. The file's address stays valid for a minute, so a browser that asks first can still read it.
+ */
+export function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${safeFileName(doc.fileName)}.html`;
+  link.download = fileName;
   link.rel = 'noopener';
   document.body.appendChild(link);
   link.click();
   link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Letters, digits, dash and underscore only (no path tricks, no personal data beyond what the caller chose). */

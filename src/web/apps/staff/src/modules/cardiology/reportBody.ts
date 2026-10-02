@@ -1,19 +1,10 @@
 /**
- * Cardiology report content (pure; unit-tested): the measurement rows of the study type (shared by the on-screen view
- * and the print) and the printed body. Empty measurements are left out rather than printed as blanks.
+ * Cardiology report content (pure; unit-tested): the measurement rows of the study type, as the report screen shows
+ * them. Empty measurements are left out rather than shown as blanks. The printed report and its PDF are made by the
+ * server, which lists the same rows.
  */
-import { escapeHtml, formatDateTime, genderShort } from '@hc360/core';
-import { paragraphs } from '@/modules/lab/common/reportHtml';
-import type {
-  AbpmFindings,
-  CardiologyReportView,
-  CardiologyStudyType,
-  EcgFindings,
-  EchoFindings,
-  HolterFindings,
-  TmtFindings,
-} from './api';
-import { studyTypeLongLabel, tmtResultLabel } from './labels';
+import type { AbpmFindings, CardiologyStudyType, EcgFindings, EchoFindings, HolterFindings, TmtFindings } from './api';
+import { tmtResultLabel } from './labels';
 import { formatDuration } from './measurements';
 
 export interface MeasurementSet {
@@ -125,44 +116,3 @@ export function measurementRows(type: CardiologyStudyType, set: MeasurementSet):
       return [];
   }
 }
-
-export function cardiologyReportBodyHtml(view: CardiologyReportView): string {
-  const rows = measurementRows(view.studyType, view);
-  const table = rows.length
-    ? `<table><tbody>${rows.map(([label, value]) => `<tr><th style="width:35%">${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`).join('')}</tbody></table>`
-    : '';
-  const conclusion = paragraphs(view.conclusion);
-  const recommendations = paragraphs(view.recommendations);
-  return `
-    <h2>${escapeHtml(view.studyName)}</h2>
-    <div class="small">${escapeHtml(studyTypeLongLabel[view.studyType])}</div>
-    ${view.isCriticalFinding ? '<p class="crit">Critical finding: communicated to the treating doctor.</p>' : ''}
-    ${table}
-    ${conclusion ? `<h3>Conclusion</h3><div class="impression">${conclusion}</div>` : ''}
-    ${recommendations ? `<h3>Recommendations</h3>${recommendations}` : ''}`;
-}
-
-export function cardiologyPatientRows(view: CardiologyReportView): [string, string][] {
-  return [
-    ['Patient', view.patient.name],
-    ['Age / sex', `${view.patient.age ?? '—'} / ${genderShort[view.patient.gender]}`],
-    ['UHID', view.patient.uhid],
-    ['Accession no.', view.accessionNumber],
-    ['Referred by', view.referredBy ?? 'Self'],
-    ['Ordered', formatDateTime(view.orderedAt)],
-    ['Recorded', view.acquiredAt ? formatDateTime(view.acquiredAt) : '—'],
-    [
-      'Reported',
-      view.releasedAt
-        ? formatDateTime(view.releasedAt)
-        : view.verifiedAt
-          ? formatDateTime(view.verifiedAt)
-          : 'Not signed',
-    ],
-  ];
-}
-
-export const CARDIOLOGY_PRINT_STYLES = `
-  .impression { font-weight: 600; }
-  .body table th { border-bottom: 1px solid #eee; font-weight: 600; color: #333; }
-`;

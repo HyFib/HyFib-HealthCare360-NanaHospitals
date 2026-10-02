@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Clinical.Features.Diagnoses;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
@@ -13,6 +14,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Clinical;
 
@@ -33,6 +35,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<ClinicalOrderService>();
         services.AddScoped<PrescriptionSafetyService>();
         services.AddScoped<PrescriptionService>();
+        services.AddScoped<PrescriptionPrintBuilder>();
         services.AddScoped<PatientRecordQueries>();
         services.AddScoped<TimelineQueries>();
         services.AddScoped<WorklistQueries>();
@@ -40,6 +43,10 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<CodingService>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<HealthCheckupService>();
+
+        // The PDFs that messages to patients carry (the prescription with the "prescription shared" message).
+        services.AddScoped<INotificationDocumentSource, PrescriptionDocumentSource>();
+        services.AddScoped<INotificationDocumentSource, DischargeSummaryDocumentSource>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

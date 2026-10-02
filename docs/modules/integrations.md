@@ -1,7 +1,8 @@
 # Integrations
 
 Adapters between HC360 and external systems: SMS, WhatsApp, e-mail, payment gateway, card/UPI POS, Tally Prime,
-PACS (DICOMweb), laboratory analysers (HL7 v2 / ASTM), barcode label printers and the WHO ICD-API.
+PACS (DICOMweb), laboratory analysers (HL7 v2 / ASTM), barcode label printers and the WHO ICD-API. It also holds the
+server's PDF renderer, which drives headless Microsoft Edge.
 
 | | |
 |---|---|
@@ -54,6 +55,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 | `IInstrumentResultSink` (implemented by Diagnostics, scoped) | Consumed by the lab analyser gateway here | `LabMessageProcessor` resolves it in a new scope per message: `ReceiveAsync` for results, `GetOrderForSampleAsync` for ASTM host queries | The gateway is off until `integrations.lab.enabled` is set and instruments are listed. Without a registered sink, results are refused (HL7 `AE`, ASTM NAK) and logged. |
 | `IIcdLookup` | Clinical online ICD search (`/api/v1/mrd/icd-codes/online`) | `IcdLookupRouter` → WHO ICD-API | Returns an empty list until configured. ICD-API failures throw `HttpRequestException`, which Clinical reports as `icd.online_failed`. |
 | `ISmsSender`, `IWhatsAppSender`, `IEmailSender` | Platform `notify.sms`, `notify.whatsapp` and `notify.email` outbox handlers; the WhatsApp STOP/START confirmation (`IWhatsAppSender.SendTextAsync`) | `SmsRouter`, `WhatsAppRouter`, `EmailRouter` | `SendResult.Fail("… is not configured. Set it up in Administration → Integrations.")`, the same as the platform's `UnconfiguredChannelSender`. |
+| `IPdfRenderer` | Document endpoints of Diagnostics, Clinical, Billing and Analytics (`…/pdf`, MIS export as PDF), and the notification document sources that attach reports to e-mails and WhatsApp messages | `EdgePdfRenderer` (singleton) → headless Microsoft Edge, else Google Chrome | Without a browser, `Status` says why and `RenderAsync` throws `PdfRenderException` with a message for staff. Document endpoints answer 503 `pdf.unavailable`, and the administrator dashboard shows the `pdf.unavailable` warning. Without this module, the platform's `UnavailablePdfRenderer` does the same. |
 | Biometric attendance | HR (`/iclock/*` ZKTeco/eSSL ADMS push endpoints) | None, by design | HR implements the ADMS protocol itself (`AdmsEndpoints`, `BiometricIngestionService`), so there is no Platform abstraction and nothing for Integrations to register. |
 
 ## Configuration
@@ -112,6 +114,12 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
   (newlines, tabs and long runs of spaces are rejected by Meta) and the language is mapped through `languageCodes`.
 * Documents (reports, bills) are uploaded to `/media` first, then sent by media id. Only PDF, JPEG, PNG, text,
   DOCX and XLSX are accepted, within `maxDocumentMegabytes`, and file names are sanitised.
+* **Template document headers.** A free-form document reaches the person only within 24 hours of their last message,
+  so a report goes out in a template instead. When a template carries a `HeaderDocument` (the notification names a
+  document, and the HC360 template is marked `whatsAppDocumentHeader`), the file is uploaded first and sent as the
+  template's `header` component (`type: "document"`, media id and file name), followed by the `body` parameters. The
+  template must be approved in WhatsApp Manager with a document header, because Meta refuses a header the template
+  does not have. The log records the file's size, never its content.
 * Webhook `GET` answers `hub.challenge` only when `hub.verify_token` matches (constant time) and the challenge is a
   plain token.
 * Webhook `POST` requires `X-Hub-Signature-256`, an HMAC-SHA256 of the **raw** body with the app secret. Statuses
@@ -159,7 +167,34 @@ them. SMS is a separate channel and is not affected.
 
 SMTP over STARTTLS, normally on port 587. Implicit TLS on 465 is rejected with an explanation, because
 `System.Net.Mail` cannot do it. Credentials come only from the secret settings. The asynchronous send is bounded by
-`timeoutSeconds`. Recipients are logged masked (`r***@example.com`).
+`timeoutSeconds`. Recipients are logged masked (`r***@example.com`). Attachments come from scheduled MIS reports, and
+from notifications that name a document, such as the PDF of a released report. Together they must fit
+`maxAttachmentMegabytes`.
+
+### PDF renderer (server documents)
+
+`EdgePdfRenderer` turns the documents the server lays out in HTML (reports, prescriptions, discharge summaries, bills,
+MIS reports) into PDFs, as ADR-009 decided: no licensed PDF library, just the Microsoft Edge that every Windows 10/11
+and Windows Server 2022 machine has.
+
+* **One browser, started on demand.** The first PDF starts headless Edge (about a second). It then stays running and
+  makes each PDF in a pooled tab in about a third of a second. It closes after `HealthCare360:Pdf:IdleMinutes` (10)
+  without work, and is replaced after `RecycleAfter` (500) PDFs, which also applies Edge updates. A tab is reused for at
+  most 50 PDFs. `MaxConcurrent` (2) PDFs are made at once. A PDF that takes longer than `TimeoutSeconds` (30) is
+  abandoned, and that browser is replaced.
+* **Private control channel.** The browser is driven over the DevTools protocol on a pair of anonymous pipes
+  (`--remote-debugging-pipe` with `--remote-debugging-io-pipes`), never a TCP port, so no other program on the server can
+  take control of it.
+* **Locked-down rendering.** Each PDF is printed in a tab of its own browser context, with scripts switched off
+  (`Emulation.setScriptExecutionDisabled`) and every http, https, ws, wss, ftp and file request blocked
+  (`Network.setBlockedURLs`). The document's own content security policy forbids scripts and network access a second
+  time. Images must be `data:` URIs: logos and signatures are embedded by the platform's `DocumentAssets`.
+* **No leftovers.** The browser runs in a Windows job object that ends it and its child processes when the server
+  stops, even after a crash. Its profile lives in `<data root>\temp\pdf\<server process id>-<random>`, is deleted when
+  it closes, and a later start deletes any profile whose server process is gone. Extensions, sync, background
+  networking, crash uploads and pings are switched off. The sandbox stays on.
+* **Finding the browser.** `HealthCare360:Pdf:BrowserPath` if set. Otherwise Edge from Program Files or its App Paths
+  registry entry, then Google Chrome. Without one, `Status` explains what to install.
 
 ### Payment gateway (INT-PG) and the signature convention
 
@@ -361,6 +396,7 @@ Permissions:
   * `IPacsClient` → `PacsClientRouter`
   * `IIcdLookup` → `IcdLookupRouter`
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
+  * `IPdfRenderer` → `EdgePdfRenderer`, a singleton (disposed with the host, which closes the browser)
 * **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, and `ILabMessageProcessor` →
   `LabMessageProcessor`.
 * **Hosted service**: `LabGatewayHostedService`.

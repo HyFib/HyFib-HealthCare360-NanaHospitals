@@ -26,8 +26,9 @@ public sealed record ScheduleDto(
     uint Version);
 
 /// <summary>
-/// Create or change a schedule. <c>Time</c> is the IST time as "HH:mm". Weekly schedules need <c>DayOfWeek</c>; monthly
-/// schedules need <c>DayOfMonth</c> (1–28, or 31 for the last day). Report inputs must use a relative period.
+/// Create or change a schedule. <c>Format</c> is the attachment: Xlsx, Csv or Pdf. <c>Time</c> is the IST time as
+/// "HH:mm". Weekly schedules need <c>DayOfWeek</c>; monthly schedules need <c>DayOfMonth</c> (1–28, or 31 for the last
+/// day). Report inputs must use a relative period.
 /// </summary>
 public sealed record SaveScheduleRequest(
     string Name,
@@ -70,7 +71,7 @@ public sealed class SaveScheduleRequestValidator : AbstractValidator<SaveSchedul
     {
         RuleFor(x => x.Name).NotEmpty().WithMessage("Give the schedule a name.").SafeText(100);
         RuleFor(x => x.ReportId).NotEmpty().WithMessage("Choose a report.").MaximumLength(64);
-        RuleFor(x => x.Format).IsInEnum();
+        RuleFor(x => x.Format).IsInEnum().WithMessage("Choose Excel (xlsx), CSV or PDF.");
         RuleFor(x => x.Frequency).IsInEnum();
         RuleFor(x => x.Time).NotEmpty().Matches("^([01][0-9]|2[0-3]):[0-5][0-9]$").WithMessage("Enter the time as HH:mm (24-hour clock, IST).");
         RuleFor(x => x.DayOfWeek).NotNull().IsInEnum().When(x => x.Frequency == ScheduleFrequency.Weekly).WithMessage("Choose the day of the week.");

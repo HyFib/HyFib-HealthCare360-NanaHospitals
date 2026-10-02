@@ -1,12 +1,17 @@
 using System.Linq.Expressions;
+using HyFib.HealthCare360.Modules.Billing.Documents;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Billing.Features.Bills;
 
-/// <summary>/api/v1/billing/bills — OP/IP bills: draft, services, discounts, finalize, cancel, credit notes (OPB, IPB, MB-05/06).</summary>
+/// <summary>
+/// /api/v1/billing/bills — OP/IP bills: draft, services, discounts, finalize, cancel, credit notes, and the printed A4
+/// bill and its PDF (OPB, IPB, MB-05/06).
+/// </summary>
 internal static class BillEndpoints
 {
     private static readonly string[] Readers =
@@ -27,6 +32,8 @@ internal static class BillEndpoints
 
         group.MapGet("/", List).RequireAnyPermission(Readers);
         group.MapGet("/{id:guid}", Get).RequireAnyPermission(Readers);
+        group.MapGet("/{id:guid}/document", Document).RequireAnyPermission(Readers);
+        group.MapGet("/{id:guid}/pdf", Pdf).RequireAnyPermission(Readers);
         group.MapPost("/", Create).RequirePermission(BillingPermissions.OpCreate).WithValidation<CreateBillRequest>();
         group.MapPost("/{id:guid}/lines", AddLine).RequirePermission(BillingPermissions.OpCreate).WithValidation<AddBillLineRequest>();
         group.MapDelete("/{id:guid}/lines/{lineId:guid}", RemoveLine).RequireAnyPermission(BillingPermissions.OpCreate, BillingPermissions.IpManage);
@@ -111,20 +118,45 @@ internal static class BillEndpoints
 
     private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
+        var (detail, problem) = await OpenAsync(id, number => $"Viewed bill {number}", db, guard, audit, time, ct);
+        return problem ?? TypedResults.Ok(detail);
+    }
+
+    /// <summary>The A4 bill as the staff app prints it: the same document as the PDF the patient downloads.</summary>
+    private static async Task<IResult> Document(
+        Guid id, HospitalDbContext db, DocumentAssets assets, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    {
+        var (detail, problem) = await OpenAsync(id, number => $"Printed bill {number}", db, guard, audit, time, ct);
+        return problem ?? TypedResults.Ok((await BillDocument.BuildAsync(detail!, assets, ct)).ToDto());
+    }
+
+    private static async Task<IResult> Pdf(
+        Guid id, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time,
+        CancellationToken ct)
+    {
+        var (detail, problem) = await OpenAsync(id, number => $"Downloaded bill {number} as a PDF", db, guard, audit, time, ct);
+        return problem ?? await (await BillDocument.BuildAsync(detail!, assets, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    // Viewing, printing and downloading a bill apply the same rules: the restricted record guard, and an entry in the PHI
+    // access audit saying what was done with it.
+    private static async Task<(BillDetail? Detail, IResult? Problem)> OpenAsync(
+        Guid id, Func<string, string> action, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    {
         var detail = await BillQueries.DetailAsync(db, id, time, ct);
         if (detail is null)
         {
-            return Error.NotFound(nameof(Bill), id).ToProblem();
+            return (null, Error.NotFound(nameof(Bill), id).ToProblem());
         }
 
         var access = await guard.EnsureCanOpenAsync(detail.PatientId, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(detail.PatientId, $"Viewed bill {detail.BillNumber ?? "(draft)"}", ct);
-        return TypedResults.Ok(detail);
+        await audit.PatientRecordAccessedAsync(detail.PatientId, action(detail.BillNumber ?? "(draft)"), ct);
+        return (detail, null);
     }
 
     private static async Task<IResult> Create(CreateBillRequest request, BillService bills, HospitalDbContext db, TimeProvider time, CancellationToken ct)

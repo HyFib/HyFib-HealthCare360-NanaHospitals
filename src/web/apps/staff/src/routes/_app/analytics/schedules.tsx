@@ -185,7 +185,7 @@ function SchedulesPage() {
       <PageHeader
         title="Scheduled e-mails"
         icon={<MailClockRegular />}
-        subtitle="Reports e-mailed automatically as Excel or CSV files. Times are in IST."
+        subtitle="Reports e-mailed automatically as Excel, CSV or PDF files. Times are in IST."
         breadcrumbs={[
           { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
           { label: 'Scheduled e-mails' },

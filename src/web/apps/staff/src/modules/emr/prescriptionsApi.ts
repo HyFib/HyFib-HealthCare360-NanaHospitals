@@ -1,7 +1,6 @@
-import type { Gender, PagedResult } from '@hc360/core';
+import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { FacilityLetterhead, PrescriberInfo } from './api';
 import type { DoseFrequency } from './dosing';
 import type { SafetyAlert, SafetyCheckResponse, SignPrescriptionRequest } from './safety';
 
@@ -95,52 +94,6 @@ export interface UpdatePrescriptionRequest {
 export interface SignPrescriptionResult {
   prescription: PrescriptionDto;
   alerts: SafetyAlert[];
-}
-
-export interface PrescriptionPrintLine {
-  sequence: number;
-  drugName: string;
-  genericName: string | null;
-  strength: string | null;
-  dosageForm: string | null;
-  route: string | null;
-  dose: string;
-  frequency: string;
-  frequencyEnglish: string;
-  frequencyHindi: string;
-  durationDays: number;
-  quantity: number;
-  instructions: string | null;
-  isControlledDrug: boolean;
-}
-
-export interface PrescriptionPrintModel {
-  id: string;
-  prescriptionNumber: string;
-  status: PrescriptionStatus;
-  signedAt: string | null;
-  letterhead: FacilityLetterhead | null;
-  prescriber: PrescriberInfo | null;
-  patient: {
-    id: string;
-    uhid: string;
-    name: string;
-    age: string | null;
-    gender: Gender;
-    preferredLanguage: string | null;
-  };
-  diagnoses: string[];
-  knownAllergies: string[];
-  lines: PrescriptionPrintLine[];
-  advice: string | null;
-  followUpDate: string | null;
-  followUpAdvice: string | null;
-  refillsAllowed: number;
-  verificationToken: string | null;
-  /** Server-relative verification API; resolves only on the hospital network. */
-  verificationPath: string | null;
-  /** Absolute portal verification page (`{portal.baseUrl}/portal/verify/…`) for the QR code; null until the public address is configured. */
-  verificationUrl: string | null;
 }
 
 export interface DrugInteractionDto {
@@ -307,8 +260,10 @@ export const prescriptionsApi = {
   repeat: (id: string) => api.post<PrescriptionDto>(`/api/v1/clinical/prescriptions/${id}/repeat`),
   refill: (id: string, request: Omit<SignPrescriptionRequest, 'version'>) =>
     api.post<SignPrescriptionResult>(`/api/v1/clinical/prescriptions/${id}/refill`, request),
-  print: (id: string) => api.get<PrescriptionPrintModel>(`/api/v1/clinical/prescriptions/${id}/print`),
 };
+
+/** The A5 prescription as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const prescriptionDocument = (id: string) => `/api/v1/clinical/prescriptions/${id}`;
 
 export const safetyTablesApi = {
   saveInteraction: (id: string | null, request: SaveDrugInteractionRequest) =>

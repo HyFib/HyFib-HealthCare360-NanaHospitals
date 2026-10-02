@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
@@ -48,6 +49,13 @@ public sealed class NotificationTemplate : AuditableEntity
     public string Body { get; set; } = string.Empty;
     public string? DltTemplateId { get; set; }
     public string? WhatsAppTemplateName { get; set; }
+
+    /// <summary>
+    /// The WhatsApp template was approved with a document header: messages that carry a document (a report's PDF) send
+    /// it there. Set it only to match the template registered with Meta, which rejects a header it does not expect.
+    /// </summary>
+    public bool WhatsAppDocumentHeader { get; set; }
+
     public string? Description { get; set; }
     public bool IsActive { get; set; } = true;
 }
@@ -132,6 +140,27 @@ internal sealed class NotificationLogConfiguration : IEntityTypeConfiguration<No
 
 public sealed record NotificationRecipient(string? Phone, string? Email, Guid? PatientId, string? Name, string Language = "en");
 
+/// <summary>
+/// A document to send with a message, named rather than attached: it is made when the message goes out, so the patient
+/// gets the current version, and the outbox never holds the file.
+/// </summary>
+/// <param name="Kind">Which <see cref="INotificationDocumentSource"/> makes it, for example "diagnostics.lab-report".</param>
+public sealed record NotificationDocument(string Kind, Guid Id);
+
+public sealed record NotificationFile(string FileName, byte[] Content, string ContentType);
+
+/// <summary>
+/// Makes the documents of one kind that messages carry (a report's PDF, say). Modules register one per kind; e-mail
+/// attaches the file and WhatsApp sends it in the template's document header.
+/// </summary>
+public interface INotificationDocumentSource
+{
+    string Kind { get; }
+
+    /// <returns>The file, or null when the document no longer exists (the message then goes without it).</returns>
+    Task<NotificationFile?> CreateAsync(Guid id, CancellationToken cancellationToken);
+}
+
 /// <summary>Outbox payload for one channel delivery.</summary>
 public sealed record NotificationDelivery(
     Guid LogId,
@@ -141,7 +170,8 @@ public sealed record NotificationDelivery(
     string? Name,
     string Language,
     IReadOnlyDictionary<string, string> Values,
-    Guid? FacilityId);
+    Guid? FacilityId,
+    NotificationDocument? Document = null);
 
 public interface INotificationService
 {
@@ -153,6 +183,7 @@ public interface INotificationService
     /// Facility whose templates, name and provider settings apply. Defaults to the signed-in user's facility; background
     /// jobs, which have none, should pass it.
     /// </param>
+    /// <param name="document">A document to send with the message where the channel can carry one (e-mail, and WhatsApp templates with a document header).</param>
     /// <returns>The notification log ids created, one per channel (including channels skipped for missing contact details).</returns>
     IReadOnlyList<Guid> Queue(
         string templateKey,
@@ -160,7 +191,8 @@ public interface INotificationService
         IReadOnlyDictionary<string, string> values,
         IReadOnlyList<NotificationChannel> channels,
         TimeSpan? expiresIn = null,
-        Guid? facilityId = null);
+        Guid? facilityId = null,
+        NotificationDocument? document = null);
 
     /// <summary>Creates in-app notifications and pushes them in real time.</summary>
     Task NotifyUsersAsync(IEnumerable<Guid> userIds, string title, string? body, string? link, string category, string severity = "info", CancellationToken cancellationToken = default);
@@ -187,7 +219,8 @@ internal sealed class NotificationService(
         IReadOnlyDictionary<string, string> values,
         IReadOnlyList<NotificationChannel> channels,
         TimeSpan? expiresIn = null,
-        Guid? facilityId = null)
+        Guid? facilityId = null,
+        NotificationDocument? document = null)
     {
         var now = time.GetUtcNow();
         var facility = facilityId ?? currentUser.FacilityId;
@@ -213,7 +246,8 @@ internal sealed class NotificationService(
             {
                 outbox.Enqueue(
                     channel switch { NotificationChannel.Sms => SmsType, NotificationChannel.WhatsApp => WhatsAppType, _ => EmailType },
-                    new NotificationDelivery(log.Id, templateKey, channel, target, recipient.Name, recipient.Language, values, facility),
+                    new NotificationDelivery(log.Id, templateKey, channel, target, recipient.Name, recipient.Language, values, facility,
+                        channel == NotificationChannel.Sms ? null : document),
                     facility,
                     expiresIn: expiresIn);
             }
@@ -401,8 +435,14 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
 }
 
 /// <summary>Outbox handlers that render templates and call the configured channel provider.</summary>
-internal abstract class NotificationDeliveryHandler(HospitalDbContext db, NotificationTemplateRenderer renderer, TimeProvider time, ILogger logger) : IOutboxHandler
+internal abstract class NotificationDeliveryHandler(
+    HospitalDbContext db, NotificationTemplateRenderer renderer, IEnumerable<INotificationDocumentSource> documents, TimeProvider time, ILogger logger)
+    : IOutboxHandler
 {
+    // A document that can't be made (the PDF browser restarting, say) is tried this many times before a message that
+    // can go without it is sent without it: the patient still hears that the report is ready.
+    private const int DocumentAttempts = 3;
+
     public abstract string Type { get; }
 
     protected HospitalDbContext Db => db;
@@ -425,14 +465,15 @@ internal abstract class NotificationDeliveryHandler(HospitalDbContext db, Notifi
         }
 
         var (template, subject, body) = await renderer.RenderAsync(delivery, cancellationToken);
+        var (file, missing) = await DocumentAsync(delivery, template, message.Attempts, cancellationToken);
 
-        var result = await SendAsync(delivery, template, subject, body, cancellationToken);
+        var result = await SendAsync(delivery, template, subject, body, file, cancellationToken);
         if (log is not null)
         {
             log.Status = result.Success ? NotificationStatus.Sent : NotificationStatus.Failed;
             log.ProviderMessageId = result.ProviderMessageId;
             // Providers quote the recipient back in their errors (Twilio: "The 'To' number +91… is not valid").
-            log.Error = SensitiveText.RedactOrNull(result.Error);
+            log.Error = SensitiveText.RedactOrNull(result.Error) ?? missing;
             log.SentAt = result.Success ? time.GetUtcNow() : null;
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -448,20 +489,66 @@ internal abstract class NotificationDeliveryHandler(HospitalDbContext db, Notifi
     protected virtual Task<string?> SuppressionReasonAsync(NotificationDelivery delivery, CancellationToken cancellationToken) =>
         Task.FromResult<string?>(null);
 
-    protected abstract Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken);
+    /// <summary>Whether this channel sends the message's document with this template.</summary>
+    protected virtual bool CarriesDocument(NotificationTemplate? template) => false;
+
+    /// <summary>Whether the template can't be sent without its document (a WhatsApp document header can't be left empty).</summary>
+    protected virtual bool NeedsDocument(NotificationTemplate? template) => false;
+
+    protected abstract Task<SendResult> SendAsync(
+        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken);
+
+    /// <summary>The document to send, and a note for the log when the message goes without the one it names.</summary>
+    private async Task<(NotificationFile? File, string? Missing)> DocumentAsync(
+        NotificationDelivery delivery, NotificationTemplate? template, int attempts, CancellationToken cancellationToken)
+    {
+        if (delivery.Document is not { } reference || !CarriesDocument(template))
+        {
+            return (null, null);
+        }
+
+        if (documents.FirstOrDefault(d => d.Kind == reference.Kind) is not { } source)
+        {
+            return NeedsDocument(template)
+                ? throw new InvalidOperationException($"Nothing makes '{reference.Kind}' documents.")
+                : (null, $"Sent without the document: nothing makes '{reference.Kind}' documents.");
+        }
+
+        try
+        {
+            if (await source.CreateAsync(reference.Id, cancellationToken) is { } file)
+            {
+                return (file, null);
+            }
+
+            return NeedsDocument(template)
+                ? throw new InvalidOperationException("The document to send no longer exists.")
+                : (null, "Sent without the document: it no longer exists.");
+        }
+        catch (PdfRenderException ex) when (attempts + 1 >= DocumentAttempts && !NeedsDocument(template))
+        {
+            logger.LogWarning(ex, "Notification {TemplateKey} via {Channel} goes without its document", delivery.TemplateKey, delivery.Channel);
+            return (null, $"Sent without the document: {ex.Message}");
+        }
+    }
 }
 
-internal sealed class SmsDeliveryHandler(HospitalDbContext db, NotificationTemplateRenderer renderer, ISmsSender sms, TimeProvider time, ILogger<SmsDeliveryHandler> logger)
-    : NotificationDeliveryHandler(db, renderer, time, logger)
+internal sealed class SmsDeliveryHandler(
+    HospitalDbContext db, NotificationTemplateRenderer renderer, IEnumerable<INotificationDocumentSource> documents, ISmsSender sms, TimeProvider time,
+    ILogger<SmsDeliveryHandler> logger)
+    : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.SmsType;
 
-    protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
+    protected override Task<SendResult> SendAsync(
+        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
         sms.SendAsync(new SmsMessage(delivery.To, body, template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
 }
 
-internal sealed class WhatsAppDeliveryHandler(HospitalDbContext db, NotificationTemplateRenderer renderer, IWhatsAppSender whatsApp, TimeProvider time, ILogger<WhatsAppDeliveryHandler> logger)
-    : NotificationDeliveryHandler(db, renderer, time, logger)
+internal sealed class WhatsAppDeliveryHandler(
+    HospitalDbContext db, NotificationTemplateRenderer renderer, IEnumerable<INotificationDocumentSource> documents, IWhatsAppSender whatsApp,
+    TimeProvider time, ILogger<WhatsAppDeliveryHandler> logger)
+    : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.WhatsAppType;
 
@@ -480,20 +567,35 @@ internal sealed class WhatsAppDeliveryHandler(HospitalDbContext db, Notification
         return WhatsAppOptOutPolicy.Stops(delivery.Channel, delivery.TemplateKey, optedOut) ? WhatsAppOptOutPolicy.SuppressedReason : null;
     }
 
-    protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
+    protected override bool CarriesDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;
+
+    protected override bool NeedsDocument(NotificationTemplate? template) => template?.WhatsAppDocumentHeader == true;
+
+    protected override Task<SendResult> SendAsync(
+        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
         whatsApp.SendTemplateAsync(
             new WhatsAppTemplateMessage(delivery.To, template?.WhatsAppTemplateName ?? delivery.TemplateKey.Replace('.', '_'), delivery.Language,
-                [body], delivery.LogId.ToString("N"), delivery.FacilityId),
+                [body], delivery.LogId.ToString("N"), delivery.FacilityId,
+                document is null ? null : new WhatsAppHeaderDocument(document.FileName, document.Content, document.ContentType)),
             cancellationToken);
 }
 
-internal sealed class EmailDeliveryHandler(HospitalDbContext db, NotificationTemplateRenderer renderer, IEmailSender email, TimeProvider time, ILogger<EmailDeliveryHandler> logger)
-    : NotificationDeliveryHandler(db, renderer, time, logger)
+internal sealed class EmailDeliveryHandler(
+    HospitalDbContext db, NotificationTemplateRenderer renderer, IEnumerable<INotificationDocumentSource> documents, IEmailSender email, TimeProvider time,
+    ILogger<EmailDeliveryHandler> logger)
+    : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.EmailType;
 
-    protected override Task<SendResult> SendAsync(NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, CancellationToken cancellationToken) =>
-        email.SendAsync(new EmailMessage(delivery.To, subject ?? "Message from the hospital", body, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
+    protected override bool CarriesDocument(NotificationTemplate? template) => true;
+
+    protected override Task<SendResult> SendAsync(
+        NotificationDelivery delivery, NotificationTemplate? template, string? subject, string body, NotificationFile? document, CancellationToken cancellationToken) =>
+        email.SendAsync(
+            new EmailMessage(delivery.To, subject ?? "Message from the hospital", body,
+                document is null ? null : [new EmailAttachment(document.FileName, document.Content, document.ContentType)],
+                delivery.LogId.ToString("N"), delivery.FacilityId),
+            cancellationToken);
 }
 
 /// <summary>Fallback channel providers used until an integration is configured: they log and report failure, never silently succeed.</summary>

@@ -29,8 +29,9 @@ internal sealed class SimulatorWhatsAppProvider(SimulatorInbox inbox, Integratio
     public async Task<SendResult> SendTemplateAsync(WhatsAppTemplateMessage message, WhatsAppSettings settings, WhatsAppSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
+        var document = message.HeaderDocument is { } file ? $", document {file.FileName} ({file.ContentType}, {file.Content.Length} bytes)" : "";
         var id = await inbox.RecordAsync(SimulatorChannel.WhatsApp, Phone.Mask(message.To), message.TemplateName,
-            string.Join("\n", message.BodyParameters), $"template {message.TemplateName} ({message.Language})", message.Reference, cancellationToken);
+            string.Join("\n", message.BodyParameters), $"template {message.TemplateName} ({message.Language}){document}", message.Reference, cancellationToken);
         await trace.LogAsync(IntegrationNames.WhatsApp, Key, "template", true, started, message.Reference,
             $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\"}}", id);
         return SendResult.Ok(id);

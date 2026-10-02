@@ -77,6 +77,12 @@ const manifest: ModuleManifest = {
       ],
     },
     {
+      label: 'Notification templates',
+      to: '/admin/notification-templates',
+      permission: 'admin.notifications.manage',
+      keywords: ['sms', 'whatsapp', 'email', 'message', 'dlt', 'meta template', 'document header', 'report pdf'],
+    },
+    {
       label: 'AI assistant',
       to: '/admin/ai',
       permission: 'ai.settings.manage',

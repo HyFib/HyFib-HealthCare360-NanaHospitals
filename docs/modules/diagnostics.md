@@ -5,11 +5,13 @@ SRS **LIS-01..08**, **IMG-01..05**, **CAR-01..04**. Work is created from clinici
 the lab counter, charged through Billing (`IChargePoster`), and every released report raises
 `DiagnosticReportReleased` for the EHR, the patient portal and patient notifications.
 
-Project: `src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics` (references Patients). Schema `diagnostics`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (365 unit tests: range/flag evaluation, delta check,
+Project: `src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics` (references Patients, and Clinical for the health
+check-up report). Schema `diagnostics`.
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (415 unit tests: range/flag evaluation, delta check,
 auto-validation, Westgard rules, sample state machine, tube planning, payment gate, report release/amendment, imaging and
 cardiology workflows, DICOM formatting, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
-QR verification links and report id → study look-ups).
+QR verification links, report id → study look-ups, and the printed documents: content, released-only rules, encoding of
+hostile text, footers and file names).
 
 ## Permissions
 
@@ -96,6 +98,8 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 |---|---|---|---|
 | GET | `/?status&from&to` | `lab.orders.read` | → `PagedResult<LabReportListItem>` |
 | GET | `/{id}` | `lab.orders.read` | → `LabReportView` (letterhead, patient, sections → tests → result lines, signatories, amendment history, auto-validation note, QR `verificationCode` + `verificationPath` + `verificationUrl`) |
+| GET | `/{id}/document` | `lab.orders.read` | → `PrintableDocumentDto` (title, fileName, pageSize `A4`, landscape, html): the A4 report for the staff app to print. Same released-only rule and guard as `/{id}`; audit "Printed lab report …" |
+| GET | `/{id}/pdf` | `lab.orders.read` | → the same report as `application/pdf` (`lab-report-<number>.pdf`); 503 `pdf.unavailable` when the server can't make PDFs. Audit "Downloaded lab report … as a PDF" |
 | POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode) |
 | POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced |
 
@@ -143,6 +147,8 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 |---|---|---|---|
 | GET | `/studies/{id}/report` | studies.read, reports.write or reports.verify | → `RadiologyReportDto` (findings, impression, critical flag, status, addenda) |
 | GET | `/studies/{id}/report/print` | same | → `RadiologyReportView` (letterhead, signatories, QR `verificationCode` + `verificationPath` + `verificationUrl`) |
+| GET | `/studies/{id}/report/document` | same | → `PrintableDocumentDto`: the A4 report for the staff app to print. Released report only for users without reports.write/verify; guard; audit "Printed radiology report …" |
+| GET | `/studies/{id}/report/pdf` | same | → the same report as `application/pdf` (`radiology-report-<accession>.pdf`); 503 `pdf.unavailable`. Audit "Downloaded radiology report … as a PDF" |
 | PUT | `/studies/{id}/report` | `radiology.reports.write` | `SaveRadiologyReportRequest` (templateId, technique, clinicalHistory, comparison, findings, impression, isCriticalFinding, criticalFindingNote, version) → `RadiologyReportDto` |
 | POST | `/studies/{id}/report/submit` | `radiology.reports.write` | → `RadiologyReportDto` |
 | POST | `/studies/{id}/report/verify` | `radiology.reports.verify` | `SignReportRequest` (criticalCall — required for a critical finding, release = true) → `RadiologyReportDto`; 422 `radiology.critical_call_required` |
@@ -167,6 +173,8 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | POST | `/studies/{id}/report/verify` | `cardiology.reports.verify` | `SignCardiologyReportRequest` (criticalCall, release = true) → `CardiologyStudyDetail`; 422 `cardiology.critical_call_required` |
 | POST | `/studies/{id}/report/release` | `cardiology.reports.verify` | → `CardiologyStudyDetail` |
 | GET | `/studies/{id}/report/print` | studies.read, studies.manage or reports.verify | → `CardiologyReportView` (only the measurements of the study type; QR `verificationCode` + `verificationPath` + `verificationUrl`) |
+| GET | `/studies/{id}/report/document` | same | → `PrintableDocumentDto`: the A4 report for the staff app to print. Released report only for users without studies.manage/reports.verify; guard; audit "Printed cardiology report …" |
+| GET | `/studies/{id}/report/pdf` | same | → the same report as `application/pdf` (`cardiology-report-<accession>.pdf`); 503 `pdf.unavailable`. Audit "Downloaded cardiology report … as a PDF" |
 | GET | `/reporting-worklist?studyType` | `cardiology.reports.verify` | → `PagedResult<CardiologyStudyListItem>` |
 | GET | `/reports/{reportId}` | studies.read, studies.manage or reports.verify (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit |
 
@@ -175,6 +183,19 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 |---|---|---|
 | GET | `/?patientId` | `PortalReportItem[]` (lab, radiology and cardiology reports released to the patient or their linked family members) |
 | GET | `/lab/{id}` · `/radiology/{id}` · `/cardiology/{id}` | `LabReportView` (released tests only) · `RadiologyReportView` · `CardiologyReportView` |
+| GET | `/lab/{id}/pdf` · `/radiology/{id}/pdf` · `/cardiology/{id}/pdf` | The released report as `application/pdf`, the same document the hospital prints and sends; 404 until released; 503 `pdf.unavailable`. Audit "Downloaded … report … as a PDF (patient portal)" |
+
+The lab id is the lab report's; the radiology and cardiology ids are the study's (as in `PortalReportItem.id`).
+
+### Health check-up report — `/api/v1/health-checkups/bookings` (mapped by this module)
+Bookings belong to Clinical, which serves the report's data at `GET /bookings/{id}/report`. The document is made here
+because it includes the diagnostics results. Same permissions as Clinical's `/report`, `PatientAccessGuard` and a PHI
+access audit entry; the results are read after the guard.
+
+| Method | Path | Permission | Response |
+|---|---|---|---|
+| GET | `/{id}/report/document` | `healthcheck.manage` or `clinical.emr.read` | `PrintableDocumentDto`: the full check-up report for the staff app to print. Audit "Printed health check-up report …" with the booking number |
+| GET | `/{id}/report/pdf` | same | The same report as `application/pdf` (`health-checkup-report-<booking no.>.pdf`); 503 `pdf.unavailable`. Audit "Downloaded health check-up report … as a PDF" |
 
 ### Public QR verification (anonymous, rate limit policy `public`)
 `GET /api/v1/lab/reports/verify/{code}`, `/api/v1/radiology/reports/verify/{code}`, `/api/v1/cardiology/reports/verify/{code}`
@@ -188,6 +209,34 @@ refused before the database is queried.
 the patient portal's public verification page, which calls the API. `verificationUrl` is null until the report has a
 code (release) or while `portal.baseUrl` is not configured. `portal.baseUrl` is the hospital's public https address
 (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+
+## Documents
+
+The reports a patient receives are laid out on the server, one HTML template each (`Documents/`, ADR-012). The staff
+app prints that HTML (`GET …/document`), and the server turns the same HTML into the PDF that is downloaded
+(`GET …/pdf`) or sent with the "report ready" message. So the printed copy, the download and the copy sent to the
+patient are the same. When the server can't make PDFs, the `/pdf` endpoints answer 503 with code `pdf.unavailable` and
+printing still works.
+
+The lab, radiology and cardiology reports share one A4 frame (`ReportDocumentFrame`): the letterhead with the facility
+logo, the report's title, a red banner on a copy that is not final, the patient block, the report itself, notes, the
+signatories with their qualification, registration number and signature image, the QR code that proves the report is
+genuine (the code alone while `portal.baseUrl` is not set) and the end line. Every page has a footer with the patient,
+UHID and report number, and "Page X of Y". Values are encoded, so text typed into a report can never become markup.
+
+| Document | Made from | File name | What it prints |
+|---|---|---|---|
+| Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy |
+| Radiology report | `RadiologyReportView` | `radiology-report-<accession>` | Study, modality and body part; clinical history, technique, comparison, findings and impression (empty sections left out); the critical finding note; signed addenda. Note: the report is a professional opinion. Banner "Signed, not yet released" or "Draft: not signed by the radiologist" |
+| Cardiology report | `CardiologyReportView` | `cardiology-report-<accession>` | Titled "ECG report", "Echo report", "TMT report", "Holter report" or "ABPM report" ("Cardiology report" for other tests). The measurements of the study type with units (unrecorded ones left out), conclusion and recommendations, the critical finding note. Device recordings are not printed; a note says how many are stored with the report. Banner "Signed, not yet released" or "Draft: not signed by the cardiologist" |
+| Health check-up report | Clinical's `CheckupReport` and the booking's diagnostics results | `health-checkup-report-<booking no.>` | Patient, booking, package (and company), check-up date and completion; the doctor's summary and recommendations; the package's investigations with their status; the stations of the day with their notes. Then every released lab, radiology and cardiology result of the booking (work items with its `PackageBookingId`), printed exactly as in its own report under its report number and release time; then "Results pending" with the investigations not yet released; then the signatories of those results and the reviewing doctor (or a space for one), and the end line. Until the check-up is completed, a banner gives its status, for example "In progress — not final" |
+
+Released-only rules: on the staff copies, users without the department's entry or verification permissions get
+released content only, as on the report endpoints, and a value that is not verified is never printed on a released lab
+copy. Portal downloads and the copies sent with messages are released reports only. The health check-up report prints
+released results only, whoever asks: a test or report that is not released is listed under "Results pending" by name,
+never with a value, and cancelled work is left out. Its results are read in the user's facility, like every
+diagnostics screen.
 
 ## Workflow rules
 
@@ -253,6 +302,17 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 | `lab.critical` | SMS (platform default) | `patient`, `uhid`, `test`, `value` | Critical lab value to the ordering doctor |
 | `diagnostics.critical_finding` | SMS (seeded here) | `patient`, `uhid`, `study`, `finding` | Critical imaging/cardiology finding to the ordering doctor |
 
+**The report's PDF with "report ready".** The message names the released report as a notification document; the PDF is
+made when the message is sent, so the patient gets the report as it is then, and it is never stored. The e-mail carries
+it as an attachment, and the WhatsApp message carries it when its template has a document header. SMS never carries it.
+Only released content is ever made into these PDFs.
+
+| Document kind | Id | Made by |
+|---|---|---|
+| `diagnostics.lab-report` | Lab report | `LabReportDocumentSource` |
+| `diagnostics.radiology-report` | Imaging study | `RadiologyReportDocumentSource` |
+| `diagnostics.cardiology-report` | Cardiology study | `CardiologyReportDocumentSource` |
+
 ## Settings
 
 | Key | Default | Meaning |
@@ -260,6 +320,7 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
+| `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal |
 
 ## Number series
 

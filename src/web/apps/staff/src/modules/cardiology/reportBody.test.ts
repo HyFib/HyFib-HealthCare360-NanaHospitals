@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CardiologyReportView, EcgFindings } from './api';
-import { cardiologyPatientRows, cardiologyReportBodyHtml, measurementRows } from './reportBody';
+import type { EcgFindings } from './api';
+import { measurementRows } from './reportBody';
 
 const ecg: EcgFindings = {
   heartRate: 118,
@@ -59,53 +59,5 @@ describe('cardiology measurements', () => {
       }),
     ).toContainEqual(['Daytime mean BP', '142/88 mmHg']);
     expect(measurementRows('Other', { ecg })).toEqual([]);
-  });
-});
-
-describe('printed cardiology report', () => {
-  const view = {
-    reportId: 'r',
-    cardiologyStudyId: 's',
-    letterhead: {
-      facilityName: 'Nana Hospitals',
-      address: null,
-      phone: null,
-      email: null,
-      nabhNumber: null,
-      letterheadNote: null,
-      logoFileId: null,
-    },
-    patient: { id: 'p', uhid: 'NH26000009', name: 'Sunil Patil', gender: 'Male', age: '61Y', dateOfBirth: null },
-    accessionNumber: 'NHCD260000007',
-    studyName: 'ECG',
-    studyType: 'Ecg',
-    referredBy: null,
-    orderedAt: '2026-09-26T03:00:00Z',
-    acquiredAt: '2026-09-26T03:10:00Z',
-    ecg,
-    echo: null,
-    tmt: null,
-    holter: null,
-    abpm: null,
-    conclusion: 'Acute anterior STEMI pattern.',
-    recommendations: 'Urgent cardiology review.',
-    isCriticalFinding: true,
-    status: 'Released',
-    verifiedAt: null,
-    releasedAt: '2026-09-26T03:20:00Z',
-    signatories: [],
-    files: [],
-    verificationCode: null,
-    verificationPath: null,
-    verificationUrl: null,
-  } satisfies CardiologyReportView;
-
-  it('prints measurements, conclusion and the critical note, escaped', () => {
-    const html = cardiologyReportBodyHtml(view);
-    expect(html).toContain('12-lead ECG');
-    expect(html).toContain('ST elevation in V1–V4 &lt;2 mm&gt;');
-    expect(html).toContain('Critical finding');
-    expect(html).toContain('<h3>Conclusion</h3>');
-    expect(Object.fromEntries(cardiologyPatientRows(view))['Referred by']).toBe('Self');
   });
 });

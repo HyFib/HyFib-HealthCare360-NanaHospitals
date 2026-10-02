@@ -1,17 +1,22 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Portal;
 
 /// <summary>
 /// /api/v1/portal/reports: released lab, radiology and cardiology reports for the patient and family members who
-/// share the verified mobile number (PP-02, LIS-07). Only released content is returned, access is enforced by
-/// <see cref="PortalPatientScope"/>, and every read is written to the PHI access audit.
+/// share the verified mobile number (PP-02, LIS-07), each also as a PDF download. Only released content is returned,
+/// access is enforced by <see cref="PortalPatientScope"/>, and every read is written to the PHI access audit.
 /// </summary>
 internal static class PortalReportEndpoints
 {
@@ -22,8 +27,11 @@ internal static class PortalReportEndpoints
         var portal = app.MapGroup("/api/v1/portal/reports").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
         portal.MapGet("/", List);
         portal.MapGet("/lab/{id:guid}", Lab);
+        portal.MapGet("/lab/{id:guid}/pdf", LabPdf);
         portal.MapGet("/radiology/{id:guid}", Radiology);
+        portal.MapGet("/radiology/{id:guid}/pdf", RadiologyPdf);
         portal.MapGet("/cardiology/{id:guid}", Cardiology);
+        portal.MapGet("/cardiology/{id:guid}/pdf", CardiologyPdf);
     }
 
     /// <summary>Report list. The item id is the lab report id, or the imaging/cardiology study id.</summary>
@@ -98,55 +106,104 @@ internal static class PortalReportEndpoints
 
     private static async Task<IResult> Lab(Guid id, LabReportBuilder builder, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
     {
+        var (view, problem) = await OpenLabAsync(id, n => $"Viewed lab report {n} (patient portal)", builder, scope, audit, ct);
+        return problem ?? TypedResults.Ok(view);
+    }
+
+    /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
+    private static async Task<IResult> LabPdf(
+        Guid id, LabReportBuilder builder, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
+    {
+        var (view, problem) = await OpenLabAsync(id, n => $"Downloaded lab report {n} as a PDF (patient portal)", builder, scope, audit, ct);
+        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly: true, frame, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    private static async Task<(LabReportView? View, IResult? Problem)> OpenLabAsync(
+        Guid id, Func<string, string> action, LabReportBuilder builder, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
+    {
         var view = await builder.BuildAsync(id, releasedOnly: true, ct);
         if (view is null || view.Sections.Count == 0)
         {
-            return Error.NotFound("Report", id).ToProblem();
+            return (null, Error.NotFound("Report", id).ToProblem());
         }
 
         var access = await scope.EnsureAccessAsync(view.Patient.Id, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(view.Patient.Id, $"Viewed lab report {view.ReportNumber} (patient portal)", ct);
-        return TypedResults.Ok(view);
+        await audit.PatientRecordAccessedAsync(view.Patient.Id, action(view.ReportNumber), ct);
+        return (view, null);
     }
 
+    /// <param name="id">The imaging study.</param>
     private static async Task<IResult> Radiology(Guid id, RadiologyReportService reports, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
+    {
+        var (view, problem) = await OpenRadiologyAsync(id, n => $"Viewed radiology report {n} (patient portal)", reports, scope, audit, ct);
+        return problem ?? TypedResults.Ok(view);
+    }
+
+    /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
+    private static async Task<IResult> RadiologyPdf(
+        Guid id, RadiologyReportService reports, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var (view, problem) = await OpenRadiologyAsync(id, n => $"Downloaded radiology report {n} as a PDF (patient portal)", reports, scope, audit, ct);
+        return problem ?? await (await RadiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    private static async Task<(RadiologyReportView? View, IResult? Problem)> OpenRadiologyAsync(
+        Guid id, Func<string, string> action, RadiologyReportService reports, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
     {
         var view = await reports.ViewAsync(id, releasedOnly: true, ct);
         if (view is null)
         {
-            return Error.NotFound("Report", id).ToProblem();
+            return (null, Error.NotFound("Report", id).ToProblem());
         }
 
         var access = await scope.EnsureAccessAsync(view.Patient.Id, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(view.Patient.Id, $"Viewed radiology report {view.AccessionNumber} (patient portal)", ct);
-        return TypedResults.Ok(view);
+        await audit.PatientRecordAccessedAsync(view.Patient.Id, action(view.AccessionNumber), ct);
+        return (view, null);
     }
 
+    /// <param name="id">The cardiology study.</param>
     private static async Task<IResult> Cardiology(Guid id, CardiologyService cardiology, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
+    {
+        var (view, problem) = await OpenCardiologyAsync(id, n => $"Viewed cardiology report {n} (patient portal)", cardiology, scope, audit, ct);
+        return problem ?? TypedResults.Ok(view);
+    }
+
+    /// <summary>The released report as a PDF: the same document the hospital prints and sends.</summary>
+    private static async Task<IResult> CardiologyPdf(
+        Guid id, CardiologyService cardiology, ReportDocumentFrame frame, IPdfRenderer renderer, PortalPatientScope scope, IAuditLogger audit,
+        CancellationToken ct)
+    {
+        var (view, problem) = await OpenCardiologyAsync(id, n => $"Downloaded cardiology report {n} as a PDF (patient portal)", cardiology, scope, audit, ct);
+        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    private static async Task<(CardiologyReportView? View, IResult? Problem)> OpenCardiologyAsync(
+        Guid id, Func<string, string> action, CardiologyService cardiology, PortalPatientScope scope, IAuditLogger audit, CancellationToken ct)
     {
         var view = await cardiology.ViewAsync(id, releasedOnly: true, ct);
         if (view is null)
         {
-            return Error.NotFound("Report", id).ToProblem();
+            return (null, Error.NotFound("Report", id).ToProblem());
         }
 
         var access = await scope.EnsureAccessAsync(view.Patient.Id, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(view.Patient.Id, $"Viewed cardiology report {view.AccessionNumber} (patient portal)", ct);
-        return TypedResults.Ok(view);
+        await audit.PatientRecordAccessedAsync(view.Patient.Id, action(view.AccessionNumber), ct);
+        return (view, null);
     }
 }

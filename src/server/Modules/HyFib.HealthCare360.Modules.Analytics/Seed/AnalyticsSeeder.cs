@@ -34,7 +34,7 @@ internal sealed class AnalyticsSeeder : ISeeder
                        + "<p>Scheduled e-mail: {{schedule}}<br>Generated: {{generatedAt}}<br>Rows: {{rows}}</p>"
                        + "<p>This report is confidential and meant only for the people it was sent to. Please do not forward it outside the hospital.</p>"
                        + "<p>— HyFib HealthCare360 (automatic e-mail; replies are not read)</p>",
-                Description = "Scheduled MIS report e-mail (the Excel/CSV file is attached)",
+                Description = "Scheduled MIS report e-mail (the Excel, CSV or PDF file is attached)",
             });
         }
 

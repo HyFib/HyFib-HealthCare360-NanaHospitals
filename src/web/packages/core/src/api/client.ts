@@ -24,6 +24,13 @@ export interface ApiClientConfig {
   onReachability?: (reachable: boolean) => void;
 }
 
+/** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
+export interface DownloadedFile {
+  blob: Blob;
+  fileName: string | null;
+  headers: Headers;
+}
+
 export interface ApiClient {
   get<T>(path: string, options?: RequestOptions): Promise<T>;
   post<T>(path: string, body?: unknown, options?: RequestOptions): Promise<T>;
@@ -32,7 +39,7 @@ export interface ApiClient {
   delete<T>(path: string, options?: RequestOptions): Promise<T>;
   blob(path: string, options?: RequestOptions): Promise<Blob>;
   /** A file together with the name the server gave it (Content-Disposition), for "save as" downloads. */
-  download(path: string, options?: RequestOptions): Promise<{ blob: Blob; fileName: string | null }>;
+  download(path: string, options?: RequestOptions): Promise<DownloadedFile>;
 }
 
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
@@ -147,6 +154,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       return {
         blob: await response.blob(),
         fileName: fileNameFromDisposition(response.headers.get('content-disposition')),
+        headers: response.headers,
       };
     },
   };

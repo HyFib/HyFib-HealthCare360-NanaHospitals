@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
@@ -264,7 +265,8 @@ internal sealed class RadiologyReportService(
             return released;
         }
 
-        await delivery.QueueReportReadyAsync(study.PatientId, study.AccessionNumber, ct);
+        await delivery.QueueReportReadyAsync(
+            study.PatientId, study.AccessionNumber, new NotificationDocument(RadiologyReportDocumentSource.DocumentKind, study.Id), study.FacilityId, ct);
         return Result.Success();
     }
 

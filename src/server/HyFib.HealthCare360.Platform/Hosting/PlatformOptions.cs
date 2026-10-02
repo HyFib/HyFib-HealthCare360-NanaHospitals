@@ -42,6 +42,8 @@ public sealed class PlatformOptions
 
     public BackupOptions Backup { get; set; } = new();
 
+    public PdfOptions Pdf { get; set; } = new();
+
     public bool RunsJobs => !string.Equals(Role, "api", StringComparison.OrdinalIgnoreCase);
 
     public bool ServesApi => !string.Equals(Role, "worker", StringComparison.OrdinalIgnoreCase);
@@ -127,6 +129,31 @@ public sealed class BackupOptions
 
     /// <summary>pg_restore, used to verify each backup. By default the one next to pg_dump.</summary>
     public string? PgRestorePath { get; set; }
+}
+
+/// <summary>
+/// Server-side PDFs (ADR-009): documents are laid out in HTML and printed to PDF by headless Microsoft Edge, which
+/// every Windows 10/11 and Windows Server 2022 machine has. The browser starts with the first PDF and closes when idle.
+/// </summary>
+public sealed class PdfOptions
+{
+    /// <summary>
+    /// msedge.exe or chrome.exe. By default Microsoft Edge from its standard install, then Google Chrome. Set this only
+    /// when the browser is installed somewhere else.
+    /// </summary>
+    public string? BrowserPath { get; set; }
+
+    /// <summary>PDFs made at the same time, each in a browser tab of its own (1–8).</summary>
+    public int MaxConcurrent { get; set; } = 2;
+
+    /// <summary>A PDF that takes longer is abandoned, and the browser restarted if it no longer answers.</summary>
+    public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>Close the browser after this many minutes without a PDF. The next one starts it again (about a second).</summary>
+    public int IdleMinutes { get; set; } = 10;
+
+    /// <summary>Start a fresh browser after this many PDFs, which keeps memory in check and applies Edge updates.</summary>
+    public int RecycleAfter { get; set; } = 500;
 }
 
 /// <summary>Resolved on-disk locations under the data root.</summary>

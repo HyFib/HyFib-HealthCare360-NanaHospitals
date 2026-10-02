@@ -23,18 +23,18 @@ import {
   DocumentArrowLeftRegular,
   OpenRegular,
   PersonAvailableRegular,
-  PrintRegular,
   SaveRegular,
   SkipForwardTabRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatDateOnly, formatDateTime, formatRelative, isApiError, todayIso, useSession } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatRelative, isApiError, todayIso } from '@hc360/core';
 import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
@@ -43,6 +43,7 @@ import {
   checkupApi,
   checkupKeys,
   checkupQueries,
+  checkupReportDocument,
   type BookingDto,
   type ItineraryItemDto,
 } from '@/modules/health-checkups/api';
@@ -59,7 +60,6 @@ import {
   progress,
   type Wording,
 } from '@/modules/health-checkups/itinerary';
-import { printCheckupReport } from '@/modules/health-checkups/print';
 import { patientQueries } from '@/modules/patients/api';
 
 export const Route = createFileRoute('/_app/health-checkups/bookings/$bookingId')({
@@ -237,13 +237,15 @@ function SummaryEditor({ booking, onSaved }: { booking: BookingDto; onSaved: (b:
 
 type Pending = { kind: 'skip'; stop: ItineraryItemDto } | { kind: 'note'; stop: ItineraryItemDto } | null;
 
-/** One booking: check-in, the station checklist, the doctor's summary, completion and the consolidated report. */
+/**
+ * One booking: check-in, the station checklist, the doctor's summary, completion and the full report (summary with all
+ * released results) to print or download as a PDF.
+ */
 function BookingView({ booking: b }: { booking: BookingDto }) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const canManage = usePermission('healthcheck.manage');
   const canStations = usePermission(['healthcheck.manage', 'clinical.emr.write', 'clinical.vitals.record']);
   const canSummarise = usePermission('clinical.emr.write');
@@ -317,18 +319,13 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
       setConfirmComplete(false);
       setProblem(null);
       publish(updated);
-      notify.success('Check-up completed', 'Print the report for the patient.');
+      notify.success('Check-up completed', 'Print the full report or download its PDF for the patient.');
     },
     onError: (error) => {
       setConfirmComplete(false);
       explain(error, 'complete');
     },
   });
-  const print = useMutation({
-    mutationFn: async () => printCheckupReport(await checkupApi.report(b.id), facilityName),
-    onError: (error) => notify.error(error, 'Printing failed'),
-  });
-
   const p = progress(b.itinerary);
   const next = nextStop(b.itinerary);
   const blockers = completionBlockers(b);
@@ -371,13 +368,11 @@ function BookingView({ booking: b }: { booking: BookingDto }) {
                 </Button>
               </Tooltip>
             )}
-            <Button
-              icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
-              disabled={print.isPending}
-              onClick={() => print.mutate()}
-            >
-              {b.status === 'Completed' ? 'Print report' : 'Print draft report'}
-            </Button>
+            <DocumentButtons
+              path={checkupReportDocument(b.id)}
+              printLabel={b.status === 'Completed' ? 'Print full report' : 'Print draft report'}
+              printHint="The doctor's summary and recommendations with all released results"
+            />
             {canReadEmr && (
               <Button
                 icon={<OpenRegular />}

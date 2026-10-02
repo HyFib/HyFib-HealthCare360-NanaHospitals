@@ -18,6 +18,7 @@ import { Route as AppAdminAiRouteImport } from './routes/_app/admin/ai'
 import { Route as AppAdminAuditRouteImport } from './routes/_app/admin/audit'
 import { Route as AppAdminBackupsRouteImport } from './routes/_app/admin/backups'
 import { Route as AppAdminDevicesRouteImport } from './routes/_app/admin/devices'
+import { Route as AppAdminNotificationTemplatesRouteImport } from './routes/_app/admin/notification-templates'
 import { Route as AppAdminRolesRouteImport } from './routes/_app/admin/roles'
 import { Route as AppAdminSettingsRouteImport } from './routes/_app/admin/settings'
 import { Route as AppAdminSystemRouteImport } from './routes/_app/admin/system'
@@ -337,6 +338,12 @@ const AppAdminDevicesRoute = AppAdminDevicesRouteImport.update({
   path: '/admin/devices',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAdminNotificationTemplatesRoute =
+  AppAdminNotificationTemplatesRouteImport.update({
+    id: '/admin/notification-templates',
+    path: '/admin/notification-templates',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppAdminRolesRoute = AppAdminRolesRouteImport.update({
   id: '/admin/roles',
   path: '/admin/roles',
@@ -1780,6 +1787,7 @@ export interface FileRoutesByFullPath {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
+  '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
@@ -2064,6 +2072,7 @@ export interface FileRoutesByTo {
   '/admin/audit': typeof AppAdminAuditRoute
   '/admin/backups': typeof AppAdminBackupsRoute
   '/admin/devices': typeof AppAdminDevicesRoute
+  '/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/admin/roles': typeof AppAdminRolesRoute
   '/admin/settings': typeof AppAdminSettingsRoute
   '/admin/system': typeof AppAdminSystemRoute
@@ -2350,6 +2359,7 @@ export interface FileRoutesById {
   '/_app/admin/audit': typeof AppAdminAuditRoute
   '/_app/admin/backups': typeof AppAdminBackupsRoute
   '/_app/admin/devices': typeof AppAdminDevicesRoute
+  '/_app/admin/notification-templates': typeof AppAdminNotificationTemplatesRoute
   '/_app/admin/roles': typeof AppAdminRolesRoute
   '/_app/admin/settings': typeof AppAdminSettingsRoute
   '/_app/admin/system': typeof AppAdminSystemRoute
@@ -2636,6 +2646,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
+    | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
     | '/admin/system'
@@ -2920,6 +2931,7 @@ export interface FileRouteTypes {
     | '/admin/audit'
     | '/admin/backups'
     | '/admin/devices'
+    | '/admin/notification-templates'
     | '/admin/roles'
     | '/admin/settings'
     | '/admin/system'
@@ -3205,6 +3217,7 @@ export interface FileRouteTypes {
     | '/_app/admin/audit'
     | '/_app/admin/backups'
     | '/_app/admin/devices'
+    | '/_app/admin/notification-templates'
     | '/_app/admin/roles'
     | '/_app/admin/settings'
     | '/_app/admin/system'
@@ -3550,6 +3563,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/devices'
       fullPath: '/admin/devices'
       preLoaderRoute: typeof AppAdminDevicesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/admin/notification-templates': {
+      id: '/_app/admin/notification-templates'
+      path: '/admin/notification-templates'
+      fullPath: '/admin/notification-templates'
+      preLoaderRoute: typeof AppAdminNotificationTemplatesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/admin/roles': {
@@ -5480,6 +5500,7 @@ interface AppRouteChildren {
   AppAdminAuditRoute: typeof AppAdminAuditRoute
   AppAdminBackupsRoute: typeof AppAdminBackupsRoute
   AppAdminDevicesRoute: typeof AppAdminDevicesRoute
+  AppAdminNotificationTemplatesRoute: typeof AppAdminNotificationTemplatesRoute
   AppAdminRolesRoute: typeof AppAdminRolesRoute
   AppAdminSettingsRoute: typeof AppAdminSettingsRoute
   AppAdminSystemRoute: typeof AppAdminSystemRoute
@@ -5763,6 +5784,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminAuditRoute: AppAdminAuditRoute,
   AppAdminBackupsRoute: AppAdminBackupsRoute,
   AppAdminDevicesRoute: AppAdminDevicesRoute,
+  AppAdminNotificationTemplatesRoute: AppAdminNotificationTemplatesRoute,
   AppAdminRolesRoute: AppAdminRolesRoute,
   AppAdminSettingsRoute: AppAdminSettingsRoute,
   AppAdminSystemRoute: AppAdminSystemRoute,

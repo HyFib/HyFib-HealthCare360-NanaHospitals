@@ -1,12 +1,14 @@
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
-using HyFib.HealthCare360.Modules.Patients.Domain;
-using HyFib.HealthCare360.Modules.Patients.Services;
-using HyFib.HealthCare360.Platform.Settings;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 
-/// <summary>/api/v1/clinical/prescriptions — e-prescribing with safety checks, signing, refills and printing (ERX-01..06).</summary>
+/// <summary>
+/// /api/v1/clinical/prescriptions — e-prescribing with safety checks, signing, refills and printing (ERX-01..06): the
+/// print model, and the A5 document to print and its PDF.
+/// </summary>
 internal static class PrescriptionEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
@@ -23,6 +25,8 @@ internal static class PrescriptionEndpoints
         group.MapPost("/{id:guid}/repeat", Repeat).RequirePermission(ClinicalPermissions.PrescriptionsWrite);
         group.MapPost("/{id:guid}/refill", Refill).RequirePermission(ClinicalPermissions.PrescriptionsRefill).WithValidation<RefillPrescriptionRequest>();
         group.MapGet("/{id:guid}/print", Print).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/{id:guid}/document", Document).RequirePermission(ClinicalPermissions.EmrRead);
+        group.MapGet("/{id:guid}/pdf", Pdf).RequirePermission(ClinicalPermissions.EmrRead);
     }
 
     private static async Task<IResult> Create(CreatePrescriptionRequest request, PrescriptionService prescriptions, CancellationToken ct) =>
@@ -101,52 +105,52 @@ internal static class PrescriptionEndpoints
     /// Print/share model (ERX-04). Only signed prescriptions are printed; each print is recorded in the audit trail. The
     /// QR code points at the portal's public verification page when the hospital's public address is configured.
     /// </summary>
-    private static async Task<IResult> Print(Guid id, PrescriptionService prescriptions, ClinicalAccess access, HospitalDbContext db,
-        ISettingsService settings, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Print(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
+        CancellationToken ct)
+    {
+        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, ct);
+        return problem ?? TypedResults.Ok(model);
+    }
+
+    /// <summary>The A5 prescription as the staff app prints it: the same document as the PDF and the patient's copy.</summary>
+    private static async Task<IResult> Document(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
+        DocumentAssets assets, CancellationToken ct)
+    {
+        var (model, problem) = await OpenAsync(id, n => $"Printed prescription {n}", prescriptions, builder, access, ct);
+        return problem ?? TypedResults.Ok((await PrescriptionDocument.BuildAsync(model!, assets, ct)).ToDto());
+    }
+
+    private static async Task<IResult> Pdf(Guid id, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
+        DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+    {
+        var (model, problem) = await OpenAsync(id, n => $"Downloaded prescription {n} as a PDF", prescriptions, builder, access, ct);
+        return problem ?? await (await PrescriptionDocument.BuildAsync(model!, assets, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    // Every way of printing a prescription applies the same rules: the restricted-record guard (in LoadAsync), signed
+    // prescriptions only, and an entry in the PHI access audit saying what was done with it.
+    private static async Task<(PrescriptionPrintModel? Model, IResult? Problem)> OpenAsync(
+        Guid id, Func<string, string> action, PrescriptionService prescriptions, PrescriptionPrintBuilder builder, ClinicalAccess access,
+        CancellationToken ct)
     {
         var loaded = await prescriptions.LoadAsync(id, ct);
         if (loaded.IsFailure)
         {
-            return loaded.Error!.ToProblem();
+            return (null, loaded.Error!.ToProblem());
         }
 
         var p = loaded.Value;
         if (p.Status != PrescriptionStatus.Signed)
         {
-            return Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem();
+            return (null, Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem());
         }
 
-        await access.OpenAsync(p.PatientId, $"Printed prescription {p.PrescriptionNumber}", ct);
-        var today = time.Today();
-        var patient = await db.Set<Patient>().AsNoTracking().Where(x => x.Id == p.PatientId)
-            .Select(x => new { x.Id, x.Uhid, x.FullName, x.DateOfBirth, x.Gender, x.PreferredLanguage }).FirstAsync(ct);
-        var diagnoses = p.EncounterId is { } encounterId
-            ? await db.Set<Diagnosis>().AsNoTracking().Where(d => d.EncounterId == encounterId && d.Type != DiagnosisType.Differential)
-                .OrderByDescending(d => d.IsPrimary).Select(d => d.IcdCode == null ? d.Title : d.Title + " (" + d.IcdCode + ")").ToListAsync(ct)
-            : [];
-        var allergies = await db.Set<Allergy>().AsNoTracking().Where(a => a.PatientId == p.PatientId && a.Status == AllergyStatus.Active)
-            .Select(a => a.Allergen).ToListAsync(ct);
-        var encounter = p.EncounterId is { } eid
-            ? await db.Set<Encounter>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Where(e => e.Id == eid)
-                .Select(e => new { e.FollowUpDate, e.FollowUpAdvice }).FirstOrDefaultAsync(ct)
-            : null;
-
-        var lines = p.Items.OrderBy(i => i.Sequence).Select(i =>
+        var opened = await access.OpenAsync(p.PatientId, action(p.PrescriptionNumber), ct);
+        if (opened.IsFailure)
         {
-            var (english, hindi) = FrequencyLabels.For(i.Frequency, i.CustomFrequency);
-            return new PrescriptionPrintLine(i.Sequence, i.DrugName, i.GenericName, i.Strength, i.DosageForm, i.Route, i.Dose, i.FrequencyText, english, hindi,
-                i.DurationDays, i.Quantity, i.Instructions, i.IsControlledDrug);
-        }).ToList();
-        var publicAddress = p.VerificationToken is null ? null : await PortalAddress.BaseUrlAsync(settings, p.FacilityId, ct);
+            return (null, opened.Error!.ToProblem());
+        }
 
-        return TypedResults.Ok(new PrescriptionPrintModel(
-            p.Id, p.PrescriptionNumber, p.Status, p.SignedAt,
-            await PrintQueries.LetterheadAsync(db, p.FacilityId, ct),
-            await PrintQueries.PrescriberAsync(db, p.PractitionerId, ct),
-            new PrescriptionPrintPatient(patient.Id, patient.Uhid, patient.FullName, patient.DateOfBirth is { } dob ? Age.Format(dob, today) : null,
-                patient.Gender, patient.PreferredLanguage),
-            diagnoses, allergies, lines, p.Advice, encounter?.FollowUpDate, encounter?.FollowUpAdvice, p.RefillsAllowed, p.VerificationToken,
-            PrescriptionVerificationLinks.Path(p.VerificationToken),
-            PrescriptionVerificationLinks.Url(publicAddress, p.VerificationToken)));
+        return (await builder.BuildAsync(p, ct), null);
     }
 }

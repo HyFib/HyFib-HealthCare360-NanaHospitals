@@ -22,6 +22,6 @@ public static class AnalyticsPermissions
         new(FinanceRead, "Analytics", "View revenue, collections, dues, discounts, refunds and doctor-fee reports", [SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(ClinicalRead, "Analytics", "View clinical quality reports, including reports that list individual patients (audited)", [SystemRoles.HospitalAdmin, SystemRoles.QualityManager, SystemRoles.MrdOfficer]),
         new(DashboardsManage, "Analytics", "Build, share and edit BI dashboards", [SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
-        new(SchedulesManage, "Analytics", "Schedule reports to be e-mailed as Excel or CSV files", [SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
+        new(SchedulesManage, "Analytics", "Schedule reports to be e-mailed as Excel, CSV or PDF files", [SystemRoles.HospitalAdmin, SystemRoles.MisAnalyst]),
     ];
 }

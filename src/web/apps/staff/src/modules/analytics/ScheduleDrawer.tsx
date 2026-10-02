@@ -60,7 +60,7 @@ const scheduleSchema = z
   .object({
     name: z.string().trim().min(1, 'Give the schedule a name.').max(100, 'Use at most 100 characters.'),
     reportId: z.string().min(1, 'Choose a report.'),
-    format: z.enum(['Xlsx', 'Csv']),
+    format: z.enum(['Xlsx', 'Csv', 'Pdf']),
     frequency: z.enum(['Daily', 'Weekly', 'Monthly']),
     time: z.string().regex(TIME, 'Enter the time as HH:mm (24-hour clock, IST).'),
     dayOfWeek: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).nullable(),
@@ -389,6 +389,7 @@ export function ScheduleDrawer({
             options={[
               { value: 'Xlsx', label: 'Excel workbook' },
               { value: 'Csv', label: 'CSV file' },
+              { value: 'Pdf', label: 'PDF (print-ready)' },
             ]}
           />
 

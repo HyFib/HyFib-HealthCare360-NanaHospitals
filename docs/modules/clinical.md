@@ -13,7 +13,7 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-04/06/07 documents, consent, break-the-glass | Patients module; every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
 | EMR-01 worklist | `GET /emr/worklist` (queue, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) |
 | EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites |
-| ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, print/QR verification, refills/repeat, Schedule H1/X confirmation + register |
+| ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register |
 | MRD-01..06 | ICD-10 / ICD-10-PCS catalogues + ranked search + WHO ICD-API lookup, coding at discharge, chart deficiencies, record requests, retention/archival, morbidity index |
 | MHC-01..05 | Packages (billable service items), bookings, itinerary, doctor summary, consolidated report, corporate batches |
 
@@ -103,6 +103,8 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | POST | `/clinical/prescriptions/{id}/repeat` | prescriptions.write | → 201 new Draft |
 | POST | `/clinical/prescriptions/{id}/refill` | prescriptions.refill | `RefillPrescriptionRequest{overrideReason?, acknowledgeWarnings, confirmControlledDrugs}` → 201 `SignPrescriptionResult` (new signed prescription, `refillOfPrescriptionId`) |
 | GET | `/clinical/prescriptions/{id}/print` | emr.read | → `PrescriptionPrintModel` (letterhead, prescriber qualification + council registration, patient, diagnoses, known allergies, lines with English/Hindi directions, advice, follow-up, `verificationToken`, `verificationPath`, `verificationUrl`) — print `verificationUrl` as the QR code (see *QR verification links*) |
+| GET | `/clinical/prescriptions/{id}/document` | emr.read | → `PrintableDocumentDto{title, fileName, pageSize: "A5", landscape, html}`: the printed prescription for the staff app to print (see *Prescription and discharge summary documents*). Same rules as `/print`: signed only (422 `prescription.not_printable`), restricted-record guard, audit "Printed prescription {number}" |
+| GET | `/clinical/prescriptions/{id}/pdf` | emr.read | → `application/pdf` attachment `prescription-{number}.pdf`, the same document. Same rules; audit "Downloaded prescription {number} as a PDF"; 503 `pdf.unavailable` when the server cannot make PDFs |
 | GET / POST / PUT | `/clinical/drug-interactions[/{id}]` | emr.read / templates.manage | `SaveDrugInteractionRequest{drugA, drugB, severity, effect, management, isActive, version?}` |
 | GET / POST / PUT | `/clinical/dose-limits[/{id}]` | emr.read / templates.manage | `SaveDoseLimitRequest{genericName, maxDailyDoseMg, route, notes, isActive, version?}` |
 | GET | `/clinical/controlled-drug-register?from&to&page` | prescriptions.sign or mrd.records | → `PagedResult<ControlledDrugRegisterDto>` |
@@ -111,6 +113,8 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/clinical/discharge-summaries/by-admission/{admissionId}/prefill?patientId` | discharge_summary.write | → `DischargeSummaryPrefill` (from diagnoses, orders, prescriptions) |
 | POST | `/clinical/discharge-summaries/{id}/sign` / `/amend` | discharge_summary.write | `SignDischargeSummaryRequest{version}` / `AmendDischargeSummaryRequest{reason, …, version}` |
 | GET | `/clinical/discharge-summaries/{id}/print` | emr.read | → `DischargeSummaryPrint` |
+| GET | `/clinical/discharge-summaries/{id}/document` | emr.read | → `PrintableDocumentDto` (`pageSize: "A4"`): the printed discharge summary. Same rules as `/print`: drafts print too, marked "DRAFT — not signed"; restricted-record guard; audit "Printed discharge summary" |
+| GET | `/clinical/discharge-summaries/{id}/pdf` | emr.read | → `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`, the same document. Same rules; audit "Downloaded discharge summary as a PDF"; 503 `pdf.unavailable` |
 
 Public (anonymous, rate limit policy `public`): `GET /public/prescriptions/verify/{token}` → `PrescriptionVerification{found, status: Valid|Cancelled, doctor, qualification, registrationNumber, facility, issuedOn, itemCount}` — no patient data.
 
@@ -121,6 +125,27 @@ compatibility. `verificationUrl` is the absolute page a phone can open anywhere:
 `{portal.baseUrl}/portal/verify/prescription/{token}` (the patient portal's public page, which calls the verification
 API). It is null until the prescription is signed or while `portal.baseUrl` is not configured. `portal.baseUrl` is the
 hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
+
+#### Prescription and discharge summary documents
+
+The server lays out both documents (ADR-012) from the data of the print models, as the staff app's print templates
+did (`Documents/PrescriptionDocument.cs`, `Documents/DischargeSummaryDocument.cs`, shared parts and style in
+`Documents/ClinicalDocumentParts.cs`). The staff app prints the HTML from `/document`; the PDFs for staff, the portal and
+messages are made from the same HTML, so every copy is the same.
+
+| | Prescription | Discharge summary |
+|---|---|---|
+| Page | A5 | A4 |
+| Content | Letterhead with the facility logo and the prescriber's block on the right (name, qualification, specialty, council registration); patient strip (patient, UHID, age / sex, date signed); known allergies (in red, or "none recorded"); diagnosis; ℞ and one row per medicine: name, strength, Schedule H1/X tag, generic and form, dose with English directions and the route unless oral, the Hindi line under it (`lang="hi"`), instructions, duration ("Once" for STAT, whole weeks from 14 days), quantity; advice; follow-up; refills allowed; the QR code with the prescription number; "Digitally signed on …" and the prescriber's signature image above the name | Letterhead with the facility logo and the consultant's block; "Signed …" (and "amended … (reason)"); patient strip with the admission and discharge dates; diagnosis with ICD-10 codes, presenting complaints, course in hospital, procedures, investigations, condition at discharge, medicines on discharge, advice, follow-up; the emergency line; the consultant's signature image above the name |
+| Footer on every page | "Asha Rao · UHID NH-000123 · Prescription NHRX260000123", and "Page X of Y" | "Asha Rao · UHID NH-000123 · Discharge summary · Discharged 25 Sep 2026", and "Page X of Y" |
+| File name | `prescription-{number}.pdf` | `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the discharge date in IST, else the signing or admission date |
+| Not final | Only signed prescriptions are printed. A draft or cancelled copy would say "DRAFT — not valid for dispensing" or "CANCELLED — do not dispense" at the top and in the footer | A draft says "DRAFT — not signed" at the top and in the footer, and has no signature image |
+
+* The QR code opens `verificationUrl` (see *QR verification links*). Without `portal.baseUrl` the verification code is
+  printed without a QR code, as on the lab reports.
+* The logo and signatures come from the file store (`DocumentAssets`: PNG, JPEG, WebP or SVG up to 1 MB); a missing
+  image is left out. The signature image is printed only once the document is signed.
+* Every value is HTML-encoded, and the doctor's text keeps its line breaks.
 
 #### No known allergies
 
@@ -211,6 +236,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | POST | `/health-checkups/bookings/{id}/complete` | healthcheck.manage or emr.write | all stops done/skipped + summary required |
 | POST | `/health-checkups/bookings/{id}/cancel` / `no-show` | healthcheck.manage | cancels the package charge, then the booking and the remaining tests (`ServiceOrderCancelled`); 422 `booking.package_billed` (booking unchanged) when the charge is on a finalised bill |
 | GET | `/health-checkups/bookings/{id}/report` | healthcheck.manage or emr.read | → `CheckupReport{booking, patient, letterhead, reviewingDoctor, order}` |
+| GET | `/health-checkups/bookings/{id}/report/document`, `/report/pdf` | healthcheck.manage or emr.read | The full check-up report (summary, then every released lab, radiology and cardiology result) as a printable document or PDF. Served by the Diagnostics module, which reads the results; see [diagnostics.md](diagnostics.md) |
 | GET / POST | `/health-checkups/corporate-batches`, `GET /{id}` | healthcheck.manage | `CorporateBatchRequest{corporateName, contactPerson, contactPhone, reference, packageId, scheduledDate, patientIds[≤500], notes}` → `CorporateBatchResult{batchId, batchNumber, booked, skipped[{patientId, reason}]}` |
 
 #### Package billing
@@ -238,8 +264,10 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 |---|---|---|
 | GET | `/portal/prescriptions?patientId&page` | `PagedResult<PortalPrescriptionListItem>` (signed/cancelled only) |
 | GET | `/portal/prescriptions/{id}` | `PortalPrescriptionDetail` (bilingual directions, doctor registration, QR `verificationToken` and `verificationUrl`, see *QR verification links*) |
+| GET | `/portal/prescriptions/{id}/pdf` | `application/pdf` attachment `prescription-{number}.pdf`: the printed prescription. Signed only: 404 for a draft, 422 `prescription.not_printable` for a cancelled one; audit "Downloaded prescription {number} as a PDF (patient portal)"; 503 `pdf.unavailable` |
 | GET | `/portal/health-records?patientId` | `PortalHealthRecord{allergies, problems, recentEncounters (no free-text notes), immunizations, dischargeSummaries}` |
 | GET | `/portal/discharge-summaries/{id}` | `DischargeSummaryDto` (signed only) |
+| GET | `/portal/discharge-summaries/{id}/pdf` | `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the printed discharge summary (signed or amended only, 404 for a draft); audit "Downloaded discharge summary as a PDF (patient portal)"; 503 `pdf.unavailable` |
 | POST | `/portal/record-requests` | `PortalRecordRequest{patientId, purpose, details}` → 201 |
 
 ## Prescribing safety (ERX-02/06)
@@ -303,6 +331,13 @@ Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facili
 ## Notification templates
 
 Uses the platform template `prescription.shared` (WhatsApp) for OP prescriptions after signing. No new templates.
+
+Documents that messages can carry (`INotificationDocumentSource`, made when the message is sent):
+
+| Kind | Document | Used by |
+|---|---|---|
+| `clinical.prescription` | The printed prescription's PDF; none once the prescription is cancelled | `prescription.shared`: WhatsApp sends it in the template's document header when the template is marked `whatsAppDocumentHeader` |
+| `clinical.discharge-summary` | The signed (or amended) discharge summary's PDF; none for a draft | Nothing in this module queues a message with it yet |
 
 ## Seed data (`ClinicalSeeder`, Order 300, idempotent)
 

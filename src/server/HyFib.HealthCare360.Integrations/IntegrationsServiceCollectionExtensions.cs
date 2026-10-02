@@ -6,7 +6,9 @@ using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Pacs;
 using HyFib.HealthCare360.Integrations.Payments;
+using HyFib.HealthCare360.Integrations.Pdf;
 using HyFib.HealthCare360.Integrations.Pos;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Integrations.Simulator;
 using HyFib.HealthCare360.Integrations.Sms;
 using HyFib.HealthCare360.Integrations.Tally;
@@ -40,6 +42,7 @@ internal static class IntegrationsServiceCollectionExtensions
         AddLaboratory(services);
 
         services.AddSingleton<ILabelPrinterService, LabelPrinterService>();
+        services.AddSingleton<IPdfRenderer, EdgePdfRenderer>();
         services.AddScoped<NotificationLogUpdater>();
         services.AddScoped<WhatsAppInboundStore>();
         services.AddScoped<IntegrationStatusService>();

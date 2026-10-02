@@ -221,10 +221,13 @@ describe('periods (IST calendar)', () => {
   });
 
   it('names export files like the server', () => {
-    expect(exportFileName('revenue-by-department', '2026-09-01', '2026-09-15', today, 'xlsx')).toBe(
+    expect(exportFileName('revenue-by-department', '2026-09-01', '2026-09-15', today, 'Xlsx')).toBe(
       'revenue-by-department_20260901-20260915.xlsx',
     );
-    expect(exportFileName('op-census', '2026-09-15', '2026-09-15', today, 'csv')).toBe('op-census_20260915.csv');
-    expect(exportFileName('near-expiry-stock', null, null, today, 'xlsx')).toBe('near-expiry-stock_20260916.xlsx');
+    expect(exportFileName('op-census', '2026-09-15', '2026-09-15', today, 'Csv')).toBe('op-census_20260915.csv');
+    expect(exportFileName('near-expiry-stock', null, null, today, 'Xlsx')).toBe('near-expiry-stock_20260916.xlsx');
+    expect(exportFileName('bed-occupancy', '2026-09-01', '2026-09-30', today, 'Pdf')).toBe(
+      'bed-occupancy_20260901-20260930.pdf',
+    );
   });
 });

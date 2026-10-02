@@ -19,7 +19,6 @@ import {
   AddRegular,
   CheckmarkCircleRegular,
   DocumentArrowLeftRegular,
-  PrintRegular,
   SaveRegular,
   SendRegular,
   SignatureRegular,
@@ -42,6 +41,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { CriticalCallDialog } from '@/modules/lab/common/CriticalCallDialog';
@@ -54,12 +54,12 @@ import {
   radiologyApi,
   radiologyKeys,
   radiologyQueries,
+  radiologyReportDocument,
   type ImagingStudyDetail,
   type RadiologyReportDto,
   type SaveRadiologyReportRequest,
 } from './api';
 import { reportStatusLabel } from './labels';
-import { printRadiologyReport } from './print';
 import { appendFinding, applyTemplate, isReportable, isReportEditable } from './workflow';
 
 const useStyles = makeStyles({
@@ -519,7 +519,6 @@ function SignedReport({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [addendum, setAddendum] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [calling, setCalling] = useState(false);
   const unsigned = report.status === 'Draft' || report.status === 'Reported';
 
@@ -548,17 +547,6 @@ function SignedReport({
     },
     onError: (error) => notify.error(error, 'Could not release the report'),
   });
-
-  const print = async () => {
-    setPrinting(true);
-    try {
-      await printRadiologyReport(await radiologyApi.printView(study.id));
-    } catch (error) {
-      notify.error(error, 'The report could not be printed');
-    } finally {
-      setPrinting(false);
-    }
-  };
 
   const block = (title: string, text: string | null, strong = false) =>
     text ? (
@@ -606,13 +594,7 @@ function SignedReport({
               Release
             </Button>
           )}
-          <Button
-            icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-            disabled={printing}
-            onClick={() => void print()}
-          >
-            Print
-          </Button>
+          <DocumentButtons path={radiologyReportDocument(study.id)} />
           {canVerify && (report.status === 'Verified' || report.status === 'Released') && (
             <Button icon={<AddRegular />} onClick={() => setAddendum(true)}>
               Addendum

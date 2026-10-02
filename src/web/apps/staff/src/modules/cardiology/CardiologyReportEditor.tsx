@@ -16,7 +16,6 @@ import {
   CalculatorRegular,
   CheckmarkCircleRegular,
   DocumentArrowLeftRegular,
-  PrintRegular,
   SaveRegular,
   SendRegular,
   SignatureRegular,
@@ -41,6 +40,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Fragment, useState } from 'react';
 import { useForm, useWatch, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { parseAgeYears } from '@/modules/lab/common/banner';
@@ -51,6 +51,7 @@ import {
   CARDIOLOGY_PERMISSIONS,
   cardiologyApi,
   cardiologyKeys,
+  cardiologyReportDocument,
   TMT_RESULTS,
   type CardiologyReportDto,
   type CardiologyStudyDetail,
@@ -67,7 +68,6 @@ import {
   qtcHint,
   targetHeartRatePercent,
 } from './measurements';
-import { printCardiologyReport } from './print';
 import { measurementRows } from './reportBody';
 import { isCardiologyReportable, isCardiologyReportEditable } from './workflow';
 
@@ -954,7 +954,6 @@ function SignedReport({
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const [printing, setPrinting] = useState(false);
   const [calling, setCalling] = useState(false);
   const unsigned = report.status === 'Draft' || report.status === 'Reported';
   const rows = measurementRows(study.studyType, report);
@@ -985,17 +984,6 @@ function SignedReport({
     },
     onError: (error) => notify.error(error, 'Could not release the report'),
   });
-
-  const print = async () => {
-    setPrinting(true);
-    try {
-      await printCardiologyReport(await cardiologyApi.printView(study.id));
-    } catch (error) {
-      notify.error(error, 'The report could not be printed');
-    } finally {
-      setPrinting(false);
-    }
-  };
 
   const signedLine = [
     report.reportedBy ? `Reported by ${report.reportedBy}` : null,
@@ -1033,13 +1021,7 @@ function SignedReport({
               Release
             </Button>
           )}
-          <Button
-            icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-            disabled={printing}
-            onClick={() => void print()}
-          >
-            Print
-          </Button>
+          <DocumentButtons path={cardiologyReportDocument(study.id)} />
         </>
       }
     >

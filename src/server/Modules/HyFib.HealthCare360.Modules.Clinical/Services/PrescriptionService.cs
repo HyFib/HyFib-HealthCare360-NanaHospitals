@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain.Safety;
 using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
@@ -350,7 +351,10 @@ public sealed class PrescriptionService(
     private Task PublishSignedAsync(Prescription prescription, CancellationToken ct) =>
         realtime.PublishAsync(Topics.Pharmacy(prescription.FacilityId), "pharmacy.prescription.signed", new { prescription.Id, prescription.IsInpatient }, ct);
 
-    /// <summary>Tells OP patients the prescription is on the portal (outbox message, committed with the signature).</summary>
+    /// <summary>
+    /// Tells OP patients the prescription is on the portal (outbox message, committed with the signature). The message
+    /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
+    /// </summary>
     private async Task QueuePatientNoticeAsync(Prescription prescription, CancellationToken ct)
     {
         if (prescription.IsInpatient)
@@ -375,7 +379,8 @@ public sealed class PrescriptionService(
                 ["date"] = ClinicalClock.LocalDate(prescription.SignedAt!.Value).ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture),
             },
             [NotificationChannel.WhatsApp],
-            TimeSpan.FromDays(2));
+            TimeSpan.FromDays(2),
+            document: new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id));
     }
 
     internal static PrescriptionItem ToItem(PrescriptionItemRequest r)

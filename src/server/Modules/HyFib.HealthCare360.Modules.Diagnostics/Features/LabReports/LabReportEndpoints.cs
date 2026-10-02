@@ -1,5 +1,7 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 
@@ -15,6 +17,8 @@ internal static class LabReportEndpoints
         var reports = app.MapGroup("/api/v1/lab/reports").WithTags("Laboratory");
         reports.MapGet("/", List).RequirePermission(DiagnosticsPermissions.LabOrdersRead);
         reports.MapGet("/{id:guid}", Get).RequirePermission(DiagnosticsPermissions.LabOrdersRead);
+        reports.MapGet("/{id:guid}/document", Document).RequirePermission(DiagnosticsPermissions.LabOrdersRead);
+        reports.MapGet("/{id:guid}/pdf", Pdf).RequirePermission(DiagnosticsPermissions.LabOrdersRead);
         reports.MapPost("/{id:guid}/release", Release).RequirePermission(DiagnosticsPermissions.LabResultsVerify);
         reports.MapPost("/{id:guid}/amend", Amend).RequirePermission(DiagnosticsPermissions.LabResultsVerify).WithValidation<AmendReportRequest>();
     }
@@ -56,25 +60,52 @@ internal static class LabReportEndpoints
             patients.GetValueOrDefault(r.PatientId)?.FullName ?? string.Empty, r.Status, r.IsPartial, r.Revision, r.OrderedAt, r.ReleasedAt)));
     }
 
-    /// <summary>The printable report. Clinicians with read-only access see released tests only.</summary>
+    /// <summary>The report's content. Clinicians with read-only access see released tests only.</summary>
     private static async Task<IResult> Get(
         Guid id, LabReportBuilder builder, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user, IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, _, problem) = await OpenAsync(id, n => $"Viewed lab report {n}", builder, guard, audit, user, permissions, ct);
+        return problem ?? TypedResults.Ok(view);
+    }
+
+    /// <summary>The A4 report as the staff app prints it: the same document as the PDF and the patient's copy.</summary>
+    private static async Task<IResult> Document(
+        Guid id, LabReportBuilder builder, ReportDocumentFrame frame, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user,
+        IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, releasedOnly, problem) = await OpenAsync(id, n => $"Printed lab report {n}", builder, guard, audit, user, permissions, ct);
+        return problem ?? TypedResults.Ok((await LabReportDocument.BuildAsync(view!, releasedOnly, frame, ct)).ToDto());
+    }
+
+    private static async Task<IResult> Pdf(
+        Guid id, LabReportBuilder builder, ReportDocumentFrame frame, IPdfRenderer renderer, PatientAccessGuard guard, IAuditLogger audit,
+        ICurrentUser user, IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, releasedOnly, problem) = await OpenAsync(id, n => $"Downloaded lab report {n} as a PDF", builder, guard, audit, user, permissions, ct);
+        return problem ?? await (await LabReportDocument.BuildAsync(view!, releasedOnly, frame, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    // Every way of opening a report applies the same rules: released content only for read-only users, the restricted
+    // record guard, and an entry in the PHI access audit saying what was done with it.
+    private static async Task<(LabReportView? View, bool ReleasedOnly, IResult? Problem)> OpenAsync(
+        Guid id, Func<string, string> action, LabReportBuilder builder, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user,
+        IPermissionService permissions, CancellationToken ct)
     {
         var releasedOnly = await ReportAccess.ReleasedOnlyAsync(user, permissions, DepartmentPermissions, ct);
         var view = await builder.BuildAsync(id, releasedOnly, ct);
         if (view is null)
         {
-            return Error.NotFound(nameof(LabReport), id).ToProblem();
+            return (null, releasedOnly, Error.NotFound(nameof(LabReport), id).ToProblem());
         }
 
         var access = await guard.EnsureCanOpenAsync(view.Patient.Id, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, releasedOnly, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(view.Patient.Id, $"Viewed lab report {view.ReportNumber}", ct);
-        return TypedResults.Ok(view);
+        await audit.PatientRecordAccessedAsync(view.Patient.Id, action(view.ReportNumber), ct);
+        return (view, releasedOnly, null);
     }
 
     private static async Task<IResult> Release(Guid id, LabReportService reports, CancellationToken ct) =>

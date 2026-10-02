@@ -13,11 +13,12 @@ public sealed record UserNotificationDto(Guid Id, string Title, string? Body, st
 
 public sealed record NotificationTemplateDto(
     Guid Id, Guid? FacilityId, string Key, NotificationChannel Channel, string Language, string? Subject, string Body, string? DltTemplateId,
-    string? WhatsAppTemplateName, string? Description, bool IsActive, uint Version);
+    string? WhatsAppTemplateName, string? Description, bool IsActive, uint Version, bool WhatsAppDocumentHeader);
 
+/// <param name="WhatsAppDocumentHeader">The WhatsApp template was approved with a document header (see <see cref="NotificationTemplate.WhatsAppDocumentHeader"/>).</param>
 public sealed record SaveNotificationTemplateRequest(
     string Key, NotificationChannel Channel, string Language, Guid? FacilityId, string? Subject, string Body, string? DltTemplateId,
-    string? WhatsAppTemplateName, string? Description, bool IsActive, uint? Version);
+    string? WhatsAppTemplateName, string? Description, bool IsActive, uint? Version, bool WhatsAppDocumentHeader = false);
 
 public sealed record NotificationLogDto(
     Guid Id, DateTimeOffset CreatedAt, NotificationChannel Channel, string TemplateKey, string? Recipient, Guid? PatientId,
@@ -67,7 +68,7 @@ internal static class NotificationEndpoints
                     .Where(t => (key == null || t.Key == key) && (channel == null || t.Channel == channel))
                     .OrderBy(t => t.Key).ThenBy(t => t.Channel).ThenBy(t => t.Language)
                     .Select(t => new NotificationTemplateDto(t.Id, t.FacilityId, t.Key, t.Channel, t.Language, t.Subject, t.Body, t.DltTemplateId,
-                        t.WhatsAppTemplateName, t.Description, t.IsActive, t.Version))
+                        t.WhatsAppTemplateName, t.Description, t.IsActive, t.Version, t.WhatsAppDocumentHeader))
                     .ToListAsync(ct)))
             .RequirePermission(PlatformPermissions.NotificationTemplatesManage);
 
@@ -149,6 +150,7 @@ internal static class NotificationEndpoints
         template.Body = request.Body.Trim();
         template.DltTemplateId = request.DltTemplateId?.Trim();
         template.WhatsAppTemplateName = request.WhatsAppTemplateName?.Trim();
+        template.WhatsAppDocumentHeader = request.Channel == NotificationChannel.WhatsApp && request.WhatsAppDocumentHeader;
         template.Description = request.Description?.Trim();
         template.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);

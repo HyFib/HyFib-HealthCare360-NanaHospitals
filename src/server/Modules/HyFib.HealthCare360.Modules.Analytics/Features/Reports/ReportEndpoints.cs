@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Analytics.Services;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Documents;
 using Npgsql;
 using Theatre = HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre.OperationTheatre;
 
@@ -13,6 +14,12 @@ namespace HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 /// <summary>/api/v1/analytics — report catalogue, run, export, look-ups, KPIs and data status.</summary>
 internal static class ReportEndpoints
 {
+    /// <summary>
+    /// Response header of an export that leaves rows out (the PDF of a very long report): what the file lists, and that
+    /// the Excel export has every row.
+    /// </summary>
+    public const string NoticeHeader = "X-Report-Notice";
+
     /// <summary>Query keys of the GET export that are not report inputs.</summary>
     private static readonly HashSet<string> ExportControlKeys = new(StringComparer.OrdinalIgnoreCase) { "format", "sort", "desc" };
 
@@ -125,27 +132,27 @@ internal static class ReportEndpoints
 
     private static Task<IResult> ExportPost(
         string id, string? format, ExportReportRequest request, HttpContext http, ReportActors actors, ReportRunner runner, ReportPresenter presenter,
-        ReportAuditor auditor, CancellationToken ct) =>
-        ExportAsync(id, format, request.Parameters, request.Sort, request.Desc, http, actors, runner, presenter, auditor, ct);
+        ReportFileWriter writer, ReportAuditor auditor, CancellationToken ct) =>
+        ExportAsync(id, format, request.Parameters, request.Sort, request.Desc, http, actors, runner, presenter, writer, auditor, ct);
 
     private static Task<IResult> ExportGet(
         string id, string? format, string? sort, bool? desc, HttpContext http, ReportActors actors, ReportRunner runner, ReportPresenter presenter,
-        ReportAuditor auditor, CancellationToken ct)
+        ReportFileWriter writer, ReportAuditor auditor, CancellationToken ct)
     {
         var parameters = http.Request.Query
             .Where(q => !ExportControlKeys.Contains(q.Key))
             .Take(30)
             .ToDictionary(q => q.Key, q => (string?)q.Value.ToString(), StringComparer.Ordinal);
-        return ExportAsync(id, format, parameters, sort, desc, http, actors, runner, presenter, auditor, ct);
+        return ExportAsync(id, format, parameters, sort, desc, http, actors, runner, presenter, writer, auditor, ct);
     }
 
     private static async Task<IResult> ExportAsync(
         string id, string? format, IReadOnlyDictionary<string, string?>? parameters, string? sort, bool? desc, HttpContext http, ReportActors actors,
-        ReportRunner runner, ReportPresenter presenter, ReportAuditor auditor, CancellationToken ct)
+        ReportRunner runner, ReportPresenter presenter, ReportFileWriter writer, ReportAuditor auditor, CancellationToken ct)
     {
         if (!TryFormat(format, out var exportFormat))
         {
-            return Error.Field("format", "Choose Excel (xlsx) or CSV.").ToProblem();
+            return Error.Field("format", "Choose Excel (xlsx), CSV or PDF.").ToProblem();
         }
 
         if (await actors.CurrentAsync(ct) is not { } actor)
@@ -161,13 +168,34 @@ internal static class ReportEndpoints
 
         var filters = await presenter.DescribeAsync(execution.Value, ct);
         var document = presenter.Document(execution.Value, filters, Person(actor), sort, desc);
-        var file = ReportExporter.Export(document, exportFormat);
-        await auditor.ExportedAsync(execution.Value, exportFormat, document.Rows.Count, actor, "download", ReportPresenter.AllPatients(execution.Value), ct);
+        ReportFile file;
+        try
+        {
+            file = await writer.WriteAsync(document, exportFormat, ct);
+        }
+        catch (PdfRenderException ex)
+        {
+            return PdfUnavailable(ex);
+        }
+
+        // Audited for the rows in the file: a PDF of a very long patient list names only the patients it lists.
+        await auditor.ExportedAsync(execution.Value, exportFormat, file.Rows, actor, "download", ReportPresenter.PatientsIn(execution.Value, document, file.Rows), ct);
 
         // Exports can contain confidential or patient data: never cache them on the workstation or a proxy.
         http.Response.Headers.CacheControl = "no-store";
+        if (file.Notice is { } notice)
+        {
+            http.Response.Headers[NoticeHeader] = notice;
+        }
+
         return TypedResults.File(file.Content, file.ContentType, file.FileName);
     }
+
+    /// <summary>
+    /// The answer when the server cannot make the PDF, as every document's PDF answers (<c>DocumentResults.ToPdfAsync</c>):
+    /// 503 with the reason and the code <c>pdf.unavailable</c>, so the screen can say so and offer Excel instead.
+    /// </summary>
+    internal static IResult PdfUnavailable(PdfRenderException error) => DocumentResults.PdfUnavailable($"{error.Message} Export to Excel or CSV instead.");
 
     private static async Task<IResult> Kpis(DateOnly? from, DateOnly? to, string? facilityId, ReportActors actors, KpiService kpis, CancellationToken ct)
     {
@@ -273,6 +301,9 @@ internal static class ReportEndpoints
                 return true;
             case "csv":
                 format = ExportFormat.Csv;
+                return true;
+            case "pdf":
+                format = ExportFormat.Pdf;
                 return true;
             default:
                 format = default;

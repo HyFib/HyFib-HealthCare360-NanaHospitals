@@ -4,6 +4,7 @@ import {
   Caption1,
   makeStyles,
   Menu,
+  MenuDivider,
   MenuItem,
   MenuList,
   MenuPopover,
@@ -17,6 +18,7 @@ import {
   Tooltip,
 } from '@fluentui/react-components';
 import {
+  ArrowDownloadRegular,
   CheckmarkCircleRegular,
   DocumentArrowLeftRegular,
   EditRegular,
@@ -30,6 +32,7 @@ import { ConfirmDialog, ErrorState, Page, Section, StatusBadge, useNotify } from
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
 import { LatestVitals } from '@/modules/emr/ChartSummary';
@@ -48,9 +51,9 @@ import { OrderComposer, OrdersList } from '@/modules/emr/OrdersPanel';
 import { orderQueries } from '@/modules/emr/ordersApi';
 import { PrescriptionEditor } from '@/modules/emr/PrescriptionEditor';
 import { templateMedicineDefaults } from '@/modules/emr/prescriptionForm';
-import { prescriptionQueries, prescriptionsApi } from '@/modules/emr/prescriptionsApi';
+import { prescriptionDocument, prescriptionQueries } from '@/modules/emr/prescriptionsApi';
 import { PrescriptionsList } from '@/modules/emr/PrescriptionsList';
-import { printEncounterSummary, printPrescription } from '@/modules/emr/print';
+import { printEncounterSummary } from '@/modules/emr/print';
 import { useEncounterNote, type EncounterNote } from '@/modules/emr/useEncounterNote';
 import { EncounterVitalsList, VitalsForm } from '@/modules/emr/VitalsPanel';
 
@@ -246,10 +249,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
     onError: (error) => notify.error(error, 'Printing failed'),
   });
 
-  const printRx = useMutation({
-    mutationFn: async (id: string) => printPrescription(await prescriptionsApi.print(id), facilityName),
-    onError: (error) => notify.error(error, 'Printing failed'),
-  });
+  const documents = useServerDocuments();
 
   if (!summary.data) {
     return (
@@ -332,15 +332,35 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  <MenuItem disabled={printSummary.isPending} onClick={() => printSummary.mutate()}>
+                  <MenuItem
+                    icon={<PrintRegular />}
+                    disabled={printSummary.isPending}
+                    onClick={() => printSummary.mutate()}
+                  >
                     Consultation summary (A4)
                   </MenuItem>
                   {signedRx.map((p) => (
-                    <MenuItem key={p.id} disabled={printRx.isPending} onClick={() => printRx.mutate(p.id)}>
+                    <MenuItem
+                      key={p.id}
+                      icon={<PrintRegular />}
+                      disabled={documents.print.isPending}
+                      onClick={() => documents.print.mutate(prescriptionDocument(p.id))}
+                    >
                       Prescription {p.prescriptionNumber} (A5)
                     </MenuItem>
                   ))}
                   {signedRx.length === 0 && <MenuItem disabled>No signed prescription yet</MenuItem>}
+                  {signedRx.length > 0 && <MenuDivider />}
+                  {signedRx.map((p) => (
+                    <MenuItem
+                      key={p.id}
+                      icon={<ArrowDownloadRegular />}
+                      disabled={documents.downloadPdf.isPending}
+                      onClick={() => documents.downloadPdf.mutate(prescriptionDocument(p.id))}
+                    >
+                      Prescription {p.prescriptionNumber} as PDF
+                    </MenuItem>
+                  ))}
                 </MenuList>
               </MenuPopover>
             </Menu>
@@ -460,7 +480,6 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
                   initialDraft={draftItem ? (draftDetail.data ?? null) : null}
                   templateMedicines={templateMedicines}
                   currentMedications={s.currentMedications}
-                  facilityName={facilityName}
                 />
               ) : (
                 <Spinner size="small" label="Loading the prescription…" />

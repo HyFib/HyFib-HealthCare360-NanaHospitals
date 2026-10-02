@@ -1,4 +1,6 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.HealthCheckups;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
@@ -10,6 +12,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.QualityControl;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
+using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics;
 
@@ -73,6 +76,11 @@ public sealed class DiagnosticsModule : IModule
     {
         DiagnosticsRealtimeTopics.Register(services);
         services.AddScoped<DiagnosticsLookups>();
+        services.AddScoped<ReportDocumentFrame>();
+        services.AddScoped<INotificationDocumentSource, LabReportDocumentSource>();
+        services.AddScoped<INotificationDocumentSource, RadiologyReportDocumentSource>();
+        services.AddScoped<INotificationDocumentSource, CardiologyReportDocumentSource>();
+        services.AddScoped<HealthCheckupResultsBuilder>();
         services.AddScoped<DiagnosticsRealtime>();
         services.AddScoped<ChargeService>();
         services.AddScoped<LabWorkflow>();
@@ -108,5 +116,6 @@ public sealed class DiagnosticsModule : IModule
         CardiologyEndpoints.Map(endpoints);
         PortalReportEndpoints.Map(endpoints);
         ReportVerificationEndpoints.Map(endpoints);
+        HealthCheckupReportEndpoints.Map(endpoints);
     }
 }

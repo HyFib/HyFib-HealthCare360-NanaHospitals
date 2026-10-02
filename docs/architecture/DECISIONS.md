@@ -65,3 +65,20 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Status:** Accepted
 **Decision:** Speech-to-text providers are Windows offline speech (Desktop) or a configured cloud/on-prem service. Text structuring and intent parsing go through an `IAiTextService` whose default provider is Anthropic Claude. Prompts strip direct identifiers. Output is always a draft that the clinician must accept, and every call is audited.
 **Consequences:** Hospitals can choose on-prem or cloud AI according to their data-processing agreements. Nothing clinical is committed without human review.
+
+## ADR-012 — Documents patients receive are made on the server
+**Status:** Accepted (implements the server half of ADR-009)
+**Context:** Lab reports must reach patients as PDFs with QR verification, on the portal, by WhatsApp and by e-mail
+(LIS-07); the portal offers prescriptions, reports, discharge summaries and bills as PDF downloads (PP-02); MIS reports
+export to PDF. Until now every document was laid out in the browser, so the server had nothing to send, and the portal
+kept its own copies of the templates.
+**Decision:** Documents that leave the hospital (lab, radiology and cardiology reports, the health check-up report,
+prescriptions, discharge summaries, A4 bills, MIS reports) are laid out once, on the server, as HTML built through an
+encoding builder (`Platform/Documents`). The staff app prints that HTML; the server turns the same HTML into a PDF with
+headless Microsoft Edge, driven over a private pipe (`Integrations/Pdf`). Page size, margins and the running footer
+(who and what the page belongs to, page X of Y) are CSS in the document, so the printed copy and the PDF match. Slips,
+labels, 80 mm receipts and internal lists stay in the browser.
+**Consequences:** One template per document, and the copy a patient receives is the one the hospital printed. Each
+module owns its document templates next to its data. The Server Node needs Edge (present on Windows 10/11 and Server
+2022); without it PDFs are unavailable and printing still works. A PDF costs about a third of a second once the browser
+is running, and the browser takes about 250 MB of memory while it runs; it closes when idle.

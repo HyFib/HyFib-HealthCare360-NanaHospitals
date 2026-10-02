@@ -111,11 +111,12 @@ internal sealed class ReportPresenter(HospitalDbContext db, IOptions<PlatformOpt
             descending,
             execution.GeneratedAt,
             execution.DataSource,
-            execution.Report.ContainsPatientIdentifiers);
+            execution.Report.ContainsPatientIdentifiers,
+            ReportPdf.Notice(data.Rows.Count));
         return (result, patients);
     }
 
-    /// <summary>The whole report, sorted as on screen, ready for Excel or CSV.</summary>
+    /// <summary>The whole report, sorted as on screen, ready for Excel, CSV or PDF.</summary>
     public ReportDocument Document(ReportExecution execution, IReadOnlyList<ReportFilterDto> filters, string generatedBy, string? sort, bool? desc)
     {
         var (order, _, _) = Order(execution, sort, desc);
@@ -140,12 +141,26 @@ internal sealed class ReportPresenter(HospitalDbContext db, IOptions<PlatformOpt
             data.Totals,
             data.Summary,
             Notes(execution),
-            execution.Report.ContainsPatientIdentifiers);
+            execution.Report.ContainsPatientIdentifiers)
+        {
+            FacilityId = execution.Facility.FacilityId,
+            RowPatientIds = data.RowPatientIds is { } ids && ids.Count == data.Rows.Count ? order.Select(i => ids[i]).ToList() : null,
+        };
     }
 
     /// <summary>Patients listed anywhere in the report (exports are audited for all of them).</summary>
     public static IReadOnlyList<Guid> AllPatients(ReportExecution execution) =>
         execution.Data.RowPatientIds?.OfType<Guid>().Distinct().ToList() ?? [];
+
+    /// <summary>
+    /// Patients listed in an export file of <paramref name="rows"/> rows, which the export is audited for: every patient
+    /// of the report, or only those in the first rows when the file holds part of it (the PDF of a very long list).
+    /// When rows and patients cannot be matched, every patient of the report, so the audit never leaves one out.
+    /// </summary>
+    public static IReadOnlyList<Guid> PatientsIn(ReportExecution execution, ReportDocument document, int rows) =>
+        rows < document.Rows.Count && document.RowPatientIds is { } ids
+            ? ids.Take(rows).OfType<Guid>().Distinct().ToList()
+            : AllPatients(execution);
 
     private static (IReadOnlyList<int> Order, string? SortKey, bool Descending) Order(ReportExecution execution, string? sort, bool? desc)
     {

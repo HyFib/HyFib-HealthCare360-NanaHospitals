@@ -41,24 +41,3 @@ export async function openFile(fileId: string): Promise<{ url: string; contentTy
   const blob = await api.blob(`/api/v1/files/${fileId}`);
   return { url: URL.createObjectURL(blob), contentType: blob.type };
 }
-
-/** File as a data URL for print templates (logo, signature). Best effort: printing continues without the image. */
-export async function fileAsDataUrl(fileId: string | null | undefined): Promise<string | null> {
-  if (!fileId) {
-    return null;
-  }
-  try {
-    const blob = await api.blob(`/api/v1/files/${fileId}`);
-    if (!blob.type.startsWith('image/')) {
-      return null;
-    }
-    return await new Promise<string | null>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
-}

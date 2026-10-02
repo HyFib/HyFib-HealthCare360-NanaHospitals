@@ -1,8 +1,10 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.Logging;
 
@@ -365,7 +367,8 @@ internal sealed class CardiologyService(
             return released;
         }
 
-        await delivery.QueueReportReadyAsync(study.PatientId, study.AccessionNumber, ct);
+        await delivery.QueueReportReadyAsync(
+            study.PatientId, study.AccessionNumber, new NotificationDocument(CardiologyReportDocumentSource.DocumentKind, study.Id), study.FacilityId, ct);
         return Result.Success();
     }
 

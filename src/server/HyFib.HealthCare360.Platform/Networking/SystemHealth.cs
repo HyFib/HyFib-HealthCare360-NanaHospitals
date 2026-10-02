@@ -3,6 +3,7 @@ using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Jobs;
@@ -64,6 +65,7 @@ public sealed class SystemHealthService(
     DataDirectories directories,
     IOptions<PlatformOptions> options,
     IHostEnvironment environment,
+    IPdfRenderer pdf,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
@@ -152,6 +154,12 @@ public sealed class SystemHealthService(
         if (outbox.OldestPendingAt is { } oldest && now - oldest > TimeSpan.FromMinutes(30))
         {
             warnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
+        }
+
+        // Reports, prescriptions and bills are printed and sent as server-made documents: say so when that is broken.
+        if (pdf.Status is { Available: false } pdfStatus)
+        {
+            warnings.Add(new("pdf.unavailable", "warning", $"PDFs can't be made on this server: {pdfStatus.Problem}"));
         }
 
         if (power is { Available: true, OnBattery: true })

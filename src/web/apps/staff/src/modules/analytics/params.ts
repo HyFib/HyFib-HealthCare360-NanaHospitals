@@ -1,4 +1,5 @@
 import type {
+  ExportFormat,
   ReportChartType,
   ReportDrillDown,
   ReportInputs,
@@ -6,7 +7,15 @@ import type {
   ScheduleFrequency,
   Weekday,
 } from './api';
-import { CHART_TYPES, CUSTOM_PERIOD, DEFAULT_PERIOD, LAST_DAY_OF_MONTH, PAGE_SIZES, PERIOD_PRESETS } from './labels';
+import {
+  CHART_TYPES,
+  CUSTOM_PERIOD,
+  DEFAULT_PERIOD,
+  FORMAT_EXTENSIONS,
+  LAST_DAY_OF_MONTH,
+  PAGE_SIZES,
+  PERIOD_PRESETS,
+} from './labels';
 
 /**
  * Report inputs in the URL, their defaults, drill-down targets, period arithmetic (IST calendar, mirroring the server's
@@ -383,9 +392,9 @@ export function exportFileName(
   from: string | null,
   to: string | null,
   today: string,
-  extension: 'xlsx' | 'csv',
+  format: ExportFormat,
 ): string {
   const compact = (iso: string) => iso.replaceAll('-', '');
   const stamp = from && to ? (from === to ? compact(from) : `${compact(from)}-${compact(to)}`) : compact(today);
-  return `${reportId}_${stamp}.${extension}`;
+  return `${reportId}_${stamp}.${FORMAT_EXTENSIONS[format]}`;
 }

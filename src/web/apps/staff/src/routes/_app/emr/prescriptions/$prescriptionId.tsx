@@ -6,25 +6,29 @@ import {
   MessageBar,
   MessageBarBody,
   MessageBarTitle,
-  Spinner,
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ArrowRepeatAllRegular, ArrowSyncRegular, DismissRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateTime, useSession } from '@hc360/core';
+import { ArrowRepeatAllRegular, ArrowSyncRegular, DismissRegular } from '@fluentui/react-icons';
+import { formatDateTime } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { emrKeys } from '@/modules/emr/api';
 import { ChartLoadError, ClinicalBanner } from '@/modules/emr/ClinicalBanner';
 import { directionsText } from '@/modules/emr/dosing';
 import { useClinicalSummary } from '@/modules/emr/hooks';
 import { PrescriptionEditor } from '@/modules/emr/PrescriptionEditor';
-import { prescriptionQueries, prescriptionsApi, type PrescriptionDto } from '@/modules/emr/prescriptionsApi';
+import {
+  prescriptionDocument,
+  prescriptionQueries,
+  prescriptionsApi,
+  type PrescriptionDto,
+} from '@/modules/emr/prescriptionsApi';
 import { RefillDialog } from '@/modules/emr/PrescriptionsList';
-import { printPrescription } from '@/modules/emr/print';
 import { ReasonDialog } from '@/modules/emr/ui';
 
 export const Route = createFileRoute('/_app/emr/prescriptions/$prescriptionId')({
@@ -61,13 +65,15 @@ function PrescriptionPage() {
   return <PrescriptionView key={prescriptionId} prescription={prescription.data} />;
 }
 
-/** One prescription: drafts open in the editor (check and sign); signed ones can be printed, repeated, refilled or cancelled. */
+/**
+ * One prescription: drafts open in the editor (check and sign); signed ones can be printed, downloaded as a PDF,
+ * repeated, refilled or cancelled.
+ */
 function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto }) {
   const styles = useStyles();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const canWrite = usePermission('clinical.prescriptions.write');
   const canSign = usePermission('clinical.prescriptions.sign');
   const canRefill = usePermission('clinical.prescriptions.refill');
@@ -80,10 +86,6 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
     void queryClient.invalidateQueries({ queryKey: emrKeys.patient(rx.patientId) });
   };
 
-  const print = useMutation({
-    mutationFn: async () => printPrescription(await prescriptionsApi.print(rx.id), facilityName),
-    onError: (error) => notify.error(error, 'Printing failed'),
-  });
   const repeat = useMutation({
     mutationFn: () => prescriptionsApi.repeat(rx.id),
     onSuccess: (draft) => {
@@ -128,15 +130,7 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
         actions={
           <div className={styles.actions}>
             <StatusBadge status={rx.status} />
-            {rx.status === 'Signed' && (
-              <Button
-                icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
-                disabled={print.isPending}
-                onClick={() => print.mutate()}
-              >
-                Print (A5)
-              </Button>
-            )}
+            {rx.status === 'Signed' && <DocumentButtons path={prescriptionDocument(rx.id)} printLabel="Print (A5)" />}
             {canWrite && rx.status !== 'Draft' && (
               <Button icon={<ArrowRepeatAllRegular />} disabled={repeat.isPending} onClick={() => repeat.mutate()}>
                 Repeat
@@ -167,7 +161,6 @@ function PrescriptionView({ prescription: rx }: { prescription: PrescriptionDto 
             isInpatient={rx.isInpatient}
             initialDraft={rx}
             currentMedications={summary.data?.currentMedications ?? []}
-            facilityName={facilityName}
             onSigned={refresh}
           />
         </Section>
