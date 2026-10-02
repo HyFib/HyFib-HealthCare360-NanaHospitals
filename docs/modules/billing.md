@@ -7,8 +7,8 @@ the Tally day book. SRS **MB-01..06, OPB-01..07, IPB-01..08, INS-01..07, DFA-01.
 **INT-PG / INT-POS / INT-TALLY**, and OA-03 (appointment prepayments).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Billing` (layer 7; references Patients and Scheduling).
-Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (232 unit tests: pure domain, plus
-change-tracking checks on the real EF model without a database).
+Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (248 unit tests: pure domain and the
+printed bill's HTML, plus change-tracking checks on the real EF model without a database).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
 fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).
@@ -98,6 +98,8 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 |---|---|---|---|
 | GET | `/?from&to&type&status&patientId&visitId&admissionId&payerId&withDueOnly&search` (paged, `sort=createdAt\|finalizedAt\|billNumber\|netAmount\|dueAmount`) | readers | → `PagedResult<BillListItem>` |
 | GET | `/{id}` | readers | → `BillDetail` (lines as `BillLineDto` with `isReturn`, receipts, refunds, credit notes, pending discount); PHI access guarded and audited |
+| GET | `/{id}/document` | readers | → `PrintableDocumentDto` (title, file name, page size `A4`, HTML): the [printed bill](#the-printed-bill) for the staff app to print, drafts included; guarded and audited ("Printed bill …") |
+| GET | `/{id}/pdf` | readers | → `application/pdf` attachment `bill-<number>.pdf` (a draft: `bill-draft-<UHID>-<yyyy-MM-dd>.pdf`), the same document; 503 `pdf.unavailable` when the server cannot make PDFs; guarded and audited ("Downloaded bill … as a PDF") |
 | POST | `/` | `billing.op.create` | `CreateBillRequest(visitId?, patientId?, chargeIds?)` → 201 `BillDetail`: OP draft from the visit's unbilled charges, or a patient-level draft from charges with no visit/admission |
 | POST | `/{id}/lines` | `billing.op.create` | `AddBillLineRequest` → `BillDetail` (ad-hoc service, posted as `billing.adhoc`) |
 | DELETE | `/{id}/lines/{lineId}?version` | `op.create` / `ip.manage` | → `BillDetail` |
@@ -223,8 +225,27 @@ advances or packages; leftover services can still be billed; any advance is refu
 | Method | Path | Request → response |
 |---|---|---|
 | GET | `/` · `/{id}` | → `PortalBillListItem[]` / `PortalBillDetail` (lines with `isReturn`, no staff names or internal codes) |
+| GET | `/{id}/pdf` | → `application/pdf` `bill-<number>.pdf`: the same [printed bill](#the-printed-bill) the counter prints, for the bills listed above only (finalized, part-paid, paid, refunded); audited ("Downloaded bill … as a PDF (patient portal)"); 503 `pdf.unavailable` when the server cannot make PDFs |
 | POST | `/{id}/pay` | → `PortalPaymentOrder` (gateway checkout / link) |
 | POST | `/{id}/payments/{orderId}/verify` | → `PortalPaymentStatus` |
+
+## The printed bill
+The A4 bill is made on the server (`Documents/BillDocument.cs`) from `BillDetail` and the facility letterhead, so the
+copy printed at the counter, the staff PDF and the patient's PDF are the same document. The 80 mm counter copy is still
+printed by the staff app.
+
+* Title: "Tax invoice" when any line carries GST, otherwise "Bill of supply"; IP bills add "IP bill" or "IP final bill".
+  A draft prints as "Estimate (draft bill)" with DRAFT across every page; cancelled and refunded bills print CANCELLED
+  and the cancellation date and reason.
+* Header: logo, legal name, address, phone and e-mail, GSTIN and PAN, registration number; the title, bill number and
+  date on the right.
+* Patient, UHID, status, payer, tariff and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
+  package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST.
+* Totals from the gross amount to the net amount, the payer's and the patient's share, credit notes, paid, refunded,
+  and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
+* On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the
+  bill's notes, signature lines for the patient and the authorised signatory, and the facility's letterhead note.
+* Every page's foot names the patient, UHID and bill number, with "Page X of Y".
 
 ## Contracts for other modules
 
