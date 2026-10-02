@@ -50,11 +50,22 @@ public sealed class BillingModule : IModule
         services.AddScoped<DoctorFeeService>();
         services.AddScoped<TallyService>();
 
+        // Gateway reconciliation (INT-PG): settlements, exceptions, follow-up of payments and refunds.
+        services.AddScoped<TallyCorrections>();
+        services.AddScoped<GatewayDiscrepancyService>();
+        services.AddScoped<GatewayDiscrepancyActions>();
+        services.AddScoped<GatewaySettlementService>();
+        services.AddScoped<GatewayRefundTracker>();
+        services.AddScoped<PrepaymentChecker>();
+        services.AddScoped<GatewayReconciliationRunner>();
+        services.AddScoped<GatewayWebhookLog>();
+
         // Replace the Platform's "billing not installed" fallbacks; ChargeService is shared so a request has one unit of work.
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
         services.Replace(ServiceDescriptor.Scoped<IBillingStatusProvider, BillingStatusProvider>());
 
         services.AddHostedService<TallyDayBookScheduler>();
+        services.AddHostedService<GatewayReconciliationJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -66,6 +77,7 @@ public sealed class BillingModule : IModule
         DiscountEndpoints.Map(endpoints);
         PaymentEndpoints.Map(endpoints);
         GatewayEndpoints.Map(endpoints);
+        ReconciliationEndpoints.Map(endpoints);
         ShiftEndpoints.Map(endpoints);
         IpEndpoints.Map(endpoints);
         PayerEndpoints.Map(endpoints);

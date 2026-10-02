@@ -124,4 +124,48 @@ public sealed class PaymentGatewayRouterTests
         Router.VerifySignature(body, Sign(WebhookSecret, body), facility).ShouldBeFalse();
         Router.VerifySignature(body, Sign(WebhookSecret, body), null).ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task Settlements_are_still_read_after_online_payments_are_switched_off()
+    {
+        Configure(new PaymentSettings { Enabled = false, Provider = "razorpay", KeyId = "rzp_test_1DP5mmOlF5G5ag" });
+        var day = new DateOnly(2026, 9, 30);
+        PaymentSettlement settlement = new("setl_A1B2C3D4E5", "UTR1", PaymentSettlementStatus.Processed, 980m, 0m, 0m, DateTimeOffset.UnixEpoch, []);
+        _razorpay.GetSettlementsAsync(day, Arg.Any<PaymentSettings>(), Arg.Any<PaymentSecrets>(), Arg.Any<CancellationToken>()).Returns([settlement]);
+
+        var report = await Router.GetSettlementsAsync(day, null, Ct);
+
+        report.ShouldSatisfyAllConditions(
+            r => r.Available.ShouldBeTrue(),
+            r => r.Provider.ShouldBe("razorpay"),
+            r => r.Settlements.ShouldHaveSingleItem().ShouldBe(settlement));
+    }
+
+    [Fact]
+    public async Task Settlements_report_why_they_cannot_be_read()
+    {
+        _razorpay.GetSettlementsAsync(Arg.Any<DateOnly>(), Arg.Any<PaymentSettings>(), Arg.Any<PaymentSecrets>(), Arg.Any<CancellationToken>())
+            .Returns<IReadOnlyList<PaymentSettlement>>(_ => throw new IntegrationException("Razorpay: Authentication failed"));
+
+        var failing = await Router.GetSettlementsAsync(new DateOnly(2026, 9, 30), null, Ct);
+        Configure(null);
+        var notConfigured = await Router.GetSettlementsAsync(new DateOnly(2026, 9, 30), null, Ct);
+
+        failing.Available.ShouldBeFalse();
+        failing.Problem.ShouldBe("Razorpay: Authentication failed");
+        notConfigured.Available.ShouldBeFalse();
+        notConfigured.Problem!.ShouldContain("not configured");
+    }
+
+    [Fact]
+    public async Task A_refund_status_the_gateway_cannot_give_stays_pending_with_the_reason()
+    {
+        _razorpay.GetRefundStatusAsync("rfnd_A1B2C3D4E5", Arg.Any<PaymentSettings>(), Arg.Any<PaymentSecrets>(), Arg.Any<CancellationToken>())
+            .Returns<RefundStatusResult>(_ => throw new IntegrationException("Could not reach Razorpay."));
+
+        var status = await Router.GetRefundStatusAsync("rfnd_A1B2C3D4E5", null, Ct);
+
+        status.Status.ShouldBe(PaymentRefundStatus.Pending);
+        status.Error.ShouldBe("Could not reach Razorpay.");
+    }
 }

@@ -56,6 +56,15 @@ public sealed record TallyLedgerMap
     /// <summary>Payment mode name → cash/bank ledger (for example Card → "HDFC Card Settlement").</summary>
     public Dictionary<string, string> ModeLedgers { get; init; } = new();
 
+    /// <summary>The bank account the payment gateway settles into (debited with each settlement's payout).</summary>
+    public string GatewaySettlementBank { get; init; } = "Bank";
+
+    /// <summary>The gateway's charges on payments, without GST.</summary>
+    public string GatewayCharges { get; init; } = "Payment Gateway Charges";
+
+    /// <summary>GST the gateway charged on its fees, which the hospital can claim as input tax credit.</summary>
+    public string GatewayInputGst { get; init; } = "Input GST";
+
     public string CreditNotes { get; init; } = "Sales Returns & Allowances";
     public string WriteOffs { get; init; } = "Bad Debts Written Off";
     public string InsuranceDisallowances { get; init; } = "Insurance Disallowances";
@@ -108,6 +117,16 @@ public sealed record TallyDoctorFee(string PractitionerName, decimal Amount);
 
 public sealed record TallyPayout(string Number, DateOnly Date, string PractitionerName, decimal Gross, decimal Tds, decimal Deductions, decimal Net);
 
+/// <summary>
+/// One facility's part of a payment-gateway settlement: <paramref name="Net"/> reached the bank, <paramref name="Charges"/>
+/// (without GST) and <paramref name="Tax"/> (GST on them) are the gateway's fees.
+/// </summary>
+public sealed record TallyGatewaySettlement(string Number, DateOnly Date, string SettlementId, string? Utr, decimal Net, decimal Charges, decimal Tax)
+{
+    /// <summary>What the settlement clears from the payment-gateway clearing ledger.</summary>
+    public decimal Gross => Net + Charges + Tax;
+}
+
 /// <summary>Everything that happened in the books of one facility on one day.</summary>
 public sealed record TallyDayBook(
     DateOnly Date,
@@ -117,9 +136,11 @@ public sealed record TallyDayBook(
     IReadOnlyList<TallyRefund> Refunds,
     IReadOnlyList<TallyCreditNote> CreditNotes,
     IReadOnlyList<TallyDoctorFee> DoctorFees,
-    IReadOnlyList<TallyPayout> Payouts)
+    IReadOnlyList<TallyPayout> Payouts,
+    IReadOnlyList<TallyGatewaySettlement>? GatewaySettlements = null)
 {
-    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count == 0;
+    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
+        + (GatewaySettlements?.Count ?? 0) == 0;
 }
 
 /// <summary>
@@ -146,7 +167,25 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.CreditNotes.Select(c => CreditNote(c, map)));
         vouchers.AddRange(day.DoctorFees.Select((f, i) => DoctorFee(f, i + 1, day.Date, map)));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
+        vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
         return vouchers.OfType<AccountingVoucher>().ToList();
+    }
+
+    /// <summary>
+    /// Settlement journal: the payout reaches the bank, the gateway's charges and the GST on them are expenses, and the
+    /// gross clears the payment-gateway clearing ledger that the day's online receipts debited (and refunds credited).
+    /// </summary>
+    private static AccountingVoucher? SettlementVoucher(TallyGatewaySettlement settlement, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(map.GatewaySettlementBank, settlement.Net);
+        entries.Debit(map.GatewayCharges, settlement.Charges);
+        entries.Debit(map.GatewayInputGst, settlement.Tax);
+        entries.Credit(map.ModeLedger(PaymentMode.PaymentGateway), settlement.Gross);
+        var narration = settlement.Utr is null
+            ? $"Payment gateway settlement {settlement.SettlementId}"
+            : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}";
+        return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 
     private static AccountingVoucher? Sale(TallySale sale, TallyLedgerMap map)

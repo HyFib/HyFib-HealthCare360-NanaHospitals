@@ -208,5 +208,6 @@ internal static class PaymentEndpoints
 
     private static RefundDto ToDto(Refund r, PatientSummary? patient) => new(
         r.Id, r.RefundNumber, r.Purpose, r.PatientId, patient?.Uhid, patient?.FullName, r.BillId, r.IpAccountId, r.Amount, r.Reason, r.Status,
-        r.RequestedByName, r.RequestedAt, r.DecidedBy, r.DecidedAt, r.DecisionRemarks, r.Mode, r.Reference, r.PaidAt, r.AdvanceId);
+        r.RequestedByName, r.RequestedAt, r.DecidedBy, r.DecidedAt, r.DecisionRemarks, r.Mode, r.Reference, r.PaidAt, r.AdvanceId,
+        r.GatewayStatus, r.GatewayReference, r.GatewayError);
 }

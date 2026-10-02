@@ -157,4 +157,119 @@ public sealed class RazorpayGatewayTests
     [InlineData("<html>Bad gateway</html>", 502, "Razorpay returned HTTP 502.")]
     public void Builds_staff_friendly_error_messages(string body, int status, string expected) =>
         RazorpayGateway.ErrorMessage(body, status).ShouldBe(expected);
+
+    [Fact]
+    public async Task Reports_when_razorpay_took_the_payment()
+    {
+        _http.Respond(HttpStatusCode.OK, """
+            {"entity":"collection","count":1,"items":[{"id":"pay_CapturedUpi001","status":"captured","amount":150050,"method":"upi","created_at":1759208112}]}
+            """);
+
+        var status = await Gateway.GetStatusAsync("order_IluGWxBm9U8zJ8", Settings, Secrets, Ct);
+
+        status.PaidAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1759208112));
+    }
+
+    [Fact]
+    public async Task Reads_a_days_settlements_with_their_transactions_and_headers()
+    {
+        _http.Respond(HttpStatusCode.OK, ReconPage)
+            .Respond(HttpStatusCode.OK, """{"id":"setl_DGlQ1Rj8os78Ec","entity":"settlement","amount":2433500,"status":"processed","fees":0,"tax":0,"utr":"1568176960vxp0rj","created_at":1568176960}""");
+
+        var settlements = await Gateway.GetSettlementsAsync(new DateOnly(2019, 9, 11), Settings, Secrets, Ct);
+
+        _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/settlements/recon/combined?year=2019&month=09&day=11&count=1000&skip=0"));
+        _http.Requests[1].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/settlements/setl_DGlQ1Rj8os78Ec"));
+        _http.Requests.ShouldAllBe(r => r.Method == HttpMethod.Get && r.Header("Authorization").StartsWith("Basic "));
+        var settlement = settlements.ShouldHaveSingleItem();
+        settlement.ShouldSatisfyAllConditions(
+            s => s.Utr.ShouldBe("1568176960vxp0rj"),
+            s => s.Status.ShouldBe(PaymentSettlementStatus.Processed),
+            s => s.Amount.ShouldBe(24_335m),
+            s => s.SettledAt.ShouldBe(DateTimeOffset.FromUnixTimeSeconds(1568176960)));
+        settlement.Items.Count.ShouldBe(2);
+        settlement.Items[0].ShouldBe(new PaymentSettlementItem(
+            "pay_DEXrnipqTmWVGE", PaymentTransactionType.Payment, null, "order_DEXrnRiR3SNDHA", 1_000m, 29m, 4.42m, 971m, 0m, "card",
+            DateTimeOffset.FromUnixTimeSeconds(1567692556)));
+        settlement.Items[1].ShouldSatisfyAllConditions(
+            i => i.Type.ShouldBe(PaymentTransactionType.Refund),
+            i => i.PaymentId.ShouldBe("pay_DEXq1pACSqFxtS"),
+            i => i.Debit.ShouldBe(2_425m));
+        _tracing.AllText.ShouldNotContain("MasterCard");
+        _tracing.AllText.ShouldNotContain("Beam me up");
+    }
+
+    [Fact]
+    public async Task Reads_every_page_of_a_busy_day()
+    {
+        var fullPage = "{\"entity\":\"collection\",\"count\":1000,\"items\":[" + string.Join(",", Enumerable.Range(0, 1000).Select(i =>
+            $$"""{"entity_id":"pay_Page1Item{{i:D6}}","type":"payment","credit":9800,"debit":0,"amount":10000,"fee":200,"tax":0,"settled":true,"settlement_id":"setl_BusyDay000001","settlement_utr":"UTR0001"}""")) + "]}";
+        _http.Respond(HttpStatusCode.OK, fullPage)
+            .Respond(HttpStatusCode.OK, """{"entity":"collection","count":0,"items":[]}""")
+            .Respond(HttpStatusCode.OK, """{"id":"setl_BusyDay000001","amount":9800000,"status":"processed","utr":"UTR0001","created_at":1759208112}""");
+
+        var settlements = await Gateway.GetSettlementsAsync(new DateOnly(2026, 9, 30), Settings, Secrets, Ct);
+
+        _http.Requests[1].Uri.Query.ShouldContain("skip=1000");
+        settlements.ShouldHaveSingleItem().Items.Count.ShouldBe(1000);
+    }
+
+    [Fact]
+    public async Task A_failed_call_fails_the_whole_day_so_nothing_half_read_is_stored()
+    {
+        _http.Respond(HttpStatusCode.OK, ReconPage).Respond(HttpStatusCode.InternalServerError, """{"error":{"description":"Something went wrong"}}""");
+
+        var failure = await Should.ThrowAsync<IntegrationException>(() => Gateway.GetSettlementsAsync(new DateOnly(2019, 9, 11), Settings, Secrets, Ct));
+
+        failure.Message.ShouldBe("Razorpay: Something went wrong");
+    }
+
+    [Fact]
+    public async Task Follows_a_refund_until_the_bank_confirms_it()
+    {
+        _http.Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","acquirer_data":{"arn":"74836287462837"},"status":"processed","created_at":1759208112}""")
+            .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","acquirer_data":{"arn":null},"status":"pending"}""")
+            .Respond(HttpStatusCode.OK, """{"id":"rfnd_FP8QHiV938haTz","amount":50000,"payment_id":"pay_CapturedUpi001","status":"failed"}""");
+
+        var processed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
+        var pending = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
+        var failed = await Gateway.GetRefundStatusAsync("rfnd_FP8QHiV938haTz", Settings, Secrets, Ct);
+
+        _http.Requests[0].Uri.ShouldBe(new Uri("https://api.razorpay.com/v1/refunds/rfnd_FP8QHiV938haTz"));
+        processed.ShouldBe(new RefundStatusResult(
+            "rfnd_FP8QHiV938haTz", PaymentRefundStatus.Processed, 500m, "pay_CapturedUpi001", "74836287462837", DateTimeOffset.FromUnixTimeSeconds(1759208112), null));
+        pending.Status.ShouldBe(PaymentRefundStatus.Pending);
+        pending.Reference.ShouldBeNull();
+        failed.Status.ShouldBe(PaymentRefundStatus.Failed);
+        failed.Error.ShouldNotBeNull();
+    }
+
+    [Theory]
+    [InlineData("rfnd_x/../../payments")]
+    [InlineData("pay_CapturedUpi001")]
+    public async Task Never_puts_untrusted_refund_ids_into_razorpay_urls(string id)
+    {
+        var status = await Gateway.GetRefundStatusAsync(id, Settings, Secrets, Ct);
+
+        status.Status.ShouldBe(PaymentRefundStatus.Pending);
+        status.Error.ShouldNotBeNull();
+        _http.Requests.ShouldBeEmpty();
+    }
+
+    /// <summary>Razorpay's documented sample (a payment and a refund in one settlement), with an unsettled item added.</summary>
+    private const string ReconPage = """
+        {"entity":"collection","count":3,"items":[
+          {"entity_id":"pay_DEXrnipqTmWVGE","type":"payment","debit":0,"credit":97100,"amount":100000,"currency":"INR","fee":2900,"tax":442,
+           "on_hold":false,"settled":true,"created_at":1567692556,"settled_at":1568176960,"settlement_id":"setl_DGlQ1Rj8os78Ec","posted_at":null,
+           "credit_type":"default","description":"Recurring Payment via Subscription","notes":"Beam me up Scotty.","payment_id":null,
+           "settlement_utr":"1568176960vxp0rj","order_id":"order_DEXrnRiR3SNDHA","order_receipt":null,"method":"card","card_network":"MasterCard",
+           "card_issuer":"KARB","card_type":"credit","dispute_id":null},
+          {"entity_id":"rfnd_DGRcGzZSLyEdg1","type":"refund","debit":242500,"credit":0,"amount":242500,"currency":"INR","fee":0,"tax":0,
+           "on_hold":false,"settled":true,"created_at":1568107224,"settled_at":1568176960,"settlement_id":"setl_DGlQ1Rj8os78Ec","posted_at":null,
+           "credit_type":"default","description":null,"notes":"Beam me up Scotty.","payment_id":"pay_DEXq1pACSqFxtS","settlement_utr":"1568176960vxp0rj",
+           "order_id":"order_DEXpmZgffXNvuI","order_receipt":null,"method":"card","card_network":"MasterCard","card_issuer":"KARB","card_type":"credit",
+           "dispute_id":null},
+          {"entity_id":"pay_NotSettledYet01","type":"payment","debit":0,"credit":0,"amount":5000,"fee":0,"tax":0,"settled":false,"settlement_id":null}
+        ]}
+        """;
 }

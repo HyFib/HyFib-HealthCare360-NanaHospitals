@@ -310,10 +310,15 @@ public sealed class RetentionService(
             db.Set<OutboxMessage>().IgnoreQueryFilters().Where(m => m.Status != OutboxStatus.Pending && (m.ProcessedAt ?? m.CreatedAt) < before),
             m => m.Id, countOnly, ct),
         RetentionSchedule.MessageLog => DeleteAsync(db.Set<NotificationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct),
-        RetentionSchedule.IntegrationLog => DeleteAsync(db.Set<IntegrationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct),
+        RetentionSchedule.IntegrationLog => PurgeIntegrationLogsAsync(before, countOnly, ct),
         RetentionSchedule.SignInLog => PurgeSignInsAsync(before, countOnly, ct),
         _ => Task.FromResult(0),
     };
+
+    /// <summary>The integration log and the payment gateway's webhook events (event and gateway ids only), kept alike.</summary>
+    private async Task<int> PurgeIntegrationLogsAsync(DateTimeOffset before, bool countOnly, CancellationToken ct) =>
+        await DeleteAsync(db.Set<IntegrationLog>().IgnoreQueryFilters().Where(l => l.CreatedAt < before), l => l.Id, countOnly, ct)
+        + await DeleteAsync(db.Set<Billing.Domain.GatewayWebhookEvent>().Where(e => e.ReceivedAt < before), e => e.Id, countOnly, ct);
 
     /// <summary>Old sign-in code requests, sessions that ended before the cut-off, and refresh tokens past their expiry.</summary>
     private async Task<int> PurgeSignInsAsync(DateTimeOffset before, bool countOnly, CancellationToken ct)

@@ -56,6 +56,7 @@ public sealed class TallyService(HospitalDbContext db, ISettingsService settings
         var payouts = await db.Set<DoctorPayout>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(p => p.FacilityId == facilityId && p.Status == PayoutStatus.Paid && p.PaidAt >= start && p.PaidAt < end)
             .ToListAsync(ct);
+        var gatewaySettlements = await GatewaySettlementService.ForDayBookAsync(db, facilityId, date, ct);
 
         var payerIds = bills.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value)
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
@@ -105,7 +106,8 @@ public sealed class TallyService(HospitalDbContext db, ISettingsService settings
             creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount)).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(doctors.GetValueOrDefault(f.PractitionerId) ?? "Doctor", f.Amount)).ToList(),
             payouts.Select(p => new TallyPayout(
-                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId) ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList());
+                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId) ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList(),
+            gatewaySettlements);
     }
 
     public async Task<IReadOnlyList<AccountingVoucher>> BuildVouchersAsync(Guid facilityId, DateOnly date, CancellationToken ct)

@@ -57,18 +57,38 @@ public sealed class GatewayOrder : AuditableEntity, IFacilityScoped
     public string? Method { get; set; }
     public Guid? ReceiptId { get; set; }
     public PaymentChannel Channel { get; set; }
+
+    /// <summary>When the gateway took the payment (also the receipt's time).</summary>
     public DateTimeOffset? PaidAt { get; set; }
+
+    /// <summary>Why the order failed, expired or was cancelled, or why its paid receipt could not be recorded.</summary>
     public string? LastError { get; set; }
 
-    public void MarkPaid(string paymentId, decimal amount, string? method, Guid receiptId, DateTimeOffset now)
+    /// <summary>Still waiting for the patient (a failed attempt can be followed by a successful one on the same order).</summary>
+    public bool IsAwaitingPayment => Status is GatewayOrderStatus.Created or GatewayOrderStatus.Failed;
+
+    public void MarkPaid(string paymentId, decimal amount, string? method, Guid receiptId, DateTimeOffset paidAt)
     {
         Status = GatewayOrderStatus.Paid;
         GatewayPaymentId = paymentId;
         PaidAmount = amount;
         Method = method;
         ReceiptId = receiptId;
-        PaidAt = now;
+        PaidAt = paidAt;
         LastError = null;
+    }
+
+    /// <summary>
+    /// The gateway took the money but the receipt could not be recorded: the payment is kept on the order with the
+    /// reason, the order stays open, and the next check (or "Record the receipt") records it.
+    /// </summary>
+    public void RecordCaptureFailure(string paymentId, decimal amount, string? method, DateTimeOffset paidAt, string error)
+    {
+        GatewayPaymentId = paymentId;
+        PaidAmount = amount;
+        Method = method;
+        PaidAt = paidAt;
+        LastError = Clip("Paid, but the receipt could not be recorded: " + error);
     }
 
     public void MarkFailed(string? error)
@@ -76,9 +96,31 @@ public sealed class GatewayOrder : AuditableEntity, IFacilityScoped
         if (Status == GatewayOrderStatus.Created)
         {
             Status = GatewayOrderStatus.Failed;
-            LastError = error is { Length: > 500 } ? error[..500] : error;
+            LastError = Clip(error);
         }
     }
+
+    /// <summary>Nobody paid before the link (or the checkout) expired. Money taken later is still recorded.</summary>
+    public void MarkExpired(string? reason)
+    {
+        if (IsAwaitingPayment && ReceiptId is null && GatewayPaymentId is null)
+        {
+            Status = GatewayOrderStatus.Expired;
+            LastError = Clip(reason ?? "Nobody paid before it expired.");
+        }
+    }
+
+    /// <summary>The link was cancelled at the gateway before anyone paid.</summary>
+    public void MarkCancelled(string? reason)
+    {
+        if (IsAwaitingPayment && ReceiptId is null && GatewayPaymentId is null)
+        {
+            Status = GatewayOrderStatus.Cancelled;
+            LastError = Clip(reason ?? "Cancelled at the payment gateway.");
+        }
+    }
+
+    private static string? Clip(string? text) => text is { Length: > 500 } ? text[..500] : text;
 }
 
 /// <summary>

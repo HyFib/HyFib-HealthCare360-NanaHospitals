@@ -207,8 +207,9 @@ public sealed class RefundService(
                 return reversal.Error!;
             }
 
+            // Paid out in HC360 now; the reconciliation job follows it until the bank confirms it (or it fails).
             reference = reversal.Value;
-            refund.GatewayRefundId = reversal.Value;
+            refund.StartGatewayRefund(reversal.Value);
         }
 
         var paid = refund.MarkPaid(request.Mode, reference, currentUser.UserId, shift.Value?.Id, shift.Value?.Counter, time.GetUtcNow());
@@ -345,19 +346,7 @@ public sealed class RefundService(
             return Error.Rule("billing.gateway_not_configured", "No payment gateway is configured. Refund by another mode.");
         }
 
-        // An online patient advance (appointment prepayment) is reversed on its own payment; bills and IP advances on the
-        // latest paid payment link or checkout large enough to cover the refund.
-        var paymentId = refund.Purpose == RefundPurpose.Advance
-            ? await db.Set<PatientAdvance>()
-                .Where(a => a.Id == refund.AdvanceId && a.Amount - a.RefundedAmount >= refund.Amount)
-                .Select(a => a.GatewayPaymentId)
-                .FirstOrDefaultAsync(ct)
-            : await db.Set<GatewayOrder>()
-                .Where(o => (refund.BillId != null && o.BillId == refund.BillId) || (refund.IpAccountId != null && o.IpAccountId == refund.IpAccountId))
-                .Where(o => o.Status == GatewayOrderStatus.Paid && o.GatewayPaymentId != null && o.PaidAmount >= refund.Amount)
-                .OrderByDescending(o => o.PaidAt)
-                .Select(o => o.GatewayPaymentId)
-                .FirstOrDefaultAsync(ct);
+        var paymentId = await GatewayPaymentForAsync(refund, ct);
         if (paymentId is null)
         {
             return Error.Rule("billing.gateway_payment_missing", "No online payment large enough to reverse was found. Refund by another mode.");
@@ -371,6 +360,26 @@ public sealed class RefundService(
 
         return result.RefundId;
     }
+
+    /// <summary>
+    /// The online payment a gateway refund reverses: an online patient advance (appointment prepayment) on its own
+    /// payment; bills and IP advances on the latest paid payment link or checkout large enough to cover the refund.
+    /// <paramref name="alreadyPaidOut"/> is set when the refund is sent again after the gateway failed it, so its amount
+    /// already counts against the advance.
+    /// </summary>
+    internal async Task<string?> GatewayPaymentForAsync(Refund refund, CancellationToken ct, bool alreadyPaidOut = false) =>
+        refund.Purpose == RefundPurpose.Advance
+            ? await db.Set<PatientAdvance>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(a => a.Id == refund.AdvanceId && a.Amount - a.RefundedAmount + (alreadyPaidOut ? refund.Amount : 0m) >= refund.Amount)
+                .Select(a => a.GatewayPaymentId)
+                .FirstOrDefaultAsync(ct)
+            : await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(o => o.FacilityId == refund.FacilityId)
+                .Where(o => (refund.BillId != null && o.BillId == refund.BillId) || (refund.IpAccountId != null && o.IpAccountId == refund.IpAccountId))
+                .Where(o => o.Status == GatewayOrderStatus.Paid && o.GatewayPaymentId != null && o.PaidAmount >= refund.Amount)
+                .OrderByDescending(o => o.PaidAt)
+                .Select(o => o.GatewayPaymentId)
+                .FirstOrDefaultAsync(ct);
 
     internal Task NotifyApproversAsync(Refund refund, CancellationToken ct) =>
         notifications.NotifyPermissionHoldersAsync(

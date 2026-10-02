@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Integrations;
+
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
 public enum RefundStatus
@@ -53,8 +55,68 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
     public string? Counter { get; set; }
     public string? GatewayRefundId { get; set; }
 
+    /// <summary>
+    /// For a refund through the payment gateway: whether the bank has returned the money yet. The refund is paid out in
+    /// HC360 when the gateway accepts it; this follows it until the gateway reports it processed or failed.
+    /// </summary>
+    public PaymentRefundStatus? GatewayStatus { get; set; }
+
+    /// <summary>The bank's reference for the gateway refund (ARN, RRN or UTR), which the patient's bank can trace.</summary>
+    public string? GatewayReference { get; set; }
+
+    /// <summary>When HC360 learnt that the gateway refund was processed or failed.</summary>
+    public DateTimeOffset? GatewaySettledAt { get; set; }
+
+    public string? GatewayError { get; set; }
+
     /// <summary>Still owed to the patient (counts against the refundable balance).</summary>
     public bool IsOutstanding => Status is RefundStatus.Requested or RefundStatus.Approved;
+
+    /// <summary>Paid through the gateway and not yet confirmed (or failed and not yet retried).</summary>
+    public bool IsGatewayRefundOpen => GatewayRefundId is not null && GatewayStatus is null or PaymentRefundStatus.Pending;
+
+    /// <summary>The gateway accepted the refund (first try or a retry after a failure): it is pending until the bank confirms it.</summary>
+    public void StartGatewayRefund(string gatewayRefundId)
+    {
+        GatewayRefundId = gatewayRefundId;
+        GatewayStatus = PaymentRefundStatus.Pending;
+        GatewayReference = null;
+        GatewaySettledAt = null;
+        GatewayError = null;
+    }
+
+    /// <summary>
+    /// Applies what the gateway reports about the refund. A processed or failed refund is final; an unanswered question
+    /// (an error with no status) changes nothing. Returns true when something changed.
+    /// </summary>
+    public bool ApplyGatewayStatus(RefundStatusResult result, DateTimeOffset now)
+    {
+        if (GatewayRefundId is null || result.RefundId != GatewayRefundId || GatewayStatus is PaymentRefundStatus.Processed or PaymentRefundStatus.Failed)
+        {
+            return false;
+        }
+
+        var reference = result.Reference is { Length: > 0 and <= 64 } r ? r : GatewayReference;
+        if (result.Status == PaymentRefundStatus.Pending)
+        {
+            var changed = GatewayStatus != PaymentRefundStatus.Pending || reference != GatewayReference;
+            if (result.Error is null && changed)
+            {
+                GatewayStatus = PaymentRefundStatus.Pending;
+                GatewayReference = reference;
+                return true;
+            }
+
+            return false;
+        }
+
+        GatewayStatus = result.Status;
+        GatewayReference = reference;
+        GatewaySettledAt = now;
+        var error = Clean(result.Error) ?? "The gateway could not return the money.";
+        GatewayError = result.Status == PaymentRefundStatus.Failed ? error[..Math.Min(error.Length, 300)] : null;
+        return true;
+    }
 
     public static Refund Request(
         Guid facilityId, string number, RefundPurpose purpose, Guid patientId, Guid? billId, Guid? ipAccountId, decimal amount, string reason,
