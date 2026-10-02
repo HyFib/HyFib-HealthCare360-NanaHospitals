@@ -88,7 +88,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 
 | Area | Endpoints |
 |---|---|
-| System | `GET /api/v1/system/info` (hospital name), `GET /health/live` (connection check) |
+| System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
 | Profiles | `GET /api/v1/portal/profiles` |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
 | Appointments | `GET /api/v1/portal/appointments?scope=upcoming\|past`, `GET …/{id}`, `POST /api/v1/portal/appointments`, `POST …/{id}/cancel`, `POST …/{id}/reschedule`, `POST …/{id}/payment`, `POST …/{id}/payment/confirm` |
@@ -103,6 +103,21 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Privacy | `GET /api/v1/portal/privacy/status?patientId=`, `GET …/summary?patientId=`, `GET …/requests?patientId=`, `GET …/requests/{id}`, `POST …/requests`, `POST …/requests/{id}/withdraw`, `GET`, `PUT` and `DELETE …/nominee`, `GET …/notices?patientId=`, `GET …/notices/{id}`; public `GET /api/v1/public/privacy` (see [privacy.md](privacy.md)) |
 | Public links | `GET` and `POST /api/v1/public/feedback/invitations/{token}`, `GET` and `POST /api/v1/public/feedback/forms/{token}[?kiosk=true]`, `GET` and `POST /api/v1/public/unsubscribe/{token}` |
 | Document checks | `GET /api/v1/public/prescriptions/verify/{token}`, `GET /api/v1/{lab\|radiology\|cardiology}/reports/verify/{code}` |
+
+## When the hospital turns the portal or video off
+
+The hospital can turn the patient portal or video consultations off ([features.md](features.md)). The portal reads
+`features` from `GET /api/v1/system/info` (asked again every five minutes) and records any answer refused with
+`feature.disabled` (`onFeatureDisabled` of the API client), so a switch turned while a page is open is noticed too.
+
+* **Portal off.** Sign-in, every signed-in page and the doctor directory show "The patient portal is not available
+  right now. Please contact the hospital.", say that QR checks and SMS links still work, and offer "Try again", which
+  asks the server once more. Document checks, the privacy notice, feedback and unsubscribe links, and video join links
+  keep working.
+* **Video off.** The menu, the home page and the sign-in page leave video consultations out, the directory offers no
+  video, and the video pages and the SMS join link say "Video consultations are not available right now". A video
+  appointment can then only be cancelled from the portal; the page asks the patient to contact the hospital about it.
+* A video call already on screen is never cut off by either switch.
 
 ## Video consultations
 
