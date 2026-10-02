@@ -32,5 +32,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
+    // Form tests drive Fluent components with user-event. When the staff and portal suites run side by side
+    // (pnpm -r test, as CI does) one can take longer than the 5 s default; the portal allows 20 s for the same reason.
+    testTimeout: 20_000,
   },
 });
