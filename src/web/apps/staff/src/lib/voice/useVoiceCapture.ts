@@ -1,8 +1,7 @@
 import { bridge } from '@hc360/core';
 import { useEffect, useEffectEvent, useRef, useState } from 'react';
-import { transcribeAudio } from './api';
-import { assistantErrorMessage } from './errors';
-import { MAX_RECORDING_MS, startRecording, VoiceError, type Recording, type VoiceMode } from './recorder';
+import { transcribeAudio } from '@/lib/ai';
+import { startRecording, VoiceError, type Recording, type VoiceMode, type VoiceUse } from './recorder';
 
 export type VoicePhase = 'idle' | 'starting' | 'listening' | 'transcribing';
 
@@ -11,6 +10,8 @@ export interface VoiceCapture {
   error: string | null;
   /** Seconds recorded so far (browser recording). */
   seconds: number;
+  /** The caller's limit for one browser recording, in seconds. */
+  maxSeconds: number;
   start: () => void;
   /** Ends a browser recording early; the audio is then transcribed. */
   stop: () => void;
@@ -21,20 +22,23 @@ export interface VoiceCapture {
 const NOTHING_HEARD = 'Nothing was heard. Try again, a little closer to the microphone.';
 
 /**
- * Speech to text for the assistant: HC360 Desktop's offline Windows speech (`bridge.dictate('en-IN')`), or a browser
- * recording sent to the server's speech-to-text. The recognised text goes to `onText` for the user to check and edit;
- * it is never logged or stored.
+ * Speech to text for the assistant and clinical dictation: HC360 Desktop's offline Windows speech
+ * (`bridge.dictate('en-IN')`), or a browser recording sent to the server's speech-to-text. The recognised text goes to
+ * `onText` for the user to check and edit; it is never logged or stored. `use` sets the recording limit and the
+ * wording of failures for the screen.
  */
 export function useVoiceCapture(
   mode: VoiceMode | null,
   patientId: string | null,
   onText: (text: string) => void,
+  use: VoiceUse,
 ): VoiceCapture {
   const [phase, setPhase] = useState<VoicePhase>('idle');
   const [error, setError] = useState<string | null>(null);
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(0);
   const recording = useRef<Recording | null>(null);
+  const maxSeconds = Math.round(use.maxRecordingMs / 1000);
 
   // Release the microphone if the panel goes away mid-recording (sign-out, lock).
   const discardRecording = useEffectEvent(() => recording.current?.cancel());
@@ -70,7 +74,7 @@ export function useVoiceCapture(
   const recordAndTranscribe = async () => {
     setPhase('starting');
     try {
-      const session = await startRecording();
+      const session = await startRecording(use);
       recording.current = session;
       const started = Date.now();
       setStartedAt(started);
@@ -85,7 +89,7 @@ export function useVoiceCapture(
       const response = await transcribeAudio(clip.blob, clip.fileName, patientId);
       deliver(response.text);
     } catch (problem) {
-      setError(problem instanceof VoiceError ? problem.message : assistantErrorMessage(problem));
+      setError(problem instanceof VoiceError ? problem.message : use.describeError(problem));
     } finally {
       recording.current = null;
       setPhase('idle');
@@ -106,13 +110,14 @@ export function useVoiceCapture(
 
   const seconds =
     phase === 'listening' && mode === 'server' && startedAt > 0
-      ? Math.min(MAX_RECORDING_MS / 1000, Math.max(0, Math.floor((now - startedAt) / 1000)))
+      ? Math.min(maxSeconds, Math.max(0, Math.floor((now - startedAt) / 1000)))
       : 0;
 
   return {
     phase,
     error,
     seconds,
+    maxSeconds,
     start,
     stop: () => recording.current?.stop(),
     cancel: () => recording.current?.cancel(),

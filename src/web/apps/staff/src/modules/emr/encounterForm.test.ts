@@ -7,6 +7,7 @@ import {
   emptyEncounterForm,
   encounterFormSchema,
   isSignable,
+  NOTE_FIELD_LIMITS,
   templateConflicts,
   toContent,
   toFormValues,
@@ -53,6 +54,21 @@ describe('schema', () => {
     const result = schema.safeParse({ ...emptyEncounterForm, referralExternal: 'AIIMS cardiology' });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.path).toEqual(['referralReason']);
+  });
+
+  it('holds each SOAP field to the server’s length limit', () => {
+    expect(NOTE_FIELD_LIMITS).toEqual({
+      chiefComplaint: 1000,
+      historyOfPresentIllness: 8000,
+      examination: 8000,
+      assessment: 4000,
+      plan: 8000,
+    });
+    for (const [field, limit] of Object.entries(NOTE_FIELD_LIMITS)) {
+      expect(schema.safeParse({ ...emptyEncounterForm, [field]: 'a'.repeat(limit) }).success).toBe(true);
+      const over = schema.safeParse({ ...emptyEncounterForm, [field]: 'a'.repeat(limit + 1) });
+      expect(over.error?.issues[0]?.path).toEqual([field]);
+    }
   });
 });
 

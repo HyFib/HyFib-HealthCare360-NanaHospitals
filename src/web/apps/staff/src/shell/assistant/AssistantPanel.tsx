@@ -44,9 +44,12 @@ import {
   type ReactNode,
   type SetStateAction,
 } from 'react';
+import { aiQueries } from '@/lib/ai';
 import { moduleManifests } from '@/lib/moduleRegistry';
+import { recorderSupported, voiceAvailability, type VoiceMode, type VoiceUse } from '@/lib/voice/recorder';
+import { useVoiceCapture, type VoiceCapture } from '@/lib/voice/useVoiceCapture';
 import { patientQueries, type PatientListItem } from '@/modules/patients/api';
-import { aiQueries, sendAssistantCommand } from './api';
+import { sendAssistantCommand } from './api';
 import { assistantErrorMessage } from './errors';
 import {
   canOpenPath,
@@ -59,8 +62,6 @@ import {
   type PlanEnvironment,
 } from './intents';
 import { emrNoteDraftName, keepNoteDraft } from './noteDraft';
-import { recorderSupported, voiceAvailability, type VoiceMode } from './recorder';
-import { useVoiceCapture, type VoiceCapture } from './useVoiceCapture';
 
 /** One command and what came of it. Kept in memory for this sign-in only; never stored or logged. */
 export interface AssistantExchange {
@@ -82,6 +83,13 @@ export interface AssistantExchange {
 const MAX_HISTORY = 20;
 const COMMAND_MAX_LENGTH = 500;
 const NOTE_MAX_LENGTH = 20_000;
+
+/** A spoken command takes a few seconds, so a browser recording stops after 30. */
+const ASSISTANT_VOICE: VoiceUse = {
+  maxRecordingMs: 30_000,
+  typeInstead: 'type the command',
+  describeError: assistantErrorMessage,
+};
 
 /** Every screen and quick action with its permission, to check "go to billing" before opening it. */
 const ALL_LINKS = moduleManifests.flatMap((module) => [...module.links, ...(module.quickActions ?? [])]);
@@ -195,16 +203,24 @@ export function AssistantPanel({
     openRef.current = open;
   }, [open]);
 
-  const voice = voiceAvailability({
-    isDesktop: bridge.isDesktop,
-    recorderSupported: canRecord,
-    status: status.data,
-    statusFailed: status.isError,
-  });
-  const capture = useVoiceCapture(voice.mode, dictation?.patientId ?? contextPatientId, (heard) => {
-    setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard));
-    inputRef.current?.focus();
-  });
+  const voice = voiceAvailability(
+    {
+      isDesktop: bridge.isDesktop,
+      recorderSupported: canRecord,
+      status: status.data,
+      statusFailed: status.isError,
+    },
+    ASSISTANT_VOICE,
+  );
+  const capture = useVoiceCapture(
+    voice.mode,
+    dictation?.patientId ?? contextPatientId,
+    (heard) => {
+      setText((current) => (current.trim() ? `${current.trimEnd()} ${heard}` : heard));
+      inputRef.current?.focus();
+    },
+    ASSISTANT_VOICE,
+  );
 
   // Keep the latest answer in view.
   useEffect(() => {
@@ -563,7 +579,9 @@ function VoiceLine({
   } else if (capture.phase === 'listening') {
     content =
       mode === 'server' ? (
-        <Caption1>Listening… {capture.seconds} s of 30. Choose Stop when you have finished.</Caption1>
+        <Caption1>
+          Listening… {capture.seconds} s of {capture.maxSeconds}. Choose Stop when you have finished.
+        </Caption1>
       ) : (
         <Caption1>Listening… speak now. It stops when you pause.</Caption1>
       );
