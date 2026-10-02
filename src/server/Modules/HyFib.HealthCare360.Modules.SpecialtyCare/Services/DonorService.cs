@@ -20,11 +20,6 @@ public sealed class DonorService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string DonorSeries = "blood-donor";
-    public const string DonorFormat = "{FAC}DN{SEQ:6}";
-    public const string BagSeries = "blood-bag";
-    public const string BagFormat = "{FAC}BB{YY}{SEQ:6}";
-
     public async Task<Result<Guid>> RegisterAsync(SaveDonorRequest request, CancellationToken ct)
     {
         var phone = Phone.Normalize(request.Phone)!;
@@ -41,7 +36,7 @@ public sealed class DonorService(
         var donor = new Donor();
         Apply(donor, request, phone);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        donor.DonorNumber = await numbers.NextAsync(DonorSeries, null, DonorFormat, NumberResetPolicy.Never, ct);
+        donor.DonorNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.BloodDonor, null, ct);
         db.Add(donor);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
@@ -175,7 +170,7 @@ public sealed class DonorService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var bagNumber = string.IsNullOrWhiteSpace(request.BagNumber)
-            ? await numbers.NextAsync(BagSeries, facilityId, BagFormat, NumberResetPolicy.Yearly, ct)
+            ? await numbers.NextAsync(SpecialtyCareNumberSeries.BloodBag, facilityId, ct)
             : request.BagNumber.Trim().ToUpperInvariant();
         if (await db.Set<Donation>().IgnoreQueryFilters().AnyAsync(d => d.BagNumber == bagNumber, ct))
         {

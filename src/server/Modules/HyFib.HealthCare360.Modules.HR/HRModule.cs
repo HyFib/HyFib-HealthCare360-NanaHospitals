@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.HR.Features.Payroll;
 using HyFib.HealthCare360.Modules.HR.Features.Rostering;
 using HyFib.HealthCare360.Modules.HR.Features.SelfService;
 using HyFib.HealthCare360.Modules.HR.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.HR;
 
@@ -45,6 +46,8 @@ public sealed class HRModule : IModule
     public string Name => "hr";
 
     public IEnumerable<PermissionDefinition> Permissions => HRPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => HRNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

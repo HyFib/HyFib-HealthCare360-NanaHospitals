@@ -11,9 +11,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 /// </summary>
 public sealed class AssetService(HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, TimeProvider time)
 {
-    public const string TagSeries = "supplychain.asset";
-    public const string TagFormat = "{FAC}AS{SEQ:6}";
-
     public async Task<Result<DocumentCreated>> CreateAsync(SaveAssetRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -31,7 +28,7 @@ public sealed class AssetService(HospitalDbContext db, INumberSeries numbers, IC
         var asset = new Asset
         {
             FacilityId = facilityId,
-            AssetTag = await numbers.NextAsync(TagSeries, facilityId, TagFormat, NumberResetPolicy.Never, ct),
+            AssetTag = await numbers.NextAsync(SupplyChainNumberSeries.AssetTag, facilityId, ct),
         };
         Apply(asset, request);
         asset.Barcode ??= asset.AssetTag;

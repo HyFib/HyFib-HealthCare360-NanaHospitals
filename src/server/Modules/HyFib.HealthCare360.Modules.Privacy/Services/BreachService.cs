@@ -43,8 +43,6 @@ public sealed class BreachService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string Series = "privacy.breach";
-    public const string Format = "DPB{YY}{SEQ:4}";
     public const string NoticeTemplate = "privacy.breach.notice";
     private const int Batch = 500;
 
@@ -95,7 +93,7 @@ public sealed class BreachService(
         var breach = new Breach();
         Apply(breach, request);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        breach.BreachNumber = await numbers.NextAsync(Series, null, Format, NumberResetPolicy.Yearly, ct);
+        breach.BreachNumber = await numbers.NextAsync(PrivacyNumberSeries.Breach, null, ct);
         db.Add(breach);
         audit.Add(new AuditEntry(AuditCategories.Security, "privacy.breach.recorded", $"Personal data breach {breach.BreachNumber} recorded: {breach.Title}")
         {

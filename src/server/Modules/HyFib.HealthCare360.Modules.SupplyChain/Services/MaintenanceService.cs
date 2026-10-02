@@ -18,9 +18,6 @@ public sealed class MaintenanceService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string TicketSeries = "supplychain.ticket";
-    public const string TicketFormat = "{FAC}MT{YY}{SEQ:6}";
-
     /// <summary>PM visits and calibrations are flagged this many days ahead (overdue ones always).</summary>
     public const int DueWindowDays = 7;
 
@@ -137,7 +134,7 @@ public sealed class MaintenanceService(
         var ticket = new MaintenanceTicket
         {
             FacilityId = asset.FacilityId,
-            Number = await numbers.NextAsync(TicketSeries, asset.FacilityId, TicketFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(SupplyChainNumberSeries.MaintenanceTicket, asset.FacilityId, ct),
             AssetId = asset.Id,
             ReportedByUserId = currentUser.UserId,
             ReportedAt = time.GetUtcNow(),

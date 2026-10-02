@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Engagement.Features.Patient360;
 using HyFib.HealthCare360.Modules.Engagement.Features.Portal;
 using HyFib.HealthCare360.Modules.Engagement.Features.Referrals;
 using HyFib.HealthCare360.Modules.Engagement.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Engagement;
 
@@ -55,6 +56,8 @@ public sealed class EngagementModule : IModule
     public string Name => "engagement";
 
     public IEnumerable<PermissionDefinition> Permissions => EngagementPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => EngagementNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

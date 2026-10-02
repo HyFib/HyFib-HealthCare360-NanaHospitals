@@ -82,8 +82,6 @@ public sealed class DispensingService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string InvoiceSeries = "pharmacy.invoice";
-    public const string InvoiceFormat = "{FAC}PH{YY}{SEQ:7}";
     public const string MaxDiscountSetting = "pharmacy.discount.max_percent";
     public const decimal DefaultMaxDiscountPercent = 10m;
     private const int MaxShelfLifeDays = 30;
@@ -193,7 +191,7 @@ public sealed class DispensingService(
             CounsellingNotes = request.CounsellingNotes?.Trim(),
             DiscountPercent = request.DiscountPercent,
         };
-        sale.InvoiceNumber = await numbers.NextAsync(InvoiceSeries, sale.FacilityId, InvoiceFormat, NumberResetPolicy.Yearly, ct);
+        sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
 
         var reference = new StockReference(PharmacyStockReferences.Dispense, sale.Id, sale.InvoiceNumber);
         var issued = await stock.IssueAsync(
@@ -319,7 +317,7 @@ public sealed class DispensingService(
             SoldByUserId = currentUser.UserId,
             DiscountPercent = request.DiscountPercent,
         };
-        sale.InvoiceNumber = await numbers.NextAsync(InvoiceSeries, sale.FacilityId, InvoiceFormat, NumberResetPolicy.Yearly, ct);
+        sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
 
         var reference = new StockReference(PharmacyStockReferences.CounterSale, sale.Id, sale.InvoiceNumber);
         var issued = await stock.IssueAsync(

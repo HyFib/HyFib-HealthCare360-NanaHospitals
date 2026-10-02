@@ -39,9 +39,6 @@ public sealed class ClinicalOrderService(
     IRealtimePublisher realtime,
     TimeProvider time)
 {
-    public const string Series = "clinical-order";
-    public const string Format = "{FAC}OR{YY}{SEQ:7}";
-
     /// <summary>Services a clinician may order; beds, nursing, registration and packages are billed by other flows.</summary>
     public static readonly IReadOnlySet<ServiceCategory> OrderableCategories = new HashSet<ServiceCategory>
     {
@@ -117,7 +114,7 @@ public sealed class ClinicalOrderService(
         var order = new ClinicalOrder
         {
             FacilityId = draft.FacilityId,
-            OrderNumber = await numbers.NextAsync(Series, draft.FacilityId, Format, NumberResetPolicy.Yearly, ct),
+            OrderNumber = await numbers.NextAsync(ClinicalNumberSeries.ClinicalOrder, draft.FacilityId, ct),
             PatientId = draft.PatientId,
             EncounterId = draft.EncounterId,
             VisitId = draft.VisitId,

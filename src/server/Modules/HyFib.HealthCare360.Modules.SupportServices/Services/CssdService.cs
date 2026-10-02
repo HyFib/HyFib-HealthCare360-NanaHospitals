@@ -20,9 +20,6 @@ public sealed class CssdService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string RequestSeries = "cssd-request";
-    public const string RequestFormat = "{FAC}CQ{YY}{SEQ:6}";
-
     /// <summary>Packs expiring within this many days are shown as "expiring soon".</summary>
     public const int ExpiringSoonDays = 2;
 
@@ -50,7 +47,7 @@ public sealed class CssdService(
         var cssdRequest = new CssdRequest
         {
             FacilityId = facilityId,
-            RequestNumber = await numbers.NextAsync(RequestSeries, facilityId, RequestFormat, NumberResetPolicy.Yearly, ct),
+            RequestNumber = await numbers.NextAsync(SupportServicesNumberSeries.CssdRequest, facilityId, ct),
             DepartmentId = request.DepartmentId,
             RequestedByName = currentUser.DisplayName,
             RequiredBy = request.RequiredBy,

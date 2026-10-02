@@ -22,9 +22,6 @@ public sealed class MedicalRecordService(
     /// <summary>In-patient charts are due for completion this many days after discharge (common Indian hospital policy).</summary>
     public const int ChartCompletionDays = 7;
 
-    public const string RequestSeries = "mrd-request";
-    public const string RequestFormat = "{FAC}RR{YY}{SEQ:6}";
-
     public async Task<Result<MedicalRecordDto>> CreateAsync(CreateMedicalRecordRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -179,7 +176,7 @@ public sealed class MedicalRecordService(
         var entry = new RecordRequest
         {
             FacilityId = facility,
-            RequestNumber = await numbers.NextAsync(RequestSeries, facility, RequestFormat, NumberResetPolicy.Yearly, ct),
+            RequestNumber = await numbers.NextAsync(ClinicalNumberSeries.RecordRequest, facility, ct),
             PatientId = request.PatientId,
             MedicalRecordId = request.MedicalRecordId,
             RequestedByName = request.RequestedByName.Trim(),

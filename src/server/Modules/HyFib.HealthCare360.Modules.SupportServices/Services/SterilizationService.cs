@@ -20,9 +20,6 @@ public sealed class SterilizationService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string CycleSeries = "cssd-cycle";
-    public const string CycleFormat = "{FAC}CS{YY}{SEQ:6}";
-
     public async Task<Result<LoadDto>> CreateLoadAsync(CreateLoadRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -48,7 +45,7 @@ public sealed class SterilizationService(
         var load = new SterilizationLoad
         {
             FacilityId = facilityId,
-            CycleNumber = await numbers.NextAsync(CycleSeries, facilityId, CycleFormat, NumberResetPolicy.Yearly, ct),
+            CycleNumber = await numbers.NextAsync(SupportServicesNumberSeries.SterilisationCycle, facilityId, ct),
             SterilizerName = request.SterilizerName.Trim(),
             Method = request.Method,
             Program = Clean(request.Program),

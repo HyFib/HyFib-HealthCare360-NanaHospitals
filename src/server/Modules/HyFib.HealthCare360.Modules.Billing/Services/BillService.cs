@@ -24,11 +24,6 @@ public sealed class BillService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string OpSeries = "billing.bill.op";
-    public const string OpFormat = "{FAC}OB{YY}{SEQ:7}";
-    public const string IpSeries = "billing.bill.ip";
-    public const string IpFormat = "{FAC}IB{YY}{SEQ:7}";
-
     public async Task<Result<Guid>> CreateOpDraftAsync(CreateBillRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -231,8 +226,8 @@ public sealed class BillService(
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
         var number = bill.Type == BillType.InPatient
-            ? await numbers.NextAsync(IpSeries, bill.FacilityId, IpFormat, NumberResetPolicy.Yearly, ct)
-            : await numbers.NextAsync(OpSeries, bill.FacilityId, OpFormat, NumberResetPolicy.Yearly, ct);
+            ? await numbers.NextAsync(BillingNumberSeries.IpBill, bill.FacilityId, ct)
+            : await numbers.NextAsync(BillingNumberSeries.OpBill, bill.FacilityId, ct);
         var finalized = bill.Finalize(number, currentUser.UserId, time.GetUtcNow());
         if (finalized.IsFailure)
         {

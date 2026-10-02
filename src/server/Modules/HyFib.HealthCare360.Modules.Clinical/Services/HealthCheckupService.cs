@@ -23,10 +23,6 @@ public sealed class HealthCheckupService(
 {
     private readonly PackageBilling billing = new(charges);
 
-    public const string BookingSeries = "healthcheck-booking";
-    public const string BookingFormat = "{FAC}HC{YY}{SEQ:6}";
-    public const string BatchSeries = "healthcheck-batch";
-    public const string BatchFormat = "{FAC}HCB{YY}{SEQ:4}";
     public const string DefaultConsultationCode = "CONS-NEW";
 
     private static readonly ServiceCategory[] DiagnosticCategories = [ServiceCategory.Laboratory, ServiceCategory.Radiology, ServiceCategory.Cardiology];
@@ -160,7 +156,7 @@ public sealed class HealthCheckupService(
         var batch = new CorporateCheckupBatch
         {
             FacilityId = facilityId,
-            BatchNumber = await numbers.NextAsync(BatchSeries, facilityId, BatchFormat, NumberResetPolicy.Yearly, ct),
+            BatchNumber = await numbers.NextAsync(ClinicalNumberSeries.CorporateCheckupBatch, facilityId, ct),
             CorporateName = request.CorporateName.Trim(),
             ContactPerson = request.ContactPerson?.Trim(),
             ContactPhone = Phone.Normalize(request.ContactPhone),
@@ -326,7 +322,7 @@ public sealed class HealthCheckupService(
         var booking = new PackageBooking
         {
             FacilityId = facilityId,
-            BookingNumber = await numbers.NextAsync(BookingSeries, facilityId, BookingFormat, NumberResetPolicy.Yearly, ct),
+            BookingNumber = await numbers.NextAsync(ClinicalNumberSeries.HealthCheckupBooking, facilityId, ct),
             PatientId = patientId,
             PackageId = package.Id,
             PackageCode = package.Code,

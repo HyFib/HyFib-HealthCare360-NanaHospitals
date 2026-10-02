@@ -12,10 +12,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 public sealed class AdjustmentService(HospitalDbContext db, INumberSeries numbers, StockService stock, ICurrentUser currentUser, TimeProvider time)
 {
     public const string AdjustmentModule = "supplychain.adjustment";
-    public const string AdjustmentSeries = "supplychain.adjustment";
-    public const string AdjustmentFormat = "{FAC}ADJ{YY}{SEQ:6}";
-    public const string CountSeries = "supplychain.count";
-    public const string CountFormat = "{FAC}PSC{YY}{SEQ:5}";
 
     // ------------------------------------------------------------------ adjustments
 
@@ -181,7 +177,7 @@ public sealed class AdjustmentService(HospitalDbContext db, INumberSeries number
         var count = new PhysicalStockCount
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(CountSeries, facilityId, CountFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(SupplyChainNumberSeries.StockCount, facilityId, ct),
             StoreId = request.StoreId,
             StartedAt = time.GetUtcNow(),
             StartedByUserId = currentUser.UserId,
@@ -297,7 +293,7 @@ public sealed class AdjustmentService(HospitalDbContext db, INumberSeries number
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        adjustment.Number = await numbers.NextAsync(AdjustmentSeries, facilityId, AdjustmentFormat, NumberResetPolicy.Yearly, ct);
+        adjustment.Number = await numbers.NextAsync(SupplyChainNumberSeries.Adjustment, facilityId, ct);
         db.Add(adjustment);
         count?.LinkAdjustment(adjustment.Id);
         await db.SaveChangesAsync(ct);

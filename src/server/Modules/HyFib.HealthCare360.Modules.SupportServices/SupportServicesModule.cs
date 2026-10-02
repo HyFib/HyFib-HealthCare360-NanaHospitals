@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.SupportServices.Features.Canteen;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 using HyFib.HealthCare360.Modules.SupportServices.Features.Dietary;
 using HyFib.HealthCare360.Modules.SupportServices.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SupportServices;
 
@@ -63,6 +64,8 @@ public sealed class SupportServicesModule : IModule
     public string Name => "supportservices";
 
     public IEnumerable<PermissionDefinition> Permissions => SupportServicesPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => SupportServicesNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

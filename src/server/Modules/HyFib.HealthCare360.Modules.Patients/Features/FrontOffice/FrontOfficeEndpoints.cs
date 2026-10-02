@@ -295,7 +295,7 @@ internal static class FrontOfficeEndpoints
         var pass = new VisitorPass
         {
             FacilityId = facilityId,
-            PassNumber = await numbers.NextAsync("visitor-pass", facilityId, "VP{YY}{MM}{DD}-{SEQ:4}", NumberResetPolicy.Daily, ct),
+            PassNumber = await numbers.NextAsync(PatientsNumberSeries.VisitorPass, facilityId, ct),
             PatientId = request.PatientId,
             VisitorName = request.VisitorName.Trim(),
             Phone = Phone.Normalize(request.Phone),

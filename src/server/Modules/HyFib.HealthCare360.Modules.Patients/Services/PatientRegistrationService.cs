@@ -38,8 +38,6 @@ public sealed class PatientRegistrationService(
     IAuditLogger audit,
     TimeProvider time)
 {
-    public const string UhidSeries = "uhid";
-    public const string UhidFormat = "{FAC}{YY}{SEQ:6}";
     private const int StrongDuplicateScore = 75;
 
     public async Task<IReadOnlyList<DuplicateCandidate>> FindDuplicatesAsync(DuplicateCheckRequest check, Guid? excludeId, CancellationToken ct)
@@ -128,7 +126,7 @@ public sealed class PatientRegistrationService(
         Apply(patient, input, today, isNew: true);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        patient.Uhid = await numbers.NextAsync(UhidSeries, null, UhidFormat, NumberResetPolicy.Never, ct);
+        patient.Uhid = await numbers.NextAsync(PatientsNumberSeries.Uhid, null, ct);
         patient.MarkRegistered();
         db.Add(patient);
         db.Set<PatientConsent>().Add(new PatientConsent

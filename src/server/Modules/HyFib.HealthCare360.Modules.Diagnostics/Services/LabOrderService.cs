@@ -25,14 +25,6 @@ internal sealed class LabOrderService(
     TimeProvider time,
     ILogger<LabOrderService> logger)
 {
-    public const string AccessionSeries = "lab.accession";
-    public const string AccessionFormat = "{FAC}LB{YY}{SEQ:7}";
-
-    /// <summary>Sample barcodes are numeric and unique across facilities (analysers look samples up by barcode only).</summary>
-    public const string BarcodeSeries = "lab.sample";
-
-    public const string BarcodeFormat = "{SEQ:9}";
-
     // ------------------------------------------------------------------ clinical orders (inside the Clinical unit of work)
 
     /// <summary>
@@ -369,7 +361,7 @@ internal sealed class LabOrderService(
         var order = new LabOrder
         {
             FacilityId = facilityId,
-            AccessionNumber = await numbers.NextAsync(AccessionSeries, facilityId, AccessionFormat, NumberResetPolicy.Yearly, ct),
+            AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.LabAccession, facilityId, ct),
             PatientId = patientId,
             VisitId = visitId,
             AdmissionId = admissionId,
@@ -431,7 +423,7 @@ internal sealed class LabOrderService(
             FacilityId = order.FacilityId,
             LabOrderId = order.Id,
             PatientId = order.PatientId,
-            Barcode = await numbers.NextAsync(BarcodeSeries, null, BarcodeFormat, NumberResetPolicy.Never, ct),
+            Barcode = await numbers.NextAsync(DiagnosticsNumberSeries.LabSample, null, ct),
             SpecimenType = key.Specimen,
             Container = key.Container,
             Section = key.Section,

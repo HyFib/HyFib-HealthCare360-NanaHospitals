@@ -12,9 +12,6 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// </summary>
 public sealed class PreAuthService(HospitalDbContext db, INumberSeries numbers, IAuditLogger audit, ICurrentUser currentUser, TimeProvider time)
 {
-    public const string Series = "insurance.preauth";
-    public const string Format = "{FAC}PA{YY}{SEQ:6}";
-
     public async Task<Result<Guid>> CreateAsync(SavePreAuthRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -38,7 +35,7 @@ public sealed class PreAuthService(HospitalDbContext db, INumberSeries numbers, 
         var preAuth = new PreAuthorization
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(BillingNumberSeries.PreAuthorisation, facilityId, ct),
             PatientId = policy.PatientId,
             PolicyId = policy.Id,
             PayerId = policy.PayerId,

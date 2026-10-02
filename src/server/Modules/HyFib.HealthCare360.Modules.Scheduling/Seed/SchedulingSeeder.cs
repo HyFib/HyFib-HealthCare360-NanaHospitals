@@ -182,7 +182,7 @@ internal sealed class SchedulingSeeder(IOptions<PlatformOptions> options, INumbe
             }
 
             var slot = slots[Math.Min(item.Slot, slots.Count - 1)];
-            var number = await numbers.NextAsync(AppointmentBookingService.NumberSeriesKey, slot.FacilityId, AppointmentBookingService.NumberFormat, NumberResetPolicy.Yearly, ct);
+            var number = await numbers.NextAsync(SchedulingNumberSeries.Appointment, slot.FacilityId, ct);
             var appointment = Appointment.Book(
                 new AppointmentBooking(
                     slot.FacilityId, patients[item.Patient].Id, doctor.Id, slot.DepartmentId, slot.ScheduleId, slot.StartsAt, slot.EndsAt, 1,

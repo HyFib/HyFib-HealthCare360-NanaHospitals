@@ -13,10 +13,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 public sealed class IndentService(HospitalDbContext db, INumberSeries numbers, StockService stock, ICurrentUser currentUser, TimeProvider time)
 {
     public const string ReferenceModule = "supplychain.indent";
-    public const string IndentSeries = "supplychain.indent";
-    public const string IndentFormat = "{FAC}IND{YY}{SEQ:6}";
-    public const string IssueSeries = "supplychain.issue";
-    public const string IssueFormat = "{FAC}ISS{YY}{SEQ:6}";
 
     public async Task<Result<DocumentCreated>> CreateAsync(CreateIndentRequest request, CancellationToken ct)
     {
@@ -51,7 +47,7 @@ public sealed class IndentService(HospitalDbContext db, INumberSeries numbers, S
         var indent = new Indent
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(IndentSeries, facilityId, IndentFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(SupplyChainNumberSeries.Indent, facilityId, ct),
             FromStoreId = request.FromStoreId,
             ToStoreId = request.ToStoreId,
             DepartmentId = request.DepartmentId,
@@ -151,7 +147,7 @@ public sealed class IndentService(HospitalDbContext db, INumberSeries numbers, S
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var now = time.GetUtcNow();
-        var issueNumber = await numbers.NextAsync(IssueSeries, indent.FacilityId, IssueFormat, NumberResetPolicy.Yearly, ct);
+        var issueNumber = await numbers.NextAsync(SupplyChainNumberSeries.Issue, indent.FacilityId, ct);
         var reference = new StockReference(ReferenceModule, indent.Id, issueNumber, $"Indent {indent.Number}");
         var demands = lines.Select(l => new StockDemand(l.Line.ItemId, l.Input.Quantity, l.Input.BatchId, l.Line.Id)).ToList();
 

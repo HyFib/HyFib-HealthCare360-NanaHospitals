@@ -187,7 +187,7 @@ internal static class DemoInventorySeed
             var asset = new Asset
             {
                 FacilityId = facility.Id,
-                AssetTag = await numbers.NextAsync(AssetService.TagSeries, facility.Id, AssetService.TagFormat, NumberResetPolicy.Never, ct),
+                AssetTag = await numbers.NextAsync(SupplyChainNumberSeries.AssetTag, facility.Id, ct),
                 Name = d.Name,
                 Category = d.Category,
                 Make = d.Make,
@@ -264,7 +264,7 @@ internal static class DemoInventorySeed
             db.Add(new MaintenanceTicket
             {
                 FacilityId = facility.Id,
-                Number = await numbers.NextAsync(MaintenanceService.TicketSeries, facility.Id, MaintenanceService.TicketFormat, NumberResetPolicy.Yearly, ct),
+                Number = await numbers.NextAsync(SupplyChainNumberSeries.MaintenanceTicket, facility.Id, ct),
                 AssetId = pump.Id,
                 ReportedAt = time.GetUtcNow().AddHours(-3),
                 Issue = "Occlusion alarm keeps sounding with a patent line; pump stops mid-infusion.",

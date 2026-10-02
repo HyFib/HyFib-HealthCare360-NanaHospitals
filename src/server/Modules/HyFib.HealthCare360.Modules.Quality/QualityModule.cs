@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Quality.Features.Incidents;
 using HyFib.HealthCare360.Modules.Quality.Features.Indicators;
 using HyFib.HealthCare360.Modules.Quality.Features.Risks;
 using HyFib.HealthCare360.Modules.Quality.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Quality;
 
@@ -35,6 +36,8 @@ public sealed class QualityModule : IModule
     public string Name => "quality";
 
     public IEnumerable<PermissionDefinition> Permissions => QualityPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => QualityNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

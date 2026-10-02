@@ -28,9 +28,6 @@ public sealed class DialysisService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string SessionSeries = "dialysis-session";
-    public const string SessionFormat = "{FAC}DL{YY}{SEQ:6}";
-
     private static readonly DialysisSessionStatus[] ActiveStatuses =
         [DialysisSessionStatus.Scheduled, DialysisSessionStatus.InProgress, DialysisSessionStatus.Completed];
 
@@ -184,7 +181,7 @@ public sealed class DialysisService(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        session.SessionNumber = await numbers.NextAsync(SessionSeries, facilityId, SessionFormat, NumberResetPolicy.Yearly, ct);
+        session.SessionNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.DialysisSession, facilityId, ct);
         db.Add(session);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

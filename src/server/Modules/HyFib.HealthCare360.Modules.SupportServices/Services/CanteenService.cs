@@ -20,9 +20,6 @@ public sealed class CanteenService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string BillSeries = "canteen-bill";
-    public const string BillFormat = "{FAC}CN{YY}{SEQ:7}";
-
     /// <summary>Facility setting (decimal): maximum outstanding staff credit per employee; 0 disables the limit. Default Rs. 3,000.</summary>
     public const string StaffCreditLimitSetting = "supportservices.canteen.staffCreditLimit";
 
@@ -93,7 +90,7 @@ public sealed class CanteenService(
         var sale = new CanteenSale
         {
             FacilityId = facilityId,
-            BillNumber = await numbers.NextAsync(BillSeries, facilityId, BillFormat, NumberResetPolicy.Yearly, ct),
+            BillNumber = await numbers.NextAsync(SupportServicesNumberSeries.CanteenBill, facilityId, ct),
             SoldAt = now,
             BusinessDate = today,
             CustomerType = request.CustomerType,

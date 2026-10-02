@@ -29,9 +29,6 @@ public sealed class PrescriptionService(
     INotificationService notifications,
     TimeProvider time)
 {
-    public const string Series = "prescription";
-    public const string Format = "{FAC}RX{YY}{SEQ:7}";
-
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     public async Task<Result<PrescriptionDto>> CreateAsync(CreatePrescriptionRequest request, CancellationToken ct)
@@ -76,7 +73,7 @@ public sealed class PrescriptionService(
         var prescription = new Prescription
         {
             FacilityId = facilityId,
-            PrescriptionNumber = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct),
+            PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, facilityId, ct),
             PatientId = request.PatientId,
             EncounterId = request.EncounterId,
             VisitId = visitId,
@@ -229,7 +226,7 @@ public sealed class PrescriptionService(
             Advice = source.Advice,
             RefillOfPrescriptionId = source.Id,
         };
-        refill.PrescriptionNumber = await numbers.NextAsync(Series, refill.FacilityId, Format, NumberResetPolicy.Yearly, ct);
+        refill.PrescriptionNumber = await numbers.NextAsync(ClinicalNumberSeries.Prescription, refill.FacilityId, ct);
         refill.ReplaceItems(source.Items.OrderBy(i => i.Sequence).Select(i => ToItem(ToRequest(i))));
 
         var signed = await SignCoreAsync(refill, request.OverrideReason, request.AcknowledgeWarnings, request.ConfirmControlledDrugs, ct);

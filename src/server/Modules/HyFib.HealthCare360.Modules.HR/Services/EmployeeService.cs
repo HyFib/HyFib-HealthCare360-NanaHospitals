@@ -19,9 +19,6 @@ public sealed class EmployeeService(
     IAuditLogger audit,
     TimeProvider time)
 {
-    public const string EmployeeSeries = "hr.employee";
-    public const string EmployeeFormat = "{FAC}EMP{SEQ:5}";
-
     public async Task<Result<EmployeeCreated>> CreateAsync(SaveEmployeeRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -44,7 +41,7 @@ public sealed class EmployeeService(
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        employee.EmployeeCode = await numbers.NextAsync(EmployeeSeries, facilityId, EmployeeFormat, NumberResetPolicy.Never, ct);
+        employee.EmployeeCode = await numbers.NextAsync(HRNumberSeries.Employee, facilityId, ct);
         employee.MarkJoined();
         db.Add(employee);
         await db.SaveChangesAsync(ct);
