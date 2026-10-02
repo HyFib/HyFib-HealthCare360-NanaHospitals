@@ -153,7 +153,9 @@ offline Windows speech, or a browser recording sent to `/ai/voice/transcribe`).
 
 ## Not included
 
-* No AI text or transcripts are stored anywhere, and no conversation history is kept. The AI endpoints are kept out
-  of the idempotency store (`.WithoutStoredResponse()`, checked by `StoredResponseTests`), which otherwise keeps a
-  retried request's answer for a day.
+* No AI text or transcripts are stored anywhere, and no conversation history is kept. The idempotency store keeps a
+  request's answer for a day so that a retry can be answered again; for the AI endpoints it keeps only that the
+  request was answered (`.WithoutStoredResponse()`, checked by `StoredResponseTests`). A retry with the same
+  `Idempotency-Key` therefore makes no second AI call and no second quota charge. It gets 409
+  `idempotency.answer_not_kept`, which the screens word as "The connection dropped before the answer arrived".
 * AI does not take any action by itself: no booking, no note saving, no ordering.

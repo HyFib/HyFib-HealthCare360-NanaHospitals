@@ -60,8 +60,9 @@ internal sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<
 
 /// <summary>
 /// Endpoint metadata: the answer must not be kept, because it is clinical text the hospital does not store (a dictation
-/// transcript, an AI draft, an interpreted voice command). Such endpoints write nothing, so a repeated request only
-/// repeats the work; the <c>Idempotency-Key</c> is ignored and nothing about the request is recorded.
+/// transcript, an AI draft, an interpreted voice command). The <c>Idempotency-Key</c> still works: a retry with the same
+/// key never runs the request again (no second AI call, no second charge to the user's AI quota). It answers 409
+/// <c>idempotency.answer_not_kept</c> instead of the first answer, which was not stored, so the user asks again.
 /// </summary>
 public sealed class NoStoredResponseMetadata
 {
@@ -74,7 +75,7 @@ public sealed class NoStoredResponseMetadata
 
 public static class IdempotencyEndpointConventions
 {
-    /// <summary>Keeps the endpoint's answers out of the idempotency store (see <see cref="NoStoredResponseMetadata"/>).</summary>
+    /// <summary>Keeps the endpoint's answers out of the idempotency store, retries still suppressed (see <see cref="NoStoredResponseMetadata"/>).</summary>
     public static TBuilder WithoutStoredResponse<TBuilder>(this TBuilder builder)
         where TBuilder : IEndpointConventionBuilder =>
         builder.WithMetadata(NoStoredResponseMetadata.Instance);
@@ -104,8 +105,7 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
     {
         if (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method) || HttpMethods.IsOptions(context.Request.Method)
             || !context.Request.Headers.TryGetValue(HeaderName, out var keyValues)
-            || !context.Request.Path.StartsWithSegments("/api")
-            || context.GetEndpoint()?.Metadata.GetMetadata<NoStoredResponseMetadata>() is not null)
+            || !context.Request.Path.StartsWithSegments("/api"))
         {
             await next(context);
             return;
@@ -118,6 +118,7 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
             return;
         }
 
+        var keepsAnswer = context.GetEndpoint()?.Metadata.GetMetadata<NoStoredResponseMetadata>() is null;
         var scope = currentUser.UserId?.ToString("N") ?? "anon:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
         var requestHash = await HashRequestAsync(context.Request);
         var now = time.GetUtcNow();
@@ -138,7 +139,19 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
 
             if (existing.State == IdempotencyState.Completed)
             {
-                await ReplayAsync(context, existing, protector);
+                if (keepsAnswer)
+                {
+                    await ReplayAsync(context, existing, protector);
+                }
+                else
+                {
+                    await Results.Problem(
+                        title: "This request was already answered",
+                        detail: "Its answer is not kept, so it can't be sent again. Please ask again.",
+                        statusCode: StatusCodes.Status409Conflict,
+                        extensions: new Dictionary<string, object?> { ["code"] = "idempotency.answer_not_kept" }).ExecuteAsync(context);
+                }
+
                 return;
             }
 
@@ -207,7 +220,7 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
                 existing.StatusCode = context.Response.StatusCode;
                 existing.ContentType = context.Response.ContentType;
                 existing.Location = context.Response.Headers.Location.ToString() is { Length: > 0 } location ? location : null;
-                existing.ResponseBody = buffer.Length <= MaxStoredBodyBytes
+                existing.ResponseBody = keepsAnswer && buffer.Length <= MaxStoredBodyBytes
                     ? protector.ProtectBytes(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), BodyPurpose(scope))
                     : null;
             }

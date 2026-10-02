@@ -387,7 +387,8 @@ export function insertedToast(fieldsChanged: number, diagnosesAdded: number, ame
 /**
  * Plain words for a failed draft or speech-to-text request, shown in the dialog (never a raw error). The AI endpoints
  * answer with Problem Details carrying a `code`: ai.disabled, ai.speech_disabled, ai.quota, ai.provider_failed and
- * patient.restricted; the `ai` rate limit (20 requests a minute per user) answers 429 without one.
+ * patient.restricted; the `ai` rate limit (20 requests a minute per user) answers 429 without one. An automatic retry
+ * after a dropped connection gets idempotency.answer_not_kept: the server answered, but AI answers are not stored.
  */
 export function dictationErrorMessage(error: unknown, during: 'draft' | 'speech'): string {
   const fallback =
@@ -415,6 +416,10 @@ export function dictationErrorMessage(error: unknown, during: 'draft' | 'speech'
         : 'The speech service could not turn this recording into text. Try again, or type the dictation.';
     case 'patient.restricted':
       return 'This is a restricted record, so AI dictation cannot be used for this patient. Write the note yourself.';
+    case 'idempotency.answer_not_kept':
+      return during === 'draft'
+        ? 'The connection dropped before the draft arrived. Try again; your dictation is still here.'
+        : 'The connection dropped before the text arrived. Please record that part again.';
     default:
       break;
   }

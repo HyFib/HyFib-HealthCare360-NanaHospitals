@@ -167,8 +167,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.
-  - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored: those
-    endpoints write nothing, so they bypass the store (`.WithoutStoredResponse()`).
+  - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
+    (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
+    quota charge. The retry gets 409 `idempotency.answer_not_kept`, and the user asks again.
 - Optimistic concurrency: a record changed by someone else is never silently overwritten.
 
 ### Application hardening

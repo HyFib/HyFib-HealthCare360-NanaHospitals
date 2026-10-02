@@ -392,6 +392,14 @@ describe('errors in plain words', () => {
     expect(dictationErrorMessage(problem(503, 'ai.speech_disabled'), 'speech')).toContain('server speech-to-text');
   });
 
+  it('asks again when a retry finds that the answer was not kept', () => {
+    const notKept = problem(409, 'idempotency.answer_not_kept');
+    expect(dictationErrorMessage(notKept, 'draft')).toBe(
+      'The connection dropped before the draft arrived. Try again; your dictation is still here.',
+    );
+    expect(dictationErrorMessage(notKept, 'speech')).toContain('record that part again');
+  });
+
   it('says when the AI took too long, without suggesting the server is unreachable', () => {
     const timedOut = new DOMException('signal timed out', 'TimeoutError');
     expect(dictationErrorMessage(timedOut, 'draft')).toBe(
