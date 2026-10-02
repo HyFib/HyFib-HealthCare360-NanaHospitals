@@ -1,6 +1,7 @@
 using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -196,6 +197,7 @@ public static class PlatformServiceCollectionExtensions
         // Staff always join their own facility's topic on connect; re-subscribing is allowed for that facility only.
         services.AddRealtimeTopic(new RealtimeTopicPolicy("facility", RealtimeTopicScope.Facility, []));
         services.AddScoped<IFileStore, EncryptedFileStore>();
+        services.AddScoped<DocumentAssets>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddScoped<SystemHealthService>();
@@ -225,6 +227,7 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddScoped<ISmsSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddScoped<IWhatsAppSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
         services.TryAddScoped<IEmailSender>(sp => sp.GetRequiredService<UnconfiguredChannelSender>());
+        services.TryAddSingleton<IPdfRenderer, UnavailablePdfRenderer>();
 
         // ---------------- background work
         if (options.RunsJobs)
