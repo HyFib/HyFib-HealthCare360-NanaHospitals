@@ -4,8 +4,8 @@ ADT (admission, discharge, transfer), ward and bed management with a live bed bo
 census statistics, automatic bed/nursing/consultant-visit charges, and nursing documentation including the medication
 administration record. SRS **WB-01..06**, IPB auto charges (IPB-01), PH-03 MAR feed.
 
-Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references Patients). Schema `inpatient`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (185 unit tests).
+Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references Patients, and Clinical for the ward
+round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (188 unit tests).
 
 ## Permissions
 
@@ -79,6 +79,28 @@ Bed board alerts (`BedAlert`): `Mlc`, `Restricted` (VIP — name shown as "Restr
 
 Conflicts: 409 `admission.already_admitted`, `bed.unavailable`, `bed.taken` (concurrent allocation; the bed's `xmin`
 version and partial unique indexes on active admissions per patient/bed make double allocation impossible).
+
+### Ward round — `GET /api/v1/inpatient/rounds?practitionerId&departmentId`
+Needs `inpatient.admissions.read` **and** `clinical.emr.read` (the round shows the clinical record). It is the ward-round
+section of the doctor's worklist (EMR-01, see the Clinical module).
+
+→ `WardRound{date, practitionerId, departmentId, patients[WardRoundPatient]}`, at most 200 patients:
+
+* **Whose patients**: by default the signed-in doctor's: admissions under them as consultant, and admissions they have
+  recorded a visit to during the stay (`isPrimaryConsultant: false`, shown as a cross-consult). Without a doctor, the
+  department's admissions. Only patients still in a bed (admitted, or discharge in progress), in the bed board's order
+  (ward and bed display order, then name or label).
+* **Each patient**: admission number, UHID, name, age and sex; ward, bed and critical care; day of the stay (the
+  admission day is day 1); expected discharge, provisional diagnosis, MLC; the consultant; the banner's flags (active
+  allergies, critical alerts).
+* **What needs attention**: `lastVisitAt` and `seenToday` (a consultant visit recorded today, IST); `lastNoteAt` (the
+  latest clinical note or encounter during the stay); `resultsToReview` and `hasCriticalResults` (results of the stay
+  not yet reviewed, whoever ordered them); the latest vital signs of the stay with their worst flag (`vitalsSeverity`)
+  and up to three flags in words (`VitalSignsAssessor`). On a doctor's round, visits and notes are the doctor's own; on
+  a department's, anyone's.
+* **Restricted (VIP) patients**, as on the bed board: unless the user may open restricted records, the name reads
+  "Restricted patient" and the diagnosis and vital-sign details are left out (`isRestricted: true`). The bed, UHID,
+  flags and what needs attention stay, and opening the chart asks for break-the-glass.
 
 ### Discharge — `/api/v1/inpatient/admissions/{id}/discharge`
 | Method | Path | Permission | Request → response |

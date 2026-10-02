@@ -87,7 +87,10 @@ export const bedQueries = {
 * Anatomy: `<Page>` → `<PageHeader title subtitle breadcrumbs actions>` → `<Section title description actions flush?>`.
   One primary button per screen, top right. PageHeader also sets the window title.
 * Lists: `DataTable` (columns with `priority: 'low'` hide on tablets; `onRowClick`; `rowActions`; server paging via
-  `page/pageSize/totalCount/onPageChange`; built-in loading/empty/error states). Filters in a `FilterBar`.
+  `page/pageSize/totalCount/onPageChange`; built-in loading/empty/error states). Filters in a `FilterBar`. The table
+  lays out its columns from the header (fixed layout), so give `actionsWidth` (px) with `rowActions`, wide enough for
+  the widest set of row buttons, or the buttons are cut off. Cell text stays on one line unless the cell sets
+  `whiteSpace: 'normal'`; let long text wrap rather than force the table wider than the screen.
 * Feedback: `LoadingState`, `EmptyState` (always say what to do next), `ErrorState` (never raw errors),
   `StatusBadge` (colour from the status word), `KpiCard`, `ConfirmDialog` (every destructive/irreversible action),
   `useNotify()` toasts (success after saves; `notify.error(error, 'Could not …')` on failures).
