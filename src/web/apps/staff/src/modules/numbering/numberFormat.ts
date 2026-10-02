@@ -465,13 +465,111 @@ export function outline(format: string, facilityCode?: string | null): string {
 
 const hasFacilityCode = (format: string) => parseFormat(format).some((p) => p.kind === 'facilityCode');
 
+/** A character of a number, or a run of digits: its fixed first and last digits, and how long it can be. */
+type ShapePiece =
+  | { character: string; run?: undefined }
+  | { character?: undefined; run: { prefix: string; suffix: string; min: number; max: number } };
+
+/** The characters and digit runs of the numbers a format makes, in order. */
+function shape(format: string, facilityCode?: string | null): ShapePiece[] {
+  const pieces: ShapePiece[] = [];
+  let run: { digit: string | null; length: number; grows: boolean }[] = [];
+  const endRun = () => {
+    if (run.length === 0) {
+      return;
+    }
+    const firstVarying = run.findIndex((e) => e.digit === null);
+    const lastVarying = run.map((e) => e.digit === null).lastIndexOf(true);
+    const digits = (from: number, to: number) =>
+      run
+        .slice(from, to)
+        .map((e) => e.digit)
+        .join('');
+    const prefix = firstVarying < 0 ? digits(0, run.length) : digits(0, firstVarying);
+    const suffix = lastVarying < 0 ? digits(0, run.length) : digits(lastVarying + 1, run.length);
+    const length = run.reduce((sum, e) => sum + e.length, 0);
+    pieces.push({ run: { prefix, suffix, min: length, max: run.some((e) => e.grows) ? Infinity : length } });
+    run = [];
+  };
+  const characters = (text: string) => {
+    for (const c of text) {
+      if (/^[0-9]$/.test(c)) {
+        run.push({ digit: c, length: 1, grows: false });
+      } else {
+        endRun();
+        pieces.push({ character: c });
+      }
+    }
+  };
+  for (const part of parseFormat(format)) {
+    switch (part.kind) {
+      case 'year':
+        run.push({ digit: null, length: 4, grows: false });
+        break;
+      case 'shortYear':
+      case 'month':
+      case 'day':
+        run.push({ digit: null, length: 2, grows: false });
+        break;
+      case 'sequence':
+        // A running number is at least its padding long (and at least one digit), and grows past it.
+        run.push({ digit: null, length: Math.max(Math.min(part.width ?? 0, MAX_SEQUENCE_WIDTH), 1), grows: true });
+        break;
+      case 'facilityCode':
+        characters(facilityCode ?? part.text);
+        break;
+      default:
+        characters(part.text);
+    }
+  }
+  endRun();
+  return pieces;
+}
+
 /**
- * Whether two formats can make the same numbers: read with their facility codes in place of {FAC}, or as written when
- * a code they need is unknown.
+ * Whether `format` and `other` can make the same number, with the facility codes in place of {FAC} (as written where a
+ * code is missing). A number is characters (letters, -, / and the facility code's) and runs of digits. Two numbers can
+ * only be equal when their characters are the same in the same places, as `outline` shows, and each pair of digit runs
+ * can come out the same: lengths that can meet, and the same fixed digits where both start or end with some. So {SEQ:6}
+ * and {SEQ:7}, or {YY}{SEQ} and 26{SEQ}, can make the same number, while B1{SEQ} and B2{SEQ}, or {FAC}OB{SEQ} at
+ * facilities NH1 and NH2, never can. Dates are taken as any digits and running numbers as growing without end, so
+ * formats that might meet are never missed.
+ */
+export function canMakeSameNumbers(
+  format: string,
+  facilityCode: string | null | undefined,
+  other: string,
+  otherFacilityCode: string | null | undefined,
+): boolean {
+  const a = shape(format, facilityCode);
+  const b = shape(other, otherFacilityCode);
+  return (
+    a.length === b.length &&
+    a.every((piece, i) => {
+      const otherPiece = b[i];
+      if (!otherPiece) {
+        return false;
+      }
+      if (!piece.run || !otherPiece.run) {
+        return !piece.run && !otherPiece.run && piece.character === otherPiece.character;
+      }
+      const [x, y] = [piece.run, otherPiece.run];
+      return (
+        Math.max(x.min, y.min) <= Math.min(x.max, y.max) &&
+        (x.prefix.startsWith(y.prefix) || y.prefix.startsWith(x.prefix)) &&
+        (x.suffix.endsWith(y.suffix) || y.suffix.endsWith(x.suffix))
+      );
+    })
+  );
+}
+
+/**
+ * Whether two formats can make the same numbers: with their facility codes in place of {FAC}, or as written when a
+ * code they need is unknown.
  */
 function alike(format: string, code: string | null | undefined, other: string, otherCode: string | null | undefined) {
   const known = (code != null || !hasFacilityCode(format)) && (otherCode != null || !hasFacilityCode(other));
-  return known ? outline(format, code) === outline(other, otherCode) : outline(format) === outline(other);
+  return known ? canMakeSameNumbers(format, code, other, otherCode) : canMakeSameNumbers(format, null, other, null);
 }
 
 /**
@@ -508,7 +606,7 @@ function sameFormatMessage(other: OtherFormat, change: FormatChange): string {
   if (codesAgree && other.format === change.format) {
     return `${other.name} already uses this format. Change the fixed text so the two kinds of number can be told apart.`;
   }
-  if (codesAgree && outline(other.format) === outline(change.format)) {
+  if (codesAgree && canMakeSameNumbers(other.format, null, change.format, null)) {
     return `${other.name} uses ${other.format}, which can make the same numbers: the two differ only in digits, dates or the length of the running number. ${fix}`;
   }
   const codes = withCode.length === 1 ? `code ${withCode[0]}` : `codes ${joinWords(withCode, 'and')}`;

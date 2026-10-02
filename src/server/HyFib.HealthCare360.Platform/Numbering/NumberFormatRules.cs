@@ -39,10 +39,10 @@ public sealed record NumberFormatChange
 }
 
 /// <summary>
-/// Another series' format now, whether that is the series' own default, and the facility code its numbers carry for
-/// {FAC} (null when unknown).
+/// Another format now in use, whether that is its series' default, and the facility code its numbers carry for {FAC}
+/// (null when unknown). <paramref name="SameSeries"/>: the series being changed, as another facility has it.
 /// </summary>
-public sealed record OtherNumberFormat(string Name, string Format, bool IsDefault, string? FacilityCode = null);
+public sealed record OtherNumberFormat(string Name, string Format, bool IsDefault, string? FacilityCode = null, bool SameSeries = false);
 
 /// <summary>How long the numbers of a format can get, part by part.</summary>
 public sealed record NumberFormatLength(int FacilityCode, int Date, int RunningNumber, int FixedText)
@@ -336,10 +336,107 @@ public static class NumberFormatRules
         return errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// Whether <paramref name="format"/> and <paramref name="other"/> can make the same number, with the facility codes in
+    /// place of {FAC} (as written where a code is null). A number is characters (letters, -, / and the facility code's)
+    /// and runs of digits. Two numbers can only be equal when their characters are the same in the same places, as
+    /// <see cref="Outline"/> shows, and each pair of digit runs can come out the same: lengths that can meet, and the same
+    /// fixed digits where both start or end with some. So {SEQ:6} and {SEQ:7}, or {YY}{SEQ} and 26{SEQ}, can make the same
+    /// number, while B1{SEQ} and B2{SEQ}, or {FAC}OB{SEQ} at facilities NH1 and NH2, never can. Dates are taken as any
+    /// digits and running numbers as growing without end, so formats that might meet are never missed.
+    /// </summary>
+    public static bool CanMakeSameNumbers(string format, string? facilityCode, string other, string? otherFacilityCode)
+    {
+        var shape = Shape(format, facilityCode);
+        var otherShape = Shape(other, otherFacilityCode);
+        return shape.Count == otherShape.Count && shape.Zip(otherShape).All(pair => pair.First.Run is { } run
+            ? pair.Second.Run is { } otherRun && run.CanMeet(otherRun)
+            : pair.Second.Run is null && pair.First.Character == pair.Second.Character);
+    }
+
+    /// <summary>The characters and digit runs of the numbers a format makes, in order.</summary>
+    private static List<ShapePiece> Shape(string format, string? facilityCode)
+    {
+        var pieces = new List<ShapePiece>();
+        var run = new List<(char? Digit, int Length, bool Grows)>();
+        void EndRun()
+        {
+            if (run.Count == 0)
+            {
+                return;
+            }
+
+            var prefix = string.Concat(run.TakeWhile(e => e.Digit is not null).Select(e => e.Digit!.Value));
+            var suffix = string.Concat(Enumerable.Reverse(run).TakeWhile(e => e.Digit is not null).Select(e => e.Digit!.Value).Reverse());
+            var length = run.Sum(e => e.Length);
+            pieces.Add(new ShapePiece('#', new DigitRun(prefix, suffix, length, run.Any(e => e.Grows) ? null : length)));
+            run.Clear();
+        }
+
+        void Characters(string text)
+        {
+            foreach (var c in text)
+            {
+                if (char.IsAsciiDigit(c))
+                {
+                    run.Add((c, 1, false));
+                }
+                else
+                {
+                    EndRun();
+                    pieces.Add(new ShapePiece(c, null));
+                }
+            }
+        }
+
+        foreach (var part in NumberFormat.Parse(format))
+        {
+            switch (part.Kind)
+            {
+                case NumberFormatPartKind.Year:
+                    run.Add((null, 4, false));
+                    break;
+                case NumberFormatPartKind.ShortYear or NumberFormatPartKind.Month or NumberFormatPartKind.Day:
+                    run.Add((null, 2, false));
+                    break;
+                case NumberFormatPartKind.Sequence:
+                    // A running number is at least its padding long (and at least one digit), and grows past it.
+                    run.Add((null, Math.Max(Math.Min(part.Width ?? 0, MaxSequenceWidth), 1), true));
+                    break;
+                case NumberFormatPartKind.FacilityCode when facilityCode is not null:
+                    Characters(facilityCode);
+                    break;
+                default:
+                    Characters(part.Text);
+                    break;
+            }
+        }
+
+        EndRun();
+        return pieces;
+    }
+
+    /// <summary>A character of a number, or (with <paramref name="Run"/>) a run of digits.</summary>
+    private readonly record struct ShapePiece(char Character, DigitRun? Run);
+
+    /// <summary>
+    /// A run of digits: the fixed digits it starts and ends with (all of them when nothing in it varies), and how long it
+    /// can be (no limit when a running number is in it).
+    /// </summary>
+    private sealed record DigitRun(string Prefix, string Suffix, int MinLength, int? MaxLength)
+    {
+        public bool CanMeet(DigitRun other) =>
+            Math.Max(MinLength, other.MinLength) <= Math.Min(MaxLength ?? int.MaxValue, other.MaxLength ?? int.MaxValue)
+            && (Prefix.StartsWith(other.Prefix, StringComparison.Ordinal) || other.Prefix.StartsWith(Prefix, StringComparison.Ordinal))
+            && (Suffix.EndsWith(other.Suffix, StringComparison.Ordinal) || other.Suffix.EndsWith(Suffix, StringComparison.Ordinal));
+    }
+
     /// <summary>Why <paramref name="other"/> can make the numbers the change would make, and what to do about it.</summary>
     private static string SameNumbersMessage(NumberFormatChange change, OtherNumberFormat other)
     {
-        const string Fix = "Change the letters, - or / so the two kinds of number can be told apart.";
+        var fix = other.SameSeries
+            ? "Change the letters, - or / so the two facilities' numbers can be told apart."
+            : "Change the letters, - or / so the two kinds of number can be told apart.";
         var withCode = new[] { (change.Format, change.FacilityCode), (other.Format, other.FacilityCode) }
             .Where(f => f.FacilityCode is not null && HasFacilityCode(f.Format))
             .Select(f => f.FacilityCode!)
@@ -353,23 +450,23 @@ public static class NumberFormatRules
             return $"{other.Name} already uses this format. Change the fixed text so the two kinds of number can be told apart.";
         }
 
-        if (codesAgree && string.Equals(Outline(other.Format), Outline(change.Format), StringComparison.Ordinal))
+        if (codesAgree && CanMakeSameNumbers(other.Format, null, change.Format, null))
         {
-            return $"{other.Name} uses {other.Format}, which can make the same numbers: the two differ only in digits, dates or the length of the running number. {Fix}";
+            return $"{other.Name} uses {other.Format}, which can make the same numbers: the two differ only in digits, dates or the length of the running number. {fix}";
         }
 
         var codes = withCode.Count == 1 ? $"code {withCode[0]}" : $"codes {JoinWords(withCode, "and")}";
-        return $"{other.Name} uses {other.Format}. With the facility {codes} in place of {{FAC}}, the two can make the same numbers. {Fix}";
+        return $"{other.Name} uses {other.Format}. With the facility {codes} in place of {{FAC}}, the two can make the same numbers. {fix}";
     }
 
     /// <summary>
-    /// Whether two formats can make the same numbers: read with their facility codes in place of {FAC}, or as written when
-    /// a code they need is unknown.
+    /// Whether two formats can make the same numbers: with their facility codes in place of {FAC}, or as written when a
+    /// code they need is unknown.
     /// </summary>
     private static bool Alike(string format, string? facilityCode, string other, string? otherFacilityCode) =>
         (facilityCode is not null || !HasFacilityCode(format)) && (otherFacilityCode is not null || !HasFacilityCode(other))
-            ? string.Equals(Outline(format, facilityCode), Outline(other, otherFacilityCode), StringComparison.Ordinal)
-            : string.Equals(Outline(format), Outline(other), StringComparison.Ordinal);
+            ? CanMakeSameNumbers(format, facilityCode, other, otherFacilityCode)
+            : CanMakeSameNumbers(format, null, other, null);
 
     private static bool HasFacilityCode(string format) => NumberFormat.Parse(format).Any(p => p.Kind == NumberFormatPartKind.FacilityCode);
 

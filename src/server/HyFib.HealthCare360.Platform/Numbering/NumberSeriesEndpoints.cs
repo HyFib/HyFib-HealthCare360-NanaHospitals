@@ -196,7 +196,7 @@ internal static class NumberSeriesEndpoints
                     FacilityCount = codes.Count,
                     LongestFacilityCode = LongestCode(codes.Values),
                     FacilityCode = scope is { } facility ? codes.GetValueOrDefault(facility) : mainCode,
-                    OtherFormats = await OtherFormatsAsync(db, catalog, series, codes, mainCode, ct),
+                    OtherFormats = await OtherFormatsAsync(db, catalog, series, scope, codes, mainCode, ct),
                 };
             }
 
@@ -277,14 +277,15 @@ internal static class NumberSeriesEndpoints
     }
 
     /// <summary>
-    /// The formats a changed format must differ from: every other series, as each facility has it (number columns are
-    /// unique across facilities), with the facility code its numbers carry for {FAC}: the facility's own for a
-    /// per-facility series, the main facility's for a shared one.
+    /// The formats a changed format must differ from: every other series, and this series at the other facilities, as
+    /// each facility has them (number columns are unique across facilities), with the facility code their numbers carry
+    /// for {FAC}: the facility's own for a per-facility series, the main facility's for a shared one.
     /// </summary>
     private static async Task<IReadOnlyCollection<OtherNumberFormat>> OtherFormatsAsync(
         HospitalDbContext db,
         NumberSeriesCatalog catalog,
         NumberSeriesDefinition series,
+        Guid? scope,
         IReadOnlyDictionary<Guid, string> codes,
         string? mainCode,
         CancellationToken ct)
@@ -292,14 +293,27 @@ internal static class NumberSeriesEndpoints
         var stored = (await db.Set<NumberSeries>().AsNoTracking().Select(s => new { s.Key, s.FacilityId, s.Format }).ToListAsync(ct))
             .ToDictionary(s => (s.Key, s.FacilityId), s => s.Format);
         var others = new List<OtherNumberFormat>();
-        foreach (var other in catalog.All.Where(d => !d.Hidden && d.Key != series.Key))
+        foreach (var other in catalog.All.Where(d => !d.Hidden))
         {
-            IEnumerable<Guid?> scopes = other.PerFacility ? codes.Keys.Select(id => (Guid?)id) : [null];
+            var sameSeries = other.Key == series.Key;
+            if (sameSeries && !series.PerFacility)
+            {
+                continue;
+            }
+
+            IEnumerable<Guid?> scopes = other.PerFacility
+                ? codes.Keys.Where(id => !sameSeries || id != scope).Select(id => (Guid?)id)
+                : [null];
             foreach (var otherScope in scopes)
             {
                 var format = stored.GetValueOrDefault((other.Key, otherScope)) ?? other.DefaultFormat;
                 var code = otherScope is { } facility ? codes[facility] : mainCode;
-                others.Add(new OtherNumberFormat(other.Name, format, string.Equals(format, other.DefaultFormat, StringComparison.Ordinal), code));
+                others.Add(new OtherNumberFormat(
+                    sameSeries ? $"{other.Name} at facility {code}" : other.Name,
+                    format,
+                    string.Equals(format, other.DefaultFormat, StringComparison.Ordinal),
+                    code,
+                    sameSeries));
             }
         }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canMakeSameNumbers,
   checkChange,
   formatChecks,
   formatProblems,
@@ -257,6 +258,38 @@ describe('checkChange', () => {
     ['{FAC}OB{SEQ}', null, '{FAC}OB#'],
   ])('reads %s at facility %s with the code in place of {FAC}', (format, code, expected) => {
     expect(outline(format, code)).toBe(expected);
+  });
+
+  it.each([
+    ['{FAC}OB{YY}{SEQ:6}', '{FAC}OB{YY}{SEQ:7}', true],
+    ['X{YY}{SEQ:4}', 'X26{SEQ:4}', true],
+    ['OP-{YY}-{SEQ}', 'OP-{SEQ}-{YY}', true],
+    ['A{MM}{SEQ:3}', 'A{YYYY}{SEQ:3}', true],
+    ['B1{SEQ}', 'B2{SEQ}', false],
+    ['A{SEQ:4}9', 'A{SEQ:4}8', false],
+    ['VP{YY}{MM}{DD}-{SEQ:4}', 'VP{YY}{MM}-{SEQ:4}', false],
+  ])('knows whether %s and %s can make the same number', (format, other, same) => {
+    expect(canMakeSameNumbers(format, null, other, null)).toBe(same);
+  });
+
+  // NH1 and NH2 never meet; NH with running number 1000001 makes NH1000001, as NH1 with 000001 does.
+  it.each([
+    ['{FAC}OB{YY}{SEQ:7}', 'NH1', 'NH2', false],
+    ['{FAC}{SEQ:6}', 'NH1', 'NH', true],
+    ['{FAC}OB{YY}{SEQ:7}', 'NH', 'KH', false],
+  ])('reads %s at facilities %s and %s with their codes', (format, code, otherCode, same) => {
+    expect(canMakeSameNumbers(format, code, format, otherCode)).toBe(same);
+  });
+
+  it('lets formats whose fixed digits differ be used together', () => {
+    expect(
+      checkChange(
+        change({
+          format: '{FAC}B1{YY}{SEQ:6}',
+          otherFormats: [{ name: 'IP bill', format: '{FAC}B2{YY}{SEQ:6}', isDefault: false }],
+        }),
+      ),
+    ).toEqual({});
   });
 
   it('refuses formats that make the same numbers once the facility code is filled in', () => {

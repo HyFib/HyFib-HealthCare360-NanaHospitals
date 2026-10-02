@@ -219,6 +219,49 @@ public sealed class NumberFormatRulesTests
             OtherFormats = [new OtherNumberFormat("IP bill", "{FAC}IB{YY}{SEQ:7}", IsDefault: false, FacilityCode: "KH")],
         }).ShouldBeEmpty("NHIB... and KHIB... can never be the same number.");
 
+    [Theory]
+    [InlineData("{FAC}OB{YY}{SEQ:6}", "{FAC}OB{YY}{SEQ:7}", true)]
+    [InlineData("X{YY}{SEQ:4}", "X26{SEQ:4}", true)]
+    [InlineData("OP-{YY}-{SEQ}", "OP-{SEQ}-{YY}", true)]
+    [InlineData("A{MM}{SEQ:3}", "A{YYYY}{SEQ:3}", true)]
+    [InlineData("B1{SEQ}", "B2{SEQ}", false)]
+    [InlineData("A{SEQ:4}9", "A{SEQ:4}8", false)]
+    [InlineData("VP{YY}{MM}{DD}-{SEQ:4}", "VP{YY}{MM}-{SEQ:4}", false)]
+    public void Formats_make_the_same_number_only_where_their_characters_and_fixed_digits_allow(string format, string other, bool same) =>
+        NumberFormatRules.CanMakeSameNumbers(format, null, other, null).ShouldBe(same);
+
+    [Theory]
+    [InlineData("{FAC}OB{YY}{SEQ:7}", "NH1", "NH2", false)]
+    [InlineData("{FAC}{SEQ:6}", "NH1", "NH", true)]
+    [InlineData("{FAC}OB{YY}{SEQ:7}", "NH", "KH", false)]
+    public void Facility_codes_count_as_the_characters_and_digits_they_are(string format, string code, string otherCode, bool same) =>
+        // NH1 and NH2 never meet; NH with running number 1000001 makes NH1000001, as NH1 with 000001 does.
+        NumberFormatRules.CanMakeSameNumbers(format, code, format, otherCode).ShouldBe(same);
+
+    [Fact]
+    public void This_series_at_another_facility_must_not_make_the_same_numbers()
+    {
+        // At AB, {FAC}COB... makes ABCOB..., as facility ABC's own OP bill numbers do.
+        var change = Change(OpBill, "{FAC}COB{YY}{SEQ:7}") with
+        {
+            FacilityCode = "AB",
+            OtherFormats = [new OtherNumberFormat("OP bill at facility ABC", "{FAC}OB{YY}{SEQ:7}", IsDefault: true, FacilityCode: "ABC", SameSeries: true)],
+        };
+
+        NumberFormatRules.Check(change)[NumberFormatRules.FormatField].ShouldBe([
+            "OP bill at facility ABC uses {FAC}OB{YY}{SEQ:7}. With the facility codes AB and ABC in place of {FAC}, the two can " +
+            "make the same numbers. Change the letters, - or / so the two facilities' numbers can be told apart.",
+        ]);
+    }
+
+    [Fact]
+    public void Facility_codes_that_differ_in_a_digit_keep_one_format_apart() =>
+        NumberFormatRules.Check(Change(OpBill, "{FAC}OB{YYYY}{SEQ:6}") with
+        {
+            FacilityCode = "NH1",
+            OtherFormats = [new OtherNumberFormat("OP bill at facility NH2", "{FAC}OB{YYYY}{SEQ:6}", IsDefault: false, FacilityCode: "NH2", SameSeries: true)],
+        }).ShouldBeEmpty("NH1OB... and NH2OB... can never be the same number.");
+
     [Fact]
     public void Restoring_a_default_that_looks_like_another_default_is_allowed()
     {
