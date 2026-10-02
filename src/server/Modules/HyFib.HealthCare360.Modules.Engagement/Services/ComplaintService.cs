@@ -125,6 +125,26 @@ public sealed class ComplaintService(
         await realtime.ToFacilityAsync(complaint.FacilityId, "feedback.complaint.created", new { complaint.Id }, ct);
     }
 
+    /// <summary>
+    /// A complaint past its deadline (FB-03) is escalated to the holders of <see cref="EngagementPermissions.ComplaintEscalations"/>
+    /// (quality managers and hospital administrators by default), and its owner hears that it was; open screens refresh.
+    /// </summary>
+    public async Task NotifyEscalatedAsync(Complaint complaint, CancellationToken ct)
+    {
+        var due = EngagementClock.ToLocal(complaint.DueAt).ToString("dd MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        var about = $"{complaint.Source} complaint about {complaint.Category ?? "the hospital"}, due {due}, is unresolved.";
+        var link = $"/feedback/complaints/{complaint.Id}";
+        await notifications.NotifyPermissionHoldersAsync(EngagementPermissions.ComplaintEscalations, complaint.FacilityId,
+            $"Complaint {complaint.ComplaintNumber} escalated: past its deadline", about, link, "feedback", "warning", ct);
+        if (complaint.OwnerUserId is { } owner)
+        {
+            await notifications.NotifyUsersAsync([owner], $"Complaint {complaint.ComplaintNumber} is past its deadline",
+                $"{about} It has been escalated.", link, "feedback", "warning", ct);
+        }
+
+        await realtime.ToFacilityAsync(complaint.FacilityId, "feedback.complaint.escalated", new { complaint.Id }, ct);
+    }
+
     private async Task<Error?> ValidateDepartmentAsync(Guid? departmentId, CancellationToken ct) =>
         departmentId is { } id && !await db.Set<Department>().AnyAsync(d => d.Id == id && d.IsActive, ct)
             ? Error.Field("departmentId", "Choose an active department of this facility.")

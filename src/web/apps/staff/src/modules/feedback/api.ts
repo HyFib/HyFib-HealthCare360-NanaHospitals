@@ -197,6 +197,8 @@ export interface ComplaintListItem {
   dueAt: string;
   isOverdue: boolean;
   turnaroundHours: number | null;
+  /** When the complaint passed its deadline unresolved and was escalated (once). */
+  escalatedAt: string | null;
 }
 
 export interface ComplaintDetail {
@@ -220,6 +222,7 @@ export interface ComplaintDetail {
   closedAt: string | null;
   reopenCount: number;
   isOverdue: boolean;
+  escalatedAt: string | null;
   version: number;
 }
 

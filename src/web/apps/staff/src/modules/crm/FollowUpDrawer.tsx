@@ -35,7 +35,7 @@ import {
   MoreHorizontalRegular,
   SendRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, todayIso } from '@hc360/core';
+import { formatDateOnly, formatDateTime, formatPhone, isApiError, todayIso } from '@hc360/core';
 import { ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
@@ -52,6 +52,7 @@ import { crmApi, crmKeys, crmQueries, type FollowUpDetail } from './api';
 import {
   FOLLOW_UP_OUTCOMES,
   followUpOutcomeLabel,
+  followUpSourceLabel,
   followUpStatusLabel,
   followUpTypeLabel,
   type FollowUpOutcome,
@@ -162,6 +163,7 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
     try {
       await crmApi.remindFollowUp(task.id);
       notify.success('Reminder SMS queued', 'It goes out through the SMS gateway shortly.');
+      refresh();
     } catch (error) {
       notify.error(
         error,
@@ -224,7 +226,8 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
         <Detail label="With">
           {task.assigneeUserId ? <UserName id={task.assigneeUserId} /> : 'Anyone on the team'}
         </Detail>
-        <Detail label="Created">{humanize(task.source)}</Detail>
+        <Detail label="Created">{followUpSourceLabel[task.source]}</Detail>
+        {task.reminderSentAt && <Detail label="Reminder SMS">{formatDateTime(task.reminderSentAt)}</Detail>}
         {task.outcome && <Detail label="Last outcome">{followUpOutcomeLabel[task.outcome]}</Detail>}
         {task.notes && (
           <Detail label="Notes" wide>
@@ -286,7 +289,7 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
               disabled={busy !== null}
               onClick={() => void remind()}
             >
-              Send SMS reminder
+              {task.reminderSentAt ? 'Send the reminder again' : 'Send SMS reminder'}
             </Button>
             <Menu>
               <MenuTrigger disableButtonEnhancement>

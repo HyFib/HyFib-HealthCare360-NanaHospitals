@@ -96,6 +96,7 @@ function Due({ f }: { f: FollowUpListItem }) {
       {!closed && (
         <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
           {formatDateOnly(f.dueDate)}
+          {f.reminderSentAt ? ' · SMS sent' : ''}
         </Caption1>
       )}
     </span>

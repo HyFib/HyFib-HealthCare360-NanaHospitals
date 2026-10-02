@@ -6,5 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- Clinical events start follow-ups: a signed consultation, a vaccine dose, a completed health check-up (CRM-02). -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
   </ItemGroup>
 </Project>

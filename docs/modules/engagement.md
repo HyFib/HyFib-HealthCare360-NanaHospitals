@@ -1,9 +1,11 @@
 # Engagement module (healthcare CRM, campaigns, feedback, portal preferences)
 
-Project: `src/server/Modules/HyFib.HealthCare360.Modules.Engagement` · schema `engagement` · depends on Platform and
-Patients (layer 3). It covers these SRS requirements:
-* **CRM-01..05**: leads, follow-up calls, consent-only SMS/WhatsApp campaigns, patient 360°, referring doctors.
-* **FB-01..04**: feedback forms (QR, kiosk, portal, SMS link), low-score complaints, complaint handling, analytics.
+Project: `src/server/Modules/HyFib.HealthCare360.Modules.Engagement` · schema `engagement` · depends on Platform,
+Patients and Clinical (layer 6). It covers these SRS requirements:
+* **CRM-01..05**: leads, follow-up calls (including those it creates and reminds by itself), consent-only SMS/WhatsApp
+  campaigns, patient 360°, referring doctors.
+* **FB-01..04**: feedback forms (QR, kiosk, portal, SMS link), low-score complaints, complaint handling and escalation,
+  analytics.
 * **PP-05/06**: portal feedback and communication preferences.
 
 Patient consents are the Patients module's `PatientConsent` records, so each patient's consent history stays in
@@ -22,6 +24,7 @@ one place. Engagement never keeps its own copy.
 | `feedback.read` | CrmExecutive, QualityManager, HospitalAdmin | Responses and analytics |
 | `feedback.manage` | CrmExecutive, QualityManager, HospitalAdmin | Forms and QR codes, staff-captured feedback, feedback links |
 | `feedback.complaints.manage` | CrmExecutive, QualityManager, HospitalAdmin | Complaint handling; receives new-complaint alerts |
+| `feedback.complaints.escalations` | QualityManager, HospitalAdmin | Receives the alert when a complaint passes its deadline unresolved (an alert, not access) |
 
 Portal endpoints use the Patients module's `portal.access` and are always limited by `PortalPatientScope`. Public
 endpoints are anonymous and use the Platform's `"public"` rate limit (60 requests a minute per client).
@@ -45,17 +48,18 @@ are stored as text, so lists never sort by an enum in SQL; priorities and status
 ### Follow-up calls (`/api/v1/crm/follow-ups`, `crm.followups.manage`)
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/` | filters `status, type, priority, assigneeUserId, mine, overdueOnly, includeClosed, dueFrom, dueTo`. `search` matches the UHID or the name. High priority first, then due date → `FollowUpListItem` (phone masked) |
-| GET | `/{id}` | → `FollowUpDetail` with the full number to call. Applies the restricted-record (VIP) guard and writes a patient-record-access audit |
+| GET | `/` | filters `status, type, priority, assigneeUserId, mine, overdueOnly, includeClosed, dueFrom, dueTo`. `search` matches the UHID or the name. High priority first, then due date → `FollowUpListItem` (phone masked, `reminderSentAt`) |
+| GET | `/{id}` | → `FollowUpDetail` with the full number to call, `source` and `reminderSentAt`. Applies the restricted-record (VIP) guard and writes a patient-record-access audit |
 | POST | `/` | `CreateFollowUpRequest {patientId, visitId, type, dueDate, assigneeUserId, priority, notes}` → 201. The due date cannot be in the past, and the visit must belong to the patient |
 | PUT | `/{id}` | `UpdateFollowUpRequest {dueDate, assigneeUserId, priority, notes, version}` → 204 |
 | POST | `/{id}/attempts` | `FollowUpAttemptRequest {outcome, notes, nextDueDate}` → 204 |
 | POST | `/{id}/cancel` | `{reason}` → 204 |
-| POST | `/{id}/remind` | sends the `followup.reminder` SMS. It needs an active SMS-updates consent and a mobile number |
+| POST | `/{id}/remind` | sends the `followup.reminder` SMS now (again, if the job already sent it) and records `reminderSentAt`. It needs an open task, a living patient, an active SMS-updates consent and a mobile number |
 
-Types: `PostConsultation, PostDischarge, Vaccination, ChronicReview, HealthCheckupDue, PaymentDue, Feedback`. The call
-rules:
-* Reached, AppointmentBooked, NotInterested, WrongNumber, Deceased and Other complete the task.
+Types: `PostConsultation, PostDischarge, Vaccination, ChronicReview, HealthCheckupDue, PaymentDue, Feedback`. Sources:
+`Manual` (staff), `Discharge` and `System` (see "Automatic follow-ups" below). The call rules:
+* Reached, AppointmentBooked, NotInterested, WrongNumber, Deceased and Other complete the task. `Visited` is set only
+  automatically, when the patient came back (the API refuses it as a call outcome).
 * NotReachable and CallBackLater keep it open. The next call defaults to tomorrow or the date the patient asked for.
 * The **third** NotReachable closes the task, so dead numbers do not clog worklists.
 * CallBackLater never uses up the attempts.
@@ -164,8 +168,8 @@ Consent is re-checked **at send time**, not only when the campaign is scheduled.
 ### Complaints (`/api/v1/feedback/complaints`, `feedback.complaints.manage`)
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/` | filters `status, priority, source, departmentId, ownerUserId, mine, openOnly, overdueOnly, from, to`. `search` matches the complaint number. Open first, then high priority, then the nearest deadline → `ComplaintListItem` (`isOverdue`, `turnaroundHours`) |
-| GET | `/{id}` | → `ComplaintDetail`. Audited when a patient is linked |
+| GET | `/` | filters `status, priority, source, departmentId, ownerUserId, mine, openOnly, overdueOnly, from, to`. `search` matches the complaint number. Open first, then high priority, then the nearest deadline → `ComplaintListItem` (`isOverdue`, `turnaroundHours`, `escalatedAt`) |
+| GET | `/{id}` | → `ComplaintDetail` (`escalatedAt`). Audited when a patient is linked |
 | POST | `/` | `CreateComplaintRequest {source: WalkIn\|Phone\|Email\|Portal, patientId, departmentId, category, description, contactName, contactPhone, priority, ownerUserId}` → 201. Feedback complaints are only raised automatically |
 | PUT | `/{id}` | `UpdateComplaintRequest {ownerUserId, priority, departmentId, category, version}`. A new owner is notified in-app |
 | POST | `/{id}/status` | `{status, note}`. Allowed moves: Open → InProgress; Open or InProgress → Resolved (a resolution note is required); Resolved → Closed; Resolved → InProgress (reopen, a reason is required, and the reopen is counted) |
@@ -173,6 +177,12 @@ Consent is re-checked **at send time**, not only when the campaign is scheduled.
 The resolution SLA is **24 h for High and 72 h for Normal** priority, counted from when the complaint is raised.
 Raising the priority tightens the deadline, and lowering it never extends a deadline already promised. Turnaround is
 measured from raised to resolved.
+
+**Escalation (FB-03).** A complaint still Open or InProgress after its deadline is escalated once, by the background
+job within 15 minutes: `escalatedAt` is set, the holders of `feedback.complaints.escalations` at the facility get a
+warning ("Complaint … escalated: past its deadline"), its owner is told too, and `feedback.complaint.escalated`
+refreshes open screens. The alerts carry the number, source and area, never the description. A complaint reopened
+after an escalation is not escalated again.
 
 ### Public, anonymous (`/api/v1/public`, `"public"` rate limit)
 | Method | Path | Behaviour |
@@ -222,7 +232,11 @@ gets 403 `portal.patient_denied`.
 | Event (raised by) | Handler effect |
 |---|---|
 | `PatientDischarged` (Inpatient) | See "After a discharge" below |
-| `AppointmentBooked` (Scheduling) | Open leads with the patient's mobile number are marked converted, but only when the names match (`LeadMatching`: same first name, or the same initial plus a shared word), because families share numbers. Open PostConsultation, Vaccination, ChronicReview and HealthCheckupDue follow-ups complete as AppointmentBooked. This is not counted as a call attempt |
+| `AppointmentBooked` (Scheduling) | Open leads with the patient's mobile number are marked converted, but only when the names match (`LeadMatching`: same first name, or the same initial plus a shared word), because families share numbers. Open PostConsultation, Vaccination, ChronicReview and HealthCheckupDue follow-ups complete as AppointmentBooked when the appointment is no more than 30 days before their due date (or after it); an earlier appointment, likely for something else, leaves them open. This is not counted as a call attempt |
+| `EncounterSigned` (Clinical) | See "Automatic follow-ups": settles reviews, adds the consultation's follow-up and the chronic review |
+| `EncounterAmended` (Clinical) | See "Automatic follow-ups": keeps the consultation's follow-up in step with the amended date |
+| `ImmunizationRecorded`, `ImmunizationEnteredInError` (Clinical) | See "Automatic follow-ups": the next dose's reminder |
+| `HealthCheckupCompleted` (Clinical) | See "Automatic follow-ups": settles "check-up due" tasks and schedules the next check-up |
 | `BillFinalized`, `BillCancelled`, `PaymentReceived`, `RefundPaid` (Billing) | Append-only `PatientSpendEntry` rows (with the facility), one per bill, cancellation, receipt or refund, idempotent, for the net 360° spend |
 | `PatientsMerged` (Patients) | Follow-ups, feedback, invitations, complaints, spend, converted leads and campaign recipients are re-pointed to the surviving patient in all facilities. Where the survivor already received a campaign, the duplicate's row is kept |
 | `WhatsAppOptOutChanged` (Integrations, once per new STOP or START reply) | Marketing consent of every patient registered with the number (not merged duplicates) changes as described in "WhatsApp STOP and START" below. The number's WhatsApp opt-out itself is kept by the platform |
@@ -253,8 +267,40 @@ mobile number or portal address only skips the survey, and the reason is logged.
 
 No events are raised by this module.
 
-## Background job
-`CampaignDispatcher`: see Campaigns above. It returns immediately on API-only nodes.
+## Automatic follow-ups (CRM-02, `FollowUpAutomation`, unit-tested)
+Clinical events start follow-ups with source `System`, each keyed by what started it (one per consultation, dose,
+chronic-care visit or check-up), so a replayed event adds nothing. They go to the facility's worklist unassigned, for
+a lead to assign. Nothing is started for a deceased, inactive or merged patient. Task notes carry no clinical details
+(no diagnosis, no advice), because the CRM team does not see the chart; a vaccination note names the vaccine.
+* **After a consultation.** A signed encounter (not an in-patient note) with a follow-up date after the visit adds a
+  PostConsultation task due on that date, linked to the visit so the reminder names the doctor. An amendment keeps it
+  in step: a date added starts the task, a changed date moves it, and a removed date cancels it. A closed task is never
+  reopened.
+* **Vaccination.** A dose with a next-due date after today adds a Vaccination task due then. A later dose of the same
+  vaccine (same card code, or the same name without codes) completes it as `Visited`; a dose transcribed out of order
+  closes only reminders of older doses. A dose marked as entered in error cancels the reminder it started.
+* **Chronic review.** When a patient with a chronic problem (a non-differential diagnosis with status Chronic) is seen,
+  any earlier automatic chronic review is cancelled as replaced, and the next one is due `crm.chronicReviewMonths`
+  (3) months after the visit, unless the doctor asked to see the patient on or after that date.
+* **Check-up due.** A completed health check-up completes the patient's open "check-up due" tasks and adds the next
+  one `crm.healthCheckupRecallMonths` (12) months later. Corporate check-ups start no recall: the employer arranges them.
+* **A visit settles reviews.** A signed encounter completes open PostConsultation and ChronicReview tasks falling due
+  within 30 days as `Visited`. A vaccination needs its dose and a check-up the check-up, so a visit leaves those open.
+
+**Reminders.** Once a day, in the campaign window (10:00–21:00 IST), the job sends the `followup.reminder` SMS for open
+PostConsultation, Vaccination, ChronicReview and HealthCheckupDue tasks due within `crm.followUpReminderDays` (2) days,
+whoever created them. It is sent once per task (`reminderSentAt`, also set by the staff "remind" action), as one
+message per patient when several tasks fall due together, naming the earliest date. Moving a task to a new date, by
+staff or by an amended note, makes it due for a new reminder. It needs a living patient, a
+mobile number and an active SMS-updates consent; otherwise the task stays for the call, and the patient is checked
+again the next day.
+
+## Background jobs
+* `CampaignDispatcher`: see Campaigns above.
+* `EngagementJobs`, every 15 minutes: complaint escalation (see Complaints) and, once a day, the follow-up reminders.
+  Each pass holds a PostgreSQL advisory lock for its transaction, so two job nodes never act twice.
+
+Both return immediately on API-only nodes.
 
 ## Notifications
 | Template key | Channel | When |
@@ -262,15 +308,26 @@ No events are raised by this module.
 | `campaign.message` | SMS, WhatsApp | campaign messages: `{{message}}` plus the mandatory `{{optout}}` link. Seeded here |
 | `complaint.acknowledged` | SMS | a low-score complaint when the patient asked for a call-back: `{{reference}}`. Seeded here |
 | `feedback.request` | SMS | personal feedback link: `{{link}}` = `{base}/portal/feedback/{token}`. Platform default |
-| `followup.reminder` | SMS | follow-up due: `{{doctor}}, {{date}}, {{link}}` (`{base}/portal/`, the portal home). Platform default |
+| `followup.reminder` | SMS | follow-up due, from staff or the reminder job: `{{doctor}}, {{date}}, {{link}}` (`{base}/portal/`, the portal home). Platform default |
 
 Campaign opt-out links are `{base}/portal/unsubscribe/{token}` and form QR codes `{base}/portal/feedback/form/{token}`.
 
 In-app notifications: a new complaint goes to `feedback.complaints.manage` holders (a warning when the complaint is
-High priority), and a complaint assignment goes to the new owner. Real-time: `feedback.complaint.created` to the
-facility. Notifications carry the complaint number and area, never the patient's comment.
+High priority), a complaint assignment goes to the new owner, and an escalation goes to `feedback.complaints.escalations`
+holders and the owner. Real-time: `feedback.complaint.created` and `feedback.complaint.escalated` to the facility.
+Notifications carry the complaint number and area, never the patient's comment.
 
 ## Settings
+| Key | Default | Meaning |
+|---|---|---|
+| `crm.followUpReminderDays` | 2 | days before a follow-up's due date when the patient is reminded (0–14) |
+| `crm.chronicReviewMonths` | 3 | months from a chronic patient's visit to the next review (1–12) |
+| `crm.healthCheckupRecallMonths` | 12 | months from a health check-up to the next one (3–36) |
+| `portal.baseUrl` | — | the hospital's public https address, base of patient links |
+
+The follow-up settings are per facility or global; a value out of range is clamped, and one that is not a number is
+ignored.
+
 `portal.baseUrl` is the hospital's public https address (for example `https://care.nanahospitals.in`); patient links are `{base}/portal/...`.
 
 It is set per facility or globally and read through the Platform helper `PortalAddress`, shared with Scheduling,
@@ -296,16 +353,18 @@ Telehealth and the QR codes of printed prescriptions and reports: a bare host na
 `leads`, `lead_activities`, `follow_up_tasks`, `referring_doctors`, `campaigns`, `campaign_recipients`,
 `feedback_forms`, `feedback_responses`, `feedback_invitations`, `complaints`, `patient_spend_entries`.
 
-Notable constraints:
-* `follow_up_tasks`: unique (source, source_reference, type) for automatic tasks.
+Notable columns and constraints:
+* `follow_up_tasks`: unique (source, source_reference, type) for automatic tasks; `reminder_sent_at`.
+* `complaints`: `escalated_at`.
 * `campaign_recipients`: unique (campaign, patient) and unique opt-out token hash.
 * `feedback_forms`: unique public token.
 * `feedback_invitations`: unique token hash.
 * `feedback_responses`: unique `invitation_id`.
 * `patient_spend_entries`: unique (kind, source id).
 
-Append-only tables are `[NotAudited]`: `campaign_recipients`, `feedback_invitations`, `patient_spend_entries`. **EF
-migrations are not included** and must be generated by the maintainers.
+Append-only tables are `[NotAudited]`: `campaign_recipients`, `feedback_invitations`, `patient_spend_entries`. Schema
+changes come with an EF migration in `src/server/HyFib.HealthCare360.Server/Persistence/Migrations` (the last one here:
+`FollowUpRemindersAndComplaintEscalation`).
 
 ## Security and privacy
 * Marketing is consent-only, enforced in one tested query and re-checked at send time. Withdrawing is one tap: the
@@ -325,3 +384,12 @@ migrations are not included** and must be generated by the maintainers.
   patient's identity.
 * Lead conversion with a new registration saves the patient, through the Patients service's own transaction, before
   the lead. If the second save fails, the patient exists and the conversion can be retried with `patientId`.
+* Automatic follow-ups:
+  * A dose marked as entered in error cancels its own reminder but does not reopen the earlier reminder it closed.
+  * An amended note moves or cancels its open follow-up, but does not reopen a closed one or revisit the chronic
+    review, which the next visit reschedules.
+  * A discharge summary's follow-up date starts nothing yet; the post-discharge call covers the first days.
+  * Reminders run once a day: a task created after that day's pass, due within the reminder days, is reminded the next
+    day, or on its due date.
+  * The escalation alert is sent after the escalation is saved, so a failure in between loses the alert but never
+    alerts for an escalation that did not happen.
