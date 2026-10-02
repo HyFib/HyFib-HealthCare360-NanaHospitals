@@ -249,10 +249,6 @@ public interface IAccountingExporter
     /// </summary>
     Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, Guid? facilityId, CancellationToken cancellationToken);
 
-    /// <summary>Sends vouchers with the signed-in facility's settings, then the all-facility settings.</summary>
-    Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, CancellationToken cancellationToken) =>
-        PushVouchersAsync(vouchers, null, cancellationToken);
-
     /// <summary>
     /// Reads back the vouchers the accounting system holds for <paramref name="date"/> and compares each of
     /// <paramref name="expected"/> with its copy there, by remote id: present, amount, type and ledgers.

@@ -132,12 +132,18 @@ public sealed class ShiftService(
         };
     }
 
-    public async Task<DayEndReport> DayEndAsync(DateOnly date, string? counter, CancellationToken ct)
+    public Task<DayEndReport> DayEndAsync(DateOnly date, string? counter, CancellationToken ct) => DayEndAsync(db.CurrentFacilityId, date, counter, ct);
+
+    /// <summary>
+    /// The day-end of one facility (null: every facility). Background work has no signed-in facility, so the Tally
+    /// reconciliation names it and gets the same figures as the cashier's report.
+    /// </summary>
+    public async Task<DayEndReport> DayEndAsync(Guid? facilityId, DateOnly date, string? counter, CancellationToken ct)
     {
         var (start, end) = BillingTime.Range(date, date);
         var counterName = string.IsNullOrWhiteSpace(counter) ? null : counter.Trim();
 
-        var shiftQuery = db.Set<CashierShift>().AsNoTracking().Where(s => s.OpenedAt < end && (s.ClosedAt == null || s.ClosedAt >= start));
+        var shiftQuery = Of<CashierShift>(facilityId).Where(s => s.OpenedAt < end && (s.ClosedAt == null || s.ClosedAt >= start));
         if (counterName is not null)
         {
             shiftQuery = shiftQuery.Where(s => s.Counter == counterName);
@@ -145,7 +151,7 @@ public sealed class ShiftService(
 
         var shifts = await shiftQuery.OrderBy(s => s.OpenedAt).ToListAsync(ct);
 
-        var receiptQuery = db.Set<Receipt>().AsNoTracking()
+        var receiptQuery = Of<Receipt>(facilityId)
             .Where(r => r.ReceivedAt >= start && r.ReceivedAt < end && r.Purpose != ReceiptPurpose.PayerSettlement);
         if (counterName is not null)
         {
@@ -156,7 +162,7 @@ public sealed class ShiftService(
             .SelectMany(r => r.Payments, (r, p) => new { r.ShiftId, r.Purpose, p.Mode, p.Amount })
             .ToListAsync(ct);
 
-        var refundQuery = db.Set<Refund>().AsNoTracking()
+        var refundQuery = Of<Refund>(facilityId)
             .Where(r => r.Status == RefundStatus.Paid && r.PaidAt >= start && r.PaidAt < end && r.Mode != null && r.Mode != PaymentMode.Advance);
         if (counterName is not null)
         {
@@ -170,11 +176,11 @@ public sealed class ShiftService(
             payments.Select(p => new ShiftMovement(p.Mode, p.Amount, false)).Concat(refunds.Select(r => new ShiftMovement(r.Mode, r.Amount, true))),
             0m).Totals;
 
-        var billed = await db.Set<Bill>().AsNoTracking()
+        var billed = await Of<Bill>(facilityId)
             .Where(b => b.FinalizedAt >= start && b.FinalizedAt < end)
             .Select(b => new { b.NetAmount, b.DiscountAmount })
             .ToListAsync(ct);
-        var cancelled = await db.Set<Bill>().AsNoTracking()
+        var cancelled = await Of<Bill>(facilityId)
             .Where(b => b.CancelledAt >= start && b.CancelledAt < end)
             .Select(b => b.NetAmount)
             .ToListAsync(ct);
@@ -206,6 +212,14 @@ public sealed class ShiftService(
             cancelled.Count,
             cancelled.Sum(),
             shifts.Count(s => s.Status == ShiftStatus.Open));
+    }
+
+    /// <summary>The facility's rows, read-only; a null facility reads every facility's, as the facility filter does without one.</summary>
+    private IQueryable<T> Of<T>(Guid? facilityId)
+        where T : class, IFacilityScoped
+    {
+        var rows = db.Set<T>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking();
+        return facilityId is { } id ? rows.Where(x => x.FacilityId == id) : rows;
     }
 
     internal static ShiftDto ToDto(CashierShift s, int receiptCount) => new(

@@ -49,6 +49,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<ClaimService>();
         services.AddScoped<DoctorFeeService>();
         services.AddScoped<TallyService>();
+        services.AddScoped<TallyReconciliationService>();
 
         // Replace the Platform's "billing not installed" fallbacks; ChargeService is shared so a request has one unit of work.
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
