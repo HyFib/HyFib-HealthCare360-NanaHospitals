@@ -73,6 +73,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review.
+  - Lists don't name them unless the user may open restricted records. The bed board, the doctor's worklist and the
+    ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
+    result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
+    and safety flags stay, so the patient is still seen to.
 - Every access to a patient record is audited.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
@@ -89,7 +93,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   pages, for example `/api/v1/public/unsubscribe/{token}`, never the token itself (`LoggedPath`,
   `.WithSensitivePath()` on the endpoint).
 - Consent capture (treatment, data sharing, SMS/WhatsApp, telehealth, research) supports the **DPDP Act 2023** notice
-  and consent requirements.
+  and consent requirements. Withdrawing is as easy as giving (s6(4)): staff withdraw a consent from the patient profile
+  or the chart with a reason, and it takes effect at once where HC360 acts on it (record sharing, campaigns, feedback
+  requests and reminders). Withdrawing a standing permission ends every grant of the type, so no older copy keeps it in
+  force. The consent stays as history with when, by whom and why. Consents follow the restricted-record rules, and
+  every listing is audited.
 - **Messaging opt-outs.**
   - After a number replies STOP to the hospital's WhatsApp messages, it gets only sign-in codes on WhatsApp, whichever
     module queued the message. The check runs when each message is delivered, and the notification log records it
@@ -159,6 +167,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.
+  - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
+    (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
+    quota charge. The retry gets 409 `idempotency.answer_not_kept`, and the user asks again.
 - Optimistic concurrency: a record changed by someone else is never silently overwritten.
 
 ### Application hardening

@@ -107,9 +107,44 @@ public sealed class PatientConsent : AuditableEntity
     public Guid? DocumentFileId { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
     public string? RevokedReason { get; set; }
+
+    /// <summary>Who recorded the withdrawal: a staff member, the patient on the portal, or null for an automatic one (a WhatsApp STOP).</summary>
+    public Guid? RevokedByUserId { get; set; }
+
     public string? Notes { get; set; }
 
     public bool IsActive => Granted && RevokedAt is null;
+
+    /// <summary>
+    /// Standing permissions (sharing records, messages, video consultations, research, photographs) hold until the
+    /// patient withdraws them, so a withdrawal or a later refusal ends every earlier grant of the type. The other types
+    /// are consents for one stay or procedure (general treatment, a high-risk procedure, anaesthesia, a transfusion): a
+    /// patient may have several, and each is withdrawn on its own.
+    /// </summary>
+    public static bool IsStandingPermission(ConsentType type) => type is ConsentType.DataSharing or ConsentType.SmsWhatsAppUpdates
+        or ConsentType.MarketingCommunication or ConsentType.Telehealth or ConsentType.Research or ConsentType.Photography;
+
+    /// <summary>
+    /// Withdraws a consent that was given. The record stays as history, marked with when, by whom and why. A refusal
+    /// has nothing to withdraw (a new consent is recorded if the patient now agrees), and a withdrawal is final.
+    /// </summary>
+    public Result Revoke(string reason, Guid? userId, DateTimeOffset at)
+    {
+        if (RevokedAt is not null)
+        {
+            return Error.Rule("consent.revoked", "This consent has already been withdrawn.");
+        }
+
+        if (!Granted)
+        {
+            return Error.Rule("consent.not_granted", "This records a refusal, so there is nothing to withdraw. Record a new consent if the patient now agrees.");
+        }
+
+        RevokedAt = at;
+        RevokedReason = reason.Trim();
+        RevokedByUserId = userId;
+        return Result.Success();
+    }
 }
 
 public enum PatientDocumentType

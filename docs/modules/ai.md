@@ -8,7 +8,7 @@ Voice and typed commands for staff, server speech-to-text, and clinical dictatio
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.AI` (module key and schema `ai`; references Patients) |
 | Schema | `ai.usage_records` (`AiUsage`, `[NotAudited]`; indexes `(user_id, created_at)` and `created_at`) |
 | Requirements | AIV-01..06, ADR-011 (AI provider), SEC-12 (AI data protection) |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.AI.Tests`: 215 tests covering the redactor, spoken numbers, the offline command parser, the AI answer interpreter, the command service, note parsing and structuring, the Claude request builder and response mapper, SDK error mapping, settings, audio and Whisper, validators and DI |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.AI.Tests`: 216 tests covering the redactor, spoken numbers, the offline command parser, the AI answer interpreter, the command service, note parsing and structuring, the Claude request builder and response mapper, SDK error mapping, settings, audio and Whisper, validators and DI |
 
 ## Behaviour
 
@@ -72,7 +72,7 @@ The official **Anthropic C# SDK** (`Anthropic` NuGet, 12.50.0), `client.Beta.Mes
 | `ai.enabled` | `true` to allow AI calls. **Default false.** |
 | `ai.provider` | `anthropic` (default) or anything else to disable |
 | `ai.model` | Model id, default `claude-opus-5-5` |
-| `ai.timeoutSeconds` | 10–300, default 90 |
+| `ai.timeoutSeconds` | 10–300, default 90. It bounds the whole call to the AI service, the SDK's retries included. |
 | `ai.anthropic.secret` (encrypted) | The API key, as a JSON string or `{ "apiKey": "…" }` |
 | `ai.speech` | `{ provider: "none" \| "whisper", url, model ("whisper-1"), language ("en"), timeoutSeconds (120) }`. `none` (the default) means HC360 Desktop dictates with offline Windows speech. |
 | `ai.speech.secret` (encrypted) | Optional bearer key for the Whisper-compatible server |
@@ -87,7 +87,7 @@ Malformed values disable the feature instead of failing the request. They are lo
 | POST | `/api/v1/ai/assistant/command` | `ai.assistant.use` | `{ text, context: { route, patientId } }` → `{ intent, parameters, confirmationText, requiresConfirmation, source ("rules" \| "ai") }`. Always answered; AI is used only as a fallback. |
 | POST | `/api/v1/ai/clinical/structure-note` | `ai.dictation.use` | `{ transcript, specialty, patientId }` → `ClinicalNoteDraft`. 503 `ai.disabled`, 429 `ai.quota`, 502 `ai.provider_failed`. |
 | POST | `/api/v1/ai/voice/transcribe` | `ai.dictation.use` or `ai.assistant.use` | multipart `audio` (WebM, WAV or Ogg, ≤ 10 MB; the declared type must match the file signature), `language` (ISO 639-1), `patientId` → `{ text, provider, language, durationMs }`. 503 `ai.speech_disabled` when no server STT is configured. Antiforgery is disabled because this is a bearer API. |
-| GET | `/api/v1/ai/status` | any AI permission | → `{ enabled, provider, model, reason, serverSpeechToText, speechProvider, speechReason }`, so the UI knows which AI actions to show |
+| GET | `/api/v1/ai/status` | any AI permission | → `{ enabled, provider, model, reason, serverSpeechToText, speechProvider, speechReason, timeoutSeconds }`, so the UI knows which AI actions to show and how long to wait for a draft (`timeoutSeconds` + 30 s) |
 | GET | `/api/v1/ai/usage` | `ai.settings.manage` | paging + `purpose, userId, from, to` → `PagedResult<AiUsageDto>` with the user's display name (never text) |
 
 Problem responses carry a machine-readable `code` extension (`ai.disabled`, `ai.speech_disabled`, `ai.quota`,
@@ -123,7 +123,39 @@ Problem responses carry a machine-readable `code` extension (`ai.disabled`, `ai.
 The platform's `IAiTextService` and `ISpeechToText` contracts are synchronous in `IsEnabled`. The routers read the
 memory-cached settings once per scope, and this module's own code uses the async `IAiGateway` instead.
 
+## Staff app
+
+The shared client code is in `src/lib/ai.ts` (contracts and calls) and `src/lib/voice/` (voice capture: HC360 Desktop's
+offline Windows speech, or a browser recording sent to `/ai/voice/transcribe`).
+
+* **Assistant** (the shell's assistant panel): typed or spoken commands (see *Behaviour*). A browser recording lasts at
+  most 30 seconds.
+* **Dictate with AI** (`modules/emr/dictation`), on the encounter workspace. The button shows while the note can be
+  edited (in progress, or being amended), for users with `clinical.emr.write` and `ai.dictation.use`, when the status
+  says AI is on.
+  1. *Dictate.* The doctor speaks, types or pastes the consultation. Each spoken take is added at the end: HC360
+     Desktop's offline speech gives one utterance per take (up to 60 seconds, ending after 1.5 seconds of silence); a
+     browser records takes of up to 90 seconds when server speech-to-text is set up. The specialty starts as the
+     encounter's department. A draft needs 10–20,000 characters, and the screen waits the server's `timeoutSeconds`
+     plus 30 seconds, without sending the request again.
+  2. *Check the draft.* The warnings (the first always says it is an AI draft); the placeholders the redactor left
+     (`[NAME_1]`…), counted, for the doctor to replace; editable boxes for the chief complaint (suggested from the first
+     line of the history when the note has none), history (S), examination (O), assessment and plan. Where the note
+     already has text, the doctor chooses to add below it (the default) or replace it; an empty box never clears
+     anything. A part that would exceed the note's limit blocks inserting until it is shortened. The ICD-10 suggestions
+     are listed with the model's confidence, none ticked; codes the encounter already has cannot be ticked again.
+  3. *Insert into note.* The boxes fill the note's form: nothing is saved until the doctor saves (Ctrl+S) or signs.
+     The ticked codes are added straight away as provisional, active diagnoses; the first the hospital's ICD list
+     accepts becomes primary if the encounter has none. A code the list doesn't have is not added, and a bar on the
+     workspace says so until dismissed.
+
+  While a placeholder remains in the note, the signing checklist warns about it.
+
 ## Not included
 
-* No AI text or transcripts are stored anywhere, and no conversation history is kept.
+* No AI text or transcripts are stored anywhere, and no conversation history is kept. The idempotency store keeps a
+  request's answer for a day so that a retry can be answered again; for the AI endpoints it keeps only that the
+  request was answered (`.WithoutStoredResponse()`, checked by `StoredResponseTests`). A retry with the same
+  `Idempotency-Key` therefore makes no second AI call and no second quota charge. It gets 409
+  `idempotency.answer_not_kept`, which the screens word as "The connection dropped before the answer arrived".
 * AI does not take any action by itself: no booking, no note saving, no ordering.

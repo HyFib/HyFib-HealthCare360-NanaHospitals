@@ -22,6 +22,15 @@ export interface EncounterContent {
 /** Minimum length of an amendment reason (server rule). */
 export const MIN_AMENDMENT_REASON = 10;
 
+/** Maximum length of the SOAP fields (server rule), shared by the form and AI dictation. */
+export const NOTE_FIELD_LIMITS = {
+  chiefComplaint: 1000,
+  historyOfPresentIllness: 8000,
+  examination: 8000,
+  assessment: 4000,
+  plan: 8000,
+} as const;
+
 /** yyyy-MM-dd + days (calendar arithmetic, no time zone). */
 export function addDaysIso(isoDate: string, days: number): string {
   const [y, m, d] = isoDate.split('-').map(Number);
@@ -50,11 +59,15 @@ export function encounterFormSchema(today: string) {
   const latest = addDaysIso(today, 730);
   return z
     .object({
-      chiefComplaint: z.string().max(1000, 'Keep the chief complaint under 1,000 characters.'),
-      historyOfPresentIllness: z.string().max(8000, 'Keep the history under 8,000 characters.'),
-      examination: z.string().max(8000, 'Keep the examination under 8,000 characters.'),
-      assessment: z.string().max(4000, 'Keep the assessment under 4,000 characters.'),
-      plan: z.string().max(8000, 'Keep the plan under 8,000 characters.'),
+      chiefComplaint: z
+        .string()
+        .max(NOTE_FIELD_LIMITS.chiefComplaint, 'Keep the chief complaint under 1,000 characters.'),
+      historyOfPresentIllness: z
+        .string()
+        .max(NOTE_FIELD_LIMITS.historyOfPresentIllness, 'Keep the history under 8,000 characters.'),
+      examination: z.string().max(NOTE_FIELD_LIMITS.examination, 'Keep the examination under 8,000 characters.'),
+      assessment: z.string().max(NOTE_FIELD_LIMITS.assessment, 'Keep the assessment under 4,000 characters.'),
+      plan: z.string().max(NOTE_FIELD_LIMITS.plan, 'Keep the plan under 8,000 characters.'),
       followUpDate: z.string().nullable(),
       followUpAdvice: z.string().max(1000, 'Keep the follow-up advice under 1,000 characters.'),
       referralDepartmentId: z.string().nullable(),

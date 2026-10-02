@@ -6,5 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HyFib.HealthCare360.Modules.Patients\HyFib.HealthCare360.Modules.Patients.csproj" />
+    <!-- The ward round reads the clinical record: notes, results to review, vital signs and the banner flags. -->
+    <ProjectReference Include="..\HyFib.HealthCare360.Modules.Clinical\HyFib.HealthCare360.Modules.Clinical.csproj" />
   </ItemGroup>
 </Project>

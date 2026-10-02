@@ -278,32 +278,53 @@ export interface CreateVisitRequest {
   notifyPatient: boolean;
 }
 
-export type ConsentType =
-  | 'GeneralTreatment'
-  | 'DataSharing'
-  | 'Telehealth'
-  | 'Research'
-  | 'SmsWhatsAppUpdates'
-  | 'MarketingCommunication'
-  | 'Photography'
-  | 'HighRiskProcedure'
-  | 'Anaesthesia'
-  | 'BloodTransfusion';
+export const CONSENT_TYPES = [
+  'GeneralTreatment',
+  'DataSharing',
+  'Telehealth',
+  'Research',
+  'SmsWhatsAppUpdates',
+  'MarketingCommunication',
+  'Photography',
+  'HighRiskProcedure',
+  'Anaesthesia',
+  'BloodTransfusion',
+] as const;
+export type ConsentType = (typeof CONSENT_TYPES)[number];
 
+/** A recorded consent (EHR-06), newest first. A withdrawn consent stays as history. */
 export interface ConsentDto {
   id: string;
   type: ConsentType;
   consentVersion: string;
   granted: boolean;
   capturedAt: string;
+  /** Null when no staff member recorded it (for example a reply on WhatsApp). */
+  capturedByName: string | null;
   witnessName: string | null;
   signedByRelation: string | null;
   signedByName: string | null;
   documentFileId: string | null;
   revokedAt: string | null;
   revokedReason: string | null;
+  /** Null when no staff member withdrew it (for example a STOP reply on WhatsApp). */
+  revokedByName: string | null;
   notes: string | null;
+  /** Given and not withdrawn. */
   isActive: boolean;
+}
+
+export interface CaptureConsentRequest {
+  type: ConsentType;
+  /** At most 16 characters; the server records "1.0" when it is null. */
+  consentVersion: string | null;
+  granted: boolean;
+  witnessName: string | null;
+  signedByRelation: string | null;
+  /** Required when `signedByRelation` is given. */
+  signedByName: string | null;
+  documentFileId: string | null;
+  notes: string | null;
 }
 
 export interface PatientDocumentDto {
@@ -389,4 +410,13 @@ export const patientApi = {
   breakGlass: (id: string, reason: string) =>
     api.post<{ patientId: string; expiresAt: string }>(`/api/v1/patients/${id}/break-glass`, { reason }),
   createVisit: (request: CreateVisitRequest) => api.post<VisitDetail>('/api/v1/visits', request),
+};
+
+/** Recording and withdrawing consents needs `patients.consents`; a restricted record answers 403 `patient.restricted`. */
+export const consentApi = {
+  capture: (patientId: string, request: CaptureConsentRequest) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/consents`, request),
+  /** 422 `consent.revoked` when it is already withdrawn, `consent.not_granted` for a refusal. */
+  revoke: (consentId: string, reason: string) =>
+    api.post<void>(`/api/v1/patients/consents/${consentId}/revoke`, { reason }),
 };

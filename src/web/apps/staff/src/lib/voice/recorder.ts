@@ -1,13 +1,12 @@
-import type { AiStatusDto } from './api';
+import type { AiStatusDto } from '@/lib/ai';
 
 /**
- * Voice capture for the assistant. HC360 Desktop dictates with offline Windows speech (`bridge.dictate`); a plain
- * browser records WebM/Opus (or Ogg) with MediaRecorder and sends it to the server's speech-to-text, which accepts
- * WebM, WAV or Ogg of at most 10 MB. The pure guards below are unit-tested; `startRecording` needs a real browser.
+ * Voice capture for the assistant and clinical dictation. HC360 Desktop dictates with offline Windows speech
+ * (`bridge.dictate`); a plain browser records WebM/Opus (or Ogg) with MediaRecorder and sends it to the server's
+ * speech-to-text, which accepts WebM, WAV or Ogg of at most 10 MB. The pure guards below are unit-tested;
+ * `startRecording` needs a real browser.
  */
 
-/** Recording stops by itself after this long (a spoken command takes a few seconds). */
-export const MAX_RECORDING_MS = 30_000;
 /** The server's limit for one upload (AudioFormat.MaxBytes). */
 export const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 /** Stop a little before the limit so the multipart request always fits. */
@@ -18,7 +17,24 @@ export const RECORDING_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/o
 
 export type VoiceMode = 'desktop' | 'server';
 
-const COULD_NOT_RECORD = 'Recording could not start in this browser. Try again, or type the command.';
+/** What differs between the screens that take voice: the assistant (a short command) and clinical dictation. */
+export interface VoiceUse {
+  /** A browser recording stops by itself after this long. */
+  maxRecordingMs: number;
+  /** What to do instead of speaking, completing "Try again, or …": "type the command", "type the dictation". */
+  typeInstead: string;
+  /** Plain words for a failed transcription request, never a raw error. */
+  describeError: (error: unknown) => string;
+}
+
+/** "type the command" → "Type the command", to start a sentence. */
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function couldNotRecord(typeInstead: string): string {
+  return `Recording could not start in this browser. Try again, or ${typeInstead}.`;
+}
 
 export class VoiceError extends Error {
   constructor(message: string) {
@@ -46,27 +62,27 @@ export function uploadTypeFor(
   return null;
 }
 
-/** Why recording must stop now, if it must: the 30-second limit or the upload size limit. */
-export function shouldStopRecording(elapsedMs: number, bytes: number): 'time' | 'size' | null {
+/** Why recording must stop now, if it must: the caller's time limit or the upload size limit. */
+export function shouldStopRecording(elapsedMs: number, bytes: number, maxRecordingMs: number): 'time' | 'size' | null {
   if (bytes >= STOP_AT_BYTES) {
     return 'size';
   }
-  return elapsedMs >= MAX_RECORDING_MS ? 'time' : null;
+  return elapsedMs >= maxRecordingMs ? 'time' : null;
 }
 
 /** A recording the server would refuse, explained; null when it can be sent. */
-export function recordingProblem(bytes: number): string | null {
+export function recordingProblem(bytes: number, maxRecordingMs: number): string | null {
   if (bytes <= 0) {
     return 'Nothing was recorded. Check that the microphone is connected and not muted.';
   }
   if (bytes > MAX_AUDIO_BYTES) {
-    return 'The recording is too large to send. Keep it under 30 seconds.';
+    return `The recording is too large to send. Keep it under ${Math.round(maxRecordingMs / 1000)} seconds.`;
   }
   return null;
 }
 
 /** Microphone access failures (DOMException names) in plain language. */
-export function microphoneProblem(errorName: string | null | undefined): string {
+export function microphoneProblem(errorName: string | null | undefined, typeInstead: string): string {
   switch (errorName) {
     case 'NotAllowedError':
     case 'SecurityError':
@@ -78,7 +94,7 @@ export function microphoneProblem(errorName: string | null | undefined): string 
     case 'AbortError':
       return 'The microphone is in use by another program. Close it and try again.';
     default:
-      return 'The microphone could not be started. Try again, or type the command.';
+      return `The microphone could not be started. Try again, or ${typeInstead}.`;
   }
 }
 
@@ -89,25 +105,30 @@ export interface VoiceAvailability {
 }
 
 /** Whether the mic is offered, and how: Desktop speech first, else server speech-to-text when it is set up. */
-export function voiceAvailability(input: {
-  isDesktop: boolean;
-  recorderSupported: boolean;
-  status: AiStatusDto | undefined;
-  statusFailed: boolean;
-}): VoiceAvailability {
+export function voiceAvailability(
+  input: {
+    isDesktop: boolean;
+    recorderSupported: boolean;
+    status: AiStatusDto | undefined;
+    statusFailed: boolean;
+  },
+  { typeInstead }: Pick<VoiceUse, 'typeInstead'>,
+): VoiceAvailability {
   if (input.isDesktop) {
     return { mode: 'desktop', reason: null };
   }
   if (!input.recorderSupported) {
     return {
       mode: null,
-      reason: 'Voice input is not supported in this browser. Type the command, or use HC360 Desktop.',
+      reason: `Voice input is not supported in this browser. ${sentence(typeInstead)}, or use HC360 Desktop.`,
     };
   }
   if (!input.status) {
     return {
       mode: null,
-      reason: input.statusFailed ? 'Voice input could not be checked right now. Type the command instead.' : null,
+      reason: input.statusFailed
+        ? `Voice input could not be checked right now. ${sentence(typeInstead)} instead.`
+        : null,
     };
   }
   if (input.status.serverSpeechToText) {
@@ -115,8 +136,7 @@ export function voiceAvailability(input: {
   }
   return {
     mode: null,
-    reason:
-      'Voice input in a browser needs server speech-to-text, which is not set up. Use HC360 Desktop, or type the command.',
+    reason: `Voice input in a browser needs server speech-to-text, which is not set up. Use HC360 Desktop, or ${typeInstead}.`,
   };
 }
 
@@ -147,10 +167,13 @@ export interface Recording {
 }
 
 /**
- * Records from the microphone until `stop()`, 30 seconds, or the size limit. The microphone is released as soon as
- * recording ends. The audio stays in memory and is only sent for transcription.
+ * Records from the microphone until `stop()`, the caller's time limit, or the size limit. The microphone is released
+ * as soon as recording ends. The audio stays in memory and is only sent for transcription.
  */
-export async function startRecording(): Promise<Recording> {
+export async function startRecording({
+  maxRecordingMs,
+  typeInstead,
+}: Pick<VoiceUse, 'maxRecordingMs' | 'typeInstead'>): Promise<Recording> {
   const recordingType = recorderSupported() ? pickRecordingType((type) => MediaRecorder.isTypeSupported(type)) : null;
   const upload = recordingType ? uploadTypeFor(recordingType) : null;
   if (!recordingType || !upload) {
@@ -163,7 +186,7 @@ export async function startRecording(): Promise<Recording> {
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
   } catch (error) {
-    throw new VoiceError(microphoneProblem(error instanceof DOMException ? error.name : null));
+    throw new VoiceError(microphoneProblem(error instanceof DOMException ? error.name : null, typeInstead));
   }
 
   let recorder: MediaRecorder;
@@ -171,7 +194,7 @@ export async function startRecording(): Promise<Recording> {
     recorder = new MediaRecorder(stream, { mimeType: recordingType, audioBitsPerSecond: 32_000 });
   } catch {
     stream.getTracks().forEach((track) => track.stop());
-    throw new VoiceError(COULD_NOT_RECORD);
+    throw new VoiceError(couldNotRecord(typeInstead));
   }
   const chunks: Blob[] = [];
   const startedAt = Date.now();
@@ -182,8 +205,8 @@ export async function startRecording(): Promise<Recording> {
       recorder.stop();
     }
   };
-  // The 30-second limit; recording starts a moment later, below.
-  const timer = setTimeout(stopIfRecording, MAX_RECORDING_MS);
+  // The time limit; recording starts a moment later, below.
+  const timer = setTimeout(stopIfRecording, maxRecordingMs);
   const release = () => {
     clearTimeout(timer);
     stream.getTracks().forEach((track) => track.stop());
@@ -195,7 +218,7 @@ export async function startRecording(): Promise<Recording> {
         chunks.push(event.data);
         bytes += event.data.size;
       }
-      if (shouldStopRecording(Date.now() - startedAt, bytes)) {
+      if (shouldStopRecording(Date.now() - startedAt, bytes, maxRecordingMs)) {
         stopIfRecording();
       }
     };
@@ -205,7 +228,7 @@ export async function startRecording(): Promise<Recording> {
         resolve(null);
         return;
       }
-      const problem = recordingProblem(bytes);
+      const problem = recordingProblem(bytes, maxRecordingMs);
       if (problem) {
         reject(new VoiceError(problem));
         return;
@@ -223,7 +246,7 @@ export async function startRecording(): Promise<Recording> {
     recorder.start(1000);
   } catch {
     release();
-    throw new VoiceError(COULD_NOT_RECORD);
+    throw new VoiceError(couldNotRecord(typeInstead));
   }
 
   return {

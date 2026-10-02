@@ -1,11 +1,17 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Scheduling.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
-/// <summary>Builds the physician desktop worklist (EMR-01) for one practitioner and day, within the current facility.</summary>
-public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
+/// <summary>
+/// Builds the physician desktop worklist (EMR-01) for one practitioner and day, within the current facility. As on the bed
+/// board and the ward round, restricted (VIP) patients are not named, and their clinical text is left out, for users who
+/// may not open restricted records (<see cref="WorklistRestriction"/>).
+/// </summary>
+public sealed class WorklistQueries(HospitalDbContext db, IPermissionService permissions, ICurrentUser currentUser, TimeProvider time)
 {
     private const int ListLimit = 50;
 
@@ -15,16 +21,31 @@ public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
             ? await db.Set<Practitioner>().Where(p => p.Id == pid).Select(p => p.DepartmentId).FirstOrDefaultAsync(ct)
             : null;
 
-        return new EmrWorklist(
+        var worklist = new EmrWorklist(
             date,
             practitionerId,
             departmentId,
             await QueueAsync(date, practitionerId, departmentId, ct),
+            await AppointmentsAsync(date, practitionerId, departmentId, ct),
             practitionerId is { } p1 ? await OpenEncountersAsync(p1, ct) : [],
             practitionerId is { } p2 ? await UnsignedNotesAsync(p2, ct) : [],
             practitionerId is { } p3 ? await DraftPrescriptionsAsync(p3, ct) : [],
             practitionerId is { } p4 ? await ResultsAsync(p4, ct) : [],
             practitionerId is { } p5 ? await DeficienciesAsync(p5, ct) : []);
+        return await WithRestrictedRecordsMaskedAsync(worklist, ct);
+    }
+
+    private async Task<EmrWorklist> WithRestrictedRecordsMaskedAsync(EmrWorklist worklist, CancellationToken ct)
+    {
+        var patientIds = WorklistRestriction.PatientIds(worklist);
+        if (patientIds.Count == 0
+            || (currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct)))
+        {
+            return worklist;
+        }
+
+        var restricted = await db.Set<Patient>().Where(p => patientIds.Contains(p.Id) && p.IsVip).Select(p => p.Id).ToListAsync(ct);
+        return restricted.Count == 0 ? worklist : WorklistRestriction.Mask(worklist, restricted.ToHashSet());
     }
 
     private async Task<List<WorklistQueueEntry>> QueueAsync(DateOnly date, Guid? practitionerId, Guid? departmentId, CancellationToken ct)
@@ -78,6 +99,58 @@ public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
             .ToList();
     }
 
+    private async Task<List<WorklistAppointment>> AppointmentsAsync(DateOnly date, Guid? practitionerId, Guid? departmentId, CancellationToken ct)
+    {
+        if (departmentId is null && practitionerId is null)
+        {
+            return [];
+        }
+
+        var rows = await Appointments(date, practitionerId, departmentId).Take(200).ToListAsync(ct);
+        return rows.Select(r => new WorklistAppointment(
+                r.Appointment.Id, r.Appointment.Number, r.Appointment.StartsAt, r.Appointment.EndsAt, r.Appointment.Status, r.Appointment.VisitType,
+                r.Appointment.IsTelehealth, r.Appointment.Reason, r.Appointment.PatientId, r.Uhid, r.FullName, r.Gender,
+                r.DateOfBirth is { } dob ? Age.Format(dob, date) : null, r.Appointment.PractitionerId, r.PractitionerName, r.Appointment.VisitId,
+                r.Appointment.CheckedInAt, r.TokenLabel, r.EncounterId, r.EncounterStatus, r.HasAllergies, r.HasCriticalAlerts))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The doctor's bookings for the day, or the department's when no doctor is chosen, in slot order. Cancelled and
+    /// rescheduled bookings are left out (the replacement booking is listed).
+    /// </summary>
+    internal IQueryable<AppointmentRow> Appointments(DateOnly date, Guid? practitionerId, Guid? departmentId)
+    {
+        var (from, to) = ClinicalClock.RangeUtc(date, date);
+        var appointments = db.Set<Appointment>().AsNoTracking()
+            .Where(a => a.StartsAt >= from && a.StartsAt < to && a.Status != AppointmentStatus.Cancelled && a.Status != AppointmentStatus.Rescheduled);
+        appointments = practitionerId is { } doctor
+            ? appointments.Where(a => a.PractitionerId == doctor)
+            : appointments.Where(a => a.DepartmentId == departmentId);
+
+        return from a in appointments
+               join p in db.Set<Patient>() on a.PatientId equals p.Id
+               join pr in db.Set<Practitioner>() on a.PractitionerId equals pr.Id into doctors
+               from pr in doctors.DefaultIfEmpty()
+               let encounter = db.Set<Encounter>().Where(e => a.VisitId != null && e.VisitId == a.VisitId).OrderByDescending(e => e.StartedAt).FirstOrDefault()
+               orderby a.StartsAt, a.SeatNumber
+               select new AppointmentRow
+               {
+                   Appointment = a,
+                   Uhid = p.Uhid,
+                   FullName = p.FullName,
+                   Gender = p.Gender,
+                   DateOfBirth = p.DateOfBirth,
+                   PractitionerName = pr != null ? pr.DisplayName : null,
+                   TokenLabel = db.Set<QueueToken>().Where(t => a.VisitId != null && t.VisitId == a.VisitId && t.Status != TokenStatus.Cancelled)
+                       .OrderByDescending(t => t.IssuedAt).Select(t => t.Label).FirstOrDefault(),
+                   EncounterId = encounter != null ? encounter.Id : null,
+                   EncounterStatus = encounter != null ? encounter.Status : null,
+                   HasAllergies = db.Set<Allergy>().Any(x => x.PatientId == a.PatientId && x.Status == AllergyStatus.Active),
+                   HasCriticalAlerts = db.Set<PatientAlert>().Any(x => x.PatientId == a.PatientId && x.IsActive && x.Severity == AlertSeverity.Critical),
+               };
+    }
+
     private Task<List<WorklistEncounter>> OpenEncountersAsync(Guid practitionerId, CancellationToken ct) =>
         (from e in db.Set<Encounter>().AsNoTracking()
          join p in db.Set<Patient>() on e.PatientId equals p.Id
@@ -123,4 +196,19 @@ public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
          select new WorklistDeficiency(d.Id, m.Id, d.Type, d.Description, d.DueDate, m.PatientId, p.Uhid, p.FullName))
         .Take(ListLimit)
         .ToListAsync(ct);
+}
+
+internal sealed record AppointmentRow
+{
+    public required Appointment Appointment { get; init; }
+    public required string Uhid { get; init; }
+    public required string FullName { get; init; }
+    public Gender Gender { get; init; }
+    public DateOnly? DateOfBirth { get; init; }
+    public string? PractitionerName { get; init; }
+    public string? TokenLabel { get; init; }
+    public Guid? EncounterId { get; init; }
+    public EncounterStatus? EncounterStatus { get; init; }
+    public bool HasAllergies { get; init; }
+    public bool HasCriticalAlerts { get; init; }
 }

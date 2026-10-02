@@ -3,6 +3,8 @@
  * stays the authority for every rule; these labels only describe.
  */
 
+export { consentTypeLabel } from '@/modules/patients/consents';
+
 export const PRIVACY_PERMISSIONS = {
   /** View requests, the data summary and the erasure assessment. */
   requestsRead: 'privacy.requests.read',
@@ -196,24 +198,6 @@ export const erasureItemDoneLabel: Record<ErasureItem, string> = {
 
 export function erasureDoneLabel(item: string): string {
   return (ERASURE_ITEMS as readonly string[]).includes(item) ? erasureItemDoneLabel[item as ErasureItem] : item;
-}
-
-/** Consent types as the patient record stores them, in plain words. */
-const consentLabels: Record<string, string> = {
-  GeneralTreatment: 'General treatment',
-  DataSharing: 'Sharing records with other care providers',
-  Telehealth: 'Video consultations',
-  Research: 'Research',
-  SmsWhatsAppUpdates: 'SMS and WhatsApp updates',
-  MarketingCommunication: 'Health offers and news',
-  Photography: 'Photographs',
-  HighRiskProcedure: 'High-risk procedure',
-  Anaesthesia: 'Anaesthesia',
-  BloodTransfusion: 'Blood transfusion',
-};
-
-export function consentTypeLabel(type: string, humanize: (value: string) => string): string {
-  return consentLabels[type] ?? humanize(type);
 }
 
 export const genderLabel: Record<string, string> = {

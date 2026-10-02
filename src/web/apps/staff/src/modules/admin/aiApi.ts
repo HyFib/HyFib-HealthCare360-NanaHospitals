@@ -5,7 +5,7 @@ import { istDayEnd, istDayStart } from './integrationsApi';
 
 /**
  * AI administration (GET /api/v1/ai/usage, permission `ai.settings.manage`). Usage rows record who, when, what for,
- * tokens and time, never the text. Status comes from `aiQueries.status()` in the assistant.
+ * tokens and time, never the text. Status comes from `aiQueries.status()` in `@/lib/ai`.
  */
 
 /** AiUsageDto: one recorded AI call. */

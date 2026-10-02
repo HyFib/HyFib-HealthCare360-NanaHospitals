@@ -3,6 +3,7 @@ import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { DeficiencyType } from '@/modules/mrd/api';
 import type { PatientSummary, TokenPriority, TokenStatus } from '@/modules/patients/api';
+import type { AppointmentStatus, AppointmentVisitType } from '@/modules/scheduling/api';
 import type { DoseFrequency } from './dosing';
 import type { EncounterContent } from './encounterForm';
 import type { ServiceCategory } from './orderCart';
@@ -105,6 +106,36 @@ export interface WorklistQueueEntry {
   encounterStatus: EncounterStatus | null;
   hasActiveAllergies: boolean;
   hasCriticalAlerts: boolean;
+  /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the complaint. */
+  isRestricted: boolean;
+}
+
+/** A booking on the doctor's day; once the patient has checked in it carries the visit, token and note. */
+export interface WorklistAppointment {
+  id: string;
+  number: string;
+  startsAt: string;
+  endsAt: string;
+  status: AppointmentStatus;
+  visitType: AppointmentVisitType;
+  isTelehealth: boolean;
+  reason: string | null;
+  patientId: string;
+  uhid: string;
+  patientName: string;
+  gender: Gender;
+  age: string | null;
+  practitionerId: string;
+  practitionerName: string | null;
+  visitId: string | null;
+  checkedInAt: string | null;
+  tokenLabel: string | null;
+  encounterId: string | null;
+  encounterStatus: EncounterStatus | null;
+  hasActiveAllergies: boolean;
+  hasCriticalAlerts: boolean;
+  /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the reason. */
+  isRestricted: boolean;
 }
 
 export interface WorklistEncounter {
@@ -165,6 +196,8 @@ export interface EmrWorklist {
   practitionerId: string | null;
   departmentId: string | null;
   queue: WorklistQueueEntry[];
+  /** Cancelled and rescheduled bookings are left out. */
+  appointments: WorklistAppointment[];
   openEncounters: WorklistEncounter[];
   unsignedNotes: WorklistNote[];
   draftPrescriptions: WorklistPrescription[];

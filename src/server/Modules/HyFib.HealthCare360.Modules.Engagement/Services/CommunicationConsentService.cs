@@ -141,8 +141,7 @@ public sealed class CommunicationConsentService(HospitalDbContext db, ICurrentUs
             .ToListAsync(ct);
         foreach (var consent in active)
         {
-            consent.RevokedAt = now;
-            consent.RevokedReason = Trim(revokedReason, MaxReasonLength);
+            consent.Revoke(Trim(revokedReason, MaxReasonLength), currentUser.UserId, now);
         }
 
         Record(patientId, type, granted: false, notes);

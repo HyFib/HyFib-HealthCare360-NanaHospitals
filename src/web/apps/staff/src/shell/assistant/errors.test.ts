@@ -12,6 +12,9 @@ describe('assistantErrorMessage', () => {
     expect(assistantErrorMessage(problem(503, 'ai.speech_disabled'))).toContain('Voice input is not set up');
     expect(assistantErrorMessage(problem(429, 'ai.quota'))).toContain('usage limit');
     expect(assistantErrorMessage(problem(502, 'ai.provider_failed'))).toContain('could not help this time');
+    expect(assistantErrorMessage(problem(409, 'idempotency.answer_not_kept'))).toBe(
+      'The connection dropped before the answer arrived. Please ask again.',
+    );
   });
 
   it('explains the rate limit, permissions and the network', () => {

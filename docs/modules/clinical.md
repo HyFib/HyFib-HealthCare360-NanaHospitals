@@ -2,7 +2,8 @@
 
 EHR / EMR physician desktop, e-prescribing, clinical orders, discharge summaries, medical records with ICD coding (MRD)
 and master health checkups (MHC). Project: `src/server/Modules/HyFib.HealthCare360.Modules.Clinical` (layer 4,
-references Patients and SupplyChain — the latter read-only, for the prescribers' drug search). Database schema: `clinical`.
+references Patients, Scheduling and SupplyChain; the last two read-only, for the doctor's appointments on the worklist
+and the prescribers' drug search). Database schema: `clinical`.
 Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 
 | Requirement | Where |
@@ -10,9 +11,9 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests`.
 | EHR-01 longitudinal record | Encounters, vitals, allergies, diagnoses/problems, notes, immunisations, orders, prescriptions, discharge summaries; `GET /emr/patients/{id}/timeline` |
 | EHR-02 timeline by type/department/date | `GET /emr/patients/{id}/timeline?types=&from=&to=&departmentId=` |
 | EHR-03 banner flags | `GET /emr/patients/{id}/summary` (allergies with `allergyStatus`, alerts, problems, current medicines, last vitals + flags) for the chart; `GET /emr/patients/{id}/flags` (allergies and alerts alone, `clinical.flags.read`) for every other clinical screen's banner (see *Banner flags on every clinical screen*); `GET /emr/patients/{id}/allergies/status`, "no known allergies"; real-time `clinical.flags.changed` on `patient:{id}` |
-| EHR-04/06/07 documents, consent, break-the-glass | Patients module; every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
-| EMR-01 worklist | `GET /emr/worklist` (queue, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) |
-| EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites |
+| EHR-04/06/07 documents, consent, break-the-glass | Patients module (consents: see *Consents (EHR-06)*); every clinical read goes through `PatientAccessGuard` + `IAuditLogger.PatientRecordAccessedAsync` (`ClinicalAccess`) |
+| EMR-01 worklist | `GET /emr/worklist` (queue, the doctor's appointments, open encounters, unsigned notes, draft prescriptions, results to review, chart deficiencies) and the ward round `GET /inpatient/rounds` (Inpatient module); see *The doctor's worklist (EMR-01)* |
+| EMR-02..07 | Encounters (SOAP, follow-up, referral, sign, amend), templates, vitals, diagnoses (ICD), orders, prescriptions, favourites; voice dictation into a SOAP draft with ICD suggestions (*Dictate with AI*, AI module) |
 | ERX-01..06 | Prescriptions, favourites/templates, safety checks, signing → `PrescriptionSigned`, the printed A5 prescription and its PDF with QR verification, refills/repeat, Schedule H1/X confirmation + register |
 | MRD-01..06 | ICD-10 / ICD-10-PCS catalogues + ranked search + WHO ICD-API lookup, coding at discharge, chart deficiencies, record requests, retention/archival, morbidity index |
 | MHC-01..05 | Packages (billable service items), bookings, itinerary, doctor summary, consolidated report, corporate batches |
@@ -48,7 +49,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional) |
+| GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional; restricted patients masked, see below). `appointments`: the doctor's bookings for the day in slot order, or the department's when no doctor is chosen, without cancelled and rescheduled ones; each with its status, visit type, video flag, and once checked in the visit, queue token and encounter |
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
@@ -269,6 +270,62 @@ bill or issues a credit note, then the booking can be cancelled). The component 
 | GET | `/portal/discharge-summaries/{id}` | `DischargeSummaryDto` (signed only) |
 | GET | `/portal/discharge-summaries/{id}/pdf` | `application/pdf` attachment `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the printed discharge summary (signed or amended only, 404 for a draft); audit "Downloaded discharge summary as a PDF (patient portal)"; 503 `pdf.unavailable` |
 | POST | `/portal/record-requests` | `PortalRecordRequest{patientId, purpose, details}` → 201 |
+
+## The doctor's worklist (EMR-01)
+
+*My worklist* (`/emr`) is the doctor's home screen. The filters (date, department, doctor) apply to every list, and
+the side panel keeps results to review, unsigned encounters and notes, draft prescriptions and chart deficiencies. The
+main panel has three tabs, kept in the address (`?view=appointments`, `?view=rounds`):
+
+* **Queue**: today's tokens for the department, as before. F2 calls the next patient.
+* **Appointments**: the day's bookings in slot order, with a count of those still to come, arrived, seen and absent.
+  A booking not arrived 15 minutes after its slot is marked *Late*; an arrived one shows its token. *Start* or
+  *Continue* opens the consultation from the visit exactly as the queue does (the token goes in service), and a video
+  booking links to the video consultations. The department's view adds each booking's doctor.
+* **Ward round** (needs `inpatient.admissions.read` as well): the doctor's in-patients from
+  `GET /api/v1/inpatient/rounds`, in the bed board's walking order or *most urgent first* (critical vital signs or a
+  critical result, then abnormal vital signs, results waiting and patients not yet seen today). Each row shows the bed
+  and ward, the day of the stay and provisional diagnosis, the safety flags, MLC, a discharge in progress and
+  *Cross-consult* for another consultant's patient; whether the doctor has seen the patient today (a recorded
+  consultant visit) and when they last wrote a note; results to review; and the latest vital signs' worst flag, with
+  the flags in a tooltip. *Record visit* records the consultant visit, which is charged to the in-patient bill (the
+  same dialog as on the admission). A row opens the chart. The round always shows the patients in hospital now.
+
+**Restricted (VIP) patients** follow the bed board in every list, unless the user may open restricted records
+(`patients.restricted.read`). They are named "Restricted patient", with a *Restricted* badge, and their clinical text
+is left out: the complaint, booking reason and note title, a result's name and a deficiency's description. The
+round also leaves out the diagnosis and vital-sign details. The token, time, bed, UHID and safety flags stay, so the
+patient is still called and seen. Opening the chart asks for break-the-glass access.
+
+The page header sums it up: the people waiting, the in-patients still to see, and the results to review.
+
+**Dictating the note.** On the encounter workspace, *Dictate with AI* turns the doctor's dictation into a SOAP draft
+with ICD-10 suggestions, which the doctor checks and inserts into the note (AI module, see `docs/modules/ai.md`). The
+signing checklist warns while a placeholder from the draft (`[NAME_1]`) remains in the note.
+
+## Consents (EHR-06)
+
+Consents are the Patients module's `PatientConsent` records (`/api/v1/patients/{id}/consents`): one consent history
+per patient, which Engagement (campaigns, messages) and Interop (record sharing) read. Staff record and withdraw them
+on the patient profile and in the chart's **Consents** tab.
+
+* **Recording** (`patients.consents`): the consent, the decision (given or refused), who signed (the patient, or a
+  named relative or guardian with the relation), the witness, the form's version and notes.
+* **Withdrawing** (`patients.consents`, a reason of up to 300 characters): only a consent that was given and not
+  withdrawn; a refusal has nothing to withdraw (422 `consent.not_granted`), and a withdrawal is final
+  (422 `consent.revoked`). The consent stays in the list, marked withdrawn, with when, by whom
+  (`RevokedByUserId`) and why. To agree again, a new consent is recorded.
+* **Standing permissions and one-off consents** (`PatientConsent.IsStandingPermission`). Sharing records, SMS and
+  WhatsApp updates, health offers, video consultations, research and photographs hold until withdrawn, so withdrawing
+  one, or recording a refusal, ends every earlier grant of the type ("The patient refused when asked again."). General
+  treatment, high-risk procedure, anaesthesia and transfusion consents belong to one stay or operation: each is
+  withdrawn on its own.
+* **What stops at once**: record sharing with other providers (Interop), health-offer campaigns, feedback requests
+  and follow-up reminders (Engagement). For the others, HC360 records the withdrawal and the screen tells staff what to
+  do (for a procedure consent: tell the treating doctor; the procedure must not go ahead without a new consent).
+* **Access**: listing, recording and withdrawing follow the record's restricted-record rules (403
+  `patient.restricted`), and every listing is in the audit trail ("Viewed consents"). Withdrawals from the portal
+  (the patient), WhatsApp STOP replies (no user) and opt-out links go through the same `PatientConsent.Revoke`.
 
 ## Prescribing safety (ERX-02/06)
 
