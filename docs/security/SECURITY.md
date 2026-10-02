@@ -142,6 +142,11 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Every period is on one screen, and none can be set below its legal minimum.
 - **Completeness.** An architecture test fails when a table that holds a patient id is missing from the personal
   data catalogue, so the data summary cannot fall behind the database.
+- **Reports sent to patients.** The "report ready" e-mail carries the report's PDF, and so does the WhatsApp message
+  when its template has a document header (LIS-07). E-mail is not end-to-end encrypted. Hospitals that do not want
+  reports to travel that way set `diagnostics.reports.sendPdf` to `false`: patients are then told the report is
+  ready and open it on the portal, after signing in with a one-time code. The PDFs are made when the message is sent
+  and are never stored, so they add no copy of the data to keep track of.
 
 ### Integrity and audit
 - **Tamper-evident audit log**:
@@ -172,6 +177,25 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   never runs without it.
 - Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM), and their stored name takes the matching
   extension, so a download can never produce a program or a web page.
+- **Server documents** (reports, prescriptions, discharge summaries, bills, MIS reports):
+  - Templates build their HTML only through an encoder that escapes every value unless it is already safe HTML, so
+    data in a document (a patient's name, a doctor's note) can never become markup. Images can only be embedded as
+    checked `data:` URIs.
+  - Each document carries its own content security policy: no scripts, no network access.
+  - The staff app gets a document as JSON and prints it, so the API never serves an HTML page.
+  - PDFs are downloads (`Content-Disposition: attachment`) with `no-store`. Every print or download of a patient's
+    document is written to the PHI access audit like the screen that shows the same record ("Downloaded lab report …
+    as a PDF"), after the same permission, restricted-record and portal-scope checks. An MIS report that lists patients
+    writes an entry for each patient in the file, as its Excel export does.
+- **The PDF browser.** PDFs are printed by headless Microsoft Edge, run as the server's own service account:
+  - It is controlled over private anonymous pipes, never a TCP port, so no other program on the machine can take
+    control of it.
+  - Scripts are switched off, and every http, https, ws, wss, ftp and file request is blocked, so a document can't
+    run code or reach anything, local files included.
+  - Each PDF is made in a tab of its own browser context. The browser has no extensions, no sync and no background
+    networking, and it keeps its sandbox.
+  - It runs in a job object that ends it, and every process it started, when the server stops. Its private profile
+    folder is deleted.
 - Calls to outside services follow no redirects and need TLS 1.2 or later.
 - The API reference is off by default. If IT turns it on, it answers only on the server machine.
 - The embedded browser in HC360 Desktop:
@@ -259,6 +283,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    `privacy.breach.notice`); without them those SMS are not sent.
 9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
    review the charts it lists as past their period.
+10. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
+    Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
+    in the privacy notice.
 
 ## 4. Reporting a vulnerability
 

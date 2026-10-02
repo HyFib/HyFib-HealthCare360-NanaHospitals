@@ -104,6 +104,8 @@ with a group label, a plain-language description and default roles from `SystemR
 | In-app alerts to staff | `INotificationService.NotifyPermissionHoldersAsync(permission, facilityId, title, body, link, category, severity, ct)` |
 | Real-time UI refresh | `IRealtimePublisher.PublishAsync(Topics.Lab(facilityId), "lab.sample.received", new { id }, ct)` — ids only |
 | Files (PDF/images) | `IFileStore.SaveAsync/ReadAsync` (encrypted at rest) |
+| A document patients receive (report, prescription, bill…) | Build a `PrintableDocument` (`Platform/Documents`) whose body comes only from `Html.Of($"…")`, which encodes every value; letterhead, logo, signatures and QR codes from `DocumentAssets`; `Footer` = patient · UHID · document number. Answer `GET …/document` with `document.ToDto()` (the staff app prints it) and `GET …/pdf` with `await document.ToPdfAsync(IPdfRenderer, ct)`, after the same permission, guard and audit as the record's own endpoint. Reference: `Diagnostics/Documents/LabReportDocument.cs` |
+| Send a document with a message | Register an `INotificationDocumentSource` for its kind (it makes the PDF when the message is sent) and pass `new NotificationDocument(kind, id)` to `INotificationService.Queue`: e-mail attaches it, WhatsApp sends it in a template's document header |
 | Settings / feature flags | `ISettingsService.GetAsync<T>("module.setting", facilityId, ct)` |
 | Current user / facility | `ICurrentUser` (`UserId`, `FacilityId`, `PractitionerId`, `IsPatient`, `PatientId`) |
 | Audit | `IAuditLogger.Add(...)` (same transaction) / `WriteAsync(...)` (immediate) |

@@ -100,8 +100,14 @@ export const bedQueries = {
   allowed to see them and kept live. A dialog or counter that acts on a patient without a banner shows
   `PatientFlagsStrip` instead. Pick patients with `PatientPicker` (`src/modules/patients/PatientPicker.tsx`); link to
   the profile at `/patients/$patientId`.
-* Printing: build HTML with `printDocument(body, { title, pageSize, styles })` and send it with `printHtml(...)`
-  (`@hc360/core`); silent printing on counters (`{ silent: true, pageSize: 'Receipt80' }`), dialog otherwise. Barcodes/QR:
+* Documents the server makes (lab, radiology and cardiology reports, prescriptions, discharge summaries, the full
+  health check-up report, A4 bills): print and download them from the server, so the printed copy is the PDF the
+  patient gets. Use `<DocumentButtons path={…Document(id)} />` (`src/lib/DocumentButtons.tsx`) or `useServerDocuments()`
+  (`src/lib/documents.ts`): Print fetches `<path>/document` and prints it, Download PDF saves `<path>/pdf` and explains a
+  503 (`pdf.unavailable`). Never rebuild these documents in the browser.
+* Printing anything else (slips, labels, 80 mm receipts, internal lists): build HTML with
+  `printDocument(body, { title, pageSize, styles })` and send it with `printHtml(...)` (`@hc360/core`); silent printing
+  on counters (`{ silent: true, pageSize: 'Receipt80' }`), dialog otherwise. Barcodes/QR:
   `await barcodeSvg(value, 'code128' | 'qrcode')` (the encoder loads on demand). Escape every value with `escapeHtml`.
 * Formatting (`@hc360/core`): `formatInr`, `formatDate`, `formatDateTime`, `formatTime`, `formatDateOnly`,
   `formatRelative`, `formatPhone`, `humanize` (enum → words). The hospital runs on IST (`HOSPITAL_TIME_ZONE`).
