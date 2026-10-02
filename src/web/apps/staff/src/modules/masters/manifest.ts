@@ -49,6 +49,21 @@ const manifest: ModuleManifest = {
       permission: MASTERS_MANAGE,
       keywords: ['service', 'price', 'charge', 'rate', 'sac', 'gst', 'catalogue', 'procedure'],
     },
+    {
+      label: 'Number formats',
+      to: '/setup/numbering',
+      permission: 'admin.numbering.manage',
+      keywords: [
+        'numbering',
+        'number series',
+        'uhid',
+        'bill number',
+        'receipt number',
+        'invoice number',
+        'prefix',
+        'format',
+      ],
+    },
   ],
 };
 
