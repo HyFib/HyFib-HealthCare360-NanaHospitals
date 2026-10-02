@@ -273,8 +273,8 @@ public sealed class AppointmentBookingService(
         }
 
         // Video consultations switched off: nothing new is booked or moved as one (in person still works, and so does
-        // cancelling). Read for the facility the booking is made from, else hospital-wide (online bookings).
-        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, currentUser.FacilityId, ct))
+        // cancelling). Off for the whole hospital is clear before any slot is looked up; off for one facility, below.
+        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, null, ct))
         {
             return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
         }
@@ -309,6 +309,13 @@ public sealed class AppointmentBookingService(
         var mode = command.IsTelehealth ? ConsultationMode.Telehealth : ConsultationMode.InPerson;
         var slots = await availability.ComputeAsync(command.PractitionerId, new SlotQuery(date, date, now) { Mode = mode, IncludeFull = true }, ct);
         var slot = slots.FirstOrDefault(s => s.StartsAt == command.StartsAt);
+
+        // Video consultations switched off for the slot's facility (online bookings have no other way to know it).
+        if (command.IsTelehealth && slot is not null && !await features.IsEnabledAsync(FeatureKeys.Telehealth, slot.FacilityId, ct))
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
+        }
+
         var slotCheck = BookingRules.EnsureSlotCanTake(slot, command.Overbook);
         if (slotCheck.IsFailure || slot is null)
         {

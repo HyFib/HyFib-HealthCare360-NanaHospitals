@@ -27,10 +27,10 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 * Sessions nobody started become `Missed` one hour after their scheduled end (job).
 * **Switched off** ([features.md](features.md), `features.telehealth`): every `/api/v1/telehealth` and
   `/api/v1/portal/telehealth` endpoint answers 503 `feature.disabled`, except `end` and `cancel`, so a call already
-  running can be closed and a booked one called off. The hub refuses to negotiate or connect, and `JoinAsClinician`,
-  `JoinAsPatient` and `JoinAsGuest` refuse a connection opened before the switch (checked for the session's facility);
-  a call already running is not cut off. `JoinAsPatient` also needs the patient portal to be on. Remote patient
-  monitoring is not affected.
+  running can be closed and a booked one called off. `JoinAsClinician`, `JoinAsPatient` and `JoinAsGuest` refuse to
+  join while video is off for the session's facility, and nothing else on the hub works without joining. The hub has no
+  switch of its own, because guests and patients connect without a facility. A call already running is not cut off.
+  `JoinAsPatient` also needs the patient portal to be on. Remote patient monitoring is not affected.
 
 ### Signalling hub — `/hubs/telehealth`
 

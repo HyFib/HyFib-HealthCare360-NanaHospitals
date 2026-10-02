@@ -106,7 +106,7 @@ public sealed class TeleconsultationJourneyTests(HospitalServer server)
     /// The doctor's first free video slot in the coming week that starts late enough to book. Any day will do: unlike a
     /// clinic visit, which is checked in on its day, a video consultation can be started at any time.
     /// </summary>
-    private static async Task<SlotDto> FreeVideoSlotAsync(ApiClient frontOffice, Guid practitionerId)
+    internal static async Task<SlotDto> FreeVideoSlotAsync(ApiClient frontOffice, Guid practitionerId)
     {
         var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(IndiaOffset).DateTime);
         var availability = await frontOffice.GetAsync<List<PractitionerAvailability>>(

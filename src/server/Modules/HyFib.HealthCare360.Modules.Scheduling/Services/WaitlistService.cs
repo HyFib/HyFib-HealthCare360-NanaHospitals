@@ -52,12 +52,6 @@ public sealed class WaitlistService(
             return Error.Field("practitionerId", "Choose an active doctor.");
         }
 
-        // A request for a video consultation could never be booked while they are switched off.
-        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, currentUser.FacilityId, ct))
-        {
-            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
-        }
-
         if (command.IsTelehealth && !practitioner.AvailableForTelehealth)
         {
             return Error.Rule("appointment.telehealth_unavailable", $"{practitioner.DisplayName} does not offer video consultations.");
@@ -75,6 +69,12 @@ public sealed class WaitlistService(
         if (facilityId is null)
         {
             return Error.Rule("waitlist.no_schedule", $"{practitioner.DisplayName} has no OPD sessions to wait for.");
+        }
+
+        // A request for a video consultation could never be booked while they are switched off where the patient waits.
+        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, facilityId, ct))
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
         }
 
         var entry = new WaitlistEntry

@@ -5,8 +5,9 @@ using HyFib.HealthCare360.Platform.Settings;
 namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
-/// The feature switches: on until someone turns them off (so an upgrade changes nothing), a facility's own true/false
-/// over the hospital-wide one, and anything that is not true or false ignored rather than read as "off".
+/// The feature switches: on until someone turns them off (so an upgrade changes nothing), the hospital-wide switch the
+/// master (a facility can only turn a feature off for itself), and anything that is not true or false ignored rather than
+/// read as "off".
 /// </summary>
 public sealed class FeatureFlagsTests
 {
@@ -52,13 +53,16 @@ public sealed class FeatureFlagsTests
     }
 
     [Fact]
-    public async Task A_facility_may_keep_a_feature_on_that_is_off_elsewhere()
+    public async Task A_facility_cannot_keep_a_feature_on_that_is_off_hospital_wide()
     {
-        _settings.Set(FeatureKeys.PatientPortal, "false");
-        _settings.Set(FeatureKeys.PatientPortal, "true", FacilityId);
+        // Turned off on the Features screen means off everywhere: callers without a facility (patients, guests) read the
+        // hospital-wide switch alone, so a branch that stayed on would be refused to them anyway.
+        _settings.Set(FeatureKeys.Telehealth, "false");
+        _settings.Set(FeatureKeys.Telehealth, "true", FacilityId);
 
-        (await IsEnabledAsync(FeatureKeys.PatientPortal, FacilityId)).ShouldBeTrue();
-        (await IsEnabledAsync(FeatureKeys.PatientPortal, OtherFacilityId)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Telehealth, FacilityId)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Telehealth, OtherFacilityId)).ShouldBeFalse();
+        (await IsEnabledAsync(FeatureKeys.Telehealth)).ShouldBeFalse();
     }
 
     [Theory]
@@ -77,11 +81,12 @@ public sealed class FeatureFlagsTests
     [Theory]
     [InlineData("null")]
     [InlineData("\"off\"")]
-    public async Task A_facility_value_that_is_not_a_switch_falls_through_to_the_hospital_wide_one(string value)
+    public async Task A_facility_value_that_is_not_a_switch_leaves_the_hospital_wide_one(string value)
     {
-        _settings.Set(FeatureKeys.Telehealth, "false");
         _settings.Set(FeatureKeys.Telehealth, value, FacilityId);
+        (await IsEnabledAsync(FeatureKeys.Telehealth, FacilityId)).ShouldBeTrue();
 
+        _settings.Set(FeatureKeys.Telehealth, "false");
         (await IsEnabledAsync(FeatureKeys.Telehealth, FacilityId)).ShouldBeFalse();
     }
 

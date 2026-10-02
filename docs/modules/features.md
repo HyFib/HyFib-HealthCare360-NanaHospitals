@@ -18,18 +18,21 @@ Both are **on** until an administrator turns them off, so an upgrade changes not
 | Key | Name | While it is off | Keeps working |
 |---|---|---|---|
 | `features.patientPortal` | Patient portal | Patients cannot sign in or register (`/api/v1/auth/otp/*`), a portal session cannot be refreshed, every `/api/v1/portal/*` API and the public doctor directory (`/api/v1/public/doctors/*`, online booking) answer 503, and a patient's sign-in opens no endpoint that needs one. A signed-in patient cannot join a video consultation from the portal. The portal shows "The patient portal is not available right now. Please contact the hospital." instead of sign-in and every signed-in page | Report and prescription checks from printed QR codes, feedback and unsubscribe links from SMS, the privacy notice, video consultation links sent by SMS (while video consultations are on), payment-gateway webhooks, and everything the staff app uses |
-| `features.telehealth` | Video consultations | Every `/api/v1/telehealth/*` and `/api/v1/portal/telehealth/*` endpoint answers 503, except ending and cancelling a consultation. The hub `/hubs/telehealth` refuses to negotiate or connect, and its join methods refuse a connection opened before the switch. Nothing new is booked, rescheduled or waitlisted as a video consultation (422 `feature.disabled`), and the public directory offers no video (`offersTelehealth: false`, in-person times only). The staff app hides video links, quick actions and the widget, the worklist's Video action and the video option when booking; the portal hides video consultations | Remote patient monitoring. Video appointments already booked stay in the diary: staff move them to an in-person visit (reschedule) or cancel them. A call already running is not cut off |
+| `features.telehealth` | Video consultations | Every `/api/v1/telehealth/*` and `/api/v1/portal/telehealth/*` endpoint answers 503, except ending and cancelling a consultation. Nobody joins a consultation on the hub `/hubs/telehealth`: every way to join checks the switch for the consultation's facility (the hub has no switch of its own, as guests and patients connect without a facility). Nothing new is booked, rescheduled or waitlisted as a video consultation (422 `feature.disabled`), and the public directory offers no video (`offersTelehealth: false`, in-person times only). The staff app hides video links, quick actions and the widget, the worklist's Video action and the video option when booking; the portal hides video consultations | Remote patient monitoring. Video appointments already booked stay in the diary: staff move them to an in-person visit (reschedule) or cancel them. A call already running is not cut off |
 
 ## How a switch is read
 
 * The setting store holds the switch (`features.<code>`, JSON `true` or `false`).
-  `IFeatureFlags.IsEnabledAsync(feature, facilityId)` reads the facility's own value, else the hospital-wide one, else
-  the catalogue default. Any value other than `true` or `false` (`"no"`, `null`, a number) is ignored, so a typo never
-  turns a feature off.
+  `IFeatureFlags.IsEnabledAsync(feature, facilityId)` reads the hospital-wide value, else the catalogue default. It is
+  the master switch: while it is off, the feature is off everywhere. While it is on, a facility's own `false` turns the
+  feature off for that facility; a facility's `true` changes nothing. Any value other than `true` or `false` (`"no"`,
+  `null`, a number) is ignored, so a typo never turns a feature off.
 * **Facility.** Requests use the signed-in user's facility. Patients, guests and anonymous callers have none, so they
-  get the hospital-wide value; the public directory uses the branch the patient asks for (`facilityId`), and the
-  telehealth hub uses the consultation's facility. The Features screen sets the hospital-wide value. A value saved for
-  one facility under Administration > Settings (same key) overrides it for that branch.
+  get the hospital-wide value, which is right for them because no branch can be on while it is off. Where the facility
+  becomes known, its own switch is checked as well: the public directory uses the branch the patient asks for
+  (`facilityId`), a booking the facility of the slot, a waitlist request the facility it waits at, and the telehealth hub
+  the consultation's facility. The Features screen sets the hospital-wide value; `false` saved for one facility under
+  Administration > Settings (same key) turns the feature off for that branch alone.
 * **When a change applies.** Settings are cached for a minute, but saving a key expires every cached value of that key
   on this server at once (hospital-wide and every facility). Other servers behind the Redis backplane see it within a
   minute. The staff app asks for the switches again when they are five minutes old and the window is next used, and at

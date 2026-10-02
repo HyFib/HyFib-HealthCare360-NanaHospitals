@@ -18,8 +18,8 @@ namespace HyFib.HealthCare360.Modules.VirtualCare.Hubs;
 /// candidates and chat. The hub itself allows anonymous connections (guests have no JWT) and authorises every call.
 /// Media never passes through the server. Presence is kept in the database (with connection ids) so any API node
 /// behind the Redis backplane can admit a patient who is connected to another node. While video consultations are
-/// switched off nobody can connect, and a connection opened before the switch cannot join; a call already running is
-/// not cut off.
+/// switched off for the consultation's facility nobody can join it (every join checks), so nobody can signal, admit or
+/// chat in it either; a call already running is not cut off.
 /// </summary>
 [AllowAnonymous]
 public sealed class TelehealthHub(
