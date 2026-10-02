@@ -1,9 +1,15 @@
 namespace HyFib.HealthCare360.Modules.Analytics.Domain;
 
+/// <summary>
+/// A report file's format. Stored as text (varchar 64), so a new format goes at the end and needs no migration.
+/// </summary>
 public enum ExportFormat
 {
     Xlsx = 0,
     Csv,
+
+    /// <summary>The printable A4 document, made on the server by the PDF renderer (Reports/Export/ReportPdf).</summary>
+    Pdf,
 }
 
 public enum ScheduleRunStatus
@@ -17,9 +23,9 @@ public enum ScheduleRunStatus
 }
 
 /// <summary>
-/// A report e-mailed on a schedule (MIS-05, BI-04) as an Excel or CSV attachment. It belongs to one facility and runs
-/// with the permissions of the person who last saved it, re-checked at every run, so revoking someone's access also
-/// stops their scheduled e-mails. Parameters are stored in canonical form with a relative period ("yesterday",
+/// A report e-mailed on a schedule (MIS-05, BI-04) as an Excel, CSV or PDF attachment. It belongs to one facility and
+/// runs with the permissions of the person who last saved it, re-checked at every run, so revoking someone's access
+/// also stops their scheduled e-mails. Parameters are stored in canonical form with a relative period ("yesterday",
 /// "last month") so every e-mail covers new dates.
 /// </summary>
 public sealed class ReportSchedule : AuditableEntity, IFacilityScoped

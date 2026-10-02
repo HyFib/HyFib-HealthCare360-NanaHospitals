@@ -22,15 +22,28 @@ public sealed record ReportDocument(
     object?[]? Totals,
     IReadOnlyList<ReportFigure> Summary,
     IReadOnlyList<string> Notes,
-    bool ContainsPatientIdentifiers);
+    bool ContainsPatientIdentifiers)
+{
+    /// <summary>The facility the report covers, whose letterhead heads the PDF; null for a consolidated report.</summary>
+    public Guid? FacilityId { get; init; }
 
-public sealed record ReportFile(string FileName, string ContentType, byte[] Content);
+    /// <summary>
+    /// The patient each row lists, aligned with <see cref="Rows"/> (patient-level reports only), so a file that holds
+    /// only the first rows is audited for exactly the patients in it.
+    /// </summary>
+    public IReadOnlyList<Guid?>? RowPatientIds { get; init; }
+}
+
+/// <param name="Rows">Report rows in the file: all of them, except in the PDF of a very long report (<see cref="ReportPdf.MaxRows"/>).</param>
+/// <param name="Notice">Set when the file leaves rows out: what it lists, and that the Excel export has every row.</param>
+public sealed record ReportFile(string FileName, string ContentType, byte[] Content, int Rows, string? Notice = null);
 
 /// <summary>
 /// Excel (ClosedXML) and CSV exports (MIS-03). Every file carries a header — hospital, report, inputs, who generated it
 /// and when (IST) — and ends with "Confidential"; the Excel sheet also prints "Confidential" in the page footer. Text
 /// cells in CSV are neutralised against formula injection (a leading =, +, -, @, tab or CR is prefixed with an
-/// apostrophe); Excel text is stored as text and never evaluated.
+/// apostrophe); Excel text is stored as text and never evaluated. PDFs are laid out by <see cref="ReportPdf"/> and made
+/// by <see cref="ReportFileWriter"/>, which needs the letterhead and the server's PDF renderer.
 /// </summary>
 public static class ReportExporter
 {
@@ -41,12 +54,16 @@ public static class ReportExporter
     private const int AutoFitRows = 400;
     private const double MaxColumnWidth = 60;
 
+    /// <summary>The report as an Excel or CSV file. A PDF is made by <see cref="ReportFileWriter"/>.</summary>
     public static ReportFile Export(ReportDocument document, ExportFormat format)
     {
         var stem = FileStem(document);
-        return format == ExportFormat.Csv
-            ? new ReportFile(stem + ".csv", CsvContentType, Csv(document))
-            : new ReportFile(stem + ".xlsx", XlsxContentType, Xlsx(document));
+        return format switch
+        {
+            ExportFormat.Csv => new ReportFile(stem + ".csv", CsvContentType, Csv(document), document.Rows.Count),
+            ExportFormat.Xlsx => new ReportFile(stem + ".xlsx", XlsxContentType, Xlsx(document), document.Rows.Count),
+            _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Only Excel and CSV files are made here; PDFs are made by ReportFileWriter."),
+        };
     }
 
     /// <summary>"revenue-by-department_20260901-20260926" (letters, digits, dashes and underscores only).</summary>

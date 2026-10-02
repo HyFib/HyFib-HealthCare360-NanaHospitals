@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports.Export;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
@@ -18,9 +19,10 @@ namespace HyFib.HealthCare360.Modules.Analytics.Services;
 
 /// <summary>
 /// Generates one delivery of a schedule: runs the report as the schedule's owner (current permissions, the schedule's
-/// facility), writes the Excel/CSV file, keeps it encrypted, and queues one e-mail per recipient through the platform
-/// outbox (<see cref="ScheduledReportEmailHandler"/>), so e-mails survive internet outages and are retried with back-off.
-/// Everything — delivery, recipients, outbox messages, schedule status and the audit entry — commits in one transaction.
+/// facility), writes the Excel, CSV or PDF file, keeps it encrypted, and queues one e-mail per recipient through the
+/// platform outbox (<see cref="ScheduledReportEmailHandler"/>), so e-mails survive internet outages and are retried with
+/// back-off. Everything — delivery, recipients, outbox messages, schedule status and the audit entry — commits in one
+/// transaction.
 /// </summary>
 internal sealed class ReportDeliveryService(
     HospitalDbContext db,
@@ -28,6 +30,7 @@ internal sealed class ReportDeliveryService(
     ReportActors actors,
     ReportRunner runner,
     ReportPresenter presenter,
+    ReportFileWriter files,
     ReportAuditor auditor,
     IFieldProtector protector,
     IOutbox outbox,
@@ -80,12 +83,23 @@ internal sealed class ReportDeliveryService(
 
         var filters = await presenter.DescribeAsync(execution.Value, ct);
         var document = presenter.Document(execution.Value, filters, $"{ReportEndpoints.Person(actor)} (scheduled e-mail \"{schedule.Name}\")", null, null);
-        var file = ReportExporter.Export(document, schedule.Format);
+        ReportFile file;
+        try
+        {
+            file = await files.WriteAsync(document, schedule.Format, ct);
+        }
+        catch (PdfRenderException ex)
+        {
+            // Reported like a report that could not run: the delivery fails with the reason, the schedule shows it,
+            // and the e-mail goes at the next scheduled time (or with Send now).
+            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed,
+                $"The PDF could not be made: {ex.Message} Use Send now to try again, or choose Excel or CSV for this schedule.", ct);
+        }
 
         delivery.FileName = file.FileName;
         delivery.ContentType = file.ContentType;
         delivery.SizeBytes = file.Content.LongLength;
-        delivery.RowCount = document.Rows.Count;
+        delivery.RowCount = file.Rows;
         delivery.Content = protector.ProtectBytes(file.Content, FilePurpose);
         delivery.GeneratedAt = now;
         delivery.Status = DeliveryStatus.Ready;
@@ -105,8 +119,8 @@ internal sealed class ReportDeliveryService(
         schedule.RecordRun(now, ScheduleRunStatus.Succeeded, null);
 
         // Saves the whole unit of work (delivery, recipients, outbox messages, schedule) together with the audit entry.
-        await auditor.ExportedAsync(execution.Value, schedule.Format, document.Rows.Count, actor, $"e-mail to {schedule.Recipients.Count} recipient(s)", [], ct);
-        logger.LogInformation("Scheduled report {ScheduleId} generated ({Rows} rows) and queued for {Recipients} recipient(s)", schedule.Id, document.Rows.Count, schedule.Recipients.Count);
+        await auditor.ExportedAsync(execution.Value, schedule.Format, file.Rows, actor, $"e-mail to {schedule.Recipients.Count} recipient(s)", [], ct);
+        logger.LogInformation("Scheduled report {ScheduleId} generated ({Rows} rows) and queued for {Recipients} recipient(s)", schedule.Id, file.Rows, schedule.Recipients.Count);
         return delivery;
     }
 

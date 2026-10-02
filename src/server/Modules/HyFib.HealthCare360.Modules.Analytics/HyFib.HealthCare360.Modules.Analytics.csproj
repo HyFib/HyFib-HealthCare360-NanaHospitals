@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    MIS reports and managed BI (layer 8): a permission-filtered report catalogue over every module's data, Excel/CSV
+    MIS reports and managed BI (layer 8): a permission-filtered report catalogue over every module's data, Excel/CSV/PDF
     exports, an executive KPI set, saved dashboards and scheduled report e-mails. Reads other modules' entities through
     HospitalDbContext (optionally on a read-only reporting replica) and never writes to their schemas.
   -->

@@ -46,6 +46,10 @@ public sealed record ExportReportRequest(Dictionary<string, string?>? Parameters
 public sealed record ReportFilterDto(string Label, string Value);
 
 /// <summary>One page of a report with totals, headline figures, chart data and drill-down.</summary>
+/// <param name="PdfNotice">
+/// Set when the report has more rows than a PDF lists (<see cref="Analytics.Reports.Export.ReportPdf.MaxRows"/>): what
+/// a PDF export will hold, for the export menu to show. The Excel and CSV exports always have every row.
+/// </param>
 public sealed record ReportResultDto(
     string ReportId,
     string Title,
@@ -71,7 +75,8 @@ public sealed record ReportResultDto(
     bool Desc,
     DateTimeOffset GeneratedAt,
     string DataSource,
-    bool ContainsPatientIdentifiers);
+    bool ContainsPatientIdentifiers,
+    string? PdfNotice);
 
 /// <summary>GET /api/v1/analytics/status — where reports read from and how fresh the data is (BI-05).</summary>
 public sealed record AnalyticsStatusDto(

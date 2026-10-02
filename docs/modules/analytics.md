@@ -2,8 +2,8 @@
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Analytics` · schema `analytics` · reads every module's tables
 through the shared `HospitalDbContext` (read-only, `AsNoTracking`), owns only its own four tables.
-Covers SRS **MIS-01..05** (report catalogue, operational, financial, clinical and stock reports, Excel/CSV export) and
-**BI-01..05** (executive dashboard, saved dashboards, drill-down, scheduled delivery, read replica).
+Covers SRS **MIS-01..05** (report catalogue, operational, financial, clinical and stock reports, Excel/CSV/PDF
+export) and **BI-01..05** (executive dashboard, saved dashboards, drill-down, scheduled delivery, read replica).
 
 Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insights*) and
 `src/web/apps/staff/src/routes/_app/analytics`.
@@ -71,8 +71,8 @@ All under `/api/v1/analytics`, tag *Analytics*.
 | GET | `/reports/{id}` | → `ReportCatalogueItem {id, title, category, categoryLabel, description, definition, parameters[{key,label,kind,required,defaultValue,choices,min,max,hint}], columns[{key,label,type,isPatientIdentifier}], chart{type,categoryKey,seriesKeys,timeSeries,topN}, containsPatientIdentifiers, canSchedule, maxDays}`; 403 when not allowed |
 | POST | `/reports/{id}/run` | `RunReportRequest {parameters{key:value}, page, pageSize (≤ 500), sort, desc, chart}` → `ReportResultDto` |
 | GET | `/reports/{id}/run` | the same with inputs as query parameters (`?period=lastMonth&departmentId=…&page=2&pageSize=50&sort=revenue&desc=true&chart=Pie`). The staff app uses this form: it is a read, so it is not stored by the idempotency layer |
-| POST | `/reports/{id}/export?format=xlsx\|csv` | `ExportReportRequest {parameters, sort, desc}` → file (`Cache-Control: no-store`) |
-| GET | `/reports/{id}/export?format=xlsx\|csv&…inputs` | the same as a GET (browser downloads) |
+| POST | `/reports/{id}/export?format=xlsx\|csv\|pdf` | `ExportReportRequest {parameters, sort, desc}` → file (`Cache-Control: no-store`); another format → 400 "Choose Excel (xlsx), CSV or PDF."; `pdf` → `application/pdf`, or 503 `pdf.unavailable` when the server cannot make PDFs; a PDF that leaves rows out carries the header `X-Report-Notice` (see *Exports*) |
+| GET | `/reports/{id}/export?format=xlsx\|csv\|pdf&…inputs` | the same as a GET (browser downloads) |
 | GET | `/kpis?from&to&facilityId` | → `KpiSet {from, to, previousFrom, previousTo, facilityName, kpis[], generatedAt, dataSource}`; default period = this month to date; max 366 days |
 | GET | `/lookups/{kind}?search&facilityId` | `kind` = `facilities` (the caller's allowed facilities), `departments`, `practitioners`, `payers`, `wards`, `stores`, `theatres` → `LookupItem[] {id, code, name}` (≤ 200, active only) |
 | GET | `/status` | → `AnalyticsStatusDto {dataSource, usesReplica, replicaLagSeconds, activeSchedules, lastDeliveryAt, failedDeliveriesLast7Days, checkedAt}` |
@@ -83,7 +83,8 @@ and schedules), `columns`, `rows` (one page, values aligned with `columns`: numb
 Month, ISO instants for DateTime), `rowKeys` (ids for drill-down), `totals` (whole report), `summary[{key,label,value,
 type}]`, `chart {type, categoryKey, categoryLabel, categoryType, categories[], series[{key,label,type,values[]}],
 timeSeries, keys[]}`, `drillDown {reportId, parameterKey, label, parameters}`, `notes[]`, `page, pageSize, totalRows,
-truncated, sort, desc, generatedAt, dataSource, containsPatientIdentifiers`.
+truncated, sort, desc, generatedAt, dataSource, containsPatientIdentifiers, pdfNotice` (null unless the report has more
+rows than a PDF lists: then what a PDF export will hold, for the export menu to show).
 
 Charts: rankings show the top N categories (15 by default) and fold the rest into *Others* (only for additive series:
 counts and money, never percentages); time series keep every point in order; a pie uses the first series.
@@ -115,10 +116,10 @@ is stored as JSON (`dashboards.layout_json`, jsonb): `[{"id","reportId","title",
 |---|---|---|
 | GET | `/schedules` | → `ScheduleDto[]` (the facility's schedules) |
 | GET | `/schedules/{id}` | → `ScheduleDto {id, name, reportId, reportTitle, parameters, format, frequency, time, dayOfWeek, dayOfMonth, when, recipients, isActive, ownerName, isMine, nextRunAt, lastRunAt, lastStatus, lastError, version}` |
-| POST | `/schedules` | `SaveScheduleRequest {name, reportId, parameters, format: Xlsx\|Csv, frequency: Daily\|Weekly\|Monthly, time "HH:mm" (IST), dayOfWeek (weekly), dayOfMonth 1–28 or 31 = last day (monthly), recipients (1–20), isActive}` → 201 |
+| POST | `/schedules` | `SaveScheduleRequest {name, reportId, parameters, format: Xlsx\|Csv\|Pdf, frequency: Daily\|Weekly\|Monthly, time "HH:mm" (IST), dayOfWeek (weekly), dayOfMonth 1–28 or 31 = last day (monthly), recipients (1–20), isActive}` → 201 |
 | PUT | `/schedules/{id}` | same with `version`; **the person who saves becomes the owner** (the report runs with the owner's permissions and facility access) |
 | DELETE | `/schedules/{id}?version=` | soft delete → 204 |
-| POST | `/schedules/{id}/send-now` | generates the file now and queues the e-mails (schedule unchanged) → `DeliveryDto`, or 422 `analytics.delivery_failed` |
+| POST | `/schedules/{id}/send-now` | generates the file now and queues the e-mails (schedule unchanged) → `DeliveryDto`, or 422 `analytics.delivery_failed` (also when a PDF cannot be made) |
 | GET | `/schedules/{id}/deliveries?page&pageSize` | → `PagedResult<DeliveryDto {id, scheduleId, reportTitle, trigger, createdAt, status, periodFrom, periodTo, format, fileName, sizeBytes, rowCount, fileAvailable, error, sent, pending, recipients[{email, status, attempts, lastError, sentAt}]}>` |
 | GET | `/deliveries/{id}/file` | the delivered file again while it is kept (audited); 422 `analytics.file_purged` after retention |
 
@@ -228,7 +229,8 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
 
 ## Exports (MIS-05)
 
-`Reports/Export/ReportExporter.cs` (ClosedXML for Excel):
+`Reports/Export/ReportExporter.cs` (ClosedXML for Excel), `Reports/Export/ReportPdf.cs` (PDF layout) and
+`Reports/Export/ReportFileWriter.cs`, which the export endpoint and scheduled e-mails both write through:
 
 * **Excel**: header block with the hospital (facility letterhead name, or the organisation for consolidated
   reports), report title, every input in words (period, facility, filters), *Generated by* (name and user name) and
@@ -238,9 +240,32 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
 * **CSV**: UTF-8 with BOM, CRLF, the same header lines, rows, totals, notes, definition and notice. Every text field is
   RFC 4180 quoted when needed and **formula injection is neutralised** (a leading `= + - @`, tab or CR gets a `'`
   unless the value is a number).
-* Sorted as on screen; the whole report (not just the page). File name `{reportId}_{yyyyMMdd}[-{yyyyMMdd}].xlsx|csv`.
+* **PDF**: an A4 document in the house document style (the platform document layer), made by the server's PDF
+  renderer (headless Edge). The facility letterhead with its logo, named as in the Excel header (for a consolidated
+  report the organisation, with the logo only); the title; every input in words, *Generated by*, *Generated on* (IST)
+  and the data source; headline figures; the table; notes; the definition; the confidentiality notice; "— End of
+  report —". Column headings repeat on every page. Number columns are right-aligned in the Excel formats with Indian
+  digit grouping: `1,23,456` (integers), `₹1,23,456.00` (money; negative amounts also in red), `30.1%`, `1,234.5`
+  (decimals, days, minutes). Dates print as `15 Sep 2026`, months as `Sep 2026`, times as `15 Sep 2026, 3:45 pm`
+  (IST). The totals row closes the table once (it is not repeated as page totals). Every page has the running footer
+  "report title · organisation · generated date, time · Confidential" and "Page X of Y".
+* **PDF orientation**: landscape when the table has more than 9 columns, or when its columns are wider together than a
+  portrait line holds (120 characters of the table's 8.5 pt type). Each column counts its widest value or the longest
+  word of its heading, text at most 40 characters (it wraps), plus 2 for padding. Otherwise portrait.
+* **PDF row limit**: a PDF lists at most **2,000 rows** (about 40 to 60 pages, kept small enough for the renderer's
+  30-second limit; aggregate reports stop at 5,000 rows anyway). A longer report is cut, not refused, so a scheduled
+  PDF e-mail still goes out on the day its report runs long: the PDF lists the first 2,000 rows in the order on screen
+  and says at the top and in its notes "The PDF lists the first 2,000 of N rows; the Excel export has every row." (and
+  "The totals are for all rows."). The download carries the same text in the header `X-Report-Notice`, and the report
+  result's `pdfNotice` gives it to the screen before the export.
+* **When PDFs can't be made** (no Edge on the server, or it failed or took too long): the export answers 503 with the
+  code `pdf.unavailable` and the reason ("… Export to Excel or CSV instead."), as every document PDF does. Nothing is
+  audited, since nothing was exported.
+* Sorted as on screen; the whole report (not just the page). File name `{reportId}_{yyyyMMdd}[-{yyyyMMdd}].xlsx|csv|pdf`.
 * Patient identifiers appear only in patient-level reports, which need `analytics.clinical.read`; aggregate reports never
-  contain patient columns.
+  contain patient columns. A PDF of a patient list keeps the Excel rules: the same permission, the patient-information
+  notice, "Confidential" on every page, never e-mailed, and a PHI audit entry for every patient in the file (for a PDF
+  cut at 2,000 rows, exactly the patients in those rows).
 
 ## Scheduled delivery (BI-04)
 
@@ -250,13 +275,17 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
   e-mail; a schedule missed while the server was down sends once on catch-up, not once per missed slot.
 * **Run**: `ReportDeliveryService` re-checks the owner (active staff user with the report's permissions and access to
   the schedule's facility, else the run is *Skipped* with the reason), runs the report for the schedule's facility and
-  relative period, exports it, stores the file **encrypted** (`IFieldProtector`, purpose `analytics.delivery`) in
-  `analytics.report_deliveries`, creates one recipient row per address and one outbox message
-  (`analytics.report.email`) per recipient in the same transaction.
+  relative period, writes the file in the schedule's format (Excel, CSV or PDF), stores it **encrypted**
+  (`IFieldProtector`, purpose `analytics.delivery`) in `analytics.report_deliveries`, creates one recipient row per
+  address and one outbox message (`analytics.report.email`) per recipient in the same transaction. The delivery's row
+  count is the rows in the file (at most 2,000 for a PDF).
+* **PDF failures**: when the PDF cannot be made, the delivery is *Failed* with the reason, as when the report cannot
+  run: the schedule's last status and error show it, nothing is e-mailed, the schedule runs again at its next time, and
+  *Send now* tries again at once (422 `analytics.delivery_failed` with the reason if it still fails).
 * **E-mail**: `ScheduledReportEmailHandler` (outbox handler) renders the template `analytics.scheduled_report`
   (seeded; subject `{{report}} — {{period}} ({{hospital}})`) and sends it through the platform `IEmailSender` with
-  the file **attached** when it is at most 10 MB; larger files are sent as a notice to download it from HC360
-  (*Delivery history* → download, audited). Failed sends throw so the outbox retries with back-off; each recipient's
+  the file **attached** when it is at most 10 MB (PDFs too); larger files are sent as a notice to download it from
+  HC360 (*Delivery history* → download, audited). Failed sends throw so the outbox retries with back-off; each recipient's
   attempts and last error are kept. Idempotent per recipient.
 * **Why not the notification service**: `INotificationService.Queue` has no attachment support and `IFileStore` accepts
   only clinical document types, so the module owns this small handler (see *Maintainers*).
@@ -290,7 +319,7 @@ ageing).
 | Event | Category | When |
 |---|---|---|
 | `analytics.report.viewed` + `patient.accessed` per patient | PhiAccess | each page of a patient-level report opened |
-| `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows) |
+| `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows in the file); a PDF that could not be made is not audited |
 | `analytics.delivery.downloaded` | Data | a delivered file downloaded again |
 | data audit | Data | dashboards and schedules (create/change/delete) via the platform interceptor |
 
@@ -312,7 +341,10 @@ Home widget *Hospital at a glance* (this month's first four KPIs) for any analyt
 `tests/Modules/HyFib.HealthCare360.Modules.Analytics.Tests` (xUnit + Shouldly):
 KPI maths, census days, IST bucketing and period presets, schedule calendar, nearest-rank percentiles and TAT summary,
 parameter binding (every rule), row sorting/paging/charting, CSV/Excel export (header, footer, formula injection,
-number formats), catalogue consistency and visibility per role, dashboard layout, model (tables, indexes, jsonb,
+number formats), the PDF export (`ReportPdfTests`: headings, number formats and alignment, totals, the landscape rule,
+the row limit and its notice, encoding of hostile text, consolidated letterhead, export format parsing, schedule
+format validation, the 503 answer, and the patients audited for a cut PDF), catalogue consistency and visibility per
+role, dashboard layout, model (tables, indexes, jsonb,
 facility filters), and SQL translation of **every report** with defaults, filters and each choice (`ToQueryString`:
 facility and soft-delete filters present, IST interval used, no enum ordering).
 Web: `format.test.ts`, `params.test.ts`, `charts.test.ts` in the module folder.
@@ -320,6 +352,11 @@ Web: `format.test.ts`, `params.test.ts`, `charts.test.ts` in the module folder.
 ## Maintainers
 
 * **Migration needed** for the `analytics` schema (four tables above); the module adds no columns to other schemas.
+  Formats are stored as text (`format`, varchar 64), so `Pdf`, added after `Xlsx` and `Csv`, needed no migration; add
+  any new format at the end of `ExportFormat` too.
+* **Staff app and PDFs**: the server takes `format=pdf` and `Pdf` schedules, but the staff app's export menu, schedule
+  drawer (`format` choices) and delivery list (file extension) still offer Excel and CSV only; the export menu can show
+  the result's `pdfNotice` next to the PDF choice.
 * **Contract gaps**: e-mail attachments are not supported by `INotificationService` (the module's outbox handler uses
   `IEmailSender` directly); `IFileStore` rejects XLSX/CSV, so delivered files are kept encrypted in the module's table.
   Adding attachment support to notifications would let this handler go.
