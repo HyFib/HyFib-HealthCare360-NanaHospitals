@@ -149,28 +149,7 @@ public sealed class UnitOfWorkInterceptor(
 
     private AuditEvent BuildAuditEvent(EntityEntry entry, string action, DateTimeOffset now)
     {
-        var changes = new Dictionary<string, object?>();
-        foreach (var property in entry.Properties)
-        {
-            var name = property.Metadata.Name;
-            if (property.Metadata.IsShadowProperty() || name is nameof(IVersioned.Version) or nameof(IAuditable.UpdatedAt) or nameof(IAuditable.UpdatedBy))
-            {
-                continue;
-            }
-
-            if (action == "update" && !property.IsModified)
-            {
-                continue;
-            }
-
-            var sensitive = property.Metadata.PropertyInfo?.GetCustomAttribute<SensitiveDataAttribute>() is not null;
-            changes[JsonNamingPolicy.CamelCase.ConvertName(name)] = action switch
-            {
-                "update" => new { from = Mask(property.OriginalValue, sensitive), to = Mask(property.CurrentValue, sensitive) },
-                _ => Mask(property.CurrentValue, sensitive),
-            };
-        }
-
+        var changes = AuditChanges(entry, action);
         return new AuditEvent
         {
             OccurredAt = now,
@@ -188,6 +167,53 @@ public sealed class UnitOfWorkInterceptor(
             CorrelationId = currentUser.CorrelationId,
             Details = JsonSerializer.Serialize(changes, JsonOptions),
         };
+    }
+
+    /// <summary>
+    /// What a data audit event records: every value on create and delete, and each changed value as from/to on update.
+    /// Complex properties are included part by part ("address.city"), so a changed address, cardiology finding or TTI
+    /// result is as visible in the trail as any other field.
+    /// </summary>
+    internal static Dictionary<string, object?> AuditChanges(EntityEntry entry, string action)
+    {
+        var changes = new Dictionary<string, object?>();
+        AddChanges(changes, entry.Properties, entry.ComplexProperties, prefix: "", action);
+        return changes;
+    }
+
+    private static void AddChanges(
+        Dictionary<string, object?> changes, IEnumerable<PropertyEntry> properties, IEnumerable<ComplexPropertyEntry> complexProperties, string prefix, string action)
+    {
+        foreach (var property in properties)
+        {
+            var name = property.Metadata.Name;
+            if (property.Metadata.IsShadowProperty() || name is nameof(IVersioned.Version) or nameof(IAuditable.UpdatedAt) or nameof(IAuditable.UpdatedBy))
+            {
+                continue;
+            }
+
+            if (action == "update" && !property.IsModified)
+            {
+                continue;
+            }
+
+            var sensitive = property.Metadata.PropertyInfo?.GetCustomAttribute<SensitiveDataAttribute>() is not null;
+            changes[prefix + JsonNamingPolicy.CamelCase.ConvertName(name)] = action switch
+            {
+                "update" => new { from = Mask(property.OriginalValue, sensitive), to = Mask(property.CurrentValue, sensitive) },
+                _ => Mask(property.CurrentValue, sensitive),
+            };
+        }
+
+        foreach (var complex in complexProperties)
+        {
+            if (complex.CurrentValue is null)
+            {
+                continue;
+            }
+
+            AddChanges(changes, complex.Properties, complex.ComplexProperties, prefix + JsonNamingPolicy.CamelCase.ConvertName(complex.Metadata.Name) + ".", action);
+        }
     }
 
     private static object? Mask(object? value, bool sensitive) =>

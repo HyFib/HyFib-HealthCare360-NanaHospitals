@@ -96,7 +96,8 @@ internal sealed class OrganizationSeeder(IOptions<PlatformOptions> options) : IS
             await db.SaveChangesAsync(cancellationToken);
         }
 
-        var specialtyCodes = await db.Set<Specialty>().Select(s => s.Code).ToListAsync(cancellationToken);
+        // Existence is checked across soft-deleted rows too: the code indexes are unique over every row.
+        var specialtyCodes = await db.Set<Specialty>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).Select(s => s.Code).ToListAsync(cancellationToken);
         foreach (var (code, name) in Specialties.Where(s => !specialtyCodes.Contains(s.Code)))
         {
             db.Add(new Specialty { Code = code, Name = name });
@@ -105,7 +106,8 @@ internal sealed class OrganizationSeeder(IOptions<PlatformOptions> options) : IS
         await db.SaveChangesAsync(cancellationToken);
         var specialties = await db.Set<Specialty>().ToDictionaryAsync(s => s.Code, s => s.Id, cancellationToken);
 
-        var departmentCodes = await db.Set<Department>().Where(d => d.FacilityId == facility.Id).Select(d => d.Code).ToListAsync(cancellationToken);
+        var departmentCodes = await db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter, HospitalDbContext.FacilityFilter])
+            .Where(d => d.FacilityId == facility.Id).Select(d => d.Code).ToListAsync(cancellationToken);
         var order = 0;
         foreach (var (code, name, kind, specialty, token) in Departments)
         {
@@ -130,7 +132,7 @@ internal sealed class OrganizationSeeder(IOptions<PlatformOptions> options) : IS
         await db.SaveChangesAsync(cancellationToken);
         var departments = await db.Set<Department>().Where(d => d.FacilityId == facility.Id).ToDictionaryAsync(d => d.Code, d => d.Id, cancellationToken);
 
-        var serviceCodes = await db.Set<ServiceItem>().Select(s => s.Code).ToListAsync(cancellationToken);
+        var serviceCodes = await db.Set<ServiceItem>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter]).Select(s => s.Code).ToListAsync(cancellationToken);
         foreach (var (code, name, category, price, department) in Services.Where(s => !serviceCodes.Contains(s.Code)))
         {
             db.Add(new ServiceItem

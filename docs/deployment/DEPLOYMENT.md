@@ -91,11 +91,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
-   - The facility record holds what the letterhead prints: legal name, address, registration, NABH, GSTIN, PAN, a
-     letterhead line, and the logo (PNG or JPEG under 300 KB; a bigger one is left off documents). There is no screen
-     for the logo yet: upload the image to `POST /api/v1/files`, then set its id as `logoFileId` on
-     `PUT /api/v1/masters/facilities/{id}`. Doctors' signature images work the same way (`signatureFileId` on the
-     practitioner). Documents print without them until they are set.
+   - **Administration › Hospital setup › Facilities and letterhead** holds what the letterhead prints: legal name,
+     address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
+     document embeds). *Preview letterhead* shows the result before saving. Doctors' signatures are uploaded in
+     **Hospital setup › Doctors and clinical staff**. Documents print without them until they are set.
    - Set `portal.baseUrl` (the patient portal's public https address). Documents then carry a QR code that anyone can
      scan to check the report is genuine. Without it they print only the verification code.
    - E-mail (`integrations.email`): the "report ready" e-mail carries the report's PDF.

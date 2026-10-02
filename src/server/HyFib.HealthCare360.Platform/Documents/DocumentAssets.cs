@@ -28,9 +28,12 @@ public sealed record DocumentLetterhead(
 /// </summary>
 public sealed class DocumentAssets(HospitalDbContext db, IFileStore files, IMemoryCache cache)
 {
-    // Logos and signatures are small. A bigger image is left out rather than making every copy heavy: HC360 Desktop
-    // prints through WebView2, which takes at most 2 MB of HTML, and images are embedded as base64 (a third larger).
-    private const int MaxImageBytes = 300 * 1024;
+    /// <summary>
+    /// The largest logo or signature a document embeds. Logos and signatures are small; a bigger image is left out rather
+    /// than making every copy heavy: HC360 Desktop prints through WebView2, which takes at most 2 MB of HTML, and images are
+    /// embedded as base64 (a third larger). The masters refuse a bigger image when it is chosen.
+    /// </summary>
+    public const int MaxImageBytes = 300 * 1024;
     private static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(10);
 
     /// <summary>The facility's letterhead; the first facility's when <paramref name="facilityId"/> is null or unknown.</summary>

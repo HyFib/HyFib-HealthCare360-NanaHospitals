@@ -163,7 +163,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   - Database triggers block deletes, rows inserted pre-sealed, and every update except a complete seal: hash, chain
     position and previous hash together, linked to the sealed entry before it (checked at commit).
   - Administration › Audit log › *Verify integrity* re-checks the chain. It also fails on any seal outside the chain.
-- Records carry who and when on every change, and deletes are soft deletes.
+- Records carry who and when on every change, and deletes are soft deletes. Every change to an audited record also
+  writes a data audit event with each changed value (from/to); compound values such as addresses, cardiology
+  findings and TTI results are recorded part by part.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
   - Stored responses are encrypted, because they can contain one-time secrets.

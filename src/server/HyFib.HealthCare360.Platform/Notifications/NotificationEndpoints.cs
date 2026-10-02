@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+using FluentValidation;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -20,11 +22,33 @@ public sealed record SaveNotificationTemplateRequest(
     string Key, NotificationChannel Channel, string Language, Guid? FacilityId, string? Subject, string Body, string? DltTemplateId,
     string? WhatsAppTemplateName, string? Description, bool IsActive, uint? Version, bool WhatsAppDocumentHeader = false);
 
+/// <summary>
+/// Template fields within their columns, so a DLT id or WhatsApp name that does not fit is a field error rather than a
+/// server error. The key and language are checked when a template is made: an existing template keeps them.
+/// </summary>
+public sealed class SaveNotificationTemplateRequestValidator : AbstractValidator<SaveNotificationTemplateRequest>
+{
+    public SaveNotificationTemplateRequestValidator()
+    {
+        RuleFor(x => x.Key).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.Channel).IsInEnum();
+        RuleFor(x => x.Language).MaximumLength(8);
+        RuleFor(x => x.Subject).SafeText(200);
+        RuleFor(x => x.Body).NotEmpty().WithMessage("Write the message.").SafeText(4000);
+        RuleFor(x => x.Body).MaximumLength(1000).When(x => x.Channel == NotificationChannel.Sms).WithMessage("SMS templates must be at most 1000 characters.");
+        RuleFor(x => x.DltTemplateId).Matches("^[0-9]{10,25}$").When(x => !string.IsNullOrWhiteSpace(x.DltTemplateId))
+            .WithMessage("Enter the DLT template id as registered on the DLT portal: 10 to 25 digits.");
+        RuleFor(x => x.WhatsAppTemplateName).MaximumLength(128).Matches("^[a-z0-9_]+$").When(x => !string.IsNullOrWhiteSpace(x.WhatsAppTemplateName))
+            .WithMessage("Use the approved template name: lower-case letters, digits and underscores.");
+        RuleFor(x => x.Description).SafeText(300);
+    }
+}
+
 public sealed record NotificationLogDto(
     Guid Id, DateTimeOffset CreatedAt, NotificationChannel Channel, string TemplateKey, string? Recipient, Guid? PatientId,
     NotificationStatus Status, string? Error, DateTimeOffset? SentAt);
 
-internal static class NotificationEndpoints
+internal static partial class NotificationEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
@@ -73,10 +97,10 @@ internal static class NotificationEndpoints
             .RequirePermission(PlatformPermissions.NotificationTemplatesManage);
 
         admin.MapPost("/notification-templates", (SaveNotificationTemplateRequest r, HospitalDbContext db, CancellationToken ct) => SaveTemplate(null, r, db, ct))
-            .RequirePermission(PlatformPermissions.NotificationTemplatesManage);
+            .RequirePermission(PlatformPermissions.NotificationTemplatesManage).WithValidation<SaveNotificationTemplateRequest>();
 
         admin.MapPut("/notification-templates/{id:guid}", (Guid id, SaveNotificationTemplateRequest r, HospitalDbContext db, CancellationToken ct) => SaveTemplate(id, r, db, ct))
-            .RequirePermission(PlatformPermissions.NotificationTemplatesManage);
+            .RequirePermission(PlatformPermissions.NotificationTemplatesManage).WithValidation<SaveNotificationTemplateRequest>();
 
         admin.MapGet("/notification-logs", async ([AsParameters] PageQuery query, NotificationChannel? channel, NotificationStatus? status, HospitalDbContext db, CancellationToken ct) =>
             {
@@ -106,19 +130,6 @@ internal static class NotificationEndpoints
 
     private static async Task<IResult> SaveTemplate(Guid? id, SaveNotificationTemplateRequest request, HospitalDbContext db, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Key) || string.IsNullOrWhiteSpace(request.Body))
-        {
-            return Error.Validation("template.invalid", "Key and body are required.", new Dictionary<string, string[]>
-            {
-                ["body"] = ["Body is required."],
-            }).ToProblem();
-        }
-
-        if (request.Channel == NotificationChannel.Sms && request.Body.Length > 1000)
-        {
-            return Error.Field("body", "SMS templates must be at most 1000 characters.").ToProblem();
-        }
-
         NotificationTemplate template;
         if (id is { } existingId)
         {
@@ -136,13 +147,25 @@ internal static class NotificationEndpoints
         }
         else
         {
-            template = new NotificationTemplate
+            var key = request.Key.Trim();
+            var language = string.IsNullOrWhiteSpace(request.Language) ? "en" : request.Language.Trim().ToLowerInvariant();
+            if (!TemplateKey().IsMatch(key))
             {
-                Key = request.Key.Trim(),
-                Channel = request.Channel,
-                Language = string.IsNullOrWhiteSpace(request.Language) ? "en" : request.Language.Trim().ToLowerInvariant(),
-                FacilityId = request.FacilityId,
-            };
+                return Error.Field("key", "Use lower-case letters and digits, separated by dots, dashes or underscores.").ToProblem();
+            }
+
+            if (!LanguageCode().IsMatch(language))
+            {
+                return Error.Field("language", "Use a language code such as en or hi.").ToProblem();
+            }
+
+            if (await db.Set<NotificationTemplate>().AnyAsync(
+                    t => t.Key == key && t.Channel == request.Channel && t.Language == language && t.FacilityId == request.FacilityId, ct))
+            {
+                return Error.Conflict("template.duplicate", "There is already a template for this message, channel and language. Edit that one instead.").ToProblem();
+            }
+
+            template = new NotificationTemplate { Key = key, Channel = request.Channel, Language = language, FacilityId = request.FacilityId };
             db.Add(template);
         }
 
@@ -156,4 +179,10 @@ internal static class NotificationEndpoints
         await db.SaveChangesAsync(ct);
         return id is null ? TypedResults.Created($"/api/v1/admin/notification-templates/{template.Id}", new { template.Id }) : TypedResults.NoContent();
     }
+
+    [GeneratedRegex("^[a-z0-9]+([._-][a-z0-9]+)*$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex TemplateKey();
+
+    [GeneratedRegex("^[a-z]{2,3}(-[a-z]{2})?$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex LanguageCode();
 }
