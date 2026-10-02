@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Integrations.Pdf;
 using HyFib.HealthCare360.Integrations.Pos;
@@ -97,6 +98,7 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<IPacsProvider>(sp => sp.GetRequiredService<DicomWebPacsProvider>());
         services.AddScoped<IPacsProvider, SimulatorPacsProvider>();
         services.AddScoped<IPacsClient, PacsClientRouter>();
+        services.AddModalityWorklist();
 
         services.AddSingleton<IcdTokenCache>();
         services.AddIntegrationHttpClient<WhoIcdApiClient>(CloudAttempt, CloudTotal);

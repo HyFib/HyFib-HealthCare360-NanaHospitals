@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Mail;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Labels;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Pos;
 using HyFib.HealthCare360.Integrations.WhatsApp;
 
@@ -20,6 +21,7 @@ internal sealed class IntegrationTestService(
     IPosTerminal pos,
     IAccountingExporter accounting,
     IPacsClient pacs,
+    ModalityWorklistSelfTest worklist,
     IIcdLookup icd,
     ILabelPrinterService labels,
     IntegrationSettingsReader settings,
@@ -43,6 +45,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Pacs => await pacs.PingAsync(cancellationToken)
                 ? new IntegrationTestResult(true, "The PACS answered a QIDO-RS study query.")
                 : new IntegrationTestResult(false, "The PACS did not answer. See the integration log for details."),
+            IntegrationNames.Mwl => await worklist.RunAsync(cancellationToken),
             IntegrationNames.Icd => await IcdAsync(cancellationToken),
             IntegrationNames.Lab => Lab(),
             IntegrationNames.Labels => Labels(),

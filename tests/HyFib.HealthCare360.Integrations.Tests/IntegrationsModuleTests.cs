@@ -3,11 +3,13 @@ using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Integrations.Pos;
 using HyFib.HealthCare360.Integrations.Sms;
 using HyFib.HealthCare360.Integrations.Tally;
 using HyFib.HealthCare360.Integrations.WhatsApp;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,4 +63,17 @@ public sealed class IntegrationsModuleTests
     [Fact]
     public void Runs_the_laboratory_gateway_as_a_hosted_service() =>
         Services().ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(LabGatewayHostedService));
+
+    [Fact]
+    public void Runs_the_modality_worklist_server_as_a_hosted_service_sharing_one_gateway()
+    {
+        var services = Services();
+
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(ModalityWorklistHostedService));
+        services.ShouldContain(d => d.ServiceType == typeof(ModalityWorklistGateway) && d.Lifetime == ServiceLifetime.Singleton);
+        services.ShouldContain(d => d.ServiceType == typeof(ModalityWorklistState) && d.Lifetime == ServiceLifetime.Singleton);
+
+        // The worklist itself comes from Diagnostics through the platform contract, never from this module.
+        services.ShouldNotContain(d => d.ServiceType == typeof(IModalityWorklistSource));
+    }
 }

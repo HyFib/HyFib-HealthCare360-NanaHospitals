@@ -10,9 +10,10 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 
 /// <summary>
 /// Radiology / medical imaging workflow (IMG-01, IMG-02, IMG-04, IMG-05). Studies are created from clinicians' orders
-/// and scheduled; the DICOM modality worklist is published for the MWL gateway; images are reconciled with PACS by
-/// accession number (PACS is optional, so its absence is reported and never crashes a workflow); TAT and repeat metrics
-/// are reported; and external AI findings are kept as preliminary annotations.
+/// and scheduled; modalities read them from the DICOM modality worklist (<see cref="ModalityWorklistSource"/>); images are
+/// linked with PACS by accession number, or by study UID when DICOM cannot carry the accession number (PACS is optional,
+/// so its absence is reported and never crashes a workflow); TAT and repeat metrics are reported; and external AI
+/// findings are kept as preliminary annotations.
 /// </summary>
 internal sealed class ImagingService(
     HospitalDbContext db,
@@ -26,8 +27,11 @@ internal sealed class ImagingService(
     TimeProvider time,
     ILogger<ImagingService> logger)
 {
-    /// <summary>Studies examined per batch reconciliation call (keeps each PACS round-trip bounded).</summary>
-    private const int ReconcileBatchSize = 50;
+    /// <summary>Studies examined per linking batch (keeps each run's PACS round-trips bounded).</summary>
+    public const int ReconcileBatchSize = 50;
+
+    /// <summary>How far back unlinked studies are looked for in PACS.</summary>
+    public static readonly TimeSpan ReconcileWindow = TimeSpan.FromDays(3);
 
     // ------------------------------------------------------------------ clinical orders
 
@@ -179,29 +183,81 @@ internal sealed class ImagingService(
         return (await DetailAsync(id, ct))!;
     }
 
-    /// <summary>Links recent studies whose images have reached PACS (run from the worklist screen or an operations job).</summary>
+    /// <summary>
+    /// Links the signed-in facility's recent studies whose images have reached PACS ("Link recent studies" on the
+    /// worklist screen): finished scans first, then studies under way, then those still waiting.
+    /// </summary>
     public async Task<Result<PacsReconciliationSummary>> ReconcileRecentAsync(CancellationToken ct)
     {
-        if (Pacs is not { } pacs)
+        if (Pacs is null)
         {
             return PacsNotConfigured;
         }
 
-        var since = time.GetUtcNow().AddDays(-3);
-        var studies = await db.Set<ImagingStudy>()
-            .Where(s => s.OrderedAt >= since
-                        && (s.Status == ImagingStudyStatus.Scheduled || s.Status == ImagingStudyStatus.Arrived || s.Status == ImagingStudyStatus.InProgress
-                            || (s.Status == ImagingStudyStatus.Acquired && s.PacsLinkedAt == null)))
-            .OrderBy(s => s.OrderedAt)
+        if (currentUser.FacilityId is not { } facilityId)
+        {
+            return Error.Rule("facility.required", "Select a facility first.");
+        }
+
+        var ids = await PacsLinkCandidates(facilityId, time.GetUtcNow())
+            .OrderBy(s => s.Status == ImagingStudyStatus.Acquired ? 0
+                : s.Status == ImagingStudyStatus.InProgress ? 1
+                : s.Status == ImagingStudyStatus.Arrived ? 2
+                : s.Status == ImagingStudyStatus.Scheduled ? 3 : 4)
+            .ThenBy(s => s.OrderedAt)
+            .Select(s => s.Id)
             .Take(ReconcileBatchSize)
+            .ToListAsync(ct);
+        var outcome = await LinkBatchAsync(facilityId, ids, ct);
+        return new PacsReconciliationSummary(outcome.Checked, outcome.Linked, outcome.Messages);
+    }
+
+    /// <summary>
+    /// A facility's studies that may have images in PACS but are not linked yet: ordered in the last
+    /// <see cref="ReconcileWindow"/>, not cancelled or reported, and not waiting for an appointment still to come. The
+    /// facility is filtered explicitly, because background linking runs without a signed-in facility.
+    /// </summary>
+    internal IQueryable<ImagingStudy> PacsLinkCandidates(Guid facilityId, DateTimeOffset now)
+    {
+        var since = now - ReconcileWindow;
+        return db.Set<ImagingStudy>().AsNoTracking()
+            .Where(s => s.FacilityId == facilityId && s.PacsLinkedAt == null && s.OrderedAt >= since)
+            .Where(s => s.Status == ImagingStudyStatus.Ordered || s.Status == ImagingStudyStatus.Arrived || s.Status == ImagingStudyStatus.InProgress
+                        || s.Status == ImagingStudyStatus.Acquired || (s.Status == ImagingStudyStatus.Scheduled && s.ScheduledAt <= now));
+    }
+
+    /// <summary>
+    /// Looks for the given studies of one facility in PACS and links those found. The batch stops at the first answer
+    /// that says PACS cannot be used (not configured, off or unreachable), so an outage costs one call, not fifty.
+    /// </summary>
+    internal async Task<PacsLinkOutcome> LinkBatchAsync(Guid facilityId, IReadOnlyCollection<Guid> studyIds, CancellationToken ct)
+    {
+        if (Pacs is not { } pacs || studyIds.Count == 0)
+        {
+            return PacsLinkOutcome.None;
+        }
+
+        var studies = await db.Set<ImagingStudy>()
+            .Where(s => s.FacilityId == facilityId && studyIds.Contains(s.Id))
             .ToListAsync(ct);
 
         var messages = new List<string>();
+        var mismatches = new List<ImagingStudy>();
+        var checkedIds = new List<Guid>();
         var linked = 0;
+        string? unavailable = null;
         var now = time.GetUtcNow();
-        foreach (var study in studies)
+        var order = studyIds.Distinct().Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
+        foreach (var study in studies.OrderBy(s => order[s.Id]))
         {
             var found = await FindInPacsAsync(pacs, study, ct);
+            if (found.Error is { Code: "pacs.unreachable" } outage)
+            {
+                unavailable = outage.Message;
+                break;
+            }
+
+            checkedIds.Add(study.Id);
             if (found.IsSuccess && study.LinkPacs(found.Value.StudyInstanceUid, found.Value.SeriesCount, found.Value.InstanceCount, now).IsSuccess)
             {
                 linked++;
@@ -209,18 +265,33 @@ internal sealed class ImagingService(
             else if (found.Error is { Code: not "pacs.study_not_found" } error)
             {
                 messages.Add($"{study.AccessionNumber}: {error.Message}");
+                if (error.Code == "pacs.patient_mismatch")
+                {
+                    mismatches.Add(study);
+                }
             }
         }
 
-        await db.SaveChangesAsync(ct);
-        foreach (var facility in studies.GroupBy(s => s.FacilityId))
+        if (linked > 0)
         {
-            await realtime.PublishAsync(facility.Key, "radiology.worklist.changed", new { Linked = linked }, ct);
+            await db.SaveChangesAsync(ct);
+            await realtime.PublishAsync(facilityId, "radiology.worklist.changed", new { Linked = linked }, ct);
         }
 
-        return new PacsReconciliationSummary(studies.Count, linked, messages);
+        if (unavailable is not null)
+        {
+            messages.Add(unavailable);
+        }
+
+        return new PacsLinkOutcome(checkedIds.Count, linked, messages, checkedIds,
+            mismatches.Select(s => new PacsMismatch(s.Id, s.AccessionNumber, s.StudyName)).ToList(), unavailable);
     }
 
+    /// <summary>
+    /// The PACS viewer for the study. Once linked, the template can use the study UID and the accession number. Before
+    /// that, a template with only <c>{accession}</c> already finds the study, so the link is offered as soon as the
+    /// accession number can be in PACS, that is when DICOM can carry it.
+    /// </summary>
     public async Task<Result<ViewerLink>> ViewerAsync(Guid id, CancellationToken ct)
     {
         if (Pacs is not { } pacs)
@@ -234,62 +305,26 @@ internal sealed class ImagingService(
             return Error.NotFound(nameof(ImagingStudy), id);
         }
 
-        if (study.PacsLinkedAt is null)
+        var linked = study.PacsLinkedAt is not null;
+        var accession = DicomConventions.AccessionFitsDicom(study.AccessionNumber) ? study.AccessionNumber : null;
+        if (pacs.BuildViewerUrl(linked ? study.StudyInstanceUid : null, accession) is { Length: > 0 } url)
         {
-            return Error.Rule("pacs.not_linked", "The images of this study are not linked yet. Reconcile the study with PACS first.");
+            return new ViewerLink(study.Id, url, study.StudyInstanceUid);
         }
 
-        var url = pacs.BuildViewerUrl(study.StudyInstanceUid, study.AccessionNumber);
-        return string.IsNullOrWhiteSpace(url)
-            ? Error.Rule("pacs.viewer_not_configured", "No image viewer is configured for the PACS integration.")
-            : new ViewerLink(study.Id, url, study.StudyInstanceUid);
-    }
-
-    // ------------------------------------------------------------------ modality worklist (IMG-01/02)
-
-    /// <summary>Scheduled procedure steps for a day (and patients already arrived or on the table) in DICOM MWL format.</summary>
-    public async Task<IReadOnlyList<ModalityWorklistItem>> WorklistAsync(DateOnly? date, string? station, Modality? modality, CancellationToken ct)
-    {
-        var day = date ?? DiagnosticsTime.Today(time);
-        var start = DiagnosticsTime.StartOfDayUtc(day);
-        var end = DiagnosticsTime.StartOfDayUtc(day.AddDays(1));
-        var recent = start.AddDays(-2);
-        var ae = string.IsNullOrWhiteSpace(station) ? null : station.Trim().ToUpperInvariant();
-
-        var studies = await db.Set<ImagingStudy>().AsNoTracking()
-            .Where(s => (s.Status == ImagingStudyStatus.Scheduled && s.ScheduledAt >= start && s.ScheduledAt < end)
-                        || ((s.Status == ImagingStudyStatus.Arrived || s.Status == ImagingStudyStatus.InProgress) && s.OrderedAt >= recent))
-            .Where(s => modality == null || s.Modality == modality)
-            .Where(s => ae == null || s.StationAeTitle == null || s.StationAeTitle == ae)
-            .OrderBy(s => s.ScheduledAt ?? s.ArrivedAt ?? s.OrderedAt)
-            .Take(500)
-            .ToListAsync(ct);
-
-        var patients = await lookups.PatientsAsync(studies.Select(s => s.PatientId).Distinct().ToList(), ct);
-        var doctors = await lookups.PractitionerNamesAsync(studies.Select(s => s.OrderingPractitionerId), ct);
-        return studies.Select(s =>
+        // Say which value the configured link lacks, so the message says what to do.
+        if (pacs.BuildViewerUrl(SampleUid, SampleAccession) is null)
         {
-            var patient = patients.GetValueOrDefault(s.PatientId);
-            var when = DiagnosticsTime.LocalTime(s.ScheduledAt ?? s.ArrivedAt ?? s.OrderedAt);
-            return new ModalityWorklistItem(
-                s.Id,
-                s.AccessionNumber,
-                s.AccessionNumber,
-                s.AccessionNumber,
-                s.StudyInstanceUid,
-                patient?.Uhid ?? string.Empty,
-                patient is null ? string.Empty : DicomConventions.PersonName(patient.FirstName, patient.MiddleName, patient.LastName),
-                patient?.DateOfBirth is { } dob ? DicomConventions.Date(dob) : null,
-                patient is null ? string.Empty : DicomConventions.Sex(patient.Gender),
-                DicomConventions.ModalityCode(s.Modality),
-                s.StationAeTitle,
-                DicomConventions.Date(DateOnly.FromDateTime(when.DateTime)),
-                DicomConventions.Time(TimeOnly.FromDateTime(when.DateTime)),
-                TextLimits.Clip(s.StudyName, 64),
-                s.BodyPart is null ? null : TextLimits.Clip(new string(s.BodyPart.ToUpperInvariant().Where(char.IsAsciiLetterOrDigit).ToArray()), 16),
-                s.OrderingPractitionerId is { } pid && doctors.GetValueOrDefault(pid) is { } doctor ? DicomConventions.PersonName(doctor, null, null) : null,
-                s.Priority switch { OrderPriority.Stat => "STAT", OrderPriority.Urgent => "HIGH", _ => "ROUTINE" });
-        }).ToList();
+            return Error.Rule("pacs.viewer_not_configured", "No image viewer is configured for the PACS integration.");
+        }
+
+        if (accession is null && pacs.BuildViewerUrl(SampleUid, null) is null)
+        {
+            return Error.Rule("pacs.accession_too_long",
+                $"The viewer link needs the accession number, and {study.AccessionNumber} is longer than the 16 characters DICOM allows. Ask the administrator for a viewer link with {{studyUid}}.");
+        }
+
+        return Error.Rule("pacs.not_linked", "The images of this study are not linked yet. Link the study with PACS first.");
     }
 
     // ------------------------------------------------------------------ TAT and repeats (IMG-04)
@@ -423,28 +458,39 @@ internal sealed class ImagingService(
             s.Modality, s.BodyPart, s.Priority, s.OrderingPractitionerId,
             s.OrderingPractitionerId is { } pid ? doctors.GetValueOrDefault(pid) : null, s.ClinicalNotes, s.OrderedAt, s.Status, s.ScheduledAt, s.Room,
             s.StationAeTitle, s.ArrivedAt, s.StartedAt, s.AcquiredAt, s.TechnicianUserId is { } tech ? users.GetValueOrDefault(tech) : null,
-            s.ContrastUsed, s.ContrastAgent, s.ContrastVolumeMl, s.DoseNote, s.TechnicianNotes, s.StudyInstanceUid, s.PacsLinkedAt, s.SeriesCount,
+            s.ContrastUsed, s.ContrastAgent, s.ContrastVolumeMl, s.DoseNote, s.TechnicianNotes, s.StudyInstanceUid,
+            DicomConventions.AccessionFitsDicom(s.AccessionNumber), DicomConventions.ProcedureId(s.AccessionNumber, s.Id), s.PacsLinkedAt, s.SeriesCount,
             s.InstanceCount, s.ReportedAt, s.VerifiedAt, s.ReleasedAt, s.CancelReason, s.ChargeError, s.PackageBookingId, s.Quantity, preparation,
             s.Repeats.OrderBy(r => r.RecordedAt).Select(r => new ImagingRepeatDto(r.Id, r.Reason, r.Note, r.RecordedAt)).ToList(),
             s.Version);
     }
 
-    private static Error PacsNotConfigured =>
+    internal static Error PacsNotConfigured =>
         Error.Rule("pacs.not_configured", "PACS is not configured. Set up the PACS integration in Administration → Integrations.");
+
+    // Values that fill any viewer template, to learn which value a configured link needs.
+    private const string SampleUid = "2.25.1";
+    private const string SampleAccession = "A";
 
     /// <summary>PACS is an optional integration: resolved per call so that an unconfigured PACS is reported, not fatal.</summary>
     private IPacsClient? Pacs => services.GetService(typeof(IPacsClient)) as IPacsClient;
 
     /// <summary>
-    /// Finds the study in PACS by accession number. The returned patient id must match the UHID, so that a mistyped
-    /// accession at the modality never links another patient's images.
+    /// Finds the study in PACS by accession number, or by its study UID when DICOM cannot carry the accession number (the
+    /// worklist then sends the modality the UID HC360 assigned, without the accession number). The returned patient id
+    /// must match the UHID, so that a mistyped accession at the modality never links another patient's images. The
+    /// facility's own PACS settings apply.
     /// </summary>
     private async Task<Result<ImagingStudyInfo>> FindInPacsAsync(IPacsClient pacs, ImagingStudy study, CancellationToken ct)
     {
+        var byAccession = DicomConventions.AccessionFitsDicom(study.AccessionNumber);
+        var query = byAccession
+            ? new PacsStudyQuery(AccessionNumber: study.AccessionNumber, FacilityId: study.FacilityId)
+            : new PacsStudyQuery(StudyInstanceUid: study.StudyInstanceUid, FacilityId: study.FacilityId);
         IReadOnlyList<ImagingStudyInfo> found;
         try
         {
-            found = await pacs.FindStudiesAsync(new PacsStudyQuery(AccessionNumber: study.AccessionNumber), ct);
+            found = await pacs.FindStudiesAsync(query, ct);
         }
         catch (HttpRequestException ex)
         {
@@ -457,10 +503,15 @@ internal sealed class ImagingService(
             return Error.Rule("pacs.unreachable", "PACS did not respond in time. Try again shortly.");
         }
 
-        var match = found.FirstOrDefault(s => string.Equals(s.AccessionNumber?.Trim(), study.AccessionNumber, StringComparison.OrdinalIgnoreCase));
+        var match = byAccession
+            ? found.FirstOrDefault(s => string.Equals(s.AccessionNumber?.Trim(), study.AccessionNumber, StringComparison.OrdinalIgnoreCase))
+            : found.FirstOrDefault(s => string.Equals(s.StudyInstanceUid.Trim(), study.StudyInstanceUid, StringComparison.Ordinal));
         if (match is null)
         {
-            return Error.Rule("pacs.study_not_found", $"No images for accession {study.AccessionNumber} have reached PACS yet.");
+            return byAccession
+                ? Error.Rule("pacs.study_not_found", $"No images for accession {study.AccessionNumber} have reached PACS yet.")
+                : Error.Rule("pacs.study_not_found",
+                    $"No images for {study.AccessionNumber} have reached PACS yet. Its accession number is longer than DICOM allows, so HC360 looks for the study by its UID, which reaches the modality only through the worklist.");
         }
 
         if (!DicomConventions.IsValidUid(match.StudyInstanceUid))
@@ -503,4 +554,17 @@ internal sealed class ImagingService(
     private static AiFindingDto ToDto(ImagingAiFinding f, IReadOnlyDictionary<Guid, string> users) => new(
         f.Id, f.Engine, f.EngineVersion, f.Finding, f.Confidence, f.IsUrgent, f.ReceivedAt, f.Status,
         f.ReviewedBy is { } by ? users.GetValueOrDefault(by) : null, f.ReviewedAt, f.ReviewNote);
+}
+
+/// <summary>A study PACS holds under another patient ID than its UHID: it is not linked, and the department is told.</summary>
+internal sealed record PacsMismatch(Guid StudyId, string AccessionNumber, string StudyName);
+
+/// <summary>
+/// What one linking batch did: the studies looked for (<see cref="CheckedIds"/>), how many were linked, problems to
+/// report, and why the batch stopped early when PACS could not be used (<see cref="Unavailable"/>).
+/// </summary>
+internal sealed record PacsLinkOutcome(
+    int Checked, int Linked, IReadOnlyList<string> Messages, IReadOnlyList<Guid> CheckedIds, IReadOnlyList<PacsMismatch> Mismatches, string? Unavailable)
+{
+    public static PacsLinkOutcome None { get; } = new(0, 0, [], [], [], null);
 }

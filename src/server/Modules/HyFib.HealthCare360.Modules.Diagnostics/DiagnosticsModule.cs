@@ -31,6 +31,14 @@ public static class DiagnosticsPermissions
     public const string RadiologyWorklist = "radiology.worklist";
     public const string RadiologyReportsWrite = "radiology.reports.write";
     public const string RadiologyReportsVerify = "radiology.reports.verify";
+
+    /// <summary>
+    /// View a study's images from PACS, in HC360 and in the PACS viewer. Granted to doctors, who review imaging results
+    /// in the EMR, and to radiographers and radiologists, who check and report them; not to nurses, who act on the
+    /// report (still readable with <see cref="RadiologyRead"/>) rather than on the images.
+    /// </summary>
+    public const string RadiologyImages = "radiology.images.view";
+
     public const string CardiologyRead = "cardiology.studies.read";
     public const string CardiologyStudiesManage = "cardiology.studies.manage";
     public const string CardiologyReportsVerify = "cardiology.reports.verify";
@@ -52,6 +60,7 @@ public static class DiagnosticsPermissions
         new(RadiologyWorklist, "Radiology", "Schedule and perform imaging studies; modality worklist and PACS reconciliation", [SystemRoles.Radiographer, SystemRoles.Radiologist]),
         new(RadiologyReportsWrite, "Radiology", "Write radiology reports", [SystemRoles.Radiologist]),
         new(RadiologyReportsVerify, "Radiology", "Sign off, release and add addenda to radiology reports; manage templates", [SystemRoles.Radiologist]),
+        new(RadiologyImages, "Radiology", "View radiology images from PACS, in HC360 and in the PACS viewer", [SystemRoles.Doctor, SystemRoles.Radiographer, SystemRoles.Radiologist]),
         new(CardiologyRead, "Cardiology", "View cardiology studies and released reports", [SystemRoles.Doctor, SystemRoles.Nurse, SystemRoles.CardiologyTechnician, SystemRoles.Cardiologist]),
         new(CardiologyStudiesManage, "Cardiology", "Perform ECG/Echo/TMT/Holter/ABPM studies and upload device output", [SystemRoles.CardiologyTechnician]),
 
@@ -97,11 +106,19 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabReportBuilder>();
         services.AddScoped<LabResultService>();
         services.AddScoped<ImagingService>();
+        services.AddScoped<StudyImageService>();
         services.AddScoped<RadiologyReportService>();
         services.AddScoped<CardiologyService>();
 
         // Lab-equipment gateway (Integrations) hands analyser results and host queries to the LIS.
         services.AddScoped<IInstrumentResultSink, InstrumentResultSink>();
+
+        // The DICOM modality worklist server (Integrations) reads the studies still to be done.
+        services.AddScoped<IModalityWorklistSource, ModalityWorklistSource>();
+
+        // Links new studies with their images in PACS every few minutes (jobs nodes only).
+        services.AddSingleton<PacsLinkAttempts>();
+        services.AddHostedService<PacsLinkJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
