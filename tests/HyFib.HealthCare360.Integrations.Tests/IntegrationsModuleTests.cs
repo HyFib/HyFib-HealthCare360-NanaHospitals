@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Integrations.Sms;
 using HyFib.HealthCare360.Integrations.Tally;
 using HyFib.HealthCare360.Integrations.WhatsApp;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,8 +30,19 @@ public sealed class IntegrationsModuleTests
     public void Module_key_is_integrations() => new IntegrationsModule().Name.ShouldBe("integrations");
 
     [Fact]
-    public void Declares_the_label_printing_permission() =>
-        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe([IntegrationsPermissions.LabelsPrint]);
+    public void Declares_label_printing_and_the_analyser_connection_permissions() =>
+        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe(
+            [IntegrationsPermissions.LabelsPrint, IntegrationsPermissions.LabConnectionsManage, IntegrationsPermissions.LabStatusRead]);
+
+    [Fact]
+    public void Only_administrators_set_up_analyser_connections_and_lab_staff_see_their_state()
+    {
+        var permissions = new IntegrationsModule().Permissions.ToDictionary(p => p.Name);
+
+        permissions[IntegrationsPermissions.LabConnectionsManage].DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin]);
+        permissions[IntegrationsPermissions.LabStatusRead].DefaultRoles.ShouldBe(
+            [SystemRoles.LabTechnician, SystemRoles.Pathologist, SystemRoles.HospitalAdmin], ignoreOrder: true);
+    }
 
     [Theory]
     [InlineData(typeof(ISmsSender), typeof(SmsRouter))]

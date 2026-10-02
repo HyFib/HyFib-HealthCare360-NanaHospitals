@@ -1,4 +1,5 @@
 using System.Text;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory.Astm;
 
@@ -9,7 +10,7 @@ internal sealed record AstmTimings(TimeSpan FrameTimeout, TimeSpan ReplyTimeout,
 }
 
 /// <summary>
-/// One analyser connection speaking ASTM E1381 (low level) / E1394 (records).
+/// One analyser connection speaking ASTM E1381 (low level) / E1394 (records), over a TCP socket or a lab agent's relay.
 /// <para>
 /// Receiving: ENQ is acknowledged; each frame is checked (number, checksum) and answered ACK or NAK; a retransmitted
 /// frame after a lost ACK is re-acknowledged without being applied twice. The frame completing a message (the one
@@ -17,8 +18,10 @@ internal sealed record AstmTimings(TimeSpan FrameTimeout, TimeSpan ReplyTimeout,
 /// sample unknown) the frame is NAKed and the analyser retransmits it, so results are never acknowledged and lost.
 /// </para>
 /// <para>
-/// Sending (host query answers): after the analyser's EOT, HC360 bids with ENQ, yields to the analyser if both bid
-/// (the instrument has priority), retransmits NAKed frames up to six times and ends with EOT.
+/// Sending (host query answers, and orders sent unasked while the line is idle): HC360 bids with ENQ and yields to the
+/// analyser if both bid (the instrument has priority), waits 10 s after a NAK (busy), retransmits NAKed frames up to six
+/// times and ends with EOT. A receiver interrupt (EOT instead of ACK) acknowledges the frame; the rest of the message is
+/// still sent, as E1381 allows, so the analyser never holds half an order.
 /// </para>
 /// </summary>
 internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOptions options, ILabMessageProcessor processor, TimeProvider time, ILogger logger)
@@ -29,12 +32,18 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
     private const int MaxSendAttempts = 6;
     private const int MaxEstablishAttempts = 3;
 
+    /// <summary>Orders sent unasked go out in messages of at most this many samples.</summary>
+    private const int MaxOrdersPerMessage = 10;
+
     private readonly byte[] _buffer = new byte[4096];
     private readonly byte[] _single = new byte[1];
     private readonly Queue<IReadOnlyList<string>> _outgoing = new();
     private Stream _stream = Stream.Null;
+    private CancellationToken _lifetime;
+    private Task<int>? _fill;
     private int _bufferStart;
     private int _bufferEnd;
+    private long _lastTraffic;
 
     private enum TokenKind
     {
@@ -45,35 +54,80 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         Closed,
     }
 
+    private enum Wake
+    {
+        Data,
+        LookForOrders,
+        Idle,
+        Closed,
+    }
+
+    private readonly record struct SendOutcome(bool Delivered, string? Error);
+
     public async Task RunAsync(Stream stream, CancellationToken cancellationToken)
     {
         _stream = stream;
+        _lifetime = cancellationToken;
+        _lastTraffic = time.GetTimestamp();
         while (!cancellationToken.IsCancellationRequested)
         {
-            // Neutral state: only ENQ starts a transfer; anything else is line noise and ignored.
-            var token = await ReadTokenAsync(options.IdleTimeout, cancellationToken);
-            if (token.Kind is TokenKind.Closed or TokenKind.Timeout)
+            // Neutral state: the analyser may bid (ENQ); otherwise, while the line is quiet, queued orders are sent.
+            switch (await WaitInNeutralAsync(cancellationToken))
+            {
+                case Wake.Closed or Wake.Idle:
+                    return;
+                case Wake.LookForOrders:
+                    await SendQueuedOrdersAsync(cancellationToken);
+                    await SendAnswersAsync(cancellationToken);
+                    continue;
+            }
+
+            var token = await ReadTokenAsync(options.Timings.FrameTimeout, cancellationToken);
+            if (token.Kind == TokenKind.Closed)
             {
                 return;
             }
 
             if (token.Kind != TokenKind.Control || token.Control != AstmControl.Enq)
             {
+                // Only ENQ starts a transfer; anything else is line noise and ignored.
                 continue;
             }
 
             await WriteAsync(AstmControl.Ack, cancellationToken);
             await ReceiveAsync(cancellationToken);
-            while (_outgoing.Count > 0 && !cancellationToken.IsCancellationRequested)
+            await SendAnswersAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>Host query answers, one delivery attempt each: an analyser that missed one simply queries again.</summary>
+    private async Task SendAnswersAsync(CancellationToken cancellationToken)
+    {
+        while (_outgoing.Count > 0 && !cancellationToken.IsCancellationRequested)
+        {
+            var records = _outgoing.Dequeue();
+            var outcome = await SendAsync(records, cancellationToken);
+            await processor.LogAsync(instrument, "astm.orders", outcome.Delivered, string.Join("\r", records), null, outcome.Error, null);
+            if (!outcome.Delivered)
             {
-                // One delivery attempt per answer: an analyser that missed it simply queries again.
-                var records = _outgoing.Dequeue();
-                if (!await SendAsync(records, cancellationToken))
-                {
-                    break;
-                }
+                _outgoing.Clear();
+                return;
             }
         }
+    }
+
+    /// <summary>Orders queued for this analyser (new samples, reruns, cancellations), sent while the line is idle.</summary>
+    private async Task SendQueuedOrdersAsync(CancellationToken cancellationToken)
+    {
+        var downloads = await processor.NextDownloadsAsync(instrument, MaxOrdersPerMessage, cancellationToken);
+        if (downloads.Count == 0)
+        {
+            return;
+        }
+
+        var records = AstmMessageMapper.BuildOrderDownload(downloads, AstmDelimiters.Default, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone);
+        var outcome = await SendAsync(records, cancellationToken);
+        await processor.CompleteDownloadsAsync(instrument, downloads, outcome.Delivered, string.Join("\r", records), outcome.Error, cancellationToken);
     }
 
     private async Task ReceiveAsync(CancellationToken cancellationToken)
@@ -186,21 +240,19 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         var records = AstmRecords.Parse(raw);
         if (records.Any(r => r.Type == 'Q'))
         {
-            if (!instrument.HostQuery)
-            {
-                await processor.LogAsync(instrument, "astm.query", false, raw, null, "Host query is disabled for this instrument.", null);
-                return true;
-            }
-
             var sampleIds = AstmMessageMapper.QueriedSampleIds(records);
-            var orders = await processor.QueryOrdersAsync(instrument, sampleIds, raw, cancellationToken);
-            if (orders is null)
+            var answer = await processor.QueryOrdersAsync(instrument, sampleIds, raw, cancellationToken);
+            switch (answer.Status)
             {
-                return false;
+                case HostQueryStatus.Unavailable:
+                    return false;
+                case HostQueryStatus.TurnedOff:
+                    // Acknowledged and logged with the reason; the analyser gets no answer, as with no host query at all.
+                    return true;
             }
 
             var delimiters = AstmDelimiters.FromHeader(records.FirstOrDefault(r => r.Type == 'H')?.Text);
-            _outgoing.Enqueue(AstmMessageMapper.BuildOrderResponse(orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone)));
+            _outgoing.Enqueue(AstmMessageMapper.BuildOrderResponse(answer.Orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone));
             return true;
         }
 
@@ -216,9 +268,8 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         return outcome.Accepted;
     }
 
-    private async Task<bool> SendAsync(IReadOnlyList<string> records, CancellationToken cancellationToken)
+    private async Task<SendOutcome> SendAsync(IReadOnlyList<string> records, CancellationToken cancellationToken)
     {
-        var raw = string.Join("\r", records);
         var established = false;
         for (var attempt = 0; attempt < MaxEstablishAttempts && !established; attempt++)
         {
@@ -239,16 +290,14 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                     break;
                 default:
                     await WriteAsync(AstmControl.Eot, cancellationToken);
-                    await processor.LogAsync(instrument, "astm.orders", false, raw, null, "The analyser did not answer the transfer request.", null);
-                    return false;
+                    return new SendOutcome(false, "The analyser did not answer the transfer request.");
             }
         }
 
         if (!established)
         {
             await WriteAsync(AstmControl.Eot, cancellationToken);
-            await processor.LogAsync(instrument, "astm.orders", false, raw, null, "The analyser refused the transfer.", null);
-            return false;
+            return new SendOutcome(false, "The analyser refused the transfer.");
         }
 
         foreach (var frame in AstmFrames.BuildMessage(records, options.Encoding))
@@ -258,6 +307,7 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
             {
                 await _stream.WriteAsync(frame, cancellationToken);
                 await _stream.FlushAsync(cancellationToken);
+                _lastTraffic = time.GetTimestamp();
                 reply = await ReadControlAsync(options.Timings.ReplyTimeout, cancellationToken);
                 if (reply != AstmControl.Nak)
                 {
@@ -265,26 +315,57 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                 }
             }
 
-            if (reply == AstmControl.Eot)
-            {
-                // Receiver interrupt: treated as an acknowledgement, and the transfer ends here.
-                await WriteAsync(AstmControl.Eot, cancellationToken);
-                await processor.LogAsync(instrument, "astm.orders", true, raw, null, "The analyser interrupted the transfer.", null);
-                return true;
-            }
-
-            if (reply != AstmControl.Ack)
+            // EOT is a receiver interrupt: it acknowledges this frame, and the sender may finish the message.
+            if (reply is not (AstmControl.Ack or AstmControl.Eot))
             {
                 await WriteAsync(AstmControl.Eot, cancellationToken);
-                await processor.LogAsync(instrument, "astm.orders", false, raw, null, "The analyser did not accept the order frames.", null);
-                return false;
+                return new SendOutcome(false, "The analyser did not accept the order frames.");
             }
         }
 
         await WriteAsync(AstmControl.Eot, cancellationToken);
-        await processor.LogAsync(instrument, "astm.orders", true, raw, null, null, null);
-        return true;
+        return new SendOutcome(true, null);
     }
+
+    /// <summary>
+    /// Waits in the neutral state for the analyser's next byte. Every <see cref="LabRuntimeOptions.OrderPollInterval"/>
+    /// of quiet it returns to look for queued orders, and after <see cref="LabRuntimeOptions.IdleTimeout"/> without any
+    /// traffic it gives up the connection. The read it starts stays pending across these waits, so no byte is lost.
+    /// </summary>
+    private async Task<Wake> WaitInNeutralAsync(CancellationToken cancellationToken)
+    {
+        if (_bufferStart < _bufferEnd)
+        {
+            return Wake.Data;
+        }
+
+        var idleLeft = IdleLeft();
+        if (idleLeft <= TimeSpan.Zero)
+        {
+            return Wake.Idle;
+        }
+
+        var fill = _fill ??= _stream.ReadAsync(_buffer, _lifetime).AsTask();
+        var wait = idleLeft is { } left && left < options.OrderPollInterval ? left : options.OrderPollInterval;
+        using var quiet = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(wait, time, quiet.Token);
+        var first = await Task.WhenAny(fill, delay);
+        await quiet.CancelAsync();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (first == fill)
+        {
+            return await TakeFillAsync() == 0 ? Wake.Closed : Wake.Data;
+        }
+
+        return IdleLeft() <= TimeSpan.Zero ? Wake.Idle : Wake.LookForOrders;
+    }
+
+    /// <summary>
+    /// Time left before the connection counts as idle; null when it never does (a relayed line, whose idle timeout is
+    /// <see cref="Timeout.InfiniteTimeSpan"/>). Null never compares as less than zero.
+    /// </summary>
+    private TimeSpan? IdleLeft() =>
+        options.IdleTimeout == Timeout.InfiniteTimeSpan ? null : options.IdleTimeout - time.GetElapsedTime(_lastTraffic);
 
     private async Task<byte?> ReadControlAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
@@ -366,13 +447,17 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         }
     }
 
+    /// <summary>
+    /// One byte, or -1 at end of stream. A timeout abandons the wait, not the read: the pending read is kept for the next
+    /// call, so a slow line never loses bytes and the transport (a relay's WebSocket included) is never cancelled.
+    /// </summary>
     private async ValueTask<int> ReadByteAsync(CancellationToken cancellationToken)
     {
         if (_bufferStart == _bufferEnd)
         {
-            _bufferStart = 0;
-            _bufferEnd = await _stream.ReadAsync(_buffer, cancellationToken);
-            if (_bufferEnd == 0)
+            _fill ??= _stream.ReadAsync(_buffer, _lifetime).AsTask();
+            await _fill.WaitAsync(cancellationToken);
+            if (await TakeFillAsync() == 0)
             {
                 return -1;
             }
@@ -381,11 +466,26 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         return _buffer[_bufferStart++];
     }
 
+    private async Task<int> TakeFillAsync()
+    {
+        var fill = _fill!;
+        _fill = null;
+        _bufferStart = 0;
+        _bufferEnd = await fill;
+        if (_bufferEnd > 0)
+        {
+            _lastTraffic = time.GetTimestamp();
+        }
+
+        return _bufferEnd;
+    }
+
     private async Task WriteAsync(byte control, CancellationToken cancellationToken)
     {
         _single[0] = control;
         await _stream.WriteAsync(_single, cancellationToken);
         await _stream.FlushAsync(cancellationToken);
+        _lastTraffic = time.GetTimestamp();
     }
 
     private readonly record struct Token(TokenKind Kind, byte Control, byte[] Frame);

@@ -4,6 +4,9 @@ using HyFib.HealthCare360.Integrations.Features.Webhooks;
 using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Pacs;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Integrations.Pdf;
@@ -108,5 +111,11 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<LabGatewayState>();
         services.AddSingleton<ILabMessageProcessor, LabMessageProcessor>();
         services.AddHostedService<LabGatewayHostedService>();
+
+        // Orders sent to analysers unasked, serial analysers relayed by lab agents, and their set-up in Lab setup.
+        services.AddScoped<LabOrderQueue>();
+        services.AddSingleton<LabRelayRegistry>();
+        services.AddScoped<LabAgentAuthenticator>();
+        services.AddScoped<LabConnectionService>();
     }
 }

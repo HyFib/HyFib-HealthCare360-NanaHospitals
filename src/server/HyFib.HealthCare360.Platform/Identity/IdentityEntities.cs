@@ -154,9 +154,12 @@ public enum DeviceKind
     Kiosk,
     DisplayBoard,
     Tablet,
+
+    /// <summary>The HC360 lab agent: a Windows service on the PC a serial analyser is cabled to (INT-LAB).</summary>
+    LabAgent,
 }
 
-/// <summary>An enrolled HC360 Desktop installation (workstation, kiosk or queue display).</summary>
+/// <summary>An enrolled HC360 Desktop installation (workstation, kiosk or queue display) or HC360 lab agent.</summary>
 public sealed class Device : AuditableEntity
 {
     public string Name { get; set; } = string.Empty;
