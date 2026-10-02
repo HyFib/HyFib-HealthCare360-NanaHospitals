@@ -10,12 +10,15 @@ namespace HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 /// <summary>
 /// /api/v1/portal/telehealth — the patient's own and family video consultations (TEL-01, PP-04), scoped by
 /// <see cref="PortalPatientScope"/>. Portal users join the hub with their portal token; guests use the SMS link instead.
+/// Off while either the portal or video consultations are switched off.
 /// </summary>
 internal static class PortalTelehealthEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/portal/telehealth").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var group = app.MapGroup("/api/v1/portal/telehealth").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal)
+            .RequireFeature(FeatureKeys.Telehealth);
         group.MapGet("/sessions", List);
         group.MapGet("/sessions/{id:guid}/join", JoinInfo);
         group.MapGet("/sessions/{id:guid}/messages", Messages);

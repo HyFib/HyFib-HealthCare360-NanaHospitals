@@ -17,6 +17,7 @@
     <Using Include="HyFib.HealthCare360.Platform.Auditing" />
     <Using Include="HyFib.HealthCare360.Platform.Organization" />
     <Using Include="HyFib.HealthCare360.Platform.Contracts" />
+    <Using Include="HyFib.HealthCare360.Platform.Features" />
     <Using Include="Microsoft.EntityFrameworkCore" />
     <Using Include="Microsoft.EntityFrameworkCore.Metadata.Builders" />
     <Using Include="Microsoft.AspNetCore.Builder" />

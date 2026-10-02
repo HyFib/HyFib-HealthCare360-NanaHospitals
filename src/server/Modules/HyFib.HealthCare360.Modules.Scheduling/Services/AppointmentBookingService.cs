@@ -58,6 +58,7 @@ public sealed class AppointmentBookingService(
     SchedulingSettings settings,
     VisitService visits,
     IRealtimePublisher realtime,
+    IFeatureFlags features,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -269,6 +270,13 @@ public sealed class AppointmentBookingService(
         if (practitioner is null || !practitioner.IsActive)
         {
             return Error.Field("practitionerId", "Choose an active doctor.");
+        }
+
+        // Video consultations switched off: nothing new is booked or moved as one (in person still works, and so does
+        // cancelling). Read for the facility the booking is made from, else hospital-wide (online bookings).
+        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, currentUser.FacilityId, ct))
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
         }
 
         if (command.IsTelehealth && !practitioner.AvailableForTelehealth)

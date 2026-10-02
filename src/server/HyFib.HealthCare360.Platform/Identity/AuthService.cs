@@ -914,6 +914,9 @@ public sealed class AuthService(
 
     private static List<string> RoleNames(User user) => user.Roles.Where(r => r.Role is not null).Select(r => r.Role!.Name).ToList();
 
+    /// <summary>A request from the patient portal app, which refreshes and signs out the portal's own session.</summary>
+    internal static bool IsPortalRequest(HttpRequest request) => ClientTypeOf(request.HttpContext) == "portal";
+
     private static string ClientTypeOf(HttpContext http) =>
         http.Request.Headers[ClientHeader].ToString() switch
         {

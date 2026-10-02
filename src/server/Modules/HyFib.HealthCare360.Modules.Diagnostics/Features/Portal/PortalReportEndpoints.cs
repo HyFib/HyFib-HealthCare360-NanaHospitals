@@ -24,7 +24,8 @@ internal static class PortalReportEndpoints
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        var portal = app.MapGroup("/api/v1/portal/reports").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var portal = app.MapGroup("/api/v1/portal/reports").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
         portal.MapGet("/", List);
         portal.MapGet("/lab/{id:guid}", Lab);
         portal.MapGet("/lab/{id:guid}/pdf", LabPdf);

@@ -17,7 +17,8 @@ internal static class PortalAppointmentEndpoints
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/portal/appointments").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var group = app.MapGroup("/api/v1/portal/appointments").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
         group.MapGet("/", List);
         group.MapGet("/{id:guid}", Get);
         group.MapPost("/", Book).WithValidation<PortalBookAppointmentRequest>();
@@ -27,7 +28,8 @@ internal static class PortalAppointmentEndpoints
         group.MapPost("/{id:guid}/payment/confirm", ConfirmPayment).WithValidation<ConfirmPaymentRequest>();
         group.MapPost("/{id:guid}/payment/verify", VerifyPayment);
 
-        var waitlist = app.MapGroup("/api/v1/portal/waitlist").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var waitlist = app.MapGroup("/api/v1/portal/waitlist").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
         waitlist.MapGet("/", ListWaitlist);
         waitlist.MapPost("/", JoinWaitlist).WithValidation<PortalJoinWaitlistRequest>();
         waitlist.MapPost("/{id:guid}/cancel", LeaveWaitlist);
