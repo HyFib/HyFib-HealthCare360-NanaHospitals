@@ -158,6 +158,7 @@ import { Route as AppSchedulingSchedulesRouteImport } from './routes/_app/schedu
 import { Route as AppSchedulingWaitlistRouteImport } from './routes/_app/scheduling/waitlist'
 import { Route as AppSetupDepartmentsRouteImport } from './routes/_app/setup/departments'
 import { Route as AppSetupFacilitiesRouteImport } from './routes/_app/setup/facilities'
+import { Route as AppSetupNumberingRouteImport } from './routes/_app/setup/numbering'
 import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/practitioners'
 import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
@@ -1045,6 +1046,11 @@ const AppSetupFacilitiesRoute = AppSetupFacilitiesRouteImport.update({
   path: '/setup/facilities',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSetupNumberingRoute = AppSetupNumberingRouteImport.update({
+  id: '/setup/numbering',
+  path: '/setup/numbering',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSetupPractitionersRoute = AppSetupPractitionersRouteImport.update({
   id: '/setup/practitioners',
   path: '/setup/practitioners',
@@ -1925,6 +1931,7 @@ export interface FileRoutesByFullPath {
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/setup/departments': typeof AppSetupDepartmentsRoute
   '/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/setup/numbering': typeof AppSetupNumberingRoute
   '/setup/practitioners': typeof AppSetupPractitionersRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
@@ -2215,6 +2222,7 @@ export interface FileRoutesByTo {
   '/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/setup/departments': typeof AppSetupDepartmentsRoute
   '/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/setup/numbering': typeof AppSetupNumberingRoute
   '/setup/practitioners': typeof AppSetupPractitionersRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
@@ -2507,6 +2515,7 @@ export interface FileRoutesById {
   '/_app/scheduling/waitlist': typeof AppSchedulingWaitlistRoute
   '/_app/setup/departments': typeof AppSetupDepartmentsRoute
   '/_app/setup/facilities': typeof AppSetupFacilitiesRoute
+  '/_app/setup/numbering': typeof AppSetupNumberingRoute
   '/_app/setup/practitioners': typeof AppSetupPractitionersRoute
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
@@ -2799,6 +2808,7 @@ export interface FileRouteTypes {
     | '/scheduling/waitlist'
     | '/setup/departments'
     | '/setup/facilities'
+    | '/setup/numbering'
     | '/setup/practitioners'
     | '/setup/services'
     | '/setup/specialties'
@@ -3089,6 +3099,7 @@ export interface FileRouteTypes {
     | '/scheduling/waitlist'
     | '/setup/departments'
     | '/setup/facilities'
+    | '/setup/numbering'
     | '/setup/practitioners'
     | '/setup/services'
     | '/setup/specialties'
@@ -3380,6 +3391,7 @@ export interface FileRouteTypes {
     | '/_app/scheduling/waitlist'
     | '/_app/setup/departments'
     | '/_app/setup/facilities'
+    | '/_app/setup/numbering'
     | '/_app/setup/practitioners'
     | '/_app/setup/services'
     | '/_app/setup/specialties'
@@ -4605,6 +4617,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSetupFacilitiesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/setup/numbering': {
+      id: '/_app/setup/numbering'
+      path: '/setup/numbering'
+      fullPath: '/setup/numbering'
+      preLoaderRoute: typeof AppSetupNumberingRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/setup/practitioners': {
       id: '/_app/setup/practitioners'
       path: '/setup/practitioners'
@@ -5703,6 +5722,7 @@ interface AppRouteChildren {
   AppSchedulingWaitlistRoute: typeof AppSchedulingWaitlistRoute
   AppSetupDepartmentsRoute: typeof AppSetupDepartmentsRoute
   AppSetupFacilitiesRoute: typeof AppSetupFacilitiesRoute
+  AppSetupNumberingRoute: typeof AppSetupNumberingRoute
   AppSetupPractitionersRoute: typeof AppSetupPractitionersRoute
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
@@ -5992,6 +6012,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSchedulingWaitlistRoute: AppSchedulingWaitlistRoute,
   AppSetupDepartmentsRoute: AppSetupDepartmentsRoute,
   AppSetupFacilitiesRoute: AppSetupFacilitiesRoute,
+  AppSetupNumberingRoute: AppSetupNumberingRoute,
   AppSetupPractitionersRoute: AppSetupPractitionersRoute,
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
