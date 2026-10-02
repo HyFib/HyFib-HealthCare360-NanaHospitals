@@ -7,7 +7,7 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
 | Project | `src/server/Modules/HyFib.HealthCare360.Modules.VirtualCare` (layer 5, references Patients and Scheduling) |
 | Schema | `virtualcare` — `telehealth_sessions`, `telehealth_participants`, `telehealth_messages`, `rpm_programs`, `rpm_enrollments`, `rpm_devices`, `rpm_readings`, `rpm_thresholds`, `rpm_alerts` |
 | Requirements | TEL-01..06, RPM-01..05 |
-| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions) |
+| Tests | `tests/Modules/HyFib.HealthCare360.Modules.VirtualCare.Tests` (join tokens, session state machine, thresholds, units, adherence, FHIR and device parsers, device keys, ICE settings, alerts, permissions, prescription notice channels) |
 
 ## Telehealth
 
@@ -144,7 +144,7 @@ number (first name + UHID only), queued in the ingestion transaction; in-app not
 | `AppointmentBooked` (`IsTelehealth`) | creates the session and queues `telehealth.link` in the booking's transaction (idempotent per appointment) |
 | `AppointmentCancelled` | cancels the not-yet-started session, invalidates the link, tells waiting clients |
 | `VisitCreated` (Patients) | links the visit to the appointment's session |
-| `PrescriptionSigned` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient (WhatsApp, SMS) |
+| `PrescriptionSigned` (Clinical) | for a teleconsultation visit: `prescription.shared` to the patient by SMS (Clinical sends the WhatsApp message for every OP prescription) |
 
 No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facilityId)` (`{ id, status, practitionerId }`).
 
@@ -155,7 +155,7 @@ No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facili
 | `telehealth.link` | SMS, WhatsApp | patient — values name, doctor, time, link, hospital |
 | `rpm.alert` | SMS (default), WhatsApp (seeded here) | care team — patient, reading, time |
 | `rpm.device_silent` | SMS, WhatsApp (seeded here) | patient — name, device, since |
-| `prescription.shared` | WhatsApp (default), SMS (seeded here) | patient — name, doctor, date |
+| `prescription.shared` | SMS (seeded here); WhatsApp (default) is sent by Clinical | patient — name, doctor, date |
 
 ## Background job
 

@@ -26,7 +26,7 @@ internal sealed class VirtualCareSeeder(IOptions<PlatformOptions> options, TimeP
         ("POSTDC", "Post-discharge recovery", RpmProgramKind.PostDischarge, "Temperature, SpO2, pulse and blood pressure for the first weeks at home after discharge.", 2),
     ];
 
-    private static readonly (string Key, NotificationChannel Channel, string Body, string Description)[] Templates =
+    internal static readonly (string Key, NotificationChannel Channel, string Body, string Description)[] Templates =
     [
         ("rpm.alert", NotificationChannel.WhatsApp,
             "HC360 RPM alert: {{patient}} reported {{reading}} at {{time}}. Please review it in HC360.",
