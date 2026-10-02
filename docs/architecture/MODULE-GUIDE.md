@@ -28,7 +28,8 @@ A module may reference only **lower** modules (see ARCHITECTURE.md §4). Everyth
 
 ## 3. Anatomy
 ```
-<Name>Module.cs          IModule (Name = schema key), <Name>Permissions, AddServices, MapEndpoints
+<Name>Module.cs          IModule (Name = schema key), <Name>Permissions, NumberSeries, AddServices, MapEndpoints
+<Name>NumberSeries.cs    the document numbers the module issues (see §8)
 Domain/                  entities, enums, domain rules (methods returning Result), events raised
 Persistence/             IEntityTypeConfiguration<T> classes — auto-discovered
 Features/<Area>/         <Area>Contracts.cs (records + FluentValidation validators) and <Area>Endpoints.cs
@@ -98,7 +99,7 @@ with a group label, a plain-language description and default roles from `SystemR
 ## 8. Services you can inject
 | Need | Use |
 |---|---|
-| Document numbers (bill, accession, PO…) | `INumberSeries.NextAsync(key, facilityId, "{FAC}LAB{YY}{SEQ:6}", NumberResetPolicy.Yearly, ct)` inside `db.Database.BeginTransactionAsync` |
+| Document numbers (bill, accession, PO…) | Declare a `NumberSeriesDefinition` in `<Name>NumberSeries` and list it in `IModule.NumberSeries`, then `INumberSeries.NextAsync(<Name>NumberSeries.LabAccession, facilityId, ct)` inside `db.Database.BeginTransactionAsync`. Administrators set the formats before the first number (Hospital setup → Number formats); see [numbering.md](../modules/numbering.md) |
 | Charge a patient | `IChargePoster.PostAsync(new ChargeRequest { ..., SourceModule = "diagnostics.lab", SourceReference = item.Id.ToString() }, ct)` |
 | SMS / WhatsApp / e-mail | `INotificationService.Queue(templateKey, recipient, values, [NotificationChannel.Sms, ...])` (+ seed templates). A number that replied STOP on WhatsApp gets no WhatsApp message except the essential ones in `WhatsAppOptOutPolicy.EssentialTemplates` (sign-in codes); a new template that must reach the person for security has to be added there |
 | In-app alerts to staff | `INotificationService.NotifyPermissionHoldersAsync(permission, facilityId, title, body, link, category, severity, ct)` |
