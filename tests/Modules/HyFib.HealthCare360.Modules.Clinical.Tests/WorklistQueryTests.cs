@@ -1,5 +1,7 @@
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore;
+using NSubstitute;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Tests;
 
@@ -17,7 +19,7 @@ public sealed class WorklistQueryTests : IDisposable
     [Fact]
     public void A_doctors_appointments_translate_with_their_queue_token_and_note()
     {
-        var sql = new WorklistQueries(_db, TimeProvider.System).Appointments(Day, Guid.CreateVersion7(), null).ToQueryString();
+        var sql = new WorklistQueries(_db, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), TimeProvider.System).Appointments(Day, Guid.CreateVersion7(), null).ToQueryString();
 
         sql.ShouldContain("scheduling.appointments");
         sql.ShouldContain("practitioner_id");
@@ -31,7 +33,7 @@ public sealed class WorklistQueryTests : IDisposable
     [Fact]
     public void A_departments_appointments_translate()
     {
-        var sql = new WorklistQueries(_db, TimeProvider.System).Appointments(Day, null, Guid.CreateVersion7()).ToQueryString();
+        var sql = new WorklistQueries(_db, Substitute.For<IPermissionService>(), Substitute.For<ICurrentUser>(), TimeProvider.System).Appointments(Day, null, Guid.CreateVersion7()).ToQueryString();
 
         sql.ShouldContain("department_id");
         sql.ShouldContain("LEFT JOIN");

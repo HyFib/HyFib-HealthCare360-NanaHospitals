@@ -23,7 +23,11 @@ public sealed record WorklistQueueEntry(
     Guid? EncounterId,
     EncounterStatus? EncounterStatus,
     bool HasActiveAllergies,
-    bool HasCriticalAlerts);
+    bool HasCriticalAlerts)
+{
+    /// <summary>A restricted (VIP) record the user may not open: named "Restricted patient", without the complaint.</summary>
+    public bool IsRestricted { get; init; }
+}
 
 /// <summary>
 /// A booked consultation on the doctor's day (cancelled and rescheduled bookings are left out). Once the patient has
@@ -51,7 +55,11 @@ public sealed record WorklistAppointment(
     Guid? EncounterId,
     EncounterStatus? EncounterStatus,
     bool HasActiveAllergies,
-    bool HasCriticalAlerts);
+    bool HasCriticalAlerts)
+{
+    /// <summary>A restricted (VIP) record the user may not open: named "Restricted patient", without the reason.</summary>
+    public bool IsRestricted { get; init; }
+}
 
 public sealed record WorklistEncounter(Guid Id, Guid PatientId, string Uhid, string PatientName, EncounterType Type, DateTimeOffset StartedAt, string? ChiefComplaint);
 

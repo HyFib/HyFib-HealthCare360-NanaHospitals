@@ -1,5 +1,5 @@
 import { Badge, Caption1, makeStyles, Text, Tooltip } from '@fluentui/react-components';
-import { AlertUrgentRegular, WarningRegular } from '@fluentui/react-icons';
+import { AlertUrgentRegular, LockClosedRegular, WarningRegular } from '@fluentui/react-icons';
 import type { Gender } from '@hc360/core';
 import type { ReactNode } from 'react';
 
@@ -10,6 +10,7 @@ const useStyles = makeStyles({
 /**
  * A patient in one of the worklist's lists: name, age and sex, UHID, and the banner's safety flags, so a risky
  * patient stands out before the chart is opened. Extra badges (priority, follow-up, MLC…) go in `children`.
+ * A restricted (VIP) record the user may not open arrives as "Restricted patient", and is badged as such.
  */
 export function WorklistPatient({
   name,
@@ -18,6 +19,7 @@ export function WorklistPatient({
   uhid,
   hasActiveAllergies,
   hasCriticalAlerts,
+  isRestricted = false,
   children,
 }: {
   name: string;
@@ -26,6 +28,7 @@ export function WorklistPatient({
   uhid: string;
   hasActiveAllergies: boolean;
   hasCriticalAlerts: boolean;
+  isRestricted?: boolean;
   children?: ReactNode;
 }) {
   const styles = useStyles();
@@ -47,6 +50,16 @@ export function WorklistPatient({
           <Tooltip content="Critical alert on the banner (DNR, isolation…)" relationship="label">
             <Badge size="small" color="important" icon={<AlertUrgentRegular />}>
               Alert
+            </Badge>
+          </Tooltip>
+        )}
+        {isRestricted && (
+          <Tooltip
+            content="Restricted record: the name and details are hidden. Opening the chart asks for emergency access."
+            relationship="description"
+          >
+            <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
+              Restricted
             </Badge>
           </Tooltip>
         )}

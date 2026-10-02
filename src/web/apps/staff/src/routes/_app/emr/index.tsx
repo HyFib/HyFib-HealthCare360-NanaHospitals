@@ -373,6 +373,7 @@ function WorklistPage() {
                           uhid={e.uhid}
                           hasActiveAllergies={e.hasActiveAllergies}
                           hasCriticalAlerts={e.hasCriticalAlerts}
+                          isRestricted={e.isRestricted}
                         >
                           {e.priority !== 'Normal' && (
                             <Badge size="small" color={e.priority === 'Emergency' ? 'danger' : 'warning'}>

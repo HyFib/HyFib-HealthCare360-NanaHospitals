@@ -54,6 +54,7 @@ const appointment = (patch: Partial<WorklistAppointment>): WorklistAppointment =
   encounterStatus: null,
   hasActiveAllergies: false,
   hasCriticalAlerts: false,
+  isRestricted: false,
   ...patch,
 });
 
@@ -137,6 +138,20 @@ describe('WorklistAppointments', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Open video consultations for Ravi' }));
     expect(onOpenVideo).toHaveBeenCalled();
+  });
+
+  it('badges a restricted record, which the server has already unnamed', () => {
+    wrap(
+      <WorklistAppointments
+        {...props}
+        appointments={[
+          appointment({ patientName: 'Restricted patient', isRestricted: true, startsAt: '2026-10-02T06:00:00Z' }),
+        ]}
+      />,
+    );
+
+    const row = screen.getByText('Restricted patient').closest('tr')!;
+    expect(within(row).getByText('Restricted')).toBeInTheDocument();
   });
 });
 

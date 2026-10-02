@@ -15,7 +15,6 @@ import {
   CheckmarkCircleRegular,
   ClockRegular,
   HeartPulseWarningRegular,
-  LockClosedRegular,
   StethoscopeRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatRelative, formatTime, type LookupItem } from '@hc360/core';
@@ -143,17 +142,8 @@ export function WardRoundList({
                   uhid={p.uhid}
                   hasActiveAllergies={p.hasActiveAllergies}
                   hasCriticalAlerts={p.hasCriticalAlerts}
+                  isRestricted={p.isRestricted}
                 >
-                  {p.isRestricted && (
-                    <Tooltip
-                      content="Restricted record: the name and details are hidden. Opening the chart asks for emergency access."
-                      relationship="description"
-                    >
-                      <Badge size="small" appearance="tint" color="subtle" icon={<LockClosedRegular />}>
-                        Restricted
-                      </Badge>
-                    </Tooltip>
-                  )}
                   {p.isMlc && (
                     <Tooltip content="Medico-legal case" relationship="label">
                       <Badge size="small" appearance="tint" color="warning">

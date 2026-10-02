@@ -1,12 +1,17 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Services;
 
-/// <summary>Builds the physician desktop worklist (EMR-01) for one practitioner and day, within the current facility.</summary>
-public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
+/// <summary>
+/// Builds the physician desktop worklist (EMR-01) for one practitioner and day, within the current facility. As on the bed
+/// board and the ward round, restricted (VIP) patients are not named, and their clinical text is left out, for users who
+/// may not open restricted records (<see cref="WorklistRestriction"/>).
+/// </summary>
+public sealed class WorklistQueries(HospitalDbContext db, IPermissionService permissions, ICurrentUser currentUser, TimeProvider time)
 {
     private const int ListLimit = 50;
 
@@ -16,7 +21,7 @@ public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
             ? await db.Set<Practitioner>().Where(p => p.Id == pid).Select(p => p.DepartmentId).FirstOrDefaultAsync(ct)
             : null;
 
-        return new EmrWorklist(
+        var worklist = new EmrWorklist(
             date,
             practitionerId,
             departmentId,
@@ -27,6 +32,20 @@ public sealed class WorklistQueries(HospitalDbContext db, TimeProvider time)
             practitionerId is { } p3 ? await DraftPrescriptionsAsync(p3, ct) : [],
             practitionerId is { } p4 ? await ResultsAsync(p4, ct) : [],
             practitionerId is { } p5 ? await DeficienciesAsync(p5, ct) : []);
+        return await WithRestrictedRecordsMaskedAsync(worklist, ct);
+    }
+
+    private async Task<EmrWorklist> WithRestrictedRecordsMaskedAsync(EmrWorklist worklist, CancellationToken ct)
+    {
+        var patientIds = WorklistRestriction.PatientIds(worklist);
+        if (patientIds.Count == 0
+            || (currentUser.UserId is { } userId && await permissions.HasPermissionAsync(userId, PatientsPermissions.ReadRestricted, ct)))
+        {
+            return worklist;
+        }
+
+        var restricted = await db.Set<Patient>().Where(p => patientIds.Contains(p.Id) && p.IsVip).Select(p => p.Id).ToListAsync(ct);
+        return restricted.Count == 0 ? worklist : WorklistRestriction.Mask(worklist, restricted.ToHashSet());
     }
 
     private async Task<List<WorklistQueueEntry>> QueueAsync(DateOnly date, Guid? practitionerId, Guid? departmentId, CancellationToken ct)

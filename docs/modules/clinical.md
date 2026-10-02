@@ -49,7 +49,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional). `appointments`: the doctor's bookings for the day in slot order, or the department's when no doctor is chosen, without cancelled and rescheduled ones; each with its status, visit type, video flag, and once checked in the visit, queue token and encounter |
+| GET | `/emr/worklist?date&practitionerId&departmentId` | emr.read | → `EmrWorklist` (defaults: today and the signed-in doctor; department optional; restricted patients masked, see below). `appointments`: the doctor's bookings for the day in slot order, or the department's when no doctor is chosen, without cancelled and rescheduled ones; each with its status, visit type, video flag, and once checked in the visit, queue token and encounter |
 | POST | `/emr/results/{id}/acknowledge` | emr.write | `AcknowledgeResultRequest{note}` → 204 |
 | GET | `/emr/patients/{patientId}/summary` | emr.read | → `PatientClinicalSummary` (patient, `allergiesEverRecorded`, `allergyStatus` (`Recorded`\|`NoKnownAllergies`\|`NotRecorded`), allergies, alerts, activeProblems, currentMedications, lastVitals+flags, recentEncounters(5), resultsAwaitingReview) |
 | GET | `/emr/patients/{patientId}/flags` | flags.read or emr.read | → `PatientFlags{allergyStatus, allergies[AllergySummary], alerts[AlertSummary]}`: the summary's flags alone (same rule, same order: most severe first, alerts in force today). Restricted-record guard (403 `patient.restricted`) and a PHI-access audit entry ("Viewed allergies and alerts") like the chart; 404 for an unknown patient |
@@ -290,6 +290,12 @@ main panel has three tabs, kept in the address (`?view=appointments`, `?view=rou
   consultant visit) and when they last wrote a note; results to review; and the latest vital signs' worst flag, with
   the flags in a tooltip. *Record visit* records the consultant visit, which is charged to the in-patient bill (the
   same dialog as on the admission). A row opens the chart. The round always shows the patients in hospital now.
+
+**Restricted (VIP) patients** follow the bed board in every list, unless the user may open restricted records
+(`patients.restricted.read`). They are named "Restricted patient", with a *Restricted* badge, and their clinical text
+is left out: the complaint, booking reason and note title, a result's name and a deficiency's description. The
+round also leaves out the diagnosis and vital-sign details. The token, time, bed, UHID and safety flags stay, so the
+patient is still called and seen. Opening the chart asks for break-the-glass access.
 
 The page header sums it up: the people waiting, the in-patients still to see, and the results to review.
 

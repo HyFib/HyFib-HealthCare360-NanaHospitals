@@ -73,8 +73,10 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - **Restricted records** (VIP, staff, high-profile patients):
   - They need an extra permission or **break-the-glass** access.
   - Break-the-glass requires a written reason, expires, and is flagged for review.
-  - Ward lists don't name them: the bed board and the doctor's ward round show "Restricted patient", and the round
-    also leaves out the diagnosis and vital-sign details, unless the user may open restricted records.
+  - Lists don't name them unless the user may open restricted records. The bed board, the doctor's worklist and the
+    ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
+    result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
+    and safety flags stay, so the patient is still seen to.
 - Every access to a patient record is audited.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.

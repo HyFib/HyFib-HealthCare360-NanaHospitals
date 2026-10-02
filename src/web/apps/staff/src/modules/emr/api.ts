@@ -106,6 +106,8 @@ export interface WorklistQueueEntry {
   encounterStatus: EncounterStatus | null;
   hasActiveAllergies: boolean;
   hasCriticalAlerts: boolean;
+  /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the complaint. */
+  isRestricted: boolean;
 }
 
 /** A booking on the doctor's day; once the patient has checked in it carries the visit, token and note. */
@@ -132,6 +134,8 @@ export interface WorklistAppointment {
   encounterStatus: EncounterStatus | null;
   hasActiveAllergies: boolean;
   hasCriticalAlerts: boolean;
+  /** A restricted (VIP) record the user may not open: the name reads "Restricted patient", without the reason. */
+  isRestricted: boolean;
 }
 
 export interface WorklistEncounter {
