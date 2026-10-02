@@ -20,9 +20,6 @@ public sealed class LeadService(
     PatientRegistrationService registration,
     TimeProvider time)
 {
-    public const string LeadSeries = "crm.lead";
-    public const string LeadFormat = "{FAC}LD{YY}{SEQ:5}";
-
     public async Task<Result<LeadCreated>> CreateAsync(SaveLeadRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -53,7 +50,7 @@ public sealed class LeadService(
         Apply(lead, request, phone);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        lead.LeadNumber = await numbers.NextAsync(LeadSeries, facilityId, LeadFormat, NumberResetPolicy.Yearly, ct);
+        lead.LeadNumber = await numbers.NextAsync(EngagementNumberSeries.Lead, facilityId, ct);
         db.Add(lead);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

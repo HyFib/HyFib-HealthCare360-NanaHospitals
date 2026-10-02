@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildUrl, createApiClient, fileNameFromDisposition } from './client';
-import { ApiError } from './errors';
+import { ApiError, featureOf, isFeatureDisabled } from './errors';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -61,6 +61,58 @@ describe('api client', () => {
       ApiError,
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a feature an administrator switched off, and says which one', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          title: 'Video consultations are turned off',
+          status: 503,
+          detail: 'Book an in-person visit instead.',
+          code: 'feature.disabled',
+          data: { feature: 'telehealth' },
+        }),
+        { status: 503, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = createApiClient(baseConfig);
+    const error = await client.get('/api/v1/telehealth/sessions').catch((e: unknown) => e);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(isFeatureDisabled(error)).toBe(true);
+    expect(isFeatureDisabled(error, 'telehealth')).toBe(true);
+    expect(isFeatureDisabled(error, 'patientPortal')).toBe(false);
+    expect(featureOf(error)).toBe('telehealth');
+    expect((error as ApiError).title).toBe('Video consultations are turned off');
+  });
+
+  it('tells the app which feature was refused', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ status: 503, code: 'feature.disabled', data: { feature: 'patientPortal' } }), {
+          status: 503,
+          headers: { 'content-type': 'application/problem+json' },
+        }),
+      ),
+    );
+    const onFeatureDisabled = vi.fn();
+
+    const client = createApiClient({ ...baseConfig, onFeatureDisabled });
+    await expect(client.get('/api/v1/portal/profiles')).rejects.toBeInstanceOf(ApiError);
+    expect(onFeatureDisabled).toHaveBeenCalledWith('patientPortal');
+  });
+
+  it('tells a switched-off feature from other refusals', () => {
+    expect(isFeatureDisabled(new ApiError({ status: 503, code: 'pdf.unavailable' }))).toBe(false);
+    expect(
+      isFeatureDisabled(new ApiError({ status: 422, code: 'feature.disabled', data: { feature: 'telehealth' } })),
+    ).toBe(true);
+    expect(isFeatureDisabled(new Error('feature.disabled'))).toBe(false);
+    expect(featureOf(new ApiError({ status: 503, code: 'ai.disabled', data: { feature: 'ai' } }))).toBeUndefined();
   });
 
   it('still retries a gateway failure without a problem body', async () => {

@@ -39,7 +39,8 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/auth/otp/verify",
         "POST /api/v1/auth/refresh",
 
-        // Workstation set-up and the sign-in page: the server's public CA certificate, name and version.
+        // Workstation set-up, the sign-in page and the portal: the server's public CA certificate, name and version, and
+        // whether the patient portal and video consultations are switched on (hospital-wide, nothing per person).
         "GET /api/v1/system/ca-certificate",
         "GET /api/v1/system/info",
         "POST /api/v1/devices/enroll",
@@ -120,7 +121,8 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/notifications/{id:guid}/read",
         "POST /api/v1/notifications/read-all",
 
-        // Branding and feature flags (non-secret "ui.*" and "features.*" settings only).
+        // Branding and feature switches (non-secret "ui.*" and "features.*" settings only; every switch as the server
+        // enforces it for the caller's facility).
         "GET /api/v1/settings/public",
 
         // Live updates: every topic subscription is authorized separately (RealtimeTopicAuthorizer).

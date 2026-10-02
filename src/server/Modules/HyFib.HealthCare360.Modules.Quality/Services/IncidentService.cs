@@ -20,9 +20,6 @@ public sealed class IncidentService(
     IRealtimePublisher realtime,
     TimeProvider time)
 {
-    public const string IncidentSeries = "quality.incident";
-    public const string IncidentFormat = "{FAC}IR{YY}{SEQ:5}";
-
     public async Task<Result<IncidentReceipt>> ReportAsync(ReportIncidentRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -264,7 +261,7 @@ public sealed class IncidentService(
         incident.Classify(request.Type, request.Severity, request.SentinelKind, request.FlagAsSentinel);
 
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
-        incident.IncidentNumber = await series.NextAsync(IncidentSeries, facilityId, IncidentFormat, NumberResetPolicy.Yearly, ct);
+        incident.IncidentNumber = await series.NextAsync(QualityNumberSeries.Incident, facilityId, ct);
         incident.MarkReported();
         context.Add(incident);
         await context.SaveChangesAsync(ct);

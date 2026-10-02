@@ -18,9 +18,6 @@ public sealed class VisitService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string VisitSeries = "visit";
-    public const string VisitFormat = "{FAC}V{YY}{SEQ:7}";
-
     public async Task<Result<VisitDetail>> CreateAsync(CreateVisitRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -91,7 +88,7 @@ public sealed class VisitService(
         var visit = new Visit
         {
             FacilityId = facilityId,
-            VisitNumber = await numbers.NextAsync(VisitSeries, facilityId, VisitFormat, NumberResetPolicy.Yearly, ct),
+            VisitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, facilityId, ct),
             PatientId = patient.Id,
             Type = request.Type,
             Status = VisitStatus.Open,
@@ -118,7 +115,7 @@ public sealed class VisitService(
         if (request.IssueToken && department is not null)
         {
             var sequence = int.Parse(
-                await numbers.NextAsync($"token:{department.Id:N}", facilityId, "{SEQ}", NumberResetPolicy.Daily, ct),
+                await numbers.NextAsync(PatientsNumberSeries.QueueToken(department.Id), facilityId, ct),
                 System.Globalization.CultureInfo.InvariantCulture);
             token = new QueueToken
             {

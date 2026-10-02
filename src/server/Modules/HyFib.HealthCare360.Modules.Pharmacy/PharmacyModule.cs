@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Pharmacy.Features.Refills;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Registers;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy;
 
@@ -46,6 +47,8 @@ public sealed class PharmacyModule : IModule
     public string Name => "pharmacy";
 
     public IEnumerable<PermissionDefinition> Permissions => PharmacyPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => PharmacyNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

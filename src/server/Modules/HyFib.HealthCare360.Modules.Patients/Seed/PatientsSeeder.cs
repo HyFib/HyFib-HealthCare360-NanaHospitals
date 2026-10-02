@@ -55,7 +55,7 @@ internal sealed class PatientsSeeder(IOptions<PlatformOptions> options, INumberS
                 Category = d.Age >= 60 ? PatientCategory.SeniorCitizen : PatientCategory.General,
             };
             patient.SetName(d.Gender == Gender.Male ? "Mr." : "Ms.", d.First, null, d.Last);
-            patient.Uhid = await numbers.NextAsync(PatientRegistrationService.UhidSeries, null, PatientRegistrationService.UhidFormat, NumberResetPolicy.Never, cancellationToken);
+            patient.Uhid = await numbers.NextAsync(PatientsNumberSeries.Uhid, null, cancellationToken);
             db.Add(patient);
             patients.Add(patient);
         }
@@ -76,7 +76,7 @@ internal sealed class PatientsSeeder(IOptions<PlatformOptions> options, INumberS
             var visit = new Visit
             {
                 FacilityId = facility.Id,
-                VisitNumber = await numbers.NextAsync(VisitService.VisitSeries, facility.Id, VisitService.VisitFormat, NumberResetPolicy.Yearly, cancellationToken),
+                VisitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, facility.Id, cancellationToken),
                 PatientId = patient.Id,
                 Type = VisitType.OutPatient,
                 Status = VisitStatus.Open,
@@ -94,7 +94,7 @@ internal sealed class PatientsSeeder(IOptions<PlatformOptions> options, INumberS
                 DepartmentId = department.Id,
                 PractitionerId = doctor?.Id,
                 TokenDate = today,
-                Sequence = int.Parse(await numbers.NextAsync($"token:{department.Id:N}", facility.Id, "{SEQ}", NumberResetPolicy.Daily, cancellationToken),
+                Sequence = int.Parse(await numbers.NextAsync(PatientsNumberSeries.QueueToken(department.Id), facility.Id, cancellationToken),
                     System.Globalization.CultureInfo.InvariantCulture),
                 Label = $"{department.TokenPrefix ?? department.Code}-{sequence:000}",
                 Status = TokenStatus.Waiting,

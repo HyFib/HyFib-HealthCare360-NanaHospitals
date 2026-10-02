@@ -28,8 +28,6 @@ internal sealed class CardiologyService(
     TimeProvider time,
     ILogger<CardiologyService> logger)
 {
-    public const string AccessionSeries = "cardiology.accession";
-    public const string AccessionFormat = "{FAC}CD{YY}{SEQ:7}";
     public const string VerificationPathPrefix = "/api/v1/cardiology/reports/verify/";
 
     public async Task CreateFromClinicalOrderAsync(ServiceOrderPlaced placed, CancellationToken ct)
@@ -43,7 +41,7 @@ internal sealed class CardiologyService(
         var study = new CardiologyStudy
         {
             FacilityId = placed.FacilityId,
-            AccessionNumber = await numbers.NextAsync(AccessionSeries, placed.FacilityId, AccessionFormat, NumberResetPolicy.Yearly, ct),
+            AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.CardiologyAccession, placed.FacilityId, ct),
             PatientId = placed.PatientId,
             VisitId = placed.VisitId,
             AdmissionId = placed.AdmissionId,

@@ -11,9 +11,6 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// </summary>
 public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, ReceiptService receipts, IAuditLogger audit, TimeProvider time)
 {
-    public const string Series = "insurance.claim";
-    public const string Format = "{FAC}CL{YY}{SEQ:6}";
-
     public async Task<Result<Guid>> CreateAsync(CreateClaimRequest request, CancellationToken ct)
     {
         var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == request.BillId, ct);
@@ -54,7 +51,7 @@ public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, Re
         var claim = new InsuranceClaim
         {
             FacilityId = bill.FacilityId,
-            ClaimNumber = await numbers.NextAsync(Series, bill.FacilityId, Format, NumberResetPolicy.Yearly, ct),
+            ClaimNumber = await numbers.NextAsync(BillingNumberSeries.InsuranceClaim, bill.FacilityId, ct),
             BillId = bill.Id,
             PatientId = bill.PatientId,
             PayerId = payerId,

@@ -15,6 +15,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Clinical;
 
@@ -27,6 +28,8 @@ public sealed class ClinicalModule : IModule
     public string Name => "clinical";
 
     public IEnumerable<PermissionDefinition> Permissions => ClinicalPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => ClinicalNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

@@ -17,7 +17,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, DocumentTextRegular, PersonRegular, PillRegular } from '@fluentui/react-icons';
-import { formatDateTime, isApiError, useRealtimeEvent, useSession } from '@hc360/core';
+import { formatDateTime, isApiError, isFeatureDisabled, useRealtimeEvent, useSession } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router';
@@ -40,6 +40,7 @@ import { EndSessionDialog, RecordingConsentDialog } from '@/modules/virtualcare/
 import { SessionDetails } from '@/modules/virtualcare/telehealth/SessionDetails';
 import { useSessionActions } from '@/modules/virtualcare/telehealth/useSessionActions';
 import { useTelehealthCall } from '@/modules/virtualcare/telehealth/useTelehealthCall';
+import { VideoOffPage } from '@/modules/virtualcare/telehealth/VideoOffPage';
 import { VideoStage } from '@/modules/virtualcare/telehealth/VideoStage';
 import { WaitingRoomPanel } from '@/modules/virtualcare/telehealth/WaitingRoomPanel';
 
@@ -91,10 +92,16 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
     }
   });
 
+  // Video consultations switched off: explained, never shown as a failure. A call already on screen stays, so the
+  // doctor can finish it.
+  const videoOff = isFeatureDisabled(session.error) || isFeatureDisabled(config.error);
   if (session.isLoading) {
     return <LoadingState label="Opening the consultation…" />;
   }
-  if (session.error || !session.data) {
+  if (!session.data && videoOff) {
+    return <VideoOffPage />;
+  }
+  if ((session.error && !videoOff) || !session.data) {
     const restricted = isApiError(session.error) && session.error.code === 'patient.restricted';
     return (
       <Page maxWidth={900}>
@@ -168,14 +175,22 @@ function SessionScreen({ sessionId }: { sessionId: string }) {
           </div>
         }
       />
+      {videoOff && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>Video consultations have been turned off</MessageBarTitle>A call already running can be
+            finished, but nobody else can join.
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {!live ? (
         <SessionRecord session={s} canConsult={canConsult} />
+      ) : config.data ? (
+        <Console session={s} config={config.data} />
       ) : config.isLoading ? (
         <LoadingState label="Preparing the call…" />
-      ) : config.error || !config.data ? (
-        <ErrorState error={config.error} onRetry={() => void config.refetch()} />
       ) : (
-        <Console session={s} config={config.data} />
+        <ErrorState error={config.error} onRetry={() => void config.refetch()} />
       )}
     </Page>
   );

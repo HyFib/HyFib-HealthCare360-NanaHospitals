@@ -18,9 +18,6 @@ public sealed class SurgeryService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string BookingSeries = "ot-booking";
-    public const string BookingFormat = "{FAC}OT{YY}{SEQ:6}";
-
     public async Task<Result<SurgeryCreated>> CreateAsync(CreateSurgeryBookingRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -57,7 +54,7 @@ public sealed class SurgeryService(
             }
         }
 
-        booking.BookingNumber = await numbers.NextAsync(BookingSeries, facilityId, BookingFormat, NumberResetPolicy.Yearly, ct);
+        booking.BookingNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.SurgeryBooking, facilityId, ct);
         db.Add(booking);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

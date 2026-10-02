@@ -26,9 +26,6 @@ internal sealed class ImagingService(
     TimeProvider time,
     ILogger<ImagingService> logger)
 {
-    public const string AccessionSeries = "radiology.accession";
-    public const string AccessionFormat = "{FAC}RD{YY}{SEQ:7}";
-
     /// <summary>Studies examined per batch reconciliation call (keeps each PACS round-trip bounded).</summary>
     private const int ReconcileBatchSize = 50;
 
@@ -50,7 +47,7 @@ internal sealed class ImagingService(
         var study = new ImagingStudy
         {
             FacilityId = placed.FacilityId,
-            AccessionNumber = await numbers.NextAsync(AccessionSeries, placed.FacilityId, AccessionFormat, NumberResetPolicy.Yearly, ct),
+            AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.RadiologyAccession, placed.FacilityId, ct),
             PatientId = placed.PatientId,
             VisitId = placed.VisitId,
             AdmissionId = placed.AdmissionId,

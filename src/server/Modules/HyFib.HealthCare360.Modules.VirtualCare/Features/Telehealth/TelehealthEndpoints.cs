@@ -7,7 +7,11 @@ using HyFib.HealthCare360.Modules.VirtualCare.Services;
 
 namespace HyFib.HealthCare360.Modules.VirtualCare.Features.Telehealth;
 
-/// <summary>/api/v1/telehealth — the doctor's and front desk's view of video consultations (TEL-01..06).</summary>
+/// <summary>
+/// /api/v1/telehealth — the doctor's and front desk's view of video consultations (TEL-01..06). While video consultations
+/// are switched off every endpoint answers 503 <c>feature.disabled</c>, except ending and cancelling: a call already in
+/// progress can still be closed, and a booked one called off.
+/// </summary>
 internal static class TelehealthEndpoints
 {
     private const int MaxDays = 31;
@@ -15,18 +19,19 @@ internal static class TelehealthEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/telehealth").WithTags("Telehealth");
-
-        group.MapGet("/config", Config).RequireAnyPermission(VirtualCarePermissions.TelehealthRead, PatientsPermissions.Portal);
-        group.MapGet("/sessions", List).RequirePermission(VirtualCarePermissions.TelehealthRead);
-        group.MapGet("/sessions/{id:guid}", Get).RequirePermission(VirtualCarePermissions.TelehealthRead);
-        group.MapPost("/sessions", Create).RequirePermission(VirtualCarePermissions.TelehealthManage).WithValidation<CreateTelehealthSessionRequest>();
-        group.MapPost("/sessions/{id:guid}/start", Start).RequirePermission(VirtualCarePermissions.TelehealthConsult);
         group.MapPost("/sessions/{id:guid}/end", End).RequirePermission(VirtualCarePermissions.TelehealthConsult).WithValidation<EndTelehealthSessionRequest>();
         group.MapPost("/sessions/{id:guid}/cancel", Cancel).RequirePermission(VirtualCarePermissions.TelehealthManage).WithValidation<CancelTelehealthSessionRequest>();
-        group.MapPost("/sessions/{id:guid}/resend-link", ResendLink).RequirePermission(VirtualCarePermissions.TelehealthManage);
-        group.MapPost("/sessions/{id:guid}/recording-consent", RecordConsent).RequirePermission(VirtualCarePermissions.TelehealthConsult);
-        group.MapGet("/sessions/{id:guid}/messages", Messages).RequirePermission(VirtualCarePermissions.TelehealthRead);
-        group.MapPost("/sessions/{id:guid}/messages", PostMessage).RequirePermission(VirtualCarePermissions.TelehealthConsult).WithValidation<PostTelehealthMessageRequest>();
+
+        var video = group.MapGroup(string.Empty).RequireFeature(FeatureKeys.Telehealth);
+        video.MapGet("/config", Config).RequireAnyPermission(VirtualCarePermissions.TelehealthRead, PatientsPermissions.Portal);
+        video.MapGet("/sessions", List).RequirePermission(VirtualCarePermissions.TelehealthRead);
+        video.MapGet("/sessions/{id:guid}", Get).RequirePermission(VirtualCarePermissions.TelehealthRead);
+        video.MapPost("/sessions", Create).RequirePermission(VirtualCarePermissions.TelehealthManage).WithValidation<CreateTelehealthSessionRequest>();
+        video.MapPost("/sessions/{id:guid}/start", Start).RequirePermission(VirtualCarePermissions.TelehealthConsult);
+        video.MapPost("/sessions/{id:guid}/resend-link", ResendLink).RequirePermission(VirtualCarePermissions.TelehealthManage);
+        video.MapPost("/sessions/{id:guid}/recording-consent", RecordConsent).RequirePermission(VirtualCarePermissions.TelehealthConsult);
+        video.MapGet("/sessions/{id:guid}/messages", Messages).RequirePermission(VirtualCarePermissions.TelehealthRead);
+        video.MapPost("/sessions/{id:guid}/messages", PostMessage).RequirePermission(VirtualCarePermissions.TelehealthConsult).WithValidation<PostTelehealthMessageRequest>();
     }
 
     /// <summary>ICE servers (STUN/TURN) and call settings (TEL-06).</summary>

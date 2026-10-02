@@ -18,7 +18,8 @@ internal static class PortalBillEndpoints
 
     public static void Map(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/portal/bills").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var group = app.MapGroup("/api/v1/portal/bills").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
         group.MapGet("/", List);
         group.MapGet("/{id:guid}", Get);
         group.MapGet("/{id:guid}/pdf", Pdf);

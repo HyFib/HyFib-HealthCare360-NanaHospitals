@@ -26,7 +26,7 @@ internal static class RefillEndpoints
                 (await refills.RejectAsync(id, r.Reason, ct)).ToNoContent())
             .RequirePermission(PharmacyPermissions.Refills).WithValidation<PharmacyReasonRequest>();
 
-        var portal = app.MapGroup("/api/v1/portal/refills").WithTags("Patient Portal");
+        var portal = app.MapGroup("/api/v1/portal/refills").WithTags("Patient Portal").RequireFeature(FeatureKeys.PatientPortal);
         portal.MapGet("/", async (RefillService refills, CancellationToken ct) => TypedResults.Ok(await refills.PortalViewAsync(ct)))
             .RequirePermission(PatientsPermissions.Portal);
         portal.MapPost("/", async (CreateRefillRequest r, RefillService refills, CancellationToken ct) =>

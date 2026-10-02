@@ -13,6 +13,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics;
 
@@ -71,6 +72,8 @@ public sealed class DiagnosticsModule : IModule
     public string Name => "diagnostics";
 
     public IEnumerable<PermissionDefinition> Permissions => DiagnosticsPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => DiagnosticsNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

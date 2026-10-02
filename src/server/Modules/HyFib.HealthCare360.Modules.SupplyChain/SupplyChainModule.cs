@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Transfers;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Vendors;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SupplyChain;
 
@@ -72,6 +73,8 @@ public sealed class SupplyChainModule : IModule
     public string Name => "supplychain";
 
     public IEnumerable<PermissionDefinition> Permissions => SupplyChainPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => SupplyChainNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

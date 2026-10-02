@@ -8,6 +8,8 @@ import {
   defaultScope,
   fieldId,
   INTEGRATION_SETTINGS,
+  isFeatureSettingKey,
+  isValidSettingKey,
   parseFieldValue,
   replaceFlagId,
   scopedSettings,
@@ -285,5 +287,23 @@ describe('scope', () => {
     expect(
       defaultScope([{ key: 'integrations.lab', facilityId: FACILITY, value: {}, hasValue: true }], lab, FACILITY),
     ).toBe('global');
+  });
+});
+
+describe('setting names', () => {
+  it.each(['ui.idleLockMinutes', 'pharmacy.discount.max_percent', 'integrations.sms-backup', 'ai.enabled', 'portal'])(
+    'accepts %s, as the server does',
+    (key) => {
+      expect(isValidSettingKey(key)).toBe(true);
+    },
+  );
+
+  it.each(['', 'ui idle', 'ui/idle', 'ui.idle:x', 'राज्य.name', 'a'.repeat(129)])('refuses %j', (key) => {
+    expect(isValidSettingKey(key)).toBe(false);
+  });
+
+  it('knows a feature switch by its prefix', () => {
+    expect(isFeatureSettingKey('features.telehealth')).toBe(true);
+    expect(isFeatureSettingKey('telehealth.earlyJoinMinutes')).toBe(false);
   });
 });

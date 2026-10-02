@@ -23,8 +23,7 @@ internal sealed class BloodOrderHandler(HospitalDbContext db, INumberSeries numb
         }
 
         var request = NewRequest(domainEvent, component);
-        request.RequestNumber = await numbers.NextAsync(TransfusionService.RequestSeries, domainEvent.FacilityId, TransfusionService.RequestFormat,
-            NumberResetPolicy.Yearly, cancellationToken);
+        request.RequestNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.BloodRequest, domainEvent.FacilityId, cancellationToken);
         db.Add(request);
     }
 

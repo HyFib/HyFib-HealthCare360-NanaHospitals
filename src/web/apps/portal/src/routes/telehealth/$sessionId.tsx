@@ -1,10 +1,13 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { VideoUnavailable } from '@/components/FeatureOff';
 import { TextLink } from '@/components/links';
 import { PortalPage } from '@/components/PortalPage';
 import { Notice } from '@/components/States';
 import { useT } from '@/i18n';
+import { usePortalFeatures } from '@/lib/features';
 import { isGuid } from '@/lib/ids';
+import { useCallActivity } from '@/lib/sessionEnd';
 import { VideoConsultation } from '@/modules/video/VideoConsultation';
 import { useHospitalName } from '@/shell/hooks';
 import { PortalFrame } from '@/shell/PortalFrame';
@@ -39,6 +42,9 @@ function GuestVideoPage() {
   const t = useT();
   const hospital = useHospitalName();
   const [token] = useState(() => search.t ?? readToken(sessionId));
+  // Turned off by the hospital: nobody joins, but a call already running is never cut off.
+  const { video } = usePortalFeatures();
+  const inCall = useCallActivity((s) => s.inCall);
 
   useEffect(() => {
     if (!search.t) {
@@ -55,7 +61,9 @@ function GuestVideoPage() {
   return (
     <PortalFrame navigation={false} brandTarget="/sign-in">
       <PortalPage title={t('video.guest.title')} subtitle={t('video.guest.body', { hospital })} width="wide">
-        {!isGuid(sessionId) || !token ? (
+        {!video && !inCall ? (
+          <VideoUnavailable />
+        ) : !isGuid(sessionId) || !token ? (
           <>
             <Notice intent="warning">{t('video.guest.noToken')}</Notice>
             <TextLink to="/sign-in">{t('video.guest.signIn')}</TextLink>

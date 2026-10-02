@@ -21,7 +21,8 @@ internal static class PatientEndpoints
         group.MapPost("/{id:guid}/break-glass", BreakGlass).RequirePermission(PatientsPermissions.BreakGlass).WithValidation<BreakGlassRequest>();
 
         // Patient Portal: the signed-in patient's own record and family members sharing the verified mobile number.
-        app.MapGet("/api/v1/portal/profiles", PortalProfiles).WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        app.MapGet("/api/v1/portal/profiles", PortalProfiles).WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
     }
 
     private static async Task<IResult> PortalProfiles(PortalPatientScope scope, HospitalDbContext db, TimeProvider time, CancellationToken ct)

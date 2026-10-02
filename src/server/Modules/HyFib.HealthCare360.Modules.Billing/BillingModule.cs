@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
@@ -26,6 +27,8 @@ public sealed class BillingModule : IModule
     public string Name => "billing";
 
     public IEnumerable<PermissionDefinition> Permissions => BillingPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => BillingNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

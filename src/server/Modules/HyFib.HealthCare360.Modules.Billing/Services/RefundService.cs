@@ -24,11 +24,6 @@ public sealed class RefundService(
     TimeProvider time,
     ILogger<RefundService> logger)
 {
-    public const string Series = "billing.refund";
-    public const string Format = "{FAC}RF{YY}{SEQ:6}";
-    public const string CreditNoteSeries = "billing.creditnote";
-    public const string CreditNoteFormat = "{FAC}CN{YY}{SEQ:6}";
-
     public async Task<Result<Guid>> RequestAsync(RequestRefundRequest request, CancellationToken ct)
     {
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
@@ -270,7 +265,7 @@ public sealed class RefundService(
         var note = new CreditNote
         {
             FacilityId = bill.FacilityId,
-            Number = await numbers.NextAsync(CreditNoteSeries, bill.FacilityId, CreditNoteFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(BillingNumberSeries.CreditNote, bill.FacilityId, ct),
             Kind = request.Kind,
             BillId = bill.Id,
             PatientId = bill.PatientId,
@@ -303,7 +298,7 @@ public sealed class RefundService(
         Guid facilityId, RefundPurpose purpose, Guid patientId, Guid? billId, Guid? ipAccountId, decimal amount, string reason, CancellationToken ct,
         Guid? advanceId = null)
     {
-        var number = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct);
+        var number = await numbers.NextAsync(BillingNumberSeries.Refund, facilityId, ct);
         var refund = Refund.Request(
             facilityId, number, purpose, patientId, billId, ipAccountId, amount, reason, currentUser.UserId, currentUser.DisplayName ?? currentUser.UserName, time.GetUtcNow());
         refund.AdvanceId = advanceId;
@@ -317,7 +312,7 @@ public sealed class RefundService(
     /// </summary>
     internal async Task<Refund> StageAdvanceReturnAsync(Bill bill, decimal amount, string reason, CancellationToken ct, Guid? advanceId = null)
     {
-        var number = await numbers.NextAsync(Series, bill.FacilityId, Format, NumberResetPolicy.Yearly, ct);
+        var number = await numbers.NextAsync(BillingNumberSeries.Refund, bill.FacilityId, ct);
         var refund = Refund.ReturnToAdvance(bill.FacilityId, number, bill.PatientId, bill.Id, bill.IpAccountId, amount, reason, currentUser.UserId, time.GetUtcNow());
         refund.AdvanceId = advanceId;
         db.Add(refund);

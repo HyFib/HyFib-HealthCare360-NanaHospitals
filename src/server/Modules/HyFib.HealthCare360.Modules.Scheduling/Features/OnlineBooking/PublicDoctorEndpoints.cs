@@ -8,7 +8,9 @@ namespace HyFib.HealthCare360.Modules.Scheduling.Features.OnlineBooking;
 /// /api/v1/public/doctors — the anonymous Online Doctor Appointment directory (OA-01/02): doctors who accept online
 /// bookings, their fees, languages, branches and live slots. Anonymous and rate-limited ("public" policy); requests
 /// carry no facility, so every branch is listed unless the caller filters by <c>facilityId</c>. Booking itself needs
-/// a patient-portal sign-in (see <c>/api/v1/portal/appointments</c>).
+/// a patient-portal sign-in (see <c>/api/v1/portal/appointments</c>), so the directory is off while the portal is. While
+/// video consultations are off (for the branch asked for, else hospital-wide) no doctor offers them and only in-person
+/// times are listed.
 /// </summary>
 internal static class PublicDoctorEndpoints
 {
@@ -22,7 +24,8 @@ internal static class PublicDoctorEndpoints
         var group = app.MapGroup("/api/v1/public/doctors")
             .WithTags("Online Appointments")
             .AllowAnonymous()
-            .RequireRateLimiting(RateLimitPolicy);
+            .RequireRateLimiting(RateLimitPolicy)
+            .RequireFeature(FeatureKeys.PatientPortal);
 
         group.MapGet("/", ListDoctors);
         group.MapGet("/filters", Filters);
@@ -40,10 +43,17 @@ internal static class PublicDoctorEndpoints
         HospitalDbContext db,
         AvailabilityService availability,
         SchedulingSettings settings,
+        IFeatureFlags features,
         TimeProvider time,
         CancellationToken ct)
     {
         var page = query.ToRequest() with { PageSize = Math.Clamp(query.PageSize ?? 12, 1, MaxPageSize) };
+        var video = await features.IsEnabledAsync(FeatureKeys.Telehealth, facilityId, ct);
+        if (telehealth == true && !video)
+        {
+            return TypedResults.Ok(PagedResult<PublicDoctor>.Empty(page));
+        }
+
         var doctors = Bookable(db, facilityId);
         if (specialtyId is not null)
         {
@@ -76,7 +86,7 @@ internal static class PublicDoctorEndpoints
         }
 
         var result = await doctors.OrderBy(p => p.DisplayName).ToPagedResultAsync(page, ct);
-        var cards = await CardsAsync(result.Items, facilityId, db, availability, settings, time, ct);
+        var cards = await CardsAsync(result.Items, facilityId, video, db, availability, settings, time, ct);
         return TypedResults.Ok(new PagedResult<PublicDoctor>(cards, result.Page, result.PageSize, result.TotalCount));
     }
 
@@ -127,6 +137,7 @@ internal static class PublicDoctorEndpoints
         HospitalDbContext db,
         AvailabilityService availability,
         SchedulingSettings settings,
+        IFeatureFlags features,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -136,7 +147,8 @@ internal static class PublicDoctorEndpoints
             return Error.NotFound("Doctor", id).ToProblem();
         }
 
-        var card = (await CardsAsync([doctor], facilityId, db, availability, settings, time, ct))[0];
+        var video = await features.IsEnabledAsync(FeatureKeys.Telehealth, facilityId, ct);
+        var card = (await CardsAsync([doctor], facilityId, video, db, availability, settings, time, ct))[0];
         var today = time.Today();
         var sessions = await db.Set<DoctorSchedule>().AsNoTracking()
             .Where(s => s.PractitionerId == id && s.IsActive && (facilityId == null || s.FacilityId == facilityId)
@@ -145,7 +157,14 @@ internal static class PublicDoctorEndpoints
             .ToListAsync(ct);
 
         return TypedResults.Ok(new PublicDoctorProfile(
-            card, doctor.Bio, doctor.FollowUpValidityDays, sessions.OrderBy(s => s.Weekday).ThenBy(s => s.StartTime).ToList()));
+            card,
+            doctor.Bio,
+            doctor.FollowUpValidityDays,
+            sessions.Where(s => video || SlotEngine.Offers(s.Mode, ConsultationMode.InPerson))
+                .Select(s => s with { Mode = Offered(s.Mode, video) })
+                .OrderBy(s => s.Weekday)
+                .ThenBy(s => s.StartTime)
+                .ToList()));
     }
 
     /// <summary>Bookable slots for up to 14 days, never inside the online cut-off or beyond the booking window.</summary>
@@ -158,6 +177,7 @@ internal static class PublicDoctorEndpoints
         HospitalDbContext db,
         AvailabilityService availability,
         SchedulingSettings settings,
+        IFeatureFlags features,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -165,6 +185,12 @@ internal static class PublicDoctorEndpoints
         if (doctor is null)
         {
             return Error.NotFound("Doctor", id).ToProblem();
+        }
+
+        var video = await features.IsEnabledAsync(FeatureKeys.Telehealth, facilityId, ct);
+        if (telehealth == true && !video)
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, forPatients: true).ToProblem();
         }
 
         if (telehealth == true && !doctor.AvailableForTelehealth)
@@ -197,17 +223,21 @@ internal static class PublicDoctorEndpoints
         {
             true => ConsultationMode.Telehealth,
             false => ConsultationMode.InPerson,
-            _ => (ConsultationMode?)null,
+            _ => video ? (ConsultationMode?)null : ConsultationMode.InPerson,
         };
         var windowEnd = now.AddDays(policy.WindowDays);
         var slots = await availability.ComputeAsync(id, new SlotQuery(start, end, now + policy.Cutoff) { Mode = mode, FacilityId = facilityId }, ct);
         var days = slots
             .Where(s => s.StartsAt <= windowEnd)
             .GroupBy(s => s.Date)
-            .Select(g => new PublicSlotDay(g.Key, g.Select(s => new PublicSlot(s.StartsAt, s.EndsAt, s.LocalStart, s.Mode, s.FacilityId, s.Available)).ToList()))
+            .Select(g => new PublicSlotDay(g.Key, g.Select(s => new PublicSlot(s.StartsAt, s.EndsAt, s.LocalStart, Offered(s.Mode, video), s.FacilityId, s.Available)).ToList()))
             .ToList();
         return TypedResults.Ok(days);
     }
+
+    /// <summary>How a session or slot is offered to patients: without video consultations, "both" is in person only.</summary>
+    internal static ConsultationMode Offered(ConsultationMode mode, bool video) =>
+        video || mode != ConsultationMode.Both ? mode : ConsultationMode.InPerson;
 
     /// <summary>Active doctors that accept online bookings and have at least one active OPD session.</summary>
     private static IQueryable<Practitioner> Bookable(HospitalDbContext db, Guid? facilityId) =>
@@ -215,9 +245,11 @@ internal static class PublicDoctorEndpoints
             .Where(p => p.IsActive && p.AvailableForOnlineBooking
                         && db.Set<DoctorSchedule>().Any(s => s.PractitionerId == p.Id && s.IsActive && (facilityId == null || s.FacilityId == facilityId)));
 
+    /// <param name="video">Whether video consultations are on: when off, no doctor offers them.</param>
     private static async Task<List<PublicDoctor>> CardsAsync(
         IReadOnlyList<Practitioner> doctors,
         Guid? facilityId,
+        bool video,
         HospitalDbContext db,
         AvailabilityService availability,
         SchedulingSettings settings,
@@ -255,7 +287,8 @@ internal static class PublicDoctorEndpoints
         {
             var mine = slots.GetValueOrDefault(d.Id) ?? [];
             var next = mine.FirstOrDefault(s => SlotEngine.Offers(s.Mode, ConsultationMode.InPerson));
-            var nextVideo = d.AvailableForTelehealth ? mine.FirstOrDefault(s => SlotEngine.Offers(s.Mode, ConsultationMode.Telehealth)) : null;
+            var offersVideo = video && d.AvailableForTelehealth;
+            var nextVideo = offersVideo ? mine.FirstOrDefault(s => SlotEngine.Offers(s.Mode, ConsultationMode.Telehealth)) : null;
             var doctorBranches = branches.Where(b => b.PractitionerId == d.Id).Select(b => b.FacilityId).ToHashSet();
             return new PublicDoctor(
                 d.Id,
@@ -270,7 +303,7 @@ internal static class PublicDoctorEndpoints
                 d.ConsultationFeeNew,
                 d.ConsultationFeeFollowUp,
                 Currency,
-                d.AvailableForTelehealth,
+                offersVideo,
                 facilities.Where(f => doctorBranches.Contains(f.Id)).ToList(),
                 next?.StartsAt,
                 nextVideo?.StartsAt);

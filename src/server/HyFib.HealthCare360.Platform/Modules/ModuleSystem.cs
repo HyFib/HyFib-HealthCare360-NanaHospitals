@@ -1,6 +1,7 @@
 using System.Reflection;
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Routing;
@@ -21,6 +22,12 @@ public interface IModule
 
     /// <summary>Permissions this module declares (grouped for the role editor).</summary>
     IEnumerable<PermissionDefinition> Permissions { get; }
+
+    /// <summary>
+    /// The number series this module issues (bill numbers, accession numbers…), which administrators can set up before
+    /// the first number. <see cref="INumberSeries.NextAsync"/> refuses a series that no module declares.
+    /// </summary>
+    IEnumerable<NumberSeriesDefinition> NumberSeries => [];
 
     void AddServices(IServiceCollection services, IConfiguration configuration);
 
@@ -71,6 +78,7 @@ public static class ModuleServiceCollectionExtensions
 
         services.AddSingleton(sp => new PermissionRegistry(
             PlatformPermissions.All.Concat(catalog.Modules.SelectMany(m => m.Permissions))));
+        services.AddSingleton(new NumberSeriesCatalog(catalog.Modules.SelectMany(m => m.NumberSeries)));
 
         return catalog;
     }

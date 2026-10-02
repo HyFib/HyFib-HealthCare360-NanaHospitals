@@ -47,9 +47,6 @@ public sealed class TransfusionService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string RequestSeries = "blood-request";
-    public const string RequestFormat = "{FAC}BR{YY}{SEQ:6}";
-
     public async Task<Result<BloodRequest>> CreateRequestAsync(CreateBloodRequestRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -83,7 +80,7 @@ public sealed class TransfusionService(
         };
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        bloodRequest.RequestNumber = await numbers.NextAsync(RequestSeries, facilityId, RequestFormat, NumberResetPolicy.Yearly, ct);
+        bloodRequest.RequestNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.BloodRequest, facilityId, ct);
         db.Add(bloodRequest);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

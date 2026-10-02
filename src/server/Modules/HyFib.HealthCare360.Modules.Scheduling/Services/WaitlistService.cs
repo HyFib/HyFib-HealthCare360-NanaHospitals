@@ -19,7 +19,13 @@ public sealed record WaitlistCommand(
 /// Waitlist handling (OA-05): joining, closing, and offering freed slots. Offers go first to patients who have not
 /// been offered anything yet, then by age of the request, so nobody is repeatedly skipped.
 /// </summary>
-public sealed class WaitlistService(HospitalDbContext db, AppointmentNotifier notifier, SchedulingSettings settings, ICurrentUser currentUser, TimeProvider time)
+public sealed class WaitlistService(
+    HospitalDbContext db,
+    AppointmentNotifier notifier,
+    SchedulingSettings settings,
+    IFeatureFlags features,
+    ICurrentUser currentUser,
+    TimeProvider time)
 {
     public async Task<Result<WaitlistEntry>> AddAsync(WaitlistCommand command, CancellationToken ct)
     {
@@ -44,6 +50,12 @@ public sealed class WaitlistService(HospitalDbContext db, AppointmentNotifier no
         if (practitioner is null)
         {
             return Error.Field("practitionerId", "Choose an active doctor.");
+        }
+
+        // A request for a video consultation could never be booked while they are switched off.
+        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, currentUser.FacilityId, ct))
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
         }
 
         if (command.IsTelehealth && !practitioner.AvailableForTelehealth)

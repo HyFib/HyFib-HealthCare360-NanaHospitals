@@ -1,6 +1,7 @@
 import type { FluentIcon } from '@fluentui/react-icons';
 import { hasPermission, type AuthUser } from '@hc360/core';
 import type { ComponentType } from 'react';
+import { isFeatureOn, type FeatureKey, type FeatureSwitches } from './featureSwitches';
 
 /** Navigation sections, in the order staff meet them during a patient's journey. */
 export const NAV_SECTIONS = [
@@ -27,6 +28,8 @@ export interface NavLink {
   permission?: string | readonly string[];
   /** Extra words for the command palette ("OP", "token", "UHID"). */
   keywords?: string[];
+  /** Shown only while this feature is switched on (Hospital setup > Features). */
+  feature?: FeatureKey;
 }
 
 export interface QuickAction extends NavLink {
@@ -37,6 +40,8 @@ export interface QuickAction extends NavLink {
 export interface DashboardWidget {
   id: string;
   permission?: string | readonly string[];
+  /** Shown only while this feature is switched on (Hospital setup > Features). */
+  feature?: FeatureKey;
   /** Grid columns on wide screens (the dashboard has 4). */
   span?: 1 | 2 | 4;
   order?: number;
@@ -58,13 +63,30 @@ export interface ModuleManifest {
   widgets?: DashboardWidget[];
 }
 
-/** Modules, links and quick actions the user may open (anything without permission is hidden, not disabled). */
-export function visibleModules(user: AuthUser | null, manifests: ModuleManifest[]): ModuleManifest[] {
+/** A link, quick action or widget the user may see: they hold its permission and its feature is switched on. */
+export function isAvailable(
+  item: { permission?: string | readonly string[]; feature?: FeatureKey },
+  user: AuthUser | null,
+  features?: FeatureSwitches,
+): boolean {
+  return hasPermission(user, item.permission) && isFeatureOn(features, item.feature);
+}
+
+/**
+ * Modules, links, quick actions and widgets the user may open: anything without permission, or whose feature an
+ * administrator switched off, is hidden, not disabled. A feature missing from `features` counts as on.
+ */
+export function visibleModules(
+  user: AuthUser | null,
+  manifests: ModuleManifest[],
+  features?: FeatureSwitches,
+): ModuleManifest[] {
   return manifests
     .map((manifest) => ({
       ...manifest,
-      links: manifest.links.filter((link) => hasPermission(user, link.permission)),
-      quickActions: manifest.quickActions?.filter((action) => hasPermission(user, action.permission)),
+      links: manifest.links.filter((link) => isAvailable(link, user, features)),
+      quickActions: manifest.quickActions?.filter((action) => isAvailable(action, user, features)),
+      widgets: manifest.widgets?.filter((widget) => isAvailable(widget, user, features)),
     }))
     .filter((manifest) => manifest.links.length > 0);
 }

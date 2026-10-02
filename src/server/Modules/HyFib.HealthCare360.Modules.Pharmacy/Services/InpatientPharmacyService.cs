@@ -31,12 +31,6 @@ public sealed class InpatientPharmacyService(
     public const string MedicinesServiceCode = "PHARM-MED";
     public const string ConsumablesServiceCode = "PHARM-CONS";
     public const string ImplantsServiceCode = "PHARM-IMPL";
-    public const string IndentSeries = "pharmacy.ward_indent";
-    public const string IndentFormat = "{FAC}WI{YY}{SEQ:6}";
-    public const string IssueSeries = "pharmacy.ip_issue";
-    public const string IssueFormat = "{FAC}IPI{YY}{SEQ:6}";
-    public const string ReturnSeries = "pharmacy.ward_return";
-    public const string ReturnFormat = "{FAC}WR{YY}{SEQ:6}";
 
     private sealed record PlannedLine(Guid Key, IpIssueLineInput Input, ItemSummary Item, WardIndentLine? IndentLine, PharmacyQueueLine? QueueLine);
 
@@ -73,7 +67,7 @@ public sealed class InpatientPharmacyService(
         var indent = new WardIndent
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(IndentSeries, facilityId, IndentFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(PharmacyNumberSeries.WardIndent, facilityId, ct),
             PatientId = request.PatientId,
             AdmissionId = request.AdmissionId,
             VisitId = request.VisitId,
@@ -253,7 +247,7 @@ public sealed class InpatientPharmacyService(
         var issue = new IpIssue
         {
             FacilityId = store.Value.FacilityId,
-            Number = await numbers.NextAsync(IssueSeries, store.Value.FacilityId, IssueFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(PharmacyNumberSeries.WardIssue, store.Value.FacilityId, ct),
             StoreId = store.Value.Id,
             PatientId = patientId,
             AdmissionId = admissionId,
@@ -388,7 +382,7 @@ public sealed class InpatientPharmacyService(
         var wardReturn = new WardReturn
         {
             FacilityId = issue.FacilityId,
-            Number = await numbers.NextAsync(ReturnSeries, issue.FacilityId, ReturnFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(PharmacyNumberSeries.WardReturn, issue.FacilityId, ct),
             IpIssueId = issue.Id,
             PatientId = issue.PatientId,
             AdmissionId = issue.AdmissionId,

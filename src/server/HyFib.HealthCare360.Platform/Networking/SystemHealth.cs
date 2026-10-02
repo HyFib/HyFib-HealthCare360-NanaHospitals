@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Jobs;
@@ -53,7 +54,12 @@ public sealed record SystemHealthReport(
     IReadOnlyList<HealthWarning> Warnings,
     DateTimeOffset GeneratedAt);
 
-public sealed record SystemInfoDto(string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion);
+public sealed record SystemInfoDto(
+    string Product, string Version, string ServerName, string? FacilityName, string? FacilityCode, string? CaFingerprint, DateTimeOffset ServerTime, int ApiVersion,
+    SystemFeatures Features);
+
+/// <summary>The hospital-wide feature switches (Platform/Features), for the portal and the sign-in page before anyone signs in.</summary>
+public sealed record SystemFeatures(bool PatientPortal, bool Telehealth);
 
 public sealed record WifiSampleDto(DateTimeOffset At, bool Connected, int SignalQuality, int? RssiDbm, double? ReceiveRateMbps, string? Ssid);
 
@@ -255,12 +261,16 @@ internal static class SystemEndpoints
     {
         var system = app.MapGroup("/api/v1/system").WithTags("System");
 
-        // Used by HC360 Desktop during discovery/enrolment to confirm it has found an HC360 server.
-        system.MapGet("/info", async (HospitalDbContext db, LanCertificateManager certificates, TimeProvider time, CancellationToken ct) =>
+        // Used by HC360 Desktop during discovery/enrolment to confirm it has found an HC360 server, and by the sign-in page
+        // and the patient portal, which also learn from it which features are switched on.
+        system.MapGet("/info", async (HospitalDbContext db, LanCertificateManager certificates, IFeatureFlags features, TimeProvider time, CancellationToken ct) =>
             {
                 var facility = await db.Set<Facility>().AsNoTracking().OrderBy(f => f.CreatedAt).Select(f => new { f.Name, f.Code }).FirstOrDefaultAsync(ct);
+                var switches = new SystemFeatures(
+                    await features.IsEnabledAsync(FeatureKeys.PatientPortal, null, ct),
+                    await features.IsEnabledAsync(FeatureKeys.Telehealth, null, ct));
                 return TypedResults.Ok(new SystemInfoDto("HyFib HealthCare360", SystemHealthService.ProductVersion, Environment.MachineName,
-                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1));
+                    facility?.Name, facility?.Code, certificates.CaFingerprint, time.GetUtcNow(), 1, switches));
             })
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicies.Public);

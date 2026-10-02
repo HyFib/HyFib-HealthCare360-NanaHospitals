@@ -25,6 +25,7 @@ import { formatDateTime, formatTime, isApiError, todayIso, useSession } from '@h
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useFeatureOn } from '@/lib/features';
 import { toOptions, usePractitioners } from '@/lib/lookups';
 import {
   schedulingApi,
@@ -86,7 +87,10 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const today = todayIso();
   const [practitionerId, setPractitionerId] = useState(appointment.practitionerId);
-  const [mode, setMode] = useState<VisitMode>(appointment.isTelehealth ? 'Telehealth' : 'InPerson');
+  const [chosenMode, setMode] = useState<VisitMode>(appointment.isTelehealth ? 'Telehealth' : 'InPerson');
+  // While video consultations are switched off, a moved appointment becomes an in-person visit.
+  const videoOn = useFeatureOn('telehealth');
+  const mode: VisitMode = videoOn ? chosenMode : 'InPerson';
   const [date, setDate] = useState(() => maxDate(today, istDate(appointment.startsAt)));
   const [slot, setSlot] = useState<SlotDto | null>(null);
   const [reason, setReason] = useState('');
@@ -96,7 +100,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
   // Same key as the slot picker's first window, so this costs no extra request.
   const availability = useQuery(schedulingQueries.slots({ practitionerId, from: today, to: addDays(today, 13) }));
   const doctor = availability.data?.find((d) => d.practitionerId === practitionerId);
-  const offersVideo = Boolean(doctor?.offersTelehealth) || appointment.isTelehealth;
+  const offersVideo = videoOn && (Boolean(doctor?.offersTelehealth) || appointment.isTelehealth);
   const doctorName =
     doctor?.practitionerName ??
     (practitionerId === appointment.practitionerId ? appointment.practitionerName : undefined);
@@ -212,6 +216,13 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
                 </Field>
               )}
             </div>
+            {appointment.isTelehealth && !videoOn && (
+              <MessageBar intent="info">
+                <MessageBarBody>
+                  Video consultations are turned off, so the appointment moves to an in-person visit.
+                </MessageBarBody>
+              </MessageBar>
+            )}
             <SlotPicker
               practitionerId={practitionerId}
               practitionerName={doctorName}

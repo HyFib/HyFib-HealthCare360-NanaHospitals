@@ -36,9 +36,6 @@ public sealed class ReceiptService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string Series = "billing.receipt";
-    public const string Format = "{FAC}RC{YY}{SEQ:7}";
-
     public async Task<Result<Guid>> CollectForBillAsync(CollectPaymentRequest request, CancellationToken ct)
     {
         var bill = await db.Set<Bill>().FirstOrDefaultAsync(b => b.Id == request.BillId, ct);
@@ -321,7 +318,7 @@ public sealed class ReceiptService(
     private async Task<Receipt> NewReceiptAsync(Guid facilityId, ReceiptPurpose purpose, Guid patientId, ReceiptSource source, CashierShift? shift, CancellationToken ct) => new()
     {
         FacilityId = facilityId,
-        ReceiptNumber = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct),
+        ReceiptNumber = await numbers.NextAsync(BillingNumberSeries.Receipt, facilityId, ct),
         Purpose = purpose,
         PatientId = patientId,
         Source = source,

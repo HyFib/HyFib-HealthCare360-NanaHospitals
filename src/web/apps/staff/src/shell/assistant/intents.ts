@@ -1,3 +1,4 @@
+import type { FeatureKey } from '@/lib/featureSwitches';
 import type { ClinicalNoteType } from '@/modules/emr/api';
 import type { AssistantCommandResponse } from './api';
 
@@ -49,6 +50,8 @@ export interface PlanEnvironment {
   hasRoute: (path: string) => boolean;
   /** True when the user may open the screen (module manifest permissions; screens without a menu entry are allowed). */
   canOpen: (path: string) => boolean;
+  /** Why a screen is closed to everyone for now (its feature is switched off), or null. */
+  switchedOff?: (path: string) => string | null;
   /** True when the user holds the permission. */
   can: (permission: string) => boolean;
   /** The signed-in user's linked doctor, for "my appointments". */
@@ -127,14 +130,29 @@ export function isIsoDate(value: string | null | undefined): value is string {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
 }
 
-/** Screens with a menu entry need one of that entry's permissions; a screen without one (Home) is allowed. */
+/**
+ * Screens with a menu entry need one of that entry's permissions, and its feature switched on; a screen without one
+ * (Home) is allowed.
+ */
 export function canOpenPath(
   path: string,
-  links: readonly { to: string; permission?: string | readonly string[] }[],
+  links: readonly { to: string; permission?: string | readonly string[]; feature?: FeatureKey }[],
   has: (permission: string | readonly string[] | undefined) => boolean,
+  featureOn: (feature: FeatureKey | undefined) => boolean = () => true,
 ): boolean {
   const entries = links.filter((link) => link.to === path);
-  return entries.length === 0 || entries.some((link) => has(link.permission));
+  return entries.length === 0 || entries.some((link) => has(link.permission) && featureOn(link.feature));
+}
+
+/** The feature that keeps a screen closed: every menu entry for the path belongs to a feature that is switched off. */
+export function switchedOffFeature(
+  path: string,
+  links: readonly { to: string; feature?: FeatureKey }[],
+  featureOn: (feature: FeatureKey | undefined) => boolean,
+): FeatureKey | null {
+  const entries = links.filter((link) => link.to === path);
+  const off = entries.find((link) => link.feature && !featureOn(link.feature))?.feature;
+  return off && entries.every((link) => !featureOn(link.feature)) ? off : null;
 }
 
 /** Maps a server route to a screen of this app, or explains why it cannot be opened. */
@@ -202,6 +220,10 @@ function planFor(intent: string, p: Record<string, string>, said: string, env: P
       const screen = resolveScreen(p.route, env.hasRoute);
       if ('problem' in screen) {
         return info(screen.problem);
+      }
+      const off = env.switchedOff?.(screen.path);
+      if (off) {
+        return info(off);
       }
       return env.canOpen(screen.path)
         ? { kind: 'navigate', href: screen.path, message: said }

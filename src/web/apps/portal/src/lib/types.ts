@@ -14,6 +14,8 @@ export interface SystemInfo {
   facilityName: string | null;
   facilityCode: string | null;
   serverTime: string;
+  /** The hospital-wide feature switches (Hospital setup > Features); missing from older servers. */
+  features?: { patientPortal: boolean; telehealth: boolean };
 }
 
 /** GET /api/v1/auth/otp/request → OtpChallengeResponse. */

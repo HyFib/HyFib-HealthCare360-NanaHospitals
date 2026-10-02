@@ -26,8 +26,10 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Specialities | `/setup/specialties` | Shared by every facility; patients choose one when booking online |
 | Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed |
+| Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
+| Features | `/setup/features` | Switch the patient portal and video consultations on or off (`admin.settings.manage`; see `docs/modules/features.md`) |
 
-All five need `masters.manage`. Each list keeps its search and filters in the address, and opens a record with
+The five masters need `masters.manage`. Each list keeps its search and filters in the address, and opens a record with
 `?edit=<id>` (or `?edit=new`), so a link opens the same record. Records are taken out of use ("In use" off), never
 deleted; the lists hide them unless *Show those not in use* is on.
 

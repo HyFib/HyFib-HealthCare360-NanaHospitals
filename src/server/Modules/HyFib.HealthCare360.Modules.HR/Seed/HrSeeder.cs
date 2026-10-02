@@ -294,7 +294,7 @@ internal sealed class HrSeeder(IOptions<PlatformOptions> options, INumberSeries 
                 PaymentMode = SalaryPaymentMode.BankTransfer,
             };
             employee.SetName(null, d.First, null, d.Last);
-            employee.EmployeeCode = await numbers.NextAsync(EmployeeService.EmployeeSeries, facilityId, EmployeeService.EmployeeFormat, NumberResetPolicy.Never, ct);
+            employee.EmployeeCode = await numbers.NextAsync(HRNumberSeries.Employee, facilityId, ct);
             db.Add(employee);
 
             var structure = new EmployeeSalaryStructure

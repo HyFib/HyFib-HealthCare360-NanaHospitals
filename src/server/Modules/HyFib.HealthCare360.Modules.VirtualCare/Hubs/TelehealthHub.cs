@@ -17,7 +17,9 @@ namespace HyFib.HealthCare360.Modules.VirtualCare.Hubs;
 /// a virtual waiting room until a clinician admits them; only admitted participants may exchange offers, answers, ICE
 /// candidates and chat. The hub itself allows anonymous connections (guests have no JWT) and authorises every call.
 /// Media never passes through the server. Presence is kept in the database (with connection ids) so any API node
-/// behind the Redis backplane can admit a patient who is connected to another node.
+/// behind the Redis backplane can admit a patient who is connected to another node. While video consultations are
+/// switched off nobody can connect, and a connection opened before the switch cannot join; a call already running is
+/// not cut off.
 /// </summary>
 [AllowAnonymous]
 public sealed class TelehealthHub(
@@ -25,6 +27,7 @@ public sealed class TelehealthHub(
     IPermissionService permissions,
     VirtualCareSettings settings,
     TelehealthBroadcaster broadcaster,
+    IFeatureFlags features,
     IAuditLogger audit,
     TimeProvider time,
     ILogger<TelehealthHub> logger) : Hub
@@ -65,6 +68,7 @@ public sealed class TelehealthHub(
             throw new HubException("This consultation is closed.");
         }
 
+        await EnsureVideoOnAsync(session, forPatients: false);
         var now = time.GetUtcNow();
         var participant = new TelehealthParticipant
         {
@@ -107,6 +111,12 @@ public sealed class TelehealthHub(
             || !await permissions.HasPermissionAsync(userId, PatientsPermissions.Portal, Aborted))
         {
             throw new HubException("Please sign in to the patient portal first.");
+        }
+
+        // The hub is open to guests, so the portal switch is checked here rather than by the gate on signed-in requests.
+        if (!await features.IsEnabledAsync(FeatureKeys.PatientPortal, null, Aborted))
+        {
+            throw new HubException("The patient portal is not available right now. Please join with the link sent to you by SMS.");
         }
 
         var session = await FindAsync(sessionId);
@@ -268,6 +278,7 @@ public sealed class TelehealthHub(
 
     private async Task<TelehealthJoinResult> JoinPatientSideAsync(TelehealthSession session, TelehealthRole role, Guid? userId, string displayName)
     {
+        await EnsureVideoOnAsync(session, forPatients: true);
         var now = time.GetUtcNow();
         var joinable = session.EnsureJoinable(now, await settings.EarlyJoinAsync(session.FacilityId, Aborted));
         if (joinable.IsFailure)
@@ -418,6 +429,16 @@ public sealed class TelehealthHub(
             {
                 await broadcaster.SessionChangedAsync(session, ct);
             }
+        }
+    }
+
+    /// <summary>Nobody joins while video consultations are off for the session's facility (else hospital-wide).</summary>
+    private async Task EnsureVideoOnAsync(TelehealthSession session, bool forPatients)
+    {
+        if (!await features.IsEnabledAsync(FeatureKeys.Telehealth, session.FacilityId, Aborted))
+        {
+            var feature = FeatureCatalog.Telehealth;
+            throw new HubException(forPatients ? feature.OffDetailForPatients : $"{feature.OffTitle}. {feature.OffDetailForStaff}");
         }
     }
 

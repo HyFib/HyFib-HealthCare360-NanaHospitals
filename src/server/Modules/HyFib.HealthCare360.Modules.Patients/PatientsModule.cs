@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Queue;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Patients;
 
@@ -55,6 +56,8 @@ public sealed class PatientsModule : IModule
     public string Name => "patients";
 
     public IEnumerable<PermissionDefinition> Permissions => PatientsPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => PatientsNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

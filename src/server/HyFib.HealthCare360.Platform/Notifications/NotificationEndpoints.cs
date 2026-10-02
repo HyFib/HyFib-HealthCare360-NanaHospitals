@@ -24,7 +24,8 @@ public sealed record SaveNotificationTemplateRequest(
 
 /// <summary>
 /// Template fields within their columns, so a DLT id or WhatsApp name that does not fit is a field error rather than a
-/// server error. The key and language are checked when a template is made: an existing template keeps them.
+/// server error. The key and language are checked when a template is made, and the SMS limit against the template's own
+/// channel: an existing template keeps its key, channel and language, whatever the request says.
 /// </summary>
 public sealed class SaveNotificationTemplateRequestValidator : AbstractValidator<SaveNotificationTemplateRequest>
 {
@@ -35,7 +36,6 @@ public sealed class SaveNotificationTemplateRequestValidator : AbstractValidator
         RuleFor(x => x.Language).MaximumLength(8);
         RuleFor(x => x.Subject).SafeText(200);
         RuleFor(x => x.Body).NotEmpty().WithMessage("Write the message.").SafeText(4000);
-        RuleFor(x => x.Body).MaximumLength(1000).When(x => x.Channel == NotificationChannel.Sms).WithMessage("SMS templates must be at most 1000 characters.");
         RuleFor(x => x.DltTemplateId).Matches("^[0-9]{10,25}$").When(x => !string.IsNullOrWhiteSpace(x.DltTemplateId))
             .WithMessage("Enter the DLT template id as registered on the DLT portal: 10 to 25 digits.");
         RuleFor(x => x.WhatsAppTemplateName).MaximumLength(128).Matches("^[a-z0-9_]+$").When(x => !string.IsNullOrWhiteSpace(x.WhatsAppTemplateName))
@@ -166,6 +166,15 @@ internal static partial class NotificationEndpoints
             }
 
             template = new NotificationTemplate { Key = key, Channel = request.Channel, Language = language, FacilityId = request.FacilityId };
+        }
+
+        if (BodyProblem(template.Channel, request.Body) is { } problem)
+        {
+            return Error.Field("body", problem).ToProblem();
+        }
+
+        if (id is null)
+        {
             db.Add(template);
         }
 
@@ -173,12 +182,21 @@ internal static partial class NotificationEndpoints
         template.Body = request.Body.Trim();
         template.DltTemplateId = request.DltTemplateId?.Trim();
         template.WhatsAppTemplateName = request.WhatsAppTemplateName?.Trim();
-        template.WhatsAppDocumentHeader = request.Channel == NotificationChannel.WhatsApp && request.WhatsAppDocumentHeader;
+        template.WhatsAppDocumentHeader = template.Channel == NotificationChannel.WhatsApp && request.WhatsAppDocumentHeader;
         template.Description = request.Description?.Trim();
         template.IsActive = request.IsActive;
         await db.SaveChangesAsync(ct);
         return id is null ? TypedResults.Created($"/api/v1/admin/notification-templates/{template.Id}", new { template.Id }) : TypedResults.NoContent();
     }
+
+    /// <summary>
+    /// What is wrong with a template's text for its channel, or null: an SMS is at most 1000 characters. Checked against the
+    /// channel the template has, since an update cannot change it.
+    /// </summary>
+    internal static string? BodyProblem(NotificationChannel channel, string body) =>
+        channel == NotificationChannel.Sms && body.Trim().Length > SmsBodyLimit ? $"SMS templates must be at most {SmsBodyLimit} characters." : null;
+
+    private const int SmsBodyLimit = 1000;
 
     [GeneratedRegex("^[a-z0-9]+([._-][a-z0-9]+)*$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
     private static partial Regex TemplateKey();

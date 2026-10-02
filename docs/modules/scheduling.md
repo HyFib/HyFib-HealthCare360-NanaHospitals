@@ -37,6 +37,10 @@ Doctor OPD schedules, appointments, front-desk check-in and Online Doctor Appoin
 * Staff may overbook a full slot only with `scheduling.appointments.manage` (`overbook: true`).
 * Online (portal) bookings: only `AvailableForOnlineBooking` doctors, not inside the cut-off, not beyond the booking
   window, one open booking per doctor per day; portal cancel/reschedule closes at the cut-off.
+* While video consultations are switched off ([features.md](features.md)), nothing is booked, rescheduled or added
+  to the waitlist as a video consultation, from any channel: 422 `feature.disabled`. The switch is read for the
+  facility the booking is made from, else hospital-wide. Video appointments already booked stay; rescheduling one with
+  `isTelehealth: false` moves it to an in-person visit, and cancelling works as always.
 * Rescheduling books the new slot and marks the old row `Rescheduled` in the same transaction; online prepayment moves
   to the new booking; the freed slot is offered to the waitlist.
 * Check-in is allowed on the appointment day only. It calls `VisitService.CreateAsync` (visit + queue token; no token
@@ -96,6 +100,10 @@ conflicts (slot full, overlap, duplicates, concurrency) 409.
 
 Anonymous, `RequireRateLimiting("public")`. Only active doctors with `AvailableForOnlineBooking` and at least one
 active session are listed; requests carry no facility, so every branch is shown unless `facilityId` is passed.
+Booking online needs the portal, so every endpoint answers 503 `feature.disabled` while the patient portal is switched
+off. While video consultations are off (for `facilityId`, else hospital-wide), no doctor offers them
+(`offersTelehealth: false`, no `nextTelehealthAt`), `telehealth=true` lists nobody and its slots answer 422
+`feature.disabled`, and sessions and slots for both modes are shown as in person ([features.md](features.md)).
 
 | Method | Path | Request → Response |
 |---|---|---|

@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
+using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -25,9 +26,6 @@ public sealed class AdmissionService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string AdmissionSeries = "admission";
-    public const string AdmissionFormat = "{FAC}IP{YY}{SEQ:6}";
-
     public async Task<Result<AdmissionCreated>> AdmitAsync(AdmitPatientRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -107,7 +105,7 @@ public sealed class AdmissionService(
         var visit = new Visit
         {
             FacilityId = facilityId,
-            VisitNumber = await numbers.NextAsync(VisitService.VisitSeries, facilityId, VisitService.VisitFormat, NumberResetPolicy.Yearly, ct),
+            VisitNumber = await numbers.NextAsync(PatientsNumberSeries.Visit, facilityId, ct),
             PatientId = patient.Id,
             Type = VisitType.InPatient,
             Status = VisitStatus.Open,
@@ -131,7 +129,7 @@ public sealed class AdmissionService(
         var admission = new Admission
         {
             FacilityId = facilityId,
-            AdmissionNumber = await numbers.NextAsync(AdmissionSeries, facilityId, AdmissionFormat, NumberResetPolicy.Yearly, ct),
+            AdmissionNumber = await numbers.NextAsync(InpatientNumberSeries.Admission, facilityId, ct),
             PatientId = patient.Id,
             VisitId = visit.Id,
             SourceVisitId = request.SourceVisitId,

@@ -107,8 +107,11 @@ public sealed class HospitalServer : IAsyncLifetime
         await _app.StartAsync(ct);
     }
 
-    /// <summary>A caller who has not signed in.</summary>
-    public ApiClient Anonymous() => new(CreateHttpClient());
+    /// <summary>
+    /// A caller who has not signed in. With <paramref name="ownAddress"/> its requests come from the test's own address,
+    /// for calls limited per address (one-time codes allow only 5 requests per address in 15 minutes).
+    /// </summary>
+    public ApiClient Anonymous(bool ownAddress = false) => new(CreateHttpClient(ownAddress));
 
     /// <summary>
     /// A caller signed in as one of the staff accounts in <see cref="Users"/>, with that role's real permissions.

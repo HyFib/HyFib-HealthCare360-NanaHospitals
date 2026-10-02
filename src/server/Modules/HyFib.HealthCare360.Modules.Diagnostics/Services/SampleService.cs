@@ -258,7 +258,7 @@ internal sealed class SampleService(
             return Error.Rule("sample.not_rejected", "Only a rejected sample can be recollected.");
         }
 
-        var barcode = await numbers.NextAsync(LabOrderService.BarcodeSeries, null, LabOrderService.BarcodeFormat, NumberResetPolicy.Never, ct);
+        var barcode = await numbers.NextAsync(DiagnosticsNumberSeries.LabSample, null, ct);
         var replacement = tube.CreateRecollection(barcode);
         if (replacement.IsSuccess)
         {

@@ -19,13 +19,10 @@ public sealed class ComplaintService(
     IRealtimePublisher realtime,
     TimeProvider time)
 {
-    public const string ComplaintSeries = "feedback.complaint";
-    public const string ComplaintFormat = "{FAC}CMP{YY}{SEQ:5}";
-
     /// <summary>Adds a numbered complaint to the current unit of work (the caller owns the transaction and save).</summary>
     public async Task<Complaint> AddAsync(Complaint complaint, CancellationToken ct)
     {
-        complaint.ComplaintNumber = await numbers.NextAsync(ComplaintSeries, complaint.FacilityId, ComplaintFormat, NumberResetPolicy.Yearly, ct);
+        complaint.ComplaintNumber = await numbers.NextAsync(EngagementNumberSeries.Complaint, complaint.FacilityId, ct);
         complaint.Status = ComplaintStatus.Open;
         complaint.Register(time.GetUtcNow());
         db.Add(complaint);

@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Dialysis;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Physio;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.SpecialtyCare;
 
@@ -15,6 +16,8 @@ public sealed class SpecialtyCareModule : IModule
     public string Name => "specialtycare";
 
     public IEnumerable<PermissionDefinition> Permissions => SpecialtyCarePermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => SpecialtyCareNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

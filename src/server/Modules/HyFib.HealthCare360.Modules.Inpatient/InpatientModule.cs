@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Nursing;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Rounds;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Inpatient;
 
@@ -53,6 +54,8 @@ public sealed class InpatientModule : IModule
     public string Name => "inpatient";
 
     public IEnumerable<PermissionDefinition> Permissions => InpatientPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => InpatientNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

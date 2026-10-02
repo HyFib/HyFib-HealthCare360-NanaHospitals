@@ -15,7 +15,8 @@ internal static class PortalPrivacyEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/v1/portal/privacy").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal);
+        var group = app.MapGroup("/api/v1/portal/privacy").WithTags("Patient Portal").RequirePermission(PatientsPermissions.Portal)
+            .RequireFeature(FeatureKeys.PatientPortal);
 
         group.MapGet("/status", Status);
         group.MapGet("/summary", Summary);

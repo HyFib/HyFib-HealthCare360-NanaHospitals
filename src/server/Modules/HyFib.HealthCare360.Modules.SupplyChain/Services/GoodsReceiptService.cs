@@ -12,8 +12,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 public sealed class GoodsReceiptService(HospitalDbContext db, INumberSeries numbers, StockService stock, ICurrentUser currentUser, TimeProvider time)
 {
     public const string ReferenceModule = "supplychain.grn";
-    public const string Series = "supplychain.grn";
-    public const string Format = "{FAC}GRN{YY}{SEQ:6}";
 
     public async Task<Result<GoodsReceiptCreated>> CreateAsync(CreateGoodsReceiptRequest request, CancellationToken ct)
     {
@@ -132,7 +130,7 @@ public sealed class GoodsReceiptService(HospitalDbContext db, INumberSeries numb
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        grn.Number = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct);
+        grn.Number = await numbers.NextAsync(SupplyChainNumberSeries.GoodsReceipt, facilityId, ct);
         db.Add(grn);
         if (request.Post)
         {

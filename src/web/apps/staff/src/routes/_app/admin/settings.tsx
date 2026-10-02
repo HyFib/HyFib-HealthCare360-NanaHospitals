@@ -22,22 +22,31 @@ import { AddRegular, LockClosedRegular } from '@fluentui/react-icons';
 import { formatRelative } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
+import { PUBLIC_SETTINGS_KEY } from '@/lib/lookups';
 import { adminQueries, type SettingDto } from '@/modules/admin/api';
+import { isFeatureSettingKey, isValidSettingKey } from '@/modules/admin/settingsForms';
 
 export const Route = createFileRoute('/_app/admin/settings')({
   component: SettingsPage,
 });
 
-/** Well-known settings with a friendly explanation (any other key can still be added). */
+/**
+ * Well-known settings with a friendly explanation (any other key can still be added). Feature switches
+ * (`features.*`) have their own screen, Hospital setup > Features.
+ */
 const KNOWN: Record<string, string> = {
   'ui.idleLockMinutes': 'Minutes of inactivity before a workstation locks (0 turns it off).',
   'alerts.oncallPhone': 'Mobile number that gets an SMS when the server WiFi drops or backups fail.',
-  'features.patientPortal': 'Turn the patient portal on or off.',
-  'features.telehealth': 'Turn video consultations on or off.',
 };
+
+const FEATURE_SWITCH_NOTE = 'A feature switch. Turn it on or off under Hospital setup, Features.';
+
+function explanation(key: string): string | undefined {
+  return KNOWN[key] ?? (isFeatureSettingKey(key) ? FEATURE_SWITCH_NOTE : undefined);
+}
 
 function display(value: unknown): string {
   if (value === null || value === undefined) {
@@ -98,9 +107,9 @@ function SettingsPage() {
                   <Text font="monospace" weight="semibold">
                     {s.key}
                   </Text>
-                  {(s.description ?? KNOWN[s.key]) && (
+                  {(s.description ?? explanation(s.key)) && (
                     <Caption1 block style={{ color: tokens.colorNeutralForeground3 }}>
-                      {s.description ?? KNOWN[s.key]}
+                      {s.description ?? explanation(s.key)}
                     </Caption1>
                   )}
                 </span>
@@ -168,7 +177,7 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
     }
   }, [raw]);
 
-  const keyValid = /^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+$/.test(key);
+  const keyValid = isValidSettingKey(key);
   const keepSecret = secret && Boolean(setting?.hasValue) && !raw;
 
   const save = useMutation({
@@ -182,7 +191,7 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
     onSuccess: () => {
       notify.success('Setting saved');
       void queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
-      void queryClient.invalidateQueries({ queryKey: ['settings', 'public'] });
+      void queryClient.invalidateQueries({ queryKey: PUBLIC_SETTINGS_KEY });
       onClose();
     },
     onError: (error) => notify.error(error, 'Could not save the setting'),
@@ -199,13 +208,26 @@ function SettingDialog({ setting, onClose }: { setting: SettingDto | null; onClo
                 label="Setting name"
                 required
                 hint="Dotted name, e.g. ui.idleLockMinutes or integrations.sms.apiKey"
-                validationMessage={key && !keyValid ? 'Use a dotted name like section.name' : undefined}
+                validationMessage={
+                  key && !keyValid ? 'Use letters, digits, dots, dashes or underscores, like section.name' : undefined
+                }
                 validationState={key && !keyValid ? 'error' : 'none'}
               >
                 <Input value={key} onChange={(_, d) => setKey(d.value.trim())} />
               </Field>
             )}
             {KNOWN[key] && <Caption1>{KNOWN[key]}</Caption1>}
+            {isFeatureSettingKey(key) && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  Feature switches are turned on and off under Hospital setup,{' '}
+                  <Link to="/setup/features" onClick={onClose}>
+                    Features
+                  </Link>
+                  , which explains what each one turns off. A value saved here for one facility overrides it there.
+                </MessageBarBody>
+              </MessageBar>
+            )}
             <Switch
               checked={secret}
               onChange={(_, d) => setSecret(d.checked)}

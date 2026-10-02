@@ -14,12 +14,15 @@ export const profileQueries = {
 };
 
 export const systemQueries = {
-  /** Hospital name for the sign-in page and header (anonymous endpoint, no patient data). */
+  /**
+   * Hospital name for the sign-in page and header, and whether the portal and video consultations are switched on
+   * (anonymous endpoint, no patient data). Asked again every few minutes, so a switch is seen without a reload.
+   */
   info: () =>
     queryOptions({
       queryKey: SYSTEM_INFO_QUERY_KEY,
       queryFn: ({ signal }) => api.get<SystemInfo>('/api/v1/system/info', { signal }),
-      staleTime: 60 * 60_000,
+      staleTime: 5 * 60_000,
       gcTime: 24 * 60 * 60_000,
       retry: 1,
     }),

@@ -24,8 +24,7 @@ internal sealed class SurgeryOrderHandler(HospitalDbContext db, INumberSeries nu
         db.Add(new SurgeryBooking
         {
             FacilityId = domainEvent.FacilityId,
-            BookingNumber = await numbers.NextAsync(SurgeryService.BookingSeries, domainEvent.FacilityId, SurgeryService.BookingFormat,
-                NumberResetPolicy.Yearly, cancellationToken),
+            BookingNumber = await numbers.NextAsync(SpecialtyCareNumberSeries.SurgeryBooking, domainEvent.FacilityId, cancellationToken),
             PatientId = domainEvent.PatientId,
             AdmissionId = domainEvent.AdmissionId,
             VisitId = domainEvent.VisitId,

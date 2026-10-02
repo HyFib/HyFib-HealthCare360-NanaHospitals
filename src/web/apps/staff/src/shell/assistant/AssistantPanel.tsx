@@ -45,6 +45,8 @@ import {
   type SetStateAction,
 } from 'react';
 import { aiQueries } from '@/lib/ai';
+import { useFeatureSwitches } from '@/lib/features';
+import { FEATURE_OFF_TEXT, isFeatureOn } from '@/lib/featureSwitches';
 import { moduleManifests } from '@/lib/moduleRegistry';
 import { recorderSupported, voiceAvailability, type VoiceMode, type VoiceUse } from '@/lib/voice/recorder';
 import { useVoiceCapture, type VoiceCapture } from '@/lib/voice/useVoiceCapture';
@@ -58,6 +60,7 @@ import {
   patientIdFromPath,
   planAssistantAction,
   planDictatedNote,
+  switchedOffFeature,
   type AssistantPlan,
   type PlanEnvironment,
 } from './intents';
@@ -186,6 +189,7 @@ export function AssistantPanel({
   const router = useRouter();
   const { pathname } = useLocation();
   const user = useSession((s) => s.user);
+  const features = useFeatureSwitches();
   const queryClient = useQueryClient();
   const notify = useNotify();
   const status = useQuery({ ...aiQueries.status(), enabled: open });
@@ -231,7 +235,17 @@ export function AssistantPanel({
 
   const environment = (): PlanEnvironment => ({
     hasRoute: (path) => Object.hasOwn(router.routesByPath, path),
-    canOpen: (path) => canOpenPath(path, ALL_LINKS, (permission) => hasPermission(user, permission)),
+    canOpen: (path) =>
+      canOpenPath(
+        path,
+        ALL_LINKS,
+        (permission) => hasPermission(user, permission),
+        (feature) => isFeatureOn(features, feature),
+      ),
+    switchedOff: (path) => {
+      const feature = switchedOffFeature(path, ALL_LINKS, (f) => isFeatureOn(features, f));
+      return feature ? `${FEATURE_OFF_TEXT[feature].title}.` : null;
+    },
     can: (permission) => hasPermission(user, permission),
     practitionerId: user?.practitionerId ?? null,
     contextPatientId,

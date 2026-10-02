@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
@@ -199,6 +200,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IFileStore, EncryptedFileStore>();
         services.AddScoped<DocumentAssets>();
         services.AddScoped<ISettingsService, SettingsService>();
+        services.AddScoped<IFeatureFlags, FeatureFlags>();
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddScoped<SystemHealthService>();
         services.AddScoped<BackupService>();
@@ -282,6 +284,9 @@ public static class PlatformServiceCollectionExtensions
         // address; sign-in, OTP and public endpoints stay per address.
         app.UseRateLimiter();
         app.UseAuthorization();
+        // After authorization (a caller who may not use an endpoint still gets 401/403) and before the idempotency store
+        // (nothing is kept for a write refused because its feature is switched off).
+        app.UseMiddleware<FeatureGateMiddleware>();
         app.UseMiddleware<IdempotencyMiddleware>();
         return app;
     }
@@ -297,6 +302,7 @@ public static class PlatformServiceCollectionExtensions
         NotificationEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);
         SettingsEndpoints.Map(endpoints);
+        FeatureEndpoints.Map(endpoints);
         SystemEndpoints.Map(endpoints);
         BackupEndpoints.Map(endpoints);
         // A connection lasts only as long as the access token it opened with: the client reconnects with a fresh one,

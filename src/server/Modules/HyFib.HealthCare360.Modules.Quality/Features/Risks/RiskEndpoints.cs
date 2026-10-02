@@ -9,9 +9,6 @@ namespace HyFib.HealthCare360.Modules.Quality.Features.Risks;
 /// <summary>/api/v1/quality/risks — facility risk register with 5 × 5 likelihood × impact scoring (IRMS-05).</summary>
 internal static class RiskEndpoints
 {
-    public const string RiskSeries = "quality.risk";
-    public const string RiskFormat = "{FAC}RSK{SEQ:4}";
-
     private static readonly Dictionary<string, Expression<Func<Risk, object?>>> SortKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         ["score"] = r => r.Score,
@@ -134,7 +131,7 @@ internal static class RiskEndpoints
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        risk.RiskNumber = await numbers.NextAsync(RiskSeries, facilityId, RiskFormat, NumberResetPolicy.Never, ct);
+        risk.RiskNumber = await numbers.NextAsync(QualityNumberSeries.Risk, facilityId, ct);
         db.Add(risk);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

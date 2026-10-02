@@ -119,7 +119,8 @@ internal static class AssetEndpoints
     /// <summary>Scanning the asset label (tag or barcode) opens the asset.</summary>
     private static async Task<IResult> ByTag(string tag, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var normalized = tag.Trim();
+        // An asset tag format may contain "/". The staff app sends it as %2F, which ASP.NET Core leaves encoded in a route value.
+        var normalized = tag.Replace("%2F", "/", StringComparison.OrdinalIgnoreCase).Trim();
         var upper = normalized.ToUpperInvariant();
         var asset = await db.Set<Asset>().AsNoTracking().FirstOrDefaultAsync(a => a.AssetTag == upper || a.Barcode == normalized, ct);
         return asset is null ? Error.NotFound(nameof(Asset), normalized).ToProblem() : TypedResults.Ok(await ToDetailAsync(asset, db, time, ct));

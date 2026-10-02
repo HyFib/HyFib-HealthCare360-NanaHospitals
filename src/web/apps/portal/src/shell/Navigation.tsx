@@ -13,9 +13,16 @@ import { DismissRegular, NavigationRegular, SignOutRegular } from '@fluentui/rea
 import { Link, useLocation } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useT } from '@/i18n';
+import { usePortalFeatures } from '@/lib/features';
 import { useSignOut } from './hooks';
 import { LanguageChoice } from './LanguageMenu';
-import { EXTRA_ITEMS, isActivePath, NAV_ITEMS, type NavItem } from './navItems';
+import { EXTRA_ITEMS, isActivePath, visibleNavItems, type NavItem } from './navItems';
+
+/** The signed-in destinations, without those of a feature the hospital switched off (video consultations). */
+function useNavItems(): readonly NavItem[] {
+  const { video } = usePortalFeatures();
+  return visibleNavItems((feature) => feature !== 'telehealth' || video);
+}
 
 const useStyles = makeStyles({
   side: {
@@ -150,10 +157,11 @@ export function SideNav() {
   const styles = useStyles();
   const t = useT();
   const signOut = useSignOut();
+  const items = useNavItems();
   return (
     <nav aria-label={t('nav.main')} className={styles.side}>
       <ul className={styles.sideList}>
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <SideNavLink key={item.to} item={item} />
         ))}
       </ul>
@@ -184,7 +192,7 @@ export function BottomNav() {
   const t = useT();
   const pathname = useLocation({ select: (location) => location.pathname });
   const [moreOpen, setMoreOpen] = useState(false);
-  const primary = NAV_ITEMS.filter((item) => item.primary);
+  const primary = useNavItems().filter((item) => item.primary);
   const moreActive = !primary.some((item) => isActivePath(pathname, item.to));
 
   return (
@@ -224,7 +232,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const styles = useStyles();
   const t = useT();
   const signOut = useSignOut();
-  const others = NAV_ITEMS.filter((item) => !item.primary);
+  const others = useNavItems().filter((item) => !item.primary);
   return (
     <OverlayDrawer
       open={open}

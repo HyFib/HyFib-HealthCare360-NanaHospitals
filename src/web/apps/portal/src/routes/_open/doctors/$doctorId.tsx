@@ -23,12 +23,14 @@ import { createFileRoute, useNavigate, useRouter } from '@tanstack/react-router'
 import { useState } from 'react';
 import { ChoiceCards } from '@/components/ChoiceCards';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { PortalUnavailable } from '@/components/FeatureOff';
 import { BackLink } from '@/components/links';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, LoadingCards, Notice, PageSpinner } from '@/components/States';
 import { useT } from '@/i18n';
 import { addDays, daysBetween, istDateOf } from '@/i18n/format';
 import { useFormat } from '@/i18n/useFormat';
+import { usePortalFeatures } from '@/lib/features';
 import { useNow } from '@/lib/hooks';
 import { guidParam, isGuid } from '@/lib/ids';
 import { useToast } from '@/lib/toast';
@@ -136,7 +138,21 @@ const WEEKDAY_DATES: Record<Weekday, string> = {
 function DoctorPage() {
   const { doctorId } = Route.useParams();
   const t = useT();
-  const doctor = useQuery({ ...doctorQueries.profile(doctorId), enabled: isGuid(doctorId) });
+  // Booking online needs the portal.
+  const { portal, settled } = usePortalFeatures();
+  const doctor = useQuery({ ...doctorQueries.profile(doctorId), enabled: isGuid(doctorId) && portal && settled });
+
+  if (!portal) {
+    return (
+      <PortalPage
+        title={t('doctors.title')}
+        back={<BackLink to="/doctors">{t('doctors.title')}</BackLink>}
+        width="narrow"
+      >
+        <PortalUnavailable />
+      </PortalPage>
+    );
+  }
 
   if (!isGuid(doctorId) || (doctor.isError && isApiError(doctor.error) && doctor.error.status === 404)) {
     return (
@@ -185,7 +201,10 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
   });
   const moving = search.reschedule ? (reschedule.data ?? null) : null;
 
-  const video = moving ? moving.isTelehealth : search.mode === 'video' && doctor.offersTelehealth;
+  // Without video consultations (turned off by the hospital) every booking is a visit at the hospital.
+  const videoOn = usePortalFeatures().video;
+  const offersVideo = videoOn && doctor.offersTelehealth;
+  const video = moving ? moving.isTelehealth && videoOn : search.mode === 'video' && offersVideo;
   const branches = doctor.facilities;
   const branchId = moving
     ? moving.facilityId
@@ -333,7 +352,7 @@ function DoctorBooking({ profile: doctorProfile }: { profile: PublicDoctorProfil
         <h2 id="choose-time" className={styles.sectionTitle}>
           {t('doctors.profile.book')}
         </h2>
-        {!moving && doctor.offersTelehealth && (
+        {!moving && offersVideo && (
           <ChoiceCards
             label={t('booking.mode.label')}
             value={video ? 'video' : 'clinic'}

@@ -21,9 +21,6 @@ public sealed class CapaService(
     IncidentService incidents,
     TimeProvider time)
 {
-    public const string CapaSeries = "quality.capa";
-    public const string CapaFormat = "{FAC}CAPA{YY}{SEQ:4}";
-
     public async Task<Result<Guid>> CreateAsync(CreateCapaRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -55,7 +52,7 @@ public sealed class CapaService(
         var capa = new CapaEntity
         {
             FacilityId = facilityId,
-            CapaNumber = await numbers.NextAsync(CapaSeries, facilityId, CapaFormat, NumberResetPolicy.Yearly, ct),
+            CapaNumber = await numbers.NextAsync(QualityNumberSeries.Capa, facilityId, ct),
             Source = request.Source,
             IncidentId = request.IncidentId,
             RiskId = request.RiskId,

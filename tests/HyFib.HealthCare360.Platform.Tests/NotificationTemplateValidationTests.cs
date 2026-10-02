@@ -22,8 +22,17 @@ public sealed class NotificationTemplateValidationTests
         _validator.Validate(Sms() with { DltTemplateId = dltTemplateId }).Errors.ShouldHaveSingleItem().PropertyName.ShouldBe("DltTemplateId");
 
     [Fact]
-    public void An_sms_is_at_most_1000_characters() =>
-        _validator.Validate(Sms() with { Body = new string('a', 1001) }).Errors.ShouldHaveSingleItem().PropertyName.ShouldBe("Body");
+    public void An_sms_is_at_most_1000_characters_by_the_templates_own_channel()
+    {
+        NotificationEndpoints.BodyProblem(NotificationChannel.Sms, new string('a', 1001)).ShouldBe("SMS templates must be at most 1000 characters.");
+        NotificationEndpoints.BodyProblem(NotificationChannel.Sms, new string('a', 1000)).ShouldBeNull();
+        NotificationEndpoints.BodyProblem(NotificationChannel.Email, new string('a', 1001)).ShouldBeNull();
+    }
+
+    [Fact]
+    public void The_request_channel_alone_does_not_decide_the_limit() =>
+        // The handler applies it with the channel the template has: an update cannot change the channel.
+        _validator.Validate(Sms() with { Body = new string('a', 1001) }).IsValid.ShouldBeTrue();
 
     [Fact]
     public void A_whatsapp_template_name_is_the_approved_lower_case_name()

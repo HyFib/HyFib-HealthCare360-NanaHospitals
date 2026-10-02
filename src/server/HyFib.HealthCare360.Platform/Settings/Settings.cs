@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Primitives;
 
 namespace HyFib.HealthCare360.Platform.Settings;
 
@@ -48,6 +50,11 @@ public interface ISettingsService
     Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Values are cached for a minute per key and facility. Every cached value of a key (the hospital-wide one and each
+/// facility's merged one) depends on one change token, so saving the key, hospital-wide or for a facility, takes effect
+/// at once for every facility on this server; other servers see it within the minute.
+/// </summary>
 internal sealed class SettingsService(HospitalDbContext db, IFieldProtector protector, IMemoryCache cache) : ISettingsService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -58,6 +65,8 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         var json = await cache.GetOrCreateAsync($"setting:{key}:{facilityId}", async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = CacheDuration;
+            // Taken before the read: a change saved while the value is being read expires it at once.
+            entry.AddExpirationToken(ChangeToken(key));
             var rows = await db.Set<SystemSetting>().AsNoTracking()
                 .Where(s => s.Key == key && (s.FacilityId == null || s.FacilityId == facilityId))
                 .ToListAsync(cancellationToken);
@@ -90,8 +99,26 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
         }
 
         await db.SaveChangesAsync(cancellationToken);
-        cache.Remove($"setting:{key}:{facilityId}");
-        cache.Remove($"setting:{key}:");
+        Changed(key);
+    }
+
+    private static string TokenKey(string key) => $"setting-changed:{key}";
+
+    private CancellationChangeToken ChangeToken(string key) =>
+        new(cache.GetOrCreate(TokenKey(key), entry =>
+        {
+            entry.Priority = CacheItemPriority.NeverRemove;
+            return new CancellationTokenSource();
+        })!.Token);
+
+    /// <summary>Expires every cached value of the key. The source is not disposed: a reader may still be taking its token.</summary>
+    private void Changed(string key)
+    {
+        if (cache.TryGetValue(TokenKey(key), out CancellationTokenSource? source) && source is not null)
+        {
+            cache.Remove(TokenKey(key));
+            source.Cancel();
+        }
     }
 }
 
@@ -103,8 +130,10 @@ internal static class SettingsEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
     {
-        // Any signed-in user may read non-secret "ui.*" (branding) and "features.*" (feature flags) settings.
-        app.MapGet("/api/v1/settings/public", async (HospitalDbContext db, ICurrentUser user, CancellationToken ct) =>
+        // Any signed-in user may read non-secret "ui.*" (branding) and "features.*" (feature flags) settings. Every switch
+        // in the feature catalogue is given as the server enforces it for the user's facility (default and fallbacks
+        // applied), so the apps hide exactly what the server refuses.
+        app.MapGet("/api/v1/settings/public", async (HospitalDbContext db, ICurrentUser user, IFeatureFlags features, CancellationToken ct) =>
             {
                 var rows = await db.Set<SystemSetting>().AsNoTracking()
                     .Where(s => !s.IsSecret && (s.Key.StartsWith("ui.") || s.Key.StartsWith("features."))
@@ -113,6 +142,11 @@ internal static class SettingsEndpoints
                 var merged = rows.OrderBy(r => r.FacilityId != null)
                     .GroupBy(r => r.Key)
                     .ToDictionary(g => g.Key, g => JsonNode.Parse(g.Last().Value));
+                foreach (var feature in FeatureCatalog.All)
+                {
+                    merged[feature.Key] = JsonValue.Create(await features.IsEnabledAsync(feature.Key, user.FacilityId, ct));
+                }
+
                 return TypedResults.Ok(merged);
             })
             .WithTags("Settings")

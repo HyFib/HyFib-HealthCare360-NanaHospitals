@@ -21,9 +21,6 @@ public sealed class SaleAdjustmentService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string ReturnSeries = "pharmacy.return";
-    public const string ReturnFormat = "{FAC}PHR{YY}{SEQ:6}";
-
     public async Task<Result> CollectAsync(Guid saleId, CollectPaymentRequest request, CancellationToken ct)
     {
         var sale = await db.Set<PharmacySale>().Include(s => s.Payments).FirstOrDefaultAsync(s => s.Id == saleId, ct);
@@ -115,7 +112,7 @@ public sealed class SaleAdjustmentService(
         var saleReturn = new PharmacySaleReturn
         {
             FacilityId = sale.FacilityId,
-            ReturnNumber = await numbers.NextAsync(ReturnSeries, sale.FacilityId, ReturnFormat, NumberResetPolicy.Yearly, ct),
+            ReturnNumber = await numbers.NextAsync(PharmacyNumberSeries.SaleReturn, sale.FacilityId, ct),
             SaleId = sale.Id,
             PatientId = sale.PatientId,
             ReturnedAt = now,

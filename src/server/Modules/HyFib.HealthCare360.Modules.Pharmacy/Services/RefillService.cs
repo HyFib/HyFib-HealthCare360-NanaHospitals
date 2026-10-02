@@ -23,8 +23,6 @@ public sealed class RefillService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string Series = "pharmacy.refill";
-    public const string Format = "{FAC}RF{YY}{SEQ:6}";
     public const string ReadyTemplate = "pharmacy.refill_ready";
     public const string ReminderTemplate = "pharmacy.refill_reminder";
 
@@ -77,7 +75,7 @@ public sealed class RefillService(
         var refill = new RefillRequest
         {
             FacilityId = entry.FacilityId,
-            Number = await numbers.NextAsync(Series, entry.FacilityId, Format, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(PharmacyNumberSeries.RefillRequest, entry.FacilityId, ct),
             QueueEntryId = entry.Id,
             PatientId = entry.PatientId,
             Channel = channel,

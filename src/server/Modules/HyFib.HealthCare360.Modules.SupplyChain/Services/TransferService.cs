@@ -13,8 +13,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 public sealed class TransferService(HospitalDbContext db, INumberSeries numbers, StockService stock, ICurrentUser currentUser, TimeProvider time)
 {
     public const string ReferenceModule = "supplychain.transfer";
-    public const string Series = "supplychain.transfer";
-    public const string Format = "{FAC}STN{YY}{SEQ:6}";
 
     public async Task<Result<DocumentCreated>> DispatchAsync(DispatchTransferRequest request, CancellationToken ct)
     {
@@ -30,7 +28,7 @@ public sealed class TransferService(HospitalDbContext db, INumberSeries numbers,
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var number = await numbers.NextAsync(Series, facilityId, Format, NumberResetPolicy.Yearly, ct);
+        var number = await numbers.NextAsync(SupplyChainNumberSeries.Transfer, facilityId, ct);
         var transfer = new StockTransfer
         {
             FacilityId = facilityId,

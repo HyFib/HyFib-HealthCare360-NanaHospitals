@@ -14,6 +14,7 @@ const manifest: ModuleManifest = {
       to: '/telehealth',
       permission: 'telehealth.sessions.read',
       keywords: ['telehealth', 'teleconsultation', 'video call', 'online consultation', 'waiting room', 'join link'],
+      feature: 'telehealth',
     },
     {
       label: 'Remote monitoring',
@@ -47,12 +48,14 @@ const manifest: ModuleManifest = {
       permission: 'telehealth.consult',
       icon: VideoRegular,
       description: 'See who is waiting and join',
+      feature: 'telehealth',
     },
   ],
   widgets: [
     {
       id: 'telehealth-today',
       permission: 'telehealth.sessions.read',
+      feature: 'telehealth',
       span: 2,
       order: 40,
       component: TelehealthTodayWidget,

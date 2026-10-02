@@ -42,8 +42,6 @@ public sealed class DataRequestService(
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string Series = "privacy.request";
-    public const string Format = "{FAC}DPR{YY}{SEQ:5}";
     public const string ReceivedTemplate = "privacy.request.received";
     public const string ClosedTemplate = "privacy.request.closed";
 
@@ -102,7 +100,7 @@ public sealed class DataRequestService(
         var now = time.GetUtcNow();
         var responseDays = await privacy.ResponseDaysAsync(ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        request.RequestNumber = await numbers.NextAsync(Series, input.FacilityId, Format, NumberResetPolicy.Yearly, ct);
+        request.RequestNumber = await numbers.NextAsync(PrivacyNumberSeries.DataRequest, input.FacilityId, ct);
         request.Receive(now, responseDays, currentUser.UserId, Via(input.Channel));
         if (input.IdentityCheck is { } check)
         {

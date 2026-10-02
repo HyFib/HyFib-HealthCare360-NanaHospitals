@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Scheduling.Features.Portal;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Schedules;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Waitlist;
 using HyFib.HealthCare360.Modules.Scheduling.Services;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Scheduling;
 
@@ -42,6 +43,8 @@ public sealed class SchedulingModule : IModule
     public string Name => "scheduling";
 
     public IEnumerable<PermissionDefinition> Permissions => SchedulingPermissions.All;
+
+    public IEnumerable<NumberSeriesDefinition> NumberSeries => SchedulingNumberSeries.All;
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {

@@ -5,9 +5,11 @@ import { EmptyState } from '@hc360/ui';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { PortalUnavailable } from '@/components/FeatureOff';
 import { PortalPage } from '@/components/PortalPage';
 import { ErrorBlock, LoadingCards } from '@/components/States';
 import { useT } from '@/i18n';
+import { usePortalFeatures } from '@/lib/features';
 import { useNow } from '@/lib/hooks';
 import { flagParam, guidParam, textParam } from '@/lib/ids';
 import { doctorQueries, type DoctorSearch } from '@/modules/doctors/api';
@@ -44,7 +46,10 @@ const useStyles = makeStyles({
 function FindDoctorPage() {
   const styles = useStyles();
   const t = useT();
-  const search = Route.useSearch();
+  const asked = Route.useSearch();
+  // Online booking needs the portal; without video consultations nobody is listed "for video".
+  const { portal, video, settled } = usePortalFeatures();
+  const search = video ? asked : { ...asked, video: undefined };
   const navigate = useNavigate({ from: Route.fullPath });
   const [term, setTerm] = useState(search.q ?? '');
   const debounced = useDebouncedValue(term.trim(), 350);
@@ -56,14 +61,23 @@ function FindDoctorPage() {
     }
   }, [debounced, search.q, navigate]);
 
-  const filters = useQuery(doctorQueries.filters());
-  const doctors = useInfiniteQuery(doctorQueries.search(search));
+  // Asked only once the hospital's switches are known, so a closed directory is never fetched.
+  const filters = useQuery({ ...doctorQueries.filters(), enabled: portal && settled });
+  const doctors = useInfiniteQuery({ ...doctorQueries.search(search), enabled: portal && settled });
   const rows = doctors.data?.pages.flatMap((page) => page.items) ?? [];
   const total = doctors.data?.pages[0]?.totalCount ?? 0;
   const hasFilters = Boolean(search.q || search.specialtyId || search.facilityId || search.language || search.video);
 
   const setFilter = (patch: Partial<DoctorSearch>) =>
     void navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
+
+  if (!portal) {
+    return (
+      <PortalPage title={t('doctors.title')} width="narrow">
+        <PortalUnavailable />
+      </PortalPage>
+    );
+  }
 
   return (
     <PortalPage title={t('doctors.title')} subtitle={t('doctors.subtitle')}>
@@ -125,11 +139,13 @@ function FindDoctorPage() {
           )}
         </div>
         <div className={styles.row}>
-          <Switch
-            checked={Boolean(search.video)}
-            label={t('doctors.filter.video')}
-            onChange={(_, data) => setFilter({ video: data.checked || undefined })}
-          />
+          {video && (
+            <Switch
+              checked={Boolean(search.video)}
+              label={t('doctors.filter.video')}
+              onChange={(_, data) => setFilter({ video: data.checked || undefined })}
+            />
+          )}
           {hasFilters && (
             <Button
               appearance="subtle"

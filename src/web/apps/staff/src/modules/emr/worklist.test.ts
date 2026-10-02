@@ -67,6 +67,10 @@ describe('appointments', () => {
       appointmentAction({ ...base, status: 'Confirmed', isTelehealth: true }, { ...can, isToday: false }),
     ).toBeNull();
     expect(appointmentAction({ ...base, status: 'NoShow', isTelehealth: true }, can)).toBeNull();
+    // Video consultations switched off: no way into a call; a patient who came in is consulted like any other.
+    const videoOff = { ...can, video: false };
+    expect(appointmentAction({ ...base, status: 'Confirmed', isTelehealth: true, visitId: null }, videoOff)).toBeNull();
+    expect(appointmentAction({ ...base, status: 'CheckedIn', isTelehealth: true }, videoOff)).toBe('consult');
   });
 
   it('summarises the day in words, leaving out what is zero', () => {

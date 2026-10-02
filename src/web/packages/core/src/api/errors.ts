@@ -91,3 +91,23 @@ function defaultTitle(status: number): string {
 export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
+
+/** The problem code of an answer refused because an administrator switched the feature off. */
+export const FEATURE_DISABLED = 'feature.disabled';
+
+/** The feature a `feature.disabled` answer names ("telehealth", "patientPortal"). */
+export function featureOf(error: unknown): string | undefined {
+  if (!isApiError(error) || error.code !== FEATURE_DISABLED) {
+    return undefined;
+  }
+  const data = error.data as { feature?: unknown } | null | undefined;
+  return typeof data?.feature === 'string' ? data.feature : undefined;
+}
+
+/**
+ * True for an answer refused because the feature is switched off (Hospital setup > Features): 503 when the whole
+ * screen is off, 422 when only one option is (a video appointment, say). With `feature`, only for that feature.
+ */
+export function isFeatureDisabled(error: unknown, feature?: string): error is ApiError {
+  return isApiError(error) && error.code === FEATURE_DISABLED && (!feature || featureOf(error) === feature);
+}

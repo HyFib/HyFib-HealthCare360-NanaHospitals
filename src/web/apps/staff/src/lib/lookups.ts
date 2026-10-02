@@ -39,10 +39,16 @@ export function searchPractitioners(search: string, departmentId?: string | null
   return api.get<LookupItem[]>('/api/v1/masters/lookups/practitioners', { query: { search, departmentId } });
 }
 
-/** Non-secret `ui.*` and `features.*` settings for the current facility. */
+/** Query key of the public settings: invalidate it after changing a `ui.*` setting or a feature switch. */
+export const PUBLIC_SETTINGS_KEY = ['settings', 'public'] as const;
+
+/**
+ * Non-secret `ui.*` and `features.*` settings for the current facility. Every feature switch is included, as the
+ * server enforces it (see `useFeatureSwitches` in `./features`).
+ */
 export function usePublicSettings() {
   return useQuery({
-    queryKey: ['settings', 'public'],
+    queryKey: PUBLIC_SETTINGS_KEY,
     queryFn: () => api.get<Record<string, unknown>>('/api/v1/settings/public'),
     staleTime: 5 * 60_000,
   });

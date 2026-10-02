@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -24,20 +25,26 @@ internal static class AuthEndpoints
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimit);
 
+        // The patient portal's sign-in, which also registers a new number: off while the portal is switched off.
         group.MapPost("/otp/request", async (OtpRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.RequestOtpAsync(request, ct)).ToOk())
             .AllowAnonymous()
-            .RequireRateLimiting(OtpRateLimit);
+            .RequireRateLimiting(OtpRateLimit)
+            .RequireFeature(FeatureKeys.PatientPortal);
 
         group.MapPost("/otp/verify", async (OtpVerifyRequest request, AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.VerifyOtpAsync(request, http, ct)).ToOk())
             .AllowAnonymous()
-            .RequireRateLimiting(AuthRateLimit);
+            .RequireRateLimiting(AuthRateLimit)
+            .RequireFeature(FeatureKeys.PatientPortal);
 
+        // A portal session can only be refreshed as the portal (its cookie is read by the client header), so the portal's
+        // own refreshes stop while it is switched off and staff sessions are not affected.
         group.MapPost("/refresh", async (AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.RefreshAsync(http, ct)).ToOk())
             .AllowAnonymous()
-            .RequireRateLimiting(AuthRateLimit);
+            .RequireRateLimiting(AuthRateLimit)
+            .RequireFeature(FeatureKeys.PatientPortal, AuthService.IsPortalRequest);
 
         group.MapPost("/logout", async (AuthService auth, HttpContext http, CancellationToken ct) =>
                 (await auth.LogoutAsync(http, ct)).ToNoContent())

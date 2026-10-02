@@ -18,9 +18,6 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
     /// <summary>TDS percentage on professional fees (section 194J); default 10.</summary>
     public const string TdsSetting = "doctorfees.tds.percent";
 
-    public const string PayoutSeries = "doctorfees.payout";
-    public const string PayoutFormat = "{FAC}DP{YY}{SEQ:5}";
-
     internal async Task<bool> AccruesOnPaymentAsync(Guid facilityId, CancellationToken ct) =>
         string.Equals(await settings.GetAsync<string>(TriggerSetting, facilityId, ct), "paid", StringComparison.OrdinalIgnoreCase);
 
@@ -215,7 +212,7 @@ public sealed class DoctorFeeService(HospitalDbContext db, INumberSeries numbers
         var payout = new DoctorPayout
         {
             FacilityId = facilityId,
-            PayoutNumber = await numbers.NextAsync(PayoutSeries, facilityId, PayoutFormat, NumberResetPolicy.Yearly, ct),
+            PayoutNumber = await numbers.NextAsync(BillingNumberSeries.DoctorPayout, facilityId, ct),
             PractitionerId = request.PractitionerId,
             PeriodFrom = request.PeriodFrom,
             PeriodTo = request.PeriodTo,

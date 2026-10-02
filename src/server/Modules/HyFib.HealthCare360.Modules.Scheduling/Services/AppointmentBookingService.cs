@@ -58,11 +58,10 @@ public sealed class AppointmentBookingService(
     SchedulingSettings settings,
     VisitService visits,
     IRealtimePublisher realtime,
+    IFeatureFlags features,
     ICurrentUser currentUser,
     TimeProvider time)
 {
-    public const string NumberSeriesKey = "appointment";
-    public const string NumberFormat = "{FAC}AP{YY}{SEQ:7}";
     public const string ChangedEvent = "appointments.changed";
 
     public Task<Result<Appointment>> BookAsync(BookingCommand command, CancellationToken ct) => PlaceAsync(command, null, null, ct);
@@ -273,6 +272,13 @@ public sealed class AppointmentBookingService(
             return Error.Field("practitionerId", "Choose an active doctor.");
         }
 
+        // Video consultations switched off: nothing new is booked or moved as one (in person still works, and so does
+        // cancelling). Read for the facility the booking is made from, else hospital-wide (online bookings).
+        if (command.IsTelehealth && !await features.IsEnabledAsync(FeatureKeys.Telehealth, currentUser.FacilityId, ct))
+        {
+            return FeatureProblems.DisabledError(FeatureCatalog.Telehealth, FeatureProblems.IsForPatients(currentUser));
+        }
+
         if (command.IsTelehealth && !practitioner.AvailableForTelehealth)
         {
             return Error.Rule("appointment.telehealth_unavailable", $"{practitioner.DisplayName} does not offer video consultations.");
@@ -345,7 +351,7 @@ public sealed class AppointmentBookingService(
             return Error.Conflict("appointment.slot_full", "This slot has just been booked. Choose another slot.");
         }
 
-        var number = await numbers.NextAsync(NumberSeriesKey, slot.FacilityId, NumberFormat, NumberResetPolicy.Yearly, ct);
+        var number = await numbers.NextAsync(SchedulingNumberSeries.Appointment, slot.FacilityId, ct);
         var appointment = Appointment.Book(
             new AppointmentBooking(
                 slot.FacilityId, patient.Id, practitioner.Id, slot.DepartmentId, slot.ScheduleId, slot.StartsAt, slot.EndsAt, seat.Value,

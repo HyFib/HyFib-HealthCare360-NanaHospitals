@@ -10,11 +10,6 @@ namespace HyFib.HealthCare360.Modules.SupplyChain.Services;
 /// </summary>
 public sealed class PurchaseService(HospitalDbContext db, INumberSeries numbers, ICurrentUser currentUser, TimeProvider time)
 {
-    public const string RequisitionSeries = "supplychain.pr";
-    public const string RequisitionFormat = "{FAC}PR{YY}{SEQ:6}";
-    public const string OrderSeries = "supplychain.po";
-    public const string OrderFormat = "{FAC}PO{YY}{SEQ:6}";
-
     // ------------------------------------------------------------------ requisitions
 
     public async Task<Result<DocumentCreated>> CreateRequisitionAsync(CreateRequisitionRequest request, CancellationToken ct)
@@ -39,7 +34,7 @@ public sealed class PurchaseService(HospitalDbContext db, INumberSeries numbers,
         var requisition = new PurchaseRequisition
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(RequisitionSeries, facilityId, RequisitionFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(SupplyChainNumberSeries.PurchaseRequisition, facilityId, ct),
             StoreId = request.StoreId,
             RequiredBy = request.RequiredBy,
             Remarks = request.Remarks?.Trim(),
@@ -115,7 +110,7 @@ public sealed class PurchaseService(HospitalDbContext db, INumberSeries numbers,
         var order = new PurchaseOrder
         {
             FacilityId = facilityId,
-            Number = await numbers.NextAsync(OrderSeries, facilityId, OrderFormat, NumberResetPolicy.Yearly, ct),
+            Number = await numbers.NextAsync(SupplyChainNumberSeries.PurchaseOrder, facilityId, ct),
             VendorId = vendor.Id,
             StoreId = request.StoreId,
             RequisitionId = request.RequisitionId,

@@ -2,7 +2,7 @@ import { BuildingMultipleRegular } from '@fluentui/react-icons';
 import type { ModuleManifest } from '@/lib/modules';
 import { MASTERS_MANAGE } from './api';
 
-/** Hospital setup (HMS-03, HMS-04): the organisation masters and how the hospital's numbers and documents read. */
+/** Hospital setup (HMS-03, HMS-04): the organisation masters, how the hospital's numbers and documents read, and which features are on. */
 const manifest: ModuleManifest = {
   id: 'masters',
   title: 'Hospital setup',
@@ -48,6 +48,27 @@ const manifest: ModuleManifest = {
       to: '/setup/services',
       permission: MASTERS_MANAGE,
       keywords: ['service', 'price', 'charge', 'rate', 'sac', 'gst', 'catalogue', 'procedure'],
+    },
+    {
+      label: 'Number formats',
+      to: '/setup/numbering',
+      permission: 'admin.numbering.manage',
+      keywords: [
+        'numbering',
+        'number series',
+        'uhid',
+        'bill number',
+        'receipt number',
+        'invoice number',
+        'prefix',
+        'format',
+      ],
+    },
+    {
+      label: 'Features',
+      to: '/setup/features',
+      permission: 'admin.settings.manage',
+      keywords: ['feature', 'switch', 'turn off', 'patient portal', 'video consultation', 'telehealth'],
     },
   ],
 };

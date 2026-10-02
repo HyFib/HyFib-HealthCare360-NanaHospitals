@@ -28,7 +28,8 @@ A module may reference only **lower** modules (see ARCHITECTURE.md §4). Everyth
 
 ## 3. Anatomy
 ```
-<Name>Module.cs          IModule (Name = schema key), <Name>Permissions, AddServices, MapEndpoints
+<Name>Module.cs          IModule (Name = schema key), <Name>Permissions, NumberSeries, AddServices, MapEndpoints
+<Name>NumberSeries.cs    the document numbers the module issues (see §8)
 Domain/                  entities, enums, domain rules (methods returning Result), events raised
 Persistence/             IEntityTypeConfiguration<T> classes — auto-discovered
 Features/<Area>/         <Area>Contracts.cs (records + FluentValidation validators) and <Area>Endpoints.cs
@@ -98,7 +99,7 @@ with a group label, a plain-language description and default roles from `SystemR
 ## 8. Services you can inject
 | Need | Use |
 |---|---|
-| Document numbers (bill, accession, PO…) | `INumberSeries.NextAsync(key, facilityId, "{FAC}LAB{YY}{SEQ:6}", NumberResetPolicy.Yearly, ct)` inside `db.Database.BeginTransactionAsync` |
+| Document numbers (bill, accession, PO…) | Declare a `NumberSeriesDefinition` in `<Name>NumberSeries` and list it in `IModule.NumberSeries`, then `INumberSeries.NextAsync(<Name>NumberSeries.LabAccession, facilityId, ct)` inside `db.Database.BeginTransactionAsync`. Administrators set the formats before the first number (Hospital setup → Number formats); see [numbering.md](../modules/numbering.md) |
 | Charge a patient | `IChargePoster.PostAsync(new ChargeRequest { ..., SourceModule = "diagnostics.lab", SourceReference = item.Id.ToString() }, ct)` |
 | SMS / WhatsApp / e-mail | `INotificationService.Queue(templateKey, recipient, values, [NotificationChannel.Sms, ...])` (+ seed templates). A number that replied STOP on WhatsApp gets no WhatsApp message except the essential ones in `WhatsAppOptOutPolicy.EssentialTemplates` (sign-in codes); a new template that must reach the person for security has to be added there |
 | In-app alerts to staff | `INotificationService.NotifyPermissionHoldersAsync(permission, facilityId, title, body, link, category, severity, ct)` |
@@ -106,7 +107,8 @@ with a group label, a plain-language description and default roles from `SystemR
 | Files (PDF/images) | `IFileStore.SaveAsync/ReadAsync` (encrypted at rest) |
 | A document patients receive (report, prescription, bill…) | Build a `PrintableDocument` (`Platform/Documents`) whose body comes only from `Html.Of($"…")`, which encodes every value; letterhead, logo, signatures and QR codes from `DocumentAssets`; `Footer` = patient · UHID · document number. Answer `GET …/document` with `document.ToDto()` (the staff app prints it) and `GET …/pdf` with `await document.ToPdfAsync(IPdfRenderer, ct)`, after the same permission, guard and audit as the record's own endpoint. Reference: `Diagnostics/Documents/LabReportDocument.cs` |
 | Send a document with a message | Register an `INotificationDocumentSource` for its kind (it makes the PDF when the message is sent) and pass `new NotificationDocument(kind, id)` to `INotificationService.Queue`: e-mail attaches it, WhatsApp sends it in a template's document header |
-| Settings / feature flags | `ISettingsService.GetAsync<T>("module.setting", facilityId, ct)` |
+| Settings | `ISettingsService.GetAsync<T>("module.setting", facilityId, ct)` |
+| Feature switches (a part of HC360 an administrator can turn off, such as video consultations) | `.RequireFeature(FeatureKeys.Telehealth)` on its endpoints and hubs (503 `feature.disabled` while off); `IFeatureFlags.IsEnabledAsync(FeatureKeys.X, facilityId, ct)` and `FeatureProblems.DisabledError(...)` for an option inside a request that otherwise works. New switches go in `FeatureCatalog`; see [features.md](../modules/features.md) |
 | Current user / facility | `ICurrentUser` (`UserId`, `FacilityId`, `PractitionerId`, `IsPatient`, `PatientId`) |
 | Audit | `IAuditLogger.Add(...)` (same transaction) / `WriteAsync(...)` (immediate) |
 | Time | `TimeProvider` (never `DateTime.Now`) |
