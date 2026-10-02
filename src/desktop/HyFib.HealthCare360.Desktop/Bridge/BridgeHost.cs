@@ -24,6 +24,7 @@ internal sealed class BridgeHost(
     DesktopSettings settings,
     NetworkStatusService network,
     PrintService printing,
+    PrinterSetupStore printers,
     TrayNotifier tray)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -135,6 +136,21 @@ internal sealed class BridgeHost(
 
             case "printer.list":
                 return PrintService.ListPrinters();
+
+            case "printer.getSetup":
+                return printers.Load();
+
+            case "printer.saveSetup":
+            {
+                // The staff app offers this only to staff allowed to set up printers, after the server recorded the change.
+                var setup = Required(parameters).TryGetProperty("setup", out var value) && value.ValueKind == JsonValueKind.Object
+                    ? value.Deserialize<WorkstationPrinters>(Json)
+                    : null;
+                return printers.Save(
+                    setup ?? throw new BridgeException("bad_request", "No printers to save."),
+                    PrintService.ListPrinters().Select(p => p.Name).ToList(),
+                    DateTimeOffset.UtcNow);
+            }
 
             case "printer.printHtml":
             {
