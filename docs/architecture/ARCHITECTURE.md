@@ -268,4 +268,5 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
   * Each journey signs in as the role that does each step: front office, doctor, lab, pharmacist, billing, nurse. The demonstration data has no pathologist, so the test host has the hospital administrator create that account through the admin API the first time a journey needs it.
   * `OutpatientJourneyTests`: register → appointment → consult → lab → pharmacy → bill.
   * `InpatientJourneyTests`: admit (with insurance and a pre-authorisation) → bed and transfer → charges → discharge bill → insurance claim and settlement.
+  * `TeleconsultationJourneyTests`: video booking → join link → call and telehealth visit → e-prescription, which reaches the patient once on WhatsApp and once by SMS.
   * CI runs them on the runner's own PostgreSQL. Locally they use Docker or `HC360_TEST_DATABASE` (see the README).
