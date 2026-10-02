@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.Emr;
 using HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
@@ -5,6 +6,7 @@ using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Patients;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.Portal;
@@ -12,7 +14,8 @@ namespace HyFib.HealthCare360.Modules.Clinical.Features.Portal;
 /// <summary>
 /// Patient Portal (PP-02/05): prescriptions, a health-record summary (allergies, problems, recent encounters without
 /// clinicians' free-text notes, immunisations), signed discharge summaries and record requests — only for patients
-/// linked to the signed-in mobile number (<see cref="PortalPatientScope"/>). Every read is recorded in the audit trail.
+/// linked to the signed-in mobile number (<see cref="PortalPatientScope"/>). Signed prescriptions and discharge
+/// summaries can be downloaded as the PDF of the document the hospital prints. Every read is recorded in the audit trail.
 /// </summary>
 internal static class PortalEndpoints
 {
@@ -22,8 +25,10 @@ internal static class PortalEndpoints
 
         group.MapGet("/prescriptions", ListPrescriptions);
         group.MapGet("/prescriptions/{id:guid}", GetPrescription);
+        group.MapGet("/prescriptions/{id:guid}/pdf", PrescriptionPdf);
         group.MapGet("/health-records", HealthRecord);
         group.MapGet("/discharge-summaries/{id:guid}", GetDischargeSummary);
+        group.MapGet("/discharge-summaries/{id:guid}/pdf", DischargeSummaryPdf);
         group.MapPost("/record-requests", RequestRecords).WithValidation<PortalRecordRequest>();
     }
 
@@ -94,6 +99,36 @@ internal static class PortalEndpoints
             token, PrescriptionVerificationLinks.Url(publicAddress, token)));
     }
 
+    /// <summary>
+    /// The prescription as a PDF: the same A5 document the hospital prints. Only a signed prescription is issued as a
+    /// document (the print rule); a cancelled one can still be read on the portal but not downloaded.
+    /// </summary>
+    private static async Task<IResult> PrescriptionPdf(Guid id, PortalPatientScope scope, HospitalDbContext db, IAuditLogger audit,
+        PrescriptionPrintBuilder builder, DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+    {
+        var p = await db.Set<Prescription>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(x => x.Items)
+            .FirstOrDefaultAsync(x => x.Id == id && x.Status != PrescriptionStatus.Draft, ct);
+        if (p is null)
+        {
+            return Error.NotFound(nameof(Prescription), id).ToProblem();
+        }
+
+        var allowed = await scope.EnsureAccessAsync(p.PatientId, ct);
+        if (allowed.IsFailure)
+        {
+            return allowed.Error!.ToProblem();
+        }
+
+        if (p.Status != PrescriptionStatus.Signed)
+        {
+            return Error.Rule("prescription.not_printable", "Only signed prescriptions can be printed or shared.").ToProblem();
+        }
+
+        await audit.PatientRecordAccessedAsync(p.PatientId, $"Downloaded prescription {p.PrescriptionNumber} as a PDF (patient portal)", ct);
+        var document = await PrescriptionDocument.BuildAsync(await builder.BuildAsync(p, ct), assets, ct);
+        return await document.ToPdfAsync(renderer, ct);
+    }
+
     private static async Task<IResult> HealthRecord(Guid patientId, PortalPatientScope scope, HospitalDbContext db, PatientRecordQueries records,
         IAuditLogger audit, CancellationToken ct)
     {
@@ -139,21 +174,44 @@ internal static class PortalEndpoints
     private static async Task<IResult> GetDischargeSummary(Guid id, PortalPatientScope scope, DischargeSummaryService summaries, IAuditLogger audit,
         CancellationToken ct)
     {
+        var (summary, problem) = await OpenDischargeSummaryAsync(id, "Portal: viewed discharge summary", scope, summaries, audit, ct);
+        return problem ?? TypedResults.Ok(await summaries.ToDtoAsync(summary!, ct));
+    }
+
+    /// <summary>The signed summary as a PDF: the same A4 document the hospital prints.</summary>
+    private static async Task<IResult> DischargeSummaryPdf(Guid id, PortalPatientScope scope, DischargeSummaryService summaries, IAuditLogger audit,
+        DocumentAssets assets, IPdfRenderer renderer, CancellationToken ct)
+    {
+        var (summary, problem) = await OpenDischargeSummaryAsync(id, "Downloaded discharge summary as a PDF (patient portal)", scope, summaries, audit, ct);
+        if (problem is not null)
+        {
+            return problem;
+        }
+
+        var print = await summaries.PrintAsync(summary!.Id, ct);
+        return print.IsFailure ? print.Error!.ToProblem() : await (await DischargeSummaryDocument.BuildAsync(print.Value, assets, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    // Both ways of opening a discharge summary on the portal apply the same rules: signed (or amended) summaries only,
+    // of a patient linked to the signed-in mobile number, and an audit entry saying what was done with it.
+    private static async Task<(DischargeSummary? Summary, IResult? Problem)> OpenDischargeSummaryAsync(
+        Guid id, string action, PortalPatientScope scope, DischargeSummaryService summaries, IAuditLogger audit, CancellationToken ct)
+    {
         var summary = await summaries.Summaries().AsNoTracking().Include(s => s.Amendments)
             .FirstOrDefaultAsync(s => s.Id == id && s.Status != DischargeSummaryStatus.Draft, ct);
         if (summary is null)
         {
-            return Error.NotFound("Discharge summary", id).ToProblem();
+            return (null, Error.NotFound("Discharge summary", id).ToProblem());
         }
 
         var allowed = await scope.EnsureAccessAsync(summary.PatientId, ct);
         if (allowed.IsFailure)
         {
-            return allowed.Error!.ToProblem();
+            return (null, allowed.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(summary.PatientId, "Portal: viewed discharge summary", ct);
-        return TypedResults.Ok(await summaries.ToDtoAsync(summary, ct));
+        await audit.PatientRecordAccessedAsync(summary.PatientId, action, ct);
+        return (summary, null);
     }
 
     private static async Task<IResult> RequestRecords(PortalRecordRequest request, PortalPatientScope scope, HospitalDbContext db, MedicalRecordService charts,
