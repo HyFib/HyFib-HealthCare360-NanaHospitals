@@ -33,7 +33,8 @@ public sealed class OrganizationMasterTests(HospitalServer server)
         using (var renamed = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/masters/departments/{department.Id}", Edit(saved) with { Code = $"X{suffix}" }))
         {
             renamed.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
-            (await renamed.Content.ReadAsStringAsync(Ct)).ShouldContain("can't be changed once it is saved");
+            // The problem JSON escapes the apostrophe, so the message is matched after it.
+            (await renamed.Content.ReadAsStringAsync(Ct)).ShouldContain("be changed once it is saved");
         }
 
         using (var outOfUse = await admin.SendRawAsync(HttpMethod.Put, $"/api/v1/masters/departments/{department.Id}", Edit(saved) with { SpecialtyId = retired.Id }))
