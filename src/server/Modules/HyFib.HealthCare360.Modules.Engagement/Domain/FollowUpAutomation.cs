@@ -44,6 +44,9 @@ public static class FollowUpAutomation
             ? id
             : null;
 
+    /// <summary>The follow-up a consultation note asks for: its date, when that is after the visit (one on or before it asks for nothing).</summary>
+    public static DateOnly? ConsultationDueDate(DateOnly? followUpDate, DateOnly seenOn) => followUpDate is { } date && date > seenOn ? date : null;
+
     /// <summary>Is a visit or an appointment on <paramref name="date"/> close enough to <paramref name="dueDate"/> to fulfil it?</summary>
     public static bool IsAround(DateOnly dueDate, DateOnly date) => date >= dueDate.AddDays(-FulfilmentWindowDays);
 

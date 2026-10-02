@@ -122,6 +122,24 @@ public sealed class FollowUpTaskTests
     }
 
     [Fact]
+    public void A_new_due_date_needs_a_new_reminder_and_a_closed_task_cannot_move()
+    {
+        var task = NewTask(FollowUpType.PostConsultation);
+        task.ReminderSentAt = Now;
+
+        task.Reschedule(Today).IsSuccess.ShouldBeTrue();
+        task.ReminderSentAt.ShouldBe(Now, "The same date keeps its reminder.");
+
+        task.Reschedule(Today.AddDays(10)).IsSuccess.ShouldBeTrue();
+        task.DueDate.ShouldBe(Today.AddDays(10));
+        task.ReminderSentAt.ShouldBeNull("The patient was reminded of the old date only.");
+
+        task.Cancel("Advice changed");
+        task.Reschedule(Today.AddDays(20)).IsFailure.ShouldBeTrue();
+        task.DueDate.ShouldBe(Today.AddDays(10));
+    }
+
+    [Fact]
     public void Coming_back_completes_the_task_without_a_call_and_is_never_a_call_outcome()
     {
         var task = NewTask(FollowUpType.PostConsultation);

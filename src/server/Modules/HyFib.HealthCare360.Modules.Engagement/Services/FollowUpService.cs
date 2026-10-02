@@ -79,7 +79,7 @@ public sealed class FollowUpService(
         }
 
         db.SetExpectedVersion(task, request.Version);
-        task.DueDate = request.DueDate;
+        task.Reschedule(request.DueDate);
         task.AssigneeUserId = request.AssigneeUserId;
         task.Priority = request.Priority;
         task.Notes = Clean(request.Notes);

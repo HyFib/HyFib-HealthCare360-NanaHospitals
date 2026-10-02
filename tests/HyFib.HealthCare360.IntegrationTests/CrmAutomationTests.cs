@@ -84,6 +84,36 @@ public sealed class CrmAutomationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task An_amended_note_moves_or_removes_its_follow_up()
+    {
+        var patient = await RegisterPatientWithSmsConsentAsync();
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var crm = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        const string Complaint = "Cough for two weeks";
+
+        // Signed with a review in ten days.
+        var encounter = await doctor.PostAsync<EncounterDetail>("/api/v1/emr/encounters", new StartEncounterRequest(
+            patient.Id, VisitId: null, AdmissionId: null, Type: null, DepartmentId: null, PractitionerId: null, TemplateId: null, Complaint));
+        encounter = await doctor.PutAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}", new UpdateEncounterRequest(
+            Complaint, HistoryOfPresentIllness: null, Examination: null, Assessment: "Acute bronchitis.", Plan: null, FollowUpDate: Today.AddDays(10),
+            FollowUpAdvice: null, ReferralDepartmentId: null, ReferralPractitionerId: null, ReferralExternal: null, ReferralReason: null, encounter.Version));
+        encounter = await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/sign", new SignEncounterRequest(encounter.Version));
+        (await FollowUpsAsync(crm, patient.Uhid)).ShouldHaveSingleItem().DueDate.ShouldBe(Today.AddDays(10));
+
+        // The doctor moves the review in an amendment: the follow-up moves with it.
+        encounter = await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/amend", Amendment(Today.AddDays(20), "Review after the course of antibiotics"));
+        (await FollowUpsAsync(crm, patient.Uhid)).ShouldHaveSingleItem().DueDate.ShouldBe(Today.AddDays(20));
+
+        // The doctor removes it: the follow-up is cancelled.
+        await doctor.PostAsync<EncounterDetail>($"/api/v1/emr/encounters/{encounter.Id}/amend", Amendment(null, "No review needed"));
+        (await FollowUpsAsync(crm, patient.Uhid, includeClosed: true)).ShouldHaveSingleItem().Status.ShouldBe(FollowUpStatus.Cancelled);
+
+        AmendEncounterRequest Amendment(DateOnly? followUpDate, string reason) => new(
+            reason, Complaint, HistoryOfPresentIllness: null, Examination: null, Assessment: "Acute bronchitis.", Plan: null, followUpDate,
+            FollowUpAdvice: null, ReferralDepartmentId: null, ReferralPractitionerId: null, ReferralExternal: null, ReferralReason: null, encounter.Version);
+    }
+
+    [Fact]
     public async Task A_vaccine_dose_schedules_the_next_dose_and_the_next_dose_settles_it()
     {
         var patient = await RegisterPatientWithSmsConsentAsync();

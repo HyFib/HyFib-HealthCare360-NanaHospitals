@@ -141,6 +141,23 @@ public sealed class FollowUpTask : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>Moves an open task to a new due date. A reminder sent for the old date no longer counts, so the patient is reminded again.</summary>
+    public Result Reschedule(DateOnly dueDate)
+    {
+        if (!IsOpen)
+        {
+            return Error.Rule("followup.closed", "This follow-up is already closed.");
+        }
+
+        if (dueDate != DueDate)
+        {
+            DueDate = dueDate;
+            ReminderSentAt = null;
+        }
+
+        return Result.Success();
+    }
+
     /// <summary>Completes the task because the patient came back for a visit or the dose (not counted as a call attempt).</summary>
     public Result CompleteAsVisited(string note, DateTimeOffset now)
     {

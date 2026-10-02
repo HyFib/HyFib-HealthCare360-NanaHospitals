@@ -234,6 +234,7 @@ gets 403 `portal.patient_denied`.
 | `PatientDischarged` (Inpatient) | See "After a discharge" below |
 | `AppointmentBooked` (Scheduling) | Open leads with the patient's mobile number are marked converted, but only when the names match (`LeadMatching`: same first name, or the same initial plus a shared word), because families share numbers. Open PostConsultation, Vaccination, ChronicReview and HealthCheckupDue follow-ups complete as AppointmentBooked when the appointment is no more than 30 days before their due date (or after it); an earlier appointment, likely for something else, leaves them open. This is not counted as a call attempt |
 | `EncounterSigned` (Clinical) | See "Automatic follow-ups": settles reviews, adds the consultation's follow-up and the chronic review |
+| `EncounterAmended` (Clinical) | See "Automatic follow-ups": keeps the consultation's follow-up in step with the amended date |
 | `ImmunizationRecorded`, `ImmunizationEnteredInError` (Clinical) | See "Automatic follow-ups": the next dose's reminder |
 | `HealthCheckupCompleted` (Clinical) | See "Automatic follow-ups": settles "check-up due" tasks and schedules the next check-up |
 | `BillFinalized`, `BillCancelled`, `PaymentReceived`, `RefundPaid` (Billing) | Append-only `PatientSpendEntry` rows (with the facility), one per bill, cancellation, receipt or refund, idempotent, for the net 360° spend |
@@ -272,7 +273,9 @@ chronic-care visit or check-up), so a replayed event adds nothing. They go to th
 a lead to assign. Nothing is started for a deceased, inactive or merged patient. Task notes carry no clinical details
 (no diagnosis, no advice), because the CRM team does not see the chart; a vaccination note names the vaccine.
 * **After a consultation.** A signed encounter (not an in-patient note) with a follow-up date after the visit adds a
-  PostConsultation task due on that date, linked to the visit so the reminder names the doctor.
+  PostConsultation task due on that date, linked to the visit so the reminder names the doctor. An amendment keeps it
+  in step: a date added starts the task, a changed date moves it, and a removed date cancels it. A closed task is never
+  reopened.
 * **Vaccination.** A dose with a next-due date after today adds a Vaccination task due then. A later dose of the same
   vaccine (same card code, or the same name without codes) completes it as `Visited`; a dose transcribed out of order
   closes only reminders of older doses. A dose marked as entered in error cancels the reminder it started.
@@ -287,7 +290,8 @@ a lead to assign. Nothing is started for a deceased, inactive or merged patient.
 **Reminders.** Once a day, in the campaign window (10:00–21:00 IST), the job sends the `followup.reminder` SMS for open
 PostConsultation, Vaccination, ChronicReview and HealthCheckupDue tasks due within `crm.followUpReminderDays` (2) days,
 whoever created them. It is sent once per task (`reminderSentAt`, also set by the staff "remind" action), as one
-message per patient when several tasks fall due together, naming the earliest date. It needs a living patient, a
+message per patient when several tasks fall due together, naming the earliest date. Moving a task to a new date, by
+staff or by an amended note, makes it due for a new reminder. It needs a living patient, a
 mobile number and an active SMS-updates consent; otherwise the task stays for the call, and the patient is checked
 again the next day.
 
@@ -382,6 +386,8 @@ changes come with an EF migration in `src/server/HyFib.HealthCare360.Server/Pers
   the lead. If the second save fails, the patient exists and the conversion can be retried with `patientId`.
 * Automatic follow-ups:
   * A dose marked as entered in error cancels its own reminder but does not reopen the earlier reminder it closed.
+  * An amended note moves or cancels its open follow-up, but does not reopen a closed one or revisit the chronic
+    review, which the next visit reschedules.
   * A discharge summary's follow-up date starts nothing yet; the post-discharge call covers the first days.
   * Reminders run once a day: a task created after that day's pass, due within the reminder days, is reminded the next
     day, or on its due date.

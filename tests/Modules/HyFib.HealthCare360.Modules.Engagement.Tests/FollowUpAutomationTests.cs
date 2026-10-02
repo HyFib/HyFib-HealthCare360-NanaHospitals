@@ -28,6 +28,15 @@ public sealed class FollowUpAutomationTests
         FollowUpAutomation.ImmunizationOf(null).ShouldBeNull();
     }
 
+    [Fact]
+    public void A_consultation_asks_for_a_follow_up_only_after_the_visit()
+    {
+        FollowUpAutomation.ConsultationDueDate(Today.AddDays(7), Today).ShouldBe(Today.AddDays(7));
+        FollowUpAutomation.ConsultationDueDate(Today, Today).ShouldBeNull();
+        FollowUpAutomation.ConsultationDueDate(Today.AddDays(-1), Today).ShouldBeNull();
+        FollowUpAutomation.ConsultationDueDate(null, Today).ShouldBeNull();
+    }
+
     [Theory]
     [InlineData(-31, false)]
     [InlineData(-30, true)]
