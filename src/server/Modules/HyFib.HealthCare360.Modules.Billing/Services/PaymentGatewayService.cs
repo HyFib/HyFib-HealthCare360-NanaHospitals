@@ -390,14 +390,16 @@ public sealed class PaymentGatewayService(
 
     /// <summary>
     /// Records the receipt for a captured payment, dated when the gateway took it; false when a concurrent webhook/poll
-    /// recorded it first. When the receipt cannot be recorded, the payment and the reason stay on the order, an
-    /// exception is opened for the accountants (who are alerted the first time), and the next check tries again.
+    /// recorded it first. When the bill or admission refuses the payment, the attempt is rolled back (so its receipt
+    /// number goes back to the series) and the failure is kept on its own: the payment and the reason stay on the order,
+    /// an exception is opened for the accountants (who are alerted the first time), and the next check tries again.
     /// </summary>
     private async Task<bool> TryRecordCaptureAsync(GatewayOrder order, string paymentId, decimal amount, string? method, DateTimeOffset? paidAt, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var capturedAt = paidAt is { } at && at < now ? at : now;
-        Receipt recorded;
+        Receipt? recorded = null;
+        string? refused = null;
         await using (var transaction = await db.BeginOwnedTransactionAsync(ct))
         {
             try
@@ -407,44 +409,21 @@ public sealed class PaymentGatewayService(
                     paymentId, method, null, ReceiptSource.PaymentGateway, null, capturedAt), ct);
                 if (receipt.Error is { } error)
                 {
-                    logger.LogError("Captured gateway payment {PaymentId} could not be recorded: {Error}", paymentId, error.Message);
-                    order.RecordCaptureFailure(paymentId, Money.Round(amount), method, capturedAt, error.Message);
-                    var exception = await discrepancies.RaiseAsync(
-                        DiscrepancyKind.UnrecordedPayment, paymentId, order.FacilityId,
-                        $"₹{Money.FormatInr(Money.Round(amount))} was paid online ({paymentId}), but the receipt could not be recorded: {error.Message}",
-                        d =>
-                        {
-                            d.OrderId = order.OrderId;
-                            d.GatewayOrderRecordId = order.Id;
-                            d.BillId = order.BillId;
-                            d.IpAccountId = order.IpAccountId;
-                            d.GatewayAmount = Money.Round(amount);
-                            d.GatewayAt = capturedAt;
-                        },
-                        ct);
-                    var isNew = db.Entry(exception).State == EntityState.Added;
+                    // Not committed: the transaction rolls back when it is disposed.
+                    refused = error.Message;
+                }
+                else
+                {
+                    recorded = receipt.Value;
+                    order.MarkPaid(paymentId, Money.Round(amount), method, recorded.Id, recorded.ReceivedAt);
+                    await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, paymentId, $"Receipt {recorded.ReceiptNumber} recorded.", ct);
+                    await db.SaveChangesAsync(ct);
+
+                    // The receipt exists now, so a transaction the gateway already settled for this payment matches it.
+                    await settlements.RematchPaymentAsync(paymentId, ct);
                     await db.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
-                    if (isNew)
-                    {
-                        await notifications.NotifyPermissionHoldersAsync(
-                            BillingPermissions.GatewayReconcile, order.FacilityId, "Online payment not recorded",
-                            $"₹{Money.FormatInr(Money.Round(amount))} was paid online but no receipt could be recorded. Open Gateway reconciliation to record it.",
-                            "/billing/reconciliation", "billing", "warning", ct);
-                    }
-
-                    return true;
                 }
-
-                recorded = receipt.Value;
-                order.MarkPaid(paymentId, Money.Round(amount), method, recorded.Id, recorded.ReceivedAt);
-                await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, paymentId, $"Receipt {recorded.ReceiptNumber} recorded.", ct);
-                await db.SaveChangesAsync(ct);
-
-                // The receipt exists now, so a transaction the gateway already settled for this payment matches it.
-                await settlements.RematchPaymentAsync(paymentId, ct);
-                await db.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
             }
             catch (DbUpdateException ex)
             {
@@ -454,9 +433,56 @@ public sealed class PaymentGatewayService(
             }
         }
 
+        if (refused is not null)
+        {
+            await KeepCaptureFailureAsync(order, paymentId, Money.Round(amount), method, capturedAt, refused, ct);
+            return true;
+        }
+
         await realtime.ToFacilityAsync(order.FacilityId, "billing.bill.changed", new { Id = order.BillId, order.PatientId }, ct);
-        await tally.RepostIfPostedAsync(order.FacilityId, BillingTime.LocalDate(recorded.ReceivedAt), ct);
+        await tally.RepostIfPostedAsync(order.FacilityId, BillingTime.LocalDate(recorded!.ReceivedAt), ct);
         return true;
+    }
+
+    /// <summary>The gateway took money that HC360 could not record yet: kept on the order and in the exceptions.</summary>
+    private async Task KeepCaptureFailureAsync(
+        GatewayOrder order, string paymentId, decimal amount, string? method, DateTimeOffset capturedAt, string reason, CancellationToken ct)
+    {
+        logger.LogError("Captured gateway payment {PaymentId} could not be recorded: {Error}", paymentId, reason);
+        order.RecordCaptureFailure(paymentId, amount, method, capturedAt, reason);
+        var exception = await discrepancies.RaiseAsync(
+            DiscrepancyKind.UnrecordedPayment, paymentId, order.FacilityId,
+            $"₹{Money.FormatInr(amount)} was paid online ({paymentId}), but the receipt could not be recorded: {reason}",
+            d =>
+            {
+                d.OrderId = order.OrderId;
+                d.GatewayOrderRecordId = order.Id;
+                d.BillId = order.BillId;
+                d.IpAccountId = order.IpAccountId;
+                d.GatewayAmount = amount;
+                d.GatewayAt = capturedAt;
+            },
+            ct);
+        var isNew = db.Entry(exception).State == EntityState.Added;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // A concurrent check kept the same failure first; it alerts the accountants.
+            logger.LogInformation(ex, "The failure to record gateway payment {PaymentId} was kept by a concurrent request", paymentId);
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        if (isNew)
+        {
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.GatewayReconcile, order.FacilityId, "Online payment not recorded",
+                $"₹{Money.FormatInr(amount)} was paid online but no receipt could be recorded. Open Gateway reconciliation to record it.",
+                "/billing/reconciliation", "billing", "warning", ct);
+        }
     }
 
     private async Task<Contact?> ContactAsync(Guid patientId, CancellationToken ct) =>

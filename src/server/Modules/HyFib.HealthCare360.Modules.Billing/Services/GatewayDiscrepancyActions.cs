@@ -214,7 +214,7 @@ public sealed class GatewayDiscrepancyActions(
     private async Task<Result<DiscrepancyActionResult>> ReadSettlementsAgainAsync(GatewayDiscrepancy discrepancy, CancellationToken ct)
     {
         var today = BillingTime.Today(time);
-        var from = discrepancy.GatewayAt is { } paidAt ? BillingTime.LocalDate(paidAt) : today.AddDays(-RecheckDays + 1);
+        var from = discrepancy.GatewayAt is { } paidAt && BillingTime.LocalDate(paidAt) <= today ? BillingTime.LocalDate(paidAt) : today.AddDays(-RecheckDays + 1);
         var days = Enumerable.Range(0, RecheckDays).Select(i => from.AddDays(i)).Where(d => d <= today).ToList();
         string? problem = null;
         foreach (var day in days)
