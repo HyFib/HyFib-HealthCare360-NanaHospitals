@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Modules.Clinical.Features.Prescriptions;
 using HyFib.HealthCare360.Modules.Clinical.Features.Templates;
 using HyFib.HealthCare360.Modules.Clinical.Features.Vitals;
 using HyFib.HealthCare360.Modules.Clinical.Services;
+using HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
 
@@ -47,6 +48,10 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<HealthCheckupService>();
 
+        // The ICD-10 and ICD-10-PCS catalogues: imports of the hospital's WHO and CMS files, and the chapters and blocks in use.
+        services.AddScoped<IcdClassificationProvider>();
+        services.AddScoped<CatalogueImporter>();
+
         // The PDFs that messages to patients carry (the prescription with the "prescription shared" message).
         services.AddScoped<INotificationDocumentSource, PrescriptionDocumentSource>();
         services.AddScoped<INotificationDocumentSource, DischargeSummaryDocumentSource>();
@@ -70,6 +75,7 @@ public sealed class ClinicalModule : IModule
         PrescriptionVerificationEndpoints.Map(endpoints);
         DischargeSummaryEndpoints.Map(endpoints);
         CodeCatalogueEndpoints.Map(endpoints);
+        CatalogueEndpoints.Map(endpoints);
         CodingEndpoints.Map(endpoints);
         ChartEndpoints.Map(endpoints);
         PackageEndpoints.Map(endpoints);

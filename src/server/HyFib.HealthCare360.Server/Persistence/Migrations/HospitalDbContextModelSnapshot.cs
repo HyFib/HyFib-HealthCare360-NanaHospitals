@@ -4821,6 +4821,156 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("allergies", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.CatalogueImport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Added")
+                        .HasColumnType("integer")
+                        .HasColumnName("added");
+
+                    b.Property<int>("Blocks")
+                        .HasColumnType("integer")
+                        .HasColumnName("blocks");
+
+                    b.Property<string>("Catalogue")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("catalogue");
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("channel");
+
+                    b.Property<int>("Chapters")
+                        .HasColumnType("integer")
+                        .HasColumnName("chapters");
+
+                    b.Property<int>("CodesInFile")
+                        .HasColumnType("integer")
+                        .HasColumnName("codes_in_file");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("integer")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("FileSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("file_sha256");
+
+                    b.Property<long>("FileSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("file_size_bytes");
+
+                    b.Property<DateTimeOffset>("ImportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("imported_at");
+
+                    b.Property<string>("ImportedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("imported_by_name");
+
+                    b.Property<Guid?>("ImportedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("imported_by_user_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<int>("LeftAlone")
+                        .HasColumnType("integer")
+                        .HasColumnName("left_alone");
+
+                    b.Property<int>("Reinstated")
+                        .HasColumnType("integer")
+                        .HasColumnName("reinstated");
+
+                    b.Property<string>("Release")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("release");
+
+                    b.Property<string>("SourceTitle")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("source_title");
+
+                    b.Property<string>("SourceVersion")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("source_version");
+
+                    b.Property<int>("Unchanged")
+                        .HasColumnType("integer")
+                        .HasColumnName("unchanged");
+
+                    b.Property<int>("Updated")
+                        .HasColumnType("integer")
+                        .HasColumnName("updated");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Withdrawn")
+                        .HasColumnType("integer")
+                        .HasColumnName("withdrawn");
+
+                    b.HasKey("Id")
+                        .HasName("pk_catalogue_imports");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_catalogue_imports_is_deleted");
+
+                    b.HasIndex("Catalogue", "ImportedAt")
+                        .HasDatabaseName("ix_catalogue_imports_catalogue_imported_at");
+
+                    b.ToTable("catalogue_imports", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.ChartDeficiency", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6634,6 +6784,77 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("health_package_items", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.IcdClassificationEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ChapterNumber")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("chapter_number");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("End")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("end");
+
+                    b.Property<bool>("HoldsCategories")
+                        .HasColumnType("boolean")
+                        .HasColumnName("holds_categories");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("ParentCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("parent_code");
+
+                    b.Property<string>("Release")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("release");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.Property<string>("Start")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("start");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id")
+                        .HasName("pk_icd_classification_entries");
+
+                    b.HasIndex("Release", "Kind", "Code")
+                        .IsUnique()
+                        .HasDatabaseName("ix_icd_classification_entries_release_kind_code");
+
+                    b.ToTable("icd_classification_entries", "clinical");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Clinical.Domain.IcdCode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6672,6 +6893,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<string>("IncludedTerms")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("included_terms");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -6697,8 +6923,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.Property<string>("SearchText")
                         .IsRequired()
-                        .HasMaxLength(700)
-                        .HasColumnType("character varying(700)")
+                        .HasMaxLength(2700)
+                        .HasColumnType("character varying(2700)")
                         .HasColumnName("search_text");
 
                     b.Property<string>("Source")
@@ -6721,11 +6947,20 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("updated_by");
 
+                    b.Property<string>("Usage")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("usage");
+
                     b.Property<uint>("Version")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("withdrawn_at");
 
                     b.HasKey("Id")
                         .HasName("pk_icd_codes");
@@ -8033,6 +8268,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("WithdrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("withdrawn_at");
 
                     b.HasKey("Id")
                         .HasName("pk_procedure_codes");

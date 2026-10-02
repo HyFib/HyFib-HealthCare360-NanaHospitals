@@ -367,7 +367,7 @@ public static partial class ClamlReader
             if (_categories < limits.MinIcd10Categories)
             {
                 throw new CatalogueFileException(
-                    $"The file has only {_categories:N0} categories; WHO's ICD-10 file has about 12,000. Check that it is the complete WHO file.");
+                    $"The file has only {_categories:N0} {(_categories == 1 ? "category" : "categories")}; WHO's ICD-10 file has about 12,000. Check that it is the complete WHO file.");
             }
 
             if (_cutTitles > 0)

@@ -69,4 +69,13 @@ public sealed class ClinicalModuleTests
     [Fact]
     public void Coding_belongs_to_the_mrd_officer() =>
         ClinicalPermissions.All.Single(p => p.Name == ClinicalPermissions.MrdCoding).DefaultRoles!.ShouldBe([SystemRoles.MrdOfficer]);
+
+    [Fact]
+    public void Importing_a_catalogue_belongs_to_administrators_not_coders()
+    {
+        var import = ClinicalPermissions.All.Single(p => p.Name == ClinicalPermissions.CatalogueImport);
+
+        import.Name.ShouldBe("mrd.catalogue.import");
+        import.DefaultRoles!.ShouldBe([SystemRoles.HospitalAdmin]);
+    }
 }

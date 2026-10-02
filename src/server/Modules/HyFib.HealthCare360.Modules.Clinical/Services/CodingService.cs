@@ -8,9 +8,15 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// <summary>
 /// Clinical coding at discharge (MRD-02, MB-03) and the morbidity index (MRD-06). Codes must exist in the local
 /// catalogue and ICD-10 categories that have subdivisions are rejected, so claims and statistics use codes of the
-/// highest specificity. Verification is done by a second coder.
+/// highest specificity. An asterisk code (a manifestation) cannot be the primary diagnosis. Verification is done by a
+/// second coder.
 /// </summary>
-public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, ICurrentUser currentUser, TimeProvider time)
+public sealed class CodingService(
+    HospitalDbContext db,
+    ClinicalAccess access,
+    ICurrentUser currentUser,
+    TimeProvider time,
+    Catalogue.IcdClassificationProvider classification)
 {
     public async Task<Result<CodingDto>> CreateAsync(CreateCodingRequest request, CancellationToken ct)
     {
@@ -165,8 +171,9 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
                 .ToListAsync(ct);
 
         var mode = groupBy.ToLowerInvariant() is "block" or "chapter" ? groupBy.ToLowerInvariant() : "code";
+        var set = await classification.GetAsync(ct);
         var grouped = rows
-            .Select(r => (Fact: r, Group: KeyFor(r, mode)))
+            .Select(r => (Fact: r, Group: KeyFor(r, mode, set)))
             .GroupBy(x => x.Group.Key)
             .Select(g =>
             {
@@ -221,6 +228,12 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
                     return Error.Field("entries", $"{code} is a category with subdivisions; choose the specific code.");
                 }
 
+                if (entry.IsPrimary && match.Usage == IcdUsage.Asterisk)
+                {
+                    return Error.Field("entries",
+                        $"{code}* is an asterisk code: it records how a disease shows in an organ. Make the underlying disease (its dagger code) the primary diagnosis and keep {code} as a secondary one.");
+                }
+
                 lines.Add(new CodingLine(CodingEntryKind.Diagnosis, match.Code, match.Title, entry.IsPrimary));
             }
             else
@@ -238,9 +251,10 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
         return Result<IReadOnlyList<CodingLine>>.Ok(lines);
     }
 
-    private static (string Key, string Title, string? Chapter) KeyFor(MorbidityFact fact, string mode)
+    /// <summary>The group of a fact, by the chapters and blocks in use (the imported WHO file's, or the built-in list).</summary>
+    private static (string Key, string Title, string? Chapter) KeyFor(MorbidityFact fact, string mode, IcdClassificationSet set)
     {
-        var chapter = IcdClassification.ChapterOf(fact.Code);
+        var chapter = set.ChapterOf(fact.Code);
         if (mode == "chapter")
         {
             return chapter is null ? ("?", "Unclassified", null) : (chapter.Number, chapter.Title, chapter.Number);
@@ -248,7 +262,7 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
 
         if (mode == "block")
         {
-            var block = IcdClassification.BlockOf(fact.Code);
+            var block = set.BlockOf(fact.Code);
             return block is null ? ("?", "Unclassified", chapter?.Number) : (block.Range, block.Title, chapter?.Number);
         }
 

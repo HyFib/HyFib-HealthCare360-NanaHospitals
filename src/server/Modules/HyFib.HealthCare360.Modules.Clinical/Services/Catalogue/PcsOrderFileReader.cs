@@ -108,7 +108,7 @@ public static partial class PcsOrderFileReader
         if (codes.Count < limits.MinPcsCodes)
         {
             throw new CatalogueFileException(
-                $"The file has only {codes.Count:N0} valid codes; the CMS order file has about 78,000. Check that it is the complete order file.");
+                $"The file has only {codes.Count:N0} valid {(codes.Count == 1 ? "code" : "codes")}; the CMS order file has about 78,000. Check that it is the complete order file.");
         }
 
         if (cut > 0)
