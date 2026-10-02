@@ -119,7 +119,9 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
   document, and the HC360 template is marked `whatsAppDocumentHeader`), the file is uploaded first and sent as the
   template's `header` component (`type: "document"`, media id and file name), followed by the `body` parameters. The
   template must be approved in WhatsApp Manager with a document header, because Meta refuses a header the template
-  does not have. The log records the file's size, never its content.
+  does not have, and a template that has one without it. So a message that carries no document is not sent with a
+  header template: its log is marked Skipped with the reason, and it is not retried. The log records the file's
+  size, never its content.
 * Webhook `GET` answers `hub.challenge` only when `hub.verify_token` matches (constant time) and the challenge is a
   plain token.
 * Webhook `POST` requires `X-Hub-Signature-256`, an HMAC-SHA256 of the **raw** body with the app secret. Statuses

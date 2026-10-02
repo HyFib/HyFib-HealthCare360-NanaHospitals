@@ -320,7 +320,7 @@ Only released content is ever made into these PDFs.
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
-| `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal |
+| `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal. Use a WhatsApp template without a document header then: a template with one can't go without its PDF, so the WhatsApp message is skipped (the notification log says why) while the SMS and e-mail still go |
 
 ## Number series
 
