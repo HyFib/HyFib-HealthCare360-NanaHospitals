@@ -104,7 +104,9 @@ public static class NumberFormat
 
     /// <summary>
     /// The number <paramref name="format"/> makes for running number <paramref name="value"/>. Anything the format may
-    /// not contain is written as it is.
+    /// not contain is written as it is, and the running number is padded to at most
+    /// <see cref="NumberFormatRules.MaxSequenceWidth"/> digits: a stored format the rules now refuse, such as
+    /// {SEQ:999999999} saved before they existed, still makes a number instead of exhausting the server's memory.
     /// </summary>
     public static string Render(string format, long value, string? facilityCode, DateTimeOffset localNow)
     {
@@ -118,7 +120,8 @@ public static class NumberFormat
                 NumberFormatPartKind.ShortYear => localNow.ToString("yy", CultureInfo.InvariantCulture),
                 NumberFormatPartKind.Month => localNow.ToString("MM", CultureInfo.InvariantCulture),
                 NumberFormatPartKind.Day => localNow.ToString("dd", CultureInfo.InvariantCulture),
-                NumberFormatPartKind.Sequence => value.ToString(CultureInfo.InvariantCulture).PadLeft(part.Width ?? 0, '0'),
+                NumberFormatPartKind.Sequence => value.ToString(CultureInfo.InvariantCulture)
+                    .PadLeft(Math.Min(part.Width ?? 0, NumberFormatRules.MaxSequenceWidth), '0'),
                 _ => part.Text,
             });
         }

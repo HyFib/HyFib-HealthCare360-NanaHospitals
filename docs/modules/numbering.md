@@ -63,9 +63,15 @@ saving.
 * The numbers must fit where they are stored. The longest number is measured with the longest facility code in use and
   a running number of at least 8 digits (it grows over the years). Most numbers have room for 24 characters; UHIDs, tube
   barcodes, donor numbers and employee codes for 20. The message says which part to shorten.
-* A changed format must differ from every other series' format (OP and IP bills share one table, so one format would
-  issue the same bill numbers twice). Restoring a default is always allowed: refunds and pharmacy refill requests share
-  the default `{FAC}RF{YY}{SEQ:6}` and are kept in different tables.
+* A changed format must differ from every other series' format in its letters, `-` or `/`, not only in digits (OP and
+  IP bills share one table, so two formats that can make the same number would issue a bill number twice). Formats are
+  compared with every run of digits taken as one place: the date parts, the running number and digits in the fixed
+  text. So `{FAC}OB{YY}{SEQ:7}`, `{FAC}OB{SEQ:9}` and `{FAC}OB26{SEQ}` count as the same: `{SEQ:6}` reaching 1000000
+  makes the numbers of `{SEQ:7}`, and `{SEQ}` and `{SEQ:1}` make the same numbers. Restoring a default is always allowed:
+  refunds and pharmacy refill requests share the default `{FAC}RF{YY}{SEQ:6}`, and credit notes and canteen bills both
+  start `{FAC}CN{YY}`, but each pair is kept in different tables.
+* A stored running number padded to more than 12 digits (possible only from before these rules) is padded to 12 when
+  numbers are made, rather than to the width written.
 
 A format that already differs from these rules (for example a visitor pass format without `{FAC}` in a hospital that
 has since opened a second facility) is checked in full when its format or reset is changed. Setting only its next
