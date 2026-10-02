@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -33,8 +36,11 @@ using HyFib.HealthCare360.Modules.Scheduling.Features.Schedules;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Stores;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
 using BillPaymentMode = HyFib.HealthCare360.Modules.Billing.Domain.PaymentMode;
 using BillPaymentRequest = HyFib.HealthCare360.Modules.Billing.Features.Payments.CollectPaymentRequest;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
@@ -62,6 +68,9 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
     [Fact]
     public async Task A_new_patient_is_registered_seen_tested_treated_and_billed()
     {
+        // Messages to the patient go to the integrations simulator, so the journey can see what the patient receives.
+        await using var email = await EmailToSimulatorAsync();
+
         // Front office: registers a new patient, books today's slot with the doctor and checks the patient in.
         var patient = await FrontOfficeRegistersBooksAndChecksInAsync();
 
@@ -80,6 +89,9 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         // Doctor: the released report is on the patient's record.
         await DoctorSeesTheReportAsync(patient, consultation, reportId);
 
+        // The patient gets the report: the copy printed at the counter, the PDF on the portal, and by e-mail.
+        await ThePatientGetsTheReportAsync(patient, reportId);
+
         // Pharmacist: dispenses the e-prescription from the queue, FEFO, on the pharmacy's GST invoice, paid at the counter.
         var sale = await PharmacistDispensesAsync(patient, consultation);
 
@@ -94,10 +106,11 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
 
         // A patient of this test alone: the unique surname and mobile number keep the duplicate check quiet.
         var surname = "Journey" + RandomLetters(8);
+        var phone = "9" + RandomDigits(9);
         var registered = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: "Mr.", FirstName: "Ravi", MiddleName: null, LastName: surname, Gender: Gender.Male,
             DateOfBirth: new DateOnly(1970, 1, 1).AddDays(Random.Shared.Next(365 * 30)), AgeYears: null, AgeMonths: null,
-            Phone: "9" + RandomDigits(9), AlternatePhone: null, Email: null, Address: null, BloodGroup: null, MaritalStatus: null,
+            Phone: phone, AlternatePhone: null, Email: $"ravi.{surname}@example.org", Address: null, BloodGroup: null, MaritalStatus: null,
             GuardianName: null, GuardianRelation: null, EmergencyContactName: null, EmergencyContactPhone: null,
             EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
@@ -132,7 +145,7 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         token.Status.ShouldBe(TokenStatus.Waiting);
         (await AppointmentAsync(frontOffice, appointment.Id)).Status.ShouldBe(AppointmentStatus.CheckedIn);
 
-        return new CheckedInPatient(registered.Id, registered.Uhid, doctor, appointment.Id, appointment.FeeAmount, appointment.Room, visit.Id, token.Id);
+        return new CheckedInPatient(registered.Id, registered.Uhid, phone, doctor, appointment.Id, appointment.FeeAmount, appointment.Room, visit.Id, token.Id);
     }
 
     private async Task<Consultation> DoctorConsultsAsync(CheckedInPatient patient)
@@ -354,6 +367,44 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
         order.Items.ShouldHaveSingleItem().Status.ShouldBe(OrderItemStatus.Completed);
     }
 
+    private async Task ThePatientGetsTheReportAsync(CheckedInPatient patient, Guid reportId)
+    {
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var report = await doctor.GetAsync<LabReportView>($"/api/v1/lab/reports/{reportId}");
+        var fileName = $"lab-report-{report.ReportNumber}.pdf";
+
+        // At the counter the server's document is printed: the same one that becomes the PDF and the patient's copy.
+        var printable = await doctor.GetAsync<PrintableDocumentDto>($"/api/v1/lab/reports/{reportId}/document");
+        printable.Title.ShouldBe($"Lab report {report.ReportNumber}");
+        printable.PageSize.ShouldBe("A4");
+        printable.Html.ShouldContain(patient.Uhid);
+        printable.Html.ShouldContain(CrpValue);
+        printable.Html.ShouldContain($"Verification code {report.VerificationCode}");
+
+        var portal = await server.SignInToPortalAsync(patient.Phone);
+        if (!server.Services.GetRequiredService<IPdfRenderer>().Status.Available)
+        {
+            // A machine without Microsoft Edge can't make PDFs: the download says why, and the screen offers to print.
+            using var unavailable = await doctor.SendRawAsync(HttpMethod.Get, $"/api/v1/lab/reports/{reportId}/pdf");
+            unavailable.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+            (await ProblemCodeAsync(unavailable)).ShouldBe("pdf.unavailable");
+            return;
+        }
+
+        // Staff save it as a PDF, and the patient downloads the same PDF from the portal.
+        (await PdfAsync(doctor, $"/api/v1/lab/reports/{reportId}/pdf")).ShouldBe(fileName);
+        (await PdfAsync(portal, $"/api/v1/portal/reports/lab/{reportId}/pdf")).ShouldBe(fileName);
+
+        // The "report ready" e-mail carries the report's PDF.
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var accession = (await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{report.LabOrderId}")).AccessionNumber;
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var sent = await EventuallyAsync(async () => (await admin.GetAsync<PagedResult<SimulatorMessageDto>>(
+                $"/api/v1/admin/integrations/simulator/messages?channel=Email&search={Uri.EscapeDataString(accession)}")).Items.FirstOrDefault(),
+            "The report-ready e-mail was not sent.");
+        sent.Details.ShouldNotBeNull().ShouldContain($"attachments: {fileName}");
+    }
+
     private async Task<PharmacySaleDetail> PharmacistDispensesAsync(CheckedInPatient patient, Consultation consultation)
     {
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
@@ -493,6 +544,57 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
     private static Task<List<BatchStock>> BatchesAsync(ApiClient pharmacist, Guid storeId, Guid itemId) =>
         pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={storeId}&itemId={itemId}");
 
+    /// <summary>Downloads a PDF and returns the file name the server gave it.</summary>
+    private static async Task<string?> PdfAsync(ApiClient api, string path)
+    {
+        using var response = await api.SendRawAsync(HttpMethod.Get, path);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, $"GET {path}: {await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)}");
+        response.Content.Headers.ContentType?.MediaType.ShouldBe("application/pdf");
+        var pdf = await response.Content.ReadAsByteArrayAsync(TestContext.Current.CancellationToken);
+        Encoding.ASCII.GetString(pdf, 0, 5).ShouldBe("%PDF-");
+        var disposition = response.Content.Headers.ContentDisposition.ShouldNotBeNull();
+        disposition.DispositionType.ShouldBe("attachment");
+        return disposition.FileNameStar ?? disposition.FileName?.Trim('"');
+    }
+
+    /// <summary>Polls until the outbox has delivered (it runs every two seconds), for at most a minute.</summary>
+    private static async Task<T> EventuallyAsync<T>(Func<Task<T?>> read, string failure)
+        where T : class
+    {
+        for (var waited = TimeSpan.Zero; waited < TimeSpan.FromMinutes(1); waited += TimeSpan.FromSeconds(1))
+        {
+            if (await read() is { } value)
+            {
+                return value;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
+        }
+
+        throw new ShouldAssertException(failure);
+    }
+
+    /// <summary>
+    /// Sends e-mail to the integrations simulator for the rest of the test, then puts the setting back: the server is
+    /// shared by every test of the run.
+    /// </summary>
+    private async Task<IAsyncDisposable> EmailToSimulatorAsync()
+    {
+        const string key = "integrations.email";
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
+            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
+        await admin.PutAsync($"/api/v1/admin/settings/{key}", new SaveSettingRequest(
+            new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["fromAddress"] = "reports@hospital.example" }, null, false, null));
+        return new Restore(() => admin.PutAsync($"/api/v1/admin/settings/{key}",
+            new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
+    }
+
+    private sealed class Restore(Func<Task> restore) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await restore();
+    }
+
     private static async Task<string?> ProblemCodeAsync(HttpResponseMessage response)
     {
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, TestContext.Current.CancellationToken);
@@ -505,7 +607,7 @@ public sealed class OutpatientJourneyTests(HospitalServer server)
 
     /// <summary>What the front office hands on: the patient, the doctor and the checked-in visit.</summary>
     private sealed record CheckedInPatient(
-        Guid PatientId, string Uhid, PractitionerDto Doctor, Guid AppointmentId, decimal ConsultationFee, string? Room, Guid VisitId, Guid TokenId);
+        Guid PatientId, string Uhid, string Phone, PractitionerDto Doctor, Guid AppointmentId, decimal ConsultationFee, string? Room, Guid VisitId, Guid TokenId);
 
     /// <summary>What the doctor ordered: the clinical order of the lab test and the signed e-prescription.</summary>
     private sealed record Consultation(Guid OrderId, ServiceItemDto LabTest, PrescriptionDto Prescription, PrescribableDrug Drug);

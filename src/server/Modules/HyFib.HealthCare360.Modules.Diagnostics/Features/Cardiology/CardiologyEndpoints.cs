@@ -1,14 +1,16 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Documents;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Cardiology;
 
 /// <summary>
 /// /api/v1/cardiology: ECG, echo, TMT, Holter and ABPM studies (CAR-01). Covers device output upload (CAR-02), the
-/// structured report (CAR-03) and cardiologist sign-off with release (CAR-04).
+/// structured report (CAR-03), cardiologist sign-off with release (CAR-04), and the printable report with its PDF.
 /// </summary>
 internal static class CardiologyEndpoints
 {
@@ -47,6 +49,8 @@ internal static class CardiologyEndpoints
         studies.MapPost("/{id:guid}/report/release", async (Guid id, CardiologyService s, CancellationToken ct) => (await s.ReleaseReportAsync(id, ct)).ToOk())
             .RequirePermission(Verify);
         studies.MapGet("/{id:guid}/report/print", Print).RequireAnyPermission(readers);
+        studies.MapGet("/{id:guid}/report/document", Document).RequireAnyPermission(readers);
+        studies.MapGet("/{id:guid}/report/pdf", Pdf).RequireAnyPermission(readers);
 
         app.MapGet("/api/v1/cardiology/reporting-worklist", ReportingWorklist).WithTags("Cardiology").RequirePermission(Verify);
         app.MapGet("/api/v1/cardiology/reports/{reportId:guid}", ReportById).WithTags("Cardiology").RequireAnyPermission(readers);
@@ -152,24 +156,52 @@ internal static class CardiologyEndpoints
         return TypedResults.Ok(detail);
     }
 
+    /// <summary>The report's content for printing (letterhead, signatories, QR verification).</summary>
     private static async Task<IResult> Print(
         Guid id, CardiologyService service, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user, IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, problem) = await OpenReportAsync(id, n => $"Printed cardiology report {n}", service, guard, audit, user, permissions, ct);
+        return problem ?? TypedResults.Ok(view);
+    }
+
+    /// <summary>The A4 report as the staff app prints it: the same document as the PDF and the patient's copy.</summary>
+    private static async Task<IResult> Document(
+        Guid id, CardiologyService service, ReportDocumentFrame frame, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user,
+        IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, problem) = await OpenReportAsync(id, n => $"Printed cardiology report {n}", service, guard, audit, user, permissions, ct);
+        return problem ?? TypedResults.Ok((await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToDto());
+    }
+
+    private static async Task<IResult> Pdf(
+        Guid id, CardiologyService service, ReportDocumentFrame frame, IPdfRenderer renderer, PatientAccessGuard guard, IAuditLogger audit,
+        ICurrentUser user, IPermissionService permissions, CancellationToken ct)
+    {
+        var (view, problem) = await OpenReportAsync(id, n => $"Downloaded cardiology report {n} as a PDF", service, guard, audit, user, permissions, ct);
+        return problem ?? await (await CardiologyReportDocument.BuildAsync(view!, frame, ct)).ToPdfAsync(renderer, ct);
+    }
+
+    // Every way of opening the printable report applies the same rules: the released report only for read-only users,
+    // the restricted record guard, and an entry in the PHI access audit saying what was done with it.
+    private static async Task<(CardiologyReportView? View, IResult? Problem)> OpenReportAsync(
+        Guid id, Func<string, string> action, CardiologyService service, PatientAccessGuard guard, IAuditLogger audit, ICurrentUser user,
+        IPermissionService permissions, CancellationToken ct)
     {
         var releasedOnly = await ReportAccess.ReleasedOnlyAsync(user, permissions, DepartmentPermissions, ct);
         var view = await service.ViewAsync(id, releasedOnly, ct);
         if (view is null)
         {
-            return Error.NotFound("Cardiology report", id).ToProblem();
+            return (null, Error.NotFound("Cardiology report", id).ToProblem());
         }
 
         var access = await guard.EnsureCanOpenAsync(view.Patient.Id, ct);
         if (access.IsFailure)
         {
-            return access.Error!.ToProblem();
+            return (null, access.Error!.ToProblem());
         }
 
-        await audit.PatientRecordAccessedAsync(view.Patient.Id, $"Printed cardiology report {view.AccessionNumber}", ct);
-        return TypedResults.Ok(view);
+        await audit.PatientRecordAccessedAsync(view.Patient.Id, action(view.AccessionNumber), ct);
+        return (view, null);
     }
 
     private static async Task<PagedResult<CardiologyStudyListItem>> ToListItemsAsync(

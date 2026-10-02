@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Documents;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
@@ -201,7 +202,8 @@ internal sealed class LabReportService(
             return released.Error!;
         }
 
-        await delivery.QueueReportReadyAsync(order.PatientId, order.AccessionNumber, ct);
+        await delivery.QueueReportReadyAsync(
+            order.PatientId, order.AccessionNumber, new NotificationDocument(LabReportDocumentSource.DocumentKind, report.Id), order.FacilityId, ct);
         return new ReleaseOutcome(report.Id, released.Value.Select(i => i.Id).ToList(), report.IsPartial, report.VerificationCode);
     }
 

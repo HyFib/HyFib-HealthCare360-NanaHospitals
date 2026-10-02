@@ -19,7 +19,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
     private static readonly (string Key, NotificationChannel Channel, string? Subject, string Body, string Description)[] Templates =
     [
         (ReportDelivery.ReportReadyTemplate, NotificationChannel.Email, "Your report {{reference}} is ready",
-            "<p>Dear {{name}},</p><p>Your diagnostic report <strong>{{reference}}</strong> is ready. You can view and download it securely on the patient portal.</p><p>Regards,<br/>{{hospital}}</p>",
+            "<p>Dear {{name}},</p><p>Your diagnostic report <strong>{{reference}}</strong> is ready. A copy is attached, and you can also view and download it securely on the patient portal.</p><p>Regards,<br/>{{hospital}}</p>",
             "Diagnostic report ready (e-mail)"),
         (CriticalValueNotifier.FindingCriticalTemplate, NotificationChannel.Sms, null,
             "HC360 CRITICAL FINDING: {{patient}} ({{uhid}}) {{study}}: {{finding}}. Please review immediately.",
