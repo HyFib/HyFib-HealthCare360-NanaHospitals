@@ -118,6 +118,21 @@ public sealed record AdmissionDetail(
     string? CancelReason,
     uint Version);
 
+/// <summary>
+/// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and whether active
+/// allergies are on the chart, which prints the band's ALLERGY mark. The allergies themselves are not included.
+/// </summary>
+public sealed record WristbandDto(
+    Guid AdmissionId,
+    string Uhid,
+    string PatientName,
+    Gender Gender,
+    string? Age,
+    string AdmissionNumber,
+    string? WardName,
+    string? BedLabel,
+    bool AllergyAlert);
+
 /// <summary>One stay in a patient's admission history.</summary>
 public sealed record PatientAdmissionItem(
     Guid Id,

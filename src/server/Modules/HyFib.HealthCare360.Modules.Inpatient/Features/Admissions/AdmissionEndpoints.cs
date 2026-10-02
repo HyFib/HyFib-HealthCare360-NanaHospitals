@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
@@ -27,6 +28,7 @@ internal static class AdmissionEndpoints
                 (await admissions.CancelAsync(id, r, ct)).ToNoContent())
             .RequirePermission(InpatientPermissions.Admit).WithValidation<CancelAdmissionRequest>();
 
+        group.MapGet("/{id:guid}/wristband", Wristband).RequirePermission(InpatientPermissions.AdmissionsRead);
         group.MapGet("/{id:guid}/bed-history", BedHistory).RequirePermission(InpatientPermissions.AdmissionsRead);
         group.MapGet("/{id:guid}/charges", Charges).RequirePermission(InpatientPermissions.AdmissionsRead);
         group.MapGet("/{id:guid}/consultant-visits", Visits)
@@ -178,6 +180,50 @@ internal static class AdmissionEndpoints
             a.ReferredBy, a.PayerType, a.PayerId, a.PolicyNumberMasked, a.IsMlc, a.MlcNumber, a.ExpectedDischargeDate, a.AttendantName, a.AttendantRelation,
             a.AttendantPhone, a.Notes, LengthOfStay.Days(a.AdmittedAt, a.DischargedAt ?? now), a.DischargeInitiatedAt, a.DischargeType, a.DischargedAt,
             a.DischargeNotes, a.CancelledAt, a.CancelReason, a.Version));
+    }
+
+    /// <summary>
+    /// The wristband of a patient in a bed. The ALLERGY mark comes from the chart here rather than from what the person
+    /// printing may see, so a band printed at the admission desk carries it too; only the mark is shared, not the
+    /// allergies. A restricted record needs the same access as the admission, and the read is audited.
+    /// </summary>
+    private static async Task<IResult> Wristband(Guid id, HospitalDbContext db, AdmissionAccess access, TimeProvider time, CancellationToken ct)
+    {
+        var opened = await access.OpenForReadAsync(id, "Printed a wristband", ct);
+        if (opened.IsFailure)
+        {
+            return opened.Error!.ToProblem();
+        }
+
+        var admission = opened.Value;
+        if (admission.Status is not (AdmissionStatus.Admitted or AdmissionStatus.DischargeInitiated))
+        {
+            return Error.Rule("admission.not_in_bed", "Wristbands are printed for patients who are still admitted.").ToProblem();
+        }
+
+        var band = await (
+                from a in db.Set<Admission>().AsNoTracking()
+                join p in db.Set<Patient>() on a.PatientId equals p.Id
+                join w in db.Set<Ward>() on a.WardId equals w.Id into wards
+                from w in wards.DefaultIfEmpty()
+                join b in db.Set<Bed>() on a.BedId equals b.Id into beds
+                from b in beds.DefaultIfEmpty()
+                where a.Id == id
+                select new
+                {
+                    a.AdmissionNumber,
+                    p.Uhid,
+                    p.FullName,
+                    p.Gender,
+                    p.DateOfBirth,
+                    WardName = w != null ? w.Name : null,
+                    BedLabel = b != null ? b.Label : null,
+                })
+            .FirstAsync(ct);
+        var allergic = await db.Set<Allergy>().AnyAsync(x => x.PatientId == admission.PatientId && x.Status == AllergyStatus.Active, ct);
+        return TypedResults.Ok(new WristbandDto(
+            id, band.Uhid, band.FullName, band.Gender, band.DateOfBirth is { } dob ? Age.Format(dob, time.Today()) : null, band.AdmissionNumber,
+            band.WardName, band.BedLabel, allergic));
     }
 
     private static async Task<IResult> BedHistory(Guid id, HospitalDbContext db, CancellationToken ct) =>
