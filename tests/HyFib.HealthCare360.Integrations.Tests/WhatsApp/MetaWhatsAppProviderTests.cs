@@ -82,6 +82,60 @@ public sealed class MetaWhatsAppProviderTests
     }
 
     [Fact]
+    public async Task A_template_with_a_document_header_uploads_the_file_and_sends_it_as_the_header()
+    {
+        _http.Respond(HttpStatusCode.OK, """{"id":"2290617331189463"}""")
+            .Respond(HttpStatusCode.OK, """{"messages":[{"id":"wamid.REPORT"}]}""");
+
+        var result = await Provider.SendTemplateAsync(
+            new WhatsAppTemplateMessage("+919876543210", "lab_report_ready", "en", ["Dear Asha, your report NHLAB2600012 is ready."], "log-7", null,
+                new WhatsAppHeaderDocument("lab-report-NHLAB2600012.pdf", Encoding.ASCII.GetBytes("%PDF-1.4 Asha Rao"), "application/pdf")),
+            Settings, Secrets, Ct);
+
+        result.ShouldBe(SendResult.Ok("wamid.REPORT"));
+        _http.Requests.Count.ShouldBe(2);
+        _http.Requests[0].Uri.ShouldBe(new Uri("https://graph.facebook.com/v21.0/106540352242922/media"));
+        var components = _http.Requests[1].Json().GetProperty("template").GetProperty("components");
+        components.GetArrayLength().ShouldBe(2);
+        components[0].GetProperty("type").GetString().ShouldBe("header");
+        var document = components[0].GetProperty("parameters")[0];
+        document.GetProperty("type").GetString().ShouldBe("document");
+        document.GetProperty("document").GetProperty("id").GetString().ShouldBe("2290617331189463");
+        document.GetProperty("document").GetProperty("filename").GetString().ShouldBe("lab-report-NHLAB2600012.pdf");
+        components[1].GetProperty("type").GetString().ShouldBe("body");
+
+        // The file and the message text are PHI: the integration log records sizes only.
+        _tracing.AllText.ShouldNotContain("Asha");
+        _tracing.AllText.ShouldContain("\"document\":17");
+    }
+
+    [Fact]
+    public async Task A_header_document_whatsapp_would_refuse_is_not_uploaded()
+    {
+        var result = await Provider.SendTemplateAsync(
+            new WhatsAppTemplateMessage("+919876543210", "lab_report_ready", "en", ["x"], null, null, new WhatsAppHeaderDocument("report.html", [0x3C], "text/html")),
+            Settings, Secrets, Ct);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("text/html");
+        _http.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task A_failed_upload_fails_the_message()
+    {
+        _http.Respond(HttpStatusCode.BadRequest, """{"error":{"message":"Invalid parameter","code":100}}""");
+
+        var result = await Provider.SendTemplateAsync(
+            new WhatsAppTemplateMessage("+919876543210", "lab_report_ready", "en", ["x"], null, null, new WhatsAppHeaderDocument("r.pdf", [0x25], "application/pdf")),
+            Settings, Secrets, Ct);
+
+        result.Success.ShouldBeFalse();
+        result.Error!.ShouldContain("did not accept the document");
+        _http.Requests.ShouldHaveSingleItem();
+    }
+
+    [Fact]
     public async Task Sends_a_free_form_text_reply_and_logs_only_its_length()
     {
         _http.Respond(HttpStatusCode.OK, """{"messages":[{"id":"wamid.TXT"}]}""");

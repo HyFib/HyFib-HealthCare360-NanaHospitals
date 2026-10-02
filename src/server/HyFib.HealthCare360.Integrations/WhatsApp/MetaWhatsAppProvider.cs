@@ -4,9 +4,10 @@ using System.Text.RegularExpressions;
 namespace HyFib.HealthCare360.Integrations.WhatsApp;
 
 /// <summary>
-/// Meta WhatsApp Cloud API: approved template messages with body parameters, documents (reports, bills) uploaded to
-/// <c>/{phone-number-id}/media</c> first and then sent by media id, and free-form text replies. Parameter values and
-/// texts can carry PHI, so only the template name, parameter count and text length are logged.
+/// Meta WhatsApp Cloud API: approved template messages with body parameters (and, for templates approved with one, a
+/// document header such as a report's PDF), documents (reports, bills) uploaded to <c>/{phone-number-id}/media</c>
+/// first and then sent by media id, and free-form text replies. Parameter values, texts and documents can carry PHI,
+/// so only the template name, parameter count, text length and file size are logged.
 /// </summary>
 internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationTrace trace) : IWhatsAppProvider
 {
@@ -28,8 +29,36 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         }
 
         var language = settings.LanguageCodes?.GetValueOrDefault(message.Language) ?? message.Language;
-        var payload = TemplatePayload(message.To, message.TemplateName, language, message.BodyParameters);
-        var summary = $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\",\"language\":\"{language}\",\"parameters\":{message.BodyParameters.Count}}}";
+        var summary = $"{{\"to\":\"{Phone.Mask(message.To)}\",\"template\":\"{message.TemplateName}\",\"language\":\"{language}\",\"parameters\":{message.BodyParameters.Count}"
+            + (message.HeaderDocument is { } attached ? $",\"document\":{attached.Content.Length}}}" : "}");
+        HeaderMedia? header = null;
+        if (message.HeaderDocument is { } document)
+        {
+            if (CheckDocument(document.ContentType, document.Content.Length, settings) is { } refused)
+            {
+                return await FailAsync("template", message.Reference, started, refused, summary);
+            }
+
+            var fileName = SafeFileName(document.FileName);
+            string? mediaId;
+            try
+            {
+                mediaId = await UploadAsync(settings, secrets, document.Content, document.ContentType, fileName, cancellationToken);
+            }
+            catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
+            {
+                return await FailAsync("template", message.Reference, started, "Upload failed: " + IntegrationErrors.Describe(ex, "WhatsApp"), summary);
+            }
+
+            if (mediaId is null)
+            {
+                return await FailAsync("template", message.Reference, started, "WhatsApp did not accept the document upload.", summary);
+            }
+
+            header = new HeaderMedia(mediaId, fileName);
+        }
+
+        var payload = TemplatePayload(message.To, message.TemplateName, language, message.BodyParameters, header);
         return await SendMessageAsync(settings, secrets, payload, "template", summary, message.Reference, started, cancellationToken);
     }
 
@@ -41,14 +70,9 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
             return await FailAsync("document", message.Reference, started, problem);
         }
 
-        if (!DocumentTypes.Contains(message.ContentType))
+        if (CheckDocument(message.ContentType, message.Content.Length, settings) is { } refused)
         {
-            return await FailAsync("document", message.Reference, started, $"WhatsApp cannot send documents of type {message.ContentType}.");
-        }
-
-        if (message.Content.Length > Math.Clamp(settings.MaxDocumentMegabytes, 1, 100) * 1024L * 1024L)
-        {
-            return await FailAsync("document", message.Reference, started, "The document is larger than the configured WhatsApp limit.");
+            return await FailAsync("document", message.Reference, started, refused);
         }
 
         var fileName = SafeFileName(message.FileName);
@@ -56,7 +80,7 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         string? mediaId;
         try
         {
-            mediaId = await UploadAsync(settings, secrets, message, fileName, cancellationToken);
+            mediaId = await UploadAsync(settings, secrets, message.Content, message.ContentType, fileName, cancellationToken);
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
         {
@@ -101,22 +125,35 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         text = new { preview_url = false, body = text },
     };
 
-    /// <summary>Template message body. Meta rejects parameters containing newlines, tabs or long runs of spaces.</summary>
-    internal static object TemplatePayload(string to, string templateName, string language, IReadOnlyList<string> parameters) => new
+    /// <summary>
+    /// Template message: an optional document header (an uploaded file, by media id) and the body parameters. Meta
+    /// rejects parameters containing newlines, tabs or long runs of spaces.
+    /// </summary>
+    internal static object TemplatePayload(string to, string templateName, string language, IReadOnlyList<string> parameters, HeaderMedia? header = null)
     {
-        messaging_product = "whatsapp",
-        recipient_type = "individual",
-        to = to.TrimStart('+'),
-        type = "template",
-        template = new
+        var components = new List<object>();
+        if (header is not null)
         {
-            name = templateName,
-            language = new { code = language },
-            components = parameters.Count == 0
-                ? null
-                : new[] { new { type = "body", parameters = parameters.Select(p => new { type = "text", text = SanitizeParameter(p) }).ToArray() } },
-        },
-    };
+            components.Add(new { type = "header", parameters = new[] { new { type = "document", document = new { id = header.MediaId, filename = header.FileName } } } });
+        }
+
+        if (parameters.Count > 0)
+        {
+            components.Add(new { type = "body", parameters = parameters.Select(p => new { type = "text", text = SanitizeParameter(p) }).ToArray() });
+        }
+
+        return new
+        {
+            messaging_product = "whatsapp",
+            recipient_type = "individual",
+            to = to.TrimStart('+'),
+            type = "template",
+            template = new { name = templateName, language = new { code = language }, components = components.Count == 0 ? null : components },
+        };
+    }
+
+    /// <summary>A file already uploaded to WhatsApp, shown as a template's document header.</summary>
+    internal sealed record HeaderMedia(string MediaId, string FileName);
 
     internal static string SanitizeParameter(string value) =>
         IntegrationTrace.Truncate(Whitespace().Replace(value, " ").Trim(), 1024) ?? string.Empty;
@@ -164,13 +201,22 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         }
     }
 
-    private async Task<string?> UploadAsync(WhatsAppSettings settings, WhatsAppSecrets secrets, WhatsAppDocumentMessage message, string fileName, CancellationToken cancellationToken)
+    /// <summary>Why WhatsApp would refuse the document (its type or size), or null.</summary>
+    private static string? CheckDocument(string contentType, int length, WhatsAppSettings settings) =>
+        !DocumentTypes.Contains(contentType)
+            ? $"WhatsApp cannot send documents of type {contentType}."
+            : length > Math.Clamp(settings.MaxDocumentMegabytes, 1, 100) * 1024L * 1024L
+                ? "The document is larger than the configured WhatsApp limit."
+                : null;
+
+    private async Task<string?> UploadAsync(
+        WhatsAppSettings settings, WhatsAppSecrets secrets, byte[] content, string contentType, string fileName, CancellationToken cancellationToken)
     {
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent("whatsapp"), "messaging_product");
-        form.Add(new StringContent(message.ContentType), "type");
-        var file = new ByteArrayContent(message.Content);
-        file.Headers.ContentType = MediaTypeHeaderValue.Parse(message.ContentType);
+        form.Add(new StringContent(contentType), "type");
+        var file = new ByteArrayContent(content);
+        file.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
         form.Add(file, "file", fileName);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint(settings, "media")) { Content = form };

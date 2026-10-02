@@ -33393,6 +33393,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<bool>("WhatsAppDocumentHeader")
+                        .HasColumnType("boolean")
+                        .HasColumnName("whats_app_document_header");
+
                     b.Property<string>("WhatsAppTemplateName")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")

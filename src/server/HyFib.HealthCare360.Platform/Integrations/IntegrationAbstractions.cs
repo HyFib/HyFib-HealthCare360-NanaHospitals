@@ -23,7 +23,20 @@ public interface ISmsSender
 }
 
 // ---------- WhatsApp ----------
-public sealed record WhatsAppTemplateMessage(string To, string TemplateName, string Language, IReadOnlyList<string> BodyParameters, string? Reference = null, Guid? FacilityId = null);
+/// <param name="HeaderDocument">
+/// For a template approved with a document header (a report's PDF, say): the file sent at the top of the message.
+/// Unlike a free-form document, it reaches the person outside the 24-hour customer-service window.
+/// </param>
+public sealed record WhatsAppTemplateMessage(
+    string To,
+    string TemplateName,
+    string Language,
+    IReadOnlyList<string> BodyParameters,
+    string? Reference = null,
+    Guid? FacilityId = null,
+    WhatsAppHeaderDocument? HeaderDocument = null);
+
+public sealed record WhatsAppHeaderDocument(string FileName, byte[] Content, string ContentType);
 
 public sealed record WhatsAppDocumentMessage(string To, string FileName, byte[] Content, string ContentType, string? Caption = null, string? Reference = null, Guid? FacilityId = null);
 
