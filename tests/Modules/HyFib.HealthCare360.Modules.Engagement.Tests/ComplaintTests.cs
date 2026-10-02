@@ -88,4 +88,32 @@ public sealed class ComplaintTests
         complaint.MoveTo(ComplaintStatus.Resolved, "Done", Now.AddHours(26));
         complaint.IsOverdue(Now.AddHours(30)).ShouldBeFalse();
     }
+
+    [Fact]
+    public void A_complaint_is_escalated_once_when_it_passes_its_deadline_unresolved()
+    {
+        var complaint = Registered(ComplaintPriority.High);
+
+        complaint.Escalate(Now.AddHours(23)).ShouldBeFalse("It is still within its 24 hours.");
+        complaint.Escalate(Now.AddHours(25)).ShouldBeTrue();
+        complaint.EscalatedAt.ShouldBe(Now.AddHours(25));
+
+        complaint.Escalate(Now.AddHours(30)).ShouldBeFalse("A complaint is escalated once.");
+        complaint.EscalatedAt.ShouldBe(Now.AddHours(25));
+    }
+
+    [Fact]
+    public void A_resolved_complaint_is_never_escalated_and_reopening_does_not_escalate_it_again()
+    {
+        var resolved = Registered();
+        resolved.MoveTo(ComplaintStatus.Resolved, "Apologised and refunded the charge", Now.AddHours(1)).IsSuccess.ShouldBeTrue();
+        resolved.Escalate(Now.AddDays(5)).ShouldBeFalse();
+        resolved.EscalatedAt.ShouldBeNull();
+
+        var reopened = Registered();
+        reopened.Escalate(Now.AddDays(4)).ShouldBeTrue();
+        reopened.MoveTo(ComplaintStatus.Resolved, "Apologised", Now.AddDays(4).AddHours(1));
+        reopened.MoveTo(ComplaintStatus.InProgress, "The patient says the bill is still wrong", Now.AddDays(5)).IsSuccess.ShouldBeTrue();
+        reopened.Escalate(Now.AddDays(6)).ShouldBeFalse();
+    }
 }

@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Engagement.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Features.Campaigns;
 using HyFib.HealthCare360.Modules.Engagement.Features.Complaints;
 using HyFib.HealthCare360.Modules.Engagement.Features.Feedback;
+using HyFib.HealthCare360.Modules.Engagement.Features.FollowUps;
 using HyFib.HealthCare360.Modules.Engagement.Features.Leads;
 using HyFib.HealthCare360.Modules.Engagement.Features.Referrals;
 using HyFib.HealthCare360.SharedKernel;
@@ -112,4 +113,13 @@ public sealed class ValidatorTests
 
     private static SaveReferringDoctorRequest Doctor(IReadOnlyList<string> alternateNames) =>
         new("Dr. Ravi Kumar", "Kumar Clinic", "044-24567890", null, "General Medicine", "Chennai", "TNMC 12345", alternateNames, null, true, null);
+
+    [Fact]
+    public void A_call_records_what_happened_on_the_call_never_a_visit()
+    {
+        var validator = new FollowUpAttemptRequestValidator();
+
+        validator.Validate(new FollowUpAttemptRequest(FollowUpOutcome.Reached, "Recovering well", null)).IsValid.ShouldBeTrue();
+        validator.Validate(new FollowUpAttemptRequest(FollowUpOutcome.Visited, null, null)).IsValid.ShouldBeFalse();
+    }
 }

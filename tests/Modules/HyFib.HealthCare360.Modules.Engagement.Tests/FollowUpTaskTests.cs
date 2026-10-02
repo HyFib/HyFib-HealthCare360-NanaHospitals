@@ -120,4 +120,22 @@ public sealed class FollowUpTaskTests
         task.Cancel("Patient moved away");
         task.IsOverdue(Today).ShouldBeFalse();
     }
+
+    [Fact]
+    public void Coming_back_completes_the_task_without_a_call_and_is_never_a_call_outcome()
+    {
+        var task = NewTask(FollowUpType.PostConsultation);
+
+        task.RecordAttempt(FollowUpOutcome.Visited, null, null, Today, Now).IsFailure.ShouldBeTrue();
+        task.Attempts.ShouldBe(0);
+
+        task.CompleteAsVisited(" Seen on 26 Sep 2026. ", Now).IsSuccess.ShouldBeTrue();
+
+        task.Status.ShouldBe(FollowUpStatus.Completed);
+        task.Outcome.ShouldBe(FollowUpOutcome.Visited);
+        task.OutcomeNotes.ShouldBe("Seen on 26 Sep 2026.");
+        task.CompletedAt.ShouldBe(Now);
+        task.Attempts.ShouldBe(0);
+        task.CompleteAsVisited("again", Now).IsFailure.ShouldBeTrue();
+    }
 }

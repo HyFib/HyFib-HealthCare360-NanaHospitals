@@ -58,10 +58,28 @@ public sealed class Complaint : AuditableEntity, IFacilityScoped
     public DateTimeOffset? ClosedAt { get; set; }
     public int ReopenCount { get; set; }
 
+    /// <summary>When the complaint passed its deadline unresolved and was escalated (FB-03); it is escalated once.</summary>
+    public DateTimeOffset? EscalatedAt { get; private set; }
+
     /// <summary>Time from being raised to resolution (the turnaround the hospital reports).</summary>
     public TimeSpan? TurnaroundTime => ResolvedAt - RaisedAt;
 
     public bool IsOverdue(DateTimeOffset now) => Status is ComplaintStatus.Open or ComplaintStatus.InProgress && now > DueAt;
+
+    /// <summary>
+    /// Escalates a complaint that is still unresolved after its deadline. Returns false when it is not overdue or was
+    /// already escalated, so the escalation alert goes out once (a complaint reopened after escalation is not escalated again).
+    /// </summary>
+    public bool Escalate(DateTimeOffset now)
+    {
+        if (!IsOverdue(now) || EscalatedAt is not null)
+        {
+            return false;
+        }
+
+        EscalatedAt = now;
+        return true;
+    }
 
     public static TimeSpan SlaFor(ComplaintPriority priority) => priority == ComplaintPriority.High ? HighPrioritySla : NormalPrioritySla;
 

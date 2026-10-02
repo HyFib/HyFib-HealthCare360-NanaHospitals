@@ -301,9 +301,10 @@ Raised:
 | `ServiceOrderCancelled` (Platform) | line or order cancelled, checkup cancelled / no-show |
 | `PrescriptionSigned` (Platform) | prescription signed or refill issued (lines with snapshot and quantity) |
 | `PrescriptionCancelled` (Platform) | signed prescription cancelled |
-| `EncounterSigned`, `EncounterAmended` (Clinical.Domain) | encounter signed / amended (follow-up and referral data for CRM, doctor fees) |
+| `EncounterSigned`, `EncounterAmended` (Clinical.Domain) | encounter signed / amended (follow-up and referral data for CRM, doctor fees). Engagement starts the follow-up and chronic-review calls from it |
 | `DischargeSummarySigned` (Clinical.Domain) | discharge summary first signed |
-| `HealthCheckupCompleted` (Clinical.Domain) | checkup completed |
+| `HealthCheckupCompleted` (Clinical.Domain) | checkup completed; Engagement schedules the next check-up's recall |
+| `ImmunizationRecorded`, `ImmunizationEnteredInError` (Clinical.Domain) | dose recorded (with the recording facility and `nextDueOn`) / marked as entered in error; Engagement keeps the next dose's reminder |
 
 Handled (same transaction):
 

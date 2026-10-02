@@ -35,6 +35,9 @@ public enum FollowUpOutcome
     NotReachable,
     CallBackLater,
     Other,
+
+    /// <summary>The patient came back for a visit, so no call was needed (set automatically, never a call outcome).</summary>
+    Visited,
 }
 
 public enum FollowUpSource
@@ -73,6 +76,9 @@ public sealed class FollowUpTask : AuditableEntity, IFacilityScoped
     /// <summary>Idempotency key for automatic tasks (for example "discharge:{admissionId}").</summary>
     public string? SourceReference { get; set; }
 
+    /// <summary>When the "follow-up due" SMS was queued, by staff or by the reminder job; it goes out once.</summary>
+    public DateTimeOffset? ReminderSentAt { get; set; }
+
     public bool IsOpen => Status is FollowUpStatus.Open or FollowUpStatus.InProgress;
 
     public bool IsOverdue(DateOnly today) => IsOpen && DueDate < today;
@@ -88,6 +94,11 @@ public sealed class FollowUpTask : AuditableEntity, IFacilityScoped
         if (!IsOpen)
         {
             return Error.Rule("followup.closed", "This follow-up is already closed.");
+        }
+
+        if (outcome == FollowUpOutcome.Visited)
+        {
+            return Error.Field("outcome", "Choose what happened on the call.");
         }
 
         if (nextDueDate is { } next && next < today)
@@ -125,6 +136,21 @@ public sealed class FollowUpTask : AuditableEntity, IFacilityScoped
 
         Status = FollowUpStatus.Completed;
         Outcome = FollowUpOutcome.AppointmentBooked;
+        OutcomeNotes = note.Trim();
+        CompletedAt = now;
+        return Result.Success();
+    }
+
+    /// <summary>Completes the task because the patient came back for a visit or the dose (not counted as a call attempt).</summary>
+    public Result CompleteAsVisited(string note, DateTimeOffset now)
+    {
+        if (!IsOpen)
+        {
+            return Error.Rule("followup.closed", "This follow-up is already closed.");
+        }
+
+        Status = FollowUpStatus.Completed;
+        Outcome = FollowUpOutcome.Visited;
         OutcomeNotes = note.Trim();
         CompletedAt = now;
         return Result.Success();

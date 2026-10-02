@@ -27,6 +27,9 @@ public static class EngagementPermissions
     /// <summary>Complaint handlers; holders receive the new-complaint alert.</summary>
     public const string ComplaintsManage = "feedback.complaints.manage";
 
+    /// <summary>Those a complaint is escalated to when it passes its deadline unresolved (FB-03); an alert, not access.</summary>
+    public const string ComplaintEscalations = "feedback.complaints.escalations";
+
     private static readonly string[] Crm = [SystemRoles.CrmExecutive, SystemRoles.HospitalAdmin];
     private static readonly string[] Experience = [SystemRoles.CrmExecutive, SystemRoles.QualityManager, SystemRoles.HospitalAdmin];
 
@@ -41,6 +44,8 @@ public static class EngagementPermissions
         new(FeedbackRead, "Feedback", "View feedback responses and analytics", Experience),
         new(FeedbackManage, "Feedback", "Maintain feedback forms and QR codes, record feedback and send feedback links", Experience),
         new(ComplaintsManage, "Feedback", "Handle patient complaints; receives new-complaint alerts", Experience),
+        new(ComplaintEscalations, "Feedback", "Receive the alert when a complaint passes its resolution deadline unresolved",
+            [SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -57,6 +62,8 @@ public sealed class EngagementModule : IModule
         services.AddScoped<CommunicationConsentService>();
         services.AddScoped<PatientFeedbackEraser>();
         services.AddScoped<LeadService>();
+        services.AddScoped<EngagementSettings>();
+        services.AddScoped<FollowUpReminders>();
         services.AddScoped<FollowUpService>();
         services.AddScoped<ReferralService>();
         services.AddScoped<CampaignService>();
@@ -64,9 +71,11 @@ public sealed class EngagementModule : IModule
         services.AddScoped<FeedbackService>();
         services.AddScoped<FeedbackInvitationService>();
         services.AddScoped<Patient360Service>();
+        services.AddScoped<EngagementMonitor>();
 
-        // Returns immediately on API-only nodes (PlatformOptions.RunsJobs).
+        // Both return immediately on API-only nodes (PlatformOptions.RunsJobs).
         services.AddHostedService<CampaignDispatcher>();
+        services.AddHostedService<EngagementJobs>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

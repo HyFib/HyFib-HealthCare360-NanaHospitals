@@ -3,7 +3,6 @@ using HyFib.HealthCare360.Modules.Engagement.Features.FollowUps;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Identity;
-using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
 
@@ -11,13 +10,9 @@ namespace HyFib.HealthCare360.Modules.Engagement.Services;
 public sealed class FollowUpService(
     HospitalDbContext db,
     ICurrentUser currentUser,
-    CommunicationConsentService consents,
-    PublicLinks links,
-    INotificationService notifications,
+    FollowUpReminders reminders,
     TimeProvider time)
 {
-    public const string ReminderTemplate = "followup.reminder";
-
     public async Task<Result<Guid>> CreateAsync(CreateFollowUpRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -97,42 +92,26 @@ public sealed class FollowUpService(
 
     public Task<Result> CancelAsync(Guid id, string reason, CancellationToken ct) => ChangeAsync(id, task => task.Cancel(reason), ct);
 
-    /// <summary>Sends the "follow-up due" SMS, only to patients who accepted transactional updates.</summary>
+    /// <summary>Sends the "follow-up due" SMS now (see <see cref="FollowUpReminders"/>); staff may send it again.</summary>
     public async Task<Result> SendReminderAsync(Guid id, CancellationToken ct)
     {
-        var task = await db.Set<FollowUpTask>().AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+        var task = await db.Set<FollowUpTask>().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (task is null)
         {
             return Error.NotFound(nameof(FollowUpTask), id);
         }
 
-        var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == task.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.PreferredLanguage }).FirstOrDefaultAsync(ct);
-        if (patient?.Phone is null)
+        if (!task.IsOpen)
         {
-            return Error.Rule("followup.no_phone", "The patient has no mobile number on record.");
+            return Error.Rule("followup.closed", "This follow-up is already closed.");
         }
 
-        if (!await consents.HasTransactionalConsentAsync(patient.Id, ct))
+        var queued = await reminders.QueueAsync([task], ct);
+        if (queued.IsFailure)
         {
-            return Error.Rule("followup.no_consent", "The patient has not agreed to SMS updates.");
+            return queued;
         }
 
-        var doctor = task.VisitId is { } visitId
-            ? await (from v in db.Set<Visit>() join pr in db.Set<Practitioner>() on v.PractitionerId equals pr.Id where v.Id == visitId select pr.DisplayName).FirstOrDefaultAsync(ct)
-            : null;
-        var baseUrl = await links.BaseUrlAsync(task.FacilityId, ct);
-        notifications.Queue(ReminderTemplate,
-            new NotificationRecipient(patient.Phone, null, patient.Id, patient.FullName, CampaignService.LanguageCode(patient.PreferredLanguage)),
-            new Dictionary<string, string>
-            {
-                ["doctor"] = doctor ?? "your doctor",
-                ["date"] = task.DueDate.ToString("dd MMM yyyy", System.Globalization.CultureInfo.InvariantCulture),
-                ["link"] = baseUrl is null ? "the hospital front desk" : PublicLinks.PortalHome(baseUrl),
-            },
-            [NotificationChannel.Sms],
-            TimeSpan.FromDays(1),
-            task.FacilityId);
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }

@@ -103,7 +103,7 @@ internal static class ComplaintEndpoints
 
         return TypedResults.Ok(result.Map(c => new ComplaintListItem(
             c.Id, c.ComplaintNumber, c.Source, c.Status, c.Priority, c.Category, c.DepartmentId, c.PatientId, c.OwnerUserId, c.RaisedAt, c.DueAt,
-            c.IsOverdue(now), c.TurnaroundTime is { } tat ? Math.Round(tat.TotalHours, 1) : null)));
+            c.IsOverdue(now), c.TurnaroundTime is { } tat ? Math.Round(tat.TotalHours, 1) : null, c.EscalatedAt)));
     }
 
     private static async Task<IResult> Get(Guid id, HospitalDbContext db, IAuditLogger audit, TimeProvider time, CancellationToken ct)
@@ -122,7 +122,7 @@ internal static class ComplaintEndpoints
         return TypedResults.Ok(new ComplaintDetail(
             c.Id, c.ComplaintNumber, c.Source, c.Status, c.Priority, c.Category, c.Description, c.DepartmentId, c.PatientId, c.FeedbackResponseId,
             c.ContactName, c.ContactPhone, c.OwnerUserId, c.Resolution, c.RaisedAt, c.DueAt, c.ResolvedAt, c.ClosedAt, c.ReopenCount,
-            c.IsOverdue(time.GetUtcNow()), c.Version));
+            c.IsOverdue(time.GetUtcNow()), c.EscalatedAt, c.Version));
     }
 
     private static async Task<IResult> Create(CreateComplaintRequest request, ComplaintService complaints, ICurrentUser user, CancellationToken ct) =>

@@ -110,7 +110,7 @@ internal static class FollowUpEndpoints
 
         return TypedResults.Ok(result.Map(r => new FollowUpListItem(
             r.Task.Id, r.Task.PatientId, r.Uhid, r.FullName, r.Phone is null ? null : Phone.Mask(r.Phone), r.Task.Type, r.Task.DueDate, r.Task.Status,
-            r.Task.Priority, r.Task.AssigneeUserId, r.Task.Attempts, r.Task.Outcome, r.Task.IsOverdue(today))));
+            r.Task.Priority, r.Task.AssigneeUserId, r.Task.Attempts, r.Task.Outcome, r.Task.IsOverdue(today), r.Task.ReminderSentAt)));
     }
 
     private static async Task<IResult> Get(
@@ -141,6 +141,6 @@ internal static class FollowUpEndpoints
         return TypedResults.Ok(new FollowUpDetail(
             task.Id, task.PatientId, patient.Uhid, patient.FullName, patient.Phone, task.VisitId, task.AdmissionId, task.Type, task.DueDate, task.Status,
             task.Priority, task.AssigneeUserId, task.Notes, task.Attempts, task.Outcome, task.OutcomeNotes, task.CompletedAt, task.Source,
-            task.IsOverdue(time.Today()), task.Version));
+            task.IsOverdue(time.Today()), task.ReminderSentAt, task.Version));
     }
 }
