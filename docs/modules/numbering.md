@@ -67,7 +67,11 @@ saving.
   IP bills share one table, so two formats that can make the same number would issue a bill number twice). Formats are
   compared with every run of digits taken as one place: the date parts, the running number and digits in the fixed
   text. So `{FAC}OB{YY}{SEQ:7}`, `{FAC}OB{SEQ:9}` and `{FAC}OB26{SEQ}` count as the same: `{SEQ:6}` reaching 1000000
-  makes the numbers of `{SEQ:7}`, and `{SEQ}` and `{SEQ:1}` make the same numbers. Restoring a default is always allowed:
+  makes the numbers of `{SEQ:7}`, and `{SEQ}` and `{SEQ:1}` make the same numbers. `{FAC}` is read as the code it
+  stands for (the facility's own for a per-facility series, the main facility's for a shared one), so at facility AB
+  `{FAC}AB{YY}{SEQ:7}` and `AB{FAC}{YY}{SEQ:7}` count as the same, and so do `{FAC}-{SEQ}` and `AB-{SEQ}`. Number
+  columns are unique across facilities, so a change is checked against every facility's formats when it is saved; the
+  editor checks the formats of the facility you are signed in to as you type. Restoring a default is always allowed:
   refunds and pharmacy refill requests share the default `{FAC}RF{YY}{SEQ:6}`, and credit notes and canteen bills both
   start `{FAC}CN{YY}`, but each pair is kept in different tables.
 * A stored running number padded to more than 12 digits (possible only from before these rules) is padded to 12 when

@@ -51,6 +51,7 @@ export function toChange(
     facilityCount: context.facilityCount,
     longestFacilityCode: context.longestFacilityCode,
     otherFormats: context.otherFormats,
+    facilityCode: series.facilityCode,
   };
 }
 

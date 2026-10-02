@@ -251,6 +251,67 @@ describe('checkChange', () => {
   });
 
   it.each([
+    ['{FAC}AB{YY}{SEQ:7}', 'AB', 'ABAB#'],
+    ['AB{FAC}{YY}{SEQ:7}', 'AB', 'ABAB#'],
+    ['{FAC}{SEQ:6}', 'NH1', 'NH#'],
+    ['{FAC}OB{SEQ}', null, '{FAC}OB#'],
+  ])('reads %s at facility %s with the code in place of {FAC}', (format, code, expected) => {
+    expect(outline(format, code)).toBe(expected);
+  });
+
+  it('refuses formats that make the same numbers once the facility code is filled in', () => {
+    // At facility AB both make ABAB260000001: {FAC} is the facility's code, not a part apart.
+    expect(
+      checkChange(
+        change({
+          format: '{FAC}AB{YY}{SEQ:7}',
+          facilityCode: 'AB',
+          otherFormats: [{ name: 'IP bill', format: 'AB{FAC}{YY}{SEQ:7}', isDefault: false, facilityCode: 'AB' }],
+        }),
+      ).format,
+    ).toEqual([
+      'IP bill uses AB{FAC}{YY}{SEQ:7}. With the facility code AB in place of {FAC}, the two can make the same numbers. ' +
+        'Change the letters, - or / so the two kinds of number can be told apart.',
+    ]);
+    expect(
+      checkChange(
+        change({
+          format: '{FAC}-{YY}{SEQ:7}',
+          facilityCode: 'NH',
+          otherFormats: [{ name: 'Visitor pass', format: 'NH-{YY}{SEQ:7}', isDefault: false, facilityCode: 'NH' }],
+        }),
+      ).format,
+    ).toEqual([
+      'Visitor pass uses NH-{YY}{SEQ:7}. With the facility code NH in place of {FAC}, the two can make the same numbers. ' +
+        'Change the letters, - or / so the two kinds of number can be told apart.',
+    ]);
+  });
+
+  it("compares formats at two facilities with each one's code", () => {
+    expect(
+      checkChange(
+        change({
+          format: '{FAC}C{YY}{SEQ:7}',
+          facilityCode: 'AB',
+          otherFormats: [{ name: 'IP bill', format: '{FAC}{YY}{SEQ:7}', isDefault: false, facilityCode: 'ABC' }],
+        }),
+      ).format,
+    ).toEqual([
+      'IP bill uses {FAC}{YY}{SEQ:7}. With the facility codes AB and ABC in place of {FAC}, the two can make the same ' +
+        'numbers. Change the letters, - or / so the two kinds of number can be told apart.',
+    ]);
+    expect(
+      checkChange(
+        change({
+          format: '{FAC}IB{YY}{SEQ:7}',
+          facilityCode: 'NH',
+          otherFormats: [{ name: 'IP bill', format: '{FAC}IB{YY}{SEQ:7}', isDefault: false, facilityCode: 'KH' }],
+        }),
+      ),
+    ).toEqual({});
+  });
+
+  it.each([
     ['{FAC}/OP/{YY}/{SEQ:5}', '{FAC}/IP/{YY}/{SEQ:5}'],
     ['{FAC}OB{YYYY}{SEQ:6}', '{FAC}OB-{YY}{SEQ:7}'],
     ['{FAC}B{YY}X{SEQ:5}', '{FAC}BX{YY}{SEQ:5}'],

@@ -314,11 +314,15 @@ export function largestStartAt(isLocked: boolean, format: string): number | null
   return 10 ** digits - 1;
 }
 
-/** Another series' format now, and whether that is the series' own default. */
+/**
+ * Another series' format now, whether that is the series' own default, and the facility code its numbers carry for
+ * {FAC} (missing when unknown).
+ */
 export interface OtherFormat {
   name: string;
   format: string;
   isDefault: boolean;
+  facilityCode?: string | null;
 }
 
 /** What the administrator asks to change in one series, and what the rules need to know about the hospital. */
@@ -337,6 +341,8 @@ export interface FormatChange {
   facilityCount: number;
   longestFacilityCode: number;
   otherFormats: readonly OtherFormat[];
+  /** The facility code this series' numbers carry for {FAC}: the facility's, or the main one's for a shared series. */
+  facilityCode?: string | null;
 }
 
 export type FormatField = 'format' | 'resetPolicy' | 'startAt';
@@ -380,11 +386,19 @@ const PERIOD_WORDS: Record<NumberResetPolicy, string> = {
   Daily: ' today',
 };
 
-/** The other series a changed format must differ from: those of this facility and the shared ones (the list's). */
+/**
+ * The other series a changed format must differ from: those of this facility and the shared ones (the list's), with
+ * the facility code each one's numbers carry. The server also checks the other facilities' formats when saving.
+ */
 export function otherFormats(series: readonly NumberSeriesItem[], key: string): OtherFormat[] {
   return series
     .filter((s) => s.key !== key)
-    .map((s) => ({ name: s.name, format: s.format, isDefault: s.format === s.defaultFormat }));
+    .map((s) => ({
+      name: s.name,
+      format: s.format,
+      isDefault: s.format === s.defaultFormat,
+      facilityCode: s.facilityCode,
+    }));
 }
 
 const FACILITY_CODE_NEEDED =
@@ -403,13 +417,24 @@ function lengthOf(change: FormatChange): NumberLength {
  * How the numbers of `format` read with every run of digits (the date parts, the running number and digits in the
  * fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read "{FAC}OB#". Two
  * formats that read alike can make the same number: once a running number outgrows its padding ({SEQ:6} reaching
- * 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}.
+ * 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}. With `facilityCode`, {FAC}
+ * reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both read "ABAB#" at facility AB; without it, {FAC} stays as
+ * written.
  */
-export function outline(format: string): string {
+export function outline(format: string, facilityCode?: string | null): string {
   let result = '';
   const digits = () => {
     if (!result.endsWith('#')) {
       result += '#';
+    }
+  };
+  const characters = (text: string) => {
+    for (const c of text) {
+      if (/^[0-9]$/.test(c)) {
+        digits();
+      } else {
+        result += c;
+      }
     }
   };
   for (const part of parseFormat(format)) {
@@ -422,12 +447,13 @@ export function outline(format: string): string {
         digits();
         break;
       case 'text':
-        for (const c of part.text) {
-          if (/^[0-9]$/.test(c)) {
-            digits();
-          } else {
-            result += c;
-          }
+        characters(part.text);
+        break;
+      case 'facilityCode':
+        if (facilityCode != null) {
+          characters(facilityCode);
+        } else {
+          result += part.text;
         }
         break;
       default:
@@ -437,25 +463,57 @@ export function outline(format: string): string {
   return result;
 }
 
+const hasFacilityCode = (format: string) => parseFormat(format).some((p) => p.kind === 'facilityCode');
+
 /**
- * The other series a changed format would be confused with: one whose format reads alike. Two defaults that look
- * alike were chosen that way (they are kept in different tables), so restoring a default is always allowed.
+ * Whether two formats can make the same numbers: read with their facility codes in place of {FAC}, or as written when
+ * a code they need is unknown.
+ */
+function alike(format: string, code: string | null | undefined, other: string, otherCode: string | null | undefined) {
+  const known = (code != null || !hasFacilityCode(format)) && (otherCode != null || !hasFacilityCode(other));
+  return known ? outline(format, code) === outline(other, otherCode) : outline(format) === outline(other);
+}
+
+/**
+ * The other series a changed format would be confused with: one whose numbers read alike, with the facility codes in
+ * place of {FAC}. Two defaults that look alike were chosen that way (they are kept in different tables), so restoring
+ * a default is always allowed.
  */
 function sameFormatAs(change: FormatChange): OtherFormat | undefined {
   if (change.format === change.currentFormat) {
     return undefined;
   }
-  const shape = outline(change.format);
   return change.otherFormats.find(
-    (other) => outline(other.format) === shape && !(other.isDefault && change.format === change.defaultFormat),
+    (other) =>
+      alike(change.format, change.facilityCode, other.format, other.facilityCode) &&
+      !(other.isDefault && change.format === change.defaultFormat),
   );
 }
 
-const sameFormatMessage = (other: OtherFormat, format: string) =>
-  other.format === format
-    ? `${other.name} already uses this format. Change the fixed text so the two kinds of number can be told apart.`
-    : `${other.name} uses ${other.format}, which can make the same numbers: the two differ only in digits, dates or ` +
-      'the length of the running number. Change the letters, - or / so the two kinds of number can be told apart.';
+/** Why `other` can make the numbers the change would make, and what to do about it. */
+function sameFormatMessage(other: OtherFormat, change: FormatChange): string {
+  const fix = 'Change the letters, - or / so the two kinds of number can be told apart.';
+  const withCode = [
+    ...new Set(
+      [
+        { format: change.format, code: change.facilityCode },
+        { format: other.format, code: other.facilityCode },
+      ]
+        .filter((f) => f.code != null && hasFacilityCode(f.format))
+        .map((f) => f.code as string),
+    ),
+  ];
+  // Alike as written, and not because of where a code is filled in: the plainer explanations apply.
+  const codesAgree = withCode.length <= 1 && hasFacilityCode(change.format) === hasFacilityCode(other.format);
+  if (codesAgree && other.format === change.format) {
+    return `${other.name} already uses this format. Change the fixed text so the two kinds of number can be told apart.`;
+  }
+  if (codesAgree && outline(other.format) === outline(change.format)) {
+    return `${other.name} uses ${other.format}, which can make the same numbers: the two differ only in digits, dates or the length of the running number. ${fix}`;
+  }
+  const codes = withCode.length === 1 ? `code ${withCode[0]}` : `codes ${joinWords(withCode, 'and')}`;
+  return `${other.name} uses ${other.format}. With the facility ${codes} in place of {FAC}, the two can make the same numbers. ${fix}`;
+}
 
 /**
  * Everything that stops the change from being saved, by field (empty when it can be saved). The format is checked in
@@ -486,7 +544,7 @@ export function checkChange(change: FormatChange): FormatErrors {
     }
     const same = sameFormatAs(change);
     if (same) {
-      add('format', sameFormatMessage(same, change.format));
+      add('format', sameFormatMessage(same, change));
     }
   }
 
@@ -559,7 +617,7 @@ export function formatChecks(change: FormatChange): FormatCheck[] {
   const same = sameFormatAs(change);
   checks.push(
     same
-      ? { ok: false, text: sameFormatMessage(same, change.format) }
+      ? { ok: false, text: sameFormatMessage(same, change) }
       : { ok: true, text: 'Different from the other number formats.' },
   );
   return checks;
