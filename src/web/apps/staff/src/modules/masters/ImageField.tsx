@@ -29,7 +29,8 @@ const useStyles = makeStyles({
     backgroundColor: '#ffffff',
     overflow: 'hidden',
   },
-  photoFrame: { width: '96px', height: '96px', borderRadius: '50%' },
+  // A photo is not printed, so it sits on the page's own background.
+  photoFrame: { width: '96px', height: '96px', borderRadius: '50%', backgroundColor: tokens.colorNeutralBackground3 },
   image: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' },
   actions: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
   empty: { color: tokens.colorNeutralForeground3, textAlign: 'center', padding: '0 8px' },

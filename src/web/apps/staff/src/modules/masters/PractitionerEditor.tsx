@@ -347,7 +347,6 @@ function FacilitiesPicker({
             return (
               <Field
                 label="Consults at"
-                required
                 validationMessage={fieldState.error?.message}
                 validationState={fieldState.error ? 'error' : 'none'}
               >
