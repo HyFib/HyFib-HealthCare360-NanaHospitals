@@ -28,12 +28,21 @@ public sealed record NumberFormatChange
     /// <summary>The length of the longest facility code in use ({FAC} is at most 6 letters).</summary>
     public int LongestFacilityCode { get; init; } = NumberFormatRules.MaxFacilityCodeLength;
 
-    /// <summary>The formats of the other series in the same scope, which a changed format must differ from.</summary>
+    /// <summary>The formats of the other series, which a changed format must differ from.</summary>
     public IReadOnlyCollection<OtherNumberFormat> OtherFormats { get; init; } = [];
+
+    /// <summary>
+    /// The facility code this series' numbers carry for {FAC}: the facility's own for a per-facility series, the main
+    /// facility's for a shared one. Null when unknown, and {FAC} is then compared as written.
+    /// </summary>
+    public string? FacilityCode { get; init; }
 }
 
-/// <summary>Another series' format now, and whether that is the series' own default.</summary>
-public sealed record OtherNumberFormat(string Name, string Format, bool IsDefault);
+/// <summary>
+/// Another series' format now, whether that is the series' own default, and the facility code its numbers carry for
+/// {FAC} (null when unknown).
+/// </summary>
+public sealed record OtherNumberFormat(string Name, string Format, bool IsDefault, string? FacilityCode = null);
 
 /// <summary>How long the numbers of a format can get, part by part.</summary>
 public sealed record NumberFormatLength(int FacilityCode, int Date, int RunningNumber, int FixedText)
@@ -171,9 +180,11 @@ public static class NumberFormatRules
     /// How the numbers of <paramref name="format"/> read with every run of digits (the date parts, the running number and
     /// digits in the fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read
     /// "{FAC}OB#". Two formats that read alike can make the same number: once a running number outgrows its padding
-    /// ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}.
+    /// ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}. With
+    /// <paramref name="facilityCode"/>, {FAC} reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both read "ABAB#" at
+    /// facility AB; without it, {FAC} stays as written.
     /// </summary>
-    public static string Outline(string format)
+    public static string Outline(string format, string? facilityCode = null)
     {
         var outline = new StringBuilder();
         void Digits()
@@ -181,6 +192,21 @@ public static class NumberFormatRules
             if (outline.Length == 0 || outline[^1] != '#')
             {
                 outline.Append('#');
+            }
+        }
+
+        void Characters(string text)
+        {
+            foreach (var c in text)
+            {
+                if (char.IsAsciiDigit(c))
+                {
+                    Digits();
+                }
+                else
+                {
+                    outline.Append(c);
+                }
             }
         }
 
@@ -193,18 +219,10 @@ public static class NumberFormatRules
                     Digits();
                     break;
                 case NumberFormatPartKind.Text:
-                    foreach (var c in part.Text)
-                    {
-                        if (char.IsAsciiDigit(c))
-                        {
-                            Digits();
-                        }
-                        else
-                        {
-                            outline.Append(c);
-                        }
-                    }
-
+                    Characters(part.Text);
+                    break;
+                case NumberFormatPartKind.FacilityCode when facilityCode is not null:
+                    Characters(facilityCode);
                     break;
                 default:
                     outline.Append(part.Text);
@@ -284,20 +302,16 @@ public static class NumberFormatRules
                 Add(FormatField, TooLong(series, parts, length));
             }
 
-            // Two series whose formats read alike can issue the same numbers (OP and IP bills share a table). Two defaults
-            // that look alike were chosen that way and are kept apart by their tables, so restoring a default is always
-            // allowed.
-            var outline = Outline(change.Format);
+            // Two series whose numbers read alike, with their facility codes in place of {FAC}, can issue the same numbers
+            // (OP and IP bills share a table). Two defaults that look alike were chosen that way and are kept apart by
+            // their tables, so restoring a default is always allowed.
             var same = formatChanged
-                ? change.OtherFormats.FirstOrDefault(other => string.Equals(Outline(other.Format), outline, StringComparison.Ordinal)
+                ? change.OtherFormats.FirstOrDefault(other => Alike(change.Format, change.FacilityCode, other.Format, other.FacilityCode)
                                                               && !(other.IsDefault && string.Equals(change.Format, series.DefaultFormat, StringComparison.Ordinal)))
                 : null;
             if (same is not null)
             {
-                Add(FormatField, string.Equals(same.Format, change.Format, StringComparison.Ordinal)
-                    ? $"{same.Name} already uses this format. Change the fixed text so the two kinds of number can be told apart."
-                    : $"{same.Name} uses {same.Format}, which can make the same numbers: the two differ only in digits, dates or " +
-                      "the length of the running number. Change the letters, - or / so the two kinds of number can be told apart.");
+                Add(FormatField, SameNumbersMessage(change, same));
             }
         }
 
@@ -321,6 +335,43 @@ public static class NumberFormatRules
 
         return errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.Ordinal);
     }
+
+    /// <summary>Why <paramref name="other"/> can make the numbers the change would make, and what to do about it.</summary>
+    private static string SameNumbersMessage(NumberFormatChange change, OtherNumberFormat other)
+    {
+        const string Fix = "Change the letters, - or / so the two kinds of number can be told apart.";
+        var withCode = new[] { (change.Format, change.FacilityCode), (other.Format, other.FacilityCode) }
+            .Where(f => f.FacilityCode is not null && HasFacilityCode(f.Format))
+            .Select(f => f.FacilityCode!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        // Alike as written, and not because of where a code is filled in: the plainer explanations apply.
+        var codesAgree = withCode.Count <= 1 && HasFacilityCode(change.Format) == HasFacilityCode(other.Format);
+        if (codesAgree && string.Equals(other.Format, change.Format, StringComparison.Ordinal))
+        {
+            return $"{other.Name} already uses this format. Change the fixed text so the two kinds of number can be told apart.";
+        }
+
+        if (codesAgree && string.Equals(Outline(other.Format), Outline(change.Format), StringComparison.Ordinal))
+        {
+            return $"{other.Name} uses {other.Format}, which can make the same numbers: the two differ only in digits, dates or the length of the running number. {Fix}";
+        }
+
+        var codes = withCode.Count == 1 ? $"code {withCode[0]}" : $"codes {JoinWords(withCode, "and")}";
+        return $"{other.Name} uses {other.Format}. With the facility {codes} in place of {{FAC}}, the two can make the same numbers. {Fix}";
+    }
+
+    /// <summary>
+    /// Whether two formats can make the same numbers: read with their facility codes in place of {FAC}, or as written when
+    /// a code they need is unknown.
+    /// </summary>
+    private static bool Alike(string format, string? facilityCode, string other, string? otherFacilityCode) =>
+        (facilityCode is not null || !HasFacilityCode(format)) && (otherFacilityCode is not null || !HasFacilityCode(other))
+            ? string.Equals(Outline(format, facilityCode), Outline(other, otherFacilityCode), StringComparison.Ordinal)
+            : string.Equals(Outline(format), Outline(other), StringComparison.Ordinal);
+
+    private static bool HasFacilityCode(string format) => NumberFormat.Parse(format).Any(p => p.Kind == NumberFormatPartKind.FacilityCode);
 
     private static string TooLong(NumberSeriesDefinition series, IReadOnlyList<NumberFormatPart> parts, NumberFormatLength length)
     {

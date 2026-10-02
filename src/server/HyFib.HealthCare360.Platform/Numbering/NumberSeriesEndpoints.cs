@@ -189,12 +189,14 @@ internal static class NumberSeriesEndpoints
             };
             if (formatChanged || resetChanged)
             {
-                var facilities = await db.Set<Facility>().AsNoTracking().Select(f => new { f.Id, f.Code }).ToListAsync(ct);
+                var codes = await db.Set<Facility>().AsNoTracking().ToDictionaryAsync(f => f.Id, f => f.Code, ct);
+                var mainCode = await NumberSeriesService.FacilityCodeAsync(db, null, ct);
                 change = change with
                 {
-                    FacilityCount = facilities.Count,
-                    LongestFacilityCode = LongestCode(facilities.Select(f => f.Code)),
-                    OtherFormats = await OtherFormatsAsync(db, catalog, series, scope, facilities.Select(f => f.Id).ToList(), ct),
+                    FacilityCount = codes.Count,
+                    LongestFacilityCode = LongestCode(codes.Values),
+                    FacilityCode = scope is { } facility ? codes.GetValueOrDefault(facility) : mainCode,
+                    OtherFormats = await OtherFormatsAsync(db, catalog, series, codes, mainCode, ct),
                 };
             }
 
@@ -275,15 +277,16 @@ internal static class NumberSeriesEndpoints
     }
 
     /// <summary>
-    /// The formats a changed format must differ from: the other series of the same facility and the shared ones; for a
-    /// shared series, every facility's.
+    /// The formats a changed format must differ from: every other series, as each facility has it (number columns are
+    /// unique across facilities), with the facility code its numbers carry for {FAC}: the facility's own for a
+    /// per-facility series, the main facility's for a shared one.
     /// </summary>
     private static async Task<IReadOnlyCollection<OtherNumberFormat>> OtherFormatsAsync(
         HospitalDbContext db,
         NumberSeriesCatalog catalog,
         NumberSeriesDefinition series,
-        Guid? scope,
-        IReadOnlyList<Guid> facilityIds,
+        IReadOnlyDictionary<Guid, string> codes,
+        string? mainCode,
         CancellationToken ct)
     {
         var stored = (await db.Set<NumberSeries>().AsNoTracking().Select(s => new { s.Key, s.FacilityId, s.Format }).ToListAsync(ct))
@@ -291,13 +294,12 @@ internal static class NumberSeriesEndpoints
         var others = new List<OtherNumberFormat>();
         foreach (var other in catalog.All.Where(d => !d.Hidden && d.Key != series.Key))
         {
-            IEnumerable<Guid?> scopes = !other.PerFacility ? [null]
-                : series.PerFacility ? [scope]
-                : facilityIds.Select(id => (Guid?)id);
+            IEnumerable<Guid?> scopes = other.PerFacility ? codes.Keys.Select(id => (Guid?)id) : [null];
             foreach (var otherScope in scopes)
             {
                 var format = stored.GetValueOrDefault((other.Key, otherScope)) ?? other.DefaultFormat;
-                others.Add(new OtherNumberFormat(other.Name, format, string.Equals(format, other.DefaultFormat, StringComparison.Ordinal)));
+                var code = otherScope is { } facility ? codes[facility] : mainCode;
+                others.Add(new OtherNumberFormat(other.Name, format, string.Equals(format, other.DefaultFormat, StringComparison.Ordinal), code));
             }
         }
 

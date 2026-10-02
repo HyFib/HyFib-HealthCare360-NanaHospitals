@@ -156,6 +156,69 @@ public sealed class NumberFormatRulesTests
         NumberFormatRules.Check(Change(OpBill, format) with { OtherFormats = [new OtherNumberFormat("IP bill", other, IsDefault: false)] })
             .ShouldBeEmpty();
 
+    [Theory]
+    [InlineData("{FAC}AB{YY}{SEQ:7}", "AB", "ABAB#")]
+    [InlineData("AB{FAC}{YY}{SEQ:7}", "AB", "ABAB#")]
+    [InlineData("{FAC}{SEQ:6}", "NH1", "NH#")]
+    [InlineData("{FAC}OB{SEQ}", null, "{FAC}OB#")]
+    public void The_facility_code_is_read_in_place_of_FAC(string format, string? facilityCode, string outline) =>
+        NumberFormatRules.Outline(format, facilityCode).ShouldBe(outline);
+
+    [Fact]
+    public void Formats_that_make_the_same_numbers_once_the_facility_code_is_filled_in_are_refused()
+    {
+        // At facility AB both make ABAB260000001: {FAC} is the facility's code, not a part apart.
+        var change = Change(OpBill, "{FAC}AB{YY}{SEQ:7}") with
+        {
+            FacilityCode = "AB",
+            OtherFormats = [new OtherNumberFormat("IP bill", "AB{FAC}{YY}{SEQ:7}", IsDefault: false, FacilityCode: "AB")],
+        };
+
+        NumberFormatRules.Check(change)[NumberFormatRules.FormatField].ShouldBe([
+            "IP bill uses AB{FAC}{YY}{SEQ:7}. With the facility code AB in place of {FAC}, the two can make the same numbers. " +
+            "Change the letters, - or / so the two kinds of number can be told apart.",
+        ]);
+    }
+
+    [Fact]
+    public void A_facility_code_written_out_in_another_format_counts_as_that_code()
+    {
+        var change = Change(OpBill, "{FAC}-{YY}{SEQ:7}") with
+        {
+            FacilityCode = "NH",
+            OtherFormats = [new OtherNumberFormat("Visitor pass", "NH-{YY}{SEQ:7}", IsDefault: false, FacilityCode: "NH")],
+        };
+
+        NumberFormatRules.Check(change)[NumberFormatRules.FormatField].ShouldBe([
+            "Visitor pass uses NH-{YY}{SEQ:7}. With the facility code NH in place of {FAC}, the two can make the same numbers. " +
+            "Change the letters, - or / so the two kinds of number can be told apart.",
+        ]);
+    }
+
+    [Fact]
+    public void Formats_at_two_facilities_are_compared_with_each_ones_code()
+    {
+        // Number columns are unique across facilities: AB's {FAC}C... and ABC's {FAC}... both make ABC260000001.
+        var change = Change(OpBill, "{FAC}C{YY}{SEQ:7}") with
+        {
+            FacilityCode = "AB",
+            OtherFormats = [new OtherNumberFormat("IP bill", "{FAC}{YY}{SEQ:7}", IsDefault: false, FacilityCode: "ABC")],
+        };
+
+        NumberFormatRules.Check(change)[NumberFormatRules.FormatField].ShouldBe([
+            "IP bill uses {FAC}{YY}{SEQ:7}. With the facility codes AB and ABC in place of {FAC}, the two can make the same " +
+            "numbers. Change the letters, - or / so the two kinds of number can be told apart.",
+        ]);
+    }
+
+    [Fact]
+    public void The_same_format_at_facilities_with_different_codes_never_makes_the_same_numbers() =>
+        NumberFormatRules.Check(Change(OpBill, "{FAC}IB{YY}{SEQ:7}") with
+        {
+            FacilityCode = "NH",
+            OtherFormats = [new OtherNumberFormat("IP bill", "{FAC}IB{YY}{SEQ:7}", IsDefault: false, FacilityCode: "KH")],
+        }).ShouldBeEmpty("NHIB... and KHIB... can never be the same number.");
+
     [Fact]
     public void Restoring_a_default_that_looks_like_another_default_is_allowed()
     {
