@@ -44,7 +44,6 @@ export function WorklistAppointments({
   return (
     <DataTable
       ariaLabel="Appointments"
-      actionsWidth={124}
       rows={appointments}
       loading={loading}
       getRowId={(a) => a.id}

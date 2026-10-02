@@ -349,7 +349,6 @@ function WorklistPage() {
                 </Caption1>
                 <DataTable
                   ariaLabel="Today's queue"
-                  actionsWidth={160}
                   rows={w?.queue}
                   loading={worklist.isLoading}
                   getRowId={(e) => e.tokenId}

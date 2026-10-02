@@ -105,7 +105,6 @@ export function WardRoundList({
       )}
       <DataTable
         ariaLabel="Ward round"
-        actionsWidth={136}
         rows={rows}
         loading={loading}
         error={error}

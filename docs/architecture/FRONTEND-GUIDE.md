@@ -88,9 +88,10 @@ export const bedQueries = {
   One primary button per screen, top right. PageHeader also sets the window title.
 * Lists: `DataTable` (columns with `priority: 'low'` hide on tablets; `onRowClick`; `rowActions`; server paging via
   `page/pageSize/totalCount/onPageChange`; built-in loading/empty/error states). Filters in a `FilterBar`. The table
-  lays out its columns from the header (fixed layout), so give `actionsWidth` (px) with `rowActions`, wide enough for
-  the widest set of row buttons, or the buttons are cut off. Cell text stays on one line unless the cell sets
-  `whiteSpace: 'normal'`; let long text wrap rather than force the table wider than the screen.
+  lays out its columns from the header (fixed layout). It measures the `rowActions` buttons itself and gives their
+  column the widest row's width, so no width is needed. To line them up at the end of the column, wrap them in a flex
+  container with `justifyContent: 'flex-end'`, as the appointments list does. Cell text stays on one line unless the
+  cell sets `whiteSpace: 'normal'`; let long text wrap rather than force the table wider than the screen.
 * Feedback: `LoadingState`, `EmptyState` (always say what to do next), `ErrorState` (never raw errors),
   `StatusBadge` (colour from the status word), `KpiCard`, `ConfirmDialog` (every destructive/irreversible action),
   `useNotify()` toasts (success after saves; `notify.error(error, 'Could not …')` on failures).

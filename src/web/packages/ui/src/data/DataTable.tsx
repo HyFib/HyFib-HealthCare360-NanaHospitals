@@ -45,11 +45,6 @@ export interface DataTableProps<T> {
   onRetry?: () => void;
   onRowClick?: (row: T) => void;
   rowActions?: (row: T) => ReactNode;
-  /**
-   * Width of the actions column, enough for the widest set of row buttons. The table lays out its columns from the
-   * header (fixed layout), so without it the column stays narrow and the buttons are cut off.
-   */
-  actionsWidth?: number;
   sort?: SortState;
   onSortChange?: (sort: SortState) => void;
   emptyTitle?: string;
