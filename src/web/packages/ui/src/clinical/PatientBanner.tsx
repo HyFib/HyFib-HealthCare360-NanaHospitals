@@ -3,17 +3,28 @@ import {
   AlertUrgentRegular,
   CallRegular,
   DropRegular,
+  InfoRegular,
   ShieldKeyholeRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
 import { bloodGroupLabel, formatPhone, genderShort, type BloodGroup, type Gender } from '@hc360/core';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 
 /**
  * What is known about allergies: some recorded, a clinician confirmed "no known allergies", or nothing recorded yet.
- * The banner claims "no known allergies" only when that was recorded, never from an empty list.
+ * The banner claims "no known allergies" only when that was recorded, never from an empty list. `checking` (still
+ * loading) and `unavailable` (restricted record, no connection) say so, so a missing flag never reads as "no allergies".
  */
-export type AllergyStatus = 'recorded' | 'none' | 'unknown';
+export type AllergyStatus = 'recorded' | 'none' | 'unknown' | 'checking' | 'unavailable';
+
+/** How loudly an alert is shown: danger (DNR, isolation, infection control), warning, or information. */
+export type PatientBannerAlertTone = 'danger' | 'warning' | 'informative';
+
+/** An alert with its weight; a plain string is shown as before (a dark "important" badge). */
+export interface PatientBannerAlert {
+  label: string;
+  tone: PatientBannerAlertTone;
+}
 
 export interface PatientBannerData {
   id: string;
@@ -28,7 +39,9 @@ export interface PatientBannerData {
   isDeceased?: boolean;
   allergies?: string[];
   allergyStatus?: AllergyStatus;
-  alerts?: string[];
+  /** What the `unavailable` flag says, e.g. "Allergies and alerts hidden: restricted record". */
+  allergyNote?: string;
+  alerts?: (string | PatientBannerAlert)[];
   payer?: string | null;
   /** The patient's photo as an image source; the initials are shown without it. */
   photoUrl?: string | null;
@@ -59,14 +72,83 @@ const useStyles = makeStyles({
   uhid: { fontFamily: tokens.fontFamilyMonospace },
 });
 
+const ALERT_ICON: Record<PatientBannerAlertTone, ReactElement> = {
+  danger: <AlertUrgentRegular />,
+  warning: <WarningRegular />,
+  informative: <InfoRegular />,
+};
+
+function AlertBadge({ alert }: { alert: string | PatientBannerAlert }) {
+  if (typeof alert === 'string') {
+    return (
+      <Badge color="important" size="large" icon={<AlertUrgentRegular />}>
+        {alert}
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      color={alert.tone}
+      appearance={alert.tone === 'informative' ? 'tint' : 'filled'}
+      size="large"
+      icon={ALERT_ICON[alert.tone]}
+    >
+      {alert.label}
+    </Badge>
+  );
+}
+
+/** The banner's allergy and alert fields, which `PatientFlagBadges` also shows on their own. */
+export type PatientFlagsData = Pick<PatientBannerData, 'allergies' | 'allergyStatus' | 'allergyNote' | 'alerts'>;
+
+/**
+ * The banner's allergy and alert badges on their own, for dialogs and counters that act on a patient without the full
+ * banner (sample collection, the pharmacy counter, diet orders).
+ */
+export function PatientFlagBadges({ flags }: { flags: PatientFlagsData }) {
+  const styles = useStyles();
+  const allergies = flags.allergies ?? [];
+  const alerts = flags.alerts ?? [];
+  if (allergies.length === 0 && !flags.allergyStatus && alerts.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={styles.flags} role="group" aria-label="Allergies and alerts">
+      {allergies.length > 0 ? (
+        <Badge color="danger" size="large" icon={<WarningRegular />}>
+          Allergies: {allergies.join(', ')}
+        </Badge>
+      ) : flags.allergyStatus === 'none' ? (
+        <Badge appearance="tint" color="success">
+          No known allergies
+        </Badge>
+      ) : flags.allergyStatus === 'unknown' ? (
+        <Badge appearance="tint" color="warning" icon={<WarningRegular />}>
+          Allergies not recorded
+        </Badge>
+      ) : flags.allergyStatus === 'checking' ? (
+        <Badge appearance="outline" color="informative">
+          Checking allergies…
+        </Badge>
+      ) : flags.allergyStatus === 'unavailable' ? (
+        <Badge appearance="tint" color="warning" size="large" icon={<WarningRegular />}>
+          {flags.allergyNote ?? 'Allergies and alerts unavailable'}
+        </Badge>
+      ) : null}
+      {alerts.map((alert, index) => (
+        <AlertBadge key={`${typeof alert === 'string' ? alert : alert.label}-${index}`} alert={alert} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * Persistent patient context (SRS UX-04, EHR-03): identity, age/sex, blood group and — most prominently —
  * allergies and clinical alerts, so they are visible on every clinical screen.
  */
 export function PatientBanner({ patient, actions }: { patient: PatientBannerData; actions?: ReactNode }) {
   const styles = useStyles();
-  const allergies = patient.allergies ?? [];
-  const alerts = patient.alerts ?? [];
 
   return (
     <section className={styles.banner} aria-label={`Patient ${patient.fullName}, UHID ${patient.uhid}`}>
@@ -113,26 +195,7 @@ export function PatientBanner({ patient, actions }: { patient: PatientBannerData
           {patient.category && patient.category !== 'General' && <Caption1>{patient.category}</Caption1>}
         </div>
       </div>
-      <div className={styles.flags}>
-        {allergies.length > 0 ? (
-          <Badge color="danger" size="large" icon={<WarningRegular />}>
-            Allergies: {allergies.join(', ')}
-          </Badge>
-        ) : patient.allergyStatus === 'none' ? (
-          <Badge appearance="tint" color="success">
-            No known allergies
-          </Badge>
-        ) : patient.allergyStatus === 'unknown' ? (
-          <Badge appearance="tint" color="warning" icon={<WarningRegular />}>
-            Allergies not recorded
-          </Badge>
-        ) : null}
-        {alerts.map((alert) => (
-          <Badge key={alert} color="important" size="large" icon={<AlertUrgentRegular />}>
-            {alert}
-          </Badge>
-        ))}
-      </div>
+      <PatientFlagBadges flags={patient} />
       {actions && <div className={styles.actions}>{actions}</div>}
     </section>
   );

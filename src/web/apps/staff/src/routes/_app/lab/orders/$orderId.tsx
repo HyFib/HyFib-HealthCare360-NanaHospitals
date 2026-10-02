@@ -30,7 +30,7 @@ import {
   VehicleTruckProfileRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { DataTable, ErrorState, LoadingState, Page, PageHeader, PatientBanner, Section, useNotify } from '@hc360/ui';
+import { DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
@@ -52,6 +52,7 @@ import {
   SampleStatusBadge,
   TubeChip,
 } from '@/modules/lab/badges';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { CollectDialog, type CollectTarget } from '@/modules/lab/CollectDialog';
 import { bannerFor } from '@/modules/lab/common/banner';
 import { ReasonDialog } from '@/modules/lab/common/ReasonDialog';
@@ -93,6 +94,7 @@ function collectTarget(order: LabOrderDetail): CollectTarget {
   return {
     orderId: order.id,
     accessionNumber: order.accessionNumber,
+    patientId: order.patientId,
     patientName: order.patientName,
     uhid: order.uhid,
     ageSex: `${order.age ?? '—'} / ${order.gender.charAt(0)}`,
@@ -230,7 +232,8 @@ function OrderView({
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={order.patientId}
         patient={bannerFor(order)}
         actions={
           <>

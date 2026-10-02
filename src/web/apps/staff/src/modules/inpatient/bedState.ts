@@ -250,6 +250,12 @@ export function bedAlertInfo(alert: string): BedAlertInfo {
     : { label: alert, description: alert, severity: 'informative' };
 }
 
+/** A bed alert on the patient banner, toned like its badge on the bed tile. */
+export function bedAlertBadge(alert: string): { label: string; tone: AlertSeverity } {
+  const info = bedAlertInfo(alert);
+  return { label: info.label, tone: info.severity };
+}
+
 /** Alerts ordered most serious first (tiles show the first few). */
 export function sortAlerts(alerts: readonly string[]): string[] {
   return [...alerts].sort(

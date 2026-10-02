@@ -39,15 +39,16 @@ import {
   ErrorState,
   LoadingState,
   Page,
-  PatientBanner,
   Section,
   StatusBadge,
   useNotify,
+  type PatientBannerAlert,
 } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AdmissionDietPanel } from '@/modules/dietary/AdmissionDietPanel';
 import {
   ADMISSION_SOURCE_LABEL,
@@ -172,9 +173,10 @@ function AdmissionPage() {
     (a.dischargedAt !== null &&
       a.status !== 'Cancelled' &&
       Date.parse(a.dischargedAt) > admission.dataUpdatedAt - 24 * 3600_000);
-  const alerts = [a.isMlc ? 'Medico-legal case' : null, initiated ? 'Discharge in progress' : null].filter(
-    (x): x is string => x !== null,
-  );
+  const alerts: PatientBannerAlert[] = [
+    ...(a.isMlc ? [{ label: 'Medico-legal case', tone: 'warning' as const }] : []),
+    ...(initiated ? [{ label: 'Discharge in progress', tone: 'informative' as const }] : []),
+  ];
 
   const print = (what: 'slip' | 'wristband') => {
     const job = what === 'slip' ? printAdmissionSlip(a, facilityName) : printWristband(a);
@@ -183,7 +185,8 @@ function AdmissionPage() {
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={a.patientId}
         patient={{
           id: a.patientId,
           uhid: a.uhid,
@@ -323,6 +326,7 @@ function AdmissionPage() {
             <AdmissionDietPanel
               admission={{
                 admissionId: a.id,
+                patientId: a.patientId,
                 patientName: a.patientName,
                 place: [a.wardName, a.bedLabel ? `bed ${a.bedLabel}` : null].filter(Boolean).join(', '),
               }}

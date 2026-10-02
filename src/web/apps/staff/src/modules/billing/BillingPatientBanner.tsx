@@ -10,11 +10,11 @@ import {
 } from '@fluentui/react-components';
 import { PersonRegular, WalletRegular, WarningRegular } from '@fluentui/react-icons';
 import { formatInr, isApiError } from '@hc360/core';
-import { PatientBanner } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { patientQueries } from '@/modules/patients/api';
 import { billingQueries } from './api';
 
@@ -24,8 +24,9 @@ const useStyles = makeStyles({
 });
 
 /**
- * Patient context on billing screens: the standard banner plus what matters at the counter — unpaid bills and any
- * advance that can be used. Restricted (VIP) records explain themselves instead of failing silently.
+ * Patient context on billing screens: the standard banner (with allergies and alerts for staff who may see them) plus
+ * what matters at the counter — unpaid bills and any advance that can be used. Restricted (VIP) records explain
+ * themselves instead of failing silently.
  */
 export function BillingPatientBanner({
   patientId,
@@ -75,7 +76,8 @@ export function BillingPatientBanner({
   const d = dues.data;
   return (
     <div className={styles.root}>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={p.id}
         patient={{
           id: p.id,
           uhid: p.uhid,

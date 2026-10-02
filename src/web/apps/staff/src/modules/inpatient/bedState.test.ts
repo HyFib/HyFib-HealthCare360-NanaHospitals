@@ -4,6 +4,7 @@ import {
   BED_STATE,
   BED_STATUSES,
   bedActions,
+  bedAlertBadge,
   bedAlertInfo,
   bedStateInfo,
   bulkBedLabels,
@@ -114,6 +115,12 @@ describe('bed alerts', () => {
       description: 'NewServerAlert',
       severity: 'informative',
     });
+  });
+
+  it('tones the banner alerts like the tile badges', () => {
+    expect(bedAlertBadge('HighFallRisk')).toEqual({ label: 'Fall risk', tone: 'danger' });
+    expect(bedAlertBadge('Mlc')).toEqual({ label: 'MLC', tone: 'warning' });
+    expect(bedAlertBadge('NewServerAlert')).toEqual({ label: 'NewServerAlert', tone: 'informative' });
   });
 });
 

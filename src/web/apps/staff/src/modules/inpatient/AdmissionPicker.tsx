@@ -6,6 +6,7 @@ import { inpatientQueries, type AdmissionListItem } from './api';
 
 export interface PickedAdmission {
   admissionId: string;
+  patientId: string;
   admissionNumber: string;
   patientName: string;
   uhid: string;
@@ -16,6 +17,7 @@ export interface PickedAdmission {
 function toPickedAdmission(a: AdmissionListItem): PickedAdmission {
   return {
     admissionId: a.id,
+    patientId: a.patientId,
     admissionNumber: a.admissionNumber,
     patientName: a.patientName,
     uhid: a.uhid,

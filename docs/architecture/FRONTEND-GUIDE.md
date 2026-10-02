@@ -95,8 +95,11 @@ export const bedQueries = {
   `DateField`, `SwitchField`, `ChoiceField`, `LookupField`, laid out with `FormGrid`. On submit errors call
   `applyServerErrors(error, form.setError)` so server validation lands on the right field. Long clinical forms use
   `useFormDraft(form, key)` (auto-save to the workstation) and `useHotkey('mod+s', …)`.
-* Patient context: show `PatientBanner` on every patient-specific screen; pick patients with
-  `PatientPicker` (`src/modules/patients/PatientPicker.tsx`); link to the profile at `/patients/$patientId`.
+* Patient context: show `PatientBannerWithFlags` (`src/modules/emr/PatientBannerWithFlags.tsx`) on every
+  patient-specific screen. It is `PatientBanner` plus the patient's allergies and alerts (EHR-03), loaded for staff
+  allowed to see them and kept live. A dialog or counter that acts on a patient without a banner shows
+  `PatientFlagsStrip` instead. Pick patients with `PatientPicker` (`src/modules/patients/PatientPicker.tsx`); link to
+  the profile at `/patients/$patientId`.
 * Printing: build HTML with `printDocument(body, { title, pageSize, styles })` and send it with `printHtml(...)`
   (`@hc360/core`); silent printing on counters (`{ silent: true, pageSize: 'Receipt80' }`), dialog otherwise. Barcodes/QR:
   `await barcodeSvg(value, 'code128' | 'qrcode')` (the encoder loads on demand). Escape every value with `escapeHtml`.

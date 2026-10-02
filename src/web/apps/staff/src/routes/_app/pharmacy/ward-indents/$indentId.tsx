@@ -27,21 +27,12 @@ import {
   WarningRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, formatRelative, isApiError, useHotkey } from '@hc360/core';
-import {
-  DataTable,
-  EmptyState,
-  ErrorState,
-  LoadingState,
-  Page,
-  PatientBanner,
-  Section,
-  StatusBadge,
-  useNotify,
-} from '@hc360/ui';
+import { DataTable, EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import type { BatchStock } from '@/modules/inventory/api';
 import { sumNumbers } from '@/modules/inventory/decimal';
 import { usableQuantity } from '@/modules/inventory/fefo';
@@ -266,7 +257,8 @@ function IndentScreen({ indent, working }: { indent: WardIndentDetail; working: 
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={indent.patient.id}
         patient={{
           id: indent.patient.id,
           uhid: indent.patient.uhid,

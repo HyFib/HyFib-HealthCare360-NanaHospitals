@@ -29,17 +29,7 @@ import {
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatDateOnly, formatDateTime, formatRelative, isApiError, todayIso, useSession } from '@hc360/core';
-import {
-  ConfirmDialog,
-  ErrorState,
-  LoadingState,
-  Page,
-  PageHeader,
-  PatientBanner,
-  Section,
-  StatusBadge,
-  useNotify,
-} from '@hc360/ui';
+import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
@@ -47,8 +37,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
-import { emrQueries } from '@/modules/emr/api';
-import { ClinicalBanner } from '@/modules/emr/ClinicalBanner';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { ReasonDialog } from '@/modules/emr/ui';
 import {
   checkupApi,
@@ -128,18 +117,15 @@ function BookingPage() {
   return <BookingView booking={booking.data} />;
 }
 
-/** The patient banner: clinical flags for clinical staff, identity only for the front desk. */
+/** The patient banner: allergies and alerts for clinical staff, identity only for the front desk. */
 function BookingBanner({ patientId }: { patientId: string }) {
-  const canReadEmr = usePermission('clinical.emr.read');
-  const summary = useQuery({ ...emrQueries.summary(patientId), enabled: canReadEmr });
-  const patient = useQuery({ ...patientQueries.detail(patientId), enabled: !canReadEmr });
-  if (summary.data) {
-    return <ClinicalBanner summary={summary.data} />;
-  }
+  const patient = useQuery(patientQueries.detail(patientId));
   if (patient.data) {
     const p = patient.data;
     return (
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={patientId}
+        photoFileId={p.photoFileId}
         patient={{
           id: p.id,
           uhid: p.uhid,

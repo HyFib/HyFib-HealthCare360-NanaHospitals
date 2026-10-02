@@ -1,8 +1,9 @@
 import type { Gender } from '@hc360/core';
-import { PatientBanner, type PatientBannerData } from '@hc360/ui';
+import type { PatientBannerData } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { patientQueries, type PatientSummary } from '@/modules/patients/api';
 
 export interface BannerFallback {
@@ -15,6 +16,7 @@ export interface BannerFallback {
 /**
  * Patient context on every specialty-care screen. Uses the summary that came with the record when there is one;
  * otherwise loads the demographics (all staff may read them) and shows the identity we already have meanwhile.
+ * Allergies and clinical alerts come from the Clinical module, ahead of the screen's own alerts (EHR-03).
  *
  * `hideBloodGroup` is used by the blood bank: the group recorded at registration is self-reported and must never be
  * mistaken for the blood-bank grouping of the patient's sample.
@@ -65,5 +67,5 @@ export function SpecialtyPatientBanner({
         alerts,
       };
 
-  return <PatientBanner patient={data} actions={actions} />;
+  return <PatientBannerWithFlags patientId={patientId ?? summary?.id} patient={data} actions={actions} />;
 }

@@ -15,11 +15,12 @@ import {
 } from '@fluentui/react-components';
 import { AttachRegular, DocumentRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
-import { ErrorState, LoadingState, Page, PageHeader, PatientBanner, Section } from '@hc360/ui';
+import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { PatientClassBadge, PriorityBadge } from '@/modules/lab/badges';
 import { bannerFor } from '@/modules/lab/common/banner';
 import { useFileViewer } from '@/modules/lab/common/FileViewerDialog';
@@ -104,7 +105,8 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={study.patientId}
         patient={bannerFor(study)}
         actions={
           <>

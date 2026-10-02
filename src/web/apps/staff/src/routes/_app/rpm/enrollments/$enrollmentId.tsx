@@ -44,7 +44,6 @@ import {
   ErrorState,
   LoadingState,
   Page,
-  PatientBanner,
   Section,
   StatusBadge,
   useNotify,
@@ -53,6 +52,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { addDays, formatDayMedium } from '@/modules/scheduling/dates';
 import { useToday } from '@/modules/scheduling/useNow';
 import {
@@ -207,7 +207,8 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
 
   return (
     <Page>
-      <PatientBanner
+      <PatientBannerWithFlags
+        patientId={e.patientId}
         patient={{
           id: e.patientId,
           uhid: e.uhid,

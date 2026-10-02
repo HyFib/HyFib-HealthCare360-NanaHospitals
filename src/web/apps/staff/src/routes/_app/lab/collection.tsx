@@ -100,6 +100,7 @@ function toTarget(group: OrderGroup): CollectTarget {
   return {
     orderId: group.orderId,
     accessionNumber: first.accessionNumber,
+    patientId: first.patientId,
     patientName: first.patientName,
     uhid: first.uhid,
     ageSex: `${first.age ?? '—'} / ${first.gender.charAt(0)}`,

@@ -10,7 +10,10 @@ export interface DiagnosticsPatient {
   age: string | null;
 }
 
-/** Banner data for a diagnostics screen (allergies are not part of diagnostics DTOs, so the banner omits them). */
+/**
+ * The identity part of a diagnostics screen's banner. Allergies and alerts are not part of diagnostics DTOs:
+ * `PatientBannerWithFlags` adds them from the Clinical module.
+ */
 export function bannerFor(patient: DiagnosticsPatient): PatientBannerData {
   return {
     id: patient.patientId,
