@@ -15,14 +15,13 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { ArrowDownloadRegular, DismissRegular, HistoryRegular } from '@fluentui/react-icons';
-import { formatDateTime } from '@hc360/core';
+import { formatDateTime, saveFile } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Pagination, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
-import { analyticsApi, analyticsQueries, type DeliveryDto, type ScheduleDto } from './api';
-import { saveBlob } from './download';
+import { analyticsApi, analyticsQueries, type DeliveryDto, type ExportFormat, type ScheduleDto } from './api';
 import { describeRange, formatBytes, formatCount } from './format';
-import { DELIVERY_STATUS_LABELS, DELIVERY_TRIGGER_LABELS, RECIPIENT_STATUS_LABELS } from './labels';
+import { DELIVERY_STATUS_LABELS, DELIVERY_TRIGGER_LABELS, FORMAT_EXTENSIONS, RECIPIENT_STATUS_LABELS } from './labels';
 
 const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '4px' },
@@ -37,6 +36,12 @@ const useStyles = makeStyles({
 
 const PAGE_SIZE = 10;
 
+const DOWNLOAD_LABELS: Record<ExportFormat, string> = {
+  Xlsx: 'Download Excel file',
+  Csv: 'Download CSV file',
+  Pdf: 'Download PDF',
+};
+
 /** Each file a schedule produced, who it reached, and a way to download it again while it is kept. */
 export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto; onClose: () => void }) {
   const styles = useStyles();
@@ -47,7 +52,7 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
   const download = useMutation({
     mutationFn: async (delivery: DeliveryDto) => {
       const blob = await analyticsApi.deliveryFile(delivery.id);
-      saveBlob(blob, delivery.fileName ?? `${schedule.reportId}.${delivery.format === 'Csv' ? 'csv' : 'xlsx'}`);
+      saveFile(blob, delivery.fileName ?? `${schedule.reportId}.${FORMAT_EXTENSIONS[delivery.format]}`);
     },
     onError: (error) => notify.error(error, 'Could not download the file'),
   });
@@ -147,11 +152,7 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                           disabled={!delivery.fileAvailable || download.isPending}
                           onClick={() => download.mutate(delivery)}
                         >
-                          {delivery.fileAvailable
-                            ? delivery.format === 'Csv'
-                              ? 'Download CSV file'
-                              : 'Download Excel file'
-                            : 'File no longer kept'}
+                          {delivery.fileAvailable ? DOWNLOAD_LABELS[delivery.format] : 'File no longer kept'}
                         </Button>
                       </div>
                     </div>

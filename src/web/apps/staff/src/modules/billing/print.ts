@@ -1,24 +1,7 @@
-import {
-  escapeHtml,
-  formatDate,
-  formatDateOnly,
-  formatDateTime,
-  formatInr,
-  printDocument,
-  printHtml,
-} from '@hc360/core';
-import type {
-  BillDetail,
-  BillLineDto,
-  DayEndReport,
-  FacilityDto,
-  ReceiptDto,
-  ReceiptPaymentDto,
-  RefundDto,
-} from './api';
+import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
+import type { BillDetail, DayEndReport, FacilityDto, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
 import type { RunningBill } from './ipApi';
 import {
-  BILL_STATUS_LABEL,
   PAYMENT_MODE_LABEL,
   RECEIPT_PURPOSE_LABEL,
   REFUND_PURPOSE_LABEL,
@@ -28,20 +11,17 @@ import {
 import { amountInWords, formatPercent, fromPaise, toPaise } from './money';
 
 /**
- * Bill, receipt and report prints. Everything is built as a self-contained HTML string (every value escaped) and sent
- * to `printHtml`: counters print 80 mm receipts silently on the thermal printer, other prints open the print dialog.
+ * Receipt, counter bill and report prints. Everything is built as a self-contained HTML string (every value escaped)
+ * and sent to `printHtml`: counters print 80 mm receipts silently on the thermal printer, other prints open the print
+ * dialog. The A4 bill (tax invoice / bill of supply with GST details) is made by the server instead, so the printed
+ * copy matches its PDF (see `@/lib/documents`).
  */
 
 export type PrintFormat = 'A4' | 'Receipt80';
 
 /** The hospital as printed at the top of bills (FacilityDto, or just a name while it loads). */
 export type PrintFacility = Pick<FacilityDto, 'name'> &
-  Partial<
-    Pick<
-      FacilityDto,
-      'legalName' | 'address' | 'phone' | 'email' | 'gstin' | 'pan' | 'registrationNumber' | 'letterheadNote'
-    >
-  >;
+  Partial<Pick<FacilityDto, 'legalName' | 'address' | 'phone' | 'email' | 'gstin' | 'pan' | 'registrationNumber'>>;
 
 const e = escapeHtml;
 const money = (value: number | null | undefined) => e(formatInr(value));
@@ -97,11 +77,9 @@ const A4_STYLES = `
   .totals td { padding: 2px 4px; }
   .totals .strong td { font-weight: 700; border-top: 1px solid #555; font-size: 13px; }
   .words { margin-top: 6px; font-style: italic; }
-  .tag { display: inline-block; border: 1px solid #555; border-radius: 3px; padding: 0 4px; font-size: 9px; margin-left: 4px; }
   .sign { margin-top: 36px; display: flex; justify-content: space-between; }
   .sign div { border-top: 1px solid #555; padding-top: 2px; min-width: 180px; text-align: center; }
   .foot { margin-top: 12px; font-size: 9.5px; color: #555; }
-  .stamp { position: fixed; top: 38%; left: 12%; font-size: 64px; color: rgba(200,0,0,.18); transform: rotate(-24deg); font-weight: 800; letter-spacing: 6px; }
   h3 { margin-top: 10px; font-size: 12px; }`;
 
 const RECEIPT80_STYLES = `
@@ -134,43 +112,6 @@ export function billTitle(bill: Pick<BillDetail, 'isTaxInvoice' | 'status' | 'ty
     return `${kind} · ${bill.isFinalBill ? 'IP final bill' : 'IP bill'}`;
   }
   return kind;
-}
-
-function lineDiscount(line: BillLineDto): number {
-  return fromPaise(
-    toPaise(line.tariffDiscountAmount) + toPaise(line.lineDiscountAmount) + toPaise(line.billDiscountShare),
-  );
-}
-
-interface GstRow {
-  sac: string;
-  rate: number;
-  taxable: number;
-  cgst: number;
-  sgst: number;
-}
-
-/** GST summary by SAC code and rate, as required on a tax invoice. */
-export function gstSummary(lines: readonly BillLineDto[]): GstRow[] {
-  const rows = new Map<string, { sac: string; rate: number; taxable: bigint; cgst: bigint; sgst: bigint }>();
-  for (const line of lines) {
-    if (line.taxRate <= 0) {
-      continue;
-    }
-    const key = `${line.sacCode ?? ''}|${line.taxRate}`;
-    const row = rows.get(key) ?? { sac: line.sacCode ?? '—', rate: line.taxRate, taxable: 0n, cgst: 0n, sgst: 0n };
-    row.taxable += toPaise(line.taxableAmount);
-    row.cgst += toPaise(line.cgstAmount);
-    row.sgst += toPaise(line.sgstAmount);
-    rows.set(key, row);
-  }
-  return [...rows.values()].map((row) => ({
-    sac: row.sac,
-    rate: row.rate,
-    taxable: fromPaise(row.taxable),
-    cgst: fromPaise(row.cgst),
-    sgst: fromPaise(row.sgst),
-  }));
 }
 
 function totalsRows(bill: BillDetail): [string, number, boolean?][] {
@@ -222,26 +163,24 @@ function billMeta(bill: BillDetail): [string, string][] {
   ];
 }
 
-/** GST invoice / bill of supply (A4, or a compact 80 mm version for the counter printer). */
-export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format: PrintFormat): string {
+/** Compact bill for the counter's 80 mm receipt printer (the A4 bill is made by the server). */
+export function buildCounterBillHtml(bill: BillDetail, facility: PrintFacility): string {
   const title = billTitle(bill);
   const stamp = watermark(bill);
   const patient = `${bill.patientName ?? ''}${bill.uhid ? ` (UHID ${bill.uhid})` : ''}`;
-
-  if (format === 'Receipt80') {
-    const items = bill.lines
-      .map(
-        (line) => `<tr><td colspan="2" class="desc">${e(line.description)}${line.isReturn ? ' (return)' : ''}</td></tr>
+  const items = bill.lines
+    .map(
+      (line) => `<tr><td colspan="2" class="desc">${e(line.description)}${line.isReturn ? ' (return)' : ''}</td></tr>
         <tr><td class="small">${e(line.quantity)} × ${money(line.unitPrice)}${line.taxRate > 0 ? ` · GST ${e(formatPercent(line.taxRate))}` : ''}${line.sacCode ? ` · SAC ${e(line.sacCode)}` : ''}</td><td class="num">${money(line.netAmount)}</td></tr>`,
-      )
-      .join('');
-    const sums = totalsRows(bill)
-      .map(
-        ([label, value, strong]) =>
-          `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`,
-      )
-      .join('');
-    const body = `${stamp ? `<div class="stamp">${e(stamp)}</div>` : ''}
+    )
+    .join('');
+  const sums = totalsRows(bill)
+    .map(
+      ([label, value, strong]) =>
+        `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`,
+    )
+    .join('');
+  const body = `${stamp ? `<div class="stamp">${e(stamp)}</div>` : ''}
       ${header(facility, title, [...billMeta(bill), ['Patient', patient]], true)}
       <div class="rule"></div>
       <table class="items">${items}</table>
@@ -251,67 +190,11 @@ export function buildBillHtml(bill: BillDetail, facility: PrintFacility, format:
       ${bill.receipts.length ? `<div class="rule"></div>${bill.receipts.map((r) => `<div class="small">${e(r.receiptNumber)} · ${e(modeSummaryLabel(r.modes))} · ${money(r.amount)}</div>`).join('')}` : ''}
       <div class="rule"></div>
       <div class="center small">Thank you. Get well soon.</div>`;
-    return printDocument(body, {
-      title: `${title} ${bill.billNumber ?? ''}`.trim(),
-      pageSize: 'Receipt80',
-      styles: RECEIPT80_STYLES,
-    });
-  }
-
-  const hasPackage = bill.lines.some((l) => l.packageCoveredAmount !== 0);
-  const tax = bill.isTaxInvoice;
-  const head = `<tr><th>#</th><th>Service</th><th>SAC</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th>${hasPackage ? '<th class="num">Package</th>' : ''}<th class="num">Discount</th>${tax ? '<th class="num">Taxable</th><th class="num">GST</th><th class="num">CGST</th><th class="num">SGST</th>' : ''}<th class="num">Net</th></tr>`;
-  const rows = bill.lines
-    .map(
-      (line, index) => `<tr>
-        <td>${index + 1}</td>
-        <td>${e(line.description)}${line.isReturn ? '<span class="tag">Return</span>' : ''}<div class="muted">${e(line.serviceCode)}${line.practitionerName ? ` · ${e(line.practitionerName)}` : ''} · ${e(formatDate(line.serviceDate))}</div></td>
-        <td>${e(line.sacCode ?? '—')}</td>
-        <td class="num">${e(line.quantity)}</td>
-        <td class="num">${money(line.unitPrice)}</td>
-        <td class="num">${money(line.grossAmount)}</td>
-        ${hasPackage ? `<td class="num">${money(line.packageCoveredAmount)}</td>` : ''}
-        <td class="num">${money(lineDiscount(line))}</td>
-        ${tax ? `<td class="num">${money(line.taxableAmount)}</td><td class="num">${e(line.taxRate > 0 ? formatPercent(line.taxRate) : 'Exempt')}</td><td class="num">${money(line.cgstAmount)}</td><td class="num">${money(line.sgstAmount)}</td>` : ''}
-        <td class="num">${money(line.netAmount)}</td>
-      </tr>`,
-    )
-    .join('');
-  const sums = totalsRows(bill)
-    .map(
-      ([label, value, strong]) =>
-        `<tr class="${strong ? 'strong' : ''}"><td>${e(label)}</td><td class="num">${money(value)}</td></tr>`,
-    )
-    .join('');
-  const gst = tax ? gstSummary(bill.lines) : [];
-  const gstTable = gst.length
-    ? `<h3>GST summary</h3><table class="lines"><tr><th>SAC</th><th class="num">Taxable value</th><th class="num">CGST rate</th><th class="num">CGST</th><th class="num">SGST rate</th><th class="num">SGST</th></tr>
-      ${gst.map((g) => `<tr><td>${e(g.sac)}</td><td class="num">${money(g.taxable)}</td><td class="num">${e(formatPercent(g.rate / 2))}</td><td class="num">${money(g.cgst)}</td><td class="num">${e(formatPercent(g.rate / 2))}</td><td class="num">${money(g.sgst)}</td></tr>`).join('')}</table>`
-    : '';
-  const receipts = bill.receipts.length
-    ? `<h3>Payments received</h3><table class="lines"><tr><th>Receipt</th><th>Date</th><th>Mode</th><th class="num">Amount</th></tr>
-      ${bill.receipts.map((r) => `<tr><td>${e(r.receiptNumber)}</td><td>${e(formatDateTime(r.receivedAt))}</td><td>${e(modeSummaryLabel(r.modes))}</td><td class="num">${money(r.amount)}</td></tr>`).join('')}</table>`
-    : '';
-  const body = `${stamp ? `<div class="stamp">${e(stamp)}</div>` : ''}
-    ${header(facility, title, billMeta(bill), false)}
-    <div class="box grid">
-      <div>Patient: <b>${e(bill.patientName ?? '—')}</b></div>
-      <div>UHID: <b>${e(bill.uhid ?? '—')}</b></div>
-      <div>Status: ${e(BILL_STATUS_LABEL[bill.status])}</div>
-      <div>Payer: ${e(bill.payerName ?? (bill.payerType === 'Self' ? 'Self pay' : bill.payerType))}</div>
-      ${bill.tariffPlanName ? `<div>Tariff: ${e(bill.tariffPlanName)}</div>` : ''}
-      ${bill.coPayPercent > 0 ? `<div>Co-pay: ${e(formatPercent(bill.coPayPercent))}</div>` : ''}
-    </div>
-    ${bill.status === 'Cancelled' || bill.status === 'Refunded' ? `<div class="box"><b>Cancelled</b> on ${e(formatDateTime(bill.cancelledAt))}: ${e(bill.cancelReason ?? '')}</div>` : ''}
-    <table class="lines">${head}${rows}</table>
-    <table class="totals">${sums}</table>
-    <div class="words">Payable by patient: ${e(amountInWords(bill.patientAmount))}</div>
-    ${gstTable}
-    ${receipts}
-    ${bill.notes ? `<div class="foot">${e(bill.notes)}</div>` : ''}
-    <div class="sign"><div>Patient / attendant</div><div>Authorised signatory</div></div>
-    <div class="foot">This is a computer-generated ${e(title.toLowerCase())}. ${facility.letterheadNote ? e(facility.letterheadNote) : ''}</div>`;
-  return printDocument(body, { title: `${title} ${bill.billNumber ?? ''}`.trim(), pageSize: 'A4', styles: A4_STYLES });
+  return printDocument(body, {
+    title: `${title} ${bill.billNumber ?? ''}`.trim(),
+    pageSize: 'Receipt80',
+    styles: RECEIPT80_STYLES,
+  });
 }
 
 function paymentDetail(payment: ReceiptPaymentDto): string {

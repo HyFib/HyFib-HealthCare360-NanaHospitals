@@ -20,6 +20,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import {
+  ArrowDownloadRegular,
   ArrowRepeatAllRegular,
   ArrowSyncRegular,
   DismissRegular,
@@ -27,16 +28,21 @@ import {
   OpenRegular,
   PrintRegular,
 } from '@fluentui/react-icons';
-import { formatDateTime, isApiError, useSession } from '@hc360/core';
+import { formatDateTime, isApiError } from '@hc360/core';
 import { DataTable, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { printServerDocument, useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { emrKeys } from './api';
 import { directionsText } from './dosing';
-import { printPrescription } from './print';
-import { prescriptionQueries, prescriptionsApi, type PrescriptionListItem } from './prescriptionsApi';
+import {
+  prescriptionDocument,
+  prescriptionQueries,
+  prescriptionsApi,
+  type PrescriptionListItem,
+} from './prescriptionsApi';
 import { SafetyReview } from './SafetyReview';
 import {
   alertsFromProblem,
@@ -89,7 +95,6 @@ function RefillBody({
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const detail = useQuery(prescriptionQueries.detail(prescriptionId));
   const [alerts, setAlerts] = useState<SafetyAlert[] | null>(null);
   const [decision, setDecision] = useState<SignDecision>(emptyDecision);
@@ -111,10 +116,9 @@ function RefillBody({
     onSuccess: (result) => {
       notify.success(`Refill ${result.prescription.prescriptionNumber} issued`, 'It is now in the pharmacy queue.');
       void queryClient.invalidateQueries({ queryKey: emrKeys.patient(patientId) });
-      void prescriptionsApi
-        .print(result.prescription.id)
-        .then((model) => printPrescription(model, facilityName))
-        .catch((printError: unknown) => notify.error(printError, 'Printing failed'));
+      void printServerDocument(prescriptionDocument(result.prescription.id)).catch((printError: unknown) =>
+        notify.error(printError, 'Printing failed'),
+      );
       onClose();
     },
     onError: (e) => {
@@ -205,7 +209,7 @@ function RefillBody({
   );
 }
 
-/** Prescriptions of a patient (or one encounter): open, print, repeat, refill or cancel. */
+/** Prescriptions of a patient (or one encounter): open, print, download as a PDF, repeat, refill or cancel. */
 export function PrescriptionsList({
   patientId,
   encounterId = null,
@@ -218,7 +222,7 @@ export function PrescriptionsList({
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const documents = useServerDocuments();
   const canWrite = usePermission('clinical.prescriptions.write');
   const canSign = usePermission('clinical.prescriptions.sign');
   const canRefill = usePermission('clinical.prescriptions.refill');
@@ -230,11 +234,6 @@ export function PrescriptionsList({
 
   const open = (id: string) =>
     void navigate({ to: '/emr/prescriptions/$prescriptionId', params: { prescriptionId: id } });
-
-  const print = useMutation({
-    mutationFn: async (id: string) => printPrescription(await prescriptionsApi.print(id), facilityName),
-    onError: (error) => notify.error(error, 'Printing failed'),
-  });
 
   const repeat = useMutation({
     mutationFn: (id: string) => prescriptionsApi.repeat(id),
@@ -302,9 +301,20 @@ export function PrescriptionsList({
                   Open
                 </MenuItem>
                 {p.status === 'Signed' && (
-                  <MenuItem icon={<PrintRegular />} onClick={() => print.mutate(p.id)}>
-                    Print (A5)
-                  </MenuItem>
+                  <>
+                    <MenuItem
+                      icon={<PrintRegular />}
+                      onClick={() => documents.print.mutate(prescriptionDocument(p.id))}
+                    >
+                      Print (A5)
+                    </MenuItem>
+                    <MenuItem
+                      icon={<ArrowDownloadRegular />}
+                      onClick={() => documents.downloadPdf.mutate(prescriptionDocument(p.id))}
+                    >
+                      Download PDF
+                    </MenuItem>
+                  </>
                 )}
                 {canWrite && p.status !== 'Draft' && (
                   <MenuItem icon={<ArrowRepeatAllRegular />} onClick={() => repeat.mutate(p.id)}>

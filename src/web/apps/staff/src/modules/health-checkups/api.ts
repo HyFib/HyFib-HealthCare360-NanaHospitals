@@ -1,10 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { FacilityLetterhead, PrescriberInfo } from '@/modules/emr/api';
 import type { ServiceCategory } from '@/modules/emr/orderCart';
-import type { OrderDto } from '@/modules/emr/ordersApi';
-import type { PatientSummary } from '@/modules/patients/api';
 import type { BookingStatus, ItineraryStatus } from './itinerary';
 
 export type PackageGender = 'Any' | 'Male' | 'Female';
@@ -149,14 +146,6 @@ export interface CorporateBatchDetail {
   bookings: BookingDto[];
 }
 
-export interface CheckupReport {
-  booking: BookingDto;
-  patient: PatientSummary;
-  letterhead: FacilityLetterhead | null;
-  reviewingDoctor: PrescriberInfo | null;
-  order: OrderDto | null;
-}
-
 export interface BookingListParams {
   date?: string;
   status?: BookingStatus;
@@ -254,7 +243,12 @@ export const checkupApi = {
   cancel: (id: string, reason: string) =>
     api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/cancel`, { reason }),
   noShow: (id: string) => api.post<BookingDto>(`/api/v1/health-checkups/bookings/${id}/no-show`),
-  report: (id: string) => api.get<CheckupReport>(`/api/v1/health-checkups/bookings/${id}/report`),
   bookBatch: (request: CorporateBatchRequest) =>
     api.post<CorporateBatchResult>('/api/v1/health-checkups/corporate-batches', request),
 };
+
+/**
+ * The full health check-up report as the server prints it and makes its PDF: the doctor's summary and recommendations
+ * with every released result of the package (see `@/lib/documents`).
+ */
+export const checkupReportDocument = (bookingId: string) => `/api/v1/health-checkups/bookings/${bookingId}/report`;

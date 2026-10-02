@@ -114,7 +114,7 @@ function ReportCataloguePage() {
       <PageHeader
         title="MIS reports"
         icon={<DocumentTableRegular />}
-        subtitle={`${data.reports.length} reports you can open · figures from the ${data.dataSource.toLowerCase()} · every report exports to Excel`}
+        subtitle={`${data.reports.length} reports you can open · figures from the ${data.dataSource.toLowerCase()} · every report exports to Excel, CSV or PDF`}
         breadcrumbs={[
           { label: 'Analytics', onClick: () => void navigate({ to: '/analytics' }) },
           { label: 'MIS reports' },

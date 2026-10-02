@@ -105,7 +105,14 @@ export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
   Monthly: 'Every month',
 };
 
-export const FORMAT_LABELS: Record<ExportFormat, string> = { Xlsx: 'Excel workbook (.xlsx)', Csv: 'CSV file (.csv)' };
+export const FORMAT_LABELS: Record<ExportFormat, string> = {
+  Xlsx: 'Excel workbook (.xlsx)',
+  Csv: 'CSV file (.csv)',
+  Pdf: 'PDF, print-ready (.pdf)',
+};
+
+/** File name extension of each export format (the server names its files the same way). */
+export const FORMAT_EXTENSIONS: Record<ExportFormat, string> = { Xlsx: 'xlsx', Csv: 'csv', Pdf: 'pdf' };
 
 export const RUN_STATUS_LABELS: Record<ScheduleRunStatus, string> = {
   Succeeded: 'Sent',

@@ -1156,6 +1156,9 @@ export const labApi = {
       : api.post<Created>('/api/v1/lab/referral-labs', request),
 };
 
+/** The A4 lab report as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const labReportDocument = (reportId: string) => `/api/v1/lab/reports/${reportId}`;
+
 /** Permission names used by the lab screens (the server enforces them again on every call). */
 export const LAB_PERMISSIONS = {
   read: 'lab.orders.read',

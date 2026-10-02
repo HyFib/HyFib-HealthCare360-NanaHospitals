@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LabReportResultLine, LabReportView } from './api';
-import { labReportBodyHtml, labReportNotes, labReportPatientRows } from './reportBody';
+import { labReportNotes, labReportPatientRows } from './reportBody';
 
 function result(partial: Partial<LabReportResultLine>): LabReportResultLine {
   return {
@@ -133,28 +133,7 @@ const view: LabReportView = {
   verificationUrl: 'https://care.nanahospitals.in/portal/verify/lab/ABCD2345EFGH6789JKLM',
 };
 
-describe('printed lab report', () => {
-  it('prints sections, flags, groups and auto-validation marks', () => {
-    const html = labReportBodyHtml(view);
-    expect(html).toContain('<h2>Haematology</h2>');
-    expect(html).toContain('13.2*');
-    expect(html).toContain('class="crit" title="Critically low">LL');
-    expect(html).toContain('<strong>Differential count</strong>');
-    expect(html).toContain('Tested at Metro Reference Lab');
-    expect(html).toContain('Organism isolated: <strong>E. coli</strong>');
-    expect(html).toContain('Sensitive (S)');
-    expect(html).toContain('Transcription error');
-  });
-
-  it('never prints unverified values on a released-only copy', () => {
-    const html = labReportBodyHtml(view, true);
-    expect(html).toContain('Awaited');
-    expect(html).not.toContain('Growth');
-    expect(html).not.toContain('E. coli');
-    const staffCopy = labReportBodyHtml(view, false);
-    expect(staffCopy).toContain('(not verified)');
-  });
-
+describe('lab report details', () => {
   it('lists identity, times and footnotes', () => {
     const rows = Object.fromEntries(labReportPatientRows(view));
     expect(rows['Age / sex']).toBe('31Y / F');

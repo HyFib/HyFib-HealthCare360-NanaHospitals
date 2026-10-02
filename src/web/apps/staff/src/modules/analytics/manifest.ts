@@ -53,7 +53,7 @@ const manifest: ModuleManifest = {
       to: '/analytics/reports',
       permission: ANY_ANALYTICS,
       icon: DocumentTableRegular,
-      description: 'Census, occupancy, revenue, TAT… with Excel export',
+      description: 'Census, occupancy, revenue, TAT… with Excel and PDF export',
     },
   ],
   widgets: [

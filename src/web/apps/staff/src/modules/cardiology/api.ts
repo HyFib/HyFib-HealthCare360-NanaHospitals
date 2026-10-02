@@ -6,9 +6,6 @@ import type {
   DiagnosticReportStatus,
   OrderPriority,
   PatientClass,
-  ReportLetterhead,
-  ReportPatient,
-  ReportSignatory,
   ReportStudyRef,
 } from '@/modules/lab/common/types';
 
@@ -200,37 +197,6 @@ export interface SaveCardiologyReportRequest {
   version: number | null;
 }
 
-export interface CardiologyReportView {
-  reportId: string;
-  cardiologyStudyId: string;
-  letterhead: ReportLetterhead;
-  patient: ReportPatient;
-  accessionNumber: string;
-  studyName: string;
-  studyType: CardiologyStudyType;
-  referredBy: string | null;
-  orderedAt: string;
-  acquiredAt: string | null;
-  ecg: EcgFindings | null;
-  echo: EchoFindings | null;
-  tmt: TmtFindings | null;
-  holter: HolterFindings | null;
-  abpm: AbpmFindings | null;
-  conclusion: string | null;
-  recommendations: string | null;
-  isCriticalFinding: boolean;
-  status: DiagnosticReportStatus;
-  verifiedAt: string | null;
-  releasedAt: string | null;
-  signatories: ReportSignatory[];
-  files: DeviceFileDto[];
-  verificationCode: string | null;
-  /** Server-relative verification API; resolves only on the hospital network. */
-  verificationPath: string | null;
-  /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
-  verificationUrl: string | null;
-}
-
 // ------------------------------------------------------------------------------------------------ queries and commands
 
 export interface CardiologyFilters {
@@ -305,8 +271,10 @@ export const cardiologyApi = {
   verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
     api.post<CardiologyStudyDetail>(`${study(id)}/report/verify`, { criticalCall, release }),
   releaseReport: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/report/release`),
-  printView: (id: string) => api.get<CardiologyReportView>(`${study(id)}/report/print`),
 };
+
+/** The A4 cardiology report as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const cardiologyReportDocument = (studyId: string) => `${study(studyId)}/report`;
 
 export const CARDIOLOGY_PERMISSIONS = {
   read: 'cardiology.studies.read',

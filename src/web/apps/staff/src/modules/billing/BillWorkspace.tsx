@@ -15,9 +15,11 @@ import {
   Spinner,
   Text,
   tokens,
+  Tooltip,
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
+  ArrowDownloadRegular,
   ArrowUndoRegular,
   BedRegular,
   DeleteRegular,
@@ -35,8 +37,9 @@ import { ConfirmDialog, DataTable, Section, StatusBadge, useNotify } from '@hc36
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
-import { billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
+import { billDocument, billingApi, billingQueries, type BillDetail, type BillLineDto } from './api';
 import { BillLinesTable } from './BillLinesTable';
 import { BillTotalsCard } from './BillTotalsCard';
 import { creditableAmount } from './billTotals';
@@ -80,8 +83,9 @@ function refundableNow(bill: BillDetail): number {
 
 /**
  * One bill, from draft to paid (OPB, IPB): services with returns shown as returns, discounts within the user's limit
- * or sent for approval, finalisation (allocates the gap-free bill number), collection, printing, and afterwards
- * credit notes, refunds and cancellation. Keyboard: F2 add service, F4 discount, F8 finalise / collect, F9 print.
+ * or sent for approval, finalisation (allocates the gap-free bill number), collection, printing and the A4 bill as a
+ * PDF, and afterwards credit notes, refunds and cancellation. Keyboard: F2 add service, F4 discount, F8 finalise /
+ * collect, F9 print.
  */
 export function BillWorkspace({
   bill,
@@ -98,6 +102,7 @@ export function BillWorkspace({
   const queryClient = useQueryClient();
   const refresh = useRefreshBilling();
   const { printBill, printReceiptById, prefs } = useBillingPrint();
+  const { downloadPdf } = useServerDocuments();
   const [dialog, setDialog] = useState<DialogKind>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
@@ -381,6 +386,18 @@ export function BillWorkspace({
                 80 mm
               </Button>
             )}
+            <Tooltip
+              content={isDraft ? 'Download the estimate as a PDF' : 'Download the A4 bill as a PDF'}
+              relationship="label"
+            >
+              <Button
+                icon={downloadPdf.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+                disabled={downloadPdf.isPending}
+                onClick={() => downloadPdf.mutate(billDocument(bill.id))}
+              >
+                PDF
+              </Button>
+            </Tooltip>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
                 <Button icon={<MoreHorizontalRegular />} aria-label="More bill actions" />

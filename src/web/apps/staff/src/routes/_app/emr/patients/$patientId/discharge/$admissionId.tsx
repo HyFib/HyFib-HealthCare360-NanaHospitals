@@ -1,4 +1,4 @@
-import { formatDateTime, useSession } from '@hc360/core';
+import { formatDateTime } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
@@ -12,11 +12,10 @@ export const Route = createFileRoute('/_app/emr/patients/$patientId/discharge/$a
   component: DischargeSummaryPage,
 });
 
-/** Discharge summary of one admission: prefill, draft, sign, amend and print (A4). */
+/** Discharge summary of one admission: prefill, draft, sign, amend, print (A4) and download as a PDF. */
 function DischargeSummaryPage() {
   const { patientId, admissionId } = Route.useParams();
   const navigate = useNavigate();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
   const canWrite = usePermission('clinical.discharge_summary.write');
   const canSeeAdmissions = usePermission('inpatient.admissions.read');
   const summary = useClinicalSummary(patientId);
@@ -69,7 +68,6 @@ function DischargeSummaryPage() {
           admissionId={admissionId}
           admission={admission}
           summary={discharge.data ?? null}
-          facilityName={facilityName}
         />
       )}
     </Page>

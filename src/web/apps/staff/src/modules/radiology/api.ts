@@ -6,9 +6,6 @@ import type {
   DiagnosticReportStatus,
   OrderPriority,
   PatientClass,
-  ReportLetterhead,
-  ReportPatient,
-  ReportSignatory,
   ReportStudyRef,
   TatSummary,
 } from '@/modules/lab/common/types';
@@ -201,36 +198,6 @@ export interface AddAddendumRequest {
   reason: string | null;
   isCriticalFinding: boolean;
   criticalCall: CriticalCallDetails | null;
-}
-
-export interface RadiologyReportView {
-  reportId: string;
-  imagingStudyId: string;
-  letterhead: ReportLetterhead;
-  patient: ReportPatient;
-  accessionNumber: string;
-  studyName: string;
-  modality: Modality;
-  bodyPart: string | null;
-  referredBy: string | null;
-  orderedAt: string;
-  acquiredAt: string | null;
-  technique: string | null;
-  clinicalHistory: string | null;
-  comparison: string | null;
-  findings: string;
-  impression: string;
-  isCriticalFinding: boolean;
-  status: DiagnosticReportStatus;
-  verifiedAt: string | null;
-  releasedAt: string | null;
-  signatories: ReportSignatory[];
-  addenda: RadiologyAddendumDto[];
-  verificationCode: string | null;
-  /** Server-relative verification API; resolves only on the hospital network. */
-  verificationPath: string | null;
-  /** Absolute portal verification page for the QR code; null until the public address (`portal.baseUrl`) is configured. */
-  verificationUrl: string | null;
 }
 
 export interface ReportTemplateDto {
@@ -435,7 +402,6 @@ export const radiologyApi = {
   releaseReport: (id: string) => api.post<RadiologyReportDto>(`${study(id)}/report/release`),
   addAddendum: (id: string, request: AddAddendumRequest) =>
     api.post<RadiologyReportDto>(`${study(id)}/report/addenda`, request),
-  printView: (id: string) => api.get<RadiologyReportView>(`${study(id)}/report/print`),
 
   saveTemplate: (id: string | null, request: SaveReportTemplateRequest): Promise<{ id: string } | undefined> =>
     id
@@ -446,6 +412,9 @@ export const radiologyApi = {
       ? api.put<undefined>(`/api/v1/radiology/procedures/${id}`, request)
       : api.post<{ id: string }>('/api/v1/radiology/procedures', request),
 };
+
+/** The A4 radiology report as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const radiologyReportDocument = (studyId: string) => `${study(studyId)}/report`;
 
 export const RADIOLOGY_PERMISSIONS = {
   read: 'radiology.studies.read',

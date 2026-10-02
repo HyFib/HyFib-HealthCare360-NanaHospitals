@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BillDetail, BillLineDto, ReceiptDto } from './api';
-import { billTitle, buildBillHtml, buildReceiptHtml, gstSummary } from './print';
+import { billTitle, buildCounterBillHtml, buildReceiptHtml } from './print';
 
 const facility = {
   name: 'Nana Hospitals',
@@ -125,16 +125,16 @@ describe('bill prints', () => {
     expect(billTitle(bill({ status: 'Draft' }))).toBe('Estimate (draft bill)');
   });
 
-  it('prints the hospital GSTIN, SAC codes and the amount in words', () => {
-    const html = buildBillHtml(bill(), facility, 'A4');
+  it('prints the hospital GSTIN, SAC codes, payments and the amount in words on the 80 mm bill', () => {
+    const html = buildCounterBillHtml(bill(), facility);
     expect(html).toContain('GSTIN 27AAACN1234F1Z5');
-    expect(html).toContain('999312');
+    expect(html).toContain('SAC 999312');
     expect(html).toContain('Rupees Five Hundred Only');
     expect(html).toContain('Cash + UPI');
-    expect(html).not.toContain('CGST');
+    expect(html).toContain('size: 80mm auto');
   });
 
-  it('shows CGST and SGST columns and a GST summary on a tax invoice', () => {
+  it('shows the GST rate of taxed services and the CGST and SGST totals', () => {
     const taxed = billLine({
       taxRate: 18,
       taxableAmount: 1000,
@@ -144,18 +144,17 @@ describe('bill prints', () => {
       grossAmount: 1000,
       unitPrice: 1000,
     });
-    const html = buildBillHtml(
+    const html = buildCounterBillHtml(
       bill({ isTaxInvoice: true, lines: [taxed], cgstAmount: 90, sgstAmount: 90, taxAmount: 180 }),
       facility,
-      'A4',
     );
-    expect(html).toContain('<th class="num">CGST</th>');
-    expect(html).toContain('GST summary');
-    expect(html).toContain('9%');
+    expect(html).toContain('GST 18%');
+    expect(html).toContain('<td>CGST</td>');
+    expect(html).toContain('Tax invoice');
   });
 
   it('marks returns and cancelled bills', () => {
-    const html = buildBillHtml(
+    const html = buildCounterBillHtml(
       bill({
         status: 'Cancelled',
         cancelReason: 'Wrong patient',
@@ -163,25 +162,15 @@ describe('bill prints', () => {
         lines: [billLine({ isReturn: true, grossAmount: -100, netAmount: -100 })],
       }),
       facility,
-      'Receipt80',
     );
     expect(html).toContain('(return)');
     expect(html).toContain('CANCELLED');
   });
 
   it('escapes everything that comes from records', () => {
-    const html = buildBillHtml(bill({ patientName: '<script>alert(1)</script>' }), facility, 'A4');
+    const html = buildCounterBillHtml(bill({ patientName: '<script>alert(1)</script>' }), facility);
     expect(html).not.toContain('<script>alert');
     expect(html).toContain('&lt;script&gt;');
-  });
-
-  it('groups GST by SAC and rate', () => {
-    const rows = gstSummary([
-      billLine({ id: 'a', sacCode: '999312', taxRate: 18, taxableAmount: 100, cgstAmount: 9, sgstAmount: 9 }),
-      billLine({ id: 'b', sacCode: '999312', taxRate: 18, taxableAmount: 50.5, cgstAmount: 4.55, sgstAmount: 4.54 }),
-      billLine({ id: 'c', sacCode: '999311', taxRate: 0 }),
-    ]);
-    expect(rows).toEqual([{ sac: '999312', rate: 18, taxable: 150.5, cgst: 13.55, sgst: 13.54 }]);
   });
 });
 

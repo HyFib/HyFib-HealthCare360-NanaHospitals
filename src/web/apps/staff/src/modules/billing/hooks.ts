@@ -3,12 +3,13 @@ import { useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient, type Query } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { api } from '@/lib/api';
+import { printServerDocument } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
-import { billingQueries, type BillDetail, type ReceiptDto, type RefundDto } from './api';
+import { billDocument, billingQueries, type BillDetail, type ReceiptDto, type RefundDto } from './api';
 import { NO_DISCOUNT_AUTHORITY, type DiscountAuthority } from './billTotals';
 import { useCounterPrefs } from './counterPrefs';
 import {
-  buildBillHtml,
+  buildCounterBillHtml,
   buildReceiptHtml,
   buildRefundVoucherHtml,
   sendToPrinter,
@@ -64,7 +65,10 @@ export function useAttemptKey(): [string, () => void] {
   return [key, renew];
 }
 
-/** Print helpers bound to this counter's printer settings; failures become a toast, never a lost payment. */
+/**
+ * Print helpers bound to this counter's printer settings; failures become a toast, never a lost payment. The A4 bill
+ * comes from the server (the same document as its PDF); the 80 mm bill and the receipts are built here.
+ */
 export function useBillingPrint() {
   const facility = usePrintFacility();
   const prefs = useCounterPrefs();
@@ -72,9 +76,10 @@ export function useBillingPrint() {
 
   const printBill = useCallback(
     (bill: BillDetail, format: PrintFormat = 'A4') =>
-      sendToPrinter(buildBillHtml(bill, facility, format), format).catch((error: unknown) =>
-        notify.error(error, 'Printing failed'),
-      ),
+      (format === 'A4'
+        ? printServerDocument(billDocument(bill.id))
+        : sendToPrinter(buildCounterBillHtml(bill, facility), format)
+      ).catch((error: unknown) => notify.error(error, 'Printing failed')),
     [facility, notify],
   );
 

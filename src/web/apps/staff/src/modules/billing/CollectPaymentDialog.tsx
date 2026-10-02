@@ -37,8 +37,16 @@ import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
-import { billingApi, billingQueries, type BillDetail, type PatientAdvanceDto, type ReceiptDto } from './api';
+import {
+  billDocument,
+  billingApi,
+  billingQueries,
+  type BillDetail,
+  type PatientAdvanceDto,
+  type ReceiptDto,
+} from './api';
 import { useAttemptKey, useBillingPrint, useRefreshBilling } from './hooks';
 import { fromPaise, minBig, toPaise } from './money';
 import { PaymentLinkDialog } from './PaymentLinkDialog';
@@ -101,6 +109,7 @@ export function CollectPaymentDialog({
   const notify = useNotify();
   const refresh = useRefreshBilling();
   const { prefs, printReceipt, printReceiptById, printBill } = useBillingPrint();
+  const { downloadPdf } = useServerDocuments();
   const canShift = usePermission('billing.shifts');
   const [attemptKey, renewAttempt] = useAttemptKey();
   const [adjustKey, renewAdjustKey] = useAttemptKey();
@@ -340,6 +349,12 @@ export function CollectPaymentDialog({
                         </MenuItem>
                         <MenuItem onClick={() => void printReceipt(done.receipt, 'A4')}>A4 receipt</MenuItem>
                         <MenuItem onClick={() => void printBill(bill, 'A4')}>A4 bill with GST details</MenuItem>
+                        <MenuItem
+                          disabled={downloadPdf.isPending}
+                          onClick={() => downloadPdf.mutate(billDocument(bill.id))}
+                        >
+                          Download the A4 bill as a PDF
+                        </MenuItem>
                         <MenuItem onClick={() => void printBill(bill, 'Receipt80')}>
                           Bill on the receipt printer
                         </MenuItem>

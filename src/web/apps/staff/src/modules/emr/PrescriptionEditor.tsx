@@ -27,7 +27,6 @@ import {
   ChevronUpRegular,
   DeleteRegular,
   DocumentArrowLeftRegular,
-  PrintRegular,
   SaveRegular,
   ShieldCheckmarkRegular,
   SignatureRegular,
@@ -39,6 +38,7 @@ import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactElement } from 'react';
 import { Controller, useFieldArray, useForm, useWatch, type Control, type UseFormReturn } from 'react-hook-form';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { emrApi, emrKeys, emrQueries, type CurrentMedication } from './api';
@@ -54,7 +54,6 @@ import {
   type DoseFrequency,
 } from './dosing';
 import { DrugPicker } from './DrugPicker';
-import { printPrescription } from './print';
 import {
   appendLines,
   applyDefaults,
@@ -74,7 +73,7 @@ import {
   type RxFormValues,
   type RxLineValues,
 } from './prescriptionForm';
-import { prescriptionQueries, prescriptionsApi, type PrescriptionDto } from './prescriptionsApi';
+import { prescriptionDocument, prescriptionQueries, prescriptionsApi, type PrescriptionDto } from './prescriptionsApi';
 import { SafetyReview } from './SafetyReview';
 import {
   alertsFromProblem,
@@ -498,7 +497,6 @@ export function PrescriptionEditor({
   initialDraft,
   templateMedicines = [],
   currentMedications = [],
-  facilityName,
   onSigned,
 }: {
   patientId: string;
@@ -509,7 +507,6 @@ export function PrescriptionEditor({
   initialDraft: PrescriptionDto | null;
   templateMedicines?: readonly MedicineDefaults[];
   currentMedications?: readonly CurrentMedication[];
-  facilityName: string;
   onSigned?: (prescription: PrescriptionDto) => void;
 }) {
   const styles = useStyles();
@@ -704,11 +701,6 @@ export function PrescriptionEditor({
     setFocusRow(fields.length);
   };
 
-  const print = useMutation({
-    mutationFn: async (id: string) => printPrescription(await prescriptionsApi.print(id), facilityName),
-    onError: (error) => notify.error(error, 'Printing failed'),
-  });
-
   const duplicates = duplicateGenerics(lines ?? []);
   const favouritesList = favourites.data ?? [];
   const controlledNames = (current?.items ?? []).filter((i) => i.isControlledDrug).map((i) => i.drugName);
@@ -723,17 +715,11 @@ export function PrescriptionEditor({
         <MessageBar intent="success" layout="multiline">
           <MessageBarBody>
             <MessageBarTitle>Prescription {signed.prescriptionNumber} signed</MessageBarTitle>
-            It is in the pharmacy queue{signed.isInpatient ? '' : ' and on the patient portal'}. Print it for the
-            patient if needed.
+            It is in the pharmacy queue{signed.isInpatient ? '' : ' and on the patient portal'}. Print it or download
+            the PDF for the patient if needed.
           </MessageBarBody>
           <MessageBarActions>
-            <Button
-              icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
-              disabled={print.isPending}
-              onClick={() => print.mutate(signed.id)}
-            >
-              Print (A5)
-            </Button>
+            <DocumentButtons path={prescriptionDocument(signed.id)} printLabel="Print (A5)" />
             <Button appearance="subtle" onClick={() => setSigned(null)}>
               Write another prescription
             </Button>

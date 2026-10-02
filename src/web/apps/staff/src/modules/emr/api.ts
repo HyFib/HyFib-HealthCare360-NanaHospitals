@@ -670,40 +670,6 @@ export interface DischargeSummaryPrefill {
   followUpInstructions: string | null;
 }
 
-export interface FacilityLetterhead {
-  facilityId: string;
-  code: string;
-  name: string;
-  legalName: string | null;
-  address: string;
-  phone: string | null;
-  email: string | null;
-  website: string | null;
-  registrationNumber: string | null;
-  nabhNumber: string | null;
-  hfrId: string | null;
-  logoFileId: string | null;
-  letterheadNote: string | null;
-}
-
-export interface PrescriberInfo {
-  practitionerId: string;
-  displayName: string;
-  qualification: string | null;
-  registrationCouncil: string | null;
-  registrationNumber: string | null;
-  department: string | null;
-  specialty: string | null;
-  signatureFileId: string | null;
-}
-
-export interface DischargeSummaryPrint {
-  summary: DischargeSummaryDto;
-  patient: PatientSummary;
-  letterhead: FacilityLetterhead | null;
-  consultant: PrescriberInfo | null;
-}
-
 // ---------------------------------------------------------------------------------------------------- results (lab report view subset)
 
 export type LabResultFlag = 'Normal' | 'Low' | 'High' | 'CriticalLow' | 'CriticalHigh' | 'Abnormal' | 'Critical';
@@ -989,6 +955,7 @@ export const emrApi = {
     api.post<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/${id}/sign`, { version }),
   amendDischargeSummary: (id: string, reason: string, content: DischargeContent, version: number) =>
     api.post<DischargeSummaryDto>(`/api/v1/clinical/discharge-summaries/${id}/amend`, { reason, ...content, version }),
-  dischargeSummaryPrint: (id: string) =>
-    api.get<DischargeSummaryPrint>(`/api/v1/clinical/discharge-summaries/${id}/print`),
 };
+
+/** The A4 discharge summary as the server prints it and makes its PDF (see `@/lib/documents`). */
+export const dischargeSummaryDocument = (id: string) => `/api/v1/clinical/discharge-summaries/${id}`;

@@ -18,7 +18,6 @@ import {
   DismissRegular,
   DocumentArrowLeftRegular,
   EditRegular,
-  PrintRegular,
   SaveRegular,
   SignatureRegular,
 } from '@fluentui/react-icons';
@@ -29,10 +28,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import { z } from 'zod';
+import { DocumentButtons } from '@/lib/DocumentButtons';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { IcdCodePicker } from '@/modules/mrd/CodePicker';
 import {
+  dischargeSummaryDocument,
   emrApi,
   emrKeys,
   type DischargeContent,
@@ -41,7 +42,6 @@ import {
   type PatientAdmissionItem,
 } from './api';
 import { AmendDialog } from './EncounterNote';
-import { printDischargeSummary } from './print';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '16px' },
@@ -193,20 +193,19 @@ function TextSection({
 
 /**
  * Discharge summary of one admission: prefilled from the structured record (diagnoses, procedures, investigations,
- * discharge medicines), kept on this computer while typing, signed by the consultant and amended with a reason.
+ * discharge medicines), kept on this computer while typing, signed by the consultant and amended with a reason. The
+ * saved summary prints, or downloads as a PDF, from the server: the same document the patient receives.
  */
 export function DischargeSummaryEditor({
   patientId,
   admissionId,
   admission,
   summary,
-  facilityName,
 }: {
   patientId: string;
   admissionId: string;
   admission: PatientAdmissionItem | undefined;
   summary: DischargeSummaryDto | null;
-  facilityName: string;
 }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -324,16 +323,6 @@ export function DischargeSummaryEditor({
       }
     },
     onError: (error) => !conflict(error) && notify.error(error, 'Could not record the amendment'),
-  });
-
-  const print = useMutation({
-    mutationFn: async () => {
-      if (!current) {
-        throw new Error('Save the summary first.');
-      }
-      await printDischargeSummary(await emrApi.dischargeSummaryPrint(current.id), facilityName);
-    },
-    onError: (error) => notify.error(error, 'Printing failed'),
   });
 
   useHotkey('mod+s', () => !locked && !signedOrAmended && !save.isPending && save.mutate(), { allowInInputs: true });
@@ -464,13 +453,7 @@ export function DischargeSummaryEditor({
         {!current && <Caption1 className={styles.muted}>Not saved yet</Caption1>}
         {isDirty && <Caption1 className={styles.muted}>Unsaved changes (kept on this computer)</Caption1>}
         {current && (
-          <Button
-            icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
-            disabled={print.isPending || isDirty}
-            onClick={() => print.mutate()}
-          >
-            Print (A4)
-          </Button>
+          <DocumentButtons path={dischargeSummaryDocument(current.id)} printLabel="Print (A4)" disabled={isDirty} />
         )}
         {canWrite && !signedOrAmended && (
           <>
