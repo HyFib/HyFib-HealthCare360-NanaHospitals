@@ -45,6 +45,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HyFib.HealthCare360.Integrations.Tests" />
+    <!-- The lab agent's tests run the server's relay and protocol session end to end. -->
+    <InternalsVisibleTo Include="HyFib.HealthCare360.LabAgent.Tests" />
     <!-- NSubstitute (Castle DynamicProxy) proxies internal adapter interfaces in the unit tests. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
