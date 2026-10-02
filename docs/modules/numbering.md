@@ -63,15 +63,21 @@ saving.
 * The numbers must fit where they are stored. The longest number is measured with the longest facility code in use and
   a running number of at least 8 digits (it grows over the years). Most numbers have room for 24 characters; UHIDs, tube
   barcodes, donor numbers and employee codes for 20. The message says which part to shorten.
-* A changed format must differ from every other series' format in its letters, `-` or `/`, not only in digits (OP and
-  IP bills share one table, so two formats that can make the same number would issue a bill number twice). Formats are
-  compared with every run of digits taken as one place: the date parts, the running number and digits in the fixed
-  text. So `{FAC}OB{YY}{SEQ:7}`, `{FAC}OB{SEQ:9}` and `{FAC}OB26{SEQ}` count as the same: `{SEQ:6}` reaching 1000000
-  makes the numbers of `{SEQ:7}`, and `{SEQ}` and `{SEQ:1}` make the same numbers. `{FAC}` is read as the code it
-  stands for (the facility's own for a per-facility series, the main facility's for a shared one), so at facility AB
-  `{FAC}AB{YY}{SEQ:7}` and `AB{FAC}{YY}{SEQ:7}` count as the same, and so do `{FAC}-{SEQ}` and `AB-{SEQ}`. Number
-  columns are unique across facilities, so a change is checked against every facility's formats when it is saved; the
-  editor checks the formats of the facility you are signed in to as you type. Restoring a default is always allowed:
+* A changed format must not be able to make the numbers of another series (OP and IP bills share one table, so that
+  would issue a bill number twice), nor those this series makes at another facility (number columns are unique across
+  facilities). Two formats can make the same number when their characters (letters, `-`, `/`, and the facility code
+  that `{FAC}` stands for) are the same in the same places, and each run of digits (the date parts, the running number
+  and digits in the fixed text) can come out the same: lengths that can meet, and the same fixed digits where both
+  start or end with some.
+  - **Clash:** `{FAC}OB{YY}{SEQ:7}`, `{FAC}OB{SEQ:9}` and `{FAC}OB26{SEQ}` (`{SEQ:6}` reaching 1000000 makes the
+    numbers of `{SEQ:7}`), and `{SEQ}` with `{SEQ:1}`.
+  - **Clash at facility AB:** `{FAC}AB{YY}{SEQ:7}` and `AB{FAC}{YY}{SEQ:7}`, and `{FAC}-{SEQ}` and `AB-{SEQ}`.
+    `{FAC}` is the facility's own code for a per-facility series and the main facility's for a shared one.
+  - **Clash across facilities:** AB's `{FAC}COB…` and ABC's `{FAC}OB…`.
+  - **Never clash:** `B1{SEQ}` and `B2{SEQ}`, or one format at facilities NH1 and NH2.
+
+  The editor checks the facility you are signed in to as you type; saving checks every facility. Restoring a default
+  is always allowed:
   refunds and pharmacy refill requests share the default `{FAC}RF{YY}{SEQ:6}`, and credit notes and canteen bills both
   start `{FAC}CN{YY}`, but each pair is kept in different tables.
 * A stored running number padded to more than 12 digits (possible only from before these rules) is padded to 12 when
