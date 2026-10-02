@@ -155,7 +155,6 @@ export function ConsentsPanel({ patientId }: { patientId: string }) {
       )}
       <DataTable
         ariaLabel="Consents"
-        actionsWidth={112}
         rows={consents.data}
         loading={consents.isLoading}
         error={consents.error}
