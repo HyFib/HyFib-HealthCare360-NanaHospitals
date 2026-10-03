@@ -146,8 +146,7 @@ export async function printLabel<K extends LabelKind>(
       await bridge.printRaw(printer.printer, commands.content);
       return { via: 'commands', printer: printer.printer };
     } catch (error) {
-      // Letters the printer's own fonts lack (a name in Devanagari): the page prints them through the driver.
-      if (!isApiError(error) || error.code !== 'labels.text_not_printable') {
+      if (!printsAsPage(error)) {
         throw error;
       }
     }
@@ -161,4 +160,13 @@ export async function printLabel<K extends LabelKind>(
     ...(printer ? { printerName: printer.printer } : {}),
   });
   return { via: 'page', printer: printer?.printer ?? null };
+}
+
+/**
+ * Label data the server would not write as printer commands that the page still prints: letters the printer's own
+ * fonts lack (a name in Devanagari), or a value the label endpoint refuses (400, for example a longer ward name than
+ * it takes). Sign-in, permission, network and server errors are not: those stop the print and are shown.
+ */
+function printsAsPage(error: unknown): boolean {
+  return isApiError(error) && (error.code === 'labels.text_not_printable' || error.status === 400);
 }

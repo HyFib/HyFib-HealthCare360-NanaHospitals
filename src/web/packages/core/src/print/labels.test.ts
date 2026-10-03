@@ -123,6 +123,45 @@ describe('printLabel', () => {
     expect(result.via).toBe('page');
   });
 
+  it('prints the page on the same printer when the label endpoint refuses a value the page still prints', async () => {
+    desktop.getPrinterSetup.mockResolvedValue(
+      setup({ labels: { printer: 'ZDesigner GK420t', language: 'zpl', dpi: 203, widthMm: 50, heightMm: 25 } }),
+    );
+    api.post.mockRejectedValue(
+      new ApiError({
+        status: 400,
+        title: 'One or more fields are invalid',
+        errors: { 'Labels[0].Bench': ['The bench must be at most 20 characters.'] },
+      }),
+    );
+
+    const result = await printLabel(api, {
+      kind: 'lab-tubes',
+      labels: [{ ...tube, bench: 'Haematology and coagulation' }],
+      page,
+    });
+
+    expect(desktop.printRaw).not.toHaveBeenCalled();
+    expect(desktop.printHtml).toHaveBeenCalledWith(
+      expect.objectContaining({ printerName: 'ZDesigner GK420t', silent: true }),
+    );
+    expect(result.via).toBe('page');
+  });
+
+  it.each([
+    [401, 'Please sign in again'],
+    [403, 'You do not have permission for this action'],
+  ])('stops on a %i from the label endpoint and prints nothing', async (status, title) => {
+    desktop.getPrinterSetup.mockResolvedValue(
+      setup({ labels: { printer: 'ZDesigner GK420t', language: 'zpl', dpi: 203, widthMm: 50, heightMm: 25 } }),
+    );
+    const refusal = new ApiError({ status, title });
+    api.post.mockRejectedValue(refusal);
+
+    await expect(printLabel(api, { kind: 'lab-tubes', labels: [tube], page })).rejects.toBe(refusal);
+    expect(desktop.printHtml).not.toHaveBeenCalled();
+  });
+
   it('reports any other refusal instead of printing something else', async () => {
     desktop.getPrinterSetup.mockResolvedValue(
       setup({ labels: { printer: 'ZDesigner GK420t', language: 'zpl', dpi: 203, widthMm: 38, heightMm: 25 } }),
