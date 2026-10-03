@@ -5,8 +5,10 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services.Catalogue;
 
 /// <summary>
 /// The ICD-10 chapters and blocks in use (MRD-01, MRD-06): those of the imported WHO file once a hospital has imported
-/// one, and the built-in list until then. Read on every ICD search, so it is cached for ten minutes; an import clears
-/// the cache on the server that ran it.
+/// one, and the built-in list until then. Read on every ICD search, so the set is cached for ten minutes, tagged with
+/// the latest ICD-10 import. Each read checks that tag with one small indexed query, so an import from another server
+/// node or from the server's <c>catalogue import</c> command is seen at once; an import also clears the cache on the
+/// server that ran it.
 /// </summary>
 public sealed class IcdClassificationProvider(HospitalDbContext db, IMemoryCache cache)
 {
@@ -15,9 +17,15 @@ public sealed class IcdClassificationProvider(HospitalDbContext db, IMemoryCache
 
     public async Task<IcdClassificationSet> GetAsync(CancellationToken ct)
     {
-        if (cache.TryGetValue(CacheKey, out IcdClassificationSet? cached) && cached is not null)
+        var latestImport = await db.Set<CatalogueImport>().AsNoTracking()
+            .Where(i => i.Catalogue == CatalogueKind.Icd10)
+            .OrderByDescending(i => i.ImportedAt)
+            .Select(i => (Guid?)i.Id)
+            .FirstOrDefaultAsync(ct);
+        if (cache.TryGetValue(CacheKey, out Cached? cached) && cached is not null
+            && cached.LatestImport == latestImport)
         {
-            return cached;
+            return cached.Set;
         }
 
         var entries = await db.Set<IcdClassificationEntry>().AsNoTracking()
@@ -25,7 +33,7 @@ public sealed class IcdClassificationProvider(HospitalDbContext db, IMemoryCache
             .OrderBy(e => e.Sequence)
             .ToListAsync(ct);
         var set = From(entries);
-        cache.Set(CacheKey, set, Lifetime);
+        cache.Set(CacheKey, new Cached(latestImport, set), Lifetime);
         return set;
     }
 
@@ -44,4 +52,7 @@ public sealed class IcdClassificationProvider(HospitalDbContext db, IMemoryCache
             .ToList();
         return chapters.Count == 0 ? IcdClassificationSet.BuiltIn : new IcdClassificationSet(chapters, blocks, fromFile: true);
     }
+
+    /// <summary>The set, and the import it came from (null for the built-in list).</summary>
+    private sealed record Cached(Guid? LatestImport, IcdClassificationSet Set);
 }
