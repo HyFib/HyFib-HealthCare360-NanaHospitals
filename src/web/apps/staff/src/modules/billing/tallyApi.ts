@@ -177,6 +177,10 @@ export interface TallyLedgerMap {
   tdsPayable: string;
   doctorRecoveries: string;
   payoutBank: string;
+  /** The settlement journal (gateway reconciliation): the bank paid, the gateway's charges and the GST on them. */
+  gatewaySettlementBank: string;
+  gatewayCharges: string;
+  gatewayInputGst: string;
   pharmacy: TallyCounterLedgers;
   canteen: TallyCounterLedgers;
   salesLedgerPerGstRate: boolean;

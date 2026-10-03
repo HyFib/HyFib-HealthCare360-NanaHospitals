@@ -241,6 +241,20 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
         </FormGrid>
       </Section>
 
+      <Section title="Payment gateway settlements">
+        <FormGrid columns={2}>
+          <Ledger
+            control={control}
+            name="gatewaySettlementBank"
+            label="Bank the gateway pays into"
+            hint="Each settlement journal clears the payment gateway ledger above into this bank."
+            disabled={disabled}
+          />
+          <Ledger control={control} name="gatewayCharges" label="Gateway charges" disabled={disabled} />
+          <Ledger control={control} name="gatewayInputGst" label="GST on gateway charges" disabled={disabled} />
+        </FormGrid>
+      </Section>
+
       {(['pharmacy', 'canteen'] as const).map((counter) => (
         <Section
           key={counter}

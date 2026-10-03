@@ -132,6 +132,9 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.TdsPayable).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.DoctorRecoveries).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.PayoutBank).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.GatewaySettlementBank).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.GatewayCharges).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.GatewayInputGst).Must(BeALedgerName).WithMessage(LedgerMessage);
 
         RuleFor(x => x.IncomeByDepartment).Must(map => map is null || map.Count <= MaxEntries).WithMessage($"Map at most {MaxEntries} departments.");
         RuleForEach(x => x.IncomeByDepartment).Must(pair => BeACode(pair.Key) && BeALedgerName(pair.Value))

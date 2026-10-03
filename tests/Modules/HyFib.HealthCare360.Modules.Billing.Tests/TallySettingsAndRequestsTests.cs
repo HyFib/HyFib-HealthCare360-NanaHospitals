@@ -23,6 +23,15 @@ public sealed class TallySettingsAndRequestsTests
     }
 
     [Fact]
+    public void The_settlement_journal_ledgers_are_checked_too()
+    {
+        Ledgers.Validate(new TallyLedgerMap { GatewaySettlementBank = " " }).Errors.ShouldHaveSingleItem()
+            .PropertyName.ShouldBe(nameof(TallyLedgerMap.GatewaySettlementBank));
+        Ledgers.Validate(new TallyLedgerMap { GatewayCharges = "Gateway\nCharges" }).IsValid.ShouldBeFalse();
+        Ledgers.Validate(new TallyLedgerMap { GatewayInputGst = "" }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
     public void A_ledger_name_is_at_most_a_hundred_characters() =>
         Ledgers.Validate(new TallyLedgerMap { RoundOff = new string('R', 101) }).IsValid.ShouldBeFalse();
 
