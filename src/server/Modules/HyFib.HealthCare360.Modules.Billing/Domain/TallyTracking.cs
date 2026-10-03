@@ -67,6 +67,12 @@ public enum TallyVoucherStatus
 
     /// <summary>Found in Tally only: left over from an older version of the day book.</summary>
     OnlyInTally,
+
+    /// <summary>
+    /// Found in Tally only, and it is a bill HC360 has on another day: Tally holds it as an older post left it (a
+    /// cancellation posted before per-voucher tracking turned the sale into a credit note). Post the bill's day again.
+    /// </summary>
+    BillOfAnotherDay,
 }
 
 /// <summary>
@@ -75,7 +81,7 @@ public enum TallyVoucherStatus
 /// book stay (marked) while Tally may still hold them; rows found only in Tally come from the read-back check.
 /// </summary>
 [NotAudited]
-public sealed class TallyVoucherRecord : Entity
+public sealed class TallyVoucherRecord : Entity, IVersioned
 {
     public Guid ExportId { get; set; }
     public Guid FacilityId { get; set; }
@@ -113,13 +119,20 @@ public sealed class TallyVoucherRecord : Entity
     public string? TallyDetail { get; set; }
     public DateTimeOffset? CheckedAt { get; set; }
 
+    /// <summary>For a voucher only in Tally that is a bill of this facility: the day HC360 has the bill on.</summary>
+    public DateOnly? BillDate { get; set; }
+
+    /// <summary>Optimistic concurrency (<c>xmin</c>).</summary>
+    public uint Version { get; set; }
+
     public bool IsConfirmed => Answer is TallyVoucherAnswer.Created or TallyVoucherAnswer.Altered or TallyVoucherAnswer.Accepted or TallyVoucherAnswer.Imported;
 
     /// <summary>Tally has the version the day book has now.</summary>
     public bool IsCurrentInTally => IsConfirmed && SentHash == Hash;
 
     public TallyVoucherStatus Status =>
-        Match == TallyMatch.OnlyInTally ? TallyVoucherStatus.OnlyInTally
+        Match == TallyMatch.OnlyInTally
+            ? (BillDate is null ? TallyVoucherStatus.OnlyInTally : TallyVoucherStatus.BillOfAnotherDay)
         : !InDayBook ? TallyVoucherStatus.NoLongerInHc360
         : Answer == TallyVoucherAnswer.Rejected ? TallyVoucherStatus.Refused
         : Answer == TallyVoucherAnswer.Unconfirmed ? TallyVoucherStatus.Unconfirmed
@@ -135,6 +148,7 @@ public sealed class TallyVoucherRecord : Entity
         TallyNumber = null;
         TallyDetail = null;
         CheckedAt = null;
+        BillDate = null;
     }
 }
 
@@ -158,6 +172,9 @@ public sealed record TallySending(int Vouchers, int InTally, int NotSent, int Re
 public static class TallyTracking
 {
     public const int MaxText = 500;
+
+    /// <summary>The longest reference a voucher record keeps (the <c>key</c> column).</summary>
+    public const int MaxKey = 200;
 
     /// <summary>SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines.</summary>
     public static string Fingerprint(AccountingVoucher voucher)
@@ -187,9 +204,30 @@ public static class TallyTracking
         vouchers.GroupBy(v => v.Key, StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).Order(StringComparer.Ordinal).ToList();
 
     /// <summary>
+    /// Why the day book cannot be tracked voucher by voucher, or null: two vouchers share a reference (Tally would keep
+    /// only one of them), or a reference is longer than the records keep. A retry cannot fix either.
+    /// </summary>
+    public static string? KeyProblem(IReadOnlyList<AccountingVoucher> vouchers)
+    {
+        if (DuplicateKeys(vouchers) is { Count: > 0 } duplicates)
+        {
+            return $"Vouchers share the reference {string.Join(", ", duplicates.Take(3))}, "
+                   + "so Tally would keep only one of them.";
+        }
+
+        var tooLong = vouchers.Select(v => v.Key).Where(k => k.Length > MaxKey).Order(StringComparer.Ordinal).ToList();
+        return tooLong.Count == 0
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"The reference {tooLong[0][..40]}… is {tooLong[0].Length} characters long; "
+                + $"HC360 tracks references of at most {MaxKey}.");
+    }
+
+    /// <summary>
     /// Brings the records in line with the day book: a record per voucher (new ones added), current type, number,
     /// amount and hash; vouchers that left the day book are marked, or their records dropped when nothing of them reached
-    /// Tally. A record found only in Tally becomes an ordinary record when the day book has the voucher again.
+    /// Tally. A record found only in Tally becomes an ordinary record when the day book has the voucher again. Callers
+    /// that keep the records check <see cref="KeyProblem"/> first: a record's key is the voucher's whole reference.
     /// </summary>
     public static TallyTracked Track(TallyExport export, IReadOnlyList<TallyVoucherRecord> records, IReadOnlyList<AccountingVoucher> vouchers)
     {
@@ -200,7 +238,13 @@ public static class TallyTracking
         {
             if (!byKey.TryGetValue(voucher.Key, out var record))
             {
-                record = new TallyVoucherRecord { ExportId = export.Id, FacilityId = export.FacilityId, Date = export.Date, Key = Bound(voucher.Key, 200)! };
+                record = new TallyVoucherRecord
+                {
+                    ExportId = export.Id,
+                    FacilityId = export.FacilityId,
+                    Date = export.Date,
+                    Key = voucher.Key,
+                };
                 byKey[voucher.Key] = record;
                 added.Add(record);
             }
@@ -306,14 +350,15 @@ public static class TallyTracking
         var statuses = records.Select(r => r.Status).ToList();
         int Of(TallyVoucherStatus status) => statuses.Count(s => s == status);
         return new TallySending(
-            statuses.Count(s => s is not (TallyVoucherStatus.NoLongerInHc360 or TallyVoucherStatus.OnlyInTally)),
+            statuses.Count(s => s is not (TallyVoucherStatus.NoLongerInHc360 or TallyVoucherStatus.OnlyInTally
+                or TallyVoucherStatus.BillOfAnotherDay)),
             Of(TallyVoucherStatus.InTally),
             Of(TallyVoucherStatus.NotSent),
             Of(TallyVoucherStatus.Refused) + Of(TallyVoucherStatus.Unconfirmed),
             Of(TallyVoucherStatus.ChangedSinceSent),
             Of(TallyVoucherStatus.DiffersInTally),
             Of(TallyVoucherStatus.NoLongerInHc360),
-            Of(TallyVoucherStatus.OnlyInTally));
+            Of(TallyVoucherStatus.OnlyInTally) + Of(TallyVoucherStatus.BillOfAnotherDay));
     }
 
     /// <summary>The export row's counts of the day book's vouchers.</summary>
@@ -332,10 +377,19 @@ public static class TallyTracking
     /// <summary>
     /// Applies the read-back check to the records: each voucher of the day book gets Tally's verdict; a voucher that left
     /// the day book is dropped once Tally no longer holds it; HC360 vouchers only Tally holds (and that no other facility
-    /// tracks) are recorded so staff can delete them there. Returns the records to add and to delete.
+    /// tracks) are recorded so staff can delete them there, except a bill HC360 has on another day, which is recorded
+    /// with that day so staff post it again instead. Returns the records to add and to delete.
     /// </summary>
+    /// <param name="billDays">
+    /// Bills of the facility among the vouchers only in Tally, by number: the day each was finalised.
+    /// </param>
     public static (IReadOnlyList<TallyVoucherRecord> Added, IReadOnlyList<TallyVoucherRecord> Removed) ApplyCheck(
-        TallyExport export, IReadOnlyList<TallyVoucherRecord> records, AccountingReadBack readBack, ISet<string> trackedElsewhere, DateTimeOffset now)
+        TallyExport export,
+        IReadOnlyList<TallyVoucherRecord> records,
+        AccountingReadBack readBack,
+        ISet<string> trackedElsewhere,
+        DateTimeOffset now,
+        IReadOnlyDictionary<string, DateOnly>? billDays = null)
     {
         var checks = readBack.Vouchers.GroupBy(c => c.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last(), StringComparer.Ordinal);
         var others = readBack.Others.GroupBy(o => o.Key, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
@@ -393,14 +447,18 @@ public static class TallyTracking
             }
         }
 
-        foreach (var other in others.Values.Where(o => !trackedElsewhere.Contains(o.Key)))
+        // A reference longer than a record keeps cannot be tracked; such a voucher is not HC360's.
+        foreach (var other in others.Values.Where(o => !trackedElsewhere.Contains(o.Key) && o.Key.Length <= MaxKey))
         {
+            var billDay = billDays is not null && billDays.TryGetValue(other.Key, out var day) && day != export.Date
+                ? day
+                : (DateOnly?)null;
             added.Add(new TallyVoucherRecord
             {
                 ExportId = export.Id,
                 FacilityId = export.FacilityId,
                 Date = export.Date,
-                Key = Bound(other.Key, 200)!,
+                Key = other.Key,
                 RemoteId = Bound(AccountingVoucher.RemoteIdPrefix + other.Key, 210),
                 VoucherType = Bound(other.VoucherType, 32) ?? string.Empty,
                 Number = Bound(other.Number, 100) ?? string.Empty,
@@ -408,8 +466,15 @@ public static class TallyTracking
                 Match = TallyMatch.OnlyInTally,
                 TallyAmount = other.Amount,
                 TallyNumber = Bound(other.Number, 100),
-                TallyDetail = other.InBooks ? "Only in Tally: no day book has this voucher any more." : "Only in Tally, cancelled or optional there.",
+                TallyDetail = billDay is { } billed
+                    ? string.Create(CultureInfo.InvariantCulture,
+                        $"Bill {other.Key} of {billed:dd-MMM-yyyy}: Tally holds it on this day as an older post left it. "
+                        + $"Post {billed:dd-MMM-yyyy} again; do not delete it.")
+                    : other.InBooks
+                        ? "Only in Tally: no day book has this voucher any more."
+                        : "Only in Tally, cancelled or optional there.",
                 CheckedAt = now,
+                BillDate = billDay,
             });
             differences++;
         }

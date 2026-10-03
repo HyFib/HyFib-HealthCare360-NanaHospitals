@@ -64,6 +64,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 type: "uuid",
                 nullable: true);
 
+            migrationBuilder.AddColumn<bool>(
+                name: "legacy_references",
+                schema: "billing",
+                table: "tally_exports",
+                type: "boolean",
+                nullable: false,
+                defaultValue: false);
+
             migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "queued_at",
                 schema: "billing",
@@ -142,6 +150,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 nullable: false,
                 defaultValue: 0);
 
+            migrationBuilder.AddColumn<uint>(
+                name: "xmin",
+                schema: "billing",
+                table: "tally_exports",
+                type: "xid",
+                rowVersion: true,
+                nullable: false,
+                defaultValue: 0u);
+
             migrationBuilder.CreateTable(
                 name: "simulator_tally_vouchers",
                 schema: "integrations",
@@ -190,7 +207,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     tally_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: true),
                     tally_number = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     tally_detail = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    checked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    checked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    bill_date = table.Column<DateOnly>(type: "date", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -203,6 +222,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
+
+            // Days that existed before HC360 tracked each voucher keep the references Tally holds for them (doctor-fee
+            // journals DF-yyyyMMdd-001; see TallyExport.LegacyReferences), and a posted one shows its vouchers as in
+            // Tally rather than "0 of N".
+            migrationBuilder.Sql("UPDATE billing.tally_exports SET legacy_references = true;");
+            migrationBuilder.Sql("UPDATE billing.tally_exports SET confirmed_count = voucher_count WHERE status = 'Posted';");
 
             migrationBuilder.CreateIndex(
                 name: "ix_simulator_tally_vouchers_company_date",
@@ -284,6 +309,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 table: "tally_exports");
 
             migrationBuilder.DropColumn(
+                name: "legacy_references",
+                schema: "billing",
+                table: "tally_exports");
+
+            migrationBuilder.DropColumn(
                 name: "queued_at",
                 schema: "billing",
                 table: "tally_exports");
@@ -330,6 +360,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             migrationBuilder.DropColumn(
                 name: "tally_differences",
+                schema: "billing",
+                table: "tally_exports");
+
+            migrationBuilder.DropColumn(
+                name: "xmin",
                 schema: "billing",
                 table: "tally_exports");
         }

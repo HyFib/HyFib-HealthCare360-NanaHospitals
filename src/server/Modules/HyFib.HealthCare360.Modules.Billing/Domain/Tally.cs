@@ -35,7 +35,7 @@ public enum TallyCheckStatus
 /// <see cref="TallyVoucherRecord"/>.
 /// </summary>
 [NotAudited]
-public sealed class TallyExport : Entity
+public sealed class TallyExport : Entity, IVersioned
 {
     public Guid FacilityId { get; set; }
     public DateOnly Date { get; set; }
@@ -84,6 +84,17 @@ public sealed class TallyExport : Entity
     public DateTimeOffset? TallyCheckedAt { get; set; }
     public int TallyDifferences { get; set; }
     public string? TallyCheckMessage { get; set; }
+
+    /// <summary>
+    /// The day existed before HC360 tracked each voucher (set by the TallyReconciliation migration). Tally may hold its
+    /// doctor-fee journals under the old numbers (DF-yyyyMMdd-001), so the day keeps them, and a bill cancelled on it
+    /// may have turned the bill's sale in Tally into a credit note, so posting it posts the bill's own day again.
+    /// </summary>
+    public bool LegacyReferences { get; set; }
+
+    /// <summary>Optimistic concurrency (<c>xmin</c>): a post, a check and "mark imported" never overwrite each other.
+    /// </summary>
+    public uint Version { get; set; }
 
     /// <summary>Starts a new post run: the next attempt sends every voucher again, and older messages are ignored.</summary>
     public void StartRun(Guid runId, DateTimeOffset now)
@@ -182,7 +193,9 @@ public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Pur
 public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount);
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
-public sealed record TallyDoctorFee(string PractitionerName, decimal Amount, string? PractitionerCode = null);
+/// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
+public sealed record TallyDoctorFee(
+    string PractitionerName, decimal Amount, string? PractitionerCode = null, Guid? PractitionerId = null);
 
 public sealed record TallyPayout(string Number, DateOnly Date, string PractitionerName, decimal Gross, decimal Tds, decimal Deductions, decimal Net);
 
@@ -202,6 +215,11 @@ public sealed record TallyDayBook(
 
     /// <summary>The day of each counter that bills its own sales (pharmacy, canteen), from their modules.</summary>
     public IReadOnlyList<CounterSalesDay> Counters { get; init; } = [];
+
+    /// <summary>
+    /// The day was posted before HC360 tracked each voucher: doctor-fee journals keep their old numbers.
+    /// </summary>
+    public bool LegacyDoctorFeeNumbers { get; init; }
 
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count == 0
                            && Counters.All(c => c.IsEmpty);
@@ -337,18 +355,40 @@ public static class TallyVoucherBuilder
         return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
     }
 
-    /// <summary>One journal per doctor; two doctors with the same code (a data error) are told apart by a suffix.</summary>
+    /// <summary>
+    /// Number of a doctor-fee journal of a day posted before HC360 tracked each voucher: the day and a sequence
+    /// (DF-20260925-001), as Tally already holds it. Re-posting such a day alters those journals rather than adding
+    /// new ones beside them.
+    /// </summary>
+    public static string LegacyDoctorFeeNumber(DateOnly date, int sequence) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"DF-{date:yyyyMMdd}-{sequence:000}");
+
+    /// <summary>
+    /// One journal per doctor. Two doctors whose codes (or, without codes, names) give the same number both add the
+    /// last eight hex digits of their id, so neither number depends on the order the doctors come in. A day posted
+    /// before per-voucher tracking keeps its old sequence numbers.
+    /// </summary>
     private static IEnumerable<AccountingVoucher?> DoctorFees(TallyDayBook day, TallyLedgerMap map)
     {
-        var numbers = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var fee in day.DoctorFees.OrderBy(f => f.PractitionerCode, StringComparer.Ordinal).ThenBy(f => f.PractitionerName, StringComparer.Ordinal))
+        var fees = day.DoctorFees
+            .OrderBy(f => f.PractitionerCode, StringComparer.Ordinal)
+            .ThenBy(f => f.PractitionerName, StringComparer.Ordinal)
+            .ThenBy(f => f.PractitionerId)
+            .ToList();
+        var numbers = fees
+            .Select(f => DoctorFeeNumber(day.FacilityCode, day.Date, f.PractitionerCode, f.PractitionerName))
+            .ToList();
+        var shared = numbers.GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < fees.Count; i++)
         {
-            var number = DoctorFeeNumber(day.FacilityCode, day.Date, fee.PractitionerCode, fee.PractitionerName);
-            numbers[number] = numbers.GetValueOrDefault(number) + 1;
-            if (numbers[number] > 1)
-            {
-                number += "-" + numbers[number].ToString(System.Globalization.CultureInfo.InvariantCulture);
-            }
+            var fee = fees[i];
+            var number = day.LegacyDoctorFeeNumbers ? LegacyDoctorFeeNumber(day.Date, i + 1)
+                : shared.Contains(numbers[i]) && fee.PractitionerId is { } id
+                    ? numbers[i] + "-" + id.ToString("N")[^8..].ToUpperInvariant()
+                : numbers[i];
 
             var entries = new EntryList();
             entries.Debit(map.DoctorFeeExpense, fee.Amount);

@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261002214448_TallyReconciliation")]
+    [Migration("20261003030448_TallyReconciliation")]
     partial class TallyReconciliation
     {
         /// <inheritdoc />
@@ -4579,6 +4579,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_attempt_at");
 
+                    b.Property<bool>("LegacyReferences")
+                        .HasColumnType("boolean")
+                        .HasColumnName("legacy_references");
+
                     b.Property<string>("Message")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)")
@@ -4639,6 +4643,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("tally_differences");
 
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int>("VoucherCount")
                         .HasColumnType("integer")
                         .HasColumnName("voucher_count");
@@ -4678,6 +4688,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("AnsweredAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("answered_at");
+
+                    b.Property<DateOnly?>("BillDate")
+                        .HasColumnType("date")
+                        .HasColumnName("bill_date");
 
                     b.Property<DateTimeOffset?>("CheckedAt")
                         .HasColumnType("timestamp with time zone")
@@ -4751,6 +4765,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("tally_number");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<string>("VoucherType")
                         .IsRequired()

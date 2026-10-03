@@ -217,4 +217,34 @@ public sealed class TallyTrackingTests
         tracked.Added.ShouldBeEmpty();
         tracked.Current["PH-NH-20260925"].ShouldSatisfyAllConditions(r => r.Match.ShouldBe(TallyMatch.NotChecked), r => r.Status.ShouldBe(TallyVoucherStatus.NotSent));
     }
+
+    [Fact]
+    public void A_bill_tally_holds_on_another_day_is_to_be_posted_again_not_deleted()
+    {
+        var export = Export();
+        var readBack = new AccountingReadBack(true, null, [], [new AccountingVoucherFound("NHOP260000042", "Credit Note", "NHOP260000042", Day, 1_180m, true)]);
+
+        var (added, _) = TallyTracking.ApplyCheck(export, [], readBack, new HashSet<string>(), TestData.Now,
+            new Dictionary<string, DateOnly> { ["NHOP260000042"] = Day.AddDays(-3) });
+
+        added.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            r => r.Status.ShouldBe(TallyVoucherStatus.BillOfAnotherDay),
+            r => r.BillDate.ShouldBe(Day.AddDays(-3)),
+            r => r.TallyDetail!.ShouldContain("Post 22-Sep-2026 again; do not delete it."));
+        TallyTracking.Count(added).OnlyInTally.ShouldBe(1);
+    }
+
+    [Fact]
+    public void A_reference_longer_than_the_records_keep_stops_the_day_with_a_clear_reason()
+    {
+        var longKey = new string('A', TallyTracking.MaxKey + 1);
+
+        TallyTracking.KeyProblem([Receipt("RC1"), Receipt(longKey)])!.ShouldContain($"is {TallyTracking.MaxKey + 1} characters long");
+        TallyTracking.KeyProblem([Receipt("RC1"), Receipt("RC1")])!.ShouldContain("share the reference RC1");
+        TallyTracking.KeyProblem([Receipt("RC1"), Receipt(new string('A', TallyTracking.MaxKey))]).ShouldBeNull();
+
+        // Records keep the whole reference, so the next run finds them again instead of adding duplicates.
+        var tracked = TallyTracking.Track(Export(), [], [Receipt(new string('A', TallyTracking.MaxKey))]);
+        TallyTracking.Track(Export(), tracked.Added, [Receipt(new string('A', TallyTracking.MaxKey))]).Added.ShouldBeEmpty();
+    }
 }

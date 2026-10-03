@@ -18,11 +18,63 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// </summary>
 public sealed class TallyReconciliationService(HospitalDbContext db, TallyService tally, ShiftService shifts, IServiceProvider services, TimeProvider time)
 {
+    /// <summary>
+    /// Reading a day back from Tally stops after this, inside the outbox's 30 seconds for the whole check.
+    /// </summary>
+    internal static readonly TimeSpan ReadBackDeadline = TimeSpan.FromSeconds(22);
+
+    private const int SaveAttempts = 3;
+
     /// <summary>The check as it stands now, without keeping anything.</summary>
     public Task<TallyDayCheckDto> PreviewAsync(Guid facilityId, DateOnly date, CancellationToken ct) => RunAsync(facilityId, date, store: false, againstTally: false, ct);
 
-    /// <summary>Runs the check, against Tally too when asked, and keeps the results on the day.</summary>
-    public Task<TallyDayCheckDto> CheckAsync(Guid facilityId, DateOnly date, bool againstTally, CancellationToken ct) => RunAsync(facilityId, date, store: true, againstTally, ct);
+    /// <summary>
+    /// Runs the check, against Tally too when asked, and keeps the results on the day. A post (or another check) that
+    /// saves the day first makes the check start again from what was saved, so neither overwrites the other.
+    /// </summary>
+    public async Task<TallyDayCheckDto> CheckAsync(
+        Guid facilityId, DateOnly date, bool againstTally, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await RunAsync(facilityId, date, store: true, againstTally, ct);
+            }
+            catch (DbUpdateException ex) when (attempt < SaveAttempts && BillingDb.IsConflict(ex))
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records that a check ran out of the outbox's time: the day's check against Tally shows Failed, with why. Called
+    /// by the outbox handler in a fresh scope; the check is not retried, staff run it again from the Tally screen.
+    /// </summary>
+    internal async Task RecordTimeoutAsync(Guid facilityId, DateOnly date, TimeSpan limit, CancellationToken ct)
+    {
+        var export = await db.Set<TallyExport>()
+            .FirstOrDefaultAsync(e => e.FacilityId == facilityId && e.Date == date, ct);
+        if (export is null)
+        {
+            return;
+        }
+
+        export.TallyCheck = TallyCheckStatus.Failed;
+        export.TallyCheckedAt = time.GetUtcNow();
+        export.TallyCheckMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"The check did not finish within the {limit.TotalSeconds:0} seconds HC360 gives it. ")
+            + "Run it again from the Tally screen.";
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (BillingDb.IsConflict(ex))
+        {
+            // Someone checked or posted the day meanwhile; their result stands.
+        }
+    }
 
     private async Task<TallyDayCheckDto> RunAsync(Guid facilityId, DateOnly date, bool store, bool againstTally, CancellationToken ct)
     {
@@ -35,7 +87,8 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
         var exports = db.Set<TallyExport>().Where(e => e.FacilityId == facilityId && e.Date == date);
         var export = await (store ? exports : exports.AsNoTracking()).FirstOrDefaultAsync(ct);
         var stored = export is null ? [] : await (store ? db.Set<TallyVoucherRecord>() : db.Set<TallyVoucherRecord>().AsNoTracking()).Where(r => r.ExportId == export.Id).ToListAsync(ct);
-        var tracked = TallyTracking.DuplicateKeys(vouchers).Count > 0
+        var keyProblem = TallyTracking.KeyProblem(vouchers);
+        var tracked = keyProblem is not null
             ? null
             : TallyTracking.Track(export ?? new TallyExport { FacilityId = facilityId, Date = date }, stored, vouchers);
         var records = tracked is null ? stored : stored.Except(tracked.Removed).Concat(tracked.Added).ToList();
@@ -73,7 +126,7 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
         var notes = comparison.Notes.ToList();
         if (tracked is null)
         {
-            notes.Insert(0, "Some vouchers share a reference, so Tally would keep only one of them. Report this to HC360 support.");
+            notes.Insert(0, keyProblem + " Report this to HC360 support.");
         }
 
         if (export is null && vouchers.Count > 0)
@@ -110,7 +163,24 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             return records;
         }
 
-        var readBack = await exporter.ReadBackAsync(export.Date, vouchers, export.FacilityId, ct);
+        AccountingReadBack readBack;
+        using (var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct))
+        {
+            deadline.CancelAfter(ReadBackDeadline);
+            try
+            {
+                readBack = await exporter.ReadBackAsync(export.Date, vouchers, export.FacilityId, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                export.TallyCheck = TallyCheckStatus.Failed;
+                export.TallyCheckMessage = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                        $"Tally did not send the day's vouchers within {ReadBackDeadline.TotalSeconds:0} seconds. ")
+                    + "Run the check again when Tally is less busy.";
+                return records;
+            }
+        }
+
         if (!readBack.Success)
         {
             export.TallyCheck = readBack.NotConfigured ? TallyCheckStatus.NotChecked : TallyCheckStatus.Failed;
@@ -126,10 +196,39 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
                 .Where(r => r.Date == export.Date && r.FacilityId != export.FacilityId && r.Match != TallyMatch.OnlyInTally && otherKeys.Contains(r.Key))
                 .Select(r => r.Key)
                 .ToListAsync(ct);
-        var (added, removed) = TallyTracking.ApplyCheck(export, records, readBack, elsewhere.ToHashSet(StringComparer.OrdinalIgnoreCase), now);
+        var (added, removed) = TallyTracking.ApplyCheck(
+            export, records, readBack, elsewhere.ToHashSet(StringComparer.OrdinalIgnoreCase), now,
+            await BillDaysAsync(export, otherKeys, ct));
         db.AddRange(added);
         db.RemoveRange(removed);
         return records.Except(removed).Concat(added).ToList();
+    }
+
+    /// <summary>
+    /// The facility's bills among HC360 vouchers only Tally holds on the day, with the day each was finalised. Such a
+    /// voucher is a bill a pre-tracking post turned into a credit note: posting the bill's day restores it, deleting it
+    /// would lose the sale.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, DateOnly>> BillDaysAsync(
+        TallyExport export, IReadOnlyList<string> keys, CancellationToken ct)
+    {
+        if (keys.Count == 0)
+        {
+            return new Dictionary<string, DateOnly>();
+        }
+
+        var bills = await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(b => b.FacilityId == export.FacilityId && b.BillNumber != null && keys.Contains(b.BillNumber)
+                        && b.FinalizedAt != null)
+            .Select(b => new { Number = b.BillNumber!, FinalizedAt = b.FinalizedAt!.Value })
+            .ToListAsync(ct);
+        var days = new Dictionary<string, DateOnly>(StringComparer.OrdinalIgnoreCase);
+        foreach (var bill in bills)
+        {
+            days[bill.Number] = BillingTime.LocalDate(bill.FinalizedAt);
+        }
+
+        return days;
     }
 
     /// <summary>The day's figures read straight from the records, with the facility named (background work has no facility filter).</summary>

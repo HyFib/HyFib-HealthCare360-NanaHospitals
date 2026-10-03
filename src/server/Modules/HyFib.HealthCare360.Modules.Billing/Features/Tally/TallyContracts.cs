@@ -40,6 +40,9 @@ public sealed record TallyExportDto(
 }
 
 /// <summary>One voucher of the day as HC360 sent it, with Tally's answer and the last check against Tally.</summary>
+/// <param name="BillDate">
+/// For a bill found only in Tally on this day: the day HC360 has it on, to be posted again.
+/// </param>
 public sealed record TallyVoucherDto(
     string Key,
     string? RemoteId,
@@ -54,11 +57,12 @@ public sealed record TallyVoucherDto(
     decimal? TallyAmount,
     string? TallyNumber,
     string? TallyDetail,
-    DateTimeOffset? CheckedAt)
+    DateTimeOffset? CheckedAt,
+    DateOnly? BillDate = null)
 {
     public static TallyVoucherDto From(TallyVoucherRecord r) => new(
         r.Key, r.RemoteId, r.VoucherType, r.Number, r.Amount, r.Status, r.Answer, r.AnswerMessage, r.AnsweredAt, r.Match, r.TallyAmount, r.TallyNumber,
-        r.TallyDetail, r.CheckedAt);
+        r.TallyDetail, r.CheckedAt, r.BillDate);
 }
 
 /// <summary>The day's vouchers: the day book first, then vouchers that left it and vouchers found only in Tally.</summary>

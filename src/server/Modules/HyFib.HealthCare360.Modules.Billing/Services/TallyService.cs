@@ -42,6 +42,12 @@ public sealed class TallyService(
     /// </summary>
     internal static readonly TimeSpan AttemptBudget = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Calls to Tally in one attempt stop by this time (the exporter sends nothing new after it and cuts a call short),
+    /// which leaves the attempt time to record Tally's answers inside the outbox's 30 seconds.
+    /// </summary>
+    internal static readonly TimeSpan CallDeadline = TimeSpan.FromSeconds(24);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     public async Task<TallyDayBook> LoadDayBookAsync(Guid facilityId, DateOnly date, CancellationToken ct)
@@ -95,6 +101,8 @@ public sealed class TallyService(
         var doctorIds = fees.Select(f => f.PractitionerId).Concat(payouts.Select(p => p.PractitionerId)).Distinct().ToList();
         var doctors = await db.Set<Practitioner>().Where(p => doctorIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.DisplayName, p.Code }, ct);
         var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
+        var legacy = await db.Set<TallyExport>()
+            .AnyAsync(e => e.FacilityId == facilityId && e.Date == date && e.LegacyReferences, ct);
 
         var sales = new List<TallySale>();
         foreach (var bill in bills.OrderBy(b => b.FinalizedAt))
@@ -131,12 +139,16 @@ public sealed class TallyService(
             refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)).ToList(),
             creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount)).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
-                doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor", f.Amount, doctors.GetValueOrDefault(f.PractitionerId)?.Code)).ToList(),
+                doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
+                f.Amount,
+                doctors.GetValueOrDefault(f.PractitionerId)?.Code,
+                f.PractitionerId)).ToList(),
             payouts.Select(p => new TallyPayout(
                 p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList())
         {
             FacilityCode = facilityCode,
             Counters = await CountersAsync(facilityId, date, ct),
+            LegacyDoctorFeeNumbers = legacy,
         };
     }
 
@@ -171,6 +183,29 @@ public sealed class TallyService(
             return Error.Rule("billing.tally_file", ex.Message);
         }
 
+        var fingerprint = TallyTracking.Fingerprint(vouchers);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await RecordFileAsync(exporter, facilityId, date, vouchers.Count, fingerprint, ct);
+                break;
+            }
+            catch (DbUpdateException ex) when (attempt < 3 && BillingDb.IsConflict(ex))
+            {
+                // A post or check of the day saved first (or created the day's row): record the file on the row as it
+                // is now.
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return file;
+    }
+
+    /// <summary>Records the downloaded file on the day, creating the row only where Tally is not set up.</summary>
+    private async Task RecordFileAsync(
+        IAccountingExporter? exporter, Guid facilityId, DateOnly date, int voucherCount, string fingerprint, CancellationToken ct)
+    {
         var export = await db.Set<TallyExport>().FirstOrDefaultAsync(e => e.FacilityId == facilityId && e.Date == date, ct);
         if (export is null && await ConnectionAsync(exporter, facilityId, ct) is { State: AccountingConnectionState.NotConfigured } connection)
         {
@@ -180,7 +215,7 @@ public sealed class TallyService(
                 Date = date,
                 Status = TallyExportStatus.NotConfigured,
                 CreatedAt = time.GetUtcNow(),
-                VoucherCount = vouchers.Count,
+                VoucherCount = voucherCount,
                 Message = NotConfiguredMessage(connection),
             };
             db.Add(export);
@@ -189,12 +224,10 @@ public sealed class TallyService(
         if (export is not null)
         {
             export.FileDownloadedAt = time.GetUtcNow();
-            export.FileFingerprint = TallyTracking.Fingerprint(vouchers);
-            export.FileVoucherCount = vouchers.Count;
+            export.FileFingerprint = fingerprint;
+            export.FileVoucherCount = voucherCount;
             await db.SaveChangesAsync(ct);
         }
-
-        return file;
     }
 
     /// <summary>Queues (or re-queues after a correction) the day books of <paramref name="from"/>..<paramref name="to"/> for posting.</summary>
@@ -218,9 +251,10 @@ public sealed class TallyService(
         {
             await db.SaveChangesAsync(ct);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException ex) when (BillingDb.IsConflict(ex))
         {
-            // Someone queued one of the days at the same moment (one posting record per facility and day).
+            // Someone queued one of the days at the same moment (one posting record per facility and day), or a post or
+            // check of one of them saved first.
             return Error.Conflict("billing.tally_busy", "Another post of these days started at the same time. Look at the posting log, then try again if needed.");
         }
 
@@ -228,12 +262,55 @@ public sealed class TallyService(
     }
 
     /// <summary>
-    /// Posts a day book (outbox handler). Each attempt sends what Tally has not confirmed in the current run, records Tally's
+    /// Posts a day book (outbox handler; it runs in a scope of its own and saves as it goes, so the outbox's transaction
+    /// holds no lock on the day). Each attempt sends what Tally has not confirmed in the current run, records Tally's
     /// answer for every voucher, and checks that Tally confirmed every voucher of the day book. Failures are recorded and
     /// rethrown so the outbox retries with back-off; vouchers carry stable references, so a retry alters rather than
-    /// duplicates them in Tally. A day with no Tally connection is marked as such and not retried.
+    /// duplicates them in Tally. A day with no Tally connection is marked as such and not retried. Calls to Tally stop at
+    /// <see cref="CallDeadline"/>, so an attempt ends inside the outbox's time limit.
     /// </summary>
     internal async Task PostAsync(TallyPostMessage message, CancellationToken ct)
+    {
+        try
+        {
+            await PostAttemptAsync(message, ct);
+        }
+        catch (DbUpdateException ex) when (BillingDb.IsConflict(ex))
+        {
+            // A check or "mark imported" saved the day first. The retry sends again whatever is not recorded as confirmed;
+            // Tally alters what it already holds, so nothing is doubled.
+            throw new InvalidOperationException(
+                "The day changed while it was being posted (a check ran at the same time). HC360 posts it again shortly.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Records that a post attempt ran out of the outbox's time: the day shows Failed, with why, instead of staying
+    /// Queued. Called by the outbox handler in a fresh scope after the attempt was cancelled.
+    /// </summary>
+    internal async Task RecordPostTimeoutAsync(TallyPostMessage message, TimeSpan limit, CancellationToken ct)
+    {
+        var export = await db.Set<TallyExport>()
+            .FirstOrDefaultAsync(e => e.FacilityId == message.FacilityId && e.Date == message.Date, ct);
+        if (export is null || export.Status != TallyExportStatus.Queued || (message.RunId is { } runId && export.RunId != runId))
+        {
+            return;
+        }
+
+        MarkFailed(export, string.Create(CultureInfo.InvariantCulture,
+            $"The post did not finish within the {limit.TotalSeconds:0} seconds HC360 gives one attempt. ")
+            + "HC360 tries again shortly; vouchers Tally already confirmed are not sent again.");
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex) when (BillingDb.IsConflict(ex))
+        {
+            // The day moved on meanwhile (a new run, a check); its own status is the better record.
+        }
+    }
+
+    private async Task PostAttemptAsync(TallyPostMessage message, CancellationToken ct)
     {
         var started = time.GetTimestamp();
         var now = time.GetUtcNow();
@@ -258,20 +335,25 @@ public sealed class TallyService(
         export.Attempts++;
         export.LastAttemptAt = now;
         var vouchers = await BuildVouchersAsync(message.FacilityId, message.Date, ct);
-        if (TallyTracking.DuplicateKeys(vouchers) is { Count: > 0 } duplicates)
+        if (TallyTracking.KeyProblem(vouchers) is { } problem)
         {
-            // Tally would keep only one of the vouchers that share a reference; a retry cannot fix that.
-            MarkFailed(export, $"Vouchers share the reference {string.Join(", ", duplicates.Take(3))}, so Tally would keep only one of them. Nothing was sent. Report this to HC360 support.");
-            logger.LogError("The Tally day book of {Date} for facility {FacilityId} has duplicate references", message.Date, message.FacilityId);
+            // A retry cannot fix this.
+            MarkFailed(export, problem + " Nothing was sent. Report this to HC360 support.");
+            logger.LogError(
+                "The Tally day book of {Date} for facility {FacilityId} cannot be tracked: {Problem}", message.Date, message.FacilityId, problem);
+            await db.SaveChangesAsync(ct);
             return;
         }
 
+        var billDaysNote = BillDaysNote(
+            export.LegacyReferences && export.Attempts == 1 ? await RequeueBillDaysAsync(export, ct) : []);
         var records = await db.Set<TallyVoucherRecord>().Where(r => r.ExportId == export.Id).ToListAsync(ct);
         var tracked = Track(export, records, vouchers);
         var all = records.Except(tracked.Removed).Concat(tracked.Added).ToList();
         if (vouchers.Count == 0)
         {
-            Finish(export, all, "No transactions on this day; nothing to send.");
+            Finish(export, all, "No transactions on this day; nothing to send." + billDaysNote);
+            await db.SaveChangesAsync(ct);
             return;
         }
 
@@ -281,18 +363,24 @@ public sealed class TallyService(
         {
             TallyTracking.Summarize(export, all);
             export.Status = TallyExportStatus.NotConfigured;
-            export.Message = NotConfiguredMessage(connection);
+            export.Message = NotConfiguredMessage(connection) + billDaysNote;
+            await db.SaveChangesAsync(ct);
             return;
         }
 
         if (connection.State == AccountingConnectionState.Invalid)
         {
             TallyTracking.Summarize(export, all);
-            MarkFailed(export, connection.Message ?? "The Tally settings cannot be used.");
-            throw new InvalidOperationException(export.Message);
+            throw await FailedAsync(export, (connection.Message ?? "The Tally settings cannot be used.") + billDaysNote, ct);
         }
 
         var pending = vouchers.Where(v => TallyTracking.NeedsSending(tracked.Current[v.Key], export.RunId)).ToList();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var remaining = CallDeadline - time.GetElapsedTime(started);
+        deadline.CancelAfter(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
+        var timedOut = string.Create(CultureInfo.InvariantCulture,
+                $"Tally did not answer within the {CallDeadline.TotalSeconds:0} seconds HC360 gives one attempt. ")
+            + "HC360 tries again shortly; vouchers Tally already confirmed are not sent again.";
         var sent = 0;
         foreach (var chunk in pending.Chunk(ChunkSize))
         {
@@ -303,18 +391,25 @@ public sealed class TallyService(
                 export.Message = string.Create(CultureInfo.InvariantCulture,
                     $"Tally has confirmed {export.ConfirmedCount} of {export.VoucherCount} vouchers so far; the rest follow in a moment.");
                 outbox.Enqueue(TallyDayBookHandler.MessageType, new TallyPostMessage(message.FacilityId, message.Date, export.RunId), message.FacilityId);
+                await db.SaveChangesAsync(ct);
                 return;
             }
 
             AccountingExportResult result;
             try
             {
-                result = await exporter!.PushVouchersAsync(chunk, message.FacilityId, ct);
+                result = await exporter!.PushVouchersAsync(chunk, message.FacilityId, deadline.Token);
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+            {
+                TallyTracking.Summarize(export, all);
+                throw await FailedAsync(export, timedOut + billDaysNote, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 TallyTracking.Summarize(export, all);
-                MarkFailed(export, ex.Message);
+                MarkFailed(export, ex.Message + billDaysNote);
+                await db.SaveChangesAsync(ct);
                 throw;
             }
 
@@ -324,17 +419,23 @@ public sealed class TallyService(
             {
                 TallyTracking.Summarize(export, all);
                 export.Status = TallyExportStatus.NotConfigured;
-                export.Message = NotConfiguredMessage(new AccountingConnection(AccountingConnectionState.NotConfigured, null, result.Message));
+                export.Message = NotConfiguredMessage(
+                    new AccountingConnection(AccountingConnectionState.NotConfigured, null, result.Message)) + billDaysNote;
+                await db.SaveChangesAsync(ct);
                 return;
             }
 
             if (result.Vouchers.Any(a => a.Outcome == AccountingVoucherOutcome.NotSent))
             {
-                // Tally went away: what is left would fail the same way. The outbox tries again later.
+                // Tally went away, or the attempt ran out of time: what is left would fail the same way. The outbox tries again later.
                 TallyTracking.Summarize(export, all);
-                MarkFailed(export, result.Message ?? "Tally could not be reached.");
-                throw new InvalidOperationException(export.Message);
+                var reason = deadline.IsCancellationRequested ? timedOut : result.Message ?? "Tally could not be reached.";
+                throw await FailedAsync(export, reason + billDaysNote, ct);
             }
+
+            // Keep Tally's answers as they come, so a later failure does not lose them.
+            TallyTracking.Summarize(export, all);
+            await db.SaveChangesAsync(ct);
         }
 
         TallyTracking.Summarize(export, all);
@@ -342,26 +443,135 @@ public sealed class TallyService(
         if (refused.Count > 0 || export.ConfirmedCount != export.VoucherCount)
         {
             var detail = string.Join("; ", refused.Take(3).Select(r => $"{r.Number}: {r.AnswerMessage ?? "not confirmed"}"));
-            MarkFailed(export, string.Create(CultureInfo.InvariantCulture,
-                $"Tally confirmed {export.ConfirmedCount} of {export.VoucherCount} vouchers.{(detail.Length > 0 ? " " + detail : string.Empty)}"));
-            throw new InvalidOperationException(export.Message);
+            var confirmed = string.Create(CultureInfo.InvariantCulture,
+                $"Tally confirmed {export.ConfirmedCount} of {export.VoucherCount} vouchers.");
+            throw await FailedAsync(export, confirmed + (detail.Length > 0 ? " " + detail : string.Empty) + billDaysNote, ct);
         }
 
-        Finish(export, all, string.Create(CultureInfo.InvariantCulture, $"Tally confirmed all {export.VoucherCount} vouchers."));
+        Finish(export, all, string.Create(CultureInfo.InvariantCulture, $"Tally confirmed all {export.VoucherCount} vouchers.")
+                            + billDaysNote);
         outbox.Enqueue(TallyCheckHandler.MessageType, new TallyCheckMessage(message.FacilityId, message.Date), message.FacilityId, delay: TimeSpan.FromSeconds(10));
+        await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Records the failure on the day; the caller throws what it returns, so the outbox retries with back-off.</summary>
+    private async Task<InvalidOperationException> FailedAsync(TallyExport export, string message, CancellationToken ct)
+    {
+        MarkFailed(export, message);
+        await db.SaveChangesAsync(ct);
+        return new InvalidOperationException(export.Message);
+    }
+
+    /// <summary>
+    /// For a day posted before HC360 tracked each voucher: that post sent a bill cancelled on the day under the bill's own
+    /// reference, so Tally turned the bill's sale (HC360-&lt;bill&gt;) into a credit note. The day book now reverses the
+    /// bill with a credit note of its own (&lt;bill&gt;/C), so the bill's own day is queued again: posting it turns
+    /// Tally's voucher back into the sale, and Tally does not reverse the bill twice. A day that has sent the bill since
+    /// per-voucher tracking began, or that is queued already, is left alone. Returns the days queued.
+    /// </summary>
+    private async Task<IReadOnlyList<DateOnly>> RequeueBillDaysAsync(TallyExport export, CancellationToken ct)
+    {
+        var (start, end) = BillingTime.Range(export.Date, export.Date);
+        var bills = await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(b => b.FacilityId == export.FacilityId && b.BillNumber != null
+                        && b.CancelledAt >= start && b.CancelledAt < end && b.FinalizedAt < start)
+            .Select(b => new { Number = b.BillNumber!, FinalizedAt = b.FinalizedAt!.Value })
+            .ToListAsync(ct);
+        if (bills.Count == 0)
+        {
+            return [];
+        }
+
+        var byDay = bills.GroupBy(b => BillingTime.LocalDate(b.FinalizedAt))
+            .ToDictionary(g => g.Key, g => g.Select(b => b.Number).ToList());
+        var dates = byDay.Keys.ToList();
+        var days = await db.Set<TallyExport>()
+            .Where(e => e.FacilityId == export.FacilityId && dates.Contains(e.Date))
+            .ToDictionaryAsync(e => e.Date, ct);
+        var dayIds = days.Values.Select(e => e.Id).ToList();
+        var numbers = bills.Select(b => b.Number).ToList();
+        var sentSince = (await db.Set<TallyVoucherRecord>().AsNoTracking()
+                .Where(r => dayIds.Contains(r.ExportId) && numbers.Contains(r.Key) && r.SentHash != null)
+                .Select(r => new { r.ExportId, r.Key })
+                .ToListAsync(ct))
+            .Select(r => (r.ExportId, r.Key))
+            .ToHashSet();
+
+        var queued = new List<DateOnly>();
+        var now = time.GetUtcNow();
+        foreach (var (date, billNumbers) in byDay.OrderBy(d => d.Key))
+        {
+            var day = days.GetValueOrDefault(date);
+            var sentAlready = day is not null && billNumbers.All(n => sentSince.Contains((day.Id, n)));
+            if (day is { Status: TallyExportStatus.Queued } || sentAlready)
+            {
+                continue;
+            }
+
+            if (day is null)
+            {
+                day = new TallyExport { FacilityId = export.FacilityId, Date = date, CreatedAt = now };
+                db.Add(day);
+            }
+
+            day.StartRun(Guid.CreateVersion7(), now);
+            outbox.Enqueue(TallyDayBookHandler.MessageType, new TallyPostMessage(export.FacilityId, date, day.RunId), export.FacilityId);
+            queued.Add(date);
+            logger.LogInformation(
+                "Queued the Tally day book of {BillDay} again for bills cancelled on {Date}, posted before per-voucher tracking",
+                date, export.Date);
+        }
+
+        return queued;
+    }
+
+    private static string BillDaysNote(IReadOnlyList<DateOnly> days) =>
+        days.Count == 0
+            ? string.Empty
+            : " Bills cancelled on this day were sent to Tally before HC360 tracked each voucher, so their own days are posted "
+              + "again to turn them back into sales: "
+              + string.Join(", ", days.Select(d => d.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture))) + ".";
 
     /// <summary>
     /// Records that the downloaded file was imported into Tally by hand: every voucher of the day book is marked imported
     /// and the day's status becomes Imported. Refused when no file was downloaded, or when the day book changed since, so
-    /// the record always describes the file that was loaded.
+    /// the record always describes the file that was loaded; refused too while the day is being posted, or once Tally
+    /// confirmed the day itself (the screen hides the action then).
     /// </summary>
     public async Task<Result<TallyExport>> MarkImportedAsync(Guid facilityId, DateOnly date, Guid? userId, string? userName, CancellationToken ct)
+    {
+        try
+        {
+            return await MarkImportedOnceAsync(facilityId, date, userId, userName, ct);
+        }
+        catch (DbUpdateException ex) when (BillingDb.IsConflict(ex))
+        {
+            return Error.Conflict("billing.tally_busy",
+                "The day changed while it was being marked imported (a post or a check ran at the same time). "
+                + "Look at the day again, then mark it imported if it still needs it.");
+        }
+    }
+
+    private async Task<Result<TallyExport>> MarkImportedOnceAsync(
+        Guid facilityId, DateOnly date, Guid? userId, string? userName, CancellationToken ct)
     {
         var export = await db.Set<TallyExport>().FirstOrDefaultAsync(e => e.FacilityId == facilityId && e.Date == date, ct);
         if (export?.FileFingerprint is null)
         {
             return Error.Rule("billing.tally_no_file", "Download the day book file first, import it into Tally, then mark the day imported.");
+        }
+
+        if (export.Status == TallyExportStatus.Queued)
+        {
+            return Error.Conflict("billing.tally_posting",
+                "The day is being posted to Tally now. Wait for the post to finish; "
+                + "mark the day imported only if it does not reach Tally.");
+        }
+
+        if (export.Status == TallyExportStatus.Posted)
+        {
+            return Error.Rule("billing.tally_posted",
+                "Tally confirmed this day itself, so there is nothing to mark imported. Post the day again if it changed.");
         }
 
         var vouchers = await BuildVouchersAsync(facilityId, date, ct);
@@ -372,9 +582,9 @@ public sealed class TallyService(
                 $"The day book changed after the file was downloaded ({downloaded}). Download the file again, import it into Tally, then mark the day imported.");
         }
 
-        if (TallyTracking.DuplicateKeys(vouchers) is { Count: > 0 } duplicates)
+        if (TallyTracking.KeyProblem(vouchers) is { } problem)
         {
-            return Error.Rule("billing.tally_duplicate", $"Vouchers share the reference {string.Join(", ", duplicates.Take(3))}. Report this to HC360 support.");
+            return Error.Rule("billing.tally_duplicate", problem + " Report this to HC360 support.");
         }
 
         var now = time.GetUtcNow();

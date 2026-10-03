@@ -197,18 +197,42 @@ public sealed class TallyVoucherBuilderTests
     }
 
     [Fact]
-    public void Doctors_without_a_code_get_a_number_from_their_name_and_a_shared_code_is_told_apart()
+    public void Doctors_without_a_code_get_a_number_from_their_name_and_a_shared_code_is_told_apart_by_their_ids()
     {
-        var vouchers = TallyVoucherBuilder.Build(Book(fees:
+        var kavya = Guid.Parse("0198a1b2-0000-7000-8000-00000000aaaa");
+        var ravi = Guid.Parse("0198a1b2-0000-7000-8000-00000000bbbb");
+        TallyDoctorFee[] fees =
         [
-            new TallyDoctorFee("Dr. Arjun Mehta", 100m),
-            new TallyDoctorFee("Dr. Kavya Nair", 200m, "DR001"),
-            new TallyDoctorFee("Dr. Ravi Rao", 300m, "DR001"),
-        ]), Ledgers);
+            new("Dr. Arjun Mehta", 100m),
+            new("Dr. Kavya Nair", 200m, "DR001", kavya),
+            new("Dr. Ravi Rao", 300m, "DR001", ravi),
+            new("Dr. Meena Iyer", 400m, "DR001-2"),
+        ];
 
-        vouchers.Select(v => v.Number).ShouldBe(
-            [$"DF-20260925-{TallyCounters.ShortHash("Dr. Arjun Mehta")}", "DF-20260925-DR001", "DF-20260925-DR001-2"], ignoreOrder: true);
+        var vouchers = TallyVoucherBuilder.Build(Book(fees: fees), Ledgers);
+        var reversed = TallyVoucherBuilder.Build(Book(fees: fees.Reverse().ToList()), Ledgers);
+
+        vouchers.Select(v => (v.Number, v.Amount)).ShouldBe(
+        [
+            ($"DF-20260925-{TallyCounters.ShortHash("Dr. Arjun Mehta")}", 100m),
+            ("DF-20260925-DR001-0000AAAA", 200m),
+            ("DF-20260925-DR001-0000BBBB", 300m),
+            ("DF-20260925-DR001-2", 400m),
+        ], ignoreOrder: true);
+        reversed.Select(v => (v.Number, v.Amount)).ShouldBe(vouchers.Select(v => (v.Number, v.Amount)), ignoreOrder: true);
         TallyTracking.DuplicateKeys(vouchers).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_day_posted_before_per_voucher_tracking_keeps_its_doctor_fee_numbers()
+    {
+        TallyDoctorFee[] fees = [new("Dr. Kavya Nair", 800m, "DR009"), new("Dr. Arjun Mehta", 1_200m, "DR005")];
+        var book = Book(fees: fees) with { FacilityCode = "NH", LegacyDoctorFeeNumbers = true };
+
+        var vouchers = TallyVoucherBuilder.Build(book, Ledgers);
+
+        vouchers.Select(v => (v.Number, v.Reference, v.Amount)).ShouldBe([("DF-20260925-001", "DF-20260925-001", 1_200m), ("DF-20260925-002", "DF-20260925-002", 800m)]);
+        vouchers[0].RemoteId.ShouldBe("HC360-DF-20260925-001");
     }
 
     [Fact]
