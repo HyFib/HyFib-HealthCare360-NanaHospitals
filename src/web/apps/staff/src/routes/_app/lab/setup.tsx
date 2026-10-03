@@ -299,7 +299,11 @@ function AnalysersTab({
   const styles = useStyles();
   const instruments = useQuery(labQueries.instruments(includeInactive));
   const canEditConnections = usePermission(LAB_PERMISSIONS.connections);
-  const canSeeConnections = usePermission([LAB_PERMISSIONS.connections, LAB_PERMISSIONS.connectionStatus, 'admin.integrations.manage']);
+  const canSeeConnections = usePermission([
+    LAB_PERMISSIONS.connections,
+    LAB_PERMISSIONS.connectionStatus,
+    'admin.integrations.manage',
+  ]);
   const connections = useQuery({ ...labQueries.connections(), enabled: canSeeConnections });
   const [editing, setEditing] = useState<LabInstrumentDto | null>(null);
   const [connecting, setConnecting] = useState<LabInstrumentDto | null>(null);
@@ -402,7 +406,12 @@ function AnalysersTab({
         rowActions={
           canSeeConnections && connections.data
             ? (instrument: LabInstrumentDto) => (
-                <Button size="small" appearance="subtle" icon={<PlugConnectedRegular />} onClick={() => setConnecting(instrument)}>
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<PlugConnectedRegular />}
+                  onClick={() => setConnecting(instrument)}
+                >
                   Connection
                 </Button>
               )

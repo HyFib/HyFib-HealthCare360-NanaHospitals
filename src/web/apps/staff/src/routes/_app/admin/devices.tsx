@@ -16,7 +16,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, DesktopRegular, ProhibitedRegular, SerialPortRegular, TabletRegular, TvRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DesktopRegular,
+  ProhibitedRegular,
+  SerialPortRegular,
+  TabletRegular,
+  TvRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, humanize } from '@hc360/core';
 import { ConfirmDialog, DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

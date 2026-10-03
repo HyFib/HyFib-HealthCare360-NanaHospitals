@@ -82,7 +82,9 @@ const list = (overrides: Partial<LabConnectionsDto> = {}): LabConnectionsDto => 
 
 const problems = (values: ConnectionForm) => {
   const result = connectionSchema.safeParse(values);
-  return result.success ? {} : Object.fromEntries(result.error.issues.map((issue) => [issue.path.join('.'), issue.message]));
+  return result.success
+    ? {}
+    : Object.fromEntries(result.error.issues.map((issue) => [issue.path.join('.'), issue.message]));
 };
 
 describe('addresses and lists', () => {
@@ -103,7 +105,13 @@ describe('the form', () => {
   it('starts a new connection as a network port, and a serial line at 9600 8N1 with DTR and RTS', () => {
     const form = toConnectionForm(undefined);
 
-    expect(form).toMatchObject({ transport: 'Tcp', enabled: true, port: null, encoding: 'latin1', orderMessage: 'OML^O21' });
+    expect(form).toMatchObject({
+      transport: 'Tcp',
+      enabled: true,
+      port: null,
+      encoding: 'latin1',
+      orderMessage: 'OML^O21',
+    });
     expect(form).toMatchObject({ portName: 'COM1', baudRate: '9600', dataBits: '8', parity: 'None', stopBits: 'One' });
     expect(form).toMatchObject({ handshake: 'None', dtrEnable: true, rtsEnable: true });
   });
@@ -111,7 +119,13 @@ describe('the form', () => {
   it('shows a saved serial connection as it was saved', () => {
     const form = toConnectionForm(serial({ serial: { ...COM3, baudRate: 19200, dataBits: 7, parity: 'Even' } }));
 
-    expect(form).toMatchObject({ transport: 'Serial', agentDeviceId: AGENT, portName: 'COM3', baudRate: '19200', dataBits: '7' });
+    expect(form).toMatchObject({
+      transport: 'Serial',
+      agentDeviceId: AGENT,
+      portName: 'COM3',
+      baudRate: '19200',
+      dataBits: '7',
+    });
     expect(form.parity).toBe('Even');
   });
 
@@ -120,12 +134,19 @@ describe('the form', () => {
 
     expect(problems(tcp)).toEqual({ port: 'Enter the port the analyser connects to.' });
     expect(problems({ ...tcp, port: 70000 })).toEqual({ port: 'A port is a number from 1 to 65535.' });
-    expect(problems({ ...tcp, port: 5100, allowedIps: '10.0.5.21\nlab-pc' })).toEqual({ allowedIps: 'lab-pc is not an IP address.' });
+    expect(problems({ ...tcp, port: 5100, allowedIps: '10.0.5.21\nlab-pc' })).toEqual({
+      allowedIps: 'lab-pc is not an IP address.',
+    });
     expect(problems({ ...tcp, port: 5100, allowedIps: '10.0.5.21' })).toEqual({});
   });
 
   it('needs the agent and a COM port for a serial analyser', () => {
-    const line: ConnectionForm = { ...toConnectionForm(undefined), transport: 'Serial', agentDeviceId: '', portName: 'LPT1' };
+    const line: ConnectionForm = {
+      ...toConnectionForm(undefined),
+      transport: 'Serial',
+      agentDeviceId: '',
+      portName: 'LPT1',
+    };
 
     expect(problems(line)).toEqual({
       agentDeviceId: 'Choose the lab agent on the PC the analyser is cabled to.',
@@ -137,14 +158,21 @@ describe('the form', () => {
   it('checks where an HL7 analyser puts the barcode', () => {
     const tcp = { ...toConnectionForm(undefined), port: 5100 };
 
-    expect(problems({ ...tcp, sampleIdFields: 'OBX-3' })).toEqual({ sampleIdFields: 'Write fields like SPM-2, SAC-3, OBR-3 or OBR-2.' });
+    expect(problems({ ...tcp, sampleIdFields: 'OBX-3' })).toEqual({
+      sampleIdFields: 'Write fields like SPM-2, SAC-3, OBR-3 or OBR-2.',
+    });
     expect(problems({ ...tcp, sampleIdFields: 'sac-3, OBR-2' })).toEqual({});
   });
 });
 
 describe('the save request', () => {
   it('sends only the network settings for a network analyser', () => {
-    const values = { ...toConnectionForm(serial()), transport: 'Tcp' as const, port: 5200, allowedIps: '10.0.5.21, 10.0.5.22' };
+    const values = {
+      ...toConnectionForm(serial()),
+      transport: 'Tcp' as const,
+      port: 5200,
+      allowedIps: '10.0.5.21, 10.0.5.22',
+    };
 
     expect(toSaveRequest(values, false, 7)).toEqual({
       transport: 'Tcp',
@@ -161,11 +189,22 @@ describe('the save request', () => {
   });
 
   it('sends the agent and the port settings for a serial analyser, leaving RTS to an RTS handshake', () => {
-    const values: ConnectionForm = { ...toConnectionForm(serial()), portName: 'com4', handshake: 'RequestToSend', rtsEnable: true };
+    const values: ConnectionForm = {
+      ...toConnectionForm(serial()),
+      portName: 'com4',
+      handshake: 'RequestToSend',
+      rtsEnable: true,
+    };
 
     const request = toSaveRequest(values, true, 3);
 
-    expect(request).toMatchObject({ transport: 'Serial', port: null, allowedIps: null, agentDeviceId: AGENT, orderMessage: 'OML^O21' });
+    expect(request).toMatchObject({
+      transport: 'Serial',
+      port: null,
+      allowedIps: null,
+      agentDeviceId: AGENT,
+      orderMessage: 'OML^O21',
+    });
     expect(request.serial).toEqual({
       portName: 'COM4',
       baudRate: 9600,
@@ -200,27 +239,56 @@ describe('the status shown', () => {
   });
 
   it('tells listening from connected and failed for a network analyser', () => {
-    const status = { activeConnections: 0, connectedSince: null, lastMessageAt: null, lastErrorAt: null, lastError: null, messagesAccepted: 0, messagesRefused: 0 };
+    const status = {
+      activeConnections: 0,
+      connectedSince: null,
+      lastMessageAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      messagesAccepted: 0,
+      messagesRefused: 0,
+    };
 
     expect(connectionStatus(connection({ status: { ...status, state: 'listening' } }), list()).label).toBe('Listening');
-    expect(connectionStatus(connection({ status: { ...status, state: 'listening', activeConnections: 1 } }), list()).label).toBe('Connected');
     expect(
-      connectionStatus(connection({ status: { ...status, state: 'failed', lastError: 'Port 5100 could not be opened: AddressAlreadyInUse' } }), list()).detail,
+      connectionStatus(connection({ status: { ...status, state: 'listening', activeConnections: 1 } }), list()).label,
+    ).toBe('Connected');
+    expect(
+      connectionStatus(
+        connection({
+          status: { ...status, state: 'failed', lastError: 'Port 5100 could not be opened: AddressAlreadyInUse' },
+        }),
+        list(),
+      ).detail,
     ).toContain('AddressAlreadyInUse');
     expect(connectionStatus(connection(), list()).label).toBe('Starting');
   });
 
   it('tells an offline agent from a connected relay and a COM port problem', () => {
-    const status = { activeConnections: 0, connectedSince: null, lastMessageAt: null, lastErrorAt: null, lastError: null, messagesAccepted: 0, messagesRefused: 0 };
+    const status = {
+      activeConnections: 0,
+      connectedSince: null,
+      lastMessageAt: null,
+      lastErrorAt: null,
+      lastError: null,
+      messagesAccepted: 0,
+      messagesRefused: 0,
+    };
 
     expect(connectionStatus(serial({ status: { ...status, state: 'connected' } }), list()).label).toBe('Connected');
     expect(connectionStatus(serial({ status: { ...status, state: 'waiting' } }), list()).label).toBe('Connecting');
-    expect(connectionStatus(serial({ status: { ...status, state: 'waiting' } }), list({ agents: [agent({ online: false })] })).label).toBe(
-      'Agent offline',
-    );
+    expect(
+      connectionStatus(
+        serial({ status: { ...status, state: 'waiting' } }),
+        list({ agents: [agent({ online: false })] }),
+      ).label,
+    ).toBe('Agent offline');
     expect(connectionStatus(serial(), list({ agents: [] })).label).toBe('No agent');
     expect(
-      connectionStatus(serial({ status: { ...status, state: 'port_error', lastError: 'Access to the port is denied.' } }), list()).detail,
+      connectionStatus(
+        serial({ status: { ...status, state: 'port_error', lastError: 'Access to the port is denied.' } }),
+        list(),
+      ).detail,
     ).toContain('Access to the port is denied.');
   });
 

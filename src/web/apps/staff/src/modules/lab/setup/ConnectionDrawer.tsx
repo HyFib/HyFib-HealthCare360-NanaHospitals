@@ -133,8 +133,8 @@ export function ConnectionFields({
             <MessageBar intent="warning">
               <MessageBarBody>
                 <MessageBarTitle>No lab agent is enrolled</MessageBarTitle>
-                Install one on the PC the analyser is cabled to: create a code in Administration › Devices (device type: Lab
-                analyser agent), then run Install-HC360LabAgent.ps1 on that PC.
+                Install one on the PC the analyser is cabled to: create a code in Administration › Devices (device type:
+                Lab analyser agent), then run Install-HC360LabAgent.ps1 on that PC.
               </MessageBarBody>
             </MessageBar>
           )}
@@ -148,7 +148,15 @@ export function ConnectionFields({
             options={agents.map((agent) => ({ value: agent.id, label: agentOptionLabel(agent) }))}
           />
           <FormGrid columns={3}>
-            <TextField control={control} name="portName" label="COM port" required disabled={disabled} placeholder="COM3" maxLength={6} />
+            <TextField
+              control={control}
+              name="portName"
+              label="COM port"
+              required
+              disabled={disabled}
+              placeholder="COM3"
+              maxLength={6}
+            />
             <SelectField
               control={control}
               name="baudRate"
@@ -189,7 +197,12 @@ export function ConnectionFields({
             />
           </FormGrid>
           <FormGrid columns={2}>
-            <SwitchField control={control} name="dtrEnable" label="Raise DTR (data terminal ready)" disabled={disabled} />
+            <SwitchField
+              control={control}
+              name="dtrEnable"
+              label="Raise DTR (data terminal ready)"
+              disabled={disabled}
+            />
             <SwitchField
               control={control}
               name="rtsEnable"
@@ -198,7 +211,10 @@ export function ConnectionFields({
               hint={handshakeUsesRts(handshake) ? 'The flow control drives RTS.' : undefined}
             />
           </FormGrid>
-          <Caption1>The analyser&apos;s interface manual gives these settings. Most analysers use 9600 baud, 8 data bits, no parity and 1 stop bit.</Caption1>
+          <Caption1>
+            The analyser&apos;s interface manual gives these settings. Most analysers use 9600 baud, 8 data bits, no
+            parity and 1 stop bit.
+          </Caption1>
         </>
       )}
       <FormGrid columns={2}>
@@ -260,11 +276,17 @@ export function ConnectionDrawer({
   const connection = list.connections.find((c) => c.code.toUpperCase() === code);
   const isHl7 = instrument.protocol === 'Hl7';
   const status = connectionStatus(connection, list);
-  const form = useForm<ConnectionForm>({ resolver: zodResolver(connectionSchema), defaultValues: toConnectionForm(connection) });
+  const form = useForm<ConnectionForm>({
+    resolver: zodResolver(connectionSchema),
+    defaultValues: toConnectionForm(connection),
+  });
 
   const reloadAfterConflict = (error: unknown) => {
     if (isApiError(error) && error.isConflict) {
-      notify.error(error, 'Someone else changed the analyser connections. They have been reloaded; check and save again.');
+      notify.error(
+        error,
+        'Someone else changed the analyser connections. They have been reloaded; check and save again.',
+      );
       void queryClient.invalidateQueries({ queryKey: labKeys.connections });
       return true;
     }
@@ -333,12 +355,14 @@ export function ConnectionDrawer({
               <Text>{status.detail}</Text>
               {connection?.status?.lastMessageAt && (
                 <Caption1 className={styles.muted}>
-                  Last message {formatRelative(connection.status.lastMessageAt)} ({formatDateTime(connection.status.lastMessageAt)})
+                  Last message {formatRelative(connection.status.lastMessageAt)} (
+                  {formatDateTime(connection.status.lastMessageAt)})
                 </Caption1>
               )}
               {connection && connection.pendingOrders > 0 && (
                 <Caption1 className={styles.muted}>
-                  {connection.pendingOrders} {connection.pendingOrders === 1 ? 'order is' : 'orders are'} waiting to be sent to the analyser.
+                  {connection.pendingOrders} {connection.pendingOrders === 1 ? 'order is' : 'orders are'} waiting to be
+                  sent to the analyser.
                 </Caption1>
               )}
             </div>
@@ -350,8 +374,8 @@ export function ConnectionDrawer({
             {connection?.hostQueryRetiredOff && (
               <MessageBar intent="warning">
                 <MessageBarBody>
-                  An older setting on this connection keeps host queries and orders off. Save the connection to clear it;
-                  Bidirectional then decides.
+                  An older setting on this connection keeps host queries and orders off. Save the connection to clear
+                  it; Bidirectional then decides.
                 </MessageBarBody>
               </MessageBar>
             )}
@@ -391,7 +415,8 @@ export function ConnectionDrawer({
         onConfirm={() => remove.mutate()}
         onCancel={() => setRemoving(false)}
       >
-        HC360 stops receiving results from this analyser. Orders waiting for it are not sent. The analyser stays in Lab setup.
+        HC360 stops receiving results from this analyser. Orders waiting for it are not sent. The analyser stays in Lab
+        setup.
       </ConfirmDialog>
     </OverlayDrawer>
   );

@@ -31,7 +31,14 @@ export function isIpAddress(text: string): boolean {
 
 /** Items typed one per line or separated by commas or spaces. */
 export function splitList(text: string): string[] {
-  return [...new Set(text.split(/[\s,;]+/).map((item) => item.trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      text
+        .split(/[\s,;]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 export const connectionSchema = z
@@ -202,7 +209,11 @@ export function connectionStatus(
     };
   }
   if (connection.problem) {
-    return { label: 'Needs attention', tone: 'danger', detail: `The connection is not valid: ${connection.problem}. Save it again.` };
+    return {
+      label: 'Needs attention',
+      tone: 'danger',
+      detail: `The connection is not valid: ${connection.problem}. Save it again.`,
+    };
   }
   if (!connection.enabled) {
     return { label: 'Turned off', tone: 'subtle', detail: 'The connection is set up but turned off.' };
@@ -211,7 +222,8 @@ export function connectionStatus(
     return {
       label: 'Gateway off',
       tone: 'warning',
-      detail: 'The laboratory gateway is off, so no analyser can connect. Turn it on in Administration › Integrations › Laboratory equipment.',
+      detail:
+        'The laboratory gateway is off, so no analyser can connect. Turn it on in Administration › Integrations › Laboratory equipment.',
     };
   }
   const status = connection.status;
