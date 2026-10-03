@@ -23,11 +23,21 @@ internal sealed record TallySettings : IIntegrationSettings
     public int BatchSize { get; init; } = 50;
 }
 
+/// <summary>Tally's vouchers of one day, or why they could not be read.</summary>
+internal sealed record TallyDayRead(bool Success, string? Error, IReadOnlyList<TallyVoucherCopy> Vouchers)
+{
+    public static TallyDayRead Failed(string error) => new(false, error, []);
+}
+
 internal interface IAccountingProvider
 {
     string Key { get; }
 
     Task<bool> PingAsync(TallySettings settings, CancellationToken cancellationToken);
 
+    /// <summary>Imports the vouchers and answers for each one (see <see cref="AccountingExportResult.Vouchers"/>).</summary>
     Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, TallySettings settings, CancellationToken cancellationToken);
+
+    /// <summary>Every voucher the company holds on <paramref name="date"/>, for the read-back check.</summary>
+    Task<TallyDayRead> ReadDayAsync(DateOnly date, TallySettings settings, CancellationToken cancellationToken);
 }

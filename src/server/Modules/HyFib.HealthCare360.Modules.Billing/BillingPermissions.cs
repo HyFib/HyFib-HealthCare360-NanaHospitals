@@ -21,6 +21,7 @@ public static class BillingPermissions
     public const string Shifts = "billing.shifts";
     public const string TariffsManage = "billing.tariffs.manage";
     public const string TallyExport = "billing.tally.export";
+    public const string TallyConfigure = "billing.tally.configure";
     public const string PayersManage = "insurance.payers.manage";
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
@@ -50,7 +51,8 @@ public static class BillingPermissions
         new(Shifts, "Billing", "Open and close cashier shifts; day-end collection report",
             [SystemRoles.Cashier, SystemRoles.Billing, SystemRoles.FrontOffice, SystemRoles.Accountant, SystemRoles.HospitalAdmin]),
         new(TariffsManage, "Billing", "Maintain tariff plans, prices and packages", [SystemRoles.Billing, SystemRoles.HospitalAdmin]),
-        new(TallyExport, "Billing", "Post and export the Tally day book", Approvers),
+        new(TallyExport, "Billing", "Post and export the Tally day book, mark it imported and reconcile it with Tally", Approvers),
+        new(TallyConfigure, "Billing", "Set the Tally ledger names the day book posts to", Approvers),
         new(PayersManage, "Insurance", "Maintain insurers, TPAs, corporates, schemes and non-payable items", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(PoliciesManage, "Insurance", "Record and verify patient insurance policies",
             [SystemRoles.InsuranceDesk, SystemRoles.Billing, SystemRoles.HospitalAdmin]),

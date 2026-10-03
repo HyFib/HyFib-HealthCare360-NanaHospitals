@@ -363,6 +363,80 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("simulator_transactions", "integrations");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Integrations.Tally.SimulatorTallyVoucher", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Alterations")
+                        .HasColumnType("integer")
+                        .HasColumnName("alterations");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Company")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("company");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<Guid?>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("RemoteId")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("remote_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("VoucherType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("voucher_type");
+
+                    b.Property<string>("Xml")
+                        .IsRequired()
+                        .HasMaxLength(65536)
+                        .HasColumnType("character varying(65536)")
+                        .HasColumnName("xml");
+
+                    b.HasKey("Id")
+                        .HasName("pk_simulator_tally_vouchers");
+
+                    b.HasIndex("Company", "Date")
+                        .HasDatabaseName("ix_simulator_tally_vouchers_company_date");
+
+                    b.HasIndex("Company", "RemoteId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_simulator_tally_vouchers_company_remote_id");
+
+                    b.ToTable("simulator_tally_vouchers", "integrations");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.AI.Domain.AiUsage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4542,6 +4616,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("attempts");
 
+                    b.Property<int>("ConfirmedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("confirmed_count");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -4562,9 +4640,39 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
 
+                    b.Property<DateTimeOffset?>("FileDownloadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("file_downloaded_at");
+
+                    b.Property<string>("FileFingerprint")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("file_fingerprint");
+
+                    b.Property<int>("FileVoucherCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("file_voucher_count");
+
+                    b.Property<DateTimeOffset?>("ImportedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("imported_at");
+
+                    b.Property<string>("ImportedByName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("imported_by_name");
+
+                    b.Property<Guid?>("ImportedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("imported_by_user_id");
+
                     b.Property<DateTimeOffset?>("LastAttemptAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_attempt_at");
+
+                    b.Property<bool>("LegacyReferences")
+                        .HasColumnType("boolean")
+                        .HasColumnName("legacy_references");
 
                     b.Property<string>("Message")
                         .HasMaxLength(2000)
@@ -4575,11 +4683,62 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("posted_at");
 
+                    b.Property<DateTimeOffset?>("QueuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("queued_at");
+
+                    b.Property<string>("RecordsCheck")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("records_check");
+
+                    b.Property<DateTimeOffset?>("RecordsCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("records_checked_at");
+
+                    b.Property<int>("RecordsDifferences")
+                        .HasColumnType("integer")
+                        .HasColumnName("records_differences");
+
+                    b.Property<int>("RejectedCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("rejected_count");
+
+                    b.Property<Guid?>("RunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("run_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("status");
+
+                    b.Property<string>("TallyCheck")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("tally_check");
+
+                    b.Property<string>("TallyCheckMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("tally_check_message");
+
+                    b.Property<DateTimeOffset?>("TallyCheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("tally_checked_at");
+
+                    b.Property<int>("TallyDifferences")
+                        .HasColumnType("integer")
+                        .HasColumnName("tally_differences");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
 
                     b.Property<int>("VoucherCount")
                         .HasColumnType("integer")
@@ -4593,6 +4752,137 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_tally_exports_facility_id_date");
 
                     b.ToTable("tally_exports", "billing");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TallyVoucherRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<string>("Answer")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("answer");
+
+                    b.Property<string>("AnswerMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("answer_message");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("answered_at");
+
+                    b.Property<DateOnly?>("BillDate")
+                        .HasColumnType("date")
+                        .HasColumnName("bill_date");
+
+                    b.Property<DateTimeOffset?>("CheckedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("checked_at");
+
+                    b.Property<Guid?>("ConfirmedRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("confirmed_run_id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<Guid>("ExportId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("export_id");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("hash");
+
+                    b.Property<bool>("InDayBook")
+                        .HasColumnType("boolean")
+                        .HasColumnName("in_day_book");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<string>("Match")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("match");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("RemoteId")
+                        .HasMaxLength(210)
+                        .HasColumnType("character varying(210)")
+                        .HasColumnName("remote_id");
+
+                    b.Property<string>("SentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sent_hash");
+
+                    b.Property<decimal?>("TallyAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("tally_amount");
+
+                    b.Property<string>("TallyDetail")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("tally_detail");
+
+                    b.Property<string>("TallyNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("tally_number");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("VoucherType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("voucher_type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_tally_vouchers");
+
+                    b.HasIndex("Date", "Key")
+                        .HasDatabaseName("ix_tally_vouchers_date_key");
+
+                    b.HasIndex("ExportId", "Key")
+                        .IsUnique()
+                        .HasDatabaseName("ix_tally_vouchers_export_id_key");
+
+                    b.HasIndex("FacilityId", "Date")
+                        .HasDatabaseName("ix_tally_vouchers_facility_id_date");
+
+                    b.ToTable("tally_vouchers", "billing");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TariffBedMultiplier", b =>
@@ -34973,6 +35263,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_refunds_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TallyVoucherRecord", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Billing.Domain.TallyExport", null)
+                        .WithMany()
+                        .HasForeignKey("ExportId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_tally_vouchers_tally_exports_export_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Billing.Domain.TariffBedMultiplier", b =>

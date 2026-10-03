@@ -135,9 +135,104 @@ public interface IPosTerminal
 // ---------- Accounting (Tally) ----------
 public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null);
 
-public sealed record AccountingVoucher(string VoucherType, DateOnly Date, string Number, string Narration, IReadOnlyList<AccountingEntry> Entries, string? Reference = null);
+/// <param name="Reference">
+/// HC360's stable key for the voucher (a bill, receipt or refund number). The accounting system keeps it as the voucher's
+/// remote id (<see cref="RemoteId"/>), so sending the same voucher again alters it instead of adding a copy.
+/// </param>
+public sealed record AccountingVoucher(string VoucherType, DateOnly Date, string Number, string Narration, IReadOnlyList<AccountingEntry> Entries, string? Reference = null)
+{
+    /// <summary>Starts every remote id HC360 gives the accounting system, which tells HC360's vouchers from the hospital's own.</summary>
+    public const string RemoteIdPrefix = "HC360-";
 
-public sealed record AccountingExportResult(bool Success, int Created, int Altered, int Errors, string? Message);
+    /// <summary>The id the accounting system keeps for the voucher (Tally's <c>REMOTEID</c>); null without a reference.</summary>
+    public string? RemoteId => string.IsNullOrWhiteSpace(Reference) ? null : RemoteIdPrefix + Reference.Trim();
+
+    /// <summary>The key HC360 tracks the voucher by: its reference, else its number.</summary>
+    public string Key => string.IsNullOrWhiteSpace(Reference) ? Number.Trim() : Reference.Trim();
+
+    /// <summary>The voucher's value: the total of its debit lines, which equals its credit lines when it balances.</summary>
+    public decimal Amount => Entries.Where(e => e.IsDebit).Sum(e => e.Amount);
+}
+
+/// <summary>What the accounting system did with one voucher it was sent.</summary>
+public enum AccountingVoucherOutcome
+{
+    /// <summary>Not sent: the import stopped before it, because the accounting system could not be reached.</summary>
+    NotSent = 0,
+
+    Created,
+    Altered,
+
+    /// <summary>Accepted in a batch whose counts do not say whether it was created or altered.</summary>
+    Accepted,
+
+    /// <summary>Refused; the answer's message says why.</summary>
+    Rejected,
+
+    /// <summary>Sent, but the answer does not account for it (the accounting system ignored it, for example).</summary>
+    Unconfirmed,
+}
+
+/// <param name="Key">The voucher's <see cref="AccountingVoucher.Key"/>.</param>
+public sealed record AccountingVoucherAnswer(string Key, AccountingVoucherOutcome Outcome, string? Message = null);
+
+public sealed record AccountingExportResult(bool Success, int Created, int Altered, int Errors, string? Message)
+{
+    /// <summary>The answer for each voucher, in the order sent; empty when nothing was sent.</summary>
+    public IReadOnlyList<AccountingVoucherAnswer> Vouchers { get; init; } = [];
+
+    /// <summary>No accounting system is set up for the facility, so nothing was sent and a retry would not help.</summary>
+    public bool NotConfigured { get; init; }
+}
+
+public enum AccountingConnectionState
+{
+    /// <summary>No accounting system is set up for the facility, or it is switched off: day books are imported from a file.</summary>
+    NotConfigured = 0,
+
+    Ready,
+
+    /// <summary>Set up, but the settings cannot be used; the message says why.</summary>
+    Invalid,
+}
+
+public sealed record AccountingConnection(AccountingConnectionState State, string? Provider, string? Message);
+
+/// <summary>How a voucher HC360 sent compares with the accounting system's copy.</summary>
+public enum AccountingVoucherMatch
+{
+    Matched = 0,
+
+    /// <summary>Not in the accounting system on the voucher's date: deleted there, moved to another date, or never sent.</summary>
+    Missing,
+
+    /// <summary>Present, with another amount.</summary>
+    AmountDiffers,
+
+    /// <summary>Present with the same amount, but another voucher type, date or other ledgers.</summary>
+    Changed,
+
+    /// <summary>Cancelled, or made optional, in the accounting system, so it is not in the books.</summary>
+    NotInBooks,
+}
+
+/// <param name="Key">The voucher's <see cref="AccountingVoucher.Key"/>.</param>
+/// <param name="FoundAmount">The amount the accounting system holds, when it holds the voucher.</param>
+/// <param name="FoundNumber">The accounting system's voucher number (it may renumber vouchers it numbers itself).</param>
+public sealed record AccountingVoucherCheck(string Key, AccountingVoucherMatch Match, decimal? FoundAmount, string? FoundNumber, string? Detail);
+
+/// <summary>
+/// A voucher the accounting system holds on the date with an HC360 remote id that was not among the vouchers compared:
+/// left over from an earlier version of a day book, or sent for another facility.
+/// </summary>
+/// <param name="Key">The remote id without <see cref="AccountingVoucher.RemoteIdPrefix"/>.</param>
+public sealed record AccountingVoucherFound(string Key, string? VoucherType, string? Number, DateOnly Date, decimal Amount, bool InBooks);
+
+public sealed record AccountingReadBack(bool Success, string? Message, IReadOnlyList<AccountingVoucherCheck> Vouchers, IReadOnlyList<AccountingVoucherFound> Others)
+{
+    /// <summary>No accounting system is set up for the facility, so nothing could be read.</summary>
+    public bool NotConfigured { get; init; }
+}
 
 public interface IAccountingExporter
 {
@@ -145,7 +240,20 @@ public interface IAccountingExporter
 
     Task<bool> PingAsync(CancellationToken cancellationToken);
 
-    Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, CancellationToken cancellationToken);
+    /// <summary>Whether an accounting system is set up for the facility (null: the signed-in facility, then the all-facility settings).</summary>
+    Task<AccountingConnection> GetConnectionAsync(Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sends vouchers with the facility's settings (null: the signed-in facility, then the all-facility settings). Background
+    /// posting has no signed-in facility, so it names the facility whose day book it sends.
+    /// </summary>
+    Task<AccountingExportResult> PushVouchersAsync(IReadOnlyList<AccountingVoucher> vouchers, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Reads back the vouchers the accounting system holds for <paramref name="date"/> and compares each of
+    /// <paramref name="expected"/> with its copy there, by remote id: present, amount, type and ledgers.
+    /// </summary>
+    Task<AccountingReadBack> ReadBackAsync(DateOnly date, IReadOnlyList<AccountingVoucher> expected, Guid? facilityId, CancellationToken cancellationToken);
 
     /// <summary>Import file for manual loading when the accounting server is unreachable.</summary>
     string BuildImportFile(IReadOnlyList<AccountingVoucher> vouchers);

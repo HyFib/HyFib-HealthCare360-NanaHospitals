@@ -5,17 +5,37 @@ namespace HyFib.HealthCare360.Modules.Billing.Domain;
 public enum TallyExportStatus
 {
     Queued = 0,
+
+    /// <summary>Tally confirmed every voucher of the day book.</summary>
     Posted,
 
-    /// <summary>No accounting exporter is configured; the day book is available as a manual import file.</summary>
+    /// <summary>Tally is not set up for the facility; the day book is imported into Tally from the file.</summary>
     NotConfigured,
 
     Failed,
+
+    /// <summary>An accountant imported the downloaded file into Tally and marked the day imported.</summary>
+    Imported,
 }
 
-/// <summary>One facility's day book for one date (INT-TALLY): the job log used for retries and reconciliation.</summary>
+/// <summary>Outcome of a reconciliation check of a day.</summary>
+public enum TallyCheckStatus
+{
+    NotChecked = 0,
+    Matched,
+    Differences,
+
+    /// <summary>The check could not run (Tally could not be reached, for example).</summary>
+    Failed,
+}
+
+/// <summary>
+/// One facility's day book for one date (INT-TALLY): the posting log used for retries, the latest post run, the file
+/// downloaded for a manual import and the results of the two reconciliation checks. Every voucher sent is tracked in
+/// <see cref="TallyVoucherRecord"/>.
+/// </summary>
 [NotAudited]
-public sealed class TallyExport : Entity
+public sealed class TallyExport : Entity, IVersioned
 {
     public Guid FacilityId { get; set; }
     public DateOnly Date { get; set; }
@@ -29,6 +49,62 @@ public sealed class TallyExport : Entity
     public DateTimeOffset? LastAttemptAt { get; set; }
     public DateTimeOffset? PostedAt { get; set; }
     public string? Message { get; set; }
+
+    /// <summary>The post run in progress or last finished; outbox messages of an older run are ignored.</summary>
+    public Guid? RunId { get; set; }
+
+    /// <summary>When the current run was queued. A run queued before the day ended is posted again the next night.</summary>
+    public DateTimeOffset? QueuedAt { get; set; }
+
+    /// <summary>Vouchers of the current day book that Tally confirmed (or that were imported from the file).</summary>
+    public int ConfirmedCount { get; set; }
+
+    /// <summary>Vouchers of the current day book that Tally refused.</summary>
+    public int RejectedCount { get; set; }
+
+    public DateTimeOffset? FileDownloadedAt { get; set; }
+
+    /// <summary>Fingerprint of the day book in the last file downloaded; marking the day imported requires it to be current.</summary>
+    public string? FileFingerprint { get; set; }
+
+    public int FileVoucherCount { get; set; }
+    public DateTimeOffset? ImportedAt { get; set; }
+    public Guid? ImportedByUserId { get; set; }
+    public string? ImportedByName { get; set; }
+
+    /// <summary>The day book compared with the bills, receipts, day-end and other records it is built from.</summary>
+    public TallyCheckStatus RecordsCheck { get; set; }
+
+    public DateTimeOffset? RecordsCheckedAt { get; set; }
+    public int RecordsDifferences { get; set; }
+
+    /// <summary>The vouchers HC360 sent compared with what Tally holds (read back over Tally's XML port).</summary>
+    public TallyCheckStatus TallyCheck { get; set; }
+
+    public DateTimeOffset? TallyCheckedAt { get; set; }
+    public int TallyDifferences { get; set; }
+    public string? TallyCheckMessage { get; set; }
+
+    /// <summary>
+    /// The day existed before HC360 tracked each voucher (set by the TallyReconciliation migration). Tally may hold its
+    /// doctor-fee journals under the old numbers (DF-yyyyMMdd-001), so the day keeps them, and a bill cancelled on it
+    /// may have turned the bill's sale in Tally into a credit note, so posting it posts the bill's own day again.
+    /// </summary>
+    public bool LegacyReferences { get; set; }
+
+    /// <summary>Optimistic concurrency (<c>xmin</c>): a post, a check and "mark imported" never overwrite each other.
+    /// </summary>
+    public uint Version { get; set; }
+
+    /// <summary>Starts a new post run: the next attempt sends every voucher again, and older messages are ignored.</summary>
+    public void StartRun(Guid runId, DateTimeOffset now)
+    {
+        RunId = runId;
+        QueuedAt = now;
+        Status = TallyExportStatus.Queued;
+        Message = null;
+        Attempts = 0;
+    }
 }
 
 /// <summary>
@@ -64,6 +140,18 @@ public sealed record TallyLedgerMap
     public string TdsPayable { get; init; } = "TDS Payable (194J)";
     public string DoctorRecoveries { get; init; } = "Doctor Recoveries";
     public string PayoutBank { get; init; } = "Bank";
+
+    /// <summary>Pharmacy counter sales and returns (their own income ledger; GST on the output GST ledgers).</summary>
+    public TallyCounterLedgers Pharmacy { get; init; } = new();
+
+    /// <summary>Canteen sales; staff credit goes to <see cref="TallyCounterLedgers.OnAccount"/>.</summary>
+    public TallyCounterLedgers Canteen { get; init; } = new();
+
+    /// <summary>Pharmacy and canteen sales go to one income ledger per GST rate ("Pharmacy Sales @ 12%"), which Tally's GST reports need.</summary>
+    public bool SalesLedgerPerGstRate { get; init; } = true;
+
+    /// <summary>The ledgers of a counter that bills its own sales, with the built-in names for anything not set.</summary>
+    public TallyCounterLedgers CounterLedgers(string counter) => TallyCounters.Ledgers(this, counter);
 
     public string IncomeFor(string? departmentCode) =>
         departmentCode is not null && Find(IncomeByDepartment, departmentCode) is { } ledger ? ledger : DefaultIncome;
@@ -104,7 +192,10 @@ public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Pur
 
 public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount);
 
-public sealed record TallyDoctorFee(string PractitionerName, decimal Amount);
+/// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
+/// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
+public sealed record TallyDoctorFee(
+    string PractitionerName, decimal Amount, string? PractitionerCode = null, Guid? PractitionerId = null);
 
 public sealed record TallyPayout(string Number, DateOnly Date, string PractitionerName, decimal Gross, decimal Tds, decimal Deductions, decimal Net);
 
@@ -119,7 +210,19 @@ public sealed record TallyDayBook(
     IReadOnlyList<TallyDoctorFee> DoctorFees,
     IReadOnlyList<TallyPayout> Payouts)
 {
-    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count == 0;
+    /// <summary>The facility's code: it keeps the day book's own voucher numbers apart when facilities share a Tally company.</summary>
+    public string? FacilityCode { get; init; }
+
+    /// <summary>The day of each counter that bills its own sales (pharmacy, canteen), from their modules.</summary>
+    public IReadOnlyList<CounterSalesDay> Counters { get; init; } = [];
+
+    /// <summary>
+    /// The day was posted before HC360 tracked each voucher: doctor-fee journals keep their old numbers.
+    /// </summary>
+    public bool LegacyDoctorFeeNumbers { get; init; }
+
+    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count == 0
+                           && Counters.All(c => c.IsEmpty);
 }
 
 /// <summary>
@@ -144,9 +247,22 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.Disallowances.Select(d => Disallowance(d, map)));
         vouchers.AddRange(day.Refunds.Select(r => Refund(r, map)));
         vouchers.AddRange(day.CreditNotes.Select(c => CreditNote(c, map)));
-        vouchers.AddRange(day.DoctorFees.Select((f, i) => DoctorFee(f, i + 1, day.Date, map)));
+        vouchers.AddRange(DoctorFees(day, map));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
+        vouchers.AddRange(TallyCounters.Vouchers(day, map));
         return vouchers.OfType<AccountingVoucher>().ToList();
+    }
+
+    /// <summary>
+    /// Number (and reference) of a day's doctor-fee journal: the facility, the date and the doctor's code, so the
+    /// same doctor's journal keeps its number however often the day is posted (DF-NH-20260925-DR005).
+    /// </summary>
+    public static string DoctorFeeNumber(string? facilityCode, DateOnly date, string? practitionerCode, string practitionerName)
+    {
+        var code = TallyCounters.CodeOf(practitionerCode) ?? TallyCounters.ShortHash(practitionerName);
+        var facility = TallyCounters.CodeOf(facilityCode);
+        var day = date.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        return facility is null ? $"DF-{day}-{code}" : $"DF-{facility}-{day}-{code}";
     }
 
     private static AccountingVoucher? Sale(TallySale sale, TallyLedgerMap map)
@@ -164,9 +280,26 @@ public static class TallyVoucherBuilder
         entries.Credit(map.OutputSgst, sale.Lines.Sum(l => l.Sgst));
         entries.Credit(map.RoundOff, sale.RoundOff);
 
+        // The reversal needs a reference of its own: with the bill's, Tally would alter the sale into the credit note.
         return sale.IsCancellation
-            ? entries.Reversed().ToVoucher(CreditNoteType, sale.Date, sale.BillNumber + "/C", $"Cancellation of bill {sale.BillNumber}", sale.BillNumber)
+            ? entries.Reversed().ToVoucher(CreditNoteType, sale.Date, CancellationNumber(sale.BillNumber), $"Cancellation of bill {sale.BillNumber}", CancellationNumber(sale.BillNumber))
             : entries.ToVoucher(SalesType, sale.Date, sale.BillNumber, $"Bill {sale.BillNumber}", sale.BillNumber);
+    }
+
+    /// <summary>Number and reference of the credit note that reverses a cancelled bill.</summary>
+    public static string CancellationNumber(string billNumber) => billNumber + "/C";
+
+    /// <summary>
+    /// Reference of a claim settlement's deduction journal: the claim number and the first six hex digits of the
+    /// settlement's id. Those digits come from the id's timestamp, so two settlements of one claim recorded within a few
+    /// hours can share them; such settlements add the id's last four (random) digits, so neither alters the other in Tally.
+    /// </summary>
+    /// <param name="settlementsOfClaim">Every settlement of the claim, this one included.</param>
+    public static string ClaimDeductionReference(string claimNumber, Guid settlementId, IEnumerable<Guid> settlementsOfClaim)
+    {
+        var id = settlementId.ToString("N");
+        var shared = settlementsOfClaim.Distinct().Count(s => s.ToString("N")[..6] == id[..6]) > 1;
+        return shared ? $"{claimNumber}/{id[..6]}{id[^4..]}" : $"{claimNumber}/{id[..6]}";
     }
 
     private static AccountingVoucher? Receipt(TallyReceipt receipt, TallyLedgerMap map)
@@ -222,13 +355,46 @@ public static class TallyVoucherBuilder
         return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{(note.Kind == CreditNoteKind.WriteOff ? "Write-off" : "Credit note")} {note.Number}", note.Number);
     }
 
-    private static AccountingVoucher? DoctorFee(TallyDoctorFee fee, int sequence, DateOnly date, TallyLedgerMap map)
+    /// <summary>
+    /// Number of a doctor-fee journal of a day posted before HC360 tracked each voucher: the day and a sequence
+    /// (DF-20260925-001), as Tally already holds it. Re-posting such a day alters those journals rather than adding
+    /// new ones beside them.
+    /// </summary>
+    public static string LegacyDoctorFeeNumber(DateOnly date, int sequence) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"DF-{date:yyyyMMdd}-{sequence:000}");
+
+    /// <summary>
+    /// One journal per doctor. Two doctors whose codes (or, without codes, names) give the same number both add the
+    /// last eight hex digits of their id, so neither number depends on the order the doctors come in. A day posted
+    /// before per-voucher tracking keeps its old sequence numbers.
+    /// </summary>
+    private static IEnumerable<AccountingVoucher?> DoctorFees(TallyDayBook day, TallyLedgerMap map)
     {
-        var entries = new EntryList();
-        entries.Debit(map.DoctorFeeExpense, fee.Amount);
-        entries.Credit(map.DoctorPayable(fee.PractitionerName), fee.Amount);
-        var number = $"DF-{date:yyyyMMdd}-{sequence:000}";
-        return entries.ToVoucher(JournalType, date, number, $"Doctor fees accrued ({fee.PractitionerName})", number);
+        var fees = day.DoctorFees
+            .OrderBy(f => f.PractitionerCode, StringComparer.Ordinal)
+            .ThenBy(f => f.PractitionerName, StringComparer.Ordinal)
+            .ThenBy(f => f.PractitionerId)
+            .ToList();
+        var numbers = fees
+            .Select(f => DoctorFeeNumber(day.FacilityCode, day.Date, f.PractitionerCode, f.PractitionerName))
+            .ToList();
+        var shared = numbers.GroupBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < fees.Count; i++)
+        {
+            var fee = fees[i];
+            var number = day.LegacyDoctorFeeNumbers ? LegacyDoctorFeeNumber(day.Date, i + 1)
+                : shared.Contains(numbers[i]) && fee.PractitionerId is { } id
+                    ? numbers[i] + "-" + id.ToString("N")[^8..].ToUpperInvariant()
+                : numbers[i];
+
+            var entries = new EntryList();
+            entries.Debit(map.DoctorFeeExpense, fee.Amount);
+            entries.Credit(map.DoctorPayable(fee.PractitionerName), fee.Amount);
+            yield return entries.ToVoucher(JournalType, day.Date, number, $"Doctor fees accrued ({fee.PractitionerName})", number);
+        }
     }
 
     private static AccountingVoucher? Payout(TallyPayout payout, TallyLedgerMap map)
@@ -242,7 +408,7 @@ public static class TallyVoucherBuilder
     }
 
     /// <summary>Collects entries, merging repeats of the same ledger/side and turning negative amounts into the opposite side.</summary>
-    private sealed class EntryList
+    internal sealed class EntryList
     {
         private readonly List<AccountingEntry> _entries = [];
 

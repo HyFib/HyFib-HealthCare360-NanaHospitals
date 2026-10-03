@@ -31,8 +31,9 @@ internal static class IntegrationsServiceCollectionExtensions
     private static readonly TimeSpan CloudAttempt = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CloudTotal = TimeSpan.FromSeconds(20);
 
-    // Tally imports large voucher batches slowly on the accounts PC.
-    private static readonly TimeSpan TallyTimeout = TimeSpan.FromSeconds(60);
+    // Tally imports large voucher batches slowly on the accounts PC, but a post attempt runs as an outbox message with
+    // 30 s in all, and stops calling Tally after 24 s (TallyService.CallDeadline): one call must fit well inside that.
+    private static readonly TimeSpan TallyTimeout = TimeSpan.FromSeconds(20);
 
     public static IServiceCollection AddIntegrations(this IServiceCollection services)
     {
@@ -94,6 +95,7 @@ internal static class IntegrationsServiceCollectionExtensions
     {
         services.AddIntegrationHttpClient<TallyPrimeExporter>(TallyTimeout, TallyTimeout);
         services.AddScoped<IAccountingProvider>(sp => sp.GetRequiredService<TallyPrimeExporter>());
+        services.AddScoped<SimulatedTallyCompany>();
         services.AddScoped<IAccountingProvider, SimulatorAccountingExporter>();
         services.AddScoped<IAccountingExporter, AccountingExporterRouter>();
 
