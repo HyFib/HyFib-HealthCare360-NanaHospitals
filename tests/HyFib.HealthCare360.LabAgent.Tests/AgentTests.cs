@@ -115,6 +115,29 @@ public sealed class AgentTests : IDisposable
     }
 
     [Fact]
+    public void Finds_the_intermediate_in_the_handshake_whether_it_is_in_the_extra_store_or_the_chain()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals CA");
+        using var intermediate = CreateIntermediate(ca, "CN=Nana Hospitals LAN CA");
+        using var server = CreateLeaf(intermediate, "hc360-srv");
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+        using var handshake = new X509Chain();
+        handshake.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        handshake.ChainPolicy.CustomTrustStore.Add(ca);
+        handshake.ChainPolicy.ExtraStore.Add(intermediate);
+        handshake.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        handshake.Build(server);
+
+        trust.Validate(server, handshake, "hc360-srv").ShouldBeTrue();
+
+        // As the TLS callback may pass it: the intermediate only among the chain's elements.
+        handshake.ChainPolicy.ExtraStore.Clear();
+        ServerTrust.Intermediates(handshake, server).Cast<X509Certificate2>().Select(c => c.Subject)
+            .ShouldContain("CN=Nana Hospitals LAN CA");
+        trust.Validate(server, handshake, "hc360-srv").ShouldBeTrue();
+    }
+
+    [Fact]
     public void Refuses_a_certificate_that_is_not_for_a_tls_server()
     {
         using var ca = CreateCa("CN=Nana Hospitals CA");

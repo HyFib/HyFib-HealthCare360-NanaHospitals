@@ -285,7 +285,8 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     [GeneratedRegex("^pay_[A-Za-z0-9]{6,40}$")]
     private static partial Regex PaymentIdPattern();
 
-    [GeneratedRegex("^[A-Za-z0-9]{1,40}$")]
+    // Razorpay takes 10 or more letters, digits, hyphens or underscores; the receipt that carries it is at most 40.
+    [GeneratedRegex("^[A-Za-z0-9_-]{10,40}$")]
     private static partial Regex IdempotencyKeyPattern();
 
     [GeneratedRegex("^rfnd_[A-Za-z0-9]{6,40}$")]

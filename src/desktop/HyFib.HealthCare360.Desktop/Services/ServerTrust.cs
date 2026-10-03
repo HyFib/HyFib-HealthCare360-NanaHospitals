@@ -72,7 +72,9 @@ internal sealed class ServerTrust : IDisposable
     }
 
     /// <summary>
-    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built, holding the server's intermediates.
+    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built for the server's certificate. The
+    /// intermediates the server sent are in its extra store, and those .NET could place are in its elements too; both
+    /// are offered, so a certificate issued below the pinned CA is trusted whichever way the platform passes them.
     /// </summary>
     public bool Validate(X509Certificate? certificate, X509Chain? handshake, string host)
     {
@@ -82,7 +84,28 @@ internal sealed class ServerTrust : IDisposable
         }
 
         using var certificate2 = new X509Certificate2(certificate);
-        return IsTrusted(certificate2, host, handshake?.ChainPolicy.ExtraStore);
+        return IsTrusted(certificate2, host, Intermediates(handshake, certificate2));
+    }
+
+    /// <summary>Every certificate of the handshake other than the server's own.</summary>
+    internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server)
+    {
+        var intermediates = new X509Certificate2Collection();
+        if (handshake is null)
+        {
+            return intermediates;
+        }
+
+        intermediates.AddRange(handshake.ChainPolicy.ExtraStore);
+        foreach (var element in handshake.ChainElements)
+        {
+            if (!element.Certificate.RawData.AsSpan().SequenceEqual(server.RawData))
+            {
+                intermediates.Add(element.Certificate);
+            }
+        }
+
+        return intermediates;
     }
 
     /// <summary>HttpClient for server calls that only accepts certificates issued by the pinned CA.</summary>
