@@ -194,6 +194,42 @@ public sealed class RelayTests
         await WaitUntilAsync(() => agent.Report.Open);
     }
 
+    [Fact]
+    public async Task A_send_that_fails_on_an_old_relay_never_ends_the_new_one()
+    {
+        var wire = new Wire();
+        await using var pump = new LinePump(wire.A, NullLogger.Instance);
+
+        // The first relay's socket is dead: a send on it hangs, then fails.
+        var dead = new HangingSocket();
+        using (var first = CancellationTokenSource.CreateLinkedTokenSource(Ct))
+        {
+            var firstRelay = pump.RelayAsync(dead, first.Token);
+            await wire.B.WriteAsync(new[] { AstmControl.Enq }, Ct);
+            await dead.SendStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+            await first.CancelAsync();
+            (await firstRelay.WaitAsync(TimeSpan.FromSeconds(10), Ct)).ShouldBe("the agent is stopping");
+        }
+
+        // A new relay is open when the old send finally fails.
+        var (agentSide, serverSide) = Wire.Sockets();
+        using var second = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var secondRelay = pump.RelayAsync(agentSide, second.Token);
+        dead.FailSends();
+        await Task.Delay(TimeSpan.FromMilliseconds(300), Ct);
+        secondRelay.IsCompleted.ShouldBeFalse("the old relay's failed send must not end the new relay");
+
+        await wire.B.WriteAsync(new[] { AstmControl.Eot }, Ct);
+        var buffer = new byte[1];
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        (await serverSide.ReceiveAsync(buffer, timeout.Token)).Count.ShouldBe(1);
+        buffer[0].ShouldBe(AstmControl.Eot);
+
+        await second.CancelAsync();
+        await secondRelay.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         for (var i = 0; i < 200 && !condition(); i++)
@@ -202,6 +238,52 @@ public sealed class RelayTests
         }
 
         condition().ShouldBeTrue();
+    }
+
+    /// <summary>A socket to a server that went away: a send hangs until <see cref="FailSends"/>, then fails.</summary>
+    private sealed class HangingSocket : WebSocket
+    {
+        private readonly TaskCompletionSource _failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource SendStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+
+        public override string? CloseStatusDescription => null;
+
+        public override WebSocketState State => WebSocketState.Open;
+
+        public override string? SubProtocol => AgentProtocol.Subprotocol;
+
+        public void FailSends() => _failure.TrySetException(new WebSocketException("The connection was reset."));
+
+        public override void Abort()
+        {
+        }
+
+        public override Task CloseAsync(
+            WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override Task CloseOutputAsync(
+            WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public override void Dispose()
+        {
+        }
+
+        public override async Task<WebSocketReceiveResult> ReceiveAsync(
+            ArraySegment<byte> buffer, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("Unreachable.");
+        }
+
+        public override async Task SendAsync(
+            ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+        {
+            SendStarted.TrySetResult();
+            await _failure.Task;
+        }
     }
 
     /// <summary>Hands the agent one end of an in-memory WebSocket and gives the other end to <paramref name="serve"/>.</summary>

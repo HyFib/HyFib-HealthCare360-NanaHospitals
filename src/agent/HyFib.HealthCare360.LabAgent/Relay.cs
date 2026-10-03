@@ -59,8 +59,10 @@ internal sealed class LinePump : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task _reading;
-    private WebSocket? _socket;
-    private TaskCompletionSource<string>? _relayEnded;
+
+    // The open relay's socket and the completion source that ends it, swapped together: the port's reader takes both
+    // at once, so a failed send on an old relay can only ever end that relay, never the one that replaced it.
+    private OpenRelay? _relay;
     private long _toServer;
     private long _toAnalyser;
     private long _dropped;
@@ -81,8 +83,8 @@ internal sealed class LinePump : IAsyncDisposable
     public async Task<string> RelayAsync(WebSocket socket, CancellationToken cancellationToken)
     {
         var ended = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Volatile.Write(ref _relayEnded, ended);
-        Volatile.Write(ref _socket, socket);
+        var relay = new OpenRelay(socket, ended);
+        Volatile.Write(ref _relay, relay);
         if (Failed)
         {
             ended.TrySetResult("the COM port closed");
@@ -100,7 +102,7 @@ internal sealed class LinePump : IAsyncDisposable
             reason = "the agent is stopping";
         }
 
-        Volatile.Write(ref _socket, null);
+        Interlocked.CompareExchange(ref _relay, null, relay);
         await CloseAsync(socket);
         await receiving.CancelAsync();
         await downstream;
@@ -135,7 +137,7 @@ internal sealed class LinePump : IAsyncDisposable
                     break;
                 }
 
-                if (Volatile.Read(ref _socket) is not { } socket)
+                if (Volatile.Read(ref _relay) is not { } relay)
                 {
                     Interlocked.Add(ref _dropped, read);
                     continue;
@@ -144,13 +146,14 @@ internal sealed class LinePump : IAsyncDisposable
                 try
                 {
                     using var timeout = new CancellationTokenSource(SendTimeout);
-                    await socket.SendAsync(buffer.AsMemory(0, read), WebSocketMessageType.Binary, endOfMessage: true, timeout.Token);
+                    await relay.Socket.SendAsync(
+                        buffer.AsMemory(0, read), WebSocketMessageType.Binary, endOfMessage: true, timeout.Token);
                     Interlocked.Add(ref _toServer, read);
                 }
                 catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException or InvalidOperationException)
                 {
                     Interlocked.Add(ref _dropped, read);
-                    Volatile.Read(ref _relayEnded)?.TrySetResult("the connection to the server was lost");
+                    relay.Ended.TrySetResult("the connection to the server was lost");
                 }
             }
         }
@@ -159,7 +162,7 @@ internal sealed class LinePump : IAsyncDisposable
             _logger.LogDebug(ex, "The COM port read ended");
         }
 
-        Volatile.Read(ref _relayEnded)?.TrySetResult("the COM port closed");
+        Volatile.Read(ref _relay)?.Ended.TrySetResult("the COM port closed");
     }
 
     private async Task ToAnalyserAsync(WebSocket socket, TaskCompletionSource<string> ended, CancellationToken cancellationToken)
@@ -172,7 +175,8 @@ internal sealed class LinePump : IAsyncDisposable
                 var received = await socket.ReceiveAsync(buffer, cancellationToken);
                 if (received.MessageType == WebSocketMessageType.Close)
                 {
-                    ended.TrySetResult($"the server closed the relay ({socket.CloseStatusDescription ?? socket.CloseStatus?.ToString() ?? "no reason given"})");
+                    // The server says why (replaced, revoked, unassigned, settings changed, stopping); it is logged.
+                    ended.TrySetResult(ClosedByServer(socket));
                     return;
                 }
 
@@ -198,6 +202,13 @@ internal sealed class LinePump : IAsyncDisposable
         }
     }
 
+    internal static string ClosedByServer(WebSocket socket)
+    {
+        var description = socket.CloseStatusDescription;
+        var why = string.IsNullOrWhiteSpace(description) ? "no reason given" : description;
+        return $"the server closed the relay: {why} ({socket.CloseStatus?.ToString() ?? "no status"})";
+    }
+
     private static async Task CloseAsync(WebSocket socket)
     {
         try
@@ -213,4 +224,6 @@ internal sealed class LinePump : IAsyncDisposable
             // Already gone.
         }
     }
+
+    private sealed record OpenRelay(WebSocket Socket, TaskCompletionSource<string> Ended);
 }
