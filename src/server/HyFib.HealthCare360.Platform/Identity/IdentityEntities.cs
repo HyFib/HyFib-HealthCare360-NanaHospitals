@@ -154,9 +154,22 @@ public enum DeviceKind
     Kiosk,
     DisplayBoard,
     Tablet,
+
+    /// <summary>The HC360 lab agent: a Windows service on the PC a serial analyser is cabled to (INT-LAB).</summary>
+    LabAgent,
 }
 
-/// <summary>An enrolled HC360 Desktop installation (workstation, kiosk or queue display).</summary>
+public static class DeviceKinds
+{
+    /// <summary>
+    /// The kinds that are HC360 Desktop installations, where staff sign in and that send the desktop heartbeat. A lab
+    /// agent's credential sits on an unattended PC, so it never counts as an enrolled workstation.
+    /// </summary>
+    public static bool IsDesktop(this DeviceKind kind) =>
+        kind is DeviceKind.Workstation or DeviceKind.Kiosk or DeviceKind.DisplayBoard or DeviceKind.Tablet;
+}
+
+/// <summary>An enrolled HC360 Desktop installation (workstation, kiosk or queue display) or HC360 lab agent.</summary>
 public sealed class Device : AuditableEntity
 {
     public string Name { get; set; } = string.Empty;

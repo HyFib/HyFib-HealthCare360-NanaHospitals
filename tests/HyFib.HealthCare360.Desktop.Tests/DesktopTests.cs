@@ -165,6 +165,29 @@ public sealed class ServerTrustTests
     }
 
     [Fact]
+    public void Trusts_a_server_certificate_from_an_intermediate_the_server_sends()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var intermediate = CreateIntermediate(ca, "CN=Nana Hospitals LAN CA");
+        using var server = CreateServerCertificate(intermediate, "HC360-SRV", IPAddress.Parse("192.168.1.20"));
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+
+        trust.IsTrusted(server, "HC360-SRV", [intermediate]).ShouldBeTrue();
+        trust.IsTrusted(server, "HC360-SRV").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Rejects_a_certificate_that_is_not_for_a_tls_server()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        var clientAuthentication = "1.3.6.1.5.5.7.3.2";
+        using var server = CreateServerCertificate(ca, "HC360-SRV", IPAddress.Parse("192.168.1.20"), clientAuthentication);
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+
+        trust.IsTrusted(server, "HC360-SRV").ShouldBeFalse();
+    }
+
+    [Fact]
     public void Formats_fingerprints_in_groups_of_four() =>
         ServerTrust.Format("AB12CD34EF56").ShouldBe("AB12 CD34 EF56");
 
@@ -178,7 +201,21 @@ public sealed class ServerTrustTests
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(5));
     }
 
-    private static X509Certificate2 CreateServerCertificate(X509Certificate2 ca, string host, IPAddress address)
+    private static X509Certificate2 CreateIntermediate(X509Certificate2 ca, string subject)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true));
+        var serial = RandomNumberGenerator.GetBytes(12);
+        var notAfter = DateTimeOffset.UtcNow.AddYears(2);
+        using var issued = request.Create(ca, DateTimeOffset.UtcNow.AddHours(-1), notAfter, serial);
+        return issued.CopyWithPrivateKey(key);
+    }
+
+    private static X509Certificate2 CreateServerCertificate(
+        X509Certificate2 ca, string host, IPAddress address, string usage = "1.3.6.1.5.5.7.3.1")
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256);
@@ -187,7 +224,7 @@ public sealed class ServerTrustTests
         names.AddIpAddress(address);
         request.CertificateExtensions.Add(names.Build());
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
-        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid("1.3.6.1.5.5.7.3.1")], false));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid(usage)], false));
         var serial = RandomNumberGenerator.GetBytes(12);
         using var issued = request.Create(ca, DateTimeOffset.UtcNow.AddHours(-1), DateTimeOffset.UtcNow.AddYears(1), serial);
         return issued.CopyWithPrivateKey(key);

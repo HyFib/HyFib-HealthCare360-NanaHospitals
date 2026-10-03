@@ -167,16 +167,24 @@ internal sealed class IntegrationTestService(
 
     private IntegrationTestResult Lab()
     {
-        var listeners = lab.Snapshot();
-        if (listeners.Count == 0)
+        var analysers = lab.Snapshot();
+        if (analysers.Count == 0)
         {
-            return new IntegrationTestResult(false, "No analyser listener is running. Enable the gateway and add instruments in integrations.lab.instruments.");
+            return new IntegrationTestResult(false,
+                "No analyser is set up. Turn on the laboratory gateway, then set up each analyser's connection in Lab setup › Analysers.");
         }
 
-        var failed = listeners.Where(l => l.State == "failed").ToList();
-        return failed.Count == 0
-            ? new IntegrationTestResult(true, $"{listeners.Count} analyser listener(s) running.")
-            : new IntegrationTestResult(false, "Listeners failed: " + string.Join("; ", failed.Select(f => $"{f.InstrumentCode} ({f.LastError})")));
+        var listening = analysers.Count(a => a.Transport == "tcp" && a.State == "listening");
+        var relayed = analysers.Count(a => a.Transport == "serial" && a.State == "connected");
+        var problems = analysers.Where(a => a.State is "failed" or "port_error" or "waiting").Select(Problem).ToList();
+        var summary = $"{listening} network analyser(s) listening, {relayed} serial analyser(s) connected through their lab agent.";
+        return problems.Count == 0
+            ? new IntegrationTestResult(true, summary)
+            : new IntegrationTestResult(false, $"{summary} Not working: {string.Join("; ", problems)}");
+
+        static string Problem(LabListenerStatus analyser) => analyser.State == "waiting"
+            ? $"{analyser.InstrumentCode} (waiting for its lab agent {analyser.Agent})".Replace(" )", ")", StringComparison.Ordinal)
+            : $"{analyser.InstrumentCode} ({analyser.LastError})";
     }
 
     private IntegrationTestResult Labels()

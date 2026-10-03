@@ -43,7 +43,10 @@ export function isIntegrationName(value: unknown): value is IntegrationName {
 
 export type IntegrationHealth = 'healthy' | 'degraded' | 'failing' | 'idle' | 'disabled' | 'not_configured';
 
-/** LabListenerStatus: one analyser TCP listener. `state` is starting, listening or failed. */
+/**
+ * LabListenerStatus: one analyser connection. A network analyser (`transport` tcp) is starting, listening or failed; a
+ * serial analyser (serial) is waiting for its lab agent, connected, or has a port_error.
+ */
 export interface LabListenerStatus {
   instrumentCode: string;
   protocol: string;
@@ -55,6 +58,10 @@ export interface LabListenerStatus {
   lastMessageAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
+  transport: 'tcp' | 'serial';
+  agent: string | null;
+  serialPort: string | null;
+  connectedSince: string | null;
 }
 
 /** IntegrationStatusDto: one dashboard row. */
@@ -316,7 +323,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   dicomweb: 'DICOMweb',
   who: 'WHO ICD-API',
   disabled: 'Off',
-  tcp: 'Analyser listeners',
+  tcp: 'Network and serial analysers',
   'zpl/tspl': 'ZPL / TSPL printers',
 };
 
@@ -428,7 +435,7 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   pos: 'Checks the POS settings. Real terminals are not prompted, so no customer sees a charge; the simulator runs a ₹1 practice sale.',
   tally: 'Asks Tally whether it is running and the company is open. Nothing is posted.',
   pacs: 'Runs a study search against the PACS. Nothing is changed.',
-  lab: 'Checks that the analyser listeners are running.',
+  lab: 'Checks that each network analyser’s port is open and each serial analyser’s lab agent is connected.',
   labels: 'Builds a sample label. Print it from a workstation to check the printer.',
   icd: 'Searches the WHO ICD-API for a sample term.',
 };

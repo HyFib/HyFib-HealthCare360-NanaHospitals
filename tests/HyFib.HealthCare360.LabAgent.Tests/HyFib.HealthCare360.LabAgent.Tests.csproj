@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\agent\HyFib.HealthCare360.LabAgent\HyFib.HealthCare360.LabAgent.csproj" />
+    <!-- The server's relay stream and ASTM session, so a relayed analyser is tested end to end. -->
+    <ProjectReference Include="..\..\src\server\HyFib.HealthCare360.Integrations\HyFib.HealthCare360.Integrations.csproj" />
+  </ItemGroup>
+</Project>

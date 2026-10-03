@@ -87,6 +87,7 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<DiagnosticsRealtime>();
         services.AddScoped<ChargeService>();
         services.AddScoped<LabWorkflow>();
+        services.AddScoped<AnalyserOrders>();
         services.AddScoped<ResultEvaluator>();
         services.AddScoped<CriticalValueNotifier>();
         services.AddScoped<ReportDelivery>();

@@ -165,6 +165,23 @@ public sealed class HospitalServer : IAsyncLifetime
         return RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie.");
     }
 
+    /// <summary>
+    /// A new sign-in of a seeded staff account presenting an enrolled device's credential, as HC360 Desktop does: a
+    /// client for the new session. It comes from the test's own address, so the test has a rate-limit budget of its
+    /// own.
+    /// </summary>
+    public async Task<ApiClient> SignInFromDeviceAsync(string userName, Guid deviceId, string deviceSecret)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var http = CreateHttpClient(ownAddress: true);
+        using var response = await http.PostAsJsonAsync("/api/v1/auth/login",
+            new LoginRequest(userName, _password, DeviceId: deviceId, DeviceSecret: deviceSecret), ApiClient.Json, ct);
+        var result = await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        var token = FullAccess(userName, result);
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return new ApiClient(http);
+    }
+
     /// <summary>A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it.</summary>
     public async Task<HttpResponseMessage> RefreshAsync(string refreshCookie)
     {

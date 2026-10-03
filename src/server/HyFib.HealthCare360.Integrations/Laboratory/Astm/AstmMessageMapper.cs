@@ -1,4 +1,5 @@
 using System.Globalization;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory.Astm;
 
@@ -101,37 +102,79 @@ internal static class AstmMessageMapper
     /// Host-query answer: header, one patient + order record per sample (O.5 lists <c>^^^code</c> tests, O.26 = Q
     /// "response to query"), and a terminator with code F (query processed) or I (no information available).
     /// </summary>
-    public static IReadOnlyList<string> BuildOrderResponse(IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow)
+    public static IReadOnlyList<string> BuildOrderResponse(IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone)
     {
-        var d = delimiters;
-        var records = new List<string>
-        {
-            AstmRecords.Build(d, "H", d.Definition, null, null, $"HC360{d.Component}1.0", null, null, null, null, null, null, "P", "1",
-                localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)),
-        };
-
+        var records = new List<string> { Header(delimiters, localNow) };
         var sequence = 0;
         foreach (var order in orders.Where(o => o.ChannelCodes.Count > 0))
         {
             sequence++;
-            var number = sequence.ToString(CultureInfo.InvariantCulture);
-            records.Add(AstmRecords.Build(d, "P", number, null, null, null, d.EscapeText(order.PatientName), null,
-                order.DateOfBirth?.ToString("yyyyMMdd", CultureInfo.InvariantCulture), Sex(order.Gender)));
-
-            var tests = string.Join(d.Repeat, order.ChannelCodes.Select(code => $"{d.Component}{d.Component}{d.Component}{d.EscapeText(code)}"));
-            var fields = new string?[26];
-            fields[0] = "O";
-            fields[1] = "1";
-            fields[2] = d.EscapeText(order.SampleBarcode);
-            fields[4] = tests;
-            fields[5] = "R";
-            fields[11] = "N";
-            fields[25] = "Q";
-            records.Add(AstmRecords.Build(d, fields));
+            records.Add(PatientRecord(delimiters, sequence, order));
+            records.Add(OrderRecord(delimiters, order, actionCode: "N", reportType: "Q", zone));
         }
 
-        records.Add(AstmRecords.Build(d, "L", "1", sequence == 0 ? "I" : "F"));
+        records.Add(AstmRecords.Build(delimiters, "L", "1", sequence == 0 ? "I" : "F"));
         return records;
+    }
+
+    /// <summary>
+    /// Orders sent unasked (order download): header, then a patient + order record per sample. O.12 is the action:
+    /// N for a sample that reached the lab, A to add (rerun) tests, C to cancel them; O.26 = O (order).
+    /// </summary>
+    public static IReadOnlyList<string> BuildOrderDownload(IReadOnlyList<LabDownload> downloads, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone)
+    {
+        var records = new List<string> { Header(delimiters, localNow) };
+        var sequence = 0;
+        foreach (var download in downloads.Where(d => d.Order.ChannelCodes.Count > 0))
+        {
+            sequence++;
+            records.Add(PatientRecord(delimiters, sequence, download.Order));
+            records.Add(OrderRecord(delimiters, download.Order, ActionCode(download.Action), reportType: "O", zone));
+        }
+
+        records.Add(AstmRecords.Build(delimiters, "L", "1", "N"));
+        return records;
+    }
+
+    internal static string ActionCode(InstrumentOrderAction action) => action switch
+    {
+        InstrumentOrderAction.Cancel => "C",
+        InstrumentOrderAction.Rerun => "A",
+        _ => "N",
+    };
+
+    /// <summary>O.6 priority: S (stat), A (as soon as possible) or R (routine).</summary>
+    internal static string Priority(OrderPriority priority) => priority switch
+    {
+        OrderPriority.Stat => "S",
+        OrderPriority.Urgent => "A",
+        _ => "R",
+    };
+
+    private static string Header(AstmDelimiters d, DateTimeOffset localNow) =>
+        AstmRecords.Build(d, "H", d.Definition, null, null, $"HC360{d.Component}1.0", null, null, null, null, null, null, "P", "1",
+            localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
+
+    /// <summary>P.3 hospital patient id (UHID), P.6 name, P.8 date of birth, P.9 sex.</summary>
+    private static string PatientRecord(AstmDelimiters d, int sequence, InstrumentOrder order) =>
+        AstmRecords.Build(d, "P", sequence.ToString(CultureInfo.InvariantCulture), order.PatientId is { Length: > 0 } uhid ? d.EscapeText(uhid) : null,
+            null, null, d.EscapeText(order.PatientName), null, order.DateOfBirth?.ToString("yyyyMMdd", CultureInfo.InvariantCulture), Sex(order.Gender));
+
+    /// <summary>O.3 sample id, O.5 tests, O.6 priority, O.8 collected at, O.12 action, O.16 specimen, O.26 report type.</summary>
+    private static string OrderRecord(AstmDelimiters d, InstrumentOrder order, string actionCode, string reportType, TimeZoneInfo zone)
+    {
+        var tests = string.Join(d.Repeat, order.ChannelCodes.Select(code => $"{d.Component}{d.Component}{d.Component}{d.EscapeText(code)}"));
+        var fields = new string?[26];
+        fields[0] = "O";
+        fields[1] = "1";
+        fields[2] = d.EscapeText(order.SampleBarcode);
+        fields[4] = tests;
+        fields[5] = Priority(order.Priority);
+        fields[7] = order.CollectedAt is { } collected ? TimeZoneInfo.ConvertTime(collected, zone).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) : null;
+        fields[11] = actionCode;
+        fields[15] = order.SpecimenType is { Length: > 0 } specimen ? d.EscapeText(specimen) : null;
+        fields[25] = reportType;
+        return AstmRecords.Build(d, fields);
     }
 
     private static string Sex(string? gender) => gender?.Trim().ToUpperInvariant() switch

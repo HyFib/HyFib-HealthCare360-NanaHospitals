@@ -1,6 +1,8 @@
 using HyFib.HealthCare360.Integrations.Features.Admin;
+using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Features.Webhooks;
+using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 
 namespace HyFib.HealthCare360.Integrations;
 
@@ -9,10 +11,18 @@ public static class IntegrationsPermissions
     /// <summary>Build raw ZPL/TSPL for UHID cards, wristbands, sample, pharmacy and asset labels (INT-BAR).</summary>
     public const string LabelsPrint = "integrations.labels.print";
 
+    /// <summary>Set up how analysers connect: network ports and allowed addresses, or serial ports through a lab agent (INT-LAB).</summary>
+    public const string LabConnectionsManage = "integrations.lab.connections";
+
+    /// <summary>See whether analysers and their lab agents are connected, and orders waiting for them.</summary>
+    public const string LabStatusRead = "integrations.lab.status";
+
     // Integration administration itself uses the platform's admin.integrations.manage permission.
     internal static IEnumerable<PermissionDefinition> All { get; } =
     [
         new(LabelsPrint, "Integrations", "Print barcode/QR labels (UHID cards, wristbands, sample, pharmacy and asset tags)", PlatformPermissions.AllStaff),
+        new(LabConnectionsManage, "Integrations", "Set up analyser connections: network ports, allowed addresses, serial ports and lab agents", [SystemRoles.HospitalAdmin]),
+        new(LabStatusRead, "Integrations", "See whether lab analysers and their agents are connected", [SystemRoles.LabTechnician, SystemRoles.Pathologist, SystemRoles.HospitalAdmin]),
     ];
 }
 
@@ -35,5 +45,7 @@ public sealed class IntegrationsModule : IModule
         LabelEndpoints.Map(endpoints);
         SmsWebhookEndpoints.Map(endpoints);
         WhatsAppWebhookEndpoints.Map(endpoints);
+        LabConnectionEndpoints.Map(endpoints);
+        LabAgentEndpoints.Map(endpoints);
     }
 }

@@ -3,7 +3,6 @@ import {
   AI_SETTINGS,
   buildSecretChanges,
   buildSettingChanges,
-  checkInstruments,
   checkTerminals,
   defaultScope,
   fieldId,
@@ -145,9 +144,15 @@ describe('form → settings to save', () => {
   });
 
   it('keeps a stored value it cannot parse instead of dropping it', () => {
-    const stored = { 'integrations.lab.instruments': [{ code: 'XN550', port: 5100 }] };
-    const values = { ...toFormValues(lab, stored), [id('integrations.lab.instruments')]: '[ broken' };
-    expect(buildSettingChanges(lab, values, stored)).toEqual([]);
+    const pos = INTEGRATION_SETTINGS.pos as SettingsSpec;
+    const stored = { 'integrations.pos': { enabled: true, provider: 'simulator', terminals: [{ id: 'OPD-1' }] } };
+    const values = { ...toFormValues(pos, stored), [id('integrations.pos', 'terminals')]: '[ broken' };
+    expect(buildSettingChanges(pos, values, stored)).toEqual([]);
+  });
+
+  it('leaves analyser connections to Lab setup instead of a JSON list', () => {
+    expect(lab.fields.some((field) => field.key === 'integrations.lab.instruments')).toBe(false);
+    expect(lab.intro).toContain('Lab setup');
   });
 });
 
@@ -179,14 +184,12 @@ describe('checks', () => {
       error: expect.stringContaining('name = value'),
     });
 
-    const instruments = lab.fields.find((field) => field.key === 'integrations.lab.instruments')!;
-    expect(parseFieldValue(instruments, '{"code":"A"}')).toMatchObject({
+    const terminals = INTEGRATION_SETTINGS.pos!.fields.find((field) => field.path === 'terminals')!;
+    expect(parseFieldValue(terminals, '{"id":"OPD-1"}')).toMatchObject({
       ok: false,
       error: expect.stringContaining('square brackets'),
     });
-    expect(parseFieldValue(instruments, '[{"code":"XN550","protocol":"Hl7v2","port":5100}]')).toMatchObject({
-      ok: true,
-    });
+    expect(parseFieldValue(terminals, '[{"id":"OPD-1","name":"OPD counter"}]')).toMatchObject({ ok: true });
   });
 
   it('keeps the space in an API key prefix', () => {
@@ -194,24 +197,10 @@ describe('checks', () => {
     expect(parseFieldValue(prefix, 'Bearer ')).toEqual({ ok: true, value: 'Bearer ' });
   });
 
-  it('checks POS terminals and analysers', () => {
+  it('checks POS terminals', () => {
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'IPD_2', name: 'IP counter' }])).toBeNull();
     expect(checkTerminals([{ id: 'OPD 1' }])).toContain('Terminal 1');
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'OPD-1' }])).toContain('Two terminals');
-    expect(
-      checkInstruments([
-        { code: 'XN550', protocol: 'Hl7v2', port: 5100 },
-        { code: 'C311', protocol: 'astm', port: 5101 },
-      ]),
-    ).toBeNull();
-    expect(checkInstruments([{ code: 'XN550', port: 0 }])).toContain('port');
-    expect(checkInstruments([{ code: 'XN550', port: 5100, protocol: 'FTP' }])).toContain('Hl7v2 or Astm');
-    expect(
-      checkInstruments([
-        { code: 'A', port: 5100 },
-        { code: 'B', port: 5100 },
-      ]),
-    ).toContain('port 5100');
   });
 
   it('checks only the fields on screen, and needs a provider when switched on', () => {

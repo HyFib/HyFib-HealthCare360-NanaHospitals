@@ -112,6 +112,100 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("whatsapp_inbound_messages", "integrations");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.LabOrderDownload", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("action");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.PrimitiveCollection<List<string>>("ChannelCodes")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("channel_codes");
+
+                    b.Property<Guid?>("ClaimedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claimed_by");
+
+                    b.Property<DateTimeOffset?>("ClaimedUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_until");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("InstrumentCode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("instrument_code");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("SampleBarcode")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sample_barcode");
+
+                    b.Property<Guid>("SourceMessageId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_message_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id")
+                        .HasName("pk_lab_order_downloads");
+
+                    b.HasIndex("CreatedAt")
+                        .HasDatabaseName("ix_lab_order_downloads_created_at");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_lab_order_downloads_facility_id");
+
+                    b.HasIndex("InstrumentCode", "SampleBarcode")
+                        .HasDatabaseName("ix_lab_order_downloads_instrument_code_sample_barcode");
+
+                    b.HasIndex("SourceMessageId", "InstrumentCode")
+                        .IsUnique()
+                        .HasDatabaseName("ix_lab_order_downloads_source_message_id_instrument_code");
+
+                    b.HasIndex("InstrumentCode", "Status", "NextAttemptAt")
+                        .HasDatabaseName("ix_lab_order_downloads_instrument_code_status_next_attempt_at");
+
+                    b.ToTable("lab_order_downloads", "integrations");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Integrations.Domain.SimulatorMessage", b =>
                 {
                     b.Property<Guid>("Id")
