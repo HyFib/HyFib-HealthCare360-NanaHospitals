@@ -70,6 +70,8 @@ export interface GatewaySettlementDto {
   difference: number;
   lines: number;
   unmatched: number;
+  /** Held by another facility on the same merchant account: the amounts and counts are this facility's own only. */
+  isShare: boolean;
 }
 
 export interface SettlementDayDto {

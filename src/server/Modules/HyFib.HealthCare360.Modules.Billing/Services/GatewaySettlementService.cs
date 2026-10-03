@@ -94,6 +94,12 @@ public sealed class GatewaySettlementService(
             added.Add(settlement);
         }
 
+        // Settlements stored earlier whose exceptions were never raised (the run stopped, or clashed with another) or
+        // that still do not match: what does not match is matched again (a receipt may have been recorded since), and
+        // their exceptions are raised again, so none is lost.
+        var unfinished = await UnfinishedAsync(stored.Values.Select(s => s.Id).ToList(), ct);
+        var (rematched, moved) = await RematchAsync(unfinished, ct);
+
         try
         {
             await db.SaveChangesAsync(ct);
@@ -106,22 +112,72 @@ public sealed class GatewaySettlementService(
             return new SettlementFetchResult(day, report.Settlements.Count, 0, 0, "Another fetch stored these settlements a moment ago. Refresh to see them.");
         }
 
-        var opened = await RaiseExceptionsAsync(added, ct);
+        var opened = await RaiseExceptionsAsync([.. added, .. unfinished], rematched, ct);
         if (nowProcessed.Count > 0 || added.Count > 0)
         {
             await QueueJournalsAsync(added.Concat(nowProcessed).Where(s => s.Status == PaymentSettlementStatus.Processed), ct);
         }
 
-        if (opened > 0)
+        await RepostAsync(moved, ct);
+        foreach (var (facility, count) in opened)
         {
+            // Each facility hears about its own exceptions (a shared merchant account's settlement holds several).
             await notifications.NotifyPermissionHoldersAsync(
-                BillingPermissions.GatewayReconcile, facilityId, "Online payments need attention",
-                $"{opened} transaction{(opened == 1 ? string.Empty : "s")} in the gateway's settlements of {day:dd MMM yyyy} did not match HC360's records.",
+                BillingPermissions.GatewayReconcile, facility, "Online payments need attention",
+                $"{count} transaction{(count == 1 ? string.Empty : "s")} in the gateway's settlements of "
+                + $"{day:dd MMM yyyy} did not match HC360's records.",
                 "/billing/reconciliation", "billing", "warning", ct);
         }
 
-        return new SettlementFetchResult(day, report.Settlements.Count, added.Count, nowProcessed.Count, Describe(report.Settlements.Count, added.Count, opened));
+        return new SettlementFetchResult(
+            day, report.Settlements.Count, added.Count, nowProcessed.Count,
+            Describe(report.Settlements.Count, added.Count, opened.Values.Sum()));
     }
+
+    /// <summary>Of these settlements, those whose exceptions were never raised or that still do not match.</summary>
+    private async Task<List<GatewaySettlement>> UnfinishedAsync(IReadOnlyList<Guid> ids, CancellationToken ct) =>
+        ids.Count == 0
+            ? []
+            : await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Include(s => s.Lines)
+                .Where(s => ids.Contains(s.Id)
+                            && (!s.ExceptionsRaised
+                                || s.Lines.Any(l => l.Match != SettlementMatch.Matched)
+                                || s.Amount != s.PaymentsAmount - s.RefundsAmount + s.AdjustmentsAmount - s.Fees))
+                .ToListAsync(ct);
+
+    /// <summary>
+    /// Matches the lines that do not match yet again. Returns the settlements where a line changed, and the day books
+    /// to post again where a processed settlement's line moved to another facility.
+    /// </summary>
+    private async Task<(HashSet<Guid> Changed, List<(Guid FacilityId, DateOnly Date)> Moved)> RematchAsync(
+        IReadOnlyCollection<GatewaySettlement> settlements, CancellationToken ct)
+    {
+        var open = settlements
+            .SelectMany(s => s.Lines.Where(l => l.Match != SettlementMatch.Matched)
+                .Select(l => (Settlement: s, Line: l)))
+            .ToList();
+        if (open.Count == 0)
+        {
+            return ([], []);
+        }
+
+        static (SettlementMatch, Guid, Guid?, Guid?) Outcome(GatewaySettlementLine l) =>
+            (l.Match, l.FacilityId, l.ReceiptId, l.RefundId);
+        var before = open.ToDictionary(o => o.Line.Id, o => Outcome(o.Line));
+        await MatchAsync(open.Select(o => o.Line).ToList(), ct);
+        var changed = open.Where(o => before[o.Line.Id] != Outcome(o.Line)).ToList();
+        return (
+            changed.Select(o => o.Settlement.Id).ToHashSet(),
+            changed.Where(o => o.Settlement.Status == PaymentSettlementStatus.Processed)
+                .SelectMany(o => Moved(before[o.Line.Id].Item2, o.Line.FacilityId, o.Settlement.SettledOn))
+                .Distinct()
+                .ToList());
+    }
+
+    /// <summary>Both day books of a settlement day when a line moved from one facility to another.</summary>
+    private static (Guid FacilityId, DateOnly Date)[] Moved(Guid from, Guid to, DateOnly day) =>
+        from == to ? [] : [(from, day), (to, day)];
 
     /// <summary>
     /// Matches settled transactions to HC360 by gateway id: a payment to the receipt that recorded it, a refund to the
@@ -168,17 +224,49 @@ public sealed class GatewaySettlementService(
     }
 
     /// <summary>
-    /// A receipt was just recorded for an online payment: any settled transaction carrying its id matches it now.
-    /// Staged in the caller's unit of work.
+    /// A receipt was just recorded for an online payment: any settled transaction carrying its id matches it now, and
+    /// its exceptions follow (cleared when the amounts agree, an amount difference when they do not). Staged in the
+    /// caller's unit of work. Returns the day books to post again once that is saved (<see cref="RepostAsync"/>): a
+    /// processed settlement's journal moves to the receipt's facility when the transaction had been kept under another.
     /// </summary>
-    internal async Task RematchPaymentAsync(string paymentId, CancellationToken ct)
+    internal async Task<IReadOnlyList<(Guid FacilityId, DateOnly Date)>> RematchPaymentAsync(
+        string paymentId, CancellationToken ct)
     {
         var lines = await db.Set<GatewaySettlementLine>()
-            .Where(l => l.EntityId == paymentId && l.Type == PaymentTransactionType.Payment && l.Match != SettlementMatch.Matched)
+            .Where(l => l.EntityId == paymentId && l.Type == PaymentTransactionType.Payment)
+            .Where(l => l.Match != SettlementMatch.Matched)
             .ToListAsync(ct);
-        if (lines.Count > 0)
+        if (lines.Count == 0)
         {
-            await MatchAsync(lines, ct);
+            return [];
+        }
+
+        var before = lines.ToDictionary(l => l.Id, l => l.FacilityId);
+        await MatchAsync(lines, ct);
+        var settlementIds = lines.Select(l => l.GatewaySettlementId).Distinct().ToList();
+        var settlements = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .AsNoTracking()
+            .Where(s => settlementIds.Contains(s.Id))
+            .ToDictionaryAsync(s => s.Id, ct);
+        var targets = await TargetsForAsync(lines, ct);
+        foreach (var line in lines)
+        {
+            await RaiseForLineAsync(settlements[line.GatewaySettlementId], line, targets, new HashSet<string>(), ct);
+        }
+
+        return lines
+            .Where(l => settlements[l.GatewaySettlementId].Status == PaymentSettlementStatus.Processed)
+            .SelectMany(l => Moved(before[l.Id], l.FacilityId, settlements[l.GatewaySettlementId].SettledOn))
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>Puts day books that may already be in Tally back in its queue.</summary>
+    internal async Task RepostAsync(IEnumerable<(Guid FacilityId, DateOnly Date)> days, CancellationToken ct)
+    {
+        foreach (var (facility, date) in days.Distinct())
+        {
+            await tally.RepostIfPostedAsync(facility, date, ct);
         }
     }
 
@@ -235,8 +323,8 @@ public sealed class GatewaySettlementService(
             opened += db.Entry(exception).State == EntityState.Added ? 1 : 0;
         }
 
-        await SaveExceptionsAsync(ct);
-        return opened;
+        // Saved together; after a clash with a concurrent run the next run raises them again.
+        return await SaveExceptionsAsync(ct) ? opened : 0;
     }
 
     /// <summary>
@@ -258,7 +346,10 @@ public sealed class GatewaySettlementService(
             .ToList();
     }
 
-    /// <summary>The settlements of a period by day, with totals, for the facility (its own and those holding its money).</summary>
+    /// <summary>
+    /// The settlements of a period by day, with totals, for the facility: its own in full, and of those another
+    /// facility holds (a shared merchant account) only its part, so its totals are its own money.
+    /// </summary>
     public async Task<IReadOnlyList<SettlementDayDto>> ListAsync(Guid facilityId, DateOnly from, DateOnly to, CancellationToken ct)
     {
         var rows = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
@@ -267,8 +358,16 @@ public sealed class GatewaySettlementService(
             .Select(s => new { Settlement = s, Lines = s.Lines.Count, Unmatched = s.Lines.Count(l => l.Match != SettlementMatch.Matched) })
             .Take(1000)
             .ToListAsync(ct);
+        var shared = rows.Where(r => r.Settlement.FacilityId != facilityId).Select(r => r.Settlement.Id).ToList();
+        var ownLines = shared.Count == 0
+            ? []
+            : await db.Set<GatewaySettlementLine>().AsNoTracking()
+                .Where(l => shared.Contains(l.GatewaySettlementId) && l.FacilityId == facilityId)
+                .ToListAsync(ct);
         return rows
-            .Select(r => ToDto(r.Settlement, r.Lines, r.Unmatched))
+            .Select(r => r.Settlement.FacilityId == facilityId
+                ? ToDto(r.Settlement, r.Lines, r.Unmatched)
+                : ShareDto(r.Settlement, ownLines.Where(l => l.GatewaySettlementId == r.Settlement.Id).ToList()))
             .GroupBy(s => s.SettledOn)
             .OrderByDescending(g => g.Key)
             .Select(g => new SettlementDayDto(
@@ -285,7 +384,10 @@ public sealed class GatewaySettlementService(
             .ToList();
     }
 
-    /// <summary>A settlement and its transactions. Another facility sharing the account sees only the transactions that are its own.</summary>
+    /// <summary>
+    /// A settlement and its transactions. Another facility sharing the account sees only its own transactions, and
+    /// their totals.
+    /// </summary>
     public async Task<GatewaySettlementDetail?> GetAsync(Guid facilityId, Guid id, CancellationToken ct)
     {
         var settlement = await db.Set<GatewaySettlement>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
@@ -296,8 +398,9 @@ public sealed class GatewaySettlementService(
             return null;
         }
 
+        var owner = settlement.FacilityId == facilityId;
         var lines = settlement.Lines
-            .Where(l => settlement.FacilityId == facilityId || l.FacilityId == facilityId)
+            .Where(l => owner || l.FacilityId == facilityId)
             .OrderBy(l => l.Match == SettlementMatch.Matched)
             .ThenBy(l => l.TransactionAt)
             .ToList();
@@ -309,7 +412,10 @@ public sealed class GatewaySettlementService(
             .Where(r => refundIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.RefundNumber, ct);
 
         return new GatewaySettlementDetail(
-            ToDto(settlement, settlement.Lines.Count, settlement.Lines.Count(l => l.Match != SettlementMatch.Matched)),
+            owner
+                ? ToDto(
+                    settlement, settlement.Lines.Count, settlement.Lines.Count(l => l.Match != SettlementMatch.Matched))
+                : ShareDto(settlement, lines),
             lines.Select(l => new SettlementLineDto(
                     l.Id, l.Type, l.EntityId, l.PaymentId, l.OrderId, l.Method, l.TransactionAt, l.Amount, l.Fee, l.Tax, l.Net, l.Match, l.RecordedAmount,
                     l.ReceiptId, l.ReceiptId is { } receipt ? receipts.GetValueOrDefault(receipt) : null,
@@ -319,27 +425,108 @@ public sealed class GatewaySettlementService(
 
     internal static GatewaySettlementDto ToDto(GatewaySettlement s, int lines, int unmatched) => new(
         s.Id, s.Provider, s.SettlementId, s.Utr, s.Status, s.SettledAt, s.SettledOn, s.PaymentsAmount, s.RefundsAmount, s.AdjustmentsAmount,
-        s.Fees - s.Tax, s.Tax, s.Amount, s.Difference, lines, unmatched);
+        s.Fees - s.Tax, s.Tax, s.Amount, s.Difference, lines, unmatched, false);
 
-    /// <summary>Opens an exception for every transaction that does not match, and clears the ones a match settles. Saves.</summary>
-    internal async Task<int> RaiseExceptionsAsync(IReadOnlyCollection<GatewaySettlement> settlements, CancellationToken ct)
+    /// <summary>
+    /// A facility's part of a settlement another facility holds: the totals of its own transactions only, as in its
+    /// settlement journal (<see cref="SettlementJournal.Portions"/>). A difference stays with the facility holding it.
+    /// </summary>
+    internal static GatewaySettlementDto ShareDto(
+        GatewaySettlement s, IReadOnlyCollection<GatewaySettlementLine> own)
+    {
+        var adjustments = own
+            .Where(l => l.Type is not (PaymentTransactionType.Payment or PaymentTransactionType.Refund));
+        return new(
+            s.Id, s.Provider, s.SettlementId, s.Utr, s.Status, s.SettledAt, s.SettledOn,
+            own.Where(l => l.Type == PaymentTransactionType.Payment).Sum(l => l.Gross),
+            -own.Where(l => l.Type == PaymentTransactionType.Refund).Sum(l => l.Gross),
+            adjustments.Sum(l => l.Gross),
+            own.Sum(l => l.Fee - l.Tax),
+            own.Sum(l => l.Tax),
+            own.Sum(l => l.Net),
+            0m,
+            own.Count,
+            own.Count(l => l.Match != SettlementMatch.Matched),
+            true);
+    }
+
+    /// <summary>
+    /// Opens an exception for every transaction that does not match, and clears the ones a match settles: every line of
+    /// a settlement whose exceptions were never raised (or of one in <paramref name="rematched"/>), else only the lines
+    /// that still do not match. Saves; a clash with a concurrent run (a webhook raising the same exception) is retried
+    /// with the exceptions read again, and only once the exceptions are saved is the settlement marked as raised, so a
+    /// run that fails is made up by the next fetch. Returns the exceptions opened, by facility.
+    /// </summary>
+    internal async Task<IReadOnlyDictionary<Guid, int>> RaiseExceptionsAsync(
+        IReadOnlyCollection<GatewaySettlement> settlements, IReadOnlySet<Guid>? rematched, CancellationToken ct)
     {
         if (settlements.Count == 0)
         {
-            return 0;
+            return new Dictionary<Guid, int>();
         }
 
-        var lines = settlements.SelectMany(s => s.Lines).ToList();
-        var targets = await FindTargetsAsync(
-            lines.Select(l => l.Type == PaymentTransactionType.Payment ? l.EntityId : l.PaymentId).OfType<string>().Distinct().ToList(),
-            lines.Where(l => l.OrderId is not null).Select(l => l.OrderId!).Distinct().ToList(),
-            ct);
-        var opened = 0;
-        foreach (var settlement in settlements)
+        for (var attempt = 1; ; attempt++)
         {
-            foreach (var line in settlement.Lines)
+            var opened = await StageExceptionsAsync(settlements, rematched, ct);
+            if (await SaveExceptionsAsync(ct))
             {
-                opened += await RaiseForLineAsync(settlement, line, targets, ct) ? 1 : 0;
+                foreach (var settlement in settlements.Where(s => !s.ExceptionsRaised))
+                {
+                    settlement.ExceptionsRaised = true;
+                }
+
+                await db.SaveChangesAsync(ct);
+                return opened.GroupBy(d => d.FacilityId).ToDictionary(g => g.Key, g => g.Count());
+            }
+
+            if (attempt == 3)
+            {
+                logger.LogWarning(
+                    "Gateway exceptions of {Count} settlements could not be saved; the next fetch raises them again",
+                    settlements.Count);
+                return new Dictionary<Guid, int>();
+            }
+        }
+    }
+
+    /// <summary>Stages the exceptions of <see cref="RaiseExceptionsAsync"/>; returns the ones it opened.</summary>
+    private async Task<List<GatewayDiscrepancy>> StageExceptionsAsync(
+        IReadOnlyCollection<GatewaySettlement> settlements, IReadOnlySet<Guid>? rematched, CancellationToken ct)
+    {
+        var work = settlements
+            .Select(s => (Settlement: s, Lines: !s.ExceptionsRaised || rematched?.Contains(s.Id) == true
+                ? s.Lines.ToList()
+                : s.Lines.Where(l => l.Match != SettlementMatch.Matched).ToList()))
+            .ToList();
+        var lines = work.SelectMany(w => w.Lines).ToList();
+        var targets = await TargetsForAsync(lines, ct);
+
+        // A refund the gateway failed matches its settled line all the same; its exception (the patient has not got the
+        // money back) is the refund follow-up's to clear, never the match's.
+        var refundIds = lines
+            .Where(l => l is { Type: PaymentTransactionType.Refund, Match: SettlementMatch.Matched })
+            .Select(l => l.EntityId)
+            .Distinct()
+            .ToList();
+        var failedRefunds = refundIds.Count == 0
+            ? []
+            : (await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .Where(r => r.GatewayRefundId != null && refundIds.Contains(r.GatewayRefundId))
+                .Where(r => r.GatewayStatus == PaymentRefundStatus.Failed)
+                .Select(r => r.GatewayRefundId!)
+                .ToListAsync(ct))
+            .ToHashSet();
+
+        var opened = new List<GatewayDiscrepancy>();
+        foreach (var (settlement, settlementLines) in work)
+        {
+            foreach (var line in settlementLines)
+            {
+                var exception = await RaiseForLineAsync(settlement, line, targets, failedRefunds, ct);
+                if (exception is not null && db.Entry(exception).State == EntityState.Added)
+                {
+                    opened.Add(exception);
+                }
             }
 
             if (settlement.Difference != 0)
@@ -354,15 +541,20 @@ public sealed class GatewaySettlementService(
                         d.GatewayAt = settlement.SettledAt;
                     },
                     ct);
-                opened += db.Entry(exception).State == EntityState.Added ? 1 : 0;
+                if (db.Entry(exception).State == EntityState.Added)
+                {
+                    opened.Add(exception);
+                }
             }
         }
 
-        await SaveExceptionsAsync(ct);
         return opened;
     }
 
-    private async Task<bool> RaiseForLineAsync(GatewaySettlement settlement, GatewaySettlementLine line, SettlementTargets targets, CancellationToken ct)
+    /// <summary>Raises or clears the exception of one line; returns the exception it raised.</summary>
+    private async Task<GatewayDiscrepancy?> RaiseForLineAsync(
+        GatewaySettlement settlement, GatewaySettlementLine line, SettlementTargets targets,
+        IReadOnlySet<string> failedRefunds, CancellationToken ct)
     {
         var target = targets.For(line);
         GatewayDiscrepancy? exception = null;
@@ -371,6 +563,8 @@ public sealed class GatewaySettlementService(
             case { Type: PaymentTransactionType.Payment, Match: SettlementMatch.Matched }:
                 await discrepancies.ClearAsync(DiscrepancyKind.UnsettledReceipt, line.EntityId, $"Settled in {settlement.SettlementId} on {settlement.SettledOn:dd MMM yyyy}.", ct);
                 await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, line.EntityId, "The receipt was recorded.", ct);
+                await discrepancies.ClearAsync(
+                    DiscrepancyKind.AmountMismatch, line.EntityId, "The receipt records the settled amount.", ct);
                 break;
 
             case { Type: PaymentTransactionType.Payment, Match: SettlementMatch.NoReceipt }:
@@ -408,7 +602,12 @@ public sealed class GatewaySettlementService(
                 break;
 
             case { Type: PaymentTransactionType.Refund, Match: SettlementMatch.Matched }:
-                await discrepancies.ClearAsync(DiscrepancyKind.RefundMismatch, line.EntityId, "The gateway's refund matches HC360's.", ct);
+                if (!failedRefunds.Contains(line.EntityId))
+                {
+                    await discrepancies.ClearAsync(
+                        DiscrepancyKind.RefundMismatch, line.EntityId, "The gateway's refund matches HC360's.", ct);
+                }
+
                 break;
 
             case { Type: PaymentTransactionType.Refund }:
@@ -446,35 +645,67 @@ public sealed class GatewaySettlementService(
                 break;
         }
 
-        return exception is not null && db.Entry(exception).State == EntityState.Added;
+        return exception;
     }
 
-    /// <summary>Exceptions are saved on their own: a clash with a concurrent run must not undo the settlement already stored.</summary>
-    private async Task SaveExceptionsAsync(CancellationToken ct)
+    /// <summary>
+    /// Exceptions are saved on their own: a clash with a concurrent run must not undo the settlement already stored.
+    /// After a clash the exceptions staged are let go (the others in the unit of work stay), to be read again.
+    /// </summary>
+    private async Task<bool> SaveExceptionsAsync(CancellationToken ct)
     {
         try
         {
             await db.SaveChangesAsync(ct);
+            return true;
         }
         catch (DbUpdateException ex)
         {
-            logger.LogInformation(ex, "Gateway exceptions were updated by a concurrent run; the next run sees them");
-            db.ChangeTracker.Clear();
+            logger.LogInformation(ex, "Gateway exceptions were changed by a concurrent run; they are read again");
+            var staged = db.ChangeTracker.Entries<GatewayDiscrepancy>()
+                .Where(e => e.State != EntityState.Unchanged)
+                .ToList();
+            foreach (var entry in staged)
+            {
+                entry.State = EntityState.Detached;
+            }
+
+            return false;
         }
     }
 
     /// <summary>Settlement journals for days that may already be in Tally go back in its queue (each facility its own part).</summary>
     private async Task QueueJournalsAsync(IEnumerable<GatewaySettlement> processed, CancellationToken ct)
     {
-        var days = processed
-            .SelectMany(s => s.Lines.Select(l => l.FacilityId).Append(s.FacilityId).Distinct().Select(f => (FacilityId: f, s.SettledOn)))
-            .Distinct()
+        var settlements = processed.ToList();
+        var ids = settlements.Select(s => s.Id).ToList();
+        var lineFacilities = ids.Count == 0
+            ? []
+            : await db.Set<GatewaySettlementLine>().AsNoTracking()
+                .Where(l => ids.Contains(l.GatewaySettlementId))
+                .Select(l => new { l.GatewaySettlementId, l.FacilityId })
+                .Distinct()
+                .ToListAsync(ct);
+        var days = settlements
+            .SelectMany(s => lineFacilities
+                .Where(l => l.GatewaySettlementId == s.Id)
+                .Select(l => l.FacilityId)
+                .Append(s.FacilityId)
+                .Select(f => (f, s.SettledOn)))
             .ToList();
-        foreach (var (facility, date) in days)
-        {
-            await tally.RepostIfPostedAsync(facility, date, ct);
-        }
+        await RepostAsync(days, ct);
     }
+
+    /// <summary>Where the money of these lines was meant to go (see <see cref="FindTargetsAsync"/>).</summary>
+    private Task<SettlementTargets> TargetsForAsync(
+        IReadOnlyCollection<GatewaySettlementLine> lines, CancellationToken ct) =>
+        FindTargetsAsync(
+            lines.Select(l => l.Type == PaymentTransactionType.Payment ? l.EntityId : l.PaymentId)
+                .OfType<string>()
+                .Distinct()
+                .ToList(),
+            lines.Where(l => l.OrderId is not null).Select(l => l.OrderId!).Distinct().ToList(),
+            ct);
 
     /// <summary>Where unmatched money was meant to go: the payment link or checkout, or the prepaid booking, that took it.</summary>
     private async Task<SettlementTargets> FindTargetsAsync(IReadOnlyList<string> paymentIds, IReadOnlyList<string> orderIds, CancellationToken ct)

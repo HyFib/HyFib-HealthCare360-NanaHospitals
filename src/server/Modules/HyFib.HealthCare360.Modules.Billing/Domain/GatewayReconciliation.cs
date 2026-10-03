@@ -67,6 +67,13 @@ public sealed class GatewaySettlement : Entity, IFacilityScoped
 
     public DateTimeOffset FetchedAt { get; set; }
     public DateTimeOffset? StatusChangedAt { get; set; }
+
+    /// <summary>
+    /// The exceptions of every line were raised and saved. Until then (a run that stopped or clashed with another) the
+    /// next fetch of the day raises them again; lines that still do not match are raised again on every fetch anyway.
+    /// </summary>
+    public bool ExceptionsRaised { get; set; }
+
     public List<GatewaySettlementLine> Lines { get; set; } = [];
 
     /// <summary>

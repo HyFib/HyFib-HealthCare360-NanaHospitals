@@ -180,6 +180,7 @@ function DaySettlements({
                 <Text weight="semibold">{s.settlementId}</Text>
                 <Caption1 className={styles.muted}>
                   {s.utr ? `UTR ${s.utr}` : 'No UTR yet'} · {formatDateTime(s.settledAt)}
+                  {s.isShare ? " · this facility's part of a shared settlement" : ''}
                 </Caption1>
               </span>
             ),
@@ -245,9 +246,17 @@ function SettlementDialog({ settlement, onClose }: { settlement: GatewaySettleme
           <DialogTitle>Settlement {settlement.settlementId}</DialogTitle>
           <DialogContent className={styles.dialogBody}>
             <Text>
-              <Amount value={settlement.amount} strong /> paid to the bank on {formatDateTime(settlement.settledAt)}
+              <Amount value={settlement.amount} strong />
+              {settlement.isShare ? " of this facility's payments" : ''} paid to the bank on{' '}
+              {formatDateTime(settlement.settledAt)}
               {settlement.utr ? `, UTR ${settlement.utr}` : ''}.
             </Text>
+            {settlement.isShare && (
+              <Caption1 className={styles.muted}>
+                The settlement is shared with another facility on the same merchant account. Only this facility&apos;s
+                transactions and totals are shown.
+              </Caption1>
+            )}
             {detail.isLoading ? (
               <LoadingState label="Loading the transactions…" />
             ) : detail.error ? (

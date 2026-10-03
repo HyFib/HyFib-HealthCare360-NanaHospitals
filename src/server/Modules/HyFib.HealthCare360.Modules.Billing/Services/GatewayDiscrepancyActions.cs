@@ -198,7 +198,7 @@ public sealed class GatewayDiscrepancyActions(
         var receipt = await ReceiptForAsync(paymentId, ct);
         discrepancy.ReceiptId = receipt?.Id ?? discrepancy.ReceiptId;
         discrepancy.HandledBy(currentUser.UserId, currentUser.DisplayName ?? currentUser.UserName, message, time.GetUtcNow());
-        await settlements.RematchPaymentAsync(paymentId, ct);
+        var settledDays = await settlements.RematchPaymentAsync(paymentId, ct);
         audit.Add(new AuditEntry(AuditCategories.Data, "billing.gateway.receipt_recorded", $"Online payment {paymentId}: {message}")
         {
             PatientId = receipt?.PatientId,
@@ -207,6 +207,7 @@ public sealed class GatewayDiscrepancyActions(
             Severity = AuditSeverity.Warning,
         });
         await db.SaveChangesAsync(ct);
+        await settlements.RepostAsync(settledDays, ct);
         return await ResultAsync(discrepancy.Id, message, ct);
     }
 
@@ -240,7 +241,7 @@ public sealed class GatewayDiscrepancyActions(
             return Error.NotFound(nameof(Refund), refundId);
         }
 
-        if (refund.GatewayStatus == PaymentRefundStatus.Failed)
+        if (refund.GatewayStatus == PaymentRefundStatus.Failed || refund.GatewayRetryStartedAt is not null)
         {
             var sent = await refundTracker.RetryAsync(refund, ct);
             return sent.IsFailure
@@ -273,9 +274,17 @@ public sealed class GatewayDiscrepancyActions(
         }
 
         var stored = settlement.Lines.First(l => l.Id == lineId);
+        var facilityBefore = stored.FacilityId;
         await settlements.MatchAsync([stored], ct);
         await db.SaveChangesAsync(ct);
-        await settlements.RaiseExceptionsAsync([settlement], ct);
+        await settlements.RaiseExceptionsAsync([settlement], new HashSet<Guid> { settlement.Id }, ct);
+        if (stored.FacilityId != facilityBefore && settlement.Status == PaymentSettlementStatus.Processed)
+        {
+            // The transaction's money moved to another facility: both day books carry the settlement journal anew.
+            await settlements.RepostAsync(
+                [(facilityBefore, settlement.SettledOn), (stored.FacilityId, settlement.SettledOn)], ct);
+        }
+
         var current = await db.Set<GatewayDiscrepancy>().AsNoTracking().FirstAsync(d => d.Id == discrepancy.Id, ct);
         var message = current.Status == DiscrepancyStatus.Resolved ? current.Resolution ?? "It matches now." : "It still does not match.";
         return await ResultAsync(discrepancy.Id, prefix is null ? message : $"{prefix} {message}", ct);

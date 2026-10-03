@@ -52,10 +52,11 @@ public sealed class PrepaymentChecker(
             DiscrepancyKind.UnrecordedPayment, paymentId, advance is null ? "The booking is paid." : $"Advance receipt {advance.ReceiptNumber} recorded.", ct);
         var isNew = recorded is not null && db.Entry(recorded).State == EntityState.Added;
         await db.SaveChangesAsync(ct);
+        IReadOnlyList<(Guid FacilityId, DateOnly Date)> settledDays = [];
         if (isNew)
         {
             // The receipt exists now, so a settled transaction for this payment matches it.
-            await settlements.RematchPaymentAsync(paymentId, ct);
+            settledDays = await settlements.RematchPaymentAsync(paymentId, ct);
             await db.SaveChangesAsync(ct);
         }
 
@@ -64,6 +65,7 @@ public sealed class PrepaymentChecker(
         {
             // The advance is dated when the patient paid, which may be a day already posted to Tally.
             await tally.RepostIfPostedAsync(appointment.FacilityId, BillingTime.LocalDate(paidAt), ct);
+            await settlements.RepostAsync(settledDays, ct);
         }
 
         return advance?.ReceiptNumber ?? string.Empty;

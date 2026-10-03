@@ -6,6 +6,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 /// <summary>A settlement in the list: the bank payout and what made it up.</summary>
 /// <param name="Difference">What reached the bank less what its transactions add up to (zero when consistent).</param>
 /// <param name="Unmatched">Transactions with no matching receipt or refund, or a different amount.</param>
+/// <param name="IsShare">
+/// The settlement is held by another facility on the same merchant account: the amounts and counts are this facility's
+/// own transactions only.
+/// </param>
 public sealed record GatewaySettlementDto(
     Guid Id,
     string Provider,
@@ -22,7 +26,8 @@ public sealed record GatewaySettlementDto(
     decimal Amount,
     decimal Difference,
     int Lines,
-    int Unmatched);
+    int Unmatched,
+    bool IsShare);
 
 /// <summary>One day of settlements with its totals.</summary>
 public sealed record SettlementDayDto(

@@ -400,6 +400,7 @@ public sealed class PaymentGatewayService(
         var capturedAt = paidAt is { } at && at < now ? at : now;
         Receipt? recorded = null;
         string? refused = null;
+        IReadOnlyList<(Guid FacilityId, DateOnly Date)> settledDays = [];
         await using (var transaction = await db.BeginOwnedTransactionAsync(ct))
         {
             try
@@ -420,7 +421,7 @@ public sealed class PaymentGatewayService(
                     await db.SaveChangesAsync(ct);
 
                     // The receipt exists now, so a transaction the gateway already settled for this payment matches it.
-                    await settlements.RematchPaymentAsync(paymentId, ct);
+                    settledDays = await settlements.RematchPaymentAsync(paymentId, ct);
                     await db.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
                 }
@@ -441,6 +442,7 @@ public sealed class PaymentGatewayService(
 
         await realtime.ToFacilityAsync(order.FacilityId, "billing.bill.changed", new { Id = order.BillId, order.PatientId }, ct);
         await tally.RepostIfPostedAsync(order.FacilityId, BillingTime.LocalDate(recorded!.ReceivedAt), ct);
+        await settlements.RepostAsync(settledDays, ct);
         return true;
     }
 
