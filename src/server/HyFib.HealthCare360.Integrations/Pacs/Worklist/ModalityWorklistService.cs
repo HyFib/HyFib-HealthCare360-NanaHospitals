@@ -14,6 +14,9 @@ namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
 /// <item>An association must call the server's AE title, from an allowed modality's AE title and one of its addresses;
 /// others are refused (called or calling AE title not recognised). The server's own test (its AE title, from this machine)
 /// may only echo.</item>
+/// <item>Every query is checked against the settings in force: a modality removed from the list or from that
+/// address meanwhile gets nothing and its connection is closed, and one moved to another facility reads that
+/// facility's worklist.</item>
 /// <item>Associations beyond the limit are refused as a temporary local limit, and a connection idle for the configured time
 /// is closed.</item>
 /// </list>
@@ -38,7 +41,7 @@ internal sealed class ModalityWorklistService : DicomService, IDicomServiceProvi
     private int _busy;
     private int _closed;
     private bool _counted;
-    private WorklistPeer? _peer;
+    private string? _callingAe;
 
     public ModalityWorklistService(
         INetworkStream stream, Encoding fallbackEncoding, ILogger logger, DicomServiceDependencies dependencies, ModalityWorklistGateway gateway, TimeProvider time)
@@ -57,7 +60,7 @@ internal sealed class ModalityWorklistService : DicomService, IDicomServiceProvi
         // Strangers never get to send a PDU (whose length header alone could make the server allocate memory).
         if (!_gateway.Admits(_remote, _local))
         {
-            _ = _gateway.RefuseAsync(null, _remote,
+            _ = _gateway.RefuseAsync(WorklistRefusals.UnknownAddress, null, _remote,
                 $"A connection from {_remote?.ToString() ?? "an unknown address"} was closed: no modality on the worklist's allow-list has that address.");
             Close();
             return Task.CompletedTask;
@@ -73,20 +76,21 @@ internal sealed class ModalityWorklistService : DicomService, IDicomServiceProvi
         var decision = _gateway.Decide(association.CallingAE, association.CalledAE, _remote, _local);
         if (decision.Reject is { } reason)
         {
-            await RefuseAsync(association, decision.Reason!, decision.Result, DicomRejectSource.ServiceUser, reason);
+            await RefuseAsync(association, decision.Kind!, decision.Reason!, decision.Result,
+                DicomRejectSource.ServiceUser, reason);
             return;
         }
 
         if (!_gateway.TryOpen())
         {
-            await RefuseAsync(association,
+            await RefuseAsync(association, WorklistRefusals.Busy,
                 $"{association.CallingAE} at {_remote} was refused: {_gateway.Config.Listener?.MaxAssociations} associations are already open. It may try again.",
                 DicomRejectResult.Transient, DicomRejectSource.ServiceProviderPresentation, DicomRejectReason.LocalLimitExceeded);
             return;
         }
 
         _counted = true;
-        _peer = decision.Peer;
+        _callingAe = decision.Peer?.AeTitle;
         foreach (var context in association.PresentationContexts)
         {
             if (context.AbstractSyntax == DicomUID.Verification
@@ -138,9 +142,21 @@ internal sealed class ModalityWorklistService : DicomService, IDicomServiceProvi
         Interlocked.Increment(ref _busy);
         try
         {
-            if (_peer is not { } peer || request.SOPClassUID != DicomUID.ModalityWorklistInformationModelFind)
+            if (_callingAe is not { } callingAe || request.SOPClassUID != DicomUID.ModalityWorklistInformationModelFind)
             {
                 yield return new DicomCFindResponse(request, DicomStatus.SOPClassNotSupported);
+                yield break;
+            }
+
+            // The settings in force now, not those at association time: a modality removed from the list, or moved to
+            // another address, reads nothing more, and one moved to another facility reads that facility's worklist.
+            if (_gateway.CurrentPeer(callingAe, _remote) is not { } peer)
+            {
+                await _gateway.RefuseAsync(WorklistRefusals.Withdrawn, callingAe, _remote,
+                    $"Modality {callingAe} at {_remote} asked for the worklist on an open association, but it is no "
+                    + "longer allowed to read it from there; the association was closed.");
+                Interlocked.Exchange(ref _refusedAt, _time.GetTimestamp());
+                yield return new DicomCFindResponse(request, DicomStatus.QueryRetrieveUnableToProcess);
                 yield break;
             }
 
@@ -171,9 +187,15 @@ internal sealed class ModalityWorklistService : DicomService, IDicomServiceProvi
         base.Dispose(disposing);
     }
 
-    private async Task RefuseAsync(DicomAssociation association, string why, DicomRejectResult result, DicomRejectSource source, DicomRejectReason reason)
+    private async Task RefuseAsync(
+        DicomAssociation association,
+        string kind,
+        string why,
+        DicomRejectResult result,
+        DicomRejectSource source,
+        DicomRejectReason reason)
     {
-        await _gateway.RefuseAsync(association.CallingAE, _remote, why);
+        await _gateway.RefuseAsync(kind, association.CallingAE, _remote, why);
         Interlocked.Exchange(ref _refusedAt, _time.GetTimestamp());
         await SendAssociationRejectAsync(result, source, reason);
     }

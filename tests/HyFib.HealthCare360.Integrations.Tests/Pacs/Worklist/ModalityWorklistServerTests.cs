@@ -362,6 +362,125 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Each_query_reads_the_worklist_of_the_facility_the_modality_belongs_to_now()
+    {
+        Start(Settings());
+        TwoStudiesToday();
+        var moved = Settings() with
+        {
+            Modalities = [Settings().Modalities![0] with { Facility = "NHBR" }],
+        };
+        var client = Client();
+        await client.AddRequestAsync(new DicomCEchoRequest
+        {
+            OnResponseReceived = (_, _) =>
+                Gateway.Apply(WorklistConfig.From(moved, [(Facility, "NH"), (OtherFacility, "NHBR")])),
+        });
+        var answers = new ConcurrentQueue<DicomDataset>();
+        var find = TodaysCtWorklist();
+        find.OnResponseReceived = (_, response) =>
+        {
+            if (response.Status == DicomStatus.Pending)
+            {
+                answers.Enqueue(response.Dataset);
+            }
+        };
+        await client.AddRequestAsync(find);
+
+        await client.SendAsync(Ct);
+
+        _source.Queries.ShouldHaveSingleItem().FacilityId.ShouldBe(OtherFacility);
+        answers.ShouldHaveSingleItem().GetString(DicomTag.PatientName).ShouldBe("OTHER^BRANCH");
+    }
+
+    [Fact]
+    public async Task A_modality_removed_while_its_association_is_open_reads_nothing_more()
+    {
+        Start(Settings());
+        TwoStudiesToday();
+        var removed = Settings() with { Modalities = [] };
+        var client = Client();
+        await client.AddRequestAsync(new DicomCEchoRequest
+        {
+            OnResponseReceived = (_, _) => Gateway.Apply(WorklistConfig.From(removed, [(Facility, "NH")])),
+        });
+        DicomStatus? final = null;
+        var answered = 0;
+        var find = TodaysCtWorklist();
+        find.OnResponseReceived = (_, response) =>
+        {
+            if (response.Status == DicomStatus.Pending)
+            {
+                answered++;
+            }
+            else
+            {
+                final = response.Status;
+            }
+        };
+        await client.AddRequestAsync(find);
+
+        try
+        {
+            await client.SendAsync(Ct);
+        }
+        catch (DicomNetworkException)
+        {
+            // The server closes the connection after refusing the query.
+        }
+
+        answered.ShouldBe(0);
+        final.ShouldNotBeNull().Code.ShouldBe(DicomStatus.QueryRetrieveUnableToProcess.Code);
+        _source.Queries.ShouldBeEmpty();
+        Gateway.State.Snapshot().ShouldHaveSingleItem().LastError!.ShouldContain("no longer allowed");
+    }
+
+    [Fact]
+    public async Task Logs_refusals_once_per_kind_and_network_and_counts_every_one()
+    {
+        Start(Settings());
+
+        foreach (var address in new[] { "10.9.8.1", "10.9.8.2", "10.9.8.200" })
+        {
+            await Gateway.RefuseAsync(WorklistRefusals.UnknownAddress, null, IPAddress.Parse(address),
+                $"A connection from {address} was closed.");
+        }
+
+        await Gateway.RefuseAsync(WorklistRefusals.UnknownAddress, null, IPAddress.Parse("10.9.9.1"),
+            "A connection from 10.9.9.1 was closed.");
+        await Gateway.RefuseAsync(WorklistRefusals.CallingAe, "XRAY9", IPAddress.Parse("10.9.8.3"),
+            "XRAY9 is not on the list.");
+
+        _tracing.Entries.Select(e => e.Error).ShouldBe([
+            "A connection from 10.9.8.1 was closed.",
+            "A connection from 10.9.9.1 was closed.",
+            "XRAY9 is not on the list.",
+        ]);
+        Gateway.State.Snapshot().ShouldHaveSingleItem().MessagesRefused.ShouldBe(5);
+    }
+
+    [Fact]
+    public void Throttles_refusals_for_the_log_interval_and_counts_those_left_out()
+    {
+        var gateway = Gateway;
+        var at = DateTimeOffset.UtcNow;
+        var ipv6 = IPAddress.Parse("2001:db8:1:2::10");
+
+        gateway.FirstRefusalInInterval("k", ipv6, at, out _).ShouldBeTrue();
+        var sameNetwork = IPAddress.Parse("2001:db8:1:2::99");
+        var otherNetwork = IPAddress.Parse("2001:db8:1:3::10");
+        var later = at + ModalityWorklistGateway.RefusalLogInterval;
+
+        gateway.FirstRefusalInInterval("k", sameNetwork, at.AddMinutes(1), out _).ShouldBeFalse();
+        gateway.FirstRefusalInInterval("k", otherNetwork, at.AddMinutes(1), out _).ShouldBeTrue();
+        gateway.FirstRefusalInInterval("k", ipv6, at.AddMinutes(2), out _).ShouldBeFalse();
+        gateway.FirstRefusalInInterval("k", ipv6, later, out var suppressed).ShouldBeTrue();
+        suppressed.ShouldBe(2);
+        ModalityWorklistGateway.Network(IPAddress.Parse("::ffff:192.168.4.77")).ShouldBe("192.168.4.0/24");
+        ModalityWorklistGateway.Network(ipv6).ShouldBe("2001:db8:1:2::/64");
+    }
+
+    [Fact]
     public void Lets_only_allowed_addresses_and_this_machine_connect()
     {
         Gateway.Apply(WorklistConfig.From(Settings(ips: ["10.0.5.31"]), [(Facility, "NH")]));

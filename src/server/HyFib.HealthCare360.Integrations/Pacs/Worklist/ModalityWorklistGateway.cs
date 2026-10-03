@@ -7,11 +7,32 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 
 namespace HyFib.HealthCare360.Integrations.Pacs.Worklist;
 
-/// <summary>Whether an association is accepted: for an allowed modality, as the server's own test, or refused (with the reason).</summary>
-internal sealed record WorklistDecision(WorklistPeer? Peer, bool SelfTest, DicomRejectResult Result, DicomRejectReason? Reject, string? Reason)
+/// <summary>
+/// Whether an association is accepted: for an allowed modality, as the server's own test, or refused (with the reason,
+/// and its <see cref="Kind"/>, which throttles how often such refusals are logged).
+/// </summary>
+internal sealed record WorklistDecision(
+    WorklistPeer? Peer,
+    bool SelfTest,
+    DicomRejectResult Result,
+    DicomRejectReason? Reject,
+    string? Reason,
+    string? Kind = null)
 {
-    public static WorklistDecision Refuse(DicomRejectReason reason, string why, DicomRejectResult result = DicomRejectResult.Permanent) =>
-        new(null, false, result, reason, why);
+    public static WorklistDecision Refuse(
+        DicomRejectReason reason, string kind, string why, DicomRejectResult result = DicomRejectResult.Permanent) =>
+        new(null, false, result, reason, why, kind);
+}
+
+/// <summary>The kinds of refusal; each is logged at most once per <c>RefusalLogInterval</c> and network.</summary>
+internal static class WorklistRefusals
+{
+    public const string UnknownAddress = "unknown-address";
+    public const string CalledAe = "called-ae";
+    public const string CallingAe = "calling-ae";
+    public const string PeerAddress = "peer-address";
+    public const string Busy = "busy";
+    public const string Withdrawn = "withdrawn";
 }
 
 /// <summary>The answers to one query, and the status that ends it.</summary>
@@ -34,10 +55,13 @@ internal sealed class ModalityWorklistGateway(
     internal const int MaxScanned = 5000;
 
     /// <summary>A refusal of the same kind is written to the integration log at most this often (the dashboard counts every one).</summary>
-    private static readonly TimeSpan RefusalLogInterval = TimeSpan.FromMinutes(10);
+    internal static readonly TimeSpan RefusalLogInterval = TimeSpan.FromMinutes(10);
+
+    /// <summary>Most networks whose refusals are throttled one by one; beyond that, by kind alone.</summary>
+    private const int MaxRefusalKeys = 1000;
 
     private static readonly JsonSerializerOptions SummaryJson = new(JsonSerializerDefaults.Web);
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _refusals = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, RefusalLog> _refusals = new(StringComparer.Ordinal);
     private volatile WorklistConfig _config = WorklistConfig.Off;
     private int _associations;
 
@@ -66,7 +90,7 @@ internal sealed class ModalityWorklistGateway(
         var called = calledAe?.Trim() ?? string.Empty;
         if (!string.Equals(called, config.AeTitle, StringComparison.OrdinalIgnoreCase))
         {
-            return WorklistDecision.Refuse(DicomRejectReason.CalledAENotRecognized,
+            return WorklistDecision.Refuse(DicomRejectReason.CalledAENotRecognized, WorklistRefusals.CalledAe,
                 $"{Describe(calling)} at {remote} called the AE title \"{Clip(called)}\"; this server is {config.AeTitle}.");
         }
 
@@ -77,18 +101,29 @@ internal sealed class ModalityWorklistGateway(
 
         if (config.Peer(calling) is not { } peer)
         {
-            return WorklistDecision.Refuse(DicomRejectReason.CallingAENotRecognized,
+            return WorklistDecision.Refuse(DicomRejectReason.CallingAENotRecognized, WorklistRefusals.CallingAe,
                 $"{Describe(calling)} at {remote} is not on the list of modalities allowed to read the worklist.");
         }
 
         if (remote is null || !peer.Addresses.Contains(WorklistConfig.Normalize(remote)))
         {
-            return WorklistDecision.Refuse(DicomRejectReason.CallingAENotRecognized,
+            return WorklistDecision.Refuse(DicomRejectReason.CallingAENotRecognized, WorklistRefusals.PeerAddress,
                 $"Modality {peer.AeTitle} called from {remote}, which is not one of its allowed addresses.");
         }
 
         return new WorklistDecision(peer, false, DicomRejectResult.Permanent, null, null);
     }
+
+    /// <summary>
+    /// The modality as the settings in force now describe it, for each query of an open association: null when it was
+    /// removed from the list or no longer has the address it calls from. A modality moved to another facility reads
+    /// that facility's worklist from its next query on.
+    /// </summary>
+    public WorklistPeer? CurrentPeer(string aeTitle, IPAddress? remote) =>
+        remote is not null && _config.Peer(aeTitle) is { } peer
+                           && peer.Addresses.Contains(WorklistConfig.Normalize(remote))
+            ? peer
+            : null;
 
     /// <summary>Counts an accepted association; false (and nothing counted) when the limit is reached.</summary>
     public bool TryOpen()
@@ -110,35 +145,94 @@ internal sealed class ModalityWorklistGateway(
         state.Closed();
     }
 
-    /// <summary>Records a refused connection or association: on the dashboard always, in the integration log now and then.</summary>
-    public async Task RefuseAsync(string? callingAe, IPAddress? remote, string reason)
+    /// <summary>
+    /// Records a refused connection, association or query: on the dashboard always, in the service log at Debug always,
+    /// and as a warning and in the integration log once per <see cref="RefusalLogInterval"/> for each kind of refusal
+    /// and network (/24 for IPv4, /64 for IPv6), so a scan of many addresses cannot flood either log.
+    /// </summary>
+    public async Task RefuseAsync(string kind, string? callingAe, IPAddress? remote, string reason)
     {
         state.Refused(reason);
-        logger.LogWarning("Worklist association refused: {Reason}", reason);
-        var key = $"{callingAe}|{remote}|{reason}";
+        logger.LogDebug("Worklist association refused: {Reason}", reason);
         var now = time.GetUtcNow();
-        if (_refusals.Count > 1000)
-        {
-            _refusals.Clear();
-        }
-
-        if (_refusals.TryGetValue(key, out var last) && now - last < RefusalLogInterval)
+        if (!FirstRefusalInInterval(kind, remote, now, out var suppressed))
         {
             return;
         }
 
-        _refusals[key] = now;
+        var note = suppressed > 0
+            ? string.Create(CultureInfo.InvariantCulture, $" ({suppressed} similar refusals since the last one logged)")
+            : string.Empty;
+        logger.LogWarning("Worklist association refused: {Reason}{Suppressed}", reason, note);
         try
         {
             await using var scope = scopes.CreateAsyncScope();
             var trace = scope.ServiceProvider.GetRequiredService<IntegrationTrace>();
-            await trace.LogAsync(IntegrationNames.Mwl, Provider(callingAe), "associate", false, trace.Start(), Clip(callingAe), $"from {remote}", null, reason,
-                IntegrationDirection.Inbound);
+            await trace.LogAsync(IntegrationNames.Mwl, Provider(callingAe), "associate", false, trace.Start(),
+                Clip(callingAe), $"from {remote}", null, reason + note, IntegrationDirection.Inbound);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning("Could not log a refused worklist association ({ErrorType})", ex.GetType().Name);
         }
+    }
+
+    /// <summary>
+    /// True when no refusal of this kind from this network was logged in the last <see cref="RefusalLogInterval"/>;
+    /// <paramref name="suppressed"/> is how many were not logged since. When too many networks are being refused,
+    /// refusals are throttled by kind alone.
+    /// </summary>
+    internal bool FirstRefusalInInterval(string kind, IPAddress? remote, DateTimeOffset now, out int suppressed)
+    {
+        if (_refusals.Count >= MaxRefusalKeys)
+        {
+            foreach (var (stale, entry) in _refusals)
+            {
+                if (now - entry.LoggedAt >= RefusalLogInterval)
+                {
+                    _refusals.TryRemove(stale, out _);
+                }
+            }
+        }
+
+        var key = _refusals.Count >= MaxRefusalKeys ? kind : $"{kind}|{Network(remote)}";
+        var logged = false;
+        var count = 0;
+        _refusals.AddOrUpdate(
+            key,
+            _ =>
+            {
+                logged = true;
+                return new RefusalLog(now, 0);
+            },
+            (_, entry) =>
+            {
+                if (now - entry.LoggedAt >= RefusalLogInterval)
+                {
+                    logged = true;
+                    count = entry.Suppressed;
+                    return new RefusalLog(now, 0);
+                }
+
+                logged = false;
+                return entry with { Suppressed = entry.Suppressed + 1 };
+            });
+        suppressed = count;
+        return logged;
+    }
+
+    /// <summary>The network an address belongs to for throttling: its /24 (IPv4) or /64 (IPv6).</summary>
+    internal static string Network(IPAddress? remote)
+    {
+        if (remote is null)
+        {
+            return "unknown";
+        }
+
+        var bytes = WorklistConfig.Normalize(remote).GetAddressBytes();
+        var keep = bytes.Length == 4 ? 3 : 8;
+        Array.Clear(bytes, keep, bytes.Length - keep);
+        return new IPAddress(bytes) + (bytes.Length == 4 ? "/24" : "/64");
     }
 
     /// <summary>Answers one C-FIND from an allowed modality (see the class summary).</summary>
@@ -314,4 +408,6 @@ internal sealed class ModalityWorklistGateway(
 
     private static string? Clip(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : new string(value.Trim().Where(c => !char.IsControl(c)).Take(32).ToArray());
+
+    private sealed record RefusalLog(DateTimeOffset LoggedAt, int Suppressed);
 }
