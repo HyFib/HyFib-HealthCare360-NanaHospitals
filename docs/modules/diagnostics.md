@@ -7,9 +7,10 @@ the lab counter, charged through Billing (`IChargePoster`), and every released r
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Diagnostics` (references Patients, and Clinical for the health
 check-up report). Schema `diagnostics`.
-Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (415 unit tests: range/flag evaluation, delta check,
-auto-validation, Westgard rules, sample state machine, tube planning, payment gate, report release/amendment, imaging and
-cardiology workflows, DICOM formatting, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
+Tests: `tests/Modules/HyFib.HealthCare360.Modules.Diagnostics.Tests` (about 460 unit tests: range/flag evaluation, delta
+check, auto-validation, Westgard rules, sample state machine, tube planning, payment gate, report release/amendment,
+imaging and cardiology workflows, DICOM formatting, worklist entries, PACS study matching, the linking schedule, the
+image rate limit, critical call register, seeded catalogue checks incl. LOINC check digits, EF model,
 QR verification links, report id → study look-ups, and the printed documents: content, released-only rules, encoding of
 hostile text, footers and file names).
 
@@ -26,9 +27,10 @@ hostile text, footers and file names).
 | `lab.qc.manage` | QC lots, runs, reviews | LabTechnician, Pathologist |
 | `lab.masters.manage` | Test master, ranges, analysers, reference labs | Pathologist, HospitalAdmin |
 | `radiology.studies.read` | Imaging studies and released radiology reports | Doctor, Nurse, Radiographer, Radiologist |
-| `radiology.worklist` | Schedule/perform studies, MWL, PACS reconciliation | Radiographer, Radiologist |
+| `radiology.worklist` | Schedule/perform studies, MWL, PACS linking; told about studies PACS holds under another patient | Radiographer, Radiologist |
 | `radiology.reports.write` | Draft and submit radiology reports | Radiologist |
 | `radiology.reports.verify` | Sign off, release, addenda; report templates | Radiologist |
+| `radiology.images.view` | A study's images from PACS, in HC360 and in the PACS viewer | Doctor, Radiographer, Radiologist (not Nurse: nurses act on the report) |
 | `cardiology.studies.read` | Cardiology studies and released reports | Doctor, Nurse, CardiologyTechnician |
 | `cardiology.studies.manage` | Perform ECG/Echo/TMT/Holter/ABPM, upload device output | CardiologyTechnician |
 | `cardiology.reports.verify` | Report and sign off cardiology studies | Cardiologist (give cardiologists the Doctor role too; grant this to Doctor where physicians report ECGs) |
@@ -137,12 +139,16 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | POST | `/studies/{id}/acquire` | `radiology.worklist` | `AcquireStudyRequest` (contrastUsed, contrastAgent — required with contrast, volume, doseNote, notes) → `ImagingStudyDetail` |
 | POST | `/studies/{id}/repeats` | `radiology.worklist` | `RecordRepeatRequest` (reason, note) → `ImagingStudyDetail` |
 | POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported |
-| POST | `/studies/{id}/reconcile` | `radiology.worklist` | → `ImagingStudyDetail` (PACS lookup by accession; patient ID must match) |
-| POST | `/pacs/reconcile` | `radiology.worklist` | → `PacsReconciliationSummary` (recent unlinked studies, batches of 50) |
-| GET | `/studies/{id}/viewer` | studies.read, worklist or reports.write | → `ViewerLink` (422 `pacs.not_configured` when no PACS client is registered) |
+| POST | `/studies/{id}/reconcile` | `radiology.worklist` | → `ImagingStudyDetail`. Links the study with PACS by accession number (or study UID); refused with the fail-closed codes under Workflow rules |
+| POST | `/pacs/reconcile` | `radiology.worklist` | → `PacsReconciliationSummary` (the facility's recent unlinked studies, finished scans first, batches of 50) |
+| GET | `/studies/{id}/viewer` | `radiology.images.view` | → `ViewerLink`. Before linking, the same PACS patient check as linking. 422 `pacs.not_configured`, `pacs.viewer_not_configured`, `pacs.accession_too_long`, or a linking code. Guard; audit "Opened images of …" |
+| GET | `/studies/{id}/images` | `radiology.images.view` | → `StudyImagesDto` (the series PACS lists for the study's UID). 422 `pacs.not_linked` until linked. Guard; audit "Viewed the images of …" every time |
+| GET | `/studies/{id}/images/series/{seriesUid}` | `radiology.images.view` | → `ImageSeriesDetail` (the series' objects in instance-number order, with frame counts, up to 2000) |
+| GET | `/studies/{id}/images/series/{seriesUid}/thumbnail` | `radiology.images.view`, rate limit `radiology-images` | → JPEG or PNG at 160 px: the PACS's series thumbnail, or the middle image rendered small |
+| GET | `/studies/{id}/images/series/{seriesUid}/instances/{instanceUid}/rendered?frame&size` | `radiology.images.view`, rate limit `radiology-images` | → JPEG or PNG; `size` 64–2048 (default 1024), `frame` 1–10000 for multi-frame objects |
 | GET · POST | `/studies/{id}/ai-findings` | GET: reports.write/verify · POST: `radiology.worklist` | `SubmitAiFindingRequest` (engine, version, finding, confidence, isUrgent) → `AiFindingDto` |
 | POST | `/ai-findings/{findingId}/review` | reports.write or reports.verify | `ReviewAiFindingRequest` (acknowledge, note) → `AiFindingDto` |
-| GET | `/worklist/mwl?date&station&modality` | `radiology.worklist` | → `ModalityWorklistItem[]` (DICOM-formatted: PN names, `yyyyMMdd`/`HHmmss`, sex M/F/O, XR sent as CR, 2.25 UIDs) for the MWL gateway |
+| GET | `/worklist/mwl?date&station&modality` | `radiology.worklist` | → `ModalityWorklistItem[]`: the signed-in facility's worklist for one day exactly as the DICOM worklist server offers it (PN names, `yyyyMMdd`/`HHmmss`, sex M/F/O, XR sent as CR, 2.25 UIDs), for checking what a modality should see |
 | GET | `/reporting-worklist?modality` | reports.write or reports.verify | → `PagedResult<ImagingStudyListItem>` (urgent AI findings, then STAT, then oldest acquisition) |
 | GET | `/reports/{reportId}` | studies.read, worklist or reports.write (same as `/studies`) | → `ReportStudyRef` (studyId, reportId, status). Opens a report from the doctor's worklist (`WorklistResult.reportId`) on the study screen; 404 when the report or its study is not visible in the facility. Ids only, so no PHI audit (opening the study audits) |
 | GET | `/tat?from&to&modality` | studies.read or reports.verify | → `RadiologyTatReport` (order→acquisition→report median/P90 per modality, repeat rate and reasons) |
@@ -280,8 +286,51 @@ diagnostics screen.
   Health-checkup package components (`ServiceOrderPlaced.PackageBookingId`) are never charged per test/study.
 * **Unmapped services**: a clinical lab order for a service without a test set-up creates a provisional free-text test and
   alerts `lab.masters.manage` holders, so the order is never lost; radiology infers modality and body part from the code.
-* **PACS** (`IPacsClient`, optional): studies are matched by accession number, the PACS patient ID must match the UHID
-  before linking, and images found in PACS complete a study left in progress. Without a PACS client the endpoints return
+* **Modality worklist entries** (`ModalityWorklistSource`, read by the DICOM worklist server in Integrations): one
+  entry per study that is ordered, scheduled, arrived or started. The step starts at arrival, else at the
+  appointment, else when ordered (hospital time). Each entry carries the UHID, the name as `FAMILY^GIVEN^MIDDLE` (a
+  patient registered without a surname goes whole in the family component), birth date, sex, the accession number,
+  the Study Instance UID assigned at ordering (`2.25.…`), the modality code (XR as CR), the station and room, the
+  procedure, body part, ordering doctor, priority (STAT, HIGH, ROUTINE) and the clinical order number. The Requested
+  Procedure ID is the accession number, or, when that is longer than DICOM's 16 characters, a 16-character code made
+  from the study's id; the accession number itself is never shortened. Keep facility codes to five letters so
+  accession numbers fit. The source filters by facility, kinds of study, days and start times, station, UHID and
+  accession number (DICOM wildcards become `ILIKE`) and the start of the family name in the database, and returns
+  entries nearest to a given time first, a page at a time.
+* **PACS** (`IPacsClient`, optional): a study is looked for in PACS by accession number, or by its study UID when the
+  accession number is too long for DICOM (the worklist then gave the modality that UID). PACS is searched without the
+  patient ID, so every study under the accession is seen. Linking and the viewer link before linking are **fail
+  closed** (`PacsStudyMatch`): exactly one PACS study must match, with a patient ID equal to the UHID. Refusals:
+  * `pacs.study_not_found`: nothing in PACS yet (not reported by the job);
+  * `pacs.ambiguous_study`: several studies under the accession;
+  * `pacs.patient_id_missing`: the study has no patient ID;
+  * `pacs.patient_mismatch`: the study is under another patient ID;
+  * `pacs.patient_unknown`: the patient's UHID could not be read;
+  * `pacs.invalid_uid`: PACS sent a study UID that is not valid;
+  * `pacs.unreachable`, `pacs.not_configured`: PACS cannot be used.
+
+  The staff app shows the patient-safety refusals (ambiguous, missing or other patient ID) as a warning with the
+  reason. Linking stores the study UID and the series and object counts, and moves a study still ordered, scheduled,
+  arrived or in progress to Acquired, because images in PACS show the scan was done.
+* **Linking on a schedule** (`PacsLinkJob`, nodes that run jobs only): every five minutes (the first run waits one
+  interval), for each active facility with `radiology.pacs.autoLink` on, it reads up to 500 unlinked studies ordered in
+  the last three days that are not cancelled or reported and not waiting for an appointment still to come, and looks
+  for up to 50 of them in PACS with the facility's own PACS settings: finished scans first, then scans under way,
+  arrivals, appointments that have started and unscheduled orders; within each, studies never looked for, then those
+  looked for longest ago. A study is looked for again only after ten minutes. When PACS cannot be used, the facility's
+  run stops at the first study. Holders of `radiology.worklist` get one in-app alert per study for an ambiguous,
+  unidentified or other-patient study. What the job remembers is kept in memory, so a restart means one more look and
+  one more alert. "Link recent studies" on the worklist does the same for the signed-in facility at once.
+* **Images** (`StudyImageService`): once a study is linked, the study page shows its series with thumbnails and an image
+  viewer (step through the images and frames of a series, zoom, keyboard shortcuts), and "Open in PACS viewer". The EMR
+  result review shows the thumbnails of a radiology result to holders of `radiology.images.view`, opening the study
+  page. The study comes from HC360's database, never from the caller: a series must be one PACS lists for the study's
+  UID and an object one it lists for that series, so nobody can reach another study's images by naming its UIDs.
+  These lists are kept for five minutes; a UID missing from them is looked up again once. Opening the series list
+  always writes a PHI access audit entry; thumbnails and images write one per person and study in 15 minutes. Images
+  are fetched from PACS by the server (JPEG or PNG only, 16 MB per image, 2 MB per thumbnail), never cached by the
+  browser (`Cache-Control: no-store`), and limited per person by the `radiology-images` rate-limit policy (6 at once,
+  32 waiting, then 429). Without a PACS client the endpoints return
   `pacs.not_configured` and the workflow continues.
 
 ## Events
@@ -325,6 +374,7 @@ Only released content is ever made into these PDFs.
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
+| `radiology.pacs.autoLink` | `true` | Link the facility's new imaging studies with PACS every five minutes (`PacsLinkJob`) |
 | `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal. Use a WhatsApp template without a document header then: a template with one can't go without its PDF, so the WhatsApp message is skipped (the notification log says why) while the SMS and e-mail still go |
 
 ## Number series

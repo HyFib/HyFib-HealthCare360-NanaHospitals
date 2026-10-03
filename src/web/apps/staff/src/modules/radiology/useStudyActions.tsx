@@ -1,11 +1,11 @@
 import { Caption1 } from '@fluentui/react-components';
-import { isApiError } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
 import { ReasonDialog } from '@/modules/lab/common/ReasonDialog';
 import { radiologyApi, radiologyKeys } from './api';
+import { pacsNotice } from './pacsErrors';
 import { AcquireDialog, RepeatDialog, ScheduleDialog, type StudyRef } from './StudyDialogs';
 import { openViewerUrl } from './viewer';
 import type { StudyAction } from './workflow';
@@ -54,8 +54,9 @@ export function useStudyActions(): {
       }
     },
     onError: (error, { action }) => {
-      if (action === 'reconcile' && isApiError(error) && error.code?.startsWith('pacs.')) {
-        notify.info('Images not linked', error.userMessage);
+      const notice = action === 'reconcile' ? pacsNotice(error, 'link') : null;
+      if (notice) {
+        notify[notice.intent](notice.title, notice.message);
       } else {
         notify.error(error, 'The study could not be updated');
       }
@@ -89,8 +90,9 @@ export function useStudyActions(): {
       const link = await radiologyApi.viewer(studyId);
       await openViewerUrl(link.url);
     } catch (error) {
-      if (isApiError(error) && error.code?.startsWith('pacs.')) {
-        notify.info('Images are not available', error.userMessage);
+      const notice = pacsNotice(error, 'open');
+      if (notice) {
+        notify[notice.intent](notice.title, notice.message);
       } else {
         notify.error(error, 'Could not open the images');
       }

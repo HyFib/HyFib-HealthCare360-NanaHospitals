@@ -31,6 +31,23 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
   localhost only. Network lab analysers need their own ports, which the installer opens only when asked
   (`-LabPorts`), limited to the analysers' addresses; each analyser's port also accepts only its listed IP addresses.
+- **The DICOM modality worklist** (off by default) listens on its own TCP port, 11112 unless changed, for the CT, MR,
+  X-ray and ultrasound consoles. DICOM there has no encryption or passwords, as on most modality networks, so other
+  controls apply:
+  - Only modalities on the allow-list may speak, identified by their AE title and their IP address together. A
+    connection from any other address is closed before a byte is read; a wrong AE title is refused.
+  - Each modality sees only its own facility's studies, of the kinds it does, within a few days of today. It is checked
+    again against the settings on every query, so removing it takes effect at once, even on an open connection.
+  - It answers only the worklist query and the echo test: no images, no retrieval, no storage.
+  - Connections, their idle time and the size of an answer are limited.
+  - Every answer writes one PHI access audit entry (which modality, from where, how many patients) before anything is
+    sent; if the audit cannot be written, nothing is sent. The integration log masks the patient keys of each query,
+    and DICOM data is never written to the service log.
+  - Refused connections are counted, and logged at most once per ten minutes per network, so a scan cannot flood the
+    logs.
+
+  The installer does not open this port. The hospital opens it for the modalities' addresses only (DEPLOYMENT.md §6),
+  and should keep it on the imaging network.
 
 ### Identity and sessions
 - Passwords:
@@ -87,6 +104,13 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
 - Every access to a patient record is audited.
+- **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
+  people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
+  study's images are found by the study UID in HC360's database, and only series and objects PACS lists for that study
+  are served, so naming another study's UIDs reaches nothing. Responses are never cached, opening a study's images is
+  audited, and each person has a limited number of images in flight. A study is linked with PACS, or opened in the
+  PACS viewer before linking, only when PACS holds exactly one study under its accession number with the patient's
+  UHID as patient ID, so a mistyped accession at a modality never shows another patient's images.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
   - **ABHA numbers**: encrypted with AES-256-GCM.
@@ -307,7 +331,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    `privacy.breach.notice`); without them those SMS are not sent.
 9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
    review the charts it lists as past their period.
-10. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
+10. If the modality worklist is used, open its port in the firewall for the modalities' addresses only, keep it on the
+    imaging network, and remove a modality from the worklist settings the day it is retired or moved.
+11. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
     Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
     in the privacy notice.
 

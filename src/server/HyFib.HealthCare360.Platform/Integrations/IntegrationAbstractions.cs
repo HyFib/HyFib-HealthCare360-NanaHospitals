@@ -152,18 +152,99 @@ public interface IAccountingExporter
 }
 
 // ---------- PACS / DICOMweb ----------
-public sealed record PacsStudyQuery(string? PatientId = null, string? AccessionNumber = null, DateOnly? From = null, DateOnly? To = null, string? Modality = null);
+/// <param name="StudyInstanceUid">One study by its UID (for a study whose accession number DICOM cannot carry).</param>
+/// <param name="FacilityId">Facility whose PACS settings apply (null: the signed-in facility, then the all-facility settings).</param>
+/// <param name="ExpectedPatientId">
+/// The patient ID HC360 expects the study under. It is not a search key: a real PACS is searched without it, so a study
+/// held under another patient is still found and refused. Only the training simulator uses it, answering with it as a
+/// PACS holding the right study would.
+/// </param>
+public sealed record PacsStudyQuery(
+    string? PatientId = null,
+    string? AccessionNumber = null,
+    DateOnly? From = null,
+    DateOnly? To = null,
+    string? Modality = null,
+    string? StudyInstanceUid = null,
+    Guid? FacilityId = null,
+    string? ExpectedPatientId = null);
 
 public sealed record ImagingStudyInfo(string StudyInstanceUid, string? AccessionNumber, string? PatientId, string? PatientName, DateTimeOffset? StudyDate, string? Modalities, string? Description, int? SeriesCount, int? InstanceCount);
 
+/// <summary>One series of a study as the PACS reports it (QIDO-RS).</summary>
+public sealed record ImagingSeriesInfo(string SeriesInstanceUid, string? Modality, int? SeriesNumber, string? Description, string? BodyPart, int? InstanceCount);
+
+/// <summary>One object of a series (QIDO-RS). <paramref name="Frames"/> is 1 for single-frame images.</summary>
+public sealed record ImagingInstanceInfo(string SopInstanceUid, string? SopClassUid, int? InstanceNumber, int Frames, int? Rows, int? Columns);
+
+public enum PacsImageKind
+{
+    /// <summary>The image, rendered by the PACS as JPEG or PNG (WADO-RS rendered).</summary>
+    Rendered = 0,
+
+    /// <summary>A small picture of a series (WADO-RS thumbnail).</summary>
+    Thumbnail,
+}
+
+/// <summary>
+/// An image to fetch through the PACS. Without <paramref name="SopInstanceUid"/> it is the thumbnail of the series.
+/// <paramref name="Frame"/> is 1-based, for multi-frame objects. <paramref name="Size"/> is the longest side wanted, in
+/// pixels; the PACS fits the image inside it.
+/// </summary>
+/// <param name="FacilityId">Facility whose PACS settings apply (null: the signed-in facility, then the all-facility settings).</param>
+public sealed record PacsImageRequest(
+    string StudyInstanceUid,
+    string SeriesInstanceUid,
+    string? SopInstanceUid,
+    int? Frame,
+    PacsImageKind Kind,
+    int Size,
+    Guid? FacilityId = null);
+
+public enum PacsImageStatus
+{
+    Ok = 0,
+
+    /// <summary>The PACS has no such object.</summary>
+    NotFound,
+
+    /// <summary>The PACS does not offer this kind of image (many have no thumbnails).</summary>
+    NotAvailable,
+}
+
+/// <summary>
+/// A JPEG or PNG image (<see cref="PacsImageStatus.Ok"/>), or why there is none. <see cref="Content"/> is the part of
+/// the buffer the image was read into that it fills, so it is handed on without another copy.
+/// </summary>
+public sealed record PacsImage(
+    PacsImageStatus Status, ReadOnlyMemory<byte> Content = default, string? ContentType = null);
+
+/// <summary>
+/// The PACS (INT-PACS, IMG-02). Searches and image retrieval that cannot run (PACS not configured, disabled, unreachable,
+/// or an answer HC360 will not pass on) throw <see cref="HttpRequestException"/> whose message is safe to show to staff.
+/// Credentials stay on the server: callers get study data and finished images, never a PACS address.
+/// </summary>
 public interface IPacsClient
 {
     Task<bool> PingAsync(CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ImagingStudyInfo>> FindStudiesAsync(PacsStudyQuery query, CancellationToken cancellationToken);
 
-    /// <summary>Viewer launch URL built from the configured template (for example OHIF/Weasis/vendor viewer).</summary>
-    string? BuildViewerUrl(string studyInstanceUid, string? accessionNumber);
+    /// <summary>The series of a study (QIDO-RS).</summary>
+    Task<IReadOnlyList<ImagingSeriesInfo>> FindSeriesAsync(string studyInstanceUid, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>The objects of a series, in instance-number order (QIDO-RS).</summary>
+    Task<IReadOnlyList<ImagingInstanceInfo>> FindInstancesAsync(string studyInstanceUid, string seriesInstanceUid, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>A rendered image or a thumbnail (WADO-RS): only JPEG or PNG, within a size limit.</summary>
+    Task<PacsImage> RetrieveImageAsync(PacsImageRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Viewer launch URL built from the configured template (for example OHIF/Weasis/vendor viewer). Null when no
+    /// template is configured, or when it needs a value that is not given: a template with <c>{studyUid}</c> needs the
+    /// study UID, one with <c>{accession}</c> the accession number.
+    /// </summary>
+    string? BuildViewerUrl(string? studyInstanceUid, string? accessionNumber);
 }
 
 // ---------- ICD / procedure coding ----------

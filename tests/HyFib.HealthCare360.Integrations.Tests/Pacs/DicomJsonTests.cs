@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Integrations.Tests.Pacs;
 
@@ -92,5 +93,48 @@ public sealed class DicomJsonTests
         const string json = """[{ "0020000D": { "vr": "UI", "Value": ["1.2"] }, "00080020": { "vr": "DA", "Value": ["2026-09-01"] } }]""";
 
         DicomJson.ParseStudies(json, India).ShouldHaveSingleItem().StudyDate.ShouldBeNull();
+    }
+
+    /// <summary>A QIDO-RS series search: an image series, a scout, a structured report and an entry without a UID.</summary>
+    internal const string SeriesJson = """
+        [
+          { "0020000E": { "vr": "UI", "Value": ["1.2.3.2"] }, "00080060": { "vr": "CS", "Value": ["CT"] }, "00200011": { "vr": "IS", "Value": [2] },
+            "0008103E": { "vr": "LO", "Value": ["Axial 5 mm"] }, "00201209": { "vr": "IS", "Value": ["120"] } },
+          { "0020000E": { "vr": "UI", "Value": ["1.2.3.1"] }, "00080060": { "vr": "CS", "Value": ["CT"] }, "00200011": { "vr": "IS", "Value": [1] },
+            "0008103E": { "vr": "LO", "Value": ["Scout"] }, "00180015": { "vr": "CS", "Value": ["HEAD"] }, "00201209": { "vr": "IS", "Value": [2] } },
+          { "0020000E": { "vr": "UI", "Value": ["1.2.3.9"] }, "00080060": { "vr": "CS", "Value": ["SR"] }, "00200011": { "vr": "IS", "Value": [99] } },
+          { "00080060": { "vr": "CS", "Value": ["CT"] } }
+        ]
+        """;
+
+    [Fact]
+    public void Lists_picture_series_by_series_number()
+    {
+        var series = DicomJson.ParseSeries(SeriesJson);
+
+        series.Select(s => s.SeriesInstanceUid).ShouldBe(["1.2.3.1", "1.2.3.2"]);
+        series[0].ShouldBe(new ImagingSeriesInfo("1.2.3.1", "CT", 1, "Scout", "HEAD", 2));
+        series[1].InstanceCount.ShouldBe(120);
+    }
+
+    [Fact]
+    public void Lists_the_pictures_of_a_series_with_their_frames()
+    {
+        const string json = """
+            [
+              { "00080018": { "vr": "UI", "Value": ["1.2.3.2.2"] }, "00080016": { "vr": "UI", "Value": ["1.2.840.10008.5.1.4.1.1.2"] },
+                "00200013": { "vr": "IS", "Value": [2] }, "00280010": { "vr": "US", "Value": [512] }, "00280011": { "vr": "US", "Value": [512] } },
+              { "00080018": { "vr": "UI", "Value": ["1.2.3.2.1"] }, "00080016": { "vr": "UI", "Value": ["1.2.840.10008.5.1.4.1.1.6.1"] },
+                "00200013": { "vr": "IS", "Value": ["1"] }, "00280008": { "vr": "IS", "Value": ["30"] }, "00280010": { "vr": "US", "Value": [480] } },
+              { "00080018": { "vr": "UI", "Value": ["1.2.3.2.8"] }, "00080016": { "vr": "UI", "Value": ["1.2.840.10008.5.1.4.1.1.88.11"] } },
+              { "00080018": { "vr": "UI", "Value": ["1.2.3.2.9"] }, "00280010": { "vr": "US", "Value": [0] } }
+            ]
+            """;
+
+        var instances = DicomJson.ParseInstances(json);
+
+        instances.Select(i => i.SopInstanceUid).ShouldBe(["1.2.3.2.2", "1.2.3.2.1"]);
+        instances[0].Frames.ShouldBe(1);
+        instances[1].ShouldBe(new ImagingInstanceInfo("1.2.3.2.1", "1.2.840.10008.5.1.4.1.1.6.1", 1, 30, 480, null));
     }
 }
