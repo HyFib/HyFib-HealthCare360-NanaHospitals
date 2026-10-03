@@ -40,7 +40,7 @@ public sealed class RadiologyImagesTests(HospitalServer server)
         var fits = await AddStudyAsync(facilityId, patient.Id, $"NHRDT{digits}");
         var tooLong = await AddStudyAsync(facilityId, patient.Id, $"NHRDXYZT{digits}00");
 
-        // Before linking, a viewer link built from the accession number already opens the study in PACS.
+        // Before linking, the viewer link by accession number opens the study once PACS confirms it is the patient's.
         var link = await doctor.GetAsync<ViewerLink>($"/api/v1/radiology/studies/{fits.Id}/viewer");
         link.Url.ShouldBe($"https://pacs.example.org/viewer?acc={fits.AccessionNumber}");
         using (var refused = await doctor.SendRawAsync(HttpMethod.Get, $"/api/v1/radiology/studies/{tooLong.Id}/viewer"))

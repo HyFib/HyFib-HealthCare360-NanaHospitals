@@ -242,7 +242,7 @@ internal sealed class ImagingService(
             .ToListAsync(ct);
 
         var messages = new List<string>();
-        var mismatches = new List<ImagingStudy>();
+        var mismatches = new List<PacsMismatch>();
         var checkedIds = new List<Guid>();
         var linked = 0;
         string? unavailable = null;
@@ -262,12 +262,12 @@ internal sealed class ImagingService(
             {
                 linked++;
             }
-            else if (found.Error is { Code: not "pacs.study_not_found" } error)
+            else if (found.Error is { Code: not PacsStudyMatch.NotFound } error)
             {
                 messages.Add($"{study.AccessionNumber}: {error.Message}");
-                if (error.Code == "pacs.patient_mismatch")
+                if (PacsStudyMatch.IsPatientSafety(error.Code))
                 {
-                    mismatches.Add(study);
+                    mismatches.Add(new PacsMismatch(study.Id, study.AccessionNumber, study.StudyName, error.Message));
                 }
             }
         }
@@ -283,14 +283,14 @@ internal sealed class ImagingService(
             messages.Add(unavailable);
         }
 
-        return new PacsLinkOutcome(checkedIds.Count, linked, messages, checkedIds,
-            mismatches.Select(s => new PacsMismatch(s.Id, s.AccessionNumber, s.StudyName)).ToList(), unavailable);
+        return new PacsLinkOutcome(checkedIds.Count, linked, messages, checkedIds, mismatches, unavailable);
     }
 
     /// <summary>
-    /// The PACS viewer for the study. Once linked, the template can use the study UID and the accession number. Before
-    /// that, a template with only <c>{accession}</c> already finds the study, so the link is offered as soon as the
-    /// accession number can be in PACS, that is when DICOM can carry it.
+    /// The PACS viewer for the study. Once linked, the template can use the study UID and the accession number.
+    /// Before that, PACS is asked for the study first, exactly as linking does (<see cref="FindInPacsAsync"/>), and
+    /// the link is offered only when PACS holds exactly one study under the accession, with the patient's UHID as its
+    /// patient ID: a viewer opened by accession number alone could show another patient's images.
     /// </summary>
     public async Task<Result<ViewerLink>> ViewerAsync(Guid id, CancellationToken ct)
     {
@@ -305,26 +305,34 @@ internal sealed class ImagingService(
             return Error.NotFound(nameof(ImagingStudy), id);
         }
 
-        var linked = study.PacsLinkedAt is not null;
-        var accession = DicomConventions.AccessionFitsDicom(study.AccessionNumber) ? study.AccessionNumber : null;
-        if (pacs.BuildViewerUrl(linked ? study.StudyInstanceUid : null, accession) is { Length: > 0 } url)
-        {
-            return new ViewerLink(study.Id, url, study.StudyInstanceUid);
-        }
-
         // Say which value the configured link lacks, so the message says what to do.
         if (pacs.BuildViewerUrl(SampleUid, SampleAccession) is null)
         {
             return Error.Rule("pacs.viewer_not_configured", "No image viewer is configured for the PACS integration.");
         }
 
+        var accession = DicomConventions.AccessionFitsDicom(study.AccessionNumber) ? study.AccessionNumber : null;
         if (accession is null && pacs.BuildViewerUrl(SampleUid, null) is null)
         {
             return Error.Rule("pacs.accession_too_long",
                 $"The viewer link needs the accession number, and {study.AccessionNumber} is longer than the 16 characters DICOM allows. Ask the administrator for a viewer link with {{studyUid}}.");
         }
 
-        return Error.Rule("pacs.not_linked", "The images of this study are not linked yet. Link the study with PACS first.");
+        var studyUid = study.StudyInstanceUid;
+        if (study.PacsLinkedAt is null)
+        {
+            var found = await FindInPacsAsync(pacs, study, ct);
+            if (found.IsFailure)
+            {
+                return found.Error!;
+            }
+
+            studyUid = found.Value.StudyInstanceUid;
+        }
+
+        return pacs.BuildViewerUrl(studyUid, accession) is { Length: > 0 } url
+            ? new ViewerLink(study.Id, url, studyUid)
+            : Error.Rule("pacs.viewer_not_configured", "The PACS viewer link could not be built for this study.");
     }
 
     // ------------------------------------------------------------------ TAT and repeats (IMG-04)
@@ -477,16 +485,20 @@ internal sealed class ImagingService(
 
     /// <summary>
     /// Finds the study in PACS by accession number, or by its study UID when DICOM cannot carry the accession number (the
-    /// worklist then sends the modality the UID HC360 assigned, without the accession number). The returned patient id
-    /// must match the UHID, so that a mistyped accession at the modality never links another patient's images. The
-    /// facility's own PACS settings apply.
+    /// worklist then sends the modality the UID HC360 assigned, without the accession number). PACS is searched
+    /// without the patient ID, so every study under the accession is seen, and the answer must be exactly one study
+    /// whose patient ID is the UHID (<see cref="PacsStudyMatch"/>): a mistyped accession at the modality never links or
+    /// opens another patient's images. The facility's own PACS settings apply.
     /// </summary>
     private async Task<Result<ImagingStudyInfo>> FindInPacsAsync(IPacsClient pacs, ImagingStudy study, CancellationToken ct)
     {
         var byAccession = DicomConventions.AccessionFitsDicom(study.AccessionNumber);
+        var uhid = (await lookups.PatientAsync(study.PatientId, ct))?.Uhid;
         var query = byAccession
-            ? new PacsStudyQuery(AccessionNumber: study.AccessionNumber, FacilityId: study.FacilityId)
-            : new PacsStudyQuery(StudyInstanceUid: study.StudyInstanceUid, FacilityId: study.FacilityId);
+            ? new PacsStudyQuery(AccessionNumber: study.AccessionNumber, FacilityId: study.FacilityId,
+                ExpectedPatientId: uhid)
+            : new PacsStudyQuery(StudyInstanceUid: study.StudyInstanceUid, FacilityId: study.FacilityId,
+                ExpectedPatientId: uhid);
         IReadOnlyList<ImagingStudyInfo> found;
         try
         {
@@ -503,33 +515,7 @@ internal sealed class ImagingService(
             return Error.Rule("pacs.unreachable", "PACS did not respond in time. Try again shortly.");
         }
 
-        var match = byAccession
-            ? found.FirstOrDefault(s => string.Equals(s.AccessionNumber?.Trim(), study.AccessionNumber, StringComparison.OrdinalIgnoreCase))
-            : found.FirstOrDefault(s => string.Equals(s.StudyInstanceUid.Trim(), study.StudyInstanceUid, StringComparison.Ordinal));
-        if (match is null)
-        {
-            return byAccession
-                ? Error.Rule("pacs.study_not_found", $"No images for accession {study.AccessionNumber} have reached PACS yet.")
-                : Error.Rule("pacs.study_not_found",
-                    $"No images for {study.AccessionNumber} have reached PACS yet. Its accession number is longer than DICOM allows, so HC360 looks for the study by its UID, which reaches the modality only through the worklist.");
-        }
-
-        if (!DicomConventions.IsValidUid(match.StudyInstanceUid))
-        {
-            return Error.Rule("pacs.invalid_uid", "PACS returned an invalid Study Instance UID for this accession.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(match.PatientId))
-        {
-            var patient = await lookups.PatientAsync(study.PatientId, ct);
-            if (patient is not null && !string.Equals(match.PatientId.Trim(), patient.Uhid, StringComparison.OrdinalIgnoreCase))
-            {
-                return Error.Rule("pacs.patient_mismatch",
-                    $"PACS holds accession {study.AccessionNumber} under patient ID {match.PatientId}, not {patient.Uhid}. Correct the study at the modality/PACS before linking.");
-            }
-        }
-
-        return match;
+        return PacsStudyMatch.Pick(found, study, byAccession, uhid);
     }
 
     private async Task<Result<ImagingStudyDetail>> UpdateAsync(Guid id, Func<ImagingStudy, DateTimeOffset, Result> change, CancellationToken ct)
@@ -556,8 +542,11 @@ internal sealed class ImagingService(
         f.ReviewedBy is { } by ? users.GetValueOrDefault(by) : null, f.ReviewedAt, f.ReviewNote);
 }
 
-/// <summary>A study PACS holds under another patient ID than its UHID: it is not linked, and the department is told.</summary>
-internal sealed record PacsMismatch(Guid StudyId, string AccessionNumber, string StudyName);
+/// <summary>
+/// A study whose accession PACS holds under another patient ID than its UHID, without a patient ID, or as several
+/// studies (<see cref="PacsStudyMatch.IsPatientSafety"/>): it is not linked, and the department is told why.
+/// </summary>
+internal sealed record PacsMismatch(Guid StudyId, string AccessionNumber, string StudyName, string Reason);
 
 /// <summary>
 /// What one linking batch did: the studies looked for (<see cref="CheckedIds"/>), how many were linked, problems to

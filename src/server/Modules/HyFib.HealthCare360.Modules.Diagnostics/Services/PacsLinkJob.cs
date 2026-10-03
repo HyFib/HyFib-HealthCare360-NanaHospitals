@@ -45,7 +45,7 @@ internal static class PacsLinkSchedule
 
 /// <summary>
 /// What the linking job remembers between runs, in memory: when each study was last looked for in PACS, and which
-/// patient-ID mismatches the department has already been told about. A restart forgets it, which only means one more
+/// patient-ID problems the department has already been told about. A restart forgets it, which only means one more
 /// look and one more alert.
 /// </summary>
 internal sealed class PacsLinkAttempts
@@ -93,8 +93,9 @@ internal sealed class PacsLinkAttempts
 /// <c>radiology.pacs.autoLink</c> on (the default), it looks for up to <see cref="ImagingService.ReconcileBatchSize"/>
 /// unlinked studies ordered in the last <see cref="ImagingService.ReconcileWindow"/>, with the facility's own PACS
 /// settings, and links those found. A study is looked for again only after <see cref="RecheckAfter"/>. When PACS cannot be
-/// used the facility's run stops at the first study. A study PACS holds under another patient ID is not linked, and the
-/// radiology staff are told once. Runs only on nodes that run jobs (<see cref="PlatformOptions.RunsJobs"/>).
+/// used the facility's run stops at the first study. A study PACS holds under another patient ID, without a patient ID,
+/// or as several studies is not linked (<see cref="PacsStudyMatch"/>), and the radiology staff are told once. Runs
+/// only on nodes that run jobs (<see cref="PlatformOptions.RunsJobs"/>).
 /// </summary>
 internal sealed class PacsLinkJob(
     IServiceScopeFactory scopes,
@@ -212,8 +213,8 @@ internal sealed class PacsLinkJob(
             await notifications.NotifyPermissionHoldersAsync(
                 DiagnosticsPermissions.RadiologyWorklist,
                 facilityId,
-                $"Images in PACS under another patient: {mismatch.StudyName}",
-                $"PACS holds accession {mismatch.AccessionNumber} under a different patient ID, so the images were not linked. Correct the study at the modality or in PACS, then link it again.",
+                $"Images in PACS not linked: {mismatch.StudyName}",
+                $"{mismatch.Reason} The images of {mismatch.AccessionNumber} were not linked.",
                 $"/radiology/studies/{mismatch.StudyId}",
                 "diagnostics",
                 "warning",

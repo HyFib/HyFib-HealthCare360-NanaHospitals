@@ -6,7 +6,8 @@ namespace HyFib.HealthCare360.Integrations.Pacs;
 /// Training PACS: answers every accession-number or study-UID query with one study, so radiology staff can practise
 /// linking, the image viewer and the viewer launch without a PACS. Every study has the same three series: a localiser
 /// (one image), an image series (eight images) and a cine loop (one object of twelve frames, without a series
-/// thumbnail, as many real PACS). UIDs use a fixed test root and are derived from the study, so they stay the same.
+/// thumbnail, as many real PACS). The study is held under the patient ID HC360 expects, so linking succeeds. UIDs use
+/// a fixed test root and are derived from the study, so they stay the same.
 /// </summary>
 internal sealed class SimulatorPacsProvider(IntegrationTrace trace, TimeProvider time) : IPacsProvider
 {
@@ -37,7 +38,7 @@ internal sealed class SimulatorPacsProvider(IntegrationTrace trace, TimeProvider
                 new ImagingStudyInfo(
                     uid,
                     accession,
-                    query.PatientId,
+                    query.PatientId ?? query.ExpectedPatientId,
                     "SIMULATOR^PATIENT",
                     time.GetUtcNow(),
                     string.IsNullOrWhiteSpace(query.Modality) ? "CR" : query.Modality.ToUpperInvariant(),

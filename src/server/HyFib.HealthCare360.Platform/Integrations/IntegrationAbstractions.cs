@@ -154,6 +154,11 @@ public interface IAccountingExporter
 // ---------- PACS / DICOMweb ----------
 /// <param name="StudyInstanceUid">One study by its UID (for a study whose accession number DICOM cannot carry).</param>
 /// <param name="FacilityId">Facility whose PACS settings apply (null: the signed-in facility, then the all-facility settings).</param>
+/// <param name="ExpectedPatientId">
+/// The patient ID HC360 expects the study under. It is not a search key: a real PACS is searched without it, so a study
+/// held under another patient is still found and refused. Only the training simulator uses it, answering with it as a
+/// PACS holding the right study would.
+/// </param>
 public sealed record PacsStudyQuery(
     string? PatientId = null,
     string? AccessionNumber = null,
@@ -161,7 +166,8 @@ public sealed record PacsStudyQuery(
     DateOnly? To = null,
     string? Modality = null,
     string? StudyInstanceUid = null,
-    Guid? FacilityId = null);
+    Guid? FacilityId = null,
+    string? ExpectedPatientId = null);
 
 public sealed record ImagingStudyInfo(string StudyInstanceUid, string? AccessionNumber, string? PatientId, string? PatientName, DateTimeOffset? StudyDate, string? Modalities, string? Description, int? SeriesCount, int? InstanceCount);
 

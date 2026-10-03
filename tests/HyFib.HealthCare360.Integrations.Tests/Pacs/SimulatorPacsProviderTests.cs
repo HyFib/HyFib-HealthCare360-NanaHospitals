@@ -28,6 +28,16 @@ public sealed class SimulatorPacsProviderTests
     }
 
     [Fact]
+    public async Task Holds_the_study_under_the_patient_id_hc360_expects()
+    {
+        var query = new PacsStudyQuery(AccessionNumber: "NHRD260000042", ExpectedPatientId: "NH26000001");
+
+        var study = (await Provider.FindStudiesAsync(query, Settings, new PacsSecrets(), Ct)).ShouldHaveSingleItem();
+
+        study.PatientId.ShouldBe("NH26000001");
+    }
+
+    [Fact]
     public async Task Finds_a_study_by_its_uid_when_the_accession_number_cannot_travel()
     {
         var study = (await Provider.FindStudiesAsync(new PacsStudyQuery(StudyInstanceUid: "2.25.12345"), Settings, new PacsSecrets(), Ct)).ShouldHaveSingleItem();
