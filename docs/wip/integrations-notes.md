@@ -162,3 +162,18 @@ Fingerprint sign-in: the user chose to leave it for now (not covered).
    squash): lab analysers + labels, PACS, ICD-10, Tally + gateway. Delete docs/wip before opening any PR.
 5. Codex reviews often arrive after auto-merge: fix each late finding in a small follow-up PR, reply on its thread
    (ending "_🤖 Addressed by [Claude Code](https://claude.com/claude-code)_") and resolve it.
+
+## Cloud session, 2026-10-03
+
+- Toolchain here: .NET SDK 10.0.1xx from Ubuntu (global.json lowered locally with skip-worktree, never committed),
+  PostgreSQL 16 for IntegrationTests (`HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=postgres;Password=postgres;Database=postgres`).
+- Each part was finished (web gates, staff tests), reviewed and fixed on a local branch `part/<name>` (worktrees under
+  /home/user/wt). Review fixes: labels (wristband allergy states, raw print to installed printers only, setup
+  validation, page fallback), lab (LabAgent credential refused for sign-in, E1381 contention, facility scoping, size
+  limit, order claims, pinning, relay close; a 500 on every connection save), PACS (viewer and linking fail closed on
+  patient mismatch, worklist filtering in SQL, peer re-check, throttled refusals, image proxy limits), ICD-10
+  (switched-off codes, withdrawn codes on existing records, hand edits, Down, test isolation), Tally and gateway (in
+  progress at the time of writing).
+- This branch is built as a stack of merges in PR order: lab, labels, then PACS, ICD-10, Tally, gateway. Each part's
+  commits stay reachable from here.
+- Known Linux-only failure, not ours: Platform.Tests StoredFileNameTests (Windows path), fine on windows-latest.
