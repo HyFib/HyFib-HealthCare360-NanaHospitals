@@ -12,7 +12,9 @@ namespace HyFib.HealthCare360.Integrations.Laboratory.Relay;
 /// <item>Writes are sent at once, one at a time, as one binary message each.</item>
 /// <item>A text message is a protocol error: the relay carries bytes only, and the agent never answers the analyser
 /// itself.</item>
-/// <item>The stream ends when the agent closes the socket or the connection drops.</item>
+/// <item>The stream ends when the agent closes the socket or the connection drops. The server ends it with
+/// <see cref="CloseAsync"/>, which tells the agent why in a close frame; cancelling a read or a write never aborts the
+/// socket.</item>
 /// </list>
 /// </summary>
 internal sealed class WebSocketRelayStream : Stream
@@ -21,16 +23,17 @@ internal sealed class WebSocketRelayStream : Stream
     private readonly Pipe _incoming = new(new PipeOptions(pauseWriterThreshold: 256 * 1024, resumeWriterThreshold: 128 * 1024, useSynchronizationContext: false));
     private readonly Stream _reader;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
-    private readonly CancellationTokenSource _stopping;
+    private static readonly TimeSpan CloseTimeout = TimeSpan.FromSeconds(5);
+
+    private readonly CancellationTokenSource _stopping = new();
     private readonly Task _pump;
     private long _received;
     private long _sent;
     private bool _disposed;
 
-    public WebSocketRelayStream(WebSocket socket, CancellationToken lifetime)
+    public WebSocketRelayStream(WebSocket socket)
     {
         _socket = socket;
-        _stopping = CancellationTokenSource.CreateLinkedTokenSource(lifetime);
         _reader = _incoming.Reader.AsStream();
         _pump = PumpAsync(_stopping.Token);
     }
@@ -83,10 +86,11 @@ internal sealed class WebSocketRelayStream : Stream
                 throw new IOException("The lab agent's relay is closed.");
             }
 
-            await _socket.SendAsync(buffer, WebSocketMessageType.Binary, endOfMessage: true, cancellationToken);
+            // A started send finishes even if the session is cancelled meanwhile: a cancelled send aborts the socket.
+            await _socket.SendAsync(buffer, WebSocketMessageType.Binary, endOfMessage: true, _stopping.Token);
             Interlocked.Add(ref _sent, buffer.Length);
         }
-        catch (WebSocketException ex)
+        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
         {
             throw new IOException("The lab agent's relay was lost.", ex);
         }
@@ -106,20 +110,34 @@ internal sealed class WebSocketRelayStream : Stream
 
     public override void SetLength(long value) => throw new NotSupportedException();
 
-    /// <summary>Closes the socket politely (a short wait for the agent), then stops the pump.</summary>
+    /// <summary>
+    /// Sends a close frame saying why the relay ends and waits briefly for the agent's own close frame; an agent that
+    /// does not answer in time is cut off.
+    /// </summary>
     public async Task CloseAsync(WebSocketCloseStatus status, string description)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var timeout = new CancellationTokenSource(CloseTimeout);
         try
         {
-            if (_socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+            await _sendLock.WaitAsync(timeout.Token);
+            try
             {
-                await _socket.CloseOutputAsync(status, description, timeout.Token);
+                if (_socket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                {
+                    await _socket.CloseOutputAsync(status, description, timeout.Token);
+                }
             }
+            finally
+            {
+                _sendLock.Release();
+            }
+
+            // The agent answers with its own close frame, which ends the pump.
+            await _pump.WaitAsync(timeout.Token);
         }
         catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
         {
-            // The connection is already gone.
+            // The connection is already gone, or the agent did not answer in time.
         }
 
         await _stopping.CancelAsync();

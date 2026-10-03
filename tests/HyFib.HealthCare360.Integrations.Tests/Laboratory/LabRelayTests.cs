@@ -73,7 +73,7 @@ public sealed class LabRelayTests : IAsyncDisposable
     [Fact]
     public async Task Relays_an_analysers_transfer_to_the_unchanged_session()
     {
-        await using var stream = new WebSocketRelayStream(_server, Ct);
+        await using var stream = new WebSocketRelayStream(_server);
         var run = Relay(stream);
 
         await FromAnalyserAsync(AstmControl.Enq);
@@ -107,7 +107,7 @@ public sealed class LabRelayTests : IAsyncDisposable
             IdleTimeout = Timeout.InfiniteTimeSpan,
             Timings = new AstmTimings(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10)),
         };
-        await using var stream = new WebSocketRelayStream(_server, Ct);
+        await using var stream = new WebSocketRelayStream(_server);
         var run = Relay(stream, options);
 
         await FromAnalyserAsync(AstmControl.Enq);
@@ -135,7 +135,7 @@ public sealed class LabRelayTests : IAsyncDisposable
     [Fact]
     public async Task Text_on_the_relay_ends_it_as_a_protocol_error()
     {
-        await using var stream = new WebSocketRelayStream(_server, Ct);
+        await using var stream = new WebSocketRelayStream(_server);
         var run = Relay(stream);
 
         await _agent.SendAsync(Encoding.UTF8.GetBytes("ACK"), WebSocketMessageType.Text, endOfMessage: true, Ct);
@@ -143,6 +143,51 @@ public sealed class LabRelayTests : IAsyncDisposable
 
         stream.ProtocolError.ShouldNotBeNull().ShouldContain("only the analyser's bytes");
         await _processor.DidNotReceiveWithAnyArgs().SubmitResultsAsync(default!, default!, default!, Ct);
+    }
+
+    [Fact]
+    public async Task Ending_a_relay_tells_the_agent_why_in_a_close_frame()
+    {
+        await using var stream = new WebSocketRelayStream(_server);
+        using var session = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var instrument = LabSamples.AstmInstrument with { Transport = LabTransport.Serial };
+        var options = LabSamples.Options() with { IdleTimeout = Timeout.InfiniteTimeSpan };
+        var run = new AstmSession(instrument, options, _processor, TimeProvider.System, NullLogger.Instance)
+            .RunAsync(stream, session.Token);
+        await FromAnalyserAsync(AstmControl.Enq);
+        (await ToAnalyserAsync()).ShouldBe(AstmControl.Ack);
+
+        // The relay is replaced: ending the session does not abort the socket, so the close frame still goes out.
+        await session.CancelAsync();
+        await Should.ThrowAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(10), Ct));
+        var (status, reason) = LabAgentEndpoints.CloseFor(
+            stream.ProtocolError, null, RelayLease.Replaced, stopping: false);
+        var closing = stream.CloseAsync(status, reason);
+
+        var received = await _agent.ReceiveAsync(new byte[16], Ct);
+        received.MessageType.ShouldBe(WebSocketMessageType.Close);
+        _agent.CloseStatus.ShouldBe(WebSocketCloseStatus.NormalClosure);
+        _agent.CloseStatusDescription.ShouldBe(RelayLease.Replaced);
+        await _agent.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, Ct);
+        await closing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+    }
+
+    [Fact]
+    public void A_revoked_agent_is_told_so_and_a_stopping_server_says_it_is_stopping()
+    {
+        LabAgentEndpoints.CloseFor(null, null, RelayLease.Revoked, stopping: false)
+            .ShouldBe((WebSocketCloseStatus.PolicyViolation, RelayLease.Revoked));
+        LabAgentEndpoints.CloseFor(null, null, RelayLease.Unassigned, stopping: true)
+            .ShouldBe((WebSocketCloseStatus.NormalClosure, RelayLease.Unassigned));
+        LabAgentEndpoints.CloseFor(null, null, null, stopping: true).Status
+            .ShouldBe(WebSocketCloseStatus.EndpointUnavailable);
+        LabAgentEndpoints.CloseFor("text on the relay", null, null, stopping: false).Status
+            .ShouldBe(WebSocketCloseStatus.PolicyViolation);
+        string[] reasons = [RelayLease.Replaced, RelayLease.Unassigned, RelayLease.Revoked, RelayLease.Changed, RelayLease.GatewayOff];
+        foreach (var reason in reasons)
+        {
+            Encoding.UTF8.GetByteCount(reason).ShouldBeLessThanOrEqualTo(123, "a close frame carries at most 123 bytes");
+        }
     }
 
     [Fact]
@@ -157,6 +202,7 @@ public sealed class LabRelayTests : IAsyncDisposable
         using var second = registry.Open(instrument, agent, "Lab PC 1");
 
         first.Ended.IsCancellationRequested.ShouldBeTrue();
+        first.EndReason.ShouldBe(RelayLease.Replaced);
         second.Ended.IsCancellationRequested.ShouldBeFalse();
         first.Dispose();
         registry.IsLive("XN550").ShouldBeTrue();
@@ -180,6 +226,7 @@ public sealed class LabRelayTests : IAsyncDisposable
 
         kept.Ended.IsCancellationRequested.ShouldBeFalse();
         moved.Ended.IsCancellationRequested.ShouldBeTrue();
+        moved.EndReason.ShouldBe(RelayLease.Unassigned);
     }
 
     [Fact]

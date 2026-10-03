@@ -57,7 +57,7 @@ public sealed class RelayTests
         {
             OrderPollInterval = TimeSpan.FromMilliseconds(50),
         };
-        await using var stream = new WebSocketRelayStream(socket, cancellationToken);
+        await using var stream = new WebSocketRelayStream(socket);
         try
         {
             await new AstmSession(instrument, options, _processor, TimeProvider.System, NullLogger.Instance).RunAsync(stream, cancellationToken);

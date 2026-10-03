@@ -99,6 +99,41 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_revoked_agent_a_desktop_or_another_agent_may_not_relay_an_analyser()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var code = "RLY" + Letters(6).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            code, "Serial analyser " + code, "Erba", "Chem 7", LabSection.Biochemistry, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: false, Location: null, IsActive: true, Version: null));
+        var (assigned, assignedSecret) = await EnrolLabAgentAsync(admin);
+        var (other, otherSecret) = await EnrolLabAgentAsync(admin);
+        var (desktop, desktopSecret) = await EnrolDeviceAsync(admin, DeviceKind.Workstation);
+        await EnableGatewayAsync(admin);
+        var version = (await admin.GetAsync<LabConnectionsDto>("/api/v1/integrations/lab/connections")).ListVersion;
+        await admin.PutAsync($"/api/v1/integrations/lab/connections/{code}", new SaveLabConnectionRequest(
+            "Serial", true, null, null, null, null, null, assigned,
+            new LabSerialPortDto("COM4", 9600, 8, "None", "One", "None", true, true), version));
+
+        // Another lab agent is refused the analyser, and an HC360 Desktop's credential is no lab agent's.
+        (await RefusedRelayAsync(other, otherSecret, code)).ShouldContain("404");
+        (await RefusedRelayAsync(desktop, desktopSecret, code)).ShouldContain("401");
+
+        // A relay replaced by a newer one is told why before it is closed.
+        using var first = await ConnectRelayAsync(assigned, assignedSecret, code);
+        using var second = await ConnectRelayAsync(assigned, assignedSecret, code);
+        var closed = await first.ReceiveAsync(new byte[16], Ct);
+        closed.MessageType.ShouldBe(WebSocketMessageType.Close);
+        first.CloseStatusDescription.ShouldBe(RelayLease.Replaced);
+        await first.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "agent replaced", Ct);
+        await second.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "agent stopping", Ct);
+
+        // Once revoked, the agent may not relay any more.
+        await admin.PostAsync($"/api/v1/admin/devices/{assigned}/revoke");
+        (await RefusedRelayAsync(assigned, assignedSecret, code)).ShouldContain("401");
+    }
+
+    [Fact]
     public async Task A_lab_agent_credential_does_not_count_as_an_enrolled_workstation()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -179,6 +214,10 @@ public sealed class LabAnalyserTests(HospitalServer server)
             new EnrollDeviceRequest(code.Code, "Lab PC " + Guid.NewGuid().ToString("N")[..6], "LAB-PC-1", "Windows 11", "1.0.0"));
         return (enrolled.DeviceId, enrolled.DeviceSecret);
     }
+
+    /// <summary>The refusal of a relay the server does not open (its message names the HTTP status).</summary>
+    private async Task<string> RefusedRelayAsync(Guid deviceId, string secret, string code) =>
+        (await Should.ThrowAsync<Exception>(() => ConnectRelayAsync(deviceId, secret, code))).Message;
 
     private static async Task<SessionInfo> CurrentSessionAsync(ApiClient client) =>
         (await client.GetAsync<List<SessionInfo>>("/api/v1/auth/sessions")).Single(s => s.IsCurrent);

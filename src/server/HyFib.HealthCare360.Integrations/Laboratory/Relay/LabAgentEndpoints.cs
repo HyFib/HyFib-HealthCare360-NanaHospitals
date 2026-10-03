@@ -151,41 +151,70 @@ internal static class LabAgentEndpoints
 
         using var lease = registry.Open(instrument, device.Id, device.Name);
         using var session = CancellationTokenSource.CreateLinkedTokenSource(requestAborted, lease.Ended, stopping);
-        await using var stream = new WebSocketRelayStream(socket, session.Token);
+
+        // Not tied to the session: ending the session must not abort the socket before the close frame is sent.
+        await using var stream = new WebSocketRelayStream(socket);
         await trace.LogAsync(IntegrationNames.Lab, provider, "relay.connected", true, trace.Start(), instrument.Code, line, direction: IntegrationDirection.Inbound);
         logger.LogInformation("Lab agent {Agent} is relaying instrument {Instrument}", device.Name, instrument.Code);
 
         var started = trace.Start();
-        var watch = WatchAsync(services.GetRequiredService<IServiceScopeFactory>(), device.Id, instrument, session, time, logger);
-        string? ended = null;
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
+        var watch = WatchAsync(scopes, device.Id, instrument, lease, session, time, logger);
+        string? failed = null;
         try
         {
             await LabSessionRunner.RunAsync(instrument, LabRuntimeOptions.From(gateway, instrument), stream, processor, time, logger, session.Token);
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException or WebSocketException or ObjectDisposedException)
         {
-            ended = lease.Ended.IsCancellationRequested ? "The relay was replaced or is no longer allowed." : null;
+            // The relay was ended (see below), or the agent went away.
         }
         catch (Exception ex)
         {
             // A bug in the session code must end only this relay, never the server.
             logger.LogError(ex, "Unexpected error relaying instrument {Instrument}", instrument.Code);
-            ended = "The server ended the relay after an error.";
+            failed = "The server ended the relay after an error.";
         }
 
         await session.CancelAsync();
         await watch;
-        await stream.CloseAsync(stream.ProtocolError is null ? WebSocketCloseStatus.NormalClosure : WebSocketCloseStatus.PolicyViolation, "HC360 closed the relay.");
+
+        var (status, reason) = CloseFor(
+            stream.ProtocolError, failed, lease.EndReason, stopping.IsCancellationRequested);
+        await stream.CloseAsync(status, reason);
         var (received, sent) = stream.Traffic;
-        var error = stream.ProtocolError ?? ended;
+        var error = stream.ProtocolError ?? failed ?? lease.EndReason;
         await trace.LogAsync(IntegrationNames.Lab, provider, "relay.closed", error is null, started, instrument.Code, line,
             string.Create(CultureInfo.InvariantCulture, $"{received} bytes from the analyser, {sent} bytes to it"), error, IntegrationDirection.Inbound);
-        logger.LogInformation("Lab agent {Agent} stopped relaying instrument {Instrument}", device.Name, instrument.Code);
+        logger.LogInformation(
+            "Lab agent {Agent} stopped relaying instrument {Instrument}: {Reason}",
+            device.Name,
+            instrument.Code,
+            reason);
     }
+
+    /// <summary>
+    /// The close frame that tells the agent why its relay ended (the agent logs it, then reconnects; a relay it may no
+    /// longer run is refused then). Descriptions stay within the 123 bytes a close frame carries.
+    /// </summary>
+    internal static (WebSocketCloseStatus Status, string Reason) CloseFor(
+        string? protocolError, string? failure, string? ended, bool stopping) =>
+        protocolError is not null ? (WebSocketCloseStatus.PolicyViolation, protocolError)
+        : failure is not null ? (WebSocketCloseStatus.InternalServerError, failure)
+        : ended == RelayLease.Revoked ? (WebSocketCloseStatus.PolicyViolation, ended)
+        : ended is not null ? (WebSocketCloseStatus.NormalClosure, ended)
+        : stopping ? (WebSocketCloseStatus.EndpointUnavailable, "The HC360 server is stopping.")
+        : (WebSocketCloseStatus.NormalClosure, "HC360 closed the relay.");
 
     /// <summary>Every minute: the agent must still be enrolled and the analyser still assigned to it, unchanged.</summary>
     private static async Task WatchAsync(
-        IServiceScopeFactory scopes, Guid deviceId, LabInstrumentSettings instrument, CancellationTokenSource session, TimeProvider time, ILogger logger)
+        IServiceScopeFactory scopes,
+        Guid deviceId,
+        LabInstrumentSettings instrument,
+        RelayLease lease,
+        CancellationTokenSource session,
+        TimeProvider time,
+        ILogger logger)
     {
         var signature = JsonSerializer.Serialize(instrument, SignatureJson);
         while (!session.IsCancellationRequested)
@@ -201,10 +230,15 @@ internal static class LabAgentEndpoints
                 var current = gateway?.Enabled == true
                     ? (await AssignedAsync(settings, deviceId, session.Token)).FirstOrDefault(i => string.Equals(i.Code, instrument.Code, StringComparison.OrdinalIgnoreCase))
                     : null;
-                if (!enrolled || current is null || JsonSerializer.Serialize(current, SignatureJson) != signature)
+                var ended = !enrolled ? RelayLease.Revoked
+                    : gateway?.Enabled != true ? RelayLease.GatewayOff
+                    : current is null ? RelayLease.Unassigned
+                    : JsonSerializer.Serialize(current, SignatureJson) != signature ? RelayLease.Changed
+                    : null;
+                if (ended is not null)
                 {
-                    logger.LogInformation("Relay of instrument {Instrument} ended: its agent or connection changed", instrument.Code);
-                    await session.CancelAsync();
+                    logger.LogInformation("Relay of instrument {Instrument} ended: {Reason}", instrument.Code, ended);
+                    lease.End(ended);
                 }
             }
             catch (OperationCanceledException)
