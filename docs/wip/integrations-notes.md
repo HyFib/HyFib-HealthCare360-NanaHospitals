@@ -172,8 +172,28 @@ Fingerprint sign-in: the user chose to leave it for now (not covered).
   validation, page fallback), lab (LabAgent credential refused for sign-in, E1381 contention, facility scoping, size
   limit, order claims, pinning, relay close; a 500 on every connection save), PACS (viewer and linking fail closed on
   patient mismatch, worklist filtering in SQL, peer re-check, throttled refusals, image proxy limits), ICD-10
-  (switched-off codes, withdrawn codes on existing records, hand edits, Down, test isolation), Tally and gateway (in
-  progress at the time of writing).
+  (switched-off codes, withdrawn codes on existing records, hand edits, Down, test isolation), Tally (legacy
+  references for days posted before tracking, timeouts within the outbox's 30 s, xmin, key length, doctor-fee
+  suffix, honest counter lines), gateway (double refund on retry, failed-refund exception cleared, lost exceptions,
+  starved polling, facility guard, webhook in flight, late receipts, shared accounts, refund follow-up window).
 - This branch is built as a stack of merges in PR order: lab, labels, then PACS, ICD-10, Tally, gateway. Each part's
   commits stay reachable from here.
 - Known Linux-only failure, not ours: Platform.Tests StoredFileNameTests (Windows path), fine on windows-latest.
+
+### Combined (all six parts), 2026-10-03
+- Merge order on this branch: lab, labels, PACS, ICD-10, Tally, gateway. Migrations in order: LabAnalyserOrders
+  (20261002215306), IcdCatalogueImport (20261003034119), TallyReconciliation (20261003035955), GatewayReconciliation
+  (20261003040327); the later three regenerated with dotnet-ef after each merge, hand-written SQL kept.
+  `has-pending-model-changes` is clean.
+- After the gateway merge: TallyCorrections queues a one-day range (Tally changed QueueAsync); the Tally ledger form
+  now carries the three settlement-journal ledgers (it saves the whole map).
+- Checks on the combined branch: whole solution builds (EnableWindowsTargeting); every Linux-runnable .NET suite passes
+  (IntegrationTests 101 on PostgreSQL, Integrations 877, Billing 327, …) except Platform StoredFileNameTests (Windows
+  path, Linux only); web format, typecheck, lint (0 errors), staff 1417, portal 226, core 44, ui 16.
+- For CI on Windows: Desktop.Tests, LabAgent.Tests (DPAPI), Edge PDF tests, WebView2 PemEncodedIssuerCertificateChain.
+- Open: Razorpay `X-Refund-Idempotency` header to confirm in their docs (the `receipt` field carries the key too);
+  printer setup trusts the page beyond the server approval (policy lock is the protection; documented); wristband
+  reprint prompt when the first allergy is recorded; ARCHITECTURE.md bridge list names app.info, biometric.capture and
+  scanner.data that the shell lacks; GatewayExceptions.test.tsx once timed out under heavy local load (passes alone).
+- PRs, when asked: the stack can be cut at the merge commits (lab + labels, PACS, ICD-10, Tally + gateway) or opened
+  as one PR from this branch. Delete docs/wip first.
