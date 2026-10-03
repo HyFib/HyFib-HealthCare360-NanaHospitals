@@ -327,6 +327,17 @@ ones and retries ports that could not be bound.
   (`Recorded`, `NoKnownAllergies`, `NotRecorded`), and the band prints it three ways: a black ALLERGY mark, no mark,
   or an outlined "ALLERGIES / NOT RECORDED" mark, so a patient never assessed does not look like one with no known
   allergies. A band is not reprinted by itself when the first allergy is recorded; staff reprint it.
+* **Printers on this computer.** HC360 Desktop keeps each workstation's label, wristband, receipt and document
+  printers in `%ProgramData%\HyFib\HC360Desktop\Workstation\printers.json`. The staff app offers the change only to
+  staff with `integrations.printers.setup`: the server approves it (`POST /api/v1/integrations/printers/changes/approval`,
+  which names the user the change is saved as), HC360 Desktop saves it, and the server then records it in the audit
+  trail as `workstation.printers_changed` (`POST /api/v1/integrations/printers/changes`), with the wristband code.
+* **What protects the setup.** HC360 Desktop cannot confirm the server's approval: it holds no user's sign-in and
+  nothing the server signs, so `printer.saveSetup` saves what the staff app sends, and every Windows user on the
+  computer may change `printers.json` (the installer gives Users modify rights so any logon can save). The "saved by"
+  name is a note, not proof; the audit trail is the record. Where local users or scripts must not change the printers,
+  IT sets them in the machine policy (`policy.json`, `printers` entry), which is read-only to users: HC360 then shows
+  them and refuses changes.
 * **Checked when read.** The saved file and the policy are checked like a save. A printer that is not installed any
   more, or not a valid setup, is not used (that kind of print shows the print dialog), and Printers on this computer
   says which and why.

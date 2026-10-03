@@ -159,17 +159,20 @@ export function toLabelPrinter(role: LabelRole, value: LabelRoleForm): RolePrint
   };
 }
 
-export function toSetup(form: PrinterSetupForm, updatedBy: string | null): WorkstationPrinters {
+/** The printers as the form sets them. Who saved them is added from the server's approval (printersApi.save). */
+export function toSetup(form: PrinterSetupForm): WorkstationPrinters {
   return {
     labels: toLabelPrinter('labels', form.labels),
     wristbands: toLabelPrinter('wristbands', form.wristbands),
     receipts: form.receipts.printer === NO_PRINTER ? null : { printer: form.receipts.printer },
     documents: form.documents.printer === NO_PRINTER ? null : { printer: form.documents.printer },
-    updatedBy,
   };
 }
 
-/** The change as the server records it in the audit trail (POST /api/v1/integrations/printers/changes). */
+/**
+ * The change as the server approves it and records it in the audit trail
+ * (POST /api/v1/integrations/printers/changes/approval, then /api/v1/integrations/printers/changes).
+ */
 export interface PrinterSetupChange {
   computer: string;
   deviceId: string | null;
@@ -180,6 +183,8 @@ export interface PrinterSetupChange {
     dpi: number | null;
     widthMm: number | null;
     heightMm: number | null;
+    /** Wristbands only: how the UHID is coded on the band. */
+    code: 'code128' | 'qr' | null;
   }[];
 }
 
@@ -197,6 +202,7 @@ export function toChange(setup: WorkstationPrinters, computer: string, deviceId:
         dpi: printer?.dpi ?? null,
         widthMm: printer?.widthMm ?? null,
         heightMm: printer?.heightMm ?? null,
+        code: role === 'wristbands' ? (printer?.code ?? null) : null,
       };
     }),
   };

@@ -5,7 +5,6 @@ import {
   formatDateTime,
   isDesktop,
   PRINTER_ROLE_LABEL,
-  useSession,
   type PrinterRole,
   type RolePrinter,
 } from '@hc360/core';
@@ -13,7 +12,7 @@ import { EmptyState, ErrorState, LoadingState, Page, PageHeader, useNotify } fro
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { usePermission } from '@/lib/permissions';
-import { printerKeys, printerQueries, printersApi } from '@/modules/printers/api';
+import { PrinterChangeNotRecordedError, printerKeys, printerQueries, printersApi } from '@/modules/printers/api';
 import { PRINTERS_SETUP, toSetup, type PrinterSetupForm } from '@/modules/printers/form';
 import { PrinterSetupForm as PrinterSetupFields } from '@/modules/printers/PrinterSetupForm';
 
@@ -47,7 +46,6 @@ function PrintersPage() {
 function DesktopPrinters() {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const userName = useSession((s) => s.user?.displayName ?? null);
   const mayChange = usePermission(PRINTERS_SETUP);
   const setup = useQuery(printerQueries.setup());
   const installed = useQuery(printerQueries.installed());
@@ -56,12 +54,19 @@ function DesktopPrinters() {
 
   const save = useMutation({
     mutationFn: (values: PrinterSetupForm) =>
-      printersApi.save(toSetup(values, userName), computer, device.data?.deviceId ?? null),
+      printersApi.save(toSetup(values), computer, device.data?.deviceId ?? null),
     onSuccess: () => {
       notify.success('Printers saved', 'Prints from this computer now go to these printers.');
       void queryClient.invalidateQueries({ queryKey: printerKeys.setup });
     },
-    onError: (error) => notify.error(error, 'The printers were not saved'),
+    onError: (error) => {
+      if (error instanceof PrinterChangeNotRecordedError) {
+        notify.warning('Printers saved, change not recorded', error.message);
+        void queryClient.invalidateQueries({ queryKey: printerKeys.setup });
+        return;
+      }
+      notify.error(error, 'The printers were not saved');
+    },
   });
 
   const test = useMutation({

@@ -134,25 +134,39 @@ public sealed class LabelPrintingTests(HospitalServer server)
         var change = new PrinterSetupChange(computer, null,
         [
             new PrinterRoleSetup("labels", "ZDesigner GK420t", "zpl", 203, 50, 25),
+            new PrinterRoleSetup("wristbands", "ZDesigner HC100", "zpl", 300, 25, 254, "qr"),
             new PrinterRoleSetup("receipts", "EPSON TM-T82 Receipt", null, null, null, null),
         ]);
 
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        using (var refused = await frontOffice.SendRawAsync(HttpMethod.Post, "/api/v1/integrations/printers/changes", change))
+        foreach (var path in new[] { "/api/v1/integrations/printers/changes/approval", "/api/v1/integrations/printers/changes" })
         {
+            using var refused = await frontOffice.SendRawAsync(HttpMethod.Post, path, change);
             refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         }
 
+        // The approval names who the change is saved as, from the sign-in rather than the page; it records nothing.
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        await admin.PostAsync("/api/v1/integrations/printers/changes", change);
+        var me = await admin.GetAsync<JsonElement>("/api/v1/auth/me");
+        var approval = await admin.PostAsync<PrinterChangeApproval>("/api/v1/integrations/printers/changes/approval", change);
+        approval.ChangedBy.ShouldBe(me.GetProperty("displayName").GetString());
 
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        var recorded = await db.Set<AuditEvent>().AsNoTracking()
-            .Where(e => e.Action == "workstation.printers_changed" && e.EntityId == computer)
-            .ToListAsync(TestContext.Current.CancellationToken);
-        recorded.ShouldHaveSingleItem().UserName.ShouldBe(HospitalServer.Users.HospitalAdmin);
-        recorded[0].Summary.ShouldBe($"Changed the printers on {computer}: labels: ZDesigner GK420t; receipts: EPSON TM-T82 Receipt");
+        var recorded = db.Set<AuditEvent>().AsNoTracking().Where(e => e.Action == "workstation.printers_changed" && e.EntityId == computer);
+        (await recorded.CountAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
+
+        // Recorded once HC360 Desktop has saved it, with the wristband's code.
+        await admin.PostAsync("/api/v1/integrations/printers/changes", change);
+
+        var entry = (await recorded.ToListAsync(TestContext.Current.CancellationToken)).ShouldHaveSingleItem();
+        entry.UserName.ShouldBe(HospitalServer.Users.HospitalAdmin);
+        entry.Summary.ShouldBe(
+            $"Changed the printers on {computer}: labels: ZDesigner GK420t; wristbands: ZDesigner HC100 (QR code); receipts: EPSON TM-T82 Receipt");
+
+        using var badCode = await admin.SendRawAsync(HttpMethod.Post, "/api/v1/integrations/printers/changes/approval",
+            change with { Roles = [new PrinterRoleSetup("labels", "ZDesigner GK420t", "zpl", 203, 50, 25, "qr")] });
+        badCode.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));

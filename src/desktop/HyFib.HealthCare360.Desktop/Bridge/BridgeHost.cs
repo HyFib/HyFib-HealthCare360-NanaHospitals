@@ -142,7 +142,9 @@ internal sealed class BridgeHost(
 
             case "printer.saveSetup":
             {
-                // The staff app offers this only to staff allowed to set up printers, after the server recorded the change.
+                // The staff app offers this only to staff allowed to set up printers, after the server approved the
+                // change (and records it once saved). Nothing here can confirm that: the machine policy is what locks
+                // the setup against local users and scripts (PrinterSetupStore).
                 var setup = Required(parameters).TryGetProperty("setup", out var value) && value.ValueKind == JsonValueKind.Object
                     ? value.Deserialize<WorkstationPrinters>(Json)
                     : null;

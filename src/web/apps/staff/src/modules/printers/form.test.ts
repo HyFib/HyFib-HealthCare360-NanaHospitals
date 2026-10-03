@@ -22,7 +22,7 @@ describe('printer setup form', () => {
       heightMm: 279.4,
       code: 'qr',
     });
-    expect(toSetup(form, 'Asha Rao')).toEqual({ ...counter, updatedBy: 'Asha Rao' });
+    expect(toSetup(form)).toEqual(counter);
   });
 
   it('starts a printer not set yet with the usual stock: 50 × 25 mm labels and adult bands', () => {
@@ -30,13 +30,7 @@ describe('printer setup form', () => {
 
     expect(form.labels).toMatchObject({ printer: '', language: 'zpl', dpi: '203', widthMm: 50, heightMm: 25 });
     expect(form.wristbands).toMatchObject({ widthMm: 25.4, heightMm: 279.4, code: 'code128' });
-    expect(toSetup(form, null)).toEqual({
-      labels: null,
-      wristbands: null,
-      receipts: null,
-      documents: null,
-      updatedBy: null,
-    });
+    expect(toSetup(form)).toEqual({ labels: null, wristbands: null, receipts: null, documents: null });
   });
 
   it('keeps only the printer for a label printer on its Windows driver', () => {
@@ -45,7 +39,7 @@ describe('printer setup form', () => {
     form.labels.widthMm = null;
 
     expect(printerSetupSchema.safeParse(form).success).toBe(true);
-    expect(toSetup(form, null).labels).toEqual({ printer: 'ZDesigner GK420t', language: 'driver' });
+    expect(toSetup(form).labels).toEqual({ printer: 'ZDesigner GK420t', language: 'driver' });
   });
 
   it('asks for a label size the printer can take, and a band size for wristbands', () => {
@@ -76,15 +70,39 @@ describe('printer setup form', () => {
     expect(guessLanguage('Brother QL-800')).toBe('driver');
   });
 
-  it('describes the change for the audit trail, every kind of print included', () => {
+  it('describes the change for the audit trail, every kind of print included, with the wristband code', () => {
     expect(toChange(counter, 'OPD Reception 2', 'device-1')).toEqual({
       computer: 'OPD Reception 2',
       deviceId: 'device-1',
       roles: [
-        { role: 'labels', printer: 'ZDesigner GK420t', language: 'zpl', dpi: 203, widthMm: 50, heightMm: 25 },
-        { role: 'wristbands', printer: 'ZDesigner HC100', language: 'zpl', dpi: 300, widthMm: 25.4, heightMm: 279.4 },
-        { role: 'receipts', printer: 'EPSON TM-T82 Receipt', language: null, dpi: null, widthMm: null, heightMm: null },
-        { role: 'documents', printer: null, language: null, dpi: null, widthMm: null, heightMm: null },
+        {
+          role: 'labels',
+          printer: 'ZDesigner GK420t',
+          language: 'zpl',
+          dpi: 203,
+          widthMm: 50,
+          heightMm: 25,
+          code: null,
+        },
+        {
+          role: 'wristbands',
+          printer: 'ZDesigner HC100',
+          language: 'zpl',
+          dpi: 300,
+          widthMm: 25.4,
+          heightMm: 279.4,
+          code: 'qr',
+        },
+        {
+          role: 'receipts',
+          printer: 'EPSON TM-T82 Receipt',
+          language: null,
+          dpi: null,
+          widthMm: null,
+          heightMm: null,
+          code: null,
+        },
+        { role: 'documents', printer: null, language: null, dpi: null, widthMm: null, heightMm: null, code: null },
       ],
     });
   });

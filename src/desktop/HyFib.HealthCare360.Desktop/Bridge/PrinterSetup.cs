@@ -51,10 +51,12 @@ internal sealed record PrinterSetupInfo(
 /// The workstation's printers, kept for the computer rather than the Windows account, so they are the same for everyone
 /// who uses HC360 on it (shared logons and personal logons alike): <c>%ProgramData%\HyFib\HC360Desktop\Workstation\printers.json</c>.
 /// The folder lets every Windows user on the computer change the file, because HC360 Desktop saves it for whoever is
-/// signed in to Windows; HC360 itself offers the change only to staff with the "set up printers" permission, and the
-/// server records each change. IT can fix the printers instead with a <c>printers</c> entry in the read-only machine
-/// policy (<c>policy.json</c>); then HC360 shows them and refuses changes. Whatever is read, saved file or policy, is
-/// checked as a save is: a printer that is not valid or not installed is not used.
+/// signed in to Windows. The staff app offers the change only to staff with the "set up printers" permission, after
+/// the server approved it, and the server records each change; HC360 Desktop cannot check either itself (it holds no
+/// user's sign-in and nothing the server signs), so it saves what the staff app sends, and anyone signed in to Windows
+/// here could edit the file. Where that matters, IT fixes the printers with a <c>printers</c> entry in the read-only
+/// machine policy (<c>policy.json</c>); then HC360 shows them and refuses changes. Whatever is read, saved file or
+/// policy, is checked as a save is: a printer that is not valid or not installed is not used.
 /// </summary>
 internal sealed class PrinterSetupStore(string folder, string? policyPath)
 {
@@ -175,6 +177,9 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
         }
 
         Validate(setup, installed);
+
+        // UpdatedBy is the name the server gave the staff app when it approved the change; HC360 Desktop cannot check
+        // it, so it is shown as a note, and the server's audit trail is the record of who changed the printers.
         var saved = setup with { UpdatedAt = now, UpdatedBy = Clean(setup.UpdatedBy, 128) };
         try
         {

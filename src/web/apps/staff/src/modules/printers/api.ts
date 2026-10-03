@@ -39,12 +39,20 @@ export const printerQueries = {
 
 export const printersApi = {
   /**
-   * Saves this computer's printers: the server first checks that the user may set up printers and records the change
-   * in the audit trail; only then does HC360 Desktop save it for everyone who uses the computer.
+   * Saves this computer's printers: the server first checks that the user may set up printers and names who the change
+   * is saved as; HC360 Desktop then saves it for everyone who uses the computer; and once saved, the server records
+   * the change in the audit trail. A change HC360 Desktop refuses is not recorded.
    */
   save: async (setup: WorkstationPrinters, computer: string, deviceId: string | null): Promise<WorkstationPrinters> => {
-    await api.post<void>('/api/v1/integrations/printers/changes', toChange(setup, computer, deviceId));
-    return bridge.savePrinterSetup(setup);
+    const change = toChange(setup, computer, deviceId);
+    const approval = await api.post<{ changedBy: string }>('/api/v1/integrations/printers/changes/approval', change);
+    const saved = await bridge.savePrinterSetup({ ...setup, updatedBy: approval.changedBy });
+    try {
+      await api.post<void>('/api/v1/integrations/printers/changes', change);
+    } catch (error) {
+      throw new PrinterChangeNotRecordedError(error);
+    }
+    return saved;
   },
 
   /**
@@ -70,6 +78,16 @@ export const printersApi = {
     });
   },
 };
+
+/** The printers were saved on this computer, but the server could not record the change in the audit trail. */
+export class PrinterChangeNotRecordedError extends Error {
+  constructor(readonly reason: unknown) {
+    super(
+      'The printers were saved on this computer, but the change could not be recorded in the audit trail. Save them again when the server can be reached.',
+    );
+    this.name = 'PrinterChangeNotRecordedError';
+  }
+}
 
 const TEST_PAGE_SIZE: Record<PrinterRole, PageSize> = {
   labels: 'Label50x25',

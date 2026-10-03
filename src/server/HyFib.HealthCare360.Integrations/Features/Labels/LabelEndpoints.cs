@@ -6,8 +6,8 @@ namespace HyFib.HealthCare360.Integrations.Features.Labels;
 /// <summary>
 /// /api/v1/integrations/labels: ZPL or TSPL for the label printer of the workstation asking (INT-BAR). The staff app
 /// sends the label's data and the printer's setup; the answer is the printer commands, which HC360 Desktop sends to
-/// that printer. Nothing is printed, stored or logged here. /api/v1/integrations/printers/changes records a change to a
-/// workstation's printers in the audit trail.
+/// that printer. Nothing is printed, stored or logged here. /api/v1/integrations/printers/changes approves a change to a
+/// workstation's printers before HC360 Desktop saves it, and records it in the audit trail after.
 /// </summary>
 internal static class LabelEndpoints
 {
@@ -40,10 +40,11 @@ internal static class LabelEndpoints
                 Render(r.Printer, new[] { r }, 1, (canvas, test) => TestLabelTemplate.Draw(canvas, test.Stock, test.Computer, time.GetUtcNow())))
             .WithValidation<TestLabelRequest>();
 
-        app.MapPost("/api/v1/integrations/printers/changes", RecordChange)
+        var printers = app.MapGroup("/api/v1/integrations/printers/changes")
             .WithTags("Integrations")
-            .RequirePermission(IntegrationsPermissions.PrintersSetup)
-            .WithValidation<PrinterSetupChange>();
+            .RequirePermission(IntegrationsPermissions.PrintersSetup);
+        printers.MapPost("/approval", Approve).WithValidation<PrinterSetupChange>();
+        printers.MapPost("/", RecordChange).WithValidation<PrinterSetupChange>();
     }
 
     private static IResult Build(PrintLabelRequest request, ILabelPrinterService labels)
@@ -87,14 +88,21 @@ internal static class LabelEndpoints
     }
 
     /// <summary>
-    /// Records who changed which workstation's printers, and to what, before HC360 Desktop saves the change. Only staff
-    /// allowed to set up printers get here, so the staff app saves only what this accepted.
+    /// Approves a change to a workstation's printers before HC360 Desktop saves it: only staff allowed to set up
+    /// printers get an approval, so the staff app saves only what this accepted. The answer names the user the change is
+    /// saved as; the change is recorded once it is saved (<see cref="RecordChange"/>).
     /// </summary>
+    private static IResult Approve(PrinterSetupChange change, ICurrentUser user) =>
+        TypedResults.Ok(new PrinterChangeApproval(user.DisplayName ?? user.UserName ?? "Unknown user"));
+
+    /// <summary>Records who changed which workstation's printers, and to what, after HC360 Desktop saved the change.</summary>
     private static async Task<IResult> RecordChange(PrinterSetupChange change, IAuditLogger audit, CancellationToken ct)
     {
         var assigned = string.Join("; ", change.Roles
             .Where(r => !string.IsNullOrWhiteSpace(r.Printer))
-            .Select(r => $"{r.Role}: {r.Printer!.Trim()}"));
+            .Select(r => r.Code is { } code
+                ? $"{r.Role}: {r.Printer!.Trim()} ({(code == "qr" ? "QR code" : "Code 128")})"
+                : $"{r.Role}: {r.Printer!.Trim()}"));
         var summary = $"Changed the printers on {change.Computer.Trim()}: {(assigned.Length > 0 ? assigned : "none set")}";
         await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, "workstation.printers_changed", summary.Length > 1000 ? summary[..1000] : summary)
         {
@@ -104,7 +112,7 @@ internal static class LabelEndpoints
             {
                 computer = change.Computer.Trim(),
                 change.DeviceId,
-                roles = change.Roles.Select(r => new { r.Role, r.Printer, r.Language, r.Dpi, r.WidthMm, r.HeightMm }),
+                roles = change.Roles.Select(r => new { r.Role, r.Printer, r.Language, r.Dpi, r.WidthMm, r.HeightMm, r.Code }),
             },
         }, ct);
         return TypedResults.NoContent();

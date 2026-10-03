@@ -130,7 +130,7 @@ public sealed class ValidatorTests
         var change = new PrinterSetupChange("OPD-RECEPTION-2", Guid.NewGuid(),
         [
             new PrinterRoleSetup("labels", "ZDesigner GK420t", "zpl", 203, 50, 25),
-            new PrinterRoleSetup("wristbands", null, null, null, null, null),
+            new PrinterRoleSetup("wristbands", "ZDesigner HC100", "zpl", 300, 25, 254, "qr"),
             new PrinterRoleSetup("receipts", "EPSON TM-T82 Receipt", null, null, null, null),
             new PrinterRoleSetup("documents", "HP LaserJet M404", null, null, null, null),
         ]);
@@ -142,5 +142,7 @@ public sealed class ValidatorTests
         Invalid(validator, change with { Roles = [change.Roles[0] with { Language = "epl", Dpi = 600 }] })
             .ShouldBe(["Roles[0].Language", "Roles[0].Dpi"], ignoreOrder: true);
         Invalid(validator, change with { Roles = [change.Roles[0] with { Printer = "Zebra\u0000" }] }).ShouldBe(["Roles[0].Printer"]);
+        Invalid(validator, change with { Roles = [change.Roles[1] with { Code = "pdf417" }] }).ShouldBe(["Roles[0].Code"]);
+        Invalid(validator, change with { Roles = [change.Roles[0] with { Code = "qr" }] }).ShouldBe(["Roles[0].Code"]);
     }
 }

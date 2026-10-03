@@ -52,8 +52,9 @@ public sealed record AssetTagLabelsRequest(LabelPrinterSetup Printer, IReadOnlyL
 public sealed record TestLabelRequest(LabelPrinterSetup Printer, LabelStock Stock = LabelStock.Label, string? Computer = null);
 
 /// <summary>
-/// A change to the printers of one workstation, recorded in the audit trail before HC360 Desktop saves it there. The
-/// server keeps nothing else: the printers belong to the workstation (Printers on this computer).
+/// A change to the printers of one workstation: checked and approved before HC360 Desktop saves it there, and recorded
+/// in the audit trail once it has. The server keeps nothing else: the printers belong to the workstation (Printers on
+/// this computer).
 /// </summary>
 /// <param name="Computer">The workstation's name, as HC360 Desktop reports it.</param>
 /// <param name="DeviceId">The workstation's enrolled device id, when it has one.</param>
@@ -62,7 +63,18 @@ public sealed record PrinterSetupChange(string Computer, Guid? DeviceId, IReadOn
 /// <param name="Role">labels, wristbands, receipts or documents.</param>
 /// <param name="Printer">The Windows printer, or null for "show the print dialog".</param>
 /// <param name="Language">For labels and wristbands: zpl, tspl, or driver (print the page through the Windows driver).</param>
-public sealed record PrinterRoleSetup(string Role, string? Printer, string? Language, int? Dpi, decimal? WidthMm, decimal? HeightMm);
+/// <param name="Code">Wristbands only: code128 or qr, how the UHID is coded on the band.</param>
+public sealed record PrinterRoleSetup(
+    string Role,
+    string? Printer,
+    string? Language,
+    int? Dpi,
+    decimal? WidthMm,
+    decimal? HeightMm,
+    string? Code = null);
+
+/// <summary>The server's approval of a printer change: who the change is saved as (the signed-in user's name).</summary>
+public sealed record PrinterChangeApproval(string ChangedBy);
 
 /// <summary>The sizes each kind of stock may have, and the rules the label requests share.</summary>
 internal static class LabelRules
@@ -289,6 +301,8 @@ public sealed class PrinterSetupChangeValidator : AbstractValidator<PrinterSetup
             role.RuleFor(r => r.Dpi).Must(d => d is null or LabelMedia.LowResolution or LabelMedia.HighResolution).WithMessage("Use 203 or 300 dpi.");
             role.RuleFor(r => r.WidthMm).InclusiveBetween(15m, 110m).When(r => r.WidthMm is not null);
             role.RuleFor(r => r.HeightMm).InclusiveBetween(15m, 350m).When(r => r.HeightMm is not null);
+            role.RuleFor(r => r.Code).Must(c => c is null or "code128" or "qr").WithMessage("Use code128 or qr.");
+            role.RuleFor(r => r.Code).Null().When(r => r.Role != "wristbands").WithMessage("Only wristbands have a code.");
         });
     }
 }
