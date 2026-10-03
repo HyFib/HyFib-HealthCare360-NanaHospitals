@@ -18,6 +18,7 @@ export const INTEGRATION_NAMES = [
   'pos',
   'tally',
   'pacs',
+  'mwl',
   'lab',
   'labels',
   'icd',
@@ -32,6 +33,7 @@ export const INTEGRATION_LABELS: Record<IntegrationName, string> = {
   pos: 'Card/UPI POS',
   tally: 'Tally',
   pacs: 'PACS',
+  mwl: 'Modality worklist',
   lab: 'Laboratory equipment',
   labels: 'Barcode labels',
   icd: 'ICD lookup',
@@ -43,7 +45,11 @@ export function isIntegrationName(value: unknown): value is IntegrationName {
 
 export type IntegrationHealth = 'healthy' | 'degraded' | 'failing' | 'idle' | 'disabled' | 'not_configured';
 
-/** LabListenerStatus: one analyser TCP listener. `state` is starting, listening or failed. */
+/**
+ * LabListenerStatus: one analyser TCP listener. `state` is starting, listening or failed. The modality worklist row
+ * reports its DICOM listener in the same shape: `instrumentCode` is its AE title, the messages are queries answered
+ * and associations refused.
+ */
 export interface LabListenerStatus {
   instrumentCode: string;
   protocol: string;
@@ -314,6 +320,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   pinelabs: 'Pine Labs',
   tally: 'Tally Prime',
   dicomweb: 'DICOMweb',
+  dicom: 'DICOM worklist server',
   who: 'WHO ICD-API',
   disabled: 'Off',
   tcp: 'Analyser listeners',
@@ -428,6 +435,7 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   pos: 'Checks the POS settings. Real terminals are not prompted, so no customer sees a charge; the simulator runs a ₹1 practice sale.',
   tally: 'Asks Tally whether it is running and the company is open. Nothing is posted.',
   pacs: 'Runs a study search against the PACS. Nothing is changed.',
+  mwl: 'Sends a DICOM echo from this server to its own worklist server. No patient data is sent.',
   lab: 'Checks that the analyser listeners are running.',
   labels: 'Builds a sample label. Print it from a workstation to check the printer.',
   icd: 'Searches the WHO ICD-API for a sample term.',

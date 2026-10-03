@@ -616,6 +616,67 @@ export function checkInstruments(value: unknown): string | null {
   return null;
 }
 
+/** A DICOM AE title: 1–16 letters, digits, inner spaces, dots, dashes or underscores. */
+const AE_TITLE = /^[A-Za-z0-9._-](?:[A-Za-z0-9 ._-]{0,14}[A-Za-z0-9._-])?$/;
+const WORKLIST_MODALITIES = new Set(['CR', 'DX', 'XR', 'CT', 'MR', 'US', 'MG', 'RF']);
+
+/** An IPv4 address, or an IPv6 one (hex groups and colons). */
+export function isIpAddress(text: string): boolean {
+  const value = text.trim();
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value);
+  if (v4) {
+    return v4.slice(1).every((part) => Number(part) <= 255);
+  }
+  return value.includes(':') && /^[0-9A-Fa-f:.]{2,45}$/.test(value);
+}
+
+/** A viewer link must be a web address that names the study, so it opens that study. */
+export function viewerLinkProblem(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  if (!/^https?:\/\//i.test(value)) {
+    return 'The viewer link must start with http:// or https://.';
+  }
+  return /\{(studyUid|accession)\}/i.test(value)
+    ? null
+    : 'Put {studyUid} or {accession} in the link, so it opens the study.';
+}
+
+/** Worklist modalities: `[{ aeTitle, name, allowedIps[], facility, modalities[], enabled }]`. */
+export function checkWorklistModalities(value: unknown): string | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const titles = new Set<string>();
+  for (const [index, item] of value.entries()) {
+    if (!isPlainObject(item) || typeof item.aeTitle !== 'string' || !AE_TITLE.test(item.aeTitle.trim())) {
+      return `Modality ${index + 1} needs an "aeTitle" of 1 to 16 letters, digits, spaces, dots, dashes or underscores.`;
+    }
+    const title = item.aeTitle.trim();
+    const ips = item.allowedIps;
+    if (!Array.isArray(ips) || ips.length === 0 || !ips.every((ip) => typeof ip === 'string' && isIpAddress(ip))) {
+      return `Modality ${title}: list its IP addresses in "allowedIps", e.g. ["10.0.5.31"].`;
+    }
+    const kinds = item.modalities;
+    if (
+      !Array.isArray(kinds) ||
+      kinds.length === 0 ||
+      !kinds.every((kind) => typeof kind === 'string' && WORKLIST_MODALITIES.has(kind.trim().toUpperCase()))
+    ) {
+      return `Modality ${title}: "modalities" lists the kinds of study it does: CR or DX for X-ray, CT, MR, US, MG or RF.`;
+    }
+    if (item.facility !== undefined && item.facility !== null && typeof item.facility !== 'string') {
+      return `Modality ${title}: "facility" is the facility code, such as NH.`;
+    }
+    if (titles.has(title.toUpperCase())) {
+      return `Two modalities have the AE title ${title}.`;
+    }
+    titles.add(title.toUpperCase());
+  }
+  return null;
+}
+
 const SMS = 'integrations.sms';
 const SMS_SECRET = 'integrations.sms.secret';
 const smsBy = (...providers: string[]) => when(SMS, 'provider', ...providers);
@@ -1302,7 +1363,7 @@ const pacsSpec: SettingsSpec = {
   id: 'pacs',
   title: 'PACS',
   intro:
-    'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee) and opens them in the viewer.',
+    'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee), shows their images in HC360 (WADO-RS) and opens them in the viewer. PACS sign-in details stay on the server.',
   prefix: PACS,
   fields: [
     { key: PACS, path: 'enabled', label: 'Look up studies on the PACS', kind: 'switch' },
@@ -1325,6 +1386,15 @@ const pacsSpec: SettingsSpec = {
       placeholder: 'http://orthanc:8042/dicom-web',
       when: pacsBy('dicomweb'),
       group: 'DICOMweb',
+    },
+    {
+      key: PACS,
+      path: 'wadoUrl',
+      label: 'Image address (WADO-RS)',
+      kind: 'url',
+      placeholder: 'The DICOMweb address',
+      when: pacsBy('dicomweb'),
+      hint: 'Only when the PACS serves images at another address. Leave empty to use the DICOMweb address.',
     },
     {
       key: PACS,
@@ -1352,11 +1422,8 @@ const pacsSpec: SettingsSpec = {
       path: 'viewerUrlTemplate',
       label: 'Viewer link',
       kind: 'text',
-      hint: 'With {studyUid} and {accession}, e.g. https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}.',
-      check: (text) =>
-        typeof text === 'string' && !/^https?:\/\//i.test(text)
-          ? 'The viewer link must start with http:// or https://.'
-          : null,
+      hint: 'With {studyUid} or {accession}, e.g. https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}. A link with only {accession} works before a study is linked.',
+      check: viewerLinkProblem,
     },
     { key: PACS, path: 'limit', label: 'Studies per search', kind: 'number', defaultNumber: 50, min: 1, max: 500 },
     { key: PACS, path: 'timeZone', label: 'PACS time zone', kind: 'text', placeholder: 'Asia/Kolkata' },
@@ -1365,6 +1432,120 @@ const pacsSpec: SettingsSpec = {
     { key: PACS_SECRET, prop: 'password', label: 'Password', hint: 'For sign-in with a user name and password.' },
     { key: PACS_SECRET, prop: 'bearerToken', label: 'Token', hint: 'For token sign-in.' },
   ],
+};
+
+const MWL = 'integrations.mwl';
+
+const mwlSpec: SettingsSpec = {
+  id: 'mwl',
+  title: 'Modality worklist',
+  intro:
+    'Modalities (CT, MR, X-ray, ultrasound…) read the day’s patients from HC360 over DICOM, so nobody types names or IDs at the console. Only the modalities listed below may ask, from their own IP addresses. Keep facility codes to five letters: with six, radiology accession numbers are longer than DICOM allows and are sent without them.',
+  prefix: MWL,
+  globalOnly: true,
+  fields: [
+    { key: MWL, path: 'enabled', label: 'Serve the worklist to modalities', kind: 'switch' },
+    {
+      key: MWL,
+      path: 'aeTitle',
+      label: 'Server AE title',
+      kind: 'text',
+      placeholder: 'HC360MWL',
+      hint: 'The AE title modalities call. Set the same on each modality.',
+      pattern: {
+        regex: AE_TITLE,
+        message: 'An AE title has 1 to 16 letters, digits, spaces, dots, dashes or underscores.',
+      },
+    },
+    {
+      key: MWL,
+      path: 'port',
+      label: 'Port',
+      kind: 'number',
+      defaultNumber: 11112,
+      min: 1,
+      max: 65535,
+      hint: 'Open it in the server’s firewall for the modalities only (see the deployment guide).',
+    },
+    {
+      key: MWL,
+      path: 'bindAddress',
+      label: 'Listen on address',
+      kind: 'text',
+      placeholder: '0.0.0.0',
+      hint: 'Use the imaging network’s address to keep the port off other networks.',
+      check: (text) =>
+        typeof text === 'string' && !isIpAddress(text) ? 'Enter an IP address, such as 0.0.0.0 or 10.0.5.2.' : null,
+    },
+    {
+      key: MWL,
+      path: 'characterSet',
+      label: 'Character set',
+      kind: 'select',
+      defaultValue: 'ISO_IR 100',
+      options: [
+        { value: 'ISO_IR 100', label: 'Latin-1 (ISO_IR 100), which every modality reads' },
+        { value: 'ISO_IR 192', label: 'Unicode (ISO_IR 192), for names in other scripts' },
+      ],
+    },
+    {
+      key: MWL,
+      path: 'maxAssociations',
+      label: 'Connections at once',
+      kind: 'number',
+      defaultNumber: 10,
+      min: 1,
+      max: 64,
+    },
+    {
+      key: MWL,
+      path: 'idleTimeoutSeconds',
+      label: 'Close idle connections after (seconds)',
+      kind: 'number',
+      defaultNumber: 60,
+      min: 10,
+      max: 3600,
+    },
+    {
+      key: MWL,
+      path: 'daysBack',
+      label: 'Offer studies from this many days back',
+      kind: 'number',
+      defaultNumber: 3,
+      min: 0,
+      max: 30,
+      hint: 'Unscheduled orders and arrivals can wait a day or two.',
+    },
+    {
+      key: MWL,
+      path: 'daysAhead',
+      label: 'Offer appointments this many days ahead',
+      kind: 'number',
+      defaultNumber: 1,
+      min: 0,
+      max: 30,
+    },
+    {
+      key: MWL,
+      path: 'maxResults',
+      label: 'Most patients in one answer',
+      kind: 'number',
+      defaultNumber: 500,
+      min: 1,
+      max: 1000,
+    },
+    {
+      key: MWL,
+      path: 'modalities',
+      label: 'Modalities allowed to ask',
+      kind: 'json',
+      shape: 'array',
+      check: checkWorklistModalities,
+      group: 'Modalities',
+      hint: 'One entry per modality, e.g. [{ "aeTitle": "CT1", "name": "CT scanner", "allowedIps": ["10.0.5.31"], "facility": "NH", "modalities": ["CT"] }]. Modalities are CR or DX for X-ray, CT, MR, US, MG, RF. The facility code may be left out when there is one facility.',
+    },
+  ],
+  secrets: [],
 };
 
 const ICD = 'integrations.icd';
@@ -1516,6 +1697,7 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   pos: posSpec,
   tally: tallySpec,
   pacs: pacsSpec,
+  mwl: mwlSpec,
   lab: labSpec,
   icd: icdSpec,
 };
