@@ -138,6 +138,13 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // The earlier build knows no "Import" source and keeps search text to 700 characters: imported codes become
+            // starter-list codes for it, and their search text (inclusion terms) is cut to fit.
+            migrationBuilder.Sql("UPDATE clinical.icd_codes SET source = 'Seed' WHERE source = 'Import';");
+            migrationBuilder.Sql("UPDATE clinical.procedure_codes SET source = 'Seed' WHERE source = 'Import';");
+            migrationBuilder.Sql(
+                "UPDATE clinical.icd_codes SET search_text = left(search_text, 700) WHERE length(search_text) > 700;");
+
             migrationBuilder.DropTable(
                 name: "catalogue_imports",
                 schema: "clinical");
