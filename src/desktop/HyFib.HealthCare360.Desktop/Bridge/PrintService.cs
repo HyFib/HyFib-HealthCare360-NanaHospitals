@@ -51,6 +51,28 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
             .ToList();
     }
 
+    /// <summary>
+    /// The installed printer a job names, as Windows spells it. Pages may print only to printers installed on this
+    /// computer: a name Windows does not list, a shared queue on another computer (<c>\\host\queue</c>) among them,
+    /// is refused rather than opened, so a page cannot send printer commands anywhere on the network.
+    /// </summary>
+    /// <exception cref="BridgeException">The printer is not installed on this computer.</exception>
+    internal static string InstalledPrinter(string? name, IEnumerable<string> installed)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new BridgeException("bad_request", "Choose a printer.");
+        }
+
+        return installed.FirstOrDefault(p => string.Equals(p, name, StringComparison.OrdinalIgnoreCase))
+               ?? throw new BridgeException(
+                   "printer_not_found",
+                   name.StartsWith(@"\\", StringComparison.Ordinal)
+                       ? $"The printer '{name}' is not installed on this computer. "
+                         + "Add it in Windows Settings › Printers and scanners first."
+                       : $"The printer '{name}' is not installed on this computer.");
+    }
+
     public async Task PrintHtmlAsync(PrintHtmlRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Html) || request.Html.Length > 1_500_000)

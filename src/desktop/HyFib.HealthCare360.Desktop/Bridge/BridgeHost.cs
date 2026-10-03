@@ -161,7 +161,10 @@ internal sealed class BridgeHost(
 
             case "printer.printRaw":
             {
-                var printer = String(parameters, "printerName") ?? throw new BridgeException("bad_request", "Choose a printer.");
+                // Only printers installed on this computer: never a queue on another computer the page names.
+                var printer = PrintService.InstalledPrinter(
+                    String(parameters, "printerName"),
+                    PrintService.ListPrinters().Select(p => p.Name));
                 var data = String(parameters, "data") ?? throw new BridgeException("bad_request", "Nothing to print.");
                 RawPrinter.Send(printer, data);
                 return null;

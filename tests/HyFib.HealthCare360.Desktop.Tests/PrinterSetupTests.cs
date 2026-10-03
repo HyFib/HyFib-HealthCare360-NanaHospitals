@@ -123,6 +123,29 @@ public sealed class PrinterSetupTests : IDisposable
 
 public sealed class PrintPageTests
 {
+    private static readonly string[] Installed = ["ZDesigner GK420t", @"\\print-srv\Ward3 Zebra", "HP LaserJet M404"];
+
+    [Theory]
+    [InlineData("ZDesigner GK420t", "ZDesigner GK420t")]
+    [InlineData("zdesigner gk420t", "ZDesigner GK420t")]
+    [InlineData(@"\\print-srv\Ward3 Zebra", @"\\print-srv\Ward3 Zebra")]
+    public void Raw_jobs_go_to_printers_installed_on_this_computer(string name, string expected) =>
+        PrintService.InstalledPrinter(name, Installed).ShouldBe(expected);
+
+    [Theory]
+    [InlineData(@"\\attacker\queue")]
+    [InlineData(@"\\print-srv\Ward4 Zebra")]
+    [InlineData("ZDesigner GK420t (copy 1)")]
+    [InlineData("LPT1:")]
+    public void Raw_jobs_to_any_other_printer_are_refused(string name) =>
+        Should.Throw<BridgeException>(() => PrintService.InstalledPrinter(name, Installed)).Code.ShouldBe("printer_not_found");
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(" ")]
+    public void A_raw_job_must_name_a_printer(string? name) =>
+        Should.Throw<BridgeException>(() => PrintService.InstalledPrinter(name, Installed)).Code.ShouldBe("bad_request");
+
     [Fact]
     public void The_wristband_is_an_adult_band_printed_almost_to_the_edge()
     {
