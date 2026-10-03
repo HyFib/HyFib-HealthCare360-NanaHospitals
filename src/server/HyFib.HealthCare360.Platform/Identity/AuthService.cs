@@ -867,8 +867,10 @@ public sealed class AuthService(
             return null;
         }
 
+        // Only an HC360 Desktop installation counts: a lab agent's credential never satisfies the enrolled-device rule.
         var device = await db.Set<Device>().FirstOrDefaultAsync(d => d.Id == id && !d.IsRevoked, ct);
-        return device is not null && SecretTokens.FixedTimeEquals(device.SecretHash, SecretTokens.Hash(secret)) ? device.Id : null;
+        var matches = device is not null && SecretTokens.FixedTimeEquals(device.SecretHash, SecretTokens.Hash(secret));
+        return matches && device!.Kind.IsDesktop() ? device.Id : null;
     }
 
     private bool VerifyTotp(User user, string? code, out long timeStep)

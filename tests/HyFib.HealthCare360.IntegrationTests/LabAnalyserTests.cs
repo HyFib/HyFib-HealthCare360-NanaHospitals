@@ -99,6 +99,36 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_lab_agent_credential_does_not_count_as_an_enrolled_workstation()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var (agentId, agentSecret) = await EnrolLabAgentAsync(admin);
+        var (workstationId, workstationSecret) = await EnrolDeviceAsync(admin, DeviceKind.Workstation);
+        var anonymous = server.Anonymous(ownAddress: true);
+
+        // The desktop heartbeat is for HC360 Desktop only.
+        using (var agent = await anonymous.SendRawAsync(HttpMethod.Post, "/api/v1/devices/heartbeat",
+                   new DeviceHeartbeatRequest(agentId, agentSecret, "1.0.0", null, null)))
+        {
+            agent.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        using (var workstation = await anonymous.SendRawAsync(HttpMethod.Post, "/api/v1/devices/heartbeat",
+                   new DeviceHeartbeatRequest(workstationId, workstationSecret, "1.0.0", null, null)))
+        {
+            workstation.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+
+        // Signing in with the agent's id and secret is a sign-in from no enrolled device: the session is bound to none,
+        // so the agent's credential cannot satisfy the roles that may sign in only at an enrolled workstation.
+        var fromAgent = await server.SignInFromDeviceAsync(HospitalServer.Users.Lab, agentId, agentSecret);
+        (await CurrentSessionAsync(fromAgent)).DeviceName.ShouldBeNull();
+        var fromWorkstation = await server.SignInFromDeviceAsync(
+            HospitalServer.Users.Lab, workstationId, workstationSecret);
+        (await CurrentSessionAsync(fromWorkstation)).DeviceName.ShouldNotBeNull();
+    }
+
+    [Fact]
     public async Task A_received_sample_is_queued_for_the_bidirectional_analyser_that_runs_its_test()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
@@ -137,14 +167,21 @@ public sealed class LabAnalyserTests(HospitalServer server)
         queued.Action.ShouldBe(InstrumentOrderAction.New);
     }
 
-    private async Task<(Guid DeviceId, string Secret)> EnrolLabAgentAsync(ApiClient admin)
+    private Task<(Guid DeviceId, string Secret)> EnrolLabAgentAsync(ApiClient admin, Guid? facilityId = null) =>
+        EnrolDeviceAsync(admin, DeviceKind.LabAgent, facilityId);
+
+    private async Task<(Guid DeviceId, string Secret)> EnrolDeviceAsync(
+        ApiClient admin, DeviceKind kind, Guid? facilityId = null)
     {
         var code = await admin.PostAsync<EnrollmentCodeResponse>("/api/v1/admin/devices/enrollment-codes",
-            new CreateEnrollmentCodeRequest(DeviceKind.LabAgent, null, "Lab PC for serial analysers", 30));
+            new CreateEnrollmentCodeRequest(kind, facilityId, "Lab PC for serial analysers", 30));
         var enrolled = await server.Anonymous(ownAddress: true).PostAsync<EnrollDeviceResponse>("/api/v1/devices/enroll",
             new EnrollDeviceRequest(code.Code, "Lab PC " + Guid.NewGuid().ToString("N")[..6], "LAB-PC-1", "Windows 11", "1.0.0"));
         return (enrolled.DeviceId, enrolled.DeviceSecret);
     }
+
+    private static async Task<SessionInfo> CurrentSessionAsync(ApiClient client) =>
+        (await client.GetAsync<List<SessionInfo>>("/api/v1/auth/sessions")).Single(s => s.IsCurrent);
 
     private static Task EnableGatewayAsync(ApiClient admin) =>
         admin.PutAsync("/api/v1/admin/settings/integrations.lab", new SaveSettingRequest(JsonNode.Parse("""{"enabled":true}"""), null, false, null));
