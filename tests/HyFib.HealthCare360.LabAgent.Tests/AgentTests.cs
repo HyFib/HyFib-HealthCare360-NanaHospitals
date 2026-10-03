@@ -97,8 +97,33 @@ public sealed class AgentTests : IDisposable
         trust.IsTrusted(server, "hc360-srv").ShouldBeTrue();
         trust.IsTrusted(server, "other-host").ShouldBeFalse();
         trust.IsTrusted(impostor, "hc360-srv").ShouldBeFalse();
-        trust.Validate(null, "hc360-srv").ShouldBeFalse();
+        trust.Validate(null, null, "hc360-srv").ShouldBeFalse();
         trust.Fingerprint.ShouldBe(Convert.ToHexString(SHA256.HashData(ca.RawData)));
+    }
+
+    [Fact]
+    public void Trusts_a_server_certificate_from_an_intermediate_below_the_pinned_ca_when_the_server_sends_it()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals CA");
+        using var intermediate = CreateIntermediate(ca, "CN=Nana Hospitals LAN CA");
+        using var server = CreateLeaf(intermediate, "hc360-srv");
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+
+        trust.IsTrusted(server, "hc360-srv", [intermediate]).ShouldBeTrue();
+        trust.IsTrusted(server, "hc360-srv").ShouldBeFalse("the chain cannot be built without the intermediate");
+        trust.IsTrusted(server, "other-host", [intermediate]).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Refuses_a_certificate_that_is_not_for_a_tls_server()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals CA");
+        using var clientOnly = CreateLeaf(ca, "hc360-srv", usage: "1.3.6.1.5.5.7.3.2");
+        using var serverAuth = CreateLeaf(ca, "hc360-srv", usage: "1.3.6.1.5.5.7.3.1");
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+
+        trust.IsTrusted(clientOnly, "hc360-srv").ShouldBeFalse();
+        trust.IsTrusted(serverAuth, "hc360-srv").ShouldBeTrue();
     }
 
     [Theory]
@@ -198,13 +223,31 @@ public sealed class AgentTests : IDisposable
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
     }
 
-    private static X509Certificate2 CreateLeaf(X509Certificate2 issuer, string host)
+    private static X509Certificate2 CreateIntermediate(X509Certificate2 issuer, string subject)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest(subject, key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(
+            new X509BasicConstraintsExtension(certificateAuthority: true, hasPathLengthConstraint: true, 0, critical: true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, critical: true));
+        var serial = RandomNumberGenerator.GetBytes(8);
+        using var issued = request.Create(issuer, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddMonths(9), serial);
+        return issued.CopyWithPrivateKey(key);
+    }
+
+    private static X509Certificate2 CreateLeaf(X509Certificate2 issuer, string host, string? usage = null)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest($"CN={host}", key, HashAlgorithmName.SHA256);
         var names = new SubjectAlternativeNameBuilder();
         names.AddDnsName(host);
         request.CertificateExtensions.Add(names.Build());
+        if (usage is not null)
+        {
+            request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension([new Oid(usage)], critical: false));
+        }
+
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(certificateAuthority: false, hasPathLengthConstraint: false, 0, critical: false));
         using var issued = request.Create(issuer, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddMonths(6), RandomNumberGenerator.GetBytes(8));
         return issued.CopyWithPrivateKey(key);

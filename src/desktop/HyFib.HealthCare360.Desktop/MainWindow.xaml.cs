@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO;
+using System.Security.Cryptography.X509Certificates;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
@@ -143,7 +144,27 @@ public partial class MainWindow : Window
         {
             var uri = new Uri(e.RequestUri);
             using var certificate = e.ServerCertificate.ToX509Certificate2();
-            var trusted = IsServerOrigin(uri) && _trust.IsTrusted(certificate, uri.Host);
+
+            // The issuers the server sent, so a certificate from an intermediate below the pinned CA validates.
+            var intermediates = new X509Certificate2Collection();
+            foreach (var pem in e.ServerCertificate.PemEncodedIssuerCertificateChain)
+            {
+                intermediates.Add(X509Certificate2.CreateFromPem(pem));
+            }
+
+            bool trusted;
+            try
+            {
+                trusted = IsServerOrigin(uri) && _trust.IsTrusted(certificate, uri.Host, intermediates);
+            }
+            finally
+            {
+                foreach (var issuer in intermediates)
+                {
+                    issuer.Dispose();
+                }
+            }
+
             e.Action = trusted ? CoreWebView2ServerCertificateErrorAction.AlwaysAllow : CoreWebView2ServerCertificateErrorAction.Cancel;
             if (!trusted)
             {

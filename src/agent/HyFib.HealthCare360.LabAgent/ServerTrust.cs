@@ -13,6 +13,9 @@ namespace HyFib.HealthCare360.LabAgent;
 /// </summary>
 internal sealed class ServerTrust : IDisposable
 {
+    /// <summary>The TLS server authentication extended key usage (id-kp-serverAuth).</summary>
+    private static readonly Oid ServerAuthentication = new("1.3.6.1.5.5.7.3.1");
+
     private readonly X509Certificate2 _ca;
 
     public ServerTrust(string caPem)
@@ -33,7 +36,13 @@ internal sealed class ServerTrust : IDisposable
         return hex.Length == 64 && hex.All(char.IsAsciiHexDigitUpper) ? hex : null;
     }
 
-    public bool IsTrusted(X509Certificate2 serverCertificate, string host)
+    /// <summary>
+    /// Whether <paramref name="serverCertificate"/> may be trusted for <paramref name="host"/>: it names the host,
+    /// is for a TLS server, and chains to exactly the pinned CA, directly or through <paramref name="intermediates"/>
+    /// (the CA certificates the server sent in the handshake).
+    /// </summary>
+    public bool IsTrusted(
+        X509Certificate2 serverCertificate, string host, X509Certificate2Collection? intermediates = null)
     {
         if (!serverCertificate.MatchesHostname(host, allowWildcards: false, allowCommonName: false))
         {
@@ -43,6 +52,12 @@ internal sealed class ServerTrust : IDisposable
         using var chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.Add(_ca);
+        if (intermediates is not null)
+        {
+            chain.ChainPolicy.ExtraStore.AddRange(intermediates);
+        }
+
+        chain.ChainPolicy.ApplicationPolicy.Add(ServerAuthentication);
         // A private CA on an isolated LAN publishes no revocation lists.
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
         chain.ChainPolicy.VerificationTime = DateTime.Now;
@@ -54,7 +69,10 @@ internal sealed class ServerTrust : IDisposable
         return chain.ChainElements[^1].Certificate.RawData.AsSpan().SequenceEqual(_ca.RawData);
     }
 
-    public bool Validate(X509Certificate? certificate, string host)
+    /// <summary>
+    /// The TLS callback: <paramref name="handshake"/> is the chain .NET built, holding the server's intermediates.
+    /// </summary>
+    public bool Validate(X509Certificate? certificate, X509Chain? handshake, string host)
     {
         if (certificate is null)
         {
@@ -62,7 +80,7 @@ internal sealed class ServerTrust : IDisposable
         }
 
         using var certificate2 = new X509Certificate2(certificate);
-        return IsTrusted(certificate2, host);
+        return IsTrusted(certificate2, host, handshake?.ChainPolicy.ExtraStore);
     }
 
     /// <summary>HttpClient for the agent's calls: pinned, no proxy (the server is on the hospital LAN), bounded waits.</summary>
@@ -74,7 +92,10 @@ internal sealed class ServerTrust : IDisposable
             UseProxy = false,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             ConnectTimeout = TimeSpan.FromSeconds(10),
-            SslOptions = { RemoteCertificateValidationCallback = (_, certificate, _, _) => Validate(certificate, host) },
+            SslOptions =
+            {
+                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Validate(certificate, chain, host),
+            },
         };
         return new HttpClient(handler) { BaseAddress = baseAddress, Timeout = timeout };
     }
@@ -83,7 +104,7 @@ internal sealed class ServerTrust : IDisposable
     public void ApplyTo(ClientWebSocketOptions options, string host)
     {
         options.Proxy = null;
-        options.RemoteCertificateValidationCallback = (_, certificate, _, _) => Validate(certificate, host);
+        options.RemoteCertificateValidationCallback = (_, certificate, chain, _) => Validate(certificate, chain, host);
     }
 
     public void Dispose() => _ca.Dispose();
