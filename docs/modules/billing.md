@@ -44,7 +44,8 @@ fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
-| `billing.tally.export` | Post/export the Tally day book | HospitalAdmin, Accountant |
+| `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
+| `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
@@ -214,12 +215,21 @@ advances or packages; leftover services can still be billed; any advance is refu
 | GET | `/statements?practitionerId&from&to` | `doctorfees.payouts.manage` | → `DoctorStatement` |
 
 ### Tally — `/api/v1/billing/tally`
+Everything works on the signed-in user's facility. See [The Tally day book](#the-tally-day-book) for what the day book
+holds and how posting, the checks and the transition for older days work.
+
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/exports` | `billing.tally.export` | → `TallyExportDto[]` |
-| POST | `/exports` | `billing.tally.export` | `PostDayBookRequest(date)` → queues `billing.tally.post` |
+| GET | `/exports?from&to` | `billing.tally.export` | → `TallyExportDto[]`, the posting log (at most a year; the last 30 days by default) |
+| POST | `/exports` | `billing.tally.export` | `PostDayBookRequest(date, to?)` → 204; queues `billing.tally.post` for each day (at most 31, none in the future). 409 `billing.tally_busy` when someone queued one of the days at the same moment |
 | GET | `/day-book?date` | `billing.tally.export` | → the day's `AccountingVoucher[]` |
-| GET | `/export-file?date` | `billing.tally.export` | → Tally import file (via `IAccountingExporter`) |
+| GET | `/export-file?date` | `billing.tally.export` | → Tally import file (XML through `IAccountingExporter`, else JSON); records the file's fingerprint on the day. Audited as `billing.tally.exported` |
+| GET | `/days/{date}/vouchers` | `billing.tally.export` | → `TallyDayVouchersDto`: every voucher of the day book with Tally's answer, then vouchers that left it and vouchers found only in Tally |
+| GET | `/days/{date}/check` | `billing.tally.export` | → `TallyDayCheckDto`, the records check as it stands now (nothing kept) |
+| POST | `/days/{date}/check?againstTally` | `billing.tally.export` | → `TallyDayCheckDto`; runs the records check, and with `againstTally=true` reads the day back from Tally; keeps the results on the day. Audited as `billing.tally.checked` when Tally is read |
+| POST | `/days/{date}/imported` | `billing.tally.export` | → `TallyExportDto`; marks the downloaded file imported (see below). Audited as `billing.tally.imported` |
+| GET | `/ledgers` | `billing.tally.export` or `billing.tally.configure` | → `TallyLedgerMap` in effect, built-in names filled in |
+| PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
@@ -328,10 +338,99 @@ nothing collected twice); staff can also adjust any open advance with `POST /bil
 booking ends up cancelled, a refund request (purpose `Advance`) is raised for approval and, when paid by
 `PaymentGateway`, reversed on the original payment. Cancelling a bill gives its advance back.
 
+## The Tally day book
+
+`TallyService` builds one facility's day as balanced vouchers (`TallyVoucherBuilder`) with the ledger names of
+`billing.tally.ledgers`:
+
+* a Sales voucher per bill finalised (income by department, discount, CGST/SGST, round-off, patient and payer
+  receivables), and a Credit Note `<bill>/C` for a bill cancelled on the day;
+* a Receipt per receipt (a Journal for an advance adjustment), a Payment per refund paid, a Credit Note per credit note
+  or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`);
+* a Journal per doctor for the day's fee accruals, numbered `DF-<facility>-<yyyyMMdd>-<doctor code>`
+  (`DF-NH-20260925-DR005`). A doctor without a code is numbered by an eight-digit hash of the name. Two doctors whose
+  numbers would be the same (a shared code) both add the last eight hex digits of their practitioner id, so neither
+  number depends on the order the doctors come in. Payouts are Payments with TDS and recoveries;
+* the pharmacy's and the canteen's day, read through the Platform contract `ICounterSalesSource` (implemented by
+  Pharmacy and SupportServices): one summary Sales voucher (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST
+  rate, a Credit Note for returns (`…-R`) and a Receipt for balances paid later (`…-C`). A counter can be left out with
+  `pharmacy.include` / `canteen.include` while its sales are still entered in Tally by hand.
+
+Every voucher carries a reference; Tally keeps it as `REMOTEID="HC360-<reference>"`, so posting a day again alters its
+vouchers instead of adding new ones. Narrations carry document numbers, never patient names.
+
+**Per-voucher tracking.** Every voucher sent is a `TallyVoucherRecord` (`billing.tally_vouchers`): type, number,
+remote id, amount, a SHA-256 of its content, what Tally answered (created, altered, accepted, refused, not confirmed,
+not sent, or imported from the file) and the result of the last check against Tally. A voucher that leaves the day
+book after Tally confirmed it stays listed as "No longer in HC360" until it is deleted in Tally. The staff screen shows
+each voucher's status and what to do about it. A reference longer than 200 characters, or two vouchers with the same
+reference, fails the day with that reason before anything is sent; a retry cannot fix either.
+
+**Posting.** `POST /exports` and the nightly job start a post run on the day (`TallyExport`, one per facility and
+date) and queue `billing.tally.post`. Each attempt sends what Tally has not confirmed in the run, 50 vouchers at a
+time, and records Tally's answer for each voucher as it goes. The day is Posted when Tally confirmed every voucher;
+otherwise it is Failed with the reason, and the outbox tries again with back-off (vouchers Tally confirmed are not sent
+again in the same run). Ten seconds after a post, `billing.tally.check` reads the day back. Without a Tally connection
+the day is Not configured (not a failure): the accountant downloads the file, imports it into Tally and marks the day
+imported.
+
+**Time limits and retries.** The outbox gives a handler 30 seconds and has no per-handler setting, so the post plans
+inside it: an attempt starts no new chunk after 15 seconds (the rest follows in a new message of the same run), and
+stops calling Tally after 24 seconds, when the exporter sends nothing new and cuts a call in progress short. Each call
+to Tally has 20 seconds. A post that runs out of time anyway is recorded as Failed ("The post did not finish within
+the 30 seconds …") and retried by the outbox; a check that runs out of time records its check against Tally as
+Failed and is not retried. The post and the check run in a scope of their own and save as they go, so the outbox's
+batch transaction holds only its message rows while Tally is called, and a conflict on a day fails that message alone.
+`TallyDayBookScheduler` also queues again, every hour, any day still Queued two hours after it was queued or last
+tried (its message was lost or gave up), so no day waits for ever.
+
+**Concurrency.** `TallyExport` and `TallyVoucherRecord` carry an `xmin` concurrency token. A check that loses to a
+post (or another check) starts again from what was saved, up to three times; a post that loses fails its message and
+the outbox tries again; "mark imported" that loses answers 409 `billing.tally_busy`. Downloading the file at the same
+moment as a post records the file on the row the post created.
+
+**Mark imported.** Allowed once the file was downloaded and only while the day book still has the fingerprint of that
+file; refused while the day is Queued (409 `billing.tally_posting`) and once Tally confirmed the day itself
+(`billing.tally_posted`), as the screen hides it then. It marks every voucher imported and drops the records of
+vouchers that left the day book (the screen lists them for deleting in Tally first).
+
+**Records check** (`TallyRecordsCheck`, inside HC360). The day book's figures against the records they come from:
+bills finalised and cancelled (count and amount), money received and paid back per payment mode against the cashier
+day-end report, deposits and advances, advance adjustments, insurer settlements, claim deductions, credit notes,
+write-offs, doctor-fee accruals and payouts. Open shifts and cash shortages or excesses are listed as notes (the day
+book has no voucher for them). The pharmacy and canteen lines are totals only: the day book takes them from the
+counter's own day, which HC360 has no second record of, so they are shown but never counted as matched or different.
+Vouchers not in Tally (not sent, refused, changed since sent, no longer in HC360) count as differences too.
+
+**Check against Tally** (read-back). `IAccountingExporter.ReadBackAsync` reads the day's vouchers from Tally (22
+seconds at most) and matches them by remote id: present, amount, type and ledgers. HC360 vouchers Tally holds on the
+day that no facility's day book has are listed as only in Tally, to delete there; a bill of this facility among them
+is listed as "Bill of another day" with the day it belongs to, to post that day again instead (see below).
+
+**Days posted before per-voucher tracking.** Before tracking, a doctor-fee journal was numbered by its place in the
+day (`DF-20260925-001`, `REMOTEID="HC360-DF-20260925-001"`), and the credit note for a cancelled bill reused the
+bill's own reference, so Tally turned the bill's sale into that credit note on the cancellation day. The
+`TallyReconciliation` migration sets `legacy_references` on every day that existed then. Such a day:
+
+* keeps the old doctor-fee numbers (`DF-yyyyMMdd-001`, doctors in order of code and name), so posting it again alters
+  the journals Tally already holds instead of adding a second set. This is safer than asking the accountant to delete
+  the old journals first: nothing is doubled at any moment, and it works the same for days imported from a file. The
+  sequence may now give a doctor's journal another doctor's number; the post alters every journal of the day, so the
+  totals stay right;
+* when posted again, also queues the day each bill cancelled on it was finalised (unless that day is queued already,
+  or has sent the bill since tracking began): the cancellation now goes as `<bill>/C`, and posting the bill's day
+  turns `HC360-<bill>` back into the sale, so Tally does not reverse the bill twice. The day's message names the days
+  queued. Where Tally is not set up, those days show Not configured and the accountant imports their files too;
+* after the migration shows its vouchers as confirmed ("N of N in Tally") when it was Posted.
+
+`HC360-<bill>` found only in Tally on a cancellation day is that pre-tracking credit note: the read-back says to post
+the bill's day again, never to delete it.
+
 ## Outbox, jobs and notifications
-* `billing.tally.post` — day book per facility and date; `TallyDayBookScheduler` queues yesterday after 00:30 IST
-  (`billing.tally.dailyPost.enabled`, only where `PlatformOptions.RunsJobs`); pushes through `IAccountingExporter` when
-  registered; one `TallyExport` row per facility/day.
+* `billing.tally.post` — day book per facility and date (see [The Tally day book](#the-tally-day-book));
+  `TallyDayBookScheduler` queues yesterday after 00:30 IST (`billing.tally.dailyPost.enabled`, only where
+  `PlatformOptions.RunsJobs`), posts again a day someone posted before it ended, and queues again days stuck in Queued.
+* `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
 * `billing.appointment.prepayment` — see above.
 * SMS/WhatsApp templates used: `bill.receipt` (every counter/POS/gateway receipt), `payment.link`.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
@@ -356,7 +455,7 @@ booking ends up cancelled, a refund request (purpose `Advance`) is raised for ap
 | `billing.registrationFee.enabled` | `true` | Charge `REG-NEW` on a patient's first visit |
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
-| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer/doctor ledgers) |
+| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
@@ -373,7 +472,8 @@ Key unique indexes: charge (`source_module`, `source_reference`); bill number (n
 draft final bill per admission; receipt payment (`mode`, `external_id`); gateway order (provider, order id), merchant
 reference, gateway payment id; POS (provider, transaction id); patient advance gateway payment id and receipt;
 one open shift per cashier; one doctor-fee accrual per bill line (and one reversal per accrual); one Tally export per
-facility/day. **No migration is included** — the maintainers generate the `billing` schema migration.
+facility/day (`tally_exports`, with `xmin` as its concurrency token); one Tally voucher record per export and reference
+(`tally_vouchers`, also `xmin`). **No migration is included** — the maintainers generate the `billing` schema migration.
 
 ## Open items for maintainers
 * Generate the EF migration for the `billing` schema (new since the last review: `patient_advances`,

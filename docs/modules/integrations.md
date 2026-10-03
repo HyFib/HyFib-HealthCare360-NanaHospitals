@@ -34,7 +34,8 @@ server's PDF renderer, which drives headless Microsoft Edge.
   only after `LabPhiMasking` has removed names, dates of birth, addresses and phones, and has cut identifiers to their
   last four characters.
 * **Transport.** Each HTTP provider is a typed `HttpClient` behind the standard resilience handler. Cloud APIs use a
-  15 s attempt timeout and a 20 s total; Tally uses 60 s. Unsafe methods (POST) are **never retried** at the HTTP
+  15 s attempt timeout and a 20 s total; Tally uses 20 s for both, because the day book posts from an outbox message
+  that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). Unsafe methods (POST) are **never retried** at the HTTP
   layer, because a lost response may mean the SMS was already sent or the order already created. The outbox retries
   whole messages instead. Responses are capped at 4 MB. Endpoints must be absolute http(s) URLs without embedded
   credentials, and https is required for every internet provider.
@@ -50,7 +51,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 |---|---|---|---|
 | `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhook | `PaymentGatewayRouter` → Razorpay / simulator | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
 | `IPosTerminal` | Billing card/UPI sales | `PosTerminalRouter` → Pine Labs / simulator | A **declined** result with the reason ("Card/UPI POS is not configured…"). Each declined attempt gets a unique `declined-…` transaction id, and `Provider` reports the provider that handled the call (`none`, `pinelabs` or `simulator`), because Billing stores sales under a unique (provider, transaction id) index. |
-| `IAccountingExporter` | Billing Tally day book (outbox) and day-book file download | `AccountingExporterRouter` → Tally Prime / simulator | `PushVouchersAsync` returns a failed result ("Tally is not configured…"). Billing records it and the outbox retries per its policy; Billing's `NotConfigured` status is not reached. `PingAsync` returns false. `BuildImportFile` always works (Tally XML) and throws only for a voucher Tally would reject. |
+| `IAccountingExporter` | Billing Tally day book (outbox), its read-back check and the day-book file download | `AccountingExporterRouter` → Tally Prime / simulator | `GetConnectionAsync` says Not configured (no settings, or posting switched off) or Invalid (settings that cannot be used). `PushVouchersAsync` then returns a result with `NotConfigured` set and every voucher not sent, and Billing marks the day Not configured instead of retrying; Invalid settings fail the day until corrected. `ReadBackAsync` returns an unsuccessful result with the reason. `PingAsync` returns false. `BuildImportFile` always works (Tally XML) and throws only for a voucher Tally would reject. |
 | `IPacsClient` | Diagnostics radiology: PACS reconciliation and viewer links | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync` throws **`HttpRequestException`** with the reason (not configured, disabled, unreachable or HTTP error). Diagnostics reports it as `pacs.unreachable`. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). The DICOM modality worklist (`/api/v1/radiology/worklist/mwl`) belongs to Diagnostics. |
 | `IInstrumentResultSink` (implemented by Diagnostics, scoped) | Consumed by the lab analyser gateway here | `LabMessageProcessor` resolves it in a new scope per message: `ReceiveAsync` for results, `GetOrderForSampleAsync` for ASTM host queries | The gateway is off until `integrations.lab.enabled` is set and instruments are listed. Without a registered sink, results are refused (HL7 `AE`, ASTM NAK) and logged. |
 | `IIcdLookup` | Clinical online ICD search (`/api/v1/mrd/icd-codes/online`) | `IcdLookupRouter` → WHO ICD-API | Returns an empty list until configured. ICD-API failures throw `HttpRequestException`, which Clinical reports as `icd.online_failed`. |
@@ -244,20 +245,45 @@ would prompt a customer at a counter.
 
 ### Tally Prime (INT-TALLY)
 
+Billing builds the day book and keeps what Tally answered for every voucher; see
+[billing.md, The Tally day book](billing.md#the-tally-day-book). This module sends the vouchers, reads a day back and
+builds the import file.
+
 * Vouchers are sent as `ENVELOPE / HEADER / TALLYREQUEST = Import Data` with `SVCURRENTCOMPANY`, one
   `TALLYMESSAGE / VOUCHER` per voucher (`REMOTEID="HC360-<reference>"`, `VCHTYPE`, `ACTION="Create"`,
   `OBJVIEW="Accounting Voucher View"`), and `ALLLEDGERENTRIES.LIST` lines, built with LINQ to XML so every value is
   escaped.
+* REMOTEIDs: bills `HC360-<bill number>`, cancellations `HC360-<bill number>/C`, receipts, refunds, credit notes and
+  payouts their own numbers, claim deductions `HC360-<claim>/<settlement digits>`, doctor-fee journals
+  `HC360-DF-<facility>-<yyyyMMdd>-<doctor code>` (`HC360-DF-<yyyyMMdd>-001` on days posted before per-voucher
+  tracking), pharmacy and canteen days `HC360-PH-<facility>-<yyyyMMdd>` and `HC360-CT-…` with `-R` and `-C` for
+  returns and balances collected. The `HC360-` prefix tells HC360's vouchers from the hospital's own.
 * Sign convention: a debit is `ISDEEMEDPOSITIVE=Yes` with a negative `AMOUNT`, a credit is `No` with a positive one.
 * Cost centres go under `CATEGORYALLOCATIONS.LIST`. Ledger names are mapped with `ledgerMap`.
 * Every voucher is validated first: balanced, positive amounts, ledgers present, at least two lines. One bad voucher
-  is reported by number instead of Tally's generic totals error.
+  is reported by number instead of Tally's generic totals error, and nothing of the set is sent.
 * The import goes in batches of `batchSize`. `REMOTEID` makes a retried batch alter rather than duplicate.
 * The response counters `CREATED`, `ALTERED` and `ERRORS`, plus `LINEERROR` texts, are parsed from both the classic
   and the Prime layout. Tally's illegal XML character references are tolerated and DTDs are prohibited.
+* Tally answers a batch with counts, not per voucher. When the counts account for every voucher, each is reported as
+  created, altered or (mixed counts) accepted. Otherwise the batch's vouchers are sent again one at a time to learn
+  which ones Tally refused and why; the REMOTEID makes the second sending alter what the first created.
+* The caller's cancellation token is its deadline. Once it is cancelled no further envelope is sent (also inside the
+  one-at-a-time loop), a call in progress is cut short, and the vouchers not answered come back as not sent ("the
+  attempt ran out of time") rather than as an exception. Billing stops calling Tally 24 s into a post attempt, inside
+  the outbox's 30 s, and each HTTP call has 20 s.
+* `ReadDayAsync` (behind `ReadBackAsync`) first checks that the configured company is open (a closed company would
+  read as an empty day), then asks for the day's vouchers as a collection export and streams the answer (20 s).
+  `TallyReadBack` matches HC360's vouchers by REMOTEID: present, amount, type, and ledgers as net amounts per ledger
+  after the `ledgerMap` renaming, ignoring case and line order. Voucher numbers are not compared (Tally may renumber);
+  Tally's number is reported. HC360 vouchers on the day that the expected list does not have are returned as
+  `Others`; the hospital's own vouchers are ignored.
 * `PingAsync` asks for the list of open companies and checks the configured one.
 * `BuildImportFile` produces the same envelope for manual import (Tally → Import → Vouchers) and works even while the
   integration is disabled.
+* The simulator keeps a company per `companyName` in `integrations.simulator_tally_vouchers` (one row per company and
+  REMOTEID, so an import alters as Tally does) and answers the read-back from it, so the whole flow can be tried
+  without Tally.
 
 ### PACS (INT-PACS)
 
@@ -372,6 +398,9 @@ Permissions:
   only Super Admin holds it until an administrator grants it, because it exposes message logs and live test sends.
 * Integration settings and credentials are saved through the platform settings API (`/api/v1/admin/settings`), which
   needs `admin.settings.manage`. Credentials are write-only, and each change is audited as a warning.
+* The Tally day book's own endpoints (`/api/v1/billing/tally`, posting, the file, the checks, mark imported and the
+  ledger names) belong to Billing and need `billing.tally.export` or `billing.tally.configure`; see
+  [billing.md](billing.md#tally--apiv1billingtally).
 
 ## DI registrations (`IntegrationsServiceCollectionExtensions.AddIntegrations`)
 
@@ -379,7 +408,7 @@ Permissions:
   `WhatsAppInboundStore`, `IntegrationStatusService`, `IntegrationTestService`.
 * **Typed HTTP clients** with the standard resilience handler: `Msg91SmsProvider`, `TwilioSmsProvider`,
   `GenericHttpSmsProvider`, `MetaWhatsAppProvider`, `RazorpayGateway`, `PineLabsPosTerminal`, `DicomWebPacsProvider`
-  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 60 s.
+  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both.
 * **Providers** (scoped, keyed by `Key`):
   * `ISmsProvider`: msg91, twilio, generic, simulator.
   * `IWhatsAppProvider`: meta, simulator.
@@ -429,8 +458,9 @@ Permissions:
 
 ## Database
 
-The tables `integrations.simulator_messages`, `integrations.simulator_transactions` and
-`integrations.whatsapp_inbound_messages` are configured in `Persistence/IntegrationsConfigurations.cs`. The EF
+The tables `integrations.simulator_messages`, `integrations.simulator_transactions`,
+`integrations.simulator_tally_vouchers` (unique company and remote id) and `integrations.whatsapp_inbound_messages`
+are configured in `Persistence/IntegrationsConfigurations.cs` and `Tally/SimulatedTallyCompany.cs`. The EF
 migration is created centrally. They have unique `external_id` and `provider_message_id` indexes, and all three
 entities are `[NotAudited]` because the integration log already traces them. `whatsapp_inbound_messages.keyword_action`
 (text, nullable) records what a STOP or START did; rows stored before it existed stay empty until
