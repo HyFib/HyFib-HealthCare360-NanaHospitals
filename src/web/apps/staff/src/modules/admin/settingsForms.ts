@@ -1422,7 +1422,7 @@ const pacsSpec: SettingsSpec = {
       path: 'viewerUrlTemplate',
       label: 'Viewer link',
       kind: 'text',
-      hint: 'With {studyUid} or {accession}, e.g. https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}. A link with only {accession} works before a study is linked.',
+      hint: "With {studyUid} or {accession}, e.g. https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}. A link with only {accession} also works before a study is linked, once PACS confirms the study is the patient's.",
       check: viewerLinkProblem,
     },
     { key: PACS, path: 'limit', label: 'Studies per search', kind: 'number', defaultNumber: 50, min: 1, max: 500 },

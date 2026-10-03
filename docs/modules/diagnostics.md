@@ -134,7 +134,7 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | POST | `/studies/{id}/cancel` | `radiology.worklist` | `CancelStudyRequest` (reason) → `ImagingStudyDetail`; refused once reported |
 | POST | `/studies/{id}/reconcile` | `radiology.worklist` | → `ImagingStudyDetail` (PACS lookup by accession; patient ID must match) |
 | POST | `/pacs/reconcile` | `radiology.worklist` | → `PacsReconciliationSummary` (recent unlinked studies, batches of 50) |
-| GET | `/studies/{id}/viewer` | studies.read, worklist or reports.write | → `ViewerLink` (422 `pacs.not_configured` when no PACS client is registered) |
+| GET | `/studies/{id}/viewer` | studies.read, worklist or reports.write | → `ViewerLink` (422 `pacs.not_configured` when no PACS client is registered; before linking, the same PACS patient check as linking) |
 | GET · POST | `/studies/{id}/ai-findings` | GET: reports.write/verify · POST: `radiology.worklist` | `SubmitAiFindingRequest` (engine, version, finding, confidence, isUrgent) → `AiFindingDto` |
 | POST | `/ai-findings/{findingId}/review` | reports.write or reports.verify | `ReviewAiFindingRequest` (acknowledge, note) → `AiFindingDto` |
 | GET | `/worklist/mwl?date&station&modality` | `radiology.worklist` | → `ModalityWorklistItem[]` (DICOM-formatted: PN names, `yyyyMMdd`/`HHmmss`, sex M/F/O, XR sent as CR, 2.25 UIDs) for the MWL gateway |
@@ -275,8 +275,11 @@ diagnostics screen.
   Health-checkup package components (`ServiceOrderPlaced.PackageBookingId`) are never charged per test/study.
 * **Unmapped services**: a clinical lab order for a service without a test set-up creates a provisional free-text test and
   alerts `lab.masters.manage` holders, so the order is never lost; radiology infers modality and body part from the code.
-* **PACS** (`IPacsClient`, optional): studies are matched by accession number, the PACS patient ID must match the UHID
-  before linking, and images found in PACS complete a study left in progress. Without a PACS client the endpoints return
+* **PACS** (`IPacsClient`, optional): studies are matched by accession number (or study UID when the accession number
+  is too long for DICOM). Linking, by hand or by the five-minute job, and the viewer link before a study is linked
+  require exactly one PACS study under the accession whose patient ID is the UHID: several studies
+  (`pacs.ambiguous_study`), no patient ID (`pacs.patient_id_missing`) or another one (`pacs.patient_mismatch`) are
+  refused, and the job tells the radiology staff once. Images found in PACS complete a study left in progress. Without a PACS client the endpoints return
   `pacs.not_configured` and the workflow continues.
 
 ## Events
