@@ -73,10 +73,13 @@ describe('TallyLedgerForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save ledger names' }));
 
     await waitFor(() => expect(tallyApi.saveLedgers).toHaveBeenCalledTimes(1));
-    const saved = vi.mocked(tallyApi.saveLedgers).mock.calls[0][0];
-    expect(saved.roundOff).toBe('Rounding Off');
-    expect(saved.incomeByDepartment).toEqual({ LAB: 'Laboratory Income' });
-    expect(saved.pharmacy.sales).toBeNull();
+    expect(tallyApi.saveLedgers).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roundOff: 'Rounding Off',
+        incomeByDepartment: { LAB: 'Laboratory Income' },
+        pharmacy: expect.objectContaining({ sales: null }),
+      }),
+    );
   });
 
   it('is read-only without the permission to set up Tally', () => {
