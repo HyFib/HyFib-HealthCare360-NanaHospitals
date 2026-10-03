@@ -251,14 +251,24 @@ internal static class CodeCatalogueEndpoints
 
         var before = id is null ? null : Snapshot(entry);
         var set = await classification.GetAsync(ct);
+        var title = request.Title.Trim();
+        var edited = entry.Code != code || entry.Release != release || entry.Title != title
+                     || entry.IsBillable != request.IsBillable;
         entry.Code = code;
-        entry.Title = request.Title.Trim();
+        entry.Title = title;
         entry.Release = release;
         entry.Chapter = release == CodeReleases.Icd10 ? set.ChapterOf(code)?.Number : entry.Chapter;
         entry.Block = release == CodeReleases.Icd10 ? set.BlockOf(code)?.Range : entry.Block;
         entry.IsBillable = request.IsBillable;
         entry.Keywords = string.IsNullOrWhiteSpace(request.Keywords) ? null : request.Keywords.Trim();
+        var switchedBackOn = request.IsActive && entry.WithdrawnAt is not null;
         entry.IsActive = request.IsActive;
+        if (request.IsActive)
+        {
+            entry.WithdrawnAt = null;
+        }
+
+        entry.Source = KeptByImports(entry.Source, edited || switchedBackOn);
         entry.RefreshSearchText();
         AuditEdit(audit, nameof(IcdCode), entry.Id, before, Snapshot(entry));
         await db.SaveChangesAsync(ct);
@@ -292,18 +302,37 @@ internal static class CodeCatalogueEndpoints
         }
 
         var before = id is null ? null : Snapshot(entry);
+        var title = request.Title.Trim();
+        var category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
+        var edited = entry.Code != code || entry.System != system || entry.Title != title || entry.Category != category;
         entry.Code = code;
-        entry.Title = request.Title.Trim();
+        entry.Title = title;
         entry.System = system;
-        entry.Category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
+        entry.Category = category;
         entry.Keywords = string.IsNullOrWhiteSpace(request.Keywords) ? null : request.Keywords.Trim();
+        var switchedBackOn = request.IsActive && entry.WithdrawnAt is not null;
         entry.IsActive = request.IsActive;
+        if (request.IsActive)
+        {
+            entry.WithdrawnAt = null;
+        }
+
+        entry.Source = KeptByImports(entry.Source, edited || switchedBackOn);
         entry.RefreshSearchText();
         AuditEdit(audit, nameof(ProcedureCode), entry.Id, before, Snapshot(entry));
         await db.SaveChangesAsync(ct);
         var dto = new ProcedureCodeDto(entry.Id, entry.Code, entry.Title, entry.System, entry.Category, entry.Keywords, entry.Source, entry.IsActive);
         return id is null ? TypedResults.Created($"/api/v1/mrd/procedure-codes/{entry.Id}", dto) : TypedResults.Ok(dto);
     }
+
+    /// <summary>
+    /// A code from the starter list or an imported file that MRD edited by hand (its code, title, whether it is
+    /// codable, its category) or switched back on after an import withdrew it becomes the hospital's own code, so the
+    /// next import leaves it as it is instead of putting the file's version back. Search words and switching a code off
+    /// do not count.
+    /// </summary>
+    private static CodeSource KeptByImports(CodeSource source, bool editedHere) =>
+        editedHere && source is CodeSource.Seed or CodeSource.Import ? CodeSource.Manual : source;
 
     /// <summary>
     /// Candidates: code prefix (normalised, e.g. "e119" → "E11.9") or every query word in the search text. A word of one

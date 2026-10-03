@@ -91,7 +91,7 @@ export function importSummary(result: CatalogueImportResult): string[] {
   );
   if (result.leftAlone > 0) {
     lines.push(
-      `${plural(result.leftAlone, 'code', 'codes')} added by hand or saved from the WHO online search ${
+      `${plural(result.leftAlone, 'code', 'codes')} added or changed by hand, or saved from the WHO online search, ${
         would ? 'would be' : 'were'
       } left as ${result.leftAlone === 1 ? 'it is' : 'they are'}.`,
     );
@@ -138,6 +138,6 @@ export function sourceLabel(source: CodeSource): string {
     case 'Online':
       return 'WHO online';
     default:
-      return 'Added here';
+      return 'Added or edited here';
   }
 }

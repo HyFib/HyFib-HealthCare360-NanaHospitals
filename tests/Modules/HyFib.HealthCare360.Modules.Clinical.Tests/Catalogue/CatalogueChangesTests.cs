@@ -100,6 +100,51 @@ public sealed class CatalogueChangesTests
         off.IsActive.ShouldBeFalse();
     }
 
+    [Fact]
+    public void A_code_switched_off_stays_off_when_one_file_drops_it_and_the_next_has_it_again()
+    {
+        var off = Stored("E15", "Nondiabetic hypoglycaemic coma", CodeSource.Import);
+        off.IsActive = false;
+
+        var first = Icd10Changes.Apply([off], [FileCode("E11", "Type 2 diabetes mellitus")], Now, _ => { }, false);
+        var second = Icd10Changes.Apply([off], [FileCode("E15", off.Title)], Now.AddYears(1), _ => { }, false);
+
+        first.Withdrawn.ShouldBe(0);
+        second.Reinstated.ShouldBe(0);
+        off.IsActive.ShouldBeFalse();
+        off.WithdrawnAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_procedure_code_switched_off_stays_off_when_one_file_drops_it_and_the_next_has_it_again()
+    {
+        var off = new ProcedureCode
+        {
+            Code = "0DTJ0ZZ",
+            Title = "Resection of Appendix, Open Approach",
+            Source = CodeSource.Import,
+            IsActive = false,
+        };
+        var used = new ProcedureCode
+        {
+            Code = "0DTJ4ZZ",
+            Title = "Resection of Appendix, Percutaneous Endoscopic Approach",
+            Source = CodeSource.Import,
+        };
+        PcsCode[] without = [new("BW03ZZZ", "Plain Radiography of Chest", "Imaging")];
+        PcsCode[] with = [new("0DTJ0ZZ", off.Title, "Resection"), new("0DTJ4ZZ", used.Title, "Resection")];
+
+        var first = PcsChanges.Apply([off, used], without, Now, _ => { }, dryRun: false);
+        var second = PcsChanges.Apply([off, used], with, Now.AddYears(1), _ => { }, dryRun: false);
+
+        first.Withdrawn.ShouldBe(1, "only the code in use is withdrawn");
+        second.Reinstated.ShouldBe(1);
+        off.IsActive.ShouldBeFalse();
+        off.WithdrawnAt.ShouldBeNull();
+        used.IsActive.ShouldBeTrue();
+        used.WithdrawnAt.ShouldBeNull();
+    }
+
     [Theory]
     [InlineData(CodeSource.Manual)]
     [InlineData(CodeSource.Online)]

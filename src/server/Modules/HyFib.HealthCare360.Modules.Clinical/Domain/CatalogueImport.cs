@@ -52,7 +52,9 @@ public sealed class CatalogueImport : AuditableEntity
     public int Reinstated { get; set; }
     public int Withdrawn { get; set; }
 
-    /// <summary>Codes MRD added by hand or saved from the WHO online search: an import never changes them.</summary>
+    /// <summary>
+    /// Codes MRD added or changed by hand, or saved from the WHO online search: an import never changes them.
+    /// </summary>
     public int LeftAlone { get; set; }
 
     public int Chapters { get; set; }

@@ -51,8 +51,10 @@ public sealed record CatalogueImportResult(
 /// ICD-10-PCS codes from HC360's starter list keep their curated everyday titles.</item>
 /// <item>A code from the starter list or an earlier import that the file no longer has is <b>withdrawn</b>: made
 /// inactive with the date, never deleted, so recorded diagnoses keep their codes. A later file that has it again
-/// brings it back.</item>
-/// <item>Codes MRD added by hand or saved from the WHO online search are left alone.</item>
+/// brings it back. A code MRD switched off is not withdrawn and stays off.</item>
+/// <item>Codes MRD added or edited by hand (title, whether it is codable) or saved from the WHO online search are left
+/// alone. Switching a code off or on, or changing its search words, is not such an edit; switching a withdrawn code
+/// back on is, since the file no longer has it.</item>
 /// <item>An ICD-10 import also replaces the chapters and blocks the browser and the morbidity index use.</item>
 /// <item>Everything is saved in one transaction with an import record (file name, SHA-256, counts, who, when) and an
 /// audit entry. A PostgreSQL advisory lock lets only one import run at a time.</item>
@@ -351,8 +353,10 @@ internal static class Icd10Changes
             {
                 outcome.LeftAlone++;
             }
-            else if (row.WithdrawnAt is null && !row.IsDeleted)
+            else if (row.IsActive && row.WithdrawnAt is null && !row.IsDeleted)
             {
+                // Only codes in use are withdrawn. A code MRD switched off stays off, without a withdrawal date, so a
+                // later file that has it again does not switch it back on.
                 outcome.Withdrawn++;
                 row.IsActive = false;
                 row.WithdrawnAt = now;
@@ -378,7 +382,10 @@ internal static class Icd10Changes
         row.RefreshSearchText();
     }
 
-    /// <summary>Back in the file after an earlier import withdrew it (or after it was deleted): in use again.</summary>
+    /// <summary>
+    /// Back in the file after an earlier import withdrew it (or after it was deleted): in use again. Only codes that
+    /// were in use are withdrawn, so this puts back the state they had.
+    /// </summary>
     private static bool Reinstate(IcdCode row)
     {
         if (row.WithdrawnAt is null && !row.IsDeleted)
@@ -465,7 +472,7 @@ internal static class PcsChanges
             {
                 outcome.LeftAlone++;
             }
-            else if (row.WithdrawnAt is null && !row.IsDeleted)
+            else if (row.IsActive && row.WithdrawnAt is null && !row.IsDeleted)
             {
                 outcome.Withdrawn++;
                 row.IsActive = false;

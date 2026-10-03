@@ -86,7 +86,7 @@ export interface CatalogueImportResult {
   unchanged: number;
   reinstated: number;
   withdrawn: number;
-  /** Codes MRD added by hand or saved from the WHO online search: an import never changes them. */
+  /** Codes MRD added or changed by hand, or saved from the WHO online search: an import never changes them. */
   leftAlone: number;
   chapters: number;
   blocks: number;

@@ -160,7 +160,7 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
       }
     },
   });
-  const fromFile = code?.source === 'Import';
+  const fromFile = code?.source === 'Import' || code?.source === 'Seed';
   return (
     <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate style={{ display: 'contents' }}>
       <DrawerHeader>
@@ -175,8 +175,9 @@ function IcdForm({ code, onClose }: { code: IcdCodeDto | null; onClose: () => vo
           {fromFile && (
             <MessageBar intent="info">
               <MessageBarBody>
-                This code comes from the WHO file. Add search words freely; the next import puts back WHO&rsquo;s title
-                and whether it is codable.
+                This code comes from {code?.source === 'Seed' ? 'the starter list' : 'the WHO file'}. Search words and
+                the Active switch can be changed freely. If you change the title or whether it is codable, it becomes
+                this hospital&rsquo;s own code and later imports leave it as it is.
               </MessageBarBody>
             </MessageBar>
           )}

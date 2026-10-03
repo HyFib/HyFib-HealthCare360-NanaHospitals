@@ -34,6 +34,8 @@ function result(partial: Partial<CatalogueImportResult>): CatalogueImportResult 
     at: '2026-10-03T10:00:00Z',
     importedBy: 'MRD',
     channel: 'Upload',
+    durationMs: 0,
+    warnings: [],
     ...partial,
   };
 }
@@ -67,7 +69,7 @@ describe('importSummary', () => {
     expect(lines).toEqual([
       '12,345 codes in the file.',
       '2 would be added, 1 would be withdrawn; 12,342 already up to date.',
-      '1 code added by hand or saved from the WHO online search would be left as it is.',
+      '1 code added or changed by hand, or saved from the WHO online search, would be left as it is.',
     ]);
   });
 });
@@ -93,6 +95,7 @@ describe('labels', () => {
     expect(catalogueName('Local')).toBe('Local');
     expect(sourceLabel('Import')).toBe('Imported file');
     expect(sourceLabel('Seed')).toBe('Starter list');
+    expect(sourceLabel('Manual')).toBe('Added or edited here');
   });
 
   it('marks dagger and asterisk codes', () => {

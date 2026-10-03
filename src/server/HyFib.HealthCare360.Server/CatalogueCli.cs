@@ -83,7 +83,8 @@ internal static class CatalogueCli
                      $"{N(result.Unchanged)} were already up to date.";
         if (result.LeftAlone > 0)
         {
-            yield return $"  {N(result.LeftAlone)} codes added by hand or saved from the WHO online search were left as they are.";
+            yield return $"  {N(result.LeftAlone)} codes added or changed by hand, or saved from the WHO online search, " +
+                         "were left as they are.";
         }
 
         foreach (var warning in result.Warnings)
