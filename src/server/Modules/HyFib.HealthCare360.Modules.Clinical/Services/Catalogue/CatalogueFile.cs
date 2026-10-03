@@ -107,7 +107,9 @@ public static partial class CatalogueFile
             }
 
             var candidates = zip.Entries
-                .Where(e => e.Name.Length > 0 && (e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) || PcsOrderFileName().IsMatch(e.Name)))
+                .Where(e => e.Name.Length > 0 && !IsMacMetadata(e)
+                            && (e.Name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+                                || PcsOrderFileName().IsMatch(e.Name)))
                 .ToList();
             if (candidates.Count != 1)
             {
@@ -134,6 +136,14 @@ public static partial class CatalogueFile
             }
         }
     }
+
+    /// <summary>
+    /// The extra entries a Mac adds when it zips a folder: <c>__MACOSX/</c> and <c>._name</c> files hold Finder
+    /// metadata, not the file itself.
+    /// </summary>
+    private static bool IsMacMetadata(ZipArchiveEntry entry) =>
+        entry.FullName.Replace('\\', '/').Split('/').Contains("__MACOSX", StringComparer.OrdinalIgnoreCase)
+        || entry.Name.StartsWith("._", StringComparison.Ordinal);
 
     /// <summary>
     /// Plain XML or text: decided by the first character that is not a byte-order mark or white space. A ClaML file opens

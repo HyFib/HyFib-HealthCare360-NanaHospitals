@@ -53,6 +53,20 @@ public sealed class CatalogueFileTests
     }
 
     [Fact]
+    public void The_extra_files_a_mac_adds_to_a_zip_are_ignored()
+    {
+        using var zip = CatalogueSamples.Zip(
+            ("ICD-10/icd102019en.xml", CatalogueSamples.Claml),
+            ("__MACOSX/ICD-10/._icd102019en.xml", "Mac OS X metadata"),
+            ("ICD-10/._icd102019en.xml", "Mac OS X metadata"));
+
+        var content = CatalogueFile.Read(zip, "ICD-10.zip", Limits);
+
+        content.Kind.ShouldBe(CatalogueKind.Icd10);
+        content.InnerFileName.ShouldBe("icd102019en.xml");
+    }
+
+    [Fact]
     public void A_zip_with_two_catalogue_files_is_refused()
     {
         using var zip = CatalogueSamples.Zip(("icd102019en.xml", CatalogueSamples.Claml), ("icd102016en.xml", CatalogueSamples.Claml));
