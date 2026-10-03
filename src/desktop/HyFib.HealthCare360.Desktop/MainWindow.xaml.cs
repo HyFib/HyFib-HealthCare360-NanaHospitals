@@ -105,7 +105,7 @@ public partial class MainWindow : Window
 
         _tray = new TrayNotifier(() => Activate([]));
         var printing = new PrintService(core.Environment, new WindowInteropHelper(this).Handle);
-        new BridgeHost(core, _server, _settings, _network, printing, _tray).Attach();
+        new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), _tray).Attach();
         _network.Start();
         _ = HeartbeatLoopAsync(_lifetime.Token);
 

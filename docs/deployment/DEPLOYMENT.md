@@ -136,8 +136,33 @@ Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and sho
 
 ## 6. Printers and devices
 
-- Receipt/token printers (80 mm), label printers (50×25 mm) and A4/A5 printers are ordinary Windows printers on each
-  workstation. HC360 prints silently to the default printer, or to one chosen per workstation.
+- Receipt and token printers (80 mm), label printers, wristband printers and A4/A5 printers are ordinary Windows
+  printers on each workstation. In HC360 Desktop, open **Printers on this computer** (user menu) to choose the printer
+  for each kind of print and print a test. HC360 then prints silently to that printer; a kind with no printer shows
+  the print dialog, never the Windows default. Changing the printers needs the "set up printers" permission
+  (`integrations.printers.setup`, Hospital Admin by default), and each change is in the audit trail.
+- For Zebra (ZPL) and TSC (TSPL) label and wristband printers, choose the language, resolution (203 or 300 dpi) and
+  label or band size; the server then writes the printer commands so barcodes scan. Other label printers print
+  through their Windows driver.
+- The printers are kept for the computer in `%ProgramData%\HyFib\HC360Desktop\Workstation\printers.json`, which the
+  installer lets every Windows user change. To fix them so that users and scripts on the computer cannot, add a
+  `printers` entry to the HC360 Desktop policy, `%ProgramData%\HyFib\HC360Desktop\policy.json` (make the file
+  read-only to users). HC360 then shows them and refuses changes:
+
+  ```json
+  {
+    "serverUrl": "https://hc360-srv:7360/",
+    "printers": {
+      "labels": { "printer": "ZDesigner GK420t", "language": "zpl", "dpi": 203, "widthMm": 50, "heightMm": 25 },
+      "wristbands": { "printer": "ZDesigner HC100", "language": "zpl", "dpi": 300, "widthMm": 25, "heightMm": 279.4, "code": "code128" },
+      "receipts": { "printer": "EPSON TM-T82 Receipt" },
+      "documents": { "printer": "HP LaserJet M404" }
+    }
+  }
+  ```
+
+  Printer names must match Windows exactly. A printer that is not installed, or an entry that is not valid, is not
+  used, and Printers on this computer says why.
 - Barcode scanners work as keyboards (no driver).
 - PACS, biometric attendance devices, Tally and payment terminals are configured in **Administration ›
   Integrations**. See `docs/modules/integrations.md`.

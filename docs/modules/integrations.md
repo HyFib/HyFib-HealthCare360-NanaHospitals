@@ -428,15 +428,107 @@ acknowledgements are never acknowledged in turn.
 
 ### Barcode labels (INT-BAR)
 
-`POST /api/v1/integrations/labels` returns raw **ZPL** (Zebra) or **TSPL** (TSC) text. The Desktop bridge
-(`printer.printRaw`) prints it; the server never prints.
+The server writes printer commands; it never prints. HC360 Desktop sends the commands to the workstation's label or
+wristband printer (`printer.printRaw`). Labels have no server settings: each workstation keeps its own printers (see
+*Printers on this computer* below). Code: `Labels/` (canvas, writers, fonts, Code 128, QR sizing) and
+`Labels/Templates/`, endpoints in `Features/Labels/`.
 
-* Geometry is for 203 dpi (8 dots/mm): 50×25 mm is `^PW400 ^LL200`.
-* **Code 128**: printable ASCII, at most 48 characters, and the bar width is chosen to fit the label.
-* **QR**: model 2, level Q, at most 400 bytes, with the smallest version that fits.
-* Up to 6 text lines of 80 characters. Control characters are removed.
-* In ZPL, all field data goes through `^FH`, and `^`, `~`, `_` and non-ASCII characters are hex-escaped, so label
-  text can never inject printer commands. TSPL quotes are escaped as `\["]`.
+**Typed labels.** Each kind of label has a template that lays out the same facts as the staff app's own label page, so
+a label looks the same whichever way it is printed. The staff app sends the data; nothing is looked up here.
+
+| Endpoint (`POST /api/v1/integrations/labels/…`) | Data (`LabelData.cs`) | What prints | Scanned value |
+|---|---|---|---|
+| `lab-tubes` | `LabTubeLabel { barcode, patientName, uhid, ageSex, accessionNumber, stat, tube, bench, tests[], collectedAt }` | Name and age/sex, UHID, STAT in white on black (or the accession number), the barcode and its number, tube and bench, the tests (`CBC, ESR +2` when they do not fit), collection time | Sample barcode (Code 128) |
+| `wristbands` | `WristbandLabel { uhid, patientName, ageSex, admissionNumber, ward, bed, allergies }`, plus `code` (`Code128` or `QrCode`) for the request | Along the band: name, UHID and age/sex, admission number and ward / bed, the allergy mark, then the code | UHID (Code 128 or QR) |
+| `dispensing` | `DispensingLabel { patientName, medicine, quantity, directions, batch, expiry, dispensedOn, hospital }` | Name, medicine and quantity, directions (up to two lines each), batch and expiry, hospital and date. On a short label the hospital gives way first, then the second line of the directions, then of the medicine; the expiry is never shortened | none |
+| `blood-units` | `BloodUnitLabel { unitNumber, bloodGroup, component, volumeMl, cleared, expiresAt, storage }` | Group with POS or NEG in full, component and volume, TTI NON-REACTIVE, or QUARANTINE / NOT FOR ISSUE in white on black until cleared; the barcode and unit number, expiry, storage | Unit number (Code 128) |
+| `cssd-packs` | `CssdPackLabel { packNumber, setName, method, sterileUntil }` | Set name, the barcode and pack number, method and use-by date, or NOT RELEASED in white on black while `sterileUntil` is null | Pack number (Code 128) |
+| `asset-tags` | `AssetTagLabel { assetTag, assetName, hospital }` | Hospital, asset name, the barcode and tag | Asset tag (Code 128) |
+| `test` | `TestLabelRequest { printer, stock (Label or Wristband), computer }` | A frame 1 mm inside the edges, the printer as HC360 sees it (language, dpi, size), a sample barcode at real module width, the computer and time | `HC360-TEST` |
+
+Each request carries `printer: LabelPrinterSetup { language, dpi, widthMm, heightMm }` and `copies` (1–10); the answer
+is `LabelCommands { language, content, labels }`. At most 100 labels a request, 10 wristbands.
+
+**Wristband allergy mark.** `GET /api/v1/inpatient/admissions/{id}/wristband` gives the chart's allergy status, and the
+staff app passes it through as `allergies`:
+
+* `Recorded` (active allergies on the chart): a black ALLERGY mark.
+* `NoKnownAllergies` (a clinician recorded it): no mark.
+* `NotRecorded` (nobody has recorded allergies or their absence): an outlined "ALLERGIES / NOT RECORDED" mark, black
+  text in a frame, so a patient never assessed does not look like one with no known allergies.
+
+A band is not reprinted by itself when allergies are recorded later; staff reprint it (see [inpatient.md](inpatient.md)).
+
+**Printers and sizes.**
+
+* Languages: `zpl` (ZPL II, Zebra and compatibles) and `tspl` (`tspl2` accepted; TSC and compatibles). Resolution 203
+  or 300 dpi; positions are printer dots (8 per mm at 203 dpi, about 11.8 at 300 dpi).
+* Label rolls: 25–110 mm wide, 15–100 mm tall. Wristband bands: 15–40 mm wide, 80–350 mm long. Sizes are to one
+  decimal place. Wristband text and codes are turned a quarter turn so they read along the wrist.
+* ZPL: one `^XA … ^XZ` per label with `^CI28`, `^PW`, `^LL` and `^PQ` for copies; text in font 0. TSPL: `SIZE`,
+  `GAP 2 mm,0 mm`, then `CLS … PRINT 1,copies` per label; text in the dot fonts.
+* **Code 128**: 1 to 48 printable ASCII characters (not `!`, `>`, `"` or `\`), code sets chosen for the shortest
+  barcode. Every module is a whole number of dots, at least 0.19 mm and at most 0.5 mm, with quiet zones of ten
+  modules, so barcodes scan. A value too long for the label is refused.
+* **QR**: model 2, at most 400 bytes, the smallest version that fits. On a band each module is at least 0.33 mm, or
+  the band is refused with "Use Code 128".
+* **Text** is printed in the printer's own fonts, which cover printable ASCII only. Accents are dropped (José → Jose),
+  typographic marks become ASCII (– → -, ° → deg, ₹ → Rs), white space collapses, and text too long for its line is
+  shortened with "...". Letters with no ASCII form (Devanagari, say) cannot be printed this way.
+* **Escaping**: in ZPL every field goes through `^FH`, with `^`, `~`, `_` and non-ASCII bytes written as `_hh`; in TSPL
+  quotes are written as `\["]` and control characters dropped. Label data can never become a printer command.
+
+**Refusals and the page fallback.** A label that does not fit its media answers 422 `labels.does_not_fit`, and text the
+printer fonts cannot print answers 422 `labels.text_not_printable`, each with a message for staff. A request that
+breaks the validation rules answers 400.
+
+**How the staff app prints a label** (`printLabel` in `packages/core/src/print/labels.ts`, used through
+`printLabelJob`):
+
+1. It reads the workstation's printers from HC360 Desktop. Wristbands use the wristband printer, every other label the
+   label printer.
+2. For a ZPL or TSPL printer it posts the labels to the endpoint for their kind and sends the answer to the printer with
+   `printer.printRaw`.
+3. On `labels.text_not_printable`, or on a 400, it prints the label page (HTML) on the same printer through its Windows
+   driver instead. Any other error (sign-in, permission, network, `labels.does_not_fit`) stops the print and is shown.
+4. With a printer set to `driver`, it prints the label page silently on that printer. With no printer for the kind, or
+   in a browser, it prints the page with the print dialog.
+
+**General-purpose label.** `POST /api/v1/integrations/labels` (`ILabelPrinterService`) takes one value as Code 128 or
+QR with up to six text lines of 80 characters: `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm,
+copies, language, dpi }` → `PrintLabelResponse { language, content, copies }`.
+
+#### Printers on this computer
+
+HC360 Desktop keeps each workstation's printers for every Windows account on it, in
+`%ProgramData%\HyFib\HC360Desktop\Workstation\printers.json`. The staff app's screen is Printers on this computer
+(`/workstation/printers`, in the user menu inside HC360 Desktop).
+
+* **Roles.** `labels` and `wristbands` (each with a language `zpl`, `tspl` or `driver`, and for the first two the
+  resolution and label or band size; wristbands also `code128` or `qr`), `receipts` (80 mm slips and token slips) and
+  `documents` (A4 and A5). A page goes to the printer for its page size, silently; a role with no printer shows the
+  print dialog, so nothing prints on whichever printer is the Windows default.
+* **Who may change them.** Anyone may see the printers and print a test. Changing them needs
+  `integrations.printers.setup`:
+  1. `POST /api/v1/integrations/printers/changes/approval` checks the permission and the change and answers
+     `PrinterChangeApproval { changedBy }`, the signed-in user's name. Nothing is recorded yet.
+  2. HC360 Desktop saves the change (`printer.saveSetup`), with that name as "saved by".
+  3. `POST /api/v1/integrations/printers/changes` records it in the audit trail as `workstation.printers_changed`, with
+     each role's printer, language, resolution, size and the wristband code. A change HC360 Desktop refused is not
+     recorded. If this call fails after the save, the screen says the printers were saved but not recorded.
+* **What protects the setup.** HC360 Desktop cannot confirm the server's approval: it holds no user's sign-in and
+  nothing the server signs, so `printer.saveSetup` saves what the staff app sends, and every Windows user on the
+  computer may change `printers.json` (the installer gives Users modify rights so any logon can save). The "saved by"
+  name is a note, not proof; the audit trail is the record. Where local users or scripts must not change the printers,
+  IT sets them in the machine policy (`policy.json`, `printers` entry, see the deployment guide), which is read-only
+  to users: HC360 then shows them and refuses changes.
+* **Checked when read.** The saved file and the policy are checked like a save. A printer that is not installed any
+  more, or not a valid setup, is not used (that kind of print shows the print dialog), and the screen says which and
+  why.
+* **Only installed printers.** `printer.printRaw` and `printer.printHtml` print only to printers installed on the
+  workstation. A shared queue on another computer (`\\host\queue`) must be added in Windows first.
+* **Test print.** For a ZPL or TSPL printer the screen prints the server's test label; for any other printer a test page
+  in the role's paper size.
 
 ### ICD lookup (INT-ICD) and the Clinical module
 
@@ -476,7 +568,11 @@ acknowledgements are never acknowledged in turn.
 | DELETE | `/api/v1/integrations/lab/connections/{code}?version` | `integrations.lab.connections` | → 204; 409 on a stale version. Audited as `lab.connection.removed` |
 | POST | `/api/v1/integrations/lab/agent/heartbeat` | anonymous, lab agent credential (`X-Device-Id`, `X-Device-Key`), `device` rate limit | `LabAgentHeartbeatRequest { appVersion, ports[] { code, open, error } }` (at most 64 ports) → `LabAgentAssignments { deviceId, deviceName, gatewayEnabled, heartbeatSeconds, instruments[] }`; 401 for a device that is not an enrolled lab agent |
 | GET | `/api/v1/integrations/lab/agent/relay/{code}` | anonymous, lab agent credential, `device` rate limit | WebSocket, sub-protocol `hc360.lab-relay.v1`: the analyser's serial bytes. 401 not an enrolled lab agent, 404 analyser not assigned to it, 503 gateway off |
-| POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language }` → `PrintLabelResponse { language, content, copies }` |
+| POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language, dpi }` → `PrintLabelResponse { language, content, copies }` |
+| POST | `/api/v1/integrations/labels/{lab-tubes\|wristbands\|dispensing\|blood-units\|cssd-packs\|asset-tags}` | `integrations.labels.print` | `{ printer: LabelPrinterSetup, labels[], copies }` (wristbands also `code`) → `LabelCommands { language, content, labels }`; 422 `labels.does_not_fit` or `labels.text_not_printable`. See [Barcode labels](#barcode-labels-int-bar) |
+| POST | `/api/v1/integrations/labels/test` | `integrations.labels.print` | `TestLabelRequest { printer, stock, computer }` → `LabelCommands` |
+| POST | `/api/v1/integrations/printers/changes/approval` | `integrations.printers.setup` | `PrinterSetupChange { computer, deviceId, roles[{ role, printer, language, dpi, widthMm, heightMm, code }] }` → `PrinterChangeApproval { changedBy }`; records nothing |
+| POST | `/api/v1/integrations/printers/changes` | `integrations.printers.setup` | `PrinterSetupChange` → 204; audited as `workstation.printers_changed` |
 | POST | `/api/v1/integrations/webhooks/sms/msg91` | anonymous, token | delivery reports (JSON or form `data`) |
 | POST | `/api/v1/integrations/webhooks/sms/twilio` | anonymous, `X-Twilio-Signature` | status callbacks (form) |
 | GET, POST | `/api/v1/integrations/webhooks/sms/generic` | anonymous, token | `{ id\|messageId\|msgid…, status }` |
@@ -486,10 +582,10 @@ acknowledgements are never acknowledged in turn.
 Webhooks use the platform's `public` rate-limit policy, read at most 256 KB and accept `?facility=<id>`.
 
 Permissions:
-* `IntegrationsModule` declares `integrations.labels.print` (all staff roles), `integrations.lab.connections` (set up
-  analyser connections: ports, allowed addresses, serial ports and lab agents; HospitalAdmin) and
-  `integrations.lab.status` (see whether analysers and their agents are connected; LabTechnician, Pathologist,
-  HospitalAdmin).
+* `IntegrationsModule` declares `integrations.labels.print` (all staff roles), `integrations.printers.setup` (changes
+  a workstation's printers; Hospital Admin by default), `integrations.lab.connections` (set up analyser connections:
+  ports, allowed addresses, serial ports and lab agents; HospitalAdmin) and `integrations.lab.status` (see whether
+  analysers and their agents are connected; LabTechnician, Pathologist, HospitalAdmin).
 * The dashboard, test sends, logs and inboxes need the platform's `admin.integrations.manage`. It has no default role:
   only Super Admin holds it until an administrator grants it, because it exposes message logs and live test sends.
 * Integration settings and credentials are saved through the platform settings API (`/api/v1/admin/settings`), which

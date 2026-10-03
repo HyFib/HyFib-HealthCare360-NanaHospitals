@@ -30,9 +30,14 @@ public sealed class IntegrationsModuleTests
     public void Module_key_is_integrations() => new IntegrationsModule().Name.ShouldBe("integrations");
 
     [Fact]
-    public void Declares_label_printing_and_the_analyser_connection_permissions() =>
+    public void Declares_label_printing_printer_setup_and_the_analyser_connection_permissions() =>
         new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe(
-            [IntegrationsPermissions.LabelsPrint, IntegrationsPermissions.LabConnectionsManage, IntegrationsPermissions.LabStatusRead]);
+        [
+            IntegrationsPermissions.LabelsPrint,
+            IntegrationsPermissions.LabConnectionsManage,
+            IntegrationsPermissions.LabStatusRead,
+            IntegrationsPermissions.PrintersSetup,
+        ]);
 
     [Fact]
     public void Only_administrators_set_up_analyser_connections_and_lab_staff_see_their_state()
@@ -43,6 +48,11 @@ public sealed class IntegrationsModuleTests
         permissions[IntegrationsPermissions.LabStatusRead].DefaultRoles.ShouldBe(
             [SystemRoles.LabTechnician, SystemRoles.Pathologist, SystemRoles.HospitalAdmin], ignoreOrder: true);
     }
+
+    [Fact]
+    public void Only_hospital_administrators_set_up_workstation_printers_until_others_are_given_it() =>
+        new IntegrationsModule().Permissions.Single(p => p.Name == IntegrationsPermissions.PrintersSetup).DefaultRoles
+            .ShouldBe([SystemRoles.HospitalAdmin]);
 
     [Theory]
     [InlineData(typeof(ISmsSender), typeof(SmsRouter))]

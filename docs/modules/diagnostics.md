@@ -83,6 +83,11 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | POST | `/samples/{id}/reject` | `lab.samples.receive` | `RejectSampleRequest` (reason, remarks — required for Other, recollect) → `SampleRejected` (recollection barcode) |
 | POST | `/samples/{id}/recollect` | `lab.samples.receive` | → `SampleRejected` (new linked tube) |
 
+**Tube labels (LIS-02/03).** After collection, and on reprint, the staff app prints one label per tube from
+`SampleLabel`, without a dialog, on the workstation's label printer: name, age/sex, UHID, STAT or the accession
+number, the sample barcode (Code 128), tube and bench, tests and collection time. On a ZPL or TSPL printer the server
+writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ### Results and verification — `/api/v1/lab`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

@@ -1,4 +1,4 @@
-import type { Gender, PagedResult, PayerType } from '@hc360/core';
+import type { Gender, PagedResult, PayerType, WristbandAllergies } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { BedAlert, BedStatus } from './bedState';
@@ -436,6 +436,22 @@ export interface AdmissionListItem {
   lengthOfStayDays: number;
   payerType: PayerType;
   isMlc: boolean;
+}
+
+/**
+ * What an in-patient's wristband shows: who, the UHID to scan, the admission and the bed, and what the chart says about
+ * allergies (the band's allergy mark). The allergies themselves are not included.
+ */
+export interface WristbandDto {
+  admissionId: string;
+  uhid: string;
+  patientName: string;
+  gender: Gender;
+  age: string | null;
+  admissionNumber: string;
+  wardName: string | null;
+  bedLabel: string | null;
+  allergies: WristbandAllergies;
 }
 
 export interface AdmissionDetail {
@@ -887,4 +903,6 @@ export const admissionApi = {
     api.post<ConsultantVisitDto>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, body),
   cancelVisit: (visitId: string, reason: string) =>
     api.post<void>(`/api/v1/inpatient/admissions/consultant-visits/${visitId}/cancel`, { reason }),
+  /** What the patient's wristband shows, read fresh for each print (the allergy mark comes from the chart). */
+  wristband: (id: string) => api.get<WristbandDto>(`/api/v1/inpatient/admissions/${id}/wristband`),
 };

@@ -190,7 +190,9 @@ internal sealed class IntegrationTestService(
     private IntegrationTestResult Labels()
     {
         var zpl = labels.Build(new LabelRequest("HC360-TEST", LabelSymbology.Code128, ["HC360 test label"]), "zpl");
-        return new IntegrationTestResult(true, "Sample ZPL label built; print it from a workstation to check the printer.",
+        return new IntegrationTestResult(
+            true,
+            "A sample ZPL label was built. To check a printer, open Printers on this computer in HC360 Desktop on that workstation and print a test.",
             new Dictionary<string, string?> { ["zpl"] = zpl });
     }
 
