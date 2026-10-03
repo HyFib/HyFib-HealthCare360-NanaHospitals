@@ -137,8 +137,67 @@ Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and sho
 - Receipt/token printers (80 mm), label printers (50×25 mm) and A4/A5 printers are ordinary Windows printers on each
   workstation. HC360 prints silently to the default printer, or to one chosen per workstation.
 - Barcode scanners work as keyboards (no driver).
-- Lab analysers, PACS, biometric attendance devices, Tally and payment terminals are configured in
-  **Administration › Integrations**. See `docs/modules/integrations.md`.
+- Lab analysers, PACS, the modality worklist, biometric attendance devices, Tally and payment terminals are configured
+  in **Administration › Integrations**. See `docs/modules/integrations.md`.
+
+### Radiology: PACS and the modality worklist
+
+HC360 reads studies and images from the PACS over DICOMweb, and serves the day's patients to the modalities (CT, MR,
+X-ray, ultrasound…) as a DICOM modality worklist, so radiographers pick the patient at the console instead of typing.
+
+**PACS** (Administration › Integrations › PACS, key `integrations.pacs`):
+1. Set the provider to `dicomweb` and the DICOMweb address of the PACS, for example
+   `http://orthanc.hospital.local:8042/dicom-web`. Add a separate WADO address only if the PACS serves images elsewhere.
+2. Set the sign-in (none, basic or bearer). The password or token is stored encrypted and never shown again.
+3. Set the viewer link, for example `https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}`.
+4. Press **Test**. HC360 then links new studies with their images every five minutes. A study that PACS holds under
+   another patient ID, without one, or twice is not linked, and the radiographers are told: correct it in PACS.
+
+**Modality worklist** (Administration › Integrations › Modality worklist, key `integrations.mwl`, one setting for
+all facilities):
+1. Turn it on. Keep port **11112** (the DICOM port) and AE title `HC360MWL` unless the PACS vendor asks otherwise.
+   To keep the port off the clinical WiFi, set the listen address to the server's address on the imaging network.
+2. Add each modality: its own AE title as set on its console (for example `CT1`), its fixed IP address (give it a DHCP
+   reservation), the facility code whose patients it sees, and the kinds of study it does (`CR` or `DX` for X-ray,
+   `CT`, `MR`, `US`, `MG`, `RF`). Only listed modalities, calling from their own address, get an answer.
+3. Keep facility codes to five letters: radiology accession numbers are then within DICOM's 16 characters. Longer
+   ones are still matched with PACS, by study UID, but cannot be typed or searched at the console.
+4. Open the port in Windows Firewall for the modalities only. The installer opens only HTTPS and mDNS, and it removes
+   its own rules when it runs again, so this rule has a group of its own:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName 'HC360 Modality worklist (DICOM)' -Group 'HyFib HealthCare360 DICOM' `
+       -Direction Inbound -Protocol TCP -LocalPort 11112 -RemoteAddress 10.0.5.31,10.0.5.32 `
+       -Profile Private, Domain -Action Allow
+   ```
+
+   Put the modalities' addresses in `-RemoteAddress`. The uninstaller does not remove this rule; remove it with
+   `Get-NetFirewallRule -Group 'HyFib HealthCare360 DICOM' | Remove-NetFirewallRule`.
+5. Press **Test** on the dashboard: the server sends itself a DICOM echo, so the port is open and the AE title answers.
+   The dashboard then shows the listener, its open associations and the queries answered and refused.
+
+**At each modality console** (the vendor's service engineer usually does this), add a worklist provider (it may be
+called RIS, MWL or "worklist server"): AE title `HC360MWL`, the server's IP address, port 11112. Set the modality's own
+AE title to the one entered in HC360. Keep sending images to the PACS as before; the modality copies the accession
+number and Study Instance UID from the worklist into the images, which is how HC360 links them. Then run the console's
+"verify" or "echo" and query today's worklist.
+
+**Testing without a modality.** From a PC listed as a modality (its IP address and an AE title such as `TESTSCU`), use
+the free DCMTK tools:
+
+```
+echoscu -v -aet TESTSCU -aec HC360MWL HC360-SRV 11112
+findscu -v -W -aet TESTSCU -aec HC360MWL HC360-SRV 11112 ^
+  -k "ScheduledProcedureStepSequence[0].Modality=CT" ^
+  -k "ScheduledProcedureStepSequence[0].ScheduledProcedureStepStartDate=20261003" ^
+  -k PatientName -k PatientID -k AccessionNumber -k StudyInstanceUID -k RequestedProcedureDescription
+```
+
+Each answer is one patient. Wildcards work, for example `-k PatientName=SHARMA*`. Administration › Integrations ›
+Logs shows each query (patient keys masked), and `GET /api/v1/radiology/worklist/mwl?date=…` returns the same list as
+JSON for a radiographer or radiologist. For a test PACS, Orthanc with its DICOMweb plugin works:
+`deploy/docker/compose.dev.yml --profile pacs` starts one at `http://localhost:58042/dicom-web`. Upload a DICOM file
+whose Accession Number and Patient ID are a study's accession number and the patient's UHID, then link the study.
 
 ## 7. Upgrades
 
@@ -202,5 +261,7 @@ distribution tool).
 | "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
+| A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
+| Images are not linked with PACS | Press "Link images from PACS" on the study: the message says why. "Under another patient ID", "without a patient ID" or "several studies" must be corrected in PACS; "not reached PACS yet" usually means the modality has not sent the images, or sent them without the worklist's accession number |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.

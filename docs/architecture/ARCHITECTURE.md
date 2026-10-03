@@ -13,7 +13,7 @@ This document describes how HC360 is built. It covers the runtime topology on th
 | Validation | FluentValidation | 12 |
 | Jobs | Hosted services + Quartz.NET (cron schedules) | Quartz 4 |
 | Observability | Serilog (file + Windows Event Log), OpenTelemetry (OTLP optional) | — |
-| Interop | HL7 FHIR R4 (Firely SDK), fo-dicom / DICOMweb, HL7 v2 + ASTM parsers | — |
+| Interop | HL7 FHIR R4 (Firely SDK), fo-dicom (DICOM modality worklist server), DICOMweb (QIDO-RS, WADO-RS), HL7 v2 + ASTM parsers | fo-dicom 5 |
 | Desktop | WPF shell + Microsoft Edge **WebView2** (same model as the new Microsoft Teams/Outlook) | .NET 10, WebView2 1.0.4191+ |
 | UI | React + TypeScript + **Fluent UI v9** (Fluent 2 / Windows 11 design), TanStack Router & Query, React Hook Form + Zod, ECharts | React 19.3, TS 6.0, Vite 8 |
 | Portal | Same UI stack, mobile-first PWA, i18n (en, hi) | — |
@@ -29,7 +29,7 @@ flowchart LR
     direction TB
     API[HC360 Server<br/>ASP.NET Core 10<br/>Windows Service :7360 HTTPS]
     WRK[Background jobs<br/>outbox · reminders · backups · WiFi monitor]
-    GW[Integration gateway<br/>HL7/ASTM listeners · Tally · PACS]
+    GW[Integration gateway<br/>HL7/ASTM listeners · DICOM worklist · Tally · PACS]
     DB[(PostgreSQL 17<br/>Windows Service)]
     FS[[Encrypted file store<br/>%ProgramData%\HyFib\HC360]]
     MDNS((mDNS<br/>_hc360._tcp))
@@ -42,7 +42,9 @@ flowchart LR
   WS2[HC360 Desktop<br/>Doctor / Lab / Pharmacy] -- TLS --> API
   TAB[Tablet browser<br/>ward rounds] -- TLS --> API
   AN[Lab analysers] -- HL7/ASTM TCP --> GW
-  PACS[(PACS)] -- DICOMweb --> GW
+  MOD[Modalities<br/>CT · MR · X-ray · US] -- DICOM worklist C-FIND :11112 --> GW
+  GW -- DICOMweb QIDO/WADO --> PACS[(PACS)]
+  MOD -- images (DICOM) --> PACS
   API -- outbox, when internet up --> EXT[SMS · WhatsApp · Payment gateway · ICD-API · Claude API]
   PAT[Patients — Portal PWA] -- HTTPS via published URL --> API
   WS1 -. discover .-> MDNS
@@ -106,7 +108,7 @@ docs/                                     SRS, architecture, security, deploymen
 |---|---|---|---|
 | 0 | SharedKernel | — | — |
 | 1 | Platform | Identity, users/roles/permissions, devices, facilities, departments, specialities, practitioners, service catalogue, numbering, audit, settings, files, notifications, realtime, printable documents and PDFs | SharedKernel |
-| 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
+| 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS (DICOMweb), the DICOM modality worklist server, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
 | 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents | Platform |
 | 2 | **SupplyChain** | Inventory (INV), purchase, stores, indents, vendors, Asset Management (AST) | Platform |
 | 2 | **HR** | HRMS (HR), biometric attendance | Platform |
@@ -238,7 +240,7 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 
 ## 10. Integration architecture
 
-Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSender`, `IPaymentGateway`, `IPosTerminal`, `IAccountingExporter` (Tally), `IPacsClient`, `ILabInstrumentGateway`, `ILabelPrinterService`, `IIcdLookup`). Biometric attendance terminals are the exception: they push to HR directly over the ZKTeco/eSSL ADMS protocol (INT-BIO), so there is no Platform abstraction for them. Each has one or more **providers** in `Integrations` (for example `Msg91SmsSender`, `TwilioSmsSender`, `SimulatorSmsSender`), selected per facility in configuration. Outbound calls go through the outbox dispatcher. Inbound calls (webhooks, analyser messages, device pushes) are authenticated (HMAC signatures, per-device keys, IP allow-lists) and logged to `integrations.message_log` with PHI masked.
+Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSender`, `IPaymentGateway`, `IPosTerminal`, `IAccountingExporter` (Tally), `IPacsClient`, `ILabInstrumentGateway`, `ILabelPrinterService`, `IIcdLookup`). Biometric attendance terminals are the exception: they push to HR directly over the ZKTeco/eSSL ADMS protocol (INT-BIO), so there is no Platform abstraction for them. Two listeners call back into a module through contracts the module implements: analyser results go to Diagnostics through `IInstrumentResultSink`, and the DICOM modality worklist server reads the studies to be done through `IModalityWorklistSource`. Each has one or more **providers** in `Integrations` (for example `Msg91SmsSender`, `TwilioSmsSender`, `SimulatorSmsSender`), selected per facility in configuration. Outbound calls go through the outbox dispatcher. Inbound calls (webhooks, analyser messages, device pushes) are authenticated (HMAC signatures, per-device keys, IP allow-lists) and logged to `integrations.message_log` with PHI masked.
 
 **Patient notifications and WhatsApp STOP.** Modules queue patient and staff messages with `INotificationService.Queue(templateKey, recipient, values, channels)`. Each channel gets a `platform.notification_logs` row and an outbox message (`notify.sms`, `notify.whatsapp`, `notify.email`); the outbox handler renders the template and calls the channel's sender. A number that replied **STOP** to the hospital's WhatsApp number has a row in `platform.whatsapp_opt_outs` (one per E.164 number, for the whole group, kept by the `WhatsAppOptOutChanged` integration event that Integrations raises once per new reply; see [integrations.md](../modules/integrations.md#stop-and-start-replies)). Before every WhatsApp send, the `notify.whatsapp` handler checks it: a non-essential message to an opted-out number is not sent, and its log is marked **`Suppressed`** with the reason, instead of failing and retrying. The check runs at delivery time, so messages queued earlier stop too, whichever module queued them. `WhatsAppOptOutPolicy` classifies templates: only messages that must reach the person for security are essential (today `auth.otp`, the portal sign-in code); everything else stops on WhatsApp, including a video consultation's join link, because the patient still has SMS, e-mail and the portal. Template keys that are not listed (module or administrator templates) are non-essential, and a unit test fails when a built-in template is added to `DefaultNotificationTemplates` without a classification. **START** lifts the opt-out. SMS and e-mail are never affected by a WhatsApp reply.
 
