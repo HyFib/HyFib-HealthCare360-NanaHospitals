@@ -64,7 +64,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
         socket.SubProtocol.ShouldBe(LabAgentProtocol.Subprotocol);
         await socket.SendAsync(new[] { Enq }, WebSocketMessageType.Binary, endOfMessage: true, Ct);
         var reply = new byte[1];
-        var received = await socket.ReceiveAsync(reply, Ct);
+        var received = await ReceiveAsync(socket, reply);
         received.MessageType.ShouldBe(WebSocketMessageType.Binary);
         reply[0].ShouldBe(Ack, "the server's ASTM session acknowledges the analyser's bid");
 
@@ -122,7 +122,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
         // A relay replaced by a newer one is told why before it is closed.
         using var first = await ConnectRelayAsync(assigned, assignedSecret, code);
         using var second = await ConnectRelayAsync(assigned, assignedSecret, code);
-        var closed = await first.ReceiveAsync(new byte[16], Ct);
+        var closed = await ReceiveAsync(first, new byte[16]);
         closed.MessageType.ShouldBe(WebSocketMessageType.Close);
         first.CloseStatusDescription.ShouldBe(RelayLease.Replaced);
         await first.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "agent replaced", Ct);
@@ -234,6 +234,21 @@ public sealed class LabAnalyserTests(HospitalServer server)
         agent.Http.DefaultRequestHeaders.Add(LabAgentProtocol.DeviceIdHeader, deviceId.ToString());
         agent.Http.DefaultRequestHeaders.Add(LabAgentProtocol.DeviceKeyHeader, secret);
         return agent;
+    }
+
+    /// <summary>The server's next message on a relay, or a failure naming the wait if none comes in 30 seconds.</summary>
+    private static async Task<WebSocketReceiveResult> ReceiveAsync(WebSocket socket, byte[] buffer)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        wait.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            return await socket.ReceiveAsync(buffer, wait.Token);
+        }
+        catch (OperationCanceledException) when (!Ct.IsCancellationRequested)
+        {
+            throw new TimeoutException("The server sent nothing on the relay within 30 seconds.");
+        }
     }
 
     private async Task<WebSocket> ConnectRelayAsync(Guid deviceId, string secret, string code)
