@@ -23,7 +23,7 @@ const band: WristbandDto = {
   admissionNumber: 'IP2600123',
   wardName: 'Ward 3',
   bedLabel: 'Bed 12',
-  allergyAlert: true,
+  allergies: 'Recorded',
 };
 
 describe('wristband', () => {
@@ -45,11 +45,11 @@ describe('wristband', () => {
       admissionNumber: 'IP2600123',
       ward: 'Ward 3',
       bed: 'Bed 12',
-      allergyAlert: true,
+      allergies: 'Recorded',
     });
   });
 
-  it('lays the band page out along an adult band, escaping text, with the ALLERGY mark only when allergies are recorded', async () => {
+  it('lays the band page out along an adult band, escaping text, with the black ALLERGY mark when allergies are recorded', async () => {
     const html = await wristbandHtml(band);
 
     expect(html).toContain('size: 25.4mm 279.4mm');
@@ -58,7 +58,17 @@ describe('wristband', () => {
     expect(html).toContain('IP2600123 · Ward 3 / Bed 12');
     expect(html).toContain('<div class="allergy">ALLERGY</div>');
     expect(html).toContain('<svg id="uhid"></svg>');
-    expect(await wristbandHtml({ ...band, allergyAlert: false })).not.toContain('class="allergy"');
+    expect(html).not.toContain('NOT RECORDED');
+  });
+
+  it('marks allergies never recorded with an outlined mark, and prints no mark for no known allergies', async () => {
+    const unknown = await wristbandHtml({ ...band, allergies: 'NotRecorded' });
+    expect(unknown).toContain('<div class="allergy-unknown">ALLERGIES<br>NOT RECORDED</div>');
+    expect(unknown).not.toContain('<div class="allergy">');
+
+    const none = await wristbandHtml({ ...band, allergies: 'NoKnownAllergies' });
+    expect(none).not.toContain('<div class="allergy');
+    expect(wristbandData({ ...band, allergies: 'NotRecorded' }).allergies).toBe('NotRecorded');
   });
 
   it('reads the band fresh from the server and prints it on the wristband printer', async () => {

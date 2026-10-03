@@ -19,8 +19,8 @@ public sealed record LabTubeLabel(
     IReadOnlyList<string>? Tests,
     DateTimeOffset? CollectedAt);
 
-/// <summary>An in-patient's wristband (FO-03): who, the UHID to scan, the admission and bed, and an allergy alert.</summary>
-/// <param name="AllergyAlert">The patient has active allergies on record: the band carries a black "ALLERGY" mark.</param>
+/// <summary>An in-patient's wristband (FO-03): who, the UHID to scan, the admission and bed, and an allergy mark.</summary>
+/// <param name="Allergies">What the chart says about allergies, which decides the band's allergy mark.</param>
 public sealed record WristbandLabel(
     string Uhid,
     string PatientName,
@@ -28,7 +28,23 @@ public sealed record WristbandLabel(
     string? AdmissionNumber,
     string? Ward,
     string? Bed,
-    bool AllergyAlert);
+    WristbandAllergies Allergies);
+
+/// <summary>
+/// What the chart says about allergies, as the wristband marks it. The names match the chart's allergy recording status,
+/// so the staff app passes it through as it reads it.
+/// </summary>
+public enum WristbandAllergies
+{
+    /// <summary>Active allergies are on the chart: a black "ALLERGY" mark.</summary>
+    Recorded = 0,
+
+    /// <summary>A clinician recorded "no known allergies": no mark.</summary>
+    NoKnownAllergies,
+
+    /// <summary>Nobody has recorded allergies or their absence: an outlined "ALLERGIES NOT RECORDED" mark.</summary>
+    NotRecorded,
+}
 
 /// <summary>How the UHID is coded on a wristband: Code 128 for line scanners, QR for 2D scanners.</summary>
 public enum WristbandCode

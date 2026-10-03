@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
@@ -119,8 +120,9 @@ public sealed record AdmissionDetail(
     uint Version);
 
 /// <summary>
-/// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and whether active
-/// allergies are on the chart, which prints the band's ALLERGY mark. The allergies themselves are not included.
+/// What an in-patient's wristband shows (FO-03): who, the UHID to scan, the admission and the bed, and what the chart
+/// says about allergies, which decides the band's allergy mark (ALLERGY, none, or ALLERGIES NOT RECORDED). The allergies
+/// themselves are not included.
 /// </summary>
 public sealed record WristbandDto(
     Guid AdmissionId,
@@ -131,7 +133,7 @@ public sealed record WristbandDto(
     string AdmissionNumber,
     string? WardName,
     string? BedLabel,
-    bool AllergyAlert);
+    AllergyRecordingStatus Allergies);
 
 /// <summary>One stay in a patient's admission history.</summary>
 public sealed record PatientAdmissionItem(

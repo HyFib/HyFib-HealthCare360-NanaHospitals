@@ -19,8 +19,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
 /// Label printing over the real API (INT-BAR): the wristband carries the allergy mark from the chart whoever prints it,
-/// the label endpoints answer printer commands to any staff member, and only staff allowed to set up printers can change
-/// a workstation's printers, each change recorded in the audit trail.
+/// and marks allergies never assessed differently from "no known allergies"; the label endpoints answer printer
+/// commands to any staff member, and only staff allowed to set up printers can change a workstation's printers, each
+/// change recorded in the audit trail.
 /// </summary>
 public sealed class LabelPrintingTests(HospitalServer server)
 {
@@ -58,21 +59,28 @@ public sealed class LabelPrintingTests(HospitalServer server)
             before.Uhid.ShouldBe(patient.Uhid);
             before.AdmissionNumber.ShouldBe(admission.AdmissionNumber);
             before.BedLabel.ShouldBe(admission.BedLabel);
-            before.AllergyAlert.ShouldBeFalse();
+            before.Allergies.ShouldBe(AllergyRecordingStatus.NotRecorded);
+
+            // Allergies never assessed print an outlined NOT RECORDED mark, never the bare band of "no known allergies".
+            var unknown = await PrintAsync(before);
+            unknown.ShouldContain("^FDALLERGIES^FS");
+            unknown.ShouldContain("^FDNOT RECORDED^FS");
+            unknown.ShouldNotContain("^FDALLERGY^FS");
+
+            await nurse.PostAsync<AllergyStatusDto>($"/api/v1/emr/patients/{patient.Id}/allergies/none");
+            var none = await frontOffice.GetAsync<WristbandDto>(path);
+            none.Allergies.ShouldBe(AllergyRecordingStatus.NoKnownAllergies);
+            (await PrintAsync(none)).ShouldNotContain("ALLERG");
 
             await nurse.PostAsync<AllergyDto>($"/api/v1/emr/patients/{patient.Id}/allergies",
                 new RecordAllergyRequest("Penicillin", AllergyType.Drug, "Rash", AllergySeverity.Moderate, null, null));
 
             // The front office may not read clinical flags, yet the band it prints carries the mark (and only the mark).
-            (await frontOffice.GetAsync<WristbandDto>(path)).AllergyAlert.ShouldBeTrue();
-
-            // The band prints as ZPL for the ward's band printer.
             var band = await frontOffice.GetAsync<WristbandDto>(path);
-            var commands = await frontOffice.PostAsync<LabelCommands>("/api/v1/integrations/labels/wristbands", new WristbandLabelsRequest(
-                new LabelPrinterSetup("zpl", 300, 25, 254),
-                [new WristbandLabel(band.Uhid, band.PatientName, $"{band.Age}/{band.Gender.ToString()[0]}", band.AdmissionNumber, band.WardName, band.BedLabel, band.AllergyAlert)]));
-            commands.Language.ShouldBe("zpl");
-            commands.Content.ShouldContain("^FDALLERGY^FS");
+            band.Allergies.ShouldBe(AllergyRecordingStatus.Recorded);
+            var commands = await PrintAsync(band);
+            commands.ShouldContain("^FDALLERGY^FS");
+            commands.ShouldNotContain("NOT RECORDED");
         }
         finally
         {
@@ -82,6 +90,19 @@ public sealed class LabelPrintingTests(HospitalServer server)
         using var cancelled = await frontOffice.SendRawAsync(HttpMethod.Get, path);
         cancelled.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         (await cancelled.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("admission.not_in_bed");
+
+        // The band prints as ZPL for the ward's band printer, with the allergy status passed through as the chart gives it.
+        async Task<string> PrintAsync(WristbandDto band)
+        {
+            var commands = await frontOffice.PostAsync<LabelCommands>("/api/v1/integrations/labels/wristbands", new WristbandLabelsRequest(
+                new LabelPrinterSetup("zpl", 300, 25, 254),
+                [
+                    new WristbandLabel(band.Uhid, band.PatientName, $"{band.Age}/{band.Gender.ToString()[0]}", band.AdmissionNumber,
+                        band.WardName, band.BedLabel, Enum.Parse<WristbandAllergies>(band.Allergies.ToString())),
+                ]));
+            commands.Language.ShouldBe("zpl");
+            return commands.Content;
+        }
     }
 
     [Fact]

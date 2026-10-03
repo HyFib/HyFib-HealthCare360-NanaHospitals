@@ -1,4 +1,4 @@
-import type { Gender, PagedResult, PayerType } from '@hc360/core';
+import type { Gender, PagedResult, PayerType, WristbandAllergies } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { BedAlert, BedStatus } from './bedState';
@@ -439,8 +439,8 @@ export interface AdmissionListItem {
 }
 
 /**
- * What an in-patient's wristband shows: who, the UHID to scan, the admission and the bed, and whether active allergies
- * are on the chart (the band's ALLERGY mark). The allergies themselves are not included.
+ * What an in-patient's wristband shows: who, the UHID to scan, the admission and the bed, and what the chart says about
+ * allergies (the band's allergy mark). The allergies themselves are not included.
  */
 export interface WristbandDto {
   admissionId: string;
@@ -451,7 +451,7 @@ export interface WristbandDto {
   admissionNumber: string;
   wardName: string | null;
   bedLabel: string | null;
-  allergyAlert: boolean;
+  allergies: WristbandAllergies;
 }
 
 export interface AdmissionDetail {

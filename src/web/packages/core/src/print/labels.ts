@@ -29,9 +29,15 @@ export interface WristbandLabel {
   admissionNumber?: string | null;
   ward?: string | null;
   bed?: string | null;
-  /** Active allergies are on the chart: the band carries a black ALLERGY mark. */
-  allergyAlert: boolean;
+  /**
+   * What the chart says about allergies: active allergies (a black ALLERGY mark), no known allergies (no mark), or not
+   * recorded (an outlined ALLERGIES NOT RECORDED mark).
+   */
+  allergies: WristbandAllergies;
 }
+
+/** The chart's allergy recording status, as the wristband marks it. */
+export type WristbandAllergies = 'Recorded' | 'NoKnownAllergies' | 'NotRecorded';
 
 export interface DispensingLabel {
   patientName: string;

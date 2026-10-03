@@ -100,14 +100,27 @@ export function wristbandData(band: WristbandDto): WristbandLabel {
     admissionNumber: band.admissionNumber,
     ward: band.wardName,
     bed: band.bedLabel,
-    allergyAlert: band.allergyAlert,
+    allergies: band.allergies,
   };
+}
+
+/** The band's allergy mark: black for allergies on the chart, outlined when nobody has recorded them, none for NKA. */
+function allergyMark(allergies: WristbandDto['allergies']): string {
+  switch (allergies) {
+    case 'Recorded':
+      return '<div class="allergy">ALLERGY</div>';
+    case 'NotRecorded':
+      return '<div class="allergy-unknown">ALLERGIES<br>NOT RECORDED</div>';
+    default:
+      return '';
+  }
 }
 
 /**
  * The wristband as a page on an adult band (1 × 11 inches), printed along its length: name, UHID, age/sex, admission
- * number, ward and bed, a black ALLERGY mark when allergies are on the chart, and a Code 128 of the UHID. For band
- * printers on their Windows driver, and for browsers.
+ * number, ward and bed, a black ALLERGY mark when allergies are on the chart (an outlined ALLERGIES NOT RECORDED mark
+ * when nobody has recorded them, none for no known allergies), and a Code 128 of the UHID. For band printers on their
+ * Windows driver, and for browsers.
  */
 export async function wristbandHtml(band: WristbandDto): Promise<string> {
   const barcode = await barcodeSvg(band.uhid, 'code128', { height: 9, scale: 2 });
@@ -119,7 +132,7 @@ export async function wristbandHtml(band: WristbandDto): Promise<string> {
         <div class="meta">UHID ${escapeHtml(band.uhid)} · ${escapeHtml(bandAgeSex(band))}</div>
         <div class="meta">${escapeHtml(band.admissionNumber)}${place ? ` · ${escapeHtml(place)}` : ''}</div>
       </div>
-      ${band.allergyAlert ? '<div class="allergy">ALLERGY</div>' : ''}
+      ${allergyMark(band.allergies)}
       <div class="code">${barcode}</div>
     </div>`;
   // The band is laid out 250 × 20 mm and turned a quarter turn clockwise, so it reads along the wrist (letter tops
@@ -132,6 +145,8 @@ export async function wristbandHtml(band: WristbandDto): Promise<string> {
     .meta { font-size: 8pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .allergy { background: #000; color: #fff; font-weight: 800; font-size: 10pt; letter-spacing: 1px; padding: 3mm 4mm;
                -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .allergy-unknown { border: 0.6mm solid #000; font-weight: 800; font-size: 7pt; line-height: 1.15; text-align: center;
+                       white-space: nowrap; padding: 1.5mm 2mm; }
     .code svg { height: 15mm; width: auto; display: block; }`;
   return printDocument(body, { title: `Wristband ${band.uhid}`, pageSize: 'Wristband', styles });
 }

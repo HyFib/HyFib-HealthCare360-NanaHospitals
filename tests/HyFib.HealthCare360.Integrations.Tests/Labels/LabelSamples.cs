@@ -11,8 +11,8 @@ internal static class LabelSamples
         "LS2600000123", "Sharma Ravi Kumar", "NH00012345", "46Y/M", "LA2600123", stat, "EDTA", "HAEM",
         ["CBC", "ESR", "Peripheral smear"], Collected);
 
-    public static WristbandLabel Band(bool allergy = true) => new(
-        "NH00012345", "Sharma Ravi Kumar", "46Y/M", "IP2600123", "Ward 3", "Bed 12", allergy);
+    public static WristbandLabel Band(WristbandAllergies allergies = WristbandAllergies.Recorded) => new(
+        "NH00012345", "Sharma Ravi Kumar", "46Y/M", "IP2600123", "Ward 3", "Bed 12", allergies);
 
     public static DispensingLabel Medicine() => new(
         "Sharma Ravi Kumar", "Paracetamol 500 mg", "10 tab", "1 tab · twice a day · 5 days · after food", "AB1234",

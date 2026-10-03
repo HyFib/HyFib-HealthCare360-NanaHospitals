@@ -183,7 +183,7 @@ internal static class AdmissionEndpoints
     }
 
     /// <summary>
-    /// The wristband of a patient in a bed. The ALLERGY mark comes from the chart here rather than from what the person
+    /// The wristband of a patient in a bed. The allergy mark comes from the chart here rather than from what the person
     /// printing may see, so a band printed at the admission desk carries it too; only the mark is shared, not the
     /// allergies. A restricted record needs the same access as the admission, and the read is audited.
     /// </summary>
@@ -221,9 +221,10 @@ internal static class AdmissionEndpoints
                 })
             .FirstAsync(ct);
         var allergic = await db.Set<Allergy>().AnyAsync(x => x.PatientId == admission.PatientId && x.Status == AllergyStatus.Active, ct);
+        var noKnownAllergies = await db.Set<NoKnownAllergiesStatement>().AnyAsync(x => x.PatientId == admission.PatientId, ct);
         return TypedResults.Ok(new WristbandDto(
             id, band.Uhid, band.FullName, band.Gender, band.DateOfBirth is { } dob ? Age.Format(dob, time.Today()) : null, band.AdmissionNumber,
-            band.WardName, band.BedLabel, allergic));
+            band.WardName, band.BedLabel, NoKnownAllergiesStatement.StatusOf(allergic, noKnownAllergies)));
     }
 
     private static async Task<IResult> BedHistory(Guid id, HospitalDbContext db, CancellationToken ct) =>

@@ -323,6 +323,10 @@ ones and retries ports that could not be bound.
 * Up to 6 text lines of 80 characters. Control characters are removed.
 * In ZPL, all field data goes through `^FH`, and `^`, `~`, `_` and non-ASCII characters are hex-escaped, so label
   text can never inject printer commands. TSPL quotes are escaped as `\["]`.
+* **Wristband allergy mark.** `GET /api/v1/inpatient/admissions/{id}/wristband` gives the chart's allergy status
+  (`Recorded`, `NoKnownAllergies`, `NotRecorded`), and the band prints it three ways: a black ALLERGY mark, no mark,
+  or an outlined "ALLERGIES / NOT RECORDED" mark, so a patient never assessed does not look like one with no known
+  allergies. A band is not reprinted by itself when the first allergy is recorded; staff reprint it.
 
 ### ICD lookup (INT-ICD) and the Clinical module
 

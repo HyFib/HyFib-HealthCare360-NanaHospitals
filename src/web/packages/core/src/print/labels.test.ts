@@ -73,7 +73,7 @@ describe('printLabel', () => {
       }),
     );
     api.post.mockResolvedValue({ language: 'zpl', content: '^XA^XZ', labels: 1 });
-    const band = { uhid: 'NH00012345', patientName: 'Sharma Ravi Kumar', allergyAlert: true };
+    const band = { uhid: 'NH00012345', patientName: 'Sharma Ravi Kumar', allergies: 'Recorded' as const };
 
     await printLabel(api, { kind: 'wristbands', labels: [band], page });
 

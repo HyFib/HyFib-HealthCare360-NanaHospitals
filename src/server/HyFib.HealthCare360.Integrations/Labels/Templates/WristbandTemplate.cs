@@ -8,7 +8,9 @@ namespace HyFib.HealthCare360.Integrations.Labels.Templates;
 /// IP2600123  Ward 3 / Bed 12   |███████████|
 /// </code>
 /// The band's width runs across the print head, so the text and the barcode are turned a quarter turn. The black
-/// "ALLERGY" mark is printed only when the patient has active allergies on record.
+/// "ALLERGY" mark is printed only when the patient has active allergies on record. When nobody has recorded allergies
+/// or their absence, an outlined "ALLERGIES / NOT RECORDED" mark (black text in a frame) takes its place, so the band
+/// never reads like one of a patient with no known allergies, who gets no mark.
 /// </summary>
 internal static class WristbandTemplate
 {
@@ -51,10 +53,18 @@ internal static class WristbandTemplate
             codeLength = (plan.Modules + 20) * module;
         }
 
+        // The mark's lines, top line first when the band is read; "NOT RECORDED" takes two lines across the band so
+        // the mark stays short along it.
+        string[] mark = band.Allergies switch
+        {
+            WristbandAllergies.Recorded => ["ALLERGY"],
+            WristbandAllergies.NotRecorded => ["ALLERGIES", "NOT RECORDED"],
+            _ => [],
+        };
         var markHeight = c.Font(c.Mm(3.2 * s)).Height;
         var markPad = c.Mm(2);
-        var markLength = band.AllergyAlert ? c.Measure("ALLERGY", markHeight) + (2 * markPad) : 0;
-        var room = c.Height - lead - gap - codeLength - lead - (band.AllergyAlert ? markLength + gap : 0);
+        var markLength = mark.Length > 0 ? mark.Max(line => c.Measure(line, markHeight)) + (2 * markPad) : 0;
+        var room = c.Height - lead - gap - codeLength - lead - (mark.Length > 0 ? markLength + gap : 0);
         var textLength = Math.Min(room, c.Mm(110));
         if (textLength < c.Mm(35))
         {
@@ -84,10 +94,25 @@ internal static class WristbandTemplate
         }
 
         var y = lead + used + gap;
-        if (band.AllergyAlert)
+        if (band.Allergies == WristbandAllergies.Recorded)
         {
             c.TextDown(m + ((across - markHeight) / 2), y + markPad, markHeight, "ALLERGY");
             c.Reverse(m, y, across, markLength);
+            y += markLength + gap;
+        }
+        else if (mark.Length > 0)
+        {
+            // Two lines centred across the band, inside a frame the width of the black mark.
+            var block = (mark.Length * markHeight) + ((mark.Length - 1) * lineGap);
+            var lineX = m + ((across + block) / 2);
+            foreach (var line in mark)
+            {
+                lineX -= markHeight;
+                c.TextDown(lineX, y + markPad, markHeight, line);
+                lineX -= lineGap;
+            }
+
+            c.Box(m, y, across, markLength, Math.Max(2, c.Mm(0.5)));
             y += markLength + gap;
         }
 

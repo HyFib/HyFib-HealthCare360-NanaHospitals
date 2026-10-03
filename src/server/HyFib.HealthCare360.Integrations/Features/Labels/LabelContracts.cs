@@ -144,6 +144,7 @@ public sealed class WristbandLabelValidator : AbstractValidator<WristbandLabel>
         RuleFor(x => x.AdmissionNumber).SafeText(40);
         RuleFor(x => x.Ward).SafeText(80);
         RuleFor(x => x.Bed).SafeText(40);
+        RuleFor(x => x.Allergies).IsInEnum();
     }
 }
 

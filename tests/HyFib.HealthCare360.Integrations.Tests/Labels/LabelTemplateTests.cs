@@ -107,13 +107,44 @@ public sealed class LabelTemplateTests
     [MemberData(nameof(Printers))]
     public void A_wristband_can_carry_the_uhid_as_a_qr_code(LabelLanguage language, int dpi)
     {
-        var band = Draw(LabelSamples.Wristband(language, dpi), LabelSamples.Band(allergy: false), (c, b) => WristbandTemplate.Draw(c, b, WristbandCode.QrCode));
+        var band = Draw(LabelSamples.Wristband(language, dpi), LabelSamples.Band(WristbandAllergies.NoKnownAllergies), (c, b) => WristbandTemplate.Draw(c, b, WristbandCode.QrCode));
 
         var qr = band.Elements.OfType<QrElement>().ShouldHaveSingleItem();
         qr.Data.ShouldBe("NH00012345");
         (qr.Magnification * 25.4 / dpi).ShouldBeGreaterThanOrEqualTo(0.33, "modules big enough to scan");
         band.Elements.OfType<BarcodeElement>().ShouldBeEmpty();
-        band.Elements.OfType<ReverseElement>().ShouldBeEmpty("No allergy on record: no mark.");
+        band.Elements.OfType<ReverseElement>().ShouldBeEmpty("No known allergies: no mark.");
+        band.Elements.OfType<BoxElement>().ShouldBeEmpty();
+        band.Elements.OfType<TextElement>().ShouldNotContain(t => t.Text.Contains("ALLERG"));
+    }
+
+    [Theory]
+    [MemberData(nameof(Printers))]
+    public void A_wristband_of_a_patient_whose_allergies_are_not_recorded_carries_an_outlined_mark(LabelLanguage language, int dpi)
+    {
+        var band = Draw(LabelSamples.Wristband(language, dpi), LabelSamples.Band(WristbandAllergies.NotRecorded),
+            (c, b) => WristbandTemplate.Draw(c, b, WristbandCode.Code128));
+
+        BarcodesScan(band);
+        band.Elements.OfType<ReverseElement>().ShouldBeEmpty("Not the black ALLERGY mark.");
+        band.Elements.OfType<TextElement>().ShouldNotContain(t => t.Text == "ALLERGY");
+        var frame = band.Elements.OfType<BoxElement>().ShouldHaveSingleItem();
+        (frame.Thickness * 2).ShouldBeLessThan(Math.Min(frame.Width, frame.Height), "A frame, not a solid block.");
+
+        // Two lines inside the frame, "ALLERGIES" read first (nearer the band's right-hand edge as printed).
+        var allergies = band.Elements.OfType<TextElement>().Single(t => t.Text == "ALLERGIES");
+        var notRecorded = band.Elements.OfType<TextElement>().Single(t => t.Text == "NOT RECORDED");
+        allergies.X.ShouldBeGreaterThan(notRecorded.X);
+        foreach (var line in new[] { allergies, notRecorded })
+        {
+            line.X.ShouldBeGreaterThanOrEqualTo(frame.X + frame.Thickness);
+            (line.X + line.Font.Height).ShouldBeLessThanOrEqualTo(frame.X + frame.Width - frame.Thickness);
+            line.Y.ShouldBeGreaterThan(frame.Y + frame.Thickness);
+        }
+
+        // Between the patient's lines and the barcode, as the ALLERGY mark is.
+        var barcode = band.Elements.OfType<BarcodeElement>().ShouldHaveSingleItem();
+        (frame.Y + frame.Height).ShouldBeLessThan(barcode.Y);
     }
 
     [Theory]
@@ -124,7 +155,11 @@ public sealed class LabelTemplateTests
     {
         foreach (var code in new[] { WristbandCode.Code128, WristbandCode.QrCode })
         {
-            BarcodesScan(Draw(LabelSamples.Wristband(width: width, length: length), LabelSamples.Band(), (c, b) => WristbandTemplate.Draw(c, b, code)));
+            foreach (var allergies in Enum.GetValues<WristbandAllergies>())
+            {
+                BarcodesScan(Draw(LabelSamples.Wristband(width: width, length: length), LabelSamples.Band(allergies),
+                    (c, b) => WristbandTemplate.Draw(c, b, code)));
+            }
         }
     }
 
