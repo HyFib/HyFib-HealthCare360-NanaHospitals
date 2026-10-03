@@ -43,6 +43,20 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                 nullable: true);
 
             migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "gateway_refund_started_at",
+                schema: "billing",
+                table: "refunds",
+                type: "timestamp with time zone",
+                nullable: true);
+
+            migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "gateway_retry_started_at",
+                schema: "billing",
+                table: "refunds",
+                type: "timestamp with time zone",
+                nullable: true);
+
+            migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "gateway_settled_at",
                 schema: "billing",
                 table: "refunds",
@@ -123,7 +137,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     settled_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     settled_on = table.Column<DateOnly>(type: "date", nullable: false),
                     fetched_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    status_changed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    status_changed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    exceptions_raised = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -145,6 +160,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     settlement_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     facility_id = table.Column<Guid>(type: "uuid", nullable: true),
                     received_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     handled_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     outcome = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     deliveries = table.Column<int>(type: "integer", nullable: false),
@@ -358,6 +374,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
             migrationBuilder.DropColumn(
                 name: "gateway_reference",
+                schema: "billing",
+                table: "refunds");
+
+            migrationBuilder.DropColumn(
+                name: "gateway_refund_started_at",
+                schema: "billing",
+                table: "refunds");
+
+            migrationBuilder.DropColumn(
+                name: "gateway_retry_started_at",
                 schema: "billing",
                 table: "refunds");
 

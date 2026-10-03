@@ -2809,6 +2809,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("amount");
 
+                    b.Property<bool>("ExceptionsRaised")
+                        .HasColumnType("boolean")
+                        .HasColumnName("exceptions_raised");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -3078,6 +3082,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("settlement_id");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
 
                     b.HasKey("Id")
                         .HasName("pk_gateway_webhook_events");
@@ -4806,6 +4814,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("gateway_refund_id");
+
+                    b.Property<DateTimeOffset?>("GatewayRefundStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("gateway_refund_started_at");
+
+                    b.Property<DateTimeOffset?>("GatewayRetryStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("gateway_retry_started_at");
 
                     b.Property<DateTimeOffset?>("GatewaySettledAt")
                         .HasColumnType("timestamp with time zone")
