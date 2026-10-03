@@ -69,20 +69,37 @@ internal static class ReconciliationEndpoints
     private static async Task<IResult> Fetch(FetchSettlementsRequest request, ICurrentUser user, GatewaySettlementService settlements, CancellationToken ct) =>
         user.FacilityId is { } facilityId ? (await settlements.FetchAsync(facilityId, request.Date, ct)).ToOk() : BillingDb.FacilityRequired.ToProblem();
 
+    // The exceptions are limited to the signed-in facility by the facility query filter, which does not apply to a
+    // user without one: such a user is refused, as on the endpoints above.
+
     /// <summary>Exceptions worst first (open by default), or the resolved ones newest first.</summary>
     private static async Task<IResult> ListExceptions(
-        [AsParameters] PageQuery query, DiscrepancyStatus? status, DiscrepancyKind? kind, GatewayDiscrepancyService discrepancies, CancellationToken ct) =>
-        TypedResults.Ok(await discrepancies.ListAsync(query.ToRequest(), status, kind, ct));
+        [AsParameters] PageQuery query, DiscrepancyStatus? status, DiscrepancyKind? kind, ICurrentUser user,
+        GatewayDiscrepancyService discrepancies, CancellationToken ct) =>
+        user.FacilityId is null
+            ? BillingDb.FacilityRequired.ToProblem()
+            : TypedResults.Ok(await discrepancies.ListAsync(query.ToRequest(), status, kind, ct));
 
-    private static async Task<IResult> GetException(Guid id, GatewayDiscrepancyService discrepancies, CancellationToken ct) =>
-        await discrepancies.GetAsync(id, ct) is { } dto ? TypedResults.Ok(dto) : Error.NotFound(nameof(GatewayDiscrepancy), id).ToProblem();
+    private static async Task<IResult> GetException(
+        Guid id, ICurrentUser user, GatewayDiscrepancyService discrepancies, CancellationToken ct) =>
+        user.FacilityId is null ? BillingDb.FacilityRequired.ToProblem()
+        : await discrepancies.GetAsync(id, ct) is { } dto ? TypedResults.Ok(dto)
+        : Error.NotFound(nameof(GatewayDiscrepancy), id).ToProblem();
 
-    private static async Task<IResult> RecordReceipt(Guid id, GatewayDiscrepancyActions actions, CancellationToken ct) =>
-        (await actions.RecordReceiptAsync(id, ct)).ToOk();
+    private static async Task<IResult> RecordReceipt(
+        Guid id, ICurrentUser user, GatewayDiscrepancyActions actions, CancellationToken ct) =>
+        user.FacilityId is null
+            ? BillingDb.FacilityRequired.ToProblem()
+            : (await actions.RecordReceiptAsync(id, ct)).ToOk();
 
-    private static async Task<IResult> Retry(Guid id, GatewayDiscrepancyActions actions, CancellationToken ct) =>
-        (await actions.RetryAsync(id, ct)).ToOk();
+    private static async Task<IResult> Retry(
+        Guid id, ICurrentUser user, GatewayDiscrepancyActions actions, CancellationToken ct) =>
+        user.FacilityId is null ? BillingDb.FacilityRequired.ToProblem() : (await actions.RetryAsync(id, ct)).ToOk();
 
-    private static async Task<IResult> Resolve(Guid id, ResolveDiscrepancyRequest request, GatewayDiscrepancyService discrepancies, CancellationToken ct) =>
-        (await discrepancies.ResolveAsync(id, request, ct)).ToOk();
+    private static async Task<IResult> Resolve(
+        Guid id, ResolveDiscrepancyRequest request, ICurrentUser user, GatewayDiscrepancyService discrepancies,
+        CancellationToken ct) =>
+        user.FacilityId is null
+            ? BillingDb.FacilityRequired.ToProblem()
+            : (await discrepancies.ResolveAsync(id, request, ct)).ToOk();
 }

@@ -74,27 +74,42 @@ public sealed partial record GatewayWebhookInfo(string? EventType, string? Order
 /// </summary>
 public sealed class GatewayWebhookLog(IDbContextFactory<HospitalDbContext> contexts, TimeProvider time, ILogger<GatewayWebhookLog> logger)
 {
+    /// <summary>A delivery still being handled after this long stopped part way; the next one takes it over.</summary>
+    public static readonly TimeSpan InFlight = TimeSpan.FromMinutes(2);
+
     /// <summary>
-    /// Records a delivery. Returns null when the event was already handled (or is being handled right now by a
-    /// concurrent delivery): the caller acknowledges it without acting. An event whose earlier handling failed or
-    /// stopped part way is handled again.
+    /// Records a delivery. Returns null when the event was already handled, or is being handled right now by another
+    /// delivery: the caller acknowledges it without acting. An event whose earlier handling failed, or stopped part way
+    /// (still being handled after <see cref="InFlight"/>), is handled again by exactly one delivery: the row is taken
+    /// over with a conditional update.
     /// </summary>
     public async Task<Guid?> BeginAsync(string provider, string eventId, GatewayWebhookInfo info, Guid? facilityId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var now = time.GetUtcNow();
-        var existing = await db.Set<GatewayWebhookEvent>().FirstOrDefaultAsync(e => e.Provider == provider && e.EventId == eventId, ct);
-        if (existing is not null)
+        var existing = await db.Set<GatewayWebhookEvent>().AsNoTracking()
+            .Where(e => e.Provider == provider && e.EventId == eventId)
+            .Select(e => (Guid?)e.Id)
+            .FirstOrDefaultAsync(ct);
+        if (existing is { } id)
         {
-            existing.Deliveries++;
-            var handled = existing.Outcome is WebhookEventOutcome.Processed or WebhookEventOutcome.Ignored;
-            if (!handled)
+            var stale = now - InFlight;
+            var taken = await db.Set<GatewayWebhookEvent>()
+                .Where(e => e.Id == id)
+                .Where(e => e.Outcome == WebhookEventOutcome.Failed
+                            || (e.Outcome == WebhookEventOutcome.Received && e.StartedAt < stale))
+                .ExecuteUpdateAsync(u => u
+                    .SetProperty(e => e.Outcome, WebhookEventOutcome.Received)
+                    .SetProperty(e => e.StartedAt, now)
+                    .SetProperty(e => e.Deliveries, e => e.Deliveries + 1), ct);
+            if (taken == 1)
             {
-                existing.Outcome = WebhookEventOutcome.Received;
+                return id;
             }
 
-            await db.SaveChangesAsync(ct);
-            return handled ? null : existing.Id;
+            await db.Set<GatewayWebhookEvent>().Where(e => e.Id == id)
+                .ExecuteUpdateAsync(u => u.SetProperty(e => e.Deliveries, e => e.Deliveries + 1), ct);
+            return null;
         }
 
         var row = new GatewayWebhookEvent
@@ -108,6 +123,7 @@ public sealed class GatewayWebhookLog(IDbContextFactory<HospitalDbContext> conte
             SettlementId = info.SettlementId,
             FacilityId = facilityId,
             ReceivedAt = now,
+            StartedAt = now,
             Outcome = WebhookEventOutcome.Received,
             Deliveries = 1,
         };
@@ -125,18 +141,21 @@ public sealed class GatewayWebhookLog(IDbContextFactory<HospitalDbContext> conte
         }
     }
 
+    /// <summary>
+    /// Records how the handling went. An event already processed stays processed: a delivery that took over one that
+    /// only seemed to have stopped must not mark it failed after the other one did the work.
+    /// </summary>
     public async Task CompleteAsync(Guid id, WebhookEventOutcome outcome, string? note, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        var row = await db.Set<GatewayWebhookEvent>().FirstOrDefaultAsync(e => e.Id == id, ct);
-        if (row is null)
-        {
-            return;
-        }
-
-        row.Outcome = outcome;
-        row.HandledAt = time.GetUtcNow();
-        row.Note = note is { Length: > 300 } ? note[..300] : note;
-        await db.SaveChangesAsync(ct);
+        var handledAt = time.GetUtcNow();
+        var clipped = note is { Length: > 300 } ? note[..300] : note;
+        await db.Set<GatewayWebhookEvent>()
+            .Where(e => e.Id == id)
+            .Where(e => outcome == WebhookEventOutcome.Processed || e.Outcome != WebhookEventOutcome.Processed)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(e => e.Outcome, outcome)
+                .SetProperty(e => e.HandledAt, handledAt)
+                .SetProperty(e => e.Note, clipped), ct);
     }
 }

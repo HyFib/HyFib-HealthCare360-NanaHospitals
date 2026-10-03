@@ -282,7 +282,7 @@ public static class GatewayPolling
     public static bool IsDue(DateTimeOffset since, DateTimeOffset now)
     {
         var age = now - since;
-        if (age < Grace || age > Window)
+        if (age < Grace || age >= Window)
         {
             return false;
         }
@@ -294,6 +294,26 @@ public static class GatewayPolling
 
         var firstRunOfHour = now.Minute < Interval.TotalMinutes;
         return age < TimeSpan.FromDays(2) ? firstRunOfHour : firstRunOfHour && now.Hour % 6 == 0;
+    }
+
+    /// <summary>
+    /// The same schedule as <see cref="IsDue"/>, as the windows of start times due at <paramref name="now"/> (each
+    /// after its first time and up to its second), freshest first: a query asks for each window's newest records, so a
+    /// fresh payment is never crowded out by older ones.
+    /// </summary>
+    public static IReadOnlyList<(DateTimeOffset After, DateTimeOffset Until)> DueWindows(DateTimeOffset now)
+    {
+        List<(DateTimeOffset After, DateTimeOffset Until)> windows = [(now - TimeSpan.FromHours(2), now - Grace)];
+        if (IsHourly(now))
+        {
+            windows.Add((now - TimeSpan.FromDays(2), now - TimeSpan.FromHours(2)));
+            if (now.Hour % 6 == 0)
+            {
+                windows.Add((now - Window, now - TimeSpan.FromDays(2)));
+            }
+        }
+
+        return windows;
     }
 
     /// <summary>About hourly: refunds take days, settlements arrive once a day.</summary>
@@ -514,6 +534,13 @@ public sealed class GatewayWebhookEvent : Entity
     public string? SettlementId { get; set; }
     public Guid? FacilityId { get; set; }
     public DateTimeOffset ReceivedAt { get; set; }
+
+    /// <summary>
+    /// When the latest delivery started being handled: one still <see cref="WebhookEventOutcome.Received"/> after a
+    /// while stopped part way.
+    /// </summary>
+    public DateTimeOffset StartedAt { get; set; }
+
     public DateTimeOffset? HandledAt { get; set; }
     public WebhookEventOutcome Outcome { get; set; }
 

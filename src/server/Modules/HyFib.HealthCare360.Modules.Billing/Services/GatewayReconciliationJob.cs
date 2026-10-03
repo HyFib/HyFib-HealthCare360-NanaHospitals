@@ -34,19 +34,13 @@ public sealed class GatewayReconciliationRunner(
     public async Task<int> RecheckOrdersAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        var since = now - GatewayPolling.Window;
-        var open = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-            .Where(o => (o.Status == GatewayOrderStatus.Created || o.Status == GatewayOrderStatus.Failed) && o.CreatedAt >= since)
-            .OrderBy(o => o.CreatedAt)
-            .Select(o => new { o.Id, o.CreatedAt })
-            .Take(Batch * 4)
-            .ToListAsync(ct);
         var expiry = new Dictionary<Guid, int>();
         var checkedCount = 0;
-        foreach (var due in open.Where(o => GatewayPolling.IsDue(o.CreatedAt, now)).Take(Batch))
+        foreach (var id in await DueOrdersAsync(now, ct))
         {
             // Loaded one at a time: a step that fails clears the unit of work, and must not take the others with it.
-            var order = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(o => o.Id == due.Id, ct);
+            var order = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .FirstOrDefaultAsync(o => o.Id == id, ct);
             if (order is not { IsAwaitingPayment: true })
             {
                 continue;
@@ -79,6 +73,29 @@ public sealed class GatewayReconciliationRunner(
         }
 
         return checkedCount;
+    }
+
+    /// <summary>
+    /// The open payment links and checkouts due a check now: the newest of each of
+    /// <see cref="GatewayPolling.DueWindows"/>, up to a batch each, so however many older links are open the fresh ones
+    /// are always asked about.
+    /// </summary>
+    internal async Task<IReadOnlyList<Guid>> DueOrdersAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        var due = new List<Guid>();
+        foreach (var (after, until) in GatewayPolling.DueWindows(now))
+        {
+            due.AddRange(await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .AsNoTracking()
+                .Where(o => o.Status == GatewayOrderStatus.Created || o.Status == GatewayOrderStatus.Failed)
+                .Where(o => o.CreatedAt > after && o.CreatedAt <= until)
+                .OrderByDescending(o => o.CreatedAt)
+                .Select(o => o.Id)
+                .Take(Batch)
+                .ToListAsync(ct));
+        }
+
+        return due;
     }
 
     /// <summary>
@@ -121,19 +138,11 @@ public sealed class GatewayReconciliationRunner(
         return checkedCount;
     }
 
-    /// <summary>Refunds paid out through the gateway in the last month that the bank has not confirmed yet.</summary>
+    /// <summary>Gateway refunds sent in the last month (paid out or sent again) the bank has not confirmed.</summary>
     public async Task<int> FollowRefundsAsync(CancellationToken ct)
     {
-        var since = time.GetUtcNow() - GatewayPolling.Window;
-        var pending = await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-            .Where(r => r.GatewayRefundId != null && r.Status == RefundStatus.Paid && r.PaidAt >= since
-                        && (r.GatewayStatus == null || r.GatewayStatus == PaymentRefundStatus.Pending))
-            .OrderBy(r => r.PaidAt)
-            .Select(r => r.Id)
-            .Take(Batch)
-            .ToListAsync(ct);
         var changed = 0;
-        foreach (var id in pending)
+        foreach (var id in await DueRefundsAsync(time.GetUtcNow(), ct))
         {
             var refund = await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(r => r.Id == id, ct);
             if (refund is null)
@@ -153,6 +162,35 @@ public sealed class GatewayReconciliationRunner(
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// The gateway refunds due a check now, by when the latest attempt was sent (a refund sent again weeks after it
+    /// was first paid out is followed like a new one): the newest of the last two days every run, and the newest of
+    /// the rest of the month every six hours, up to a batch each.
+    /// </summary>
+    internal async Task<IReadOnlyList<Guid>> DueRefundsAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        var recent = now - TimeSpan.FromDays(2);
+        List<(DateTimeOffset After, DateTimeOffset Until)> windows = now.Hour % 6 == 0
+            ? [(recent, now), (now - GatewayPolling.Window, recent)]
+            : [(recent, now)];
+        var due = new List<Guid>();
+        foreach (var (after, until) in windows)
+        {
+            due.AddRange(await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(r => r.GatewayRefundId != null && r.Status == RefundStatus.Paid)
+                .Where(r => r.GatewayRetryStartedAt == null
+                            && (r.GatewayStatus == null || r.GatewayStatus == PaymentRefundStatus.Pending))
+                .Select(r => new { r.Id, SentAt = r.GatewayRefundStartedAt ?? r.PaidAt })
+                .Where(r => r.SentAt > after && r.SentAt <= until)
+                .OrderByDescending(r => r.SentAt)
+                .Select(r => r.Id)
+                .Take(Batch)
+                .ToListAsync(ct));
+        }
+
+        return due;
     }
 
     /// <summary>
