@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
@@ -102,6 +103,29 @@ public sealed class AstmSessionTests
             texts.Add(parsed.Text.TrimEnd('\r'));
             await SendAsync(interruptFirstFrame && texts.Count == 1 ? AstmControl.Eot : AstmControl.Ack);
         }
+    }
+
+    /// <summary>Fails if HC360 sends anything within <paramref name="quiet"/>.</summary>
+    private async Task ExpectNothingAsync(TimeSpan quiet)
+    {
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        wait.CancelAfter(quiet);
+        var buffer = new byte[1];
+        await Should.ThrowAsync<OperationCanceledException>(
+            async () => (await _pipe.Client.ReadAsync(buffer, wait.Token)).ShouldBe(0, $"HC360 sent 0x{buffer[0]:X2}"));
+    }
+
+    private static LabRuntimeOptions WithBackOff(TimeSpan? contention = null, TimeSpan? busy = null)
+    {
+        var options = LabSamples.Options();
+        return options with
+        {
+            Timings = options.Timings with
+            {
+                ContentionDelay = contention ?? options.Timings.ContentionDelay,
+                BusyRetryDelay = busy ?? options.Timings.BusyRetryDelay,
+            },
+        };
     }
 
     private async Task FinishAsync(Task run)
@@ -301,25 +325,54 @@ public sealed class AstmSessionTests
     [Fact]
     public async Task Yields_the_line_when_the_analyser_bids_at_the_same_time()
     {
-        var run = Start();
+        var run = Start(options: WithBackOff(contention: TimeSpan.FromSeconds(2)));
 
         await OpenAsync();
         await SendAcknowledgedAsync(AstmFrames.BuildMessage(LabSamples.AstmQueryRecords, Latin1));
         await SendAsync(AstmControl.Eot);
         await ExpectAsync(AstmControl.Enq);
 
-        // Contention: the analyser bids too. The instrument has priority, so HC360 receives first...
+        // Contention: the analyser bids too. The instrument has priority: HC360 does not answer the colliding ENQ...
+        var contention = Stopwatch.StartNew();
         await SendAsync(AstmControl.Enq);
-        await ExpectAsync(AstmControl.Ack);
+        await ExpectNothingAsync(TimeSpan.FromMilliseconds(300));
+
+        // ...answers the analyser's next bid, made during HC360's back-off, and receives its message...
+        await OpenAsync();
         await SendAcknowledgedAsync(ResultFrames);
         await SendAsync(AstmControl.Eot);
 
-        // ...and then bids again to deliver the query answer.
+        // ...and bids again to deliver the query answer only once the back-off is over.
         var records = await ReceiveTransferAsync();
+        contention.Elapsed.ShouldBeGreaterThanOrEqualTo(TimeSpan.FromSeconds(1.9));
         await FinishAsync(run);
 
         await _processor.ReceivedWithAnyArgs(1).SubmitResultsAsync(default!, default!, default!, Ct);
         records[^1].ShouldBe("L|1|F");
+    }
+
+    [Fact]
+    public async Task Keeps_listening_while_it_waits_after_the_analyser_is_busy()
+    {
+        var run = Start(options: WithBackOff(busy: TimeSpan.FromSeconds(2)));
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(LabSamples.AstmQueryRecords, Latin1));
+        await SendAsync(AstmControl.Eot);
+        await ExpectAsync(AstmControl.Enq);
+        await SendAsync(AstmControl.Nak);
+
+        // The analyser is busy, then has results to send before HC360 may bid again: they are received at once.
+        await OpenAsync();
+        await SendAcknowledgedAsync(ResultFrames);
+        await SendAsync(AstmControl.Eot);
+        await _processor.ReceivedWithAnyArgs(1).SubmitResultsAsync(default!, default!, default!, Ct);
+
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        records[^1].ShouldBe("L|1|F");
+        Logged("astm.orders").ShouldHaveSingleItem()[2].ShouldBe(true);
     }
 
     [Fact]
@@ -354,11 +407,28 @@ public sealed class AstmSessionTests
         await ExpectAsync(AstmControl.Ack);
         await SendAsync(ResultFrames[1]);
         await ExpectAsync(AstmControl.Nak);
+
+        // The transfer is abandoned: the retransmission and every later frame are refused too, so no tail of the
+        // message is stored without its start.
+        await SendAsync(ResultFrames[1]);
+        await ExpectAsync(AstmControl.Nak);
+        foreach (var frame in ResultFrames.Skip(2))
+        {
+            await SendAsync(frame);
+            await ExpectAsync(AstmControl.Nak);
+        }
+
+        await SendAsync(AstmControl.Eot);
+
+        // The next transfer starts afresh.
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(["H|\\^&", "L|1|N"], Latin1));
         await SendAsync(AstmControl.Eot);
         await FinishAsync(run);
 
         Logged("astm.rejected").ShouldHaveSingleItem()[5].ShouldBe("Message exceeded the size limit.");
         await _processor.DidNotReceiveWithAnyArgs().SubmitResultsAsync(default!, default!, default!, Ct);
+        Logged("astm.message").ShouldHaveSingleItem()[3].ShouldBe("H|\\^&\rL|1|N");
     }
 
     [Fact]
@@ -414,10 +484,10 @@ public sealed class AstmSessionTests
         QueueOneDownload();
         var run = Start();
 
-        // HC360 bids to send the order; the analyser bids at the same moment and goes first.
+        // HC360 bids to send the order; the analyser bids at the same moment, bids again and goes first.
         await ExpectAsync(AstmControl.Enq);
         await SendAsync(AstmControl.Enq);
-        await ExpectAsync(AstmControl.Ack);
+        await OpenAsync();
         await SendAcknowledgedAsync(ResultFrames);
         await SendAsync(AstmControl.Eot);
 

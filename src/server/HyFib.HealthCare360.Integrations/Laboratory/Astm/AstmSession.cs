@@ -18,10 +18,12 @@ internal sealed record AstmTimings(TimeSpan FrameTimeout, TimeSpan ReplyTimeout,
 /// sample unknown) the frame is NAKed and the analyser retransmits it, so results are never acknowledged and lost.
 /// </para>
 /// <para>
-/// Sending (host query answers, and orders sent unasked while the line is idle): HC360 bids with ENQ and yields to the
-/// analyser if both bid (the instrument has priority), waits 10 s after a NAK (busy), retransmits NAKed frames up to six
-/// times and ends with EOT. A receiver interrupt (EOT instead of ACK) acknowledges the frame; the rest of the message is
-/// still sent, as E1381 allows, so the analyser never holds half an order.
+/// Sending (host query answers, and orders sent unasked while the line is idle): HC360 bids with ENQ. If both bid, the
+/// instrument has priority (E1381 contention): HC360 does not answer the analyser's colliding ENQ, answers its next one
+/// and receives its message, and bids again no sooner than 20 s later. After a NAK (busy) it bids again no sooner than
+/// 10 s later. While it waits it keeps listening, so the analyser can always send. NAKed frames are retransmitted up
+/// to six times and the message ends with EOT. A receiver interrupt (EOT instead of ACK) acknowledges the frame; the
+/// rest of the message is still sent, as E1381 allows, so the analyser never holds half an order.
 /// </para>
 /// </summary>
 internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOptions options, ILabMessageProcessor processor, TimeProvider time, ILogger logger)
@@ -137,6 +139,7 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         var records = new List<string>();
         var partial = new StringBuilder();
         var received = 0;
+        var tooLarge = false;
         while (!cancellationToken.IsCancellationRequested)
         {
             var token = await ReadTokenAsync(options.Timings.FrameTimeout, cancellationToken);
@@ -148,7 +151,7 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                     logger.LogWarning("Instrument {Instrument} stopped sending mid-message; the incomplete message was discarded", instrument.Code);
                     return;
                 case TokenKind.Control when token.Control == AstmControl.Eot:
-                    if (records.Count > 0)
+                    if (records.Count > 0 && !tooLarge)
                     {
                         // Sender ended without a terminator record: best effort, it can no longer be NAKed.
                         await ProcessAsync(records, cancellationToken);
@@ -160,6 +163,13 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                 case TokenKind.InvalidFrame:
                     await WriteAsync(AstmControl.Nak, cancellationToken);
                     continue;
+            }
+
+            if (tooLarge)
+            {
+                // The transfer is abandoned: every frame is refused until the analyser gives up and sends EOT.
+                await WriteAsync(AstmControl.Nak, cancellationToken);
+                continue;
             }
 
             if (!AstmFrames.TryParse(token.Frame, options.Encoding, out var frame, out var error))
@@ -184,11 +194,16 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
 
             if (received + frame.Text.Length > options.MaxMessageBytes)
             {
-                logger.LogWarning("Instrument {Instrument} sent a message larger than {Limit} bytes; discarded", instrument.Code, options.MaxMessageBytes);
+                // Nothing of this transfer is stored, not even frames already acknowledged: storing the tail of a
+                // message without its start would attach results to the wrong sample.
+                logger.LogWarning(
+                    "Instrument {Instrument} sent a message larger than {Limit} bytes; the transfer was refused",
+                    instrument.Code,
+                    options.MaxMessageBytes);
                 await processor.LogAsync(instrument, "astm.rejected", false, "(message too large)", null, "Message exceeded the size limit.", null);
+                tooLarge = true;
                 records.Clear();
                 partial.Clear();
-                received = 0;
                 await WriteAsync(AstmControl.Nak, cancellationToken);
                 continue;
             }
@@ -280,13 +295,20 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                     established = true;
                     break;
                 case AstmControl.Enq:
-                    // Both sides bid for the line: the instrument has priority. Receive first, then bid again later.
-                    await WriteAsync(AstmControl.Ack, cancellationToken);
-                    await ReceiveAsync(cancellationToken);
-                    await Task.Delay(options.Timings.ContentionDelay, time, cancellationToken);
+                    // Contention: both sides bid for the line and the instrument has priority. Its colliding ENQ is not
+                    // answered; it bids again shortly and that ENQ is answered, while HC360 waits before bidding again.
+                    if (!await WaitBeforeBiddingAsync(options.Timings.ContentionDelay, cancellationToken))
+                    {
+                        return new SendOutcome(false, "The connection closed.");
+                    }
+
                     break;
                 case AstmControl.Nak:
-                    await Task.Delay(options.Timings.BusyRetryDelay, time, cancellationToken);
+                    if (!await WaitBeforeBiddingAsync(options.Timings.BusyRetryDelay, cancellationToken))
+                    {
+                        return new SendOutcome(false, "The connection closed.");
+                    }
+
                     break;
                 default:
                     await WriteAsync(AstmControl.Eot, cancellationToken);
@@ -325,6 +347,35 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
 
         await WriteAsync(AstmControl.Eot, cancellationToken);
         return new SendOutcome(true, null);
+    }
+
+    /// <summary>
+    /// Waits before bidding for the line again (after contention or a busy NAK) without leaving it: the line is in the
+    /// neutral state, so an analyser that bids meanwhile is answered and its message received as usual. False when the
+    /// connection closed.
+    /// </summary>
+    private async Task<bool> WaitBeforeBiddingAsync(TimeSpan wait, CancellationToken cancellationToken)
+    {
+        var started = time.GetTimestamp();
+        while (true)
+        {
+            var left = wait - time.GetElapsedTime(started);
+            if (left <= TimeSpan.Zero)
+            {
+                return true;
+            }
+
+            var token = await ReadTokenAsync(left, cancellationToken);
+            switch (token.Kind)
+            {
+                case TokenKind.Closed:
+                    return false;
+                case TokenKind.Control when token.Control == AstmControl.Enq:
+                    await WriteAsync(AstmControl.Ack, cancellationToken);
+                    await ReceiveAsync(cancellationToken);
+                    break;
+            }
+        }
     }
 
     /// <summary>
