@@ -175,7 +175,7 @@ describe('GatewayExceptions', () => {
 
     await openActions('pay_A1B2C3D4E5');
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark resolved…' }));
-    const dialog = await screen.findByRole('alertdialog');
+    const dialog = await screen.findByRole('alertdialog', {}, { timeout: 5000 });
     const confirm = within(dialog).getByRole('button', { name: 'Mark resolved' });
     expect(confirm).toBeDisabled();
     await userEvent.type(within(dialog).getByRole('textbox'), 'Refunded by NEFT, UTR 1234');

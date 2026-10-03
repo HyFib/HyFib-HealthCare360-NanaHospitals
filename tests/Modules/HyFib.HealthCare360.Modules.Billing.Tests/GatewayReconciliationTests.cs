@@ -275,7 +275,7 @@ public sealed class GatewayReconciliationTests
     public void A_gateway_refund_is_followed_until_the_bank_confirms_it()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5");
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, error: "Could not reach Razorpay."), TestData.Now).ShouldBeFalse();
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Pending, reference: "74836287462837"), TestData.Now).ShouldBeTrue();
@@ -293,18 +293,115 @@ public sealed class GatewayReconciliationTests
     public void A_failed_gateway_refund_keeps_the_reason_and_starts_again_when_sent_again()
     {
         var refund = PaidRefund();
-        refund.StartGatewayRefund("rfnd_A1B2C3D4E5");
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
 
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
         refund.ShouldSatisfyAllConditions(r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Failed), r => r.GatewayError.ShouldBe("The bank account is closed."));
         refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Processed) with { RefundId = "rfnd_Other00001" }, TestData.Now).ShouldBeFalse();
 
-        refund.StartGatewayRefund("rfnd_Again00001");
+        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now.AddDays(40));
         refund.ShouldSatisfyAllConditions(
             r => r.GatewayRefundId.ShouldBe("rfnd_Again00001"),
             r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Pending),
             r => r.GatewayError.ShouldBeNull(),
+            r => r.GatewayRefundStartedAt.ShouldBe(TestData.Now.AddDays(40)),
             r => r.IsGatewayRefundOpen.ShouldBeTrue());
+    }
+
+    [Fact]
+    public void A_failed_gateway_refund_is_sent_again_by_one_request_only()
+    {
+        var refund = PaidRefund();
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.ApplyGatewayStatus(Status(PaymentRefundStatus.Failed, error: "The bank account is closed."), TestData.Now).ShouldBeTrue();
+
+        refund.ClaimGatewayRetry(TestData.Now.AddHours(1)).IsSuccess.ShouldBeTrue();
+
+        refund.ShouldSatisfyAllConditions(
+            r => r.GatewayRetryStartedAt.ShouldBe(TestData.Now.AddHours(1)),
+            r => r.IsGatewayRefundOpen.ShouldBeFalse("A refund being sent again is not followed."),
+            r => r.ClaimGatewayRetry(TestData.Now.AddHours(1).AddMinutes(1)).Error!.Code.ShouldBe("billing.refund_retrying"),
+            r => r.CanSendGatewayRefundAgain(TestData.Now.AddHours(1).AddMinutes(4)).ShouldBeFalse(),
+            r => r.CanSendGatewayRefundAgain(TestData.Now.AddHours(1) + Domain.Refund.GatewayRetryTimeout).ShouldBeTrue(
+                "A retry that stopped part way can be taken over: the gateway gets the same idempotency key."));
+
+        refund.GatewayRetryRefused("Razorpay: The payment has been fully refunded.");
+        refund.ShouldSatisfyAllConditions(
+            r => r.GatewayStatus.ShouldBe(PaymentRefundStatus.Failed),
+            r => r.GatewayRetryStartedAt.ShouldBeNull(),
+            r => r.GatewayError.ShouldBe("Razorpay: The payment has been fully refunded."),
+            r => r.CanSendGatewayRefundAgain(TestData.Now.AddHours(2)).ShouldBeTrue());
+    }
+
+    [Fact]
+    public void Each_gateway_attempt_of_a_refund_has_its_own_stable_idempotency_key()
+    {
+        var refund = PaidRefund();
+        refund.GatewayRefundId = null;
+        var first = refund.GatewayIdempotencyKey;
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        var retry = refund.GatewayIdempotencyKey;
+        refund.StartGatewayRefund("rfnd_Again00001", TestData.Now);
+
+        first.ShouldBe(refund.Id.ToString("N"));
+        retry.ShouldNotBe(first);
+        retry.ShouldMatch("^[0-9a-f]{32}$");
+        refund.GatewayIdempotencyKey.ShouldNotBe(retry);
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+        refund.GatewayIdempotencyKey.ShouldBe(retry, "The same attempt asked again gets the same key.");
+    }
+
+    [Fact]
+    public void Only_a_failed_gateway_refund_can_be_sent_again()
+    {
+        var refund = PaidRefund();
+        refund.StartGatewayRefund("rfnd_A1B2C3D4E5", TestData.Now);
+
+        refund.CanSendGatewayRefundAgain(TestData.Now).ShouldBeFalse();
+        refund.ClaimGatewayRetry(TestData.Now).Error!.Code.ShouldBe("billing.refund_not_failed");
+        refund.GatewayRetryStartedAt.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(4, 47)]
+    [InlineData(5, 2)]
+    [InlineData(6, 2)]
+    public void The_due_windows_follow_the_polling_schedule(int hour, int minute)
+    {
+        var now = new DateTimeOffset(2026, 10, 1, hour, minute, 0, TimeSpan.Zero);
+        var windows = GatewayPolling.DueWindows(now);
+
+        foreach (var minutesOld in new[] { 0, 1, 2, 10, 119, 120, 121, 60 * 24, 60 * 48 - 1, 60 * 48, 60 * 48 + 1, 60 * 24 * 10, 60 * 24 * 30 - 1, 60 * 24 * 30, 60 * 24 * 31 })
+        {
+            var since = now.AddMinutes(-minutesOld);
+            windows.Any(w => since > w.After && since <= w.Until).ShouldBe(GatewayPolling.IsDue(since, now), $"{minutesOld} minutes old");
+        }
+
+        windows.Count.ShouldBe(hour switch { 4 => 1, 5 => 2, _ => 3 });
+    }
+
+    [Fact]
+    public void A_facility_sharing_a_merchant_account_sees_its_own_part_of_a_settlement()
+    {
+        var settlement = Settlement(976.40m + 488.20m - 200m,
+            Payment("pay_A1B2C3D4E5", 1_000m, 23.60m, 3.60m), Payment("pay_F6G7H8I9J0", 500m, 11.80m, 1.80m), Refund("rfnd_K1L2M3N4O5", 200m, "pay_Z9Y8X7W6V5"));
+        settlement.Lines[1].MatchTo(Guid.CreateVersion7(), null, 500m, Branch);
+        settlement.Lines[2].MatchTo(null, Guid.CreateVersion7(), 150m, Branch);
+
+        var share = GatewaySettlementService.ShareDto(settlement, settlement.Lines.Where(l => l.FacilityId == Branch).ToList());
+
+        share.ShouldSatisfyAllConditions(
+            s => s.IsShare.ShouldBeTrue(),
+            s => s.PaymentsAmount.ShouldBe(500m),
+            s => s.RefundsAmount.ShouldBe(200m),
+            s => s.Charges.ShouldBe(10m),
+            s => s.Tax.ShouldBe(1.80m),
+            s => s.Amount.ShouldBe(288.20m),
+            s => s.Difference.ShouldBe(0m),
+            s => s.Lines.ShouldBe(2),
+            s => s.Unmatched.ShouldBe(1));
+        share.Amount.ShouldBe(SettlementJournal.Portions(settlement).Single(p => p.FacilityId == Branch).Net);
+        GatewaySettlementService.ToDto(settlement, 3, 1).ShouldSatisfyAllConditions(s => s.IsShare.ShouldBeFalse(), s => s.Amount.ShouldBe(settlement.Amount));
     }
 
     [Fact]
