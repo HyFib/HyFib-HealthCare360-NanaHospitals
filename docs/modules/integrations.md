@@ -339,6 +339,10 @@ ones and retries ports that could not be bound.
   * `ICD-10 2019`, `ICD-10`, `icd10` or `10` looks up ICD-10 by code.
   * `ICD-10-PCS` returns nothing.
 * Answers are cached for `cacheHours`. Failures are not cached.
+* **Full local catalogues.** The online lookup is not needed for ICD-10 search once the hospital imports its own copy
+  of the WHO ICD-10 2019 ClaML file (WHO-licensed, supplied by the hospital) or the public-domain CMS ICD-10-PCS order
+  file into Clinical's local catalogue: Medical records > ICD catalogue > Import, or `catalogue import --file <file>` on
+  the Server Node. See [Clinical, Catalogue import](clinical.md#catalogue-import).
 * **Registration.** `IIcdLookup` is **always registered**, so Clinical's 422 `icd.online_unavailable` path, which is
   taken only when no implementation exists, is not reached. How the lookup behaves:
   * It stays **inactive until configured**: disabled, not configured or `provider: "disabled"` returns an empty list.
