@@ -146,9 +146,33 @@ public sealed class HospitalServer : IAsyncLifetime
             await _database.DisposeAsync();
         }
 
-        if (Directory.Exists(_dataDirectory))
+        await DeleteDataDirectoryAsync();
+    }
+
+    /// <summary>
+    /// Deletes the run's data directory. On Windows a helper of the PDF renderer's browser can hold a file in its
+    /// profile for a moment after the browser closes, so the delete is tried for a few seconds; a folder still in use
+    /// after that is left in the temp directory rather than failing a run whose tests all finished.
+    /// </summary>
+    private async Task DeleteDataDirectoryAsync()
+    {
+        for (var attempt = 1; Directory.Exists(_dataDirectory); attempt++)
         {
-            Directory.Delete(_dataDirectory, recursive: true);
+            try
+            {
+                Directory.Delete(_dataDirectory, recursive: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 20)
+                {
+                    TestContext.Current.SendDiagnosticMessage($"The test data directory {_dataDirectory} was left behind: {ex.Message}");
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
+            }
         }
     }
 

@@ -52,10 +52,9 @@ jobs:
           $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # Detailed output lists every test as it finishes, so a test that never finishes is the one missing; the
-      # timeout fails a hung run in half an hour instead of the runner's six.
+      # A hung run fails in half an hour instead of the runner's six.
       - name: Test
-        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --output Detailed --timeout 30m
+        run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
 
   web:
     name: Web apps (TypeScript)
