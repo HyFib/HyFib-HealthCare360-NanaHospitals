@@ -105,7 +105,7 @@ public sealed class PaymentGatewayRouterTests
         Configure(null);
 
         var status = await Router.GetStatusAsync("order_A", null, Ct);
-        var refund = await Router.RefundAsync("pay_B", 100m, "duplicate", null, Ct);
+        var refund = await Router.RefundAsync("pay_B", 100m, "duplicate", null, null, Ct);
 
         status.Status.ShouldBe(GatewayPaymentStatus.Pending);
         status.Error!.ShouldContain("not configured");

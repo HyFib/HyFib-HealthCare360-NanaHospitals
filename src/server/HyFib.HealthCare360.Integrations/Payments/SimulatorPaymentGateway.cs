@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Simulator;
 
@@ -46,10 +47,18 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
         return new PaymentStatusResult(orderId, status, transaction.PaymentId, transaction.Amount - transaction.RefundedAmount, "simulator", null, transaction.CreatedAt);
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    /// <summary>
+    /// Like Razorpay, a repeated request with the same idempotency key gets the refund already made: its id is derived
+    /// from the key, and the inbox refunds once per id.
+    /// </summary>
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var refundId = "rfnd_sim" + Guid.CreateVersion7().ToString("N")[..16];
+        var refundId = "rfnd_sim" + (idempotencyKey is null
+            ? Guid.CreateVersion7().ToString("N")[..16]
+            : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{paymentId}:{idempotencyKey}")))[..16]);
         var error = await inbox.RefundAsync(paymentId, amount, refundId, cancellationToken);
         await trace.LogAsync(IntegrationNames.Payment, Key, "refund", error is null, started, paymentId, $"{{\"amount\":{amount}}}", error is null ? refundId : null, error);
         return error is null ? new RefundResult(true, refundId, null) : new RefundResult(false, null, error);

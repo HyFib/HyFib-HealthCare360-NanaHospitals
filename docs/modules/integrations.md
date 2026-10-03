@@ -215,6 +215,9 @@ and Windows Server 2022 machine has.
     settlement is never stored. From each item only the id, type, the payment a refund came from, the order, amount,
     fee (GST included), GST, credit, debit, method and times are kept; the card network, issuer and type, the
     description and the notes are left behind.
+  * **Refunds** carry the caller's idempotency key (`RefundAsync(…, idempotencyKey, …)`, at most 40 letters and
+    digits) in the `X-Refund-Idempotency` header and the refund's `receipt`, so Razorpay answers a repeated request,
+    such as a retry after a timeout or a second click, with the refund it already made.
   * **Refund status** (`GetRefundStatusAsync`): `GET v1/refunds/{id}` → `pending`, `processed` or `failed`, with the
     bank's reference (`acquirer_data.arn`, else `rrn` or `utr`). Normal-speed refunds take 5 to 7 working days.
 * **Every `IPaymentGateway` call names a facility.** A facility may have its own merchant account, and webhooks,
@@ -241,7 +244,8 @@ and Windows Server 2022 machine has.
   flow that insists on a checkout signature cannot complete in simulator mode unless test tooling signs with a
   configured `simulatorSecret`.
   * Refunds are kept as their own simulator transactions (kind `PaymentRefund`, the refund id, the payment id in
-    `reference`) and are processed at once.
+    `reference`) and are processed at once. With an idempotency key the refund id is derived from the payment and the
+    key, and a refund id already kept is not refunded again, as Razorpay does.
   * **Settlements** work like a real gateway's, so the reconciliation can be practised: with
     `simulatorSettlementDays` = 1 (the default), the payments and refunds of a day are paid to a pretend bank at 10:00
     IST the next day, less a 2 % fee and 18 % GST on it; 2 to 7 days settle later. With 0, everything captured so far

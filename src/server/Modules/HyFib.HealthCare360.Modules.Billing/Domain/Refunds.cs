@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
@@ -69,20 +71,84 @@ public sealed class Refund : AuditableEntity, IFacilityScoped
 
     public string? GatewayError { get; set; }
 
+    /// <summary>When the gateway accepted the latest attempt (the first payout, or the refund sent again).</summary>
+    public DateTimeOffset? GatewayRefundStartedAt { get; set; }
+
+    /// <summary>
+    /// Set while a failed gateway refund is being sent again: the request that set it (saved under the concurrency
+    /// token before the gateway is called) is the only one that sends it.
+    /// </summary>
+    public DateTimeOffset? GatewayRetryStartedAt { get; set; }
+
+    /// <summary>
+    /// How long a retry may be in flight before another request may take it over (one that stopped part way). The
+    /// gateway gets the same idempotency key again, so a refund it already made is not made twice.
+    /// </summary>
+    public static readonly TimeSpan GatewayRetryTimeout = TimeSpan.FromMinutes(5);
+
     /// <summary>Still owed to the patient (counts against the refundable balance).</summary>
     public bool IsOutstanding => Status is RefundStatus.Requested or RefundStatus.Approved;
 
-    /// <summary>Paid through the gateway and not yet confirmed (or failed and not yet retried).</summary>
-    public bool IsGatewayRefundOpen => GatewayRefundId is not null && GatewayStatus is null or PaymentRefundStatus.Pending;
+    /// <summary>Paid through the gateway and not yet confirmed (not one that failed or is being sent again).</summary>
+    public bool IsGatewayRefundOpen =>
+        GatewayRefundId is not null && GatewayRetryStartedAt is null
+        && GatewayStatus is null or PaymentRefundStatus.Pending;
+
+    /// <summary>
+    /// The idempotency key of the gateway attempt about to be made: the refund's id for the first payout, and the
+    /// refund with the gateway refund that failed for a retry. The same attempt asked twice gets the same key.
+    /// </summary>
+    public string GatewayIdempotencyKey => GatewayRefundId is null
+        ? Id.ToString("N")
+        : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{Id:N}:{GatewayRefundId}")))[..32];
 
     /// <summary>The gateway accepted the refund (first try or a retry after a failure): it is pending until the bank confirms it.</summary>
-    public void StartGatewayRefund(string gatewayRefundId)
+    public void StartGatewayRefund(string gatewayRefundId, DateTimeOffset now)
     {
         GatewayRefundId = gatewayRefundId;
         GatewayStatus = PaymentRefundStatus.Pending;
         GatewayReference = null;
         GatewaySettledAt = null;
         GatewayError = null;
+        GatewayRefundStartedAt = now;
+        GatewayRetryStartedAt = null;
+    }
+
+    /// <summary>A refund the gateway failed can be sent again, as can one whose retry stopped part way.</summary>
+    public bool CanSendGatewayRefundAgain(DateTimeOffset now) =>
+        Status == RefundStatus.Paid && GatewayRefundId is not null
+        && (GatewayRetryStartedAt is { } since
+            ? now - since >= GatewayRetryTimeout
+            : GatewayStatus == PaymentRefundStatus.Failed);
+
+    /// <summary>Marks the refund as being sent again; saved before the gateway is called.</summary>
+    public Result ClaimGatewayRetry(DateTimeOffset now)
+    {
+        if (!CanSendGatewayRefundAgain(now))
+        {
+            return GatewayRetryStartedAt is null
+                ? Error.Rule(
+                    "billing.refund_not_failed",
+                    "Only a refund the payment gateway could not complete can be sent again.")
+                : RetryInProgress;
+        }
+
+        GatewayRetryStartedAt = now;
+        return Result.Success();
+    }
+
+    /// <summary>Another request is sending the refund again.</summary>
+    public static Error RetryInProgress { get; } = Error.Rule(
+        "billing.refund_retrying",
+        "This refund is being sent again already. Refresh in a few minutes to see how it went.");
+
+    /// <summary>The gateway refused the retry: the refund is failed again, with the gateway's reason.</summary>
+    public void GatewayRetryRefused(string? error)
+    {
+        GatewayRetryStartedAt = null;
+        GatewayStatus = PaymentRefundStatus.Failed;
+        var reason = Clean(error) ?? "The payment gateway declined the refund.";
+        GatewayError = reason[..Math.Min(reason.Length, 300)];
     }
 
     /// <summary>

@@ -82,20 +82,40 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
         return RazorpayStatus.FromPayments(orderId, items);
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    /// <summary>
+    /// <c>POST v1/payments/{id}/refund</c>. The idempotency key goes in <c>X-Refund-Idempotency</c>, so Razorpay
+    /// answers a repeated request with the refund it already made, and in the refund's <c>receipt</c>.
+    /// </summary>
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         if (!PaymentIdPattern().IsMatch(paymentId))
         {
             return new RefundResult(false, null, "Not a Razorpay payment id.");
         }
 
+        if (idempotencyKey is not null && !IdempotencyKeyPattern().IsMatch(idempotencyKey))
+        {
+            return new RefundResult(false, null, "Not a usable idempotency key.");
+        }
+
         try
         {
             var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
             var paise = PaymentAmounts.ToPaise(amount);
-            var payload = new { amount = paise, speed = "normal", notes = new Dictionary<string, string> { ["reason"] = IntegrationTrace.Truncate(reason, 256) ?? string.Empty } };
+            var payload = new
+            {
+                amount = paise,
+                speed = "normal",
+                receipt = idempotencyKey,
+                notes = new Dictionary<string, string>
+                {
+                    ["reason"] = IntegrationTrace.Truncate(reason, 256) ?? string.Empty,
+                },
+            };
             using var document = await SendAsync(HttpMethod.Post, IntegrationHttp.Combine(baseUri, $"v1/payments/{paymentId}/refund"), payload, keyId, keySecret,
-                "refund", paymentId, $"{{\"amount\":{paise}}}", cancellationToken);
+                "refund", paymentId, $"{{\"amount\":{paise}}}", cancellationToken, idempotencyKey);
             return new RefundResult(true, IntegrationHttp.Property(document.RootElement, "id"), null);
         }
         catch (IntegrationException ex)
@@ -196,13 +216,19 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     private async Task<JsonDocument> SendAsync(
-        HttpMethod method, Uri uri, object? payload, string keyId, string keySecret, string operation, string? reference, string? summary, CancellationToken cancellationToken)
+        HttpMethod method, Uri uri, object? payload, string keyId, string keySecret, string operation,
+        string? reference, string? summary, CancellationToken cancellationToken, string? refundIdempotencyKey = null)
     {
         var started = trace.Start();
         using var request = new HttpRequestMessage(method, uri);
         if (payload is not null)
         {
             request.Content = IntegrationHttp.JsonBody(payload);
+        }
+
+        if (refundIdempotencyKey is not null)
+        {
+            request.Headers.Add("X-Refund-Idempotency", refundIdempotencyKey);
         }
 
         IntegrationHttp.SetBasicAuth(request, keyId, keySecret);
@@ -258,6 +284,9 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
 
     [GeneratedRegex("^pay_[A-Za-z0-9]{6,40}$")]
     private static partial Regex PaymentIdPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9]{1,40}$")]
+    private static partial Regex IdempotencyKeyPattern();
 
     [GeneratedRegex("^rfnd_[A-Za-z0-9]{6,40}$")]
     private static partial Regex RefundIdPattern();

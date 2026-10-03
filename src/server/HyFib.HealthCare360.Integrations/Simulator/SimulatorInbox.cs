@@ -41,11 +41,17 @@ internal sealed class SimulatorInbox(IDbContextFactory<HospitalDbContext> contex
 
     /// <summary>
     /// Returns part of a simulated payment and keeps the refund as its own transaction (so it can be settled and looked
-    /// up later). Returns why it was refused, or null.
+    /// up later). A refund id already kept is not refunded again (a repeated request). Returns why it was refused, or
+    /// null.
     /// </summary>
     public async Task<string?> RefundAsync(string paymentId, decimal amount, string refundId, CancellationToken cancellationToken)
     {
         await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        if (await RefundExistsAsync(refundId, cancellationToken))
+        {
+            return null;
+        }
+
         var payment = await db.Set<SimulatorTransaction>()
             .FirstOrDefaultAsync(t => t.PaymentId == paymentId && (t.Kind == SimulatorTransactionKind.PaymentOrder || t.Kind == SimulatorTransactionKind.PaymentLink),
                 cancellationToken);
@@ -74,8 +80,27 @@ internal sealed class SimulatorInbox(IDbContextFactory<HospitalDbContext> contex
             Status = SimulatorTransactionStatus.Refunded,
             Description = "Refund",
         });
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            // The same request arrived twice at once: the other one made the refund.
+            if (!await RefundExistsAsync(refundId, cancellationToken))
+            {
+                throw;
+            }
+        }
+
         return null;
+    }
+
+    private async Task<bool> RefundExistsAsync(string refundId, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        return await db.Set<SimulatorTransaction>().AnyAsync(
+            t => t.ExternalId == refundId && t.Kind == SimulatorTransactionKind.PaymentRefund, cancellationToken);
     }
 
     public async Task<SimulatorTransaction?> FindRefundAsync(string refundId, CancellationToken cancellationToken)

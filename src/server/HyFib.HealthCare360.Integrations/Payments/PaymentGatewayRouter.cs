@@ -35,12 +35,15 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         }
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, Guid? facilityId, CancellationToken cancellationToken)
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
+        CancellationToken cancellationToken)
     {
         try
         {
             var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
-            return await provider.RefundAsync(paymentId, amount, reason, config.Settings!, config.Secrets, cancellationToken);
+            return await provider.RefundAsync(
+                paymentId, amount, reason, idempotencyKey, config.Settings!, config.Secrets, cancellationToken);
         }
         catch (IntegrationException ex)
         {

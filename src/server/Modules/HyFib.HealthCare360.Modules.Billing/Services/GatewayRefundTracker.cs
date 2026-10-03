@@ -88,13 +88,16 @@ public sealed class GatewayRefundTracker(
     /// <summary>
     /// Sends a refund the gateway failed again, for the same amount and to the same online payment (the money can only
     /// go back where it came from). The refund keeps its approval; the new gateway refund is followed like the first.
-    /// Audited. Saves.
+    /// The retry is claimed first, in its own save under the refund's concurrency token, so of two requests at once
+    /// only one reaches the gateway; the gateway also gets an idempotency key for the attempt, so a retry taken over
+    /// after one that stopped part way gets the refund already made instead of a second one. Audited. Saves.
     /// </summary>
     internal async Task<Result<string>> RetryAsync(Refund refund, CancellationToken ct)
     {
-        if (refund is not { Status: RefundStatus.Paid, GatewayStatus: PaymentRefundStatus.Failed, GatewayRefundId: { } failedId })
+        var now = time.GetUtcNow();
+        if (!refund.CanSendGatewayRefundAgain(now) || refund.GatewayRefundId is not { } failedId)
         {
-            return Error.Rule("billing.refund_not_failed", "Only a refund the payment gateway could not complete can be sent again.");
+            return refund.ClaimGatewayRetry(now).Error!;
         }
 
         if (services.GetService<IPaymentGateway>() is not { } gateway)
@@ -108,13 +111,42 @@ public sealed class GatewayRefundTracker(
             return Error.Rule("billing.gateway_payment_missing", "The online payment this refund reverses was not found. Pay it another way and resolve the exception.");
         }
 
-        var result = await gateway.RefundAsync(paymentId, refund.Amount, refund.Reason, refund.FacilityId, ct);
+        var failedError = refund.GatewayError;
+        refund.ClaimGatewayRetry(now);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            return Refund.RetryInProgress;
+        }
+
+        RefundResult result;
+        try
+        {
+            result = await gateway.RefundAsync(
+                paymentId, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Whether the gateway made the refund is unknown: the claim stays, and a retry after it times out asks
+            // again with the same idempotency key.
+            logger.LogWarning(
+                ex, "Sending refund {RefundNumber} through the gateway again got no answer", refund.RefundNumber);
+            return Error.Rule(
+                "billing.gateway_unavailable", "The payment gateway did not answer. Try again in a few minutes.");
+        }
+
         if (!result.Success || string.IsNullOrWhiteSpace(result.RefundId))
         {
+            refund.GatewayRetryRefused(result.Error ?? failedError);
+            await db.SaveChangesAsync(ct);
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");
         }
 
-        refund.StartGatewayRefund(result.RefundId);
+        refund.StartGatewayRefund(result.RefundId, time.GetUtcNow());
         refund.Reference = result.RefundId.Length <= 64 ? result.RefundId : refund.Reference;
         if (await FindDiscrepancyAsync(failedId, ct) is { } open)
         {
@@ -136,7 +168,8 @@ public sealed class GatewayRefundTracker(
         }
         catch (DbUpdateException ex)
         {
-            // The gateway has already accepted the money back; make the reconciliation trail impossible to miss.
+            // The gateway has already accepted the money back; make the reconciliation trail impossible to miss. The
+            // claim stays, so a retry after it times out records the same gateway refund (same idempotency key).
             logger.LogCritical(ex, "Gateway refund {GatewayRefundId} for {RefundNumber} was sent again but could not be recorded", result.RefundId, refund.RefundNumber);
             throw;
         }

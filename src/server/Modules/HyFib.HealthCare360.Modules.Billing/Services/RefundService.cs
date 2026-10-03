@@ -209,7 +209,7 @@ public sealed class RefundService(
 
             // Paid out in HC360 now; the reconciliation job follows it until the bank confirms it (or it fails).
             reference = reversal.Value;
-            refund.StartGatewayRefund(reversal.Value);
+            refund.StartGatewayRefund(reversal.Value, time.GetUtcNow());
         }
 
         var paid = refund.MarkPaid(request.Mode, reference, currentUser.UserId, shift.Value?.Id, shift.Value?.Counter, time.GetUtcNow());
@@ -352,7 +352,9 @@ public sealed class RefundService(
             return Error.Rule("billing.gateway_payment_missing", "No online payment large enough to reverse was found. Refund by another mode.");
         }
 
-        var result = await gateway.RefundAsync(paymentId, refund.Amount, refund.Reason, refund.FacilityId, ct);
+        // Keyed by the refund: a second click while the first request is still out gets the same gateway refund.
+        var result = await gateway.RefundAsync(
+            paymentId, refund.Amount, refund.Reason, refund.GatewayIdempotencyKey, refund.FacilityId, ct);
         if (!result.Success || string.IsNullOrWhiteSpace(result.RefundId))
         {
             return Error.Rule("billing.gateway_refund_failed", result.Error ?? "The payment gateway declined the refund.");

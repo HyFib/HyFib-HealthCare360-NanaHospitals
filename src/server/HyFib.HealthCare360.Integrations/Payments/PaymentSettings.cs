@@ -51,7 +51,9 @@ internal interface IPaymentProvider
 
     Task<PaymentStatusResult> GetStatusAsync(string orderId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
 
-    Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
+    Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken);
 
     bool VerifySignature(string payload, string signature, PaymentSecrets secrets);
 
