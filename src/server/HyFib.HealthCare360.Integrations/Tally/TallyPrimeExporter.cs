@@ -14,11 +14,21 @@ namespace HyFib.HealthCare360.Integrations.Tally;
 /// every voucher in it, its vouchers are sent again one at a time to learn which ones Tally refused and why; the REMOTEID
 /// makes the second sending alter what the first one created.
 /// </para>
+/// <para>
+/// The caller's token is its deadline: once it is cancelled no further envelope is sent, a call in progress is cut
+/// short, and the vouchers not answered come back as not sent rather than as an exception, so the caller keeps every
+/// answer Tally gave before the time ran out.
+/// </para>
 /// </summary>
 internal sealed class TallyPrimeExporter(HttpClient http, IntegrationTrace trace) : IAccountingProvider
 {
-    /// <summary>Reading a busy day can take longer than an import batch; the read is streamed, so only time bounds it.</summary>
-    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// Reading a day's vouchers is streamed, so only time bounds it. The check that reads it runs as an outbox message,
+    /// which has 30 seconds in all.
+    /// </summary>
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);
+
+    private const string OutOfTime = "Not sent: the attempt ran out of time. The next attempt sends it.";
 
     public string Key => ProviderKeys.TallyPrime;
 
@@ -49,6 +59,14 @@ internal sealed class TallyPrimeExporter(HttpClient http, IntegrationTrace trace
         var messages = new List<string>();
         foreach (var batch in vouchers.Chunk(Math.Clamp(settings.BatchSize, 1, 200)))
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                messages.Add(OutOfTime);
+                answers.AddRange(vouchers.Skip(answers.Count)
+                    .Select(v => new AccountingVoucherAnswer(v.Key, AccountingVoucherOutcome.NotSent, OutOfTime)));
+                break;
+            }
+
             var sent = await SendAsync(uri, batch, options, cancellationToken);
             if (sent.Failure is { } failure)
             {
@@ -74,9 +92,15 @@ internal sealed class TallyPrimeExporter(HttpClient http, IntegrationTrace trace
                 continue;
             }
 
-            // The counts do not say which vouchers Tally refused: ask again one voucher at a time.
+            // The counts do not say which vouchers Tally refused: ask again one voucher at a time, while time allows.
             foreach (var voucher in batch)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    answers.Add(new AccountingVoucherAnswer(voucher.Key, AccountingVoucherOutcome.NotSent, OutOfTime));
+                    continue;
+                }
+
                 var single = await SendAsync(uri, [voucher], options, cancellationToken);
                 answers.Add(single.Failure is { } error
                     ? new AccountingVoucherAnswer(voucher.Key, AccountingVoucherOutcome.NotSent, error)
@@ -171,7 +195,10 @@ internal sealed class TallyPrimeExporter(HttpClient http, IntegrationTrace trace
             : result.Altered > 0 ? new AccountingVoucherAnswer(voucher.Key, AccountingVoucherOutcome.Altered)
             : new AccountingVoucherAnswer(voucher.Key, AccountingVoucherOutcome.Unconfirmed, "Tally neither created nor altered the voucher.");
 
-    /// <summary>Sends one import envelope; a transport failure comes back as text, never as an exception.</summary>
+    /// <summary>
+    /// Sends one import envelope; a transport failure, or the caller's deadline passing during the call, comes back as
+    /// text, never as an exception.
+    /// </summary>
     private async Task<(AccountingExportResult? Result, string? Failure)> SendAsync(
         Uri uri, IReadOnlyList<AccountingVoucher> batch, TallyImportOptions options, CancellationToken cancellationToken)
     {
@@ -188,6 +215,14 @@ internal sealed class TallyPrimeExporter(HttpClient http, IntegrationTrace trace
         {
             var error = IntegrationErrors.Describe(ex, "Tally");
             await trace.LogAsync(IntegrationNames.Tally, Key, "vouchers.import", false, started, reference, error: error);
+            return (null, error);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Tally may still apply the envelope; the REMOTEIDs make the next attempt alter rather than duplicate it.
+            const string error = "Tally did not answer before the attempt ran out of time.";
+            await trace.LogAsync(
+                IntegrationNames.Tally, Key, "vouchers.import", false, started, reference, error: error);
             return (null, error);
         }
     }

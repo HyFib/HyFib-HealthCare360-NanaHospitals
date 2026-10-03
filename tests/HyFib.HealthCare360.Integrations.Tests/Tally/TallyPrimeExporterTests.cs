@@ -116,6 +116,42 @@ public sealed class TallyPrimeExporterTests
     }
 
     [Fact]
+    public async Task The_one_at_a_time_sending_stops_when_the_attempt_runs_out_of_time()
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        _http.Respond(() =>
+        {
+            // Tally answers the batch just as the caller's deadline passes.
+            deadline.Cancel();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(Counts(1, 0, 1, "Ledger 'X' does not exist!")) };
+        });
+
+        var result = await Exporter.PushVouchersAsync([Receipt(1), Receipt(2), Receipt(3)], Settings, deadline.Token);
+
+        _http.Requests.Count.ShouldBe(1);
+        result.Success.ShouldBeFalse();
+        result.Vouchers.Select(v => v.Outcome).ShouldBe([AccountingVoucherOutcome.NotSent, AccountingVoucherOutcome.NotSent, AccountingVoucherOutcome.NotSent]);
+        result.Vouchers.ShouldAllBe(v => v.Message!.Contains("ran out of time"));
+    }
+
+    [Fact]
+    public async Task A_call_cut_short_by_the_deadline_leaves_the_rest_not_sent_without_throwing()
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        _http.Respond(HttpStatusCode.OK, Counts(2, 0, 0), "text/xml").Respond(() =>
+        {
+            deadline.Cancel();
+            throw new TaskCanceledException("The request was canceled.", null, deadline.Token);
+        });
+
+        var result = await Exporter.PushVouchersAsync([Receipt(1), Receipt(2), Receipt(3)], Settings, deadline.Token);
+
+        result.Vouchers.Select(v => v.Outcome).ShouldBe([AccountingVoucherOutcome.Created, AccountingVoucherOutcome.Created, AccountingVoucherOutcome.NotSent]);
+        result.Vouchers[2].Message.ShouldBe("Tally did not answer before the attempt ran out of time.");
+        _tracing.Entries[^1].Error.ShouldBe("Tally did not answer before the attempt ran out of time.");
+    }
+
+    [Fact]
     public async Task A_voucher_tally_neither_created_nor_altered_is_unconfirmed()
     {
         _http.Respond(HttpStatusCode.OK, "<RESPONSE><CREATED>0</CREATED><ALTERED>0</ALTERED><IGNORED>1</IGNORED><ERRORS>0</ERRORS></RESPONSE>", "text/xml");

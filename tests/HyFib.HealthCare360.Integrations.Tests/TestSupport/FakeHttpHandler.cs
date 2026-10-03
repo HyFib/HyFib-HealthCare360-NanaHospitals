@@ -29,6 +29,13 @@ internal sealed class FakeHttpHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>Answers with whatever <paramref name="respond"/> returns or throws when the request arrives.</summary>
+    public FakeHttpHandler Respond(Func<HttpResponseMessage> respond)
+    {
+        _responses.Enqueue(respond);
+        return this;
+    }
+
     public FakeHttpHandler Throw(Exception exception)
     {
         _responses.Enqueue(() => throw exception);
