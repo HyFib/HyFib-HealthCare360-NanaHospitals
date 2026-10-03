@@ -34,10 +34,10 @@ const manifest: ModuleManifest = {
       keywords: ['file issue', 'return', 'medical records request', 'copy'],
     },
     {
-      label: 'ICD-10 browser',
+      label: 'ICD catalogue',
       to: '/mrd/icd',
-      permission: ['mrd.coding', 'clinical.emr.read'],
-      keywords: ['icd', 'diagnosis codes', 'who'],
+      permission: ['mrd.coding', 'clinical.emr.read', 'mrd.catalogue.import'],
+      keywords: ['icd', 'icd-10', 'icd-11', 'icd-10-pcs', 'diagnosis codes', 'who', 'import', 'claml'],
     },
     {
       label: 'Morbidity report',

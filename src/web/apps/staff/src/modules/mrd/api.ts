@@ -5,7 +5,10 @@ import type { DiagnosisType } from '@/modules/emr/api';
 
 // ---------------------------------------------------------------------------------------------------- ICD catalogue
 
-export type CodeSource = 'Seed' | 'Online' | 'Manual';
+export type CodeSource = 'Seed' | 'Online' | 'Manual' | 'Import';
+
+/** ICD-10's dagger (†, the underlying disease) and asterisk (*, how it shows in an organ) codes. */
+export type IcdUsage = 'Dagger' | 'Asterisk';
 
 export interface IcdCodeDto {
   id: string;
@@ -16,7 +19,10 @@ export interface IcdCodeDto {
   block: string | null;
   blockTitle: string | null;
   isBillable: boolean;
+  usage: IcdUsage | null;
   keywords: string | null;
+  /** The WHO file's inclusion terms, joined with "; ". */
+  includedTerms: string | null;
   source: CodeSource;
   isActive: boolean;
 }
@@ -60,6 +66,57 @@ export interface IcdChapter {
 
 export const ICD10_RELEASE = 'ICD-10 2019';
 export const ICD11_RELEASE = 'ICD-11 MMS';
+export const ICD10PCS_RELEASE = 'ICD-10-PCS';
+
+export type CatalogueKind = 'Icd10' | 'Icd10Pcs';
+
+/** What an import of a catalogue file did, or would do (`dryRun`). */
+export interface CatalogueImportResult {
+  id: string | null;
+  catalogue: CatalogueKind;
+  release: string;
+  fileName: string;
+  sha256: string;
+  fileSizeBytes: number;
+  sourceTitle: string | null;
+  sourceVersion: string | null;
+  codesInFile: number;
+  added: number;
+  updated: number;
+  unchanged: number;
+  reinstated: number;
+  withdrawn: number;
+  /** Codes MRD added by hand or saved from the WHO online search: an import never changes them. */
+  leftAlone: number;
+  chapters: number;
+  blocks: number;
+  dryRun: boolean;
+  at: string;
+  importedBy: string;
+  channel: 'Upload' | 'Console';
+  durationMs: number;
+  warnings: string[];
+}
+
+export interface CatalogueSummary {
+  release: string;
+  activeCodes: number;
+  codableCodes: number;
+  withdrawnCodes: number;
+  switchedOffCodes: number;
+  fromFile: number;
+  fromStarterList: number;
+  addedByHand: number;
+  savedFromOnline: number;
+  /** ICD-10 only: true once the chapters and blocks come from an imported WHO file. */
+  classificationFromFile: boolean | null;
+  lastImport: CatalogueImportResult | null;
+}
+
+export interface CatalogueStatus {
+  catalogues: CatalogueSummary[];
+  recentImports: CatalogueImportResult[];
+}
 
 // ---------------------------------------------------------------------------------------------------- coding
 
@@ -316,10 +373,11 @@ export interface MorbidityParams {
 
 export const mrdKeys = {
   all: ['mrd'] as const,
-  icd: (search: string, chapter: string | null, billableOnly: boolean, limit: number) =>
-    ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit] as const,
-  icdOnline: (search: string) => ['mrd', 'icd-online', search] as const,
+  icd: (search: string, chapter: string | null, billableOnly: boolean, limit: number, release: string | null = null) =>
+    ['mrd', 'icd', search, chapter ?? 'all', billableOnly, limit, release ?? 'any'] as const,
+  icdOnline: (search: string, release: string) => ['mrd', 'icd-online', search, release] as const,
   classification: () => ['mrd', 'icd-classification'] as const,
+  catalogue: () => ['mrd', 'catalogue'] as const,
   procedures: (search: string) => ['mrd', 'procedures', search] as const,
   codings: (params: CodingListParams) => ['mrd', 'codings', params] as const,
   coding: (id: string) => ['mrd', 'coding', id] as const,
@@ -330,9 +388,13 @@ export const mrdKeys = {
   morbidity: (params: MorbidityParams) => ['mrd', 'morbidity', params] as const,
 };
 
+/**
+ * Ranked search of the local catalogue. `release` limits it to one classification (`ICD10_RELEASE` for claims and
+ * MRD coding); without it ICD-10 codes and ICD-11 codes saved from the WHO online search are both found.
+ */
 export function searchIcd(
   search: string,
-  options: { chapter?: string | null; billableOnly?: boolean; limit?: number; signal?: AbortSignal } = {},
+  options: { chapter?: string | null; billableOnly?: boolean; limit?: number; release?: string | null; signal?: AbortSignal } = {},
 ): Promise<IcdCodeDto[]> {
   return api.get<IcdCodeDto[]>('/api/v1/mrd/icd-codes', {
     query: {
@@ -340,6 +402,7 @@ export function searchIcd(
       chapter: options.chapter ?? undefined,
       billableOnly: options.billableOnly || undefined,
       limit: options.limit ?? 20,
+      release: options.release ?? undefined,
     },
     signal: options.signal,
   });
@@ -353,20 +416,27 @@ export function searchProcedures(search: string, signal?: AbortSignal): Promise<
 }
 
 export const mrdQueries = {
-  icd: (search: string, chapter: string | null = null, billableOnly = false, limit = 20) =>
+  icd: (search: string, chapter: string | null = null, billableOnly = false, limit = 20, release: string | null = null) =>
     queryOptions({
-      queryKey: mrdKeys.icd(search, chapter, billableOnly, limit),
-      queryFn: ({ signal }) => searchIcd(search, { chapter, billableOnly, limit, signal }),
+      queryKey: mrdKeys.icd(search, chapter, billableOnly, limit, release),
+      queryFn: ({ signal }) => searchIcd(search, { chapter, billableOnly, limit, release, signal }),
       staleTime: 10 * 60_000,
       placeholderData: keepPreviousData,
     }),
-  icdOnline: (search: string) =>
+  /** WHO's online service: ICD-11 MMS by words, or an ICD-10 code and its subdivisions (it has no ICD-10 word search). */
+  icdOnline: (search: string, release: string = ICD11_RELEASE) =>
     queryOptions({
-      queryKey: mrdKeys.icdOnline(search),
+      queryKey: mrdKeys.icdOnline(search, release),
       queryFn: ({ signal }) =>
-        api.get<OnlineIcdResult[]>('/api/v1/mrd/icd-codes/online', { query: { search, limit: 20 }, signal }),
+        api.get<OnlineIcdResult[]>('/api/v1/mrd/icd-codes/online', { query: { search, release, limit: 20 }, signal }),
       staleTime: 10 * 60_000,
       retry: false,
+    }),
+  catalogue: () =>
+    queryOptions({
+      queryKey: mrdKeys.catalogue(),
+      queryFn: ({ signal }) => api.get<CatalogueStatus>('/api/v1/mrd/catalogue', { signal }),
+      staleTime: 60_000,
     }),
   classification: () =>
     queryOptions({
@@ -445,6 +515,16 @@ export const mrdApi = {
     id
       ? api.put<IcdCodeDto>(`/api/v1/mrd/icd-codes/${id}`, request)
       : api.post<IcdCodeDto>('/api/v1/mrd/icd-codes', request),
+  /**
+   * Uploads the WHO ICD-10 ClaML file or the CMS ICD-10-PCS order file. `dryRun` only reports what would change. A real
+   * file takes the server tens of seconds, so the call may take up to ten minutes before it gives up.
+   */
+  importCatalogue: (file: File, dryRun: boolean) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('dryRun', dryRun ? 'true' : 'false');
+    return api.post<CatalogueImportResult>('/api/v1/mrd/catalogue/imports', form, { timeoutMs: 10 * 60_000 });
+  },
   createCoding: (request: CreateCodingRequest) => api.post<CodingDto>('/api/v1/mrd/codings', request),
   saveCoding: (id: string, entries: CodingLineRequest[], notes: string | null, version: number) =>
     api.put<CodingDto>(`/api/v1/mrd/codings/${id}`, { entries, notes, version }),

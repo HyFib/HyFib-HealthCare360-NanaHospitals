@@ -14,6 +14,7 @@ import { useDebouncedValue } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { mrdQueries, type IcdCodeDto, type ProcedureCodeDto } from './api';
+import { usageMark } from './catalogue';
 
 const FREE_TEXT = '__free-text__';
 
@@ -39,19 +40,29 @@ interface CommonProps {
 }
 
 /**
- * Ranked ICD-10 search (code prefix "e119" → E11.9, title words, shorthand such as "T2DM", "HTN"). Arrow keys move,
- * Enter picks. `onFreeText` offers a working diagnosis without a code when nothing fits.
+ * Ranked ICD search (code prefix "e119" → E11.9, title words, shorthand such as "T2DM", "HTN"). Arrow keys move,
+ * Enter picks. `onFreeText` offers a working diagnosis without a code when nothing fits. `release` limits it to one
+ * classification (MRD coding for claims uses ICD-10); without it, ICD-11 codes saved from the WHO search appear too.
  */
 export function IcdCodePicker({
   onPick,
   onFreeText,
   billableOnly = false,
+  release = null,
   ...common
-}: CommonProps & { onPick: (code: IcdCodeDto) => void; onFreeText?: (text: string) => void; billableOnly?: boolean }) {
+}: CommonProps & {
+  onPick: (code: IcdCodeDto) => void;
+  onFreeText?: (text: string) => void;
+  billableOnly?: boolean;
+  release?: string | null;
+}) {
   const styles = useStyles();
   const [term, setTerm] = useState('');
   const debounced = useDebouncedValue(term.trim(), 200);
-  const results = useQuery({ ...mrdQueries.icd(debounced, null, billableOnly, 20), enabled: debounced.length >= 2 });
+  const results = useQuery({
+    ...mrdQueries.icd(debounced, null, billableOnly, 20, release),
+    enabled: debounced.length >= 2,
+  });
   const items = debounced.length >= 2 ? (results.data ?? []) : [];
 
   return (
@@ -73,14 +84,22 @@ export function IcdCodePicker({
       }}
     >
       {items.map((item) => (
-        <Option key={item.id} value={item.id} text={`${item.code} ${item.title}`}>
+        <Option key={item.id} value={item.id} text={`${item.code}${usageMark(item.usage)} ${item.title}`}>
           <span className={styles.option}>
             <span className={styles.optionRow}>
-              <span className={styles.code}>{item.code}</span>
+              <span className={styles.code}>
+                {item.code}
+                {usageMark(item.usage)}
+              </span>
               <Text>{item.title}</Text>
               {!item.isBillable && (
                 <Badge size="small" appearance="outline" color="warning">
                   Category
+                </Badge>
+              )}
+              {item.usage === 'Asterisk' && (
+                <Badge size="small" appearance="outline" color="informative">
+                  Not primary
                 </Badge>
               )}
             </span>
