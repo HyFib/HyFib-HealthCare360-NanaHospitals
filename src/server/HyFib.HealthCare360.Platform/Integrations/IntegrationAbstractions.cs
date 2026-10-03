@@ -79,9 +79,17 @@ public enum GatewayPaymentStatus
     Captured,
     Failed,
     Refunded,
+
+    /// <summary>A payment link passed its expiry unpaid.</summary>
+    Expired,
+
+    /// <summary>A payment link was cancelled at the gateway.</summary>
+    Cancelled,
 }
 
-public sealed record PaymentStatusResult(string OrderId, GatewayPaymentStatus Status, string? PaymentId, decimal? AmountPaid, string? Method, string? Error);
+/// <param name="PaidAt">When the gateway took the payment (the receipt's time), if it says.</param>
+public sealed record PaymentStatusResult(
+    string OrderId, GatewayPaymentStatus Status, string? PaymentId, decimal? AmountPaid, string? Method, string? Error, DateTimeOffset? PaidAt = null);
 
 public sealed record RefundResult(bool Success, string? RefundId, string? Error);
 
@@ -103,7 +111,20 @@ public interface IPaymentGateway
     /// <summary>Verifies a webhook or checkout signature with the provider secret of the facility's account (constant-time).</summary>
     bool VerifySignature(string payload, string signature, Guid? facilityId);
 
-    Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, Guid? facilityId, CancellationToken cancellationToken);
+    /// <summary>
+    /// Returns money to the payment's source. <paramref name="idempotencyKey"/> (at most 40 letters and digits) names
+    /// the attempt: the gateway answers a repeated request with the same key with the refund it already made, so a
+    /// request sent twice (a retry after a timeout, a second click) never refunds twice.
+    /// </summary>
+    Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
+        CancellationToken cancellationToken);
+
+    /// <summary>Settlements paid to the bank on <paramref name="settledOn"/> (an Indian calendar day), with their transactions.</summary>
+    Task<PaymentSettlementReport> GetSettlementsAsync(DateOnly settledOn, Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>Where a refund stands at the gateway: pending until the bank confirms it, then processed or failed.</summary>
+    Task<RefundStatusResult> GetRefundStatusAsync(string refundId, Guid? facilityId, CancellationToken cancellationToken);
 }
 
 // ---------- Card/UPI POS terminal ----------

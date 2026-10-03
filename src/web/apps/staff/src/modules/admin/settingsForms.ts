@@ -1133,6 +1133,17 @@ const paymentSpec: SettingsSpec = {
       min: 1,
       max: 2160,
     },
+    {
+      key: PAY,
+      path: 'simulatorSettlementDays',
+      label: 'Simulator pays the bank after (days)',
+      kind: 'number',
+      defaultNumber: 1,
+      min: 0,
+      max: 7,
+      when: payBy('simulator'),
+      hint: '1 settles at 10:00 the next day, like Razorpay. 0 settles at once when settlements are read, for training.',
+    },
   ],
   secrets: [
     {

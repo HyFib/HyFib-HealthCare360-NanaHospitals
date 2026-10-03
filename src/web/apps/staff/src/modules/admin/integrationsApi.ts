@@ -131,7 +131,7 @@ export interface SimulatorMessageDto {
   providerMessageId: string;
 }
 
-export const SIMULATOR_TRANSACTION_KINDS = ['PaymentOrder', 'PaymentLink', 'PosSale'] as const;
+export const SIMULATOR_TRANSACTION_KINDS = ['PaymentOrder', 'PaymentLink', 'PosSale', 'PaymentRefund'] as const;
 export type SimulatorTransactionKind = (typeof SIMULATOR_TRANSACTION_KINDS)[number];
 export type SimulatorTransactionStatus =
   'Created' | 'AwaitingCustomer' | 'Captured' | 'Approved' | 'Cancelled' | 'Refunded';
@@ -399,6 +399,7 @@ export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> =
   PaymentOrder: 'Payment order',
   PaymentLink: 'Payment link',
   PosSale: 'POS sale',
+  PaymentRefund: 'Payment refund',
 };
 
 export function transactionStatusDisplay(status: SimulatorTransactionStatus): { label: string; tone: Tone } {

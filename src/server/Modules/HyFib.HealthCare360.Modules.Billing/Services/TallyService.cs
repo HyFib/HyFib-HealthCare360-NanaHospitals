@@ -87,6 +87,7 @@ public sealed class TallyService(
         var payouts = await db.Set<DoctorPayout>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(p => p.FacilityId == facilityId && p.Status == PayoutStatus.Paid && p.PaidAt >= start && p.PaidAt < end)
             .ToListAsync(ct);
+        var gatewaySettlements = await GatewaySettlementService.ForDayBookAsync(db, facilityId, date, ct);
 
         var payerIds = bills.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value)
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
@@ -144,7 +145,8 @@ public sealed class TallyService(
                 doctors.GetValueOrDefault(f.PractitionerId)?.Code,
                 f.PractitionerId)).ToList(),
             payouts.Select(p => new TallyPayout(
-                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList())
+                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList(),
+            gatewaySettlements)
         {
             FacilityCode = facilityCode,
             Counters = await CountersAsync(facilityId, date, ct),

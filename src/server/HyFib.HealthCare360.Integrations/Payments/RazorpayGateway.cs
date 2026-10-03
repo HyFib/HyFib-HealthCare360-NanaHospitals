@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace HyFib.HealthCare360.Integrations.Payments;
@@ -81,20 +82,40 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
         return RazorpayStatus.FromPayments(orderId, items);
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    /// <summary>
+    /// <c>POST v1/payments/{id}/refund</c>. The idempotency key goes in <c>X-Refund-Idempotency</c>, so Razorpay
+    /// answers a repeated request with the refund it already made, and in the refund's <c>receipt</c>.
+    /// </summary>
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         if (!PaymentIdPattern().IsMatch(paymentId))
         {
             return new RefundResult(false, null, "Not a Razorpay payment id.");
         }
 
+        if (idempotencyKey is not null && !IdempotencyKeyPattern().IsMatch(idempotencyKey))
+        {
+            return new RefundResult(false, null, "Not a usable idempotency key.");
+        }
+
         try
         {
             var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
             var paise = PaymentAmounts.ToPaise(amount);
-            var payload = new { amount = paise, speed = "normal", notes = new Dictionary<string, string> { ["reason"] = IntegrationTrace.Truncate(reason, 256) ?? string.Empty } };
+            var payload = new
+            {
+                amount = paise,
+                speed = "normal",
+                receipt = idempotencyKey,
+                notes = new Dictionary<string, string>
+                {
+                    ["reason"] = IntegrationTrace.Truncate(reason, 256) ?? string.Empty,
+                },
+            };
             using var document = await SendAsync(HttpMethod.Post, IntegrationHttp.Combine(baseUri, $"v1/payments/{paymentId}/refund"), payload, keyId, keySecret,
-                "refund", paymentId, $"{{\"amount\":{paise}}}", cancellationToken);
+                "refund", paymentId, $"{{\"amount\":{paise}}}", cancellationToken, idempotencyKey);
             return new RefundResult(true, IntegrationHttp.Property(document.RootElement, "id"), null);
         }
         catch (IntegrationException ex)
@@ -105,6 +126,77 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
 
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>
         RazorpaySignatures.Verify(payload, signature, secrets.KeySecret, secrets.WebhookSecret);
+
+    /// <summary>
+    /// The settlements of one day: every page of <c>GET v1/settlements/recon/combined?year&amp;month&amp;day</c>, grouped
+    /// by settlement, each completed with its header from <c>GET v1/settlements/{id}</c> (status, amount and UTR). All
+    /// or nothing: a failed page fails the day, so a half-read settlement is never stored.
+    /// </summary>
+    public async Task<IReadOnlyList<PaymentSettlement>> GetSettlementsAsync(
+        DateOnly settledOn, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
+        var day = settledOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        var items = new List<RazorpayReconItem>();
+        for (var page = 0; ; page++)
+        {
+            if (page >= RazorpaySettlements.MaxPages)
+            {
+                throw new IntegrationException($"Razorpay listed more than {RazorpaySettlements.MaxPages * RazorpaySettlements.PageSize} transactions for {day}.");
+            }
+
+            var query = string.Create(CultureInfo.InvariantCulture,
+                $"v1/settlements/recon/combined?year={settledOn.Year}&month={settledOn.Month:00}&day={settledOn.Day:00}&count={RazorpaySettlements.PageSize}&skip={page * RazorpaySettlements.PageSize}");
+            using var document = await SendAsync(HttpMethod.Get, IntegrationHttp.Combine(baseUri, query), null, keyId, keySecret,
+                "settlement.recon", day, $"{{\"day\":\"{day}\",\"page\":{page + 1}}}", cancellationToken);
+            items.AddRange(RazorpaySettlements.ReadReconPage(document.RootElement));
+            if (RazorpaySettlements.CountItems(document.RootElement) < RazorpaySettlements.PageSize)
+            {
+                break;
+            }
+        }
+
+        var settlements = new List<PaymentSettlement>();
+        foreach (var group in items.GroupBy(i => i.SettlementId))
+        {
+            using var header = await SendAsync(HttpMethod.Get, IntegrationHttp.Combine(baseUri, $"v1/settlements/{group.Key}"), null, keyId, keySecret,
+                "settlement.fetch", group.Key, null, cancellationToken);
+            settlements.Add(RazorpaySettlements.Build(header.RootElement, group.Key, group.ToList()));
+        }
+
+        return settlements;
+    }
+
+    /// <summary><c>GET v1/refunds/{id}</c>: pending, processed or failed, with the bank's reference (ARN, RRN or UTR) once known.</summary>
+    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        if (!RefundIdPattern().IsMatch(refundId))
+        {
+            return new RefundStatusResult(refundId, PaymentRefundStatus.Pending, null, null, null, null, "Not a Razorpay refund id.");
+        }
+
+        var (baseUri, keyId, keySecret) = Credentials(settings, secrets);
+        using var document = await SendAsync(HttpMethod.Get, IntegrationHttp.Combine(baseUri, $"v1/refunds/{refundId}"), null, keyId, keySecret,
+            "refund.status", refundId, null, cancellationToken);
+        var root = document.RootElement;
+        var status = IntegrationHttp.Property(root, "status") switch
+        {
+            "processed" => PaymentRefundStatus.Processed,
+            "failed" => PaymentRefundStatus.Failed,
+            _ => PaymentRefundStatus.Pending,
+        };
+        var bankReference = root.TryGetProperty("acquirer_data", out var acquirer)
+            ? IntegrationHttp.Property(acquirer, "arn") ?? IntegrationHttp.Property(acquirer, "rrn") ?? IntegrationHttp.Property(acquirer, "utr")
+            : null;
+        return new RefundStatusResult(
+            refundId,
+            status,
+            root.TryGetProperty("amount", out _) ? PaymentAmounts.FromPaise(RazorpayStatus.ReadLong(root, "amount")) : null,
+            IntegrationHttp.Property(root, "payment_id") is { } paymentId && PaymentIdPattern().IsMatch(paymentId) ? paymentId : null,
+            bankReference is { Length: > 0 and <= 64 } && bankReference.All(char.IsAsciiLetterOrDigit) ? bankReference : null,
+            RazorpayStatus.ReadTime(root, "created_at"),
+            status == PaymentRefundStatus.Failed ? "Razorpay could not return the money to the patient's account." : null);
+    }
 
     /// <summary>Razorpay errors: <c>{"error":{"code":"BAD_REQUEST_ERROR","description":"…","field":"amount"}}</c>.</summary>
     internal static string ErrorMessage(string body, int status)
@@ -124,13 +216,19 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
     }
 
     private async Task<JsonDocument> SendAsync(
-        HttpMethod method, Uri uri, object? payload, string keyId, string keySecret, string operation, string? reference, string? summary, CancellationToken cancellationToken)
+        HttpMethod method, Uri uri, object? payload, string keyId, string keySecret, string operation,
+        string? reference, string? summary, CancellationToken cancellationToken, string? refundIdempotencyKey = null)
     {
         var started = trace.Start();
         using var request = new HttpRequestMessage(method, uri);
         if (payload is not null)
         {
             request.Content = IntegrationHttp.JsonBody(payload);
+        }
+
+        if (refundIdempotencyKey is not null)
+        {
+            request.Headers.Add("X-Refund-Idempotency", refundIdempotencyKey);
         }
 
         IntegrationHttp.SetBasicAuth(request, keyId, keySecret);
@@ -186,4 +284,10 @@ internal sealed partial class RazorpayGateway(HttpClient http, IntegrationTrace 
 
     [GeneratedRegex("^pay_[A-Za-z0-9]{6,40}$")]
     private static partial Regex PaymentIdPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9]{1,40}$")]
+    private static partial Regex IdempotencyKeyPattern();
+
+    [GeneratedRegex("^rfnd_[A-Za-z0-9]{6,40}$")]
+    private static partial Regex RefundIdPattern();
 }

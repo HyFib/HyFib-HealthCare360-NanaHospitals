@@ -22,6 +22,10 @@ public static class BillingPermissions
     public const string TariffsManage = "billing.tariffs.manage";
     public const string TallyExport = "billing.tally.export";
     public const string TallyConfigure = "billing.tally.configure";
+
+    /// <summary>Gateway reconciliation: settlements, exceptions, recording missed online receipts, sending failed refunds again.</summary>
+    public const string GatewayReconcile = "billing.gateway.reconcile";
+
     public const string PayersManage = "insurance.payers.manage";
     public const string PoliciesManage = "insurance.policies.manage";
     public const string PreAuthManage = "insurance.preauth.manage";
@@ -53,6 +57,9 @@ public static class BillingPermissions
         new(TariffsManage, "Billing", "Maintain tariff plans, prices and packages", [SystemRoles.Billing, SystemRoles.HospitalAdmin]),
         new(TallyExport, "Billing", "Post and export the Tally day book, mark it imported and reconcile it with Tally", Approvers),
         new(TallyConfigure, "Billing", "Set the Tally ledger names the day book posts to", Approvers),
+        new(GatewayReconcile, "Billing",
+            "Reconcile online payments with the gateway's settlements: record missed receipts, send failed refunds again, resolve exceptions",
+            Approvers),
         new(PayersManage, "Insurance", "Maintain insurers, TPAs, corporates, schemes and non-payable items", [SystemRoles.InsuranceDesk, SystemRoles.HospitalAdmin]),
         new(PoliciesManage, "Insurance", "Record and verify patient insurance policies",
             [SystemRoles.InsuranceDesk, SystemRoles.Billing, SystemRoles.HospitalAdmin]),

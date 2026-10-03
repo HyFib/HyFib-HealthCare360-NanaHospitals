@@ -184,7 +184,7 @@ true until the report is recorded.
 |---|---|---|---|
 | `messages.outbox` | 30 days | 7 days | Deleted: sent messages' full text, sign-in codes included (pending ones are never touched) |
 | `messages.log` | 365 days | 365 | Deleted |
-| `integrations.log` | 365 days | 365 | Deleted |
+| `integrations.log` | 365 days | 365 | Deleted: the integration log and the payment gateway's webhook events (`billing.gateway_webhook_events`, ids only) |
 | `signin.log` | 365 days | 365 | Deleted: code requests, ended sessions and their refresh tokens, expired refresh tokens |
 | `records.outpatient` | 3 years | 3 | Reviewed by MRD (never deleted automatically) |
 | `records.inpatient` | 5 years | 5 | Reviewed by MRD |

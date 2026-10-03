@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Platform.Realtime;
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>A payment already captured outside the counter (POS terminal or payment gateway).</summary>
+/// <param name="ReceivedAt">When the money was taken (the gateway's capture time); null means now.</param>
 internal sealed record ExternalPayment(
     Guid FacilityId,
     ReceiptPurpose Purpose,
@@ -20,7 +21,8 @@ internal sealed record ExternalPayment(
     string? Reference,
     string? CardLast4,
     ReceiptSource Source,
-    CashierShift? Shift);
+    CashierShift? Shift,
+    DateTimeOffset? ReceivedAt = null);
 
 /// <summary>
 /// Receipts (MB-04, OPB-05/06, IPB-01): split payments at the counter, IP advances, POS/gateway captures, advance
@@ -151,8 +153,9 @@ public sealed class ReceiptService(
 
     /// <summary>
     /// Records money captured by a POS terminal or the gateway. Idempotent on (mode, external id); an amount above the
-    /// balance is still recorded (the money was received) and the excess becomes refundable. The caller owns the
-    /// transaction and saves.
+    /// balance is still recorded (the money was received) and the excess becomes refundable. The receipt is dated when
+    /// the money was taken (<see cref="ExternalPayment.ReceivedAt"/>, never later than now), so a payment recorded late
+    /// still belongs to the day the patient paid. The caller owns the transaction and saves.
     /// </summary>
     internal async Task<Result<Receipt>> RecordExternalAsync(ExternalPayment payment, CancellationToken ct)
     {
@@ -192,7 +195,8 @@ public sealed class ReceiptService(
         receipt.AdmissionId = bill?.AdmissionId ?? account?.AdmissionId;
         receipt.IpAccountId = bill?.IpAccountId ?? account?.Id;
         receipt.AddPayment(new PaymentLineData(payment.Mode, payment.Amount, payment.Reference, payment.CardLast4, ExternalId: payment.ExternalId));
-        var recorded = receipt.Record(time.GetUtcNow());
+        var now = time.GetUtcNow();
+        var recorded = receipt.Record(payment.ReceivedAt is { } receivedAt && receivedAt < now ? receivedAt : now);
         if (recorded.IsFailure)
         {
             return recorded.Error!;

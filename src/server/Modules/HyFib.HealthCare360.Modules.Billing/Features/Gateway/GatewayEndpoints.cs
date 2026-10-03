@@ -13,6 +13,8 @@ internal static class GatewayEndpoints
     /// <summary>Gateways sign webhooks in a provider-specific header; the first one present is verified.</summary>
     private static readonly string[] SignatureHeaders = ["X-Razorpay-Signature", "X-PayU-Signature", "X-Webhook-Signature", "X-Signature"];
 
+    private const string RazorpayEventIdHeader = "X-Razorpay-Event-Id";
+
     private const int MaxWebhookChars = 64 * 1024;
 
     public static void Map(IEndpointRouteBuilder app)
@@ -96,7 +98,11 @@ internal static class GatewayEndpoints
         }
 
         var signature = SignatureHeaders.Select(h => request.Headers[h].ToString()).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-        return await gateway.HandleWebhookAsync(payload, signature, facility, ct) switch
+
+        // Razorpay names each event (the same id on every redelivery); other gateways are recognised by a hash of the body.
+        var eventId = request.Headers[RazorpayEventIdHeader].ToString();
+        var provider = string.IsNullOrEmpty(eventId) && string.IsNullOrEmpty(request.Headers[SignatureHeaders[0]].ToString()) ? "gateway" : "razorpay";
+        return await gateway.HandleWebhookAsync(payload, signature, eventId, provider, facility, ct) switch
         {
             WebhookOutcome.InvalidSignature => Results.Unauthorized(),
             WebhookOutcome.NotConfigured => Results.StatusCode(StatusCodes.Status503ServiceUnavailable),

@@ -2,6 +2,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Realtime;
@@ -18,12 +19,16 @@ public enum WebhookOutcome
 
     InvalidSignature,
     NotConfigured,
+
+    /// <summary>The gateway delivered an event that was already handled; it is acknowledged and not acted on again.</summary>
+    Duplicate,
 }
 
 /// <summary>
 /// Payment-gateway orders and payment links (INT-PG, PP-03). The gateway's own status API is the source of truth: a
 /// webhook (signature-verified) or a poll only tells us which order to check, so no amount or status is ever taken from
-/// an inbound payload. A captured payment is recorded once, keyed on the gateway payment id.
+/// an inbound payload. A captured payment is recorded once, keyed on the gateway payment id, and dated when the
+/// gateway took it. A payment that cannot be recorded stays visible on its order and in the reconciliation exceptions.
 /// </summary>
 public sealed class PaymentGatewayService(
     HospitalDbContext db,
@@ -31,6 +36,12 @@ public sealed class PaymentGatewayService(
     INotificationService notifications,
     IServiceProvider services,
     IRealtimePublisher realtime,
+    GatewayDiscrepancyService discrepancies,
+    GatewayWebhookLog webhookLog,
+    GatewayRefundTracker refundTracker,
+    PrepaymentChecker prepayments,
+    GatewaySettlementService settlements,
+    TallyCorrections tally,
     TimeProvider time,
     ILogger<PaymentGatewayService> logger)
 {
@@ -120,7 +131,10 @@ public sealed class PaymentGatewayService(
         return ToDto(synced.Value);
     }
 
-    /// <summary>Asks the gateway for the authoritative status and records a captured payment exactly once.</summary>
+    /// <summary>
+    /// Asks the gateway for the authoritative status: a captured payment is recorded exactly once (dated when the
+    /// gateway took it); a failed, expired or cancelled link or checkout is marked so.
+    /// </summary>
     internal async Task<Result<GatewayOrder>> SyncAsync(GatewayOrder order, CancellationToken ct)
     {
         if (order.Status == GatewayOrderStatus.Paid)
@@ -145,17 +159,30 @@ public sealed class PaymentGatewayService(
             return Error.Rule("billing.gateway_unavailable", "The payment gateway could not be reached. Try again shortly.");
         }
 
-        if (status is { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId })
+        switch (status)
         {
-            if (!await TryRecordCaptureAsync(order, paymentId, status.AmountPaid ?? order.Amount, status.Method, ct))
-            {
-                return await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().FirstAsync(o => o.Id == order.Id, ct);
-            }
-        }
-        else if (status.Status == GatewayPaymentStatus.Failed)
-        {
-            order.MarkFailed(status.Error);
-            await db.SaveChangesAsync(ct);
+            case { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId }:
+                if (!await TryRecordCaptureAsync(order, paymentId, status.AmountPaid ?? order.Amount, status.Method, status.PaidAt, ct))
+                {
+                    return await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().FirstAsync(o => o.Id == order.Id, ct);
+                }
+
+                break;
+
+            case { Status: GatewayPaymentStatus.Failed }:
+                order.MarkFailed(status.Error);
+                await db.SaveChangesAsync(ct);
+                break;
+
+            case { Status: GatewayPaymentStatus.Expired }:
+                order.MarkExpired(status.Error);
+                await db.SaveChangesAsync(ct);
+                break;
+
+            case { Status: GatewayPaymentStatus.Cancelled }:
+                order.MarkCancelled(status.Error);
+                await db.SaveChangesAsync(ct);
+                break;
         }
 
         return order;
@@ -163,11 +190,14 @@ public sealed class PaymentGatewayService(
 
     /// <summary>
     /// Signed webhook from the gateway (anonymous endpoint). A facility may have its own merchant account and webhook
-    /// secret, so the ids in the (not yet trusted) payload are used only to find which of our orders it is about, and the
-    /// signature is then checked with that order's facility account. <paramref name="facilityHint"/> (<c>?facility=</c>
-    /// on the webhook URL) is used when the payload names none of our orders.
+    /// secret, so the ids in the (not yet trusted) payload are used only to find which of our orders, prepaid bookings
+    /// or refunds it is about, and the signature is then checked with that facility's account.
+    /// <paramref name="facilityHint"/> (<c>?facility=</c> on the webhook URL) is used when the payload names none of
+    /// them. Each verified event is kept by its id (<paramref name="eventId"/>, else a hash of the body), so a
+    /// redelivery is acknowledged without being handled twice.
     /// </summary>
-    public async Task<WebhookOutcome> HandleWebhookAsync(string payload, string? signature, Guid? facilityHint, CancellationToken ct)
+    public async Task<WebhookOutcome> HandleWebhookAsync(
+        string payload, string? signature, string? eventId, string provider, Guid? facilityHint, CancellationToken ct)
     {
         var gateway = services.GetService<IPaymentGateway>();
         if (gateway is null)
@@ -176,24 +206,78 @@ public sealed class PaymentGatewayService(
         }
 
         var candidates = ExtractCandidates(payload);
-        var order = candidates.Count == 0
-            ? null
-            : await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        GatewayOrder? order = null;
+        Appointment? booking = null;
+        Refund? refund = null;
+        if (candidates.Count > 0)
+        {
+            order = await db.Set<GatewayOrder>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
                 .FirstOrDefaultAsync(o => candidates.Contains(o.OrderId) || candidates.Contains(o.MerchantReference), ct);
+            booking = order is not null
+                ? null
+                : await db.Set<Appointment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                    .FirstOrDefaultAsync(a => a.GatewayOrderId != null && candidates.Contains(a.GatewayOrderId), ct);
+            refund = await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+                .FirstOrDefaultAsync(r => r.GatewayRefundId != null && candidates.Contains(r.GatewayRefundId), ct);
+        }
 
-        if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, order?.FacilityId ?? facilityHint))
+        var facilityId = order?.FacilityId ?? booking?.FacilityId ?? refund?.FacilityId ?? facilityHint;
+        if (string.IsNullOrWhiteSpace(signature) || !gateway.VerifySignature(payload, signature, facilityId))
         {
             logger.LogWarning("Rejected a payment-gateway webhook with a missing or invalid signature");
             return WebhookOutcome.InvalidSignature;
         }
 
-        if (order is null)
+        var info = GatewayWebhookInfo.Read(payload);
+        var logged = await webhookLog.BeginAsync(provider, GatewayWebhookInfo.EventIdOf(eventId, payload), info, facilityId, ct);
+        if (logged is not { } eventRowId)
         {
-            return WebhookOutcome.Ignored;
+            return WebhookOutcome.Duplicate;
         }
 
-        var synced = await SyncAsync(order, ct);
-        return synced.IsSuccess && synced.Value.Status == GatewayOrderStatus.Paid ? WebhookOutcome.Processed : WebhookOutcome.Ignored;
+        var outcome = WebhookEventOutcome.Ignored;
+        string? note = null;
+        try
+        {
+            if (order is not null)
+            {
+                var synced = await SyncAsync(order, ct);
+                outcome = synced.IsFailure ? WebhookEventOutcome.Failed
+                    : synced.Value is { Status: GatewayOrderStatus.Created, GatewayPaymentId: not null } ? WebhookEventOutcome.Failed
+                    : synced.Value.Status is not GatewayOrderStatus.Created ? WebhookEventOutcome.Processed
+                    : WebhookEventOutcome.Ignored;
+                note = synced.IsFailure ? synced.Error!.Message : synced.Value.LastError;
+            }
+            else if (booking is not null)
+            {
+                var confirmed = await prepayments.ConfirmAsync(booking, ct);
+                outcome = confirmed.IsSuccess ? WebhookEventOutcome.Processed
+                    : confirmed.Error!.Code == "payment.not_captured" ? WebhookEventOutcome.Ignored
+                    : WebhookEventOutcome.Failed;
+                note = confirmed.IsSuccess ? $"Prepaid booking {booking.Number} confirmed." : confirmed.Error!.Message;
+            }
+
+            if (refund is not null && await refundTracker.FollowAsync(refund, ct))
+            {
+                outcome = WebhookEventOutcome.Processed;
+                note = $"Refund {refund.RefundNumber}: {refund.GatewayStatus}.";
+            }
+
+            if (outcome == WebhookEventOutcome.Ignored && info.SettlementId is not null)
+            {
+                note = "Settlements are read by the reconciliation job every hour.";
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The job checks the order, booking or refund again; the gateway is told the delivery was received.
+            logger.LogError(ex, "Payment-gateway webhook {EventType} could not be handled", info.EventType);
+            outcome = WebhookEventOutcome.Failed;
+            note = "Could not be handled; the reconciliation job checks again.";
+        }
+
+        await webhookLog.CompleteAsync(eventRowId, outcome, note, ct);
+        return outcome == WebhookEventOutcome.Processed ? WebhookOutcome.Processed : WebhookOutcome.Ignored;
     }
 
     /// <summary>
@@ -218,7 +302,7 @@ public sealed class PaymentGatewayService(
 
     internal static GatewayOrderDto ToDto(GatewayOrder o) => new(
         o.Id, o.Provider, o.Kind, o.OrderId, o.Amount, o.Currency, o.Status, o.LinkUrl, o.CheckoutKey, o.BillId, o.IpAccountId, o.ReceiptId, o.Channel,
-        o.CreatedAt, o.PaidAt);
+        o.CreatedAt, o.PaidAt, o.LastError, o.GatewayPaymentId);
 
     private static void Collect(JsonElement element, HashSet<string> values, int depth)
     {
@@ -304,28 +388,43 @@ public sealed class PaymentGatewayService(
         return order;
     }
 
-    /// <summary>Records the receipt for a captured payment; false when a concurrent webhook/poll recorded it first.</summary>
-    private async Task<bool> TryRecordCaptureAsync(GatewayOrder order, string paymentId, decimal amount, string? method, CancellationToken ct)
+    /// <summary>
+    /// Records the receipt for a captured payment, dated when the gateway took it; false when a concurrent webhook/poll
+    /// recorded it first. When the bill or admission refuses the payment, the attempt is rolled back (so its receipt
+    /// number goes back to the series) and the failure is kept on its own: the payment and the reason stay on the order,
+    /// an exception is opened for the accountants (who are alerted the first time), and the next check tries again.
+    /// </summary>
+    private async Task<bool> TryRecordCaptureAsync(GatewayOrder order, string paymentId, decimal amount, string? method, DateTimeOffset? paidAt, CancellationToken ct)
     {
+        var now = time.GetUtcNow();
+        var capturedAt = paidAt is { } at && at < now ? at : now;
+        Receipt? recorded = null;
+        string? refused = null;
+        IReadOnlyList<(Guid FacilityId, DateOnly Date)> settledDays = [];
         await using (var transaction = await db.BeginOwnedTransactionAsync(ct))
         {
             try
             {
                 var receipt = await receipts.RecordExternalAsync(new ExternalPayment(
                     order.FacilityId, order.Purpose, order.PatientId, order.BillId, order.IpAccountId, PaymentMode.PaymentGateway, Money.Round(amount),
-                    paymentId, method, null, ReceiptSource.PaymentGateway, null), ct);
+                    paymentId, method, null, ReceiptSource.PaymentGateway, null, capturedAt), ct);
                 if (receipt.Error is { } error)
                 {
-                    logger.LogError("Captured gateway payment {PaymentId} could not be recorded: {Error}", paymentId, error.Message);
-                    order.LastError = error.Message;
+                    // Not committed: the transaction rolls back when it is disposed.
+                    refused = error.Message;
+                }
+                else
+                {
+                    recorded = receipt.Value;
+                    order.MarkPaid(paymentId, Money.Round(amount), method, recorded.Id, recorded.ReceivedAt);
+                    await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, paymentId, $"Receipt {recorded.ReceiptNumber} recorded.", ct);
+                    await db.SaveChangesAsync(ct);
+
+                    // The receipt exists now, so a transaction the gateway already settled for this payment matches it.
+                    settledDays = await settlements.RematchPaymentAsync(paymentId, ct);
                     await db.SaveChangesAsync(ct);
                     await transaction.CommitAsync(ct);
-                    return true;
                 }
-
-                order.MarkPaid(paymentId, Money.Round(amount), method, receipt.Value.Id, time.GetUtcNow());
-                await db.SaveChangesAsync(ct);
-                await transaction.CommitAsync(ct);
             }
             catch (DbUpdateException ex)
             {
@@ -335,8 +434,57 @@ public sealed class PaymentGatewayService(
             }
         }
 
+        if (refused is not null)
+        {
+            await KeepCaptureFailureAsync(order, paymentId, Money.Round(amount), method, capturedAt, refused, ct);
+            return true;
+        }
+
         await realtime.ToFacilityAsync(order.FacilityId, "billing.bill.changed", new { Id = order.BillId, order.PatientId }, ct);
+        await tally.RepostIfPostedAsync(order.FacilityId, BillingTime.LocalDate(recorded!.ReceivedAt), ct);
+        await settlements.RepostAsync(settledDays, ct);
         return true;
+    }
+
+    /// <summary>The gateway took money that HC360 could not record yet: kept on the order and in the exceptions.</summary>
+    private async Task KeepCaptureFailureAsync(
+        GatewayOrder order, string paymentId, decimal amount, string? method, DateTimeOffset capturedAt, string reason, CancellationToken ct)
+    {
+        logger.LogError("Captured gateway payment {PaymentId} could not be recorded: {Error}", paymentId, reason);
+        order.RecordCaptureFailure(paymentId, amount, method, capturedAt, reason);
+        var exception = await discrepancies.RaiseAsync(
+            DiscrepancyKind.UnrecordedPayment, paymentId, order.FacilityId,
+            $"₹{Money.FormatInr(amount)} was paid online ({paymentId}), but the receipt could not be recorded: {reason}",
+            d =>
+            {
+                d.OrderId = order.OrderId;
+                d.GatewayOrderRecordId = order.Id;
+                d.BillId = order.BillId;
+                d.IpAccountId = order.IpAccountId;
+                d.GatewayAmount = amount;
+                d.GatewayAt = capturedAt;
+            },
+            ct);
+        var isNew = db.Entry(exception).State == EntityState.Added;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // A concurrent check kept the same failure first; it alerts the accountants.
+            logger.LogInformation(ex, "The failure to record gateway payment {PaymentId} was kept by a concurrent request", paymentId);
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        if (isNew)
+        {
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.GatewayReconcile, order.FacilityId, "Online payment not recorded",
+                $"₹{Money.FormatInr(amount)} was paid online but no receipt could be recorded. Open Gateway reconciliation to record it.",
+                "/billing/reconciliation", "billing", "warning", ct);
+        }
     }
 
     private async Task<Contact?> ContactAsync(Guid patientId, CancellationToken ct) =>

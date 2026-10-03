@@ -59,8 +59,44 @@ public sealed class RazorpayStatusTests
         partial.AmountPaid.ShouldBe(200m);
 
         var expired = RazorpayStatus.FromPaymentLink("plink_A", "expired", []);
-        expired.Status.ShouldBe(GatewayPaymentStatus.Failed);
-        expired.Error.ShouldBe("The payment link was expired.");
+        expired.Status.ShouldBe(GatewayPaymentStatus.Expired);
+        expired.Error.ShouldBe("The payment link expired before it was paid.");
+
+        var cancelled = RazorpayStatus.FromPaymentLink("plink_A", "cancelled", [Payment("pay_1", "failed")]);
+        cancelled.Status.ShouldBe(GatewayPaymentStatus.Cancelled);
+        cancelled.Error.ShouldBe("The payment link was cancelled at the gateway.");
+    }
+
+    [Fact]
+    public void A_payment_captured_just_before_a_link_closed_is_still_money_taken()
+    {
+        var expired = RazorpayStatus.FromPaymentLink("plink_A", "expired", [Payment("pay_1", "captured")]);
+
+        expired.Status.ShouldBe(GatewayPaymentStatus.Captured);
+        expired.PaymentId.ShouldBe("pay_1");
+    }
+
+    [Fact]
+    public void A_capture_reports_when_the_patient_paid()
+    {
+        var paidAt = new DateTimeOffset(2026, 9, 30, 4, 55, 12, TimeSpan.Zero);
+
+        var status = RazorpayStatus.FromPayments("order_A", [new RazorpayPayment("pay_1", "captured", 50_000, 0, "upi", null, paidAt)]);
+
+        status.PaidAt.ShouldBe(paidAt);
+        RazorpayStatus.FromPaymentLink("plink_A", "paid", [new RazorpayPayment("pay_1", "captured", 50_000, 0, "upi", null, paidAt)]).PaidAt.ShouldBe(paidAt);
+    }
+
+    [Theory]
+    [InlineData("""{"created_at":1759208112}""", 1759208112L)]
+    [InlineData("""{"created_at":0}""", null)]
+    [InlineData("""{"created_at":"1759208112"}""", null)]
+    [InlineData("""{}""", null)]
+    public void Reads_unix_timestamps_and_ignores_anything_else(string json, long? expected)
+    {
+        using var document = JsonDocument.Parse(json);
+
+        RazorpayStatus.ReadTime(document.RootElement, "created_at").ShouldBe(expected is { } seconds ? DateTimeOffset.FromUnixTimeSeconds(seconds) : null);
     }
 
     [Fact]
@@ -68,7 +104,7 @@ public sealed class RazorpayStatusTests
     {
         using var document = JsonDocument.Parse("""
             [
-              {"id":"pay_1","status":"captured","amount":150050,"amount_refunded":0,"method":"card"},
+              {"id":"pay_1","status":"captured","amount":150050,"amount_refunded":0,"method":"card","created_at":1759208112},
               {"payment_id":"pay_2","status":"failed","amount":150050,"error_description":"Payment was cancelled"},
               {"status":"created"}
             ]
@@ -77,7 +113,7 @@ public sealed class RazorpayStatusTests
         var payments = RazorpayStatus.ReadPayments(document.RootElement);
 
         payments.Count.ShouldBe(2);
-        payments[0].ShouldBe(new RazorpayPayment("pay_1", "captured", 150050, 0, "card", null));
+        payments[0].ShouldBe(new RazorpayPayment("pay_1", "captured", 150050, 0, "card", null, DateTimeOffset.FromUnixTimeSeconds(1759208112)));
         payments[1].Id.ShouldBe("pay_2");
         payments[1].Error.ShouldBe("Payment was cancelled");
     }

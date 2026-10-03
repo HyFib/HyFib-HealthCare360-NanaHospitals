@@ -38,6 +38,7 @@ import { Route as AppBillingOpRouteImport } from './routes/_app/billing/op'
 import { Route as AppBillingPackagesRouteImport } from './routes/_app/billing/packages'
 import { Route as AppBillingPaymentLinksRouteImport } from './routes/_app/billing/payment-links'
 import { Route as AppBillingReceiptsRouteImport } from './routes/_app/billing/receipts'
+import { Route as AppBillingReconciliationRouteImport } from './routes/_app/billing/reconciliation'
 import { Route as AppBillingShiftsRouteImport } from './routes/_app/billing/shifts'
 import { Route as AppBillingTallyRouteImport } from './routes/_app/billing/tally'
 import { Route as AppBillingTariffsRouteImport } from './routes/_app/billing/tariffs'
@@ -447,6 +448,12 @@ const AppBillingReceiptsRoute = AppBillingReceiptsRouteImport.update({
   path: '/billing/receipts',
   getParentRoute: () => AppRoute,
 } as any)
+const AppBillingReconciliationRoute =
+  AppBillingReconciliationRouteImport.update({
+    id: '/billing/reconciliation',
+    path: '/billing/reconciliation',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppBillingShiftsRoute = AppBillingShiftsRouteImport.update({
   id: '/billing/shifts',
   path: '/billing/shifts',
@@ -1852,6 +1859,7 @@ export interface FileRoutesByFullPath {
   '/billing/packages': typeof AppBillingPackagesRoute
   '/billing/payment-links': typeof AppBillingPaymentLinksRoute
   '/billing/receipts': typeof AppBillingReceiptsRoute
+  '/billing/reconciliation': typeof AppBillingReconciliationRoute
   '/billing/shifts': typeof AppBillingShiftsRoute
   '/billing/tally': typeof AppBillingTallyRoute
   '/billing/tariffs': typeof AppBillingTariffsRoute
@@ -2145,6 +2153,7 @@ export interface FileRoutesByTo {
   '/billing/packages': typeof AppBillingPackagesRoute
   '/billing/payment-links': typeof AppBillingPaymentLinksRoute
   '/billing/receipts': typeof AppBillingReceiptsRoute
+  '/billing/reconciliation': typeof AppBillingReconciliationRoute
   '/billing/shifts': typeof AppBillingShiftsRoute
   '/billing/tally': typeof AppBillingTallyRoute
   '/billing/tariffs': typeof AppBillingTariffsRoute
@@ -2440,6 +2449,7 @@ export interface FileRoutesById {
   '/_app/billing/packages': typeof AppBillingPackagesRoute
   '/_app/billing/payment-links': typeof AppBillingPaymentLinksRoute
   '/_app/billing/receipts': typeof AppBillingReceiptsRoute
+  '/_app/billing/reconciliation': typeof AppBillingReconciliationRoute
   '/_app/billing/shifts': typeof AppBillingShiftsRoute
   '/_app/billing/tally': typeof AppBillingTallyRoute
   '/_app/billing/tariffs': typeof AppBillingTariffsRoute
@@ -2735,6 +2745,7 @@ export interface FileRouteTypes {
     | '/billing/packages'
     | '/billing/payment-links'
     | '/billing/receipts'
+    | '/billing/reconciliation'
     | '/billing/shifts'
     | '/billing/tally'
     | '/billing/tariffs'
@@ -3028,6 +3039,7 @@ export interface FileRouteTypes {
     | '/billing/packages'
     | '/billing/payment-links'
     | '/billing/receipts'
+    | '/billing/reconciliation'
     | '/billing/shifts'
     | '/billing/tally'
     | '/billing/tariffs'
@@ -3322,6 +3334,7 @@ export interface FileRouteTypes {
     | '/_app/billing/packages'
     | '/_app/billing/payment-links'
     | '/_app/billing/receipts'
+    | '/_app/billing/reconciliation'
     | '/_app/billing/shifts'
     | '/_app/billing/tally'
     | '/_app/billing/tariffs'
@@ -3799,6 +3812,13 @@ declare module '@tanstack/react-router' {
       path: '/billing/receipts'
       fullPath: '/billing/receipts'
       preLoaderRoute: typeof AppBillingReceiptsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/billing/reconciliation': {
+      id: '/_app/billing/reconciliation'
+      path: '/billing/reconciliation'
+      fullPath: '/billing/reconciliation'
+      preLoaderRoute: typeof AppBillingReconciliationRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/billing/shifts': {
@@ -5669,6 +5689,7 @@ interface AppRouteChildren {
   AppBillingPackagesRoute: typeof AppBillingPackagesRoute
   AppBillingPaymentLinksRoute: typeof AppBillingPaymentLinksRoute
   AppBillingReceiptsRoute: typeof AppBillingReceiptsRoute
+  AppBillingReconciliationRoute: typeof AppBillingReconciliationRoute
   AppBillingShiftsRoute: typeof AppBillingShiftsRoute
   AppBillingTallyRoute: typeof AppBillingTallyRoute
   AppBillingTariffsRoute: typeof AppBillingTariffsRoute
@@ -5961,6 +5982,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppBillingPackagesRoute: AppBillingPackagesRoute,
   AppBillingPaymentLinksRoute: AppBillingPaymentLinksRoute,
   AppBillingReceiptsRoute: AppBillingReceiptsRoute,
+  AppBillingReconciliationRoute: AppBillingReconciliationRoute,
   AppBillingShiftsRoute: AppBillingShiftsRoute,
   AppBillingTallyRoute: AppBillingTallyRoute,
   AppBillingTariffsRoute: AppBillingTariffsRoute,

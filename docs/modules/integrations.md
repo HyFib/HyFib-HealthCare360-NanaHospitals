@@ -51,7 +51,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 
 | Abstraction (Platform) | Consumers | Implementation | Until configured / on failure |
 |---|---|---|---|
-| `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhook | `PaymentGatewayRouter` → Razorpay / simulator | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
+| `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhook, Billing gateway reconciliation (settlements, refund status) | `PaymentGatewayRouter` → Razorpay / simulator | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. `GetSettlementsAsync` returns a report marked unavailable with the reason; `GetRefundStatusAsync` returns `Pending` with the reason. Settlements and refund status are read even while online payments are switched off, so earlier payments are still reconciled. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
 | `IPosTerminal` | Billing card/UPI sales | `PosTerminalRouter` → Pine Labs / simulator | A **declined** result with the reason ("Card/UPI POS is not configured…"). Each declined attempt gets a unique `declined-…` transaction id, and `Provider` reports the provider that handled the call (`none`, `pinelabs` or `simulator`), because Billing stores sales under a unique (provider, transaction id) index. |
 | `IAccountingExporter` | Billing Tally day book (outbox), its read-back check and the day-book file download | `AccountingExporterRouter` → Tally Prime / simulator | `GetConnectionAsync` says Not configured (no settings, or posting switched off) or Invalid (settings that cannot be used). `PushVouchersAsync` then returns a result with `NotConfigured` set and every voucher not sent, and Billing marks the day Not configured instead of retrying; Invalid settings fail the day until corrected. `ReadBackAsync` returns an unsuccessful result with the reason. `PingAsync` returns false. `BuildImportFile` always works (Tally XML) and throws only for a voucher Tally would reject. |
 | `IPacsClient` | Diagnostics radiology: linking studies with PACS (by hand and by `PacsLinkJob`), the study's series and images, and viewer links | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync`, `FindSeriesAsync`, `FindInstancesAsync` and `RetrieveImageAsync` throw **`HttpRequestException`** with a staff-facing reason: not configured, disabled, unreachable, an HTTP error, a UID that is not a DICOM UID, or an answer that is not a JPEG or PNG image within the size limit. Diagnostics reports it as `pacs.unreachable`. Every call names the facility whose settings apply (null: the signed-in facility), because background linking has none. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). |
@@ -81,7 +81,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.sms` | `enabled`, `provider` (`msg91` \| `twilio` \| `generic` \| `simulator`), `senderId`, `dltEntityId`, `msg91 { baseUrl, templateIds{dlt→msg91}, textVariable, shortUrl }`, `twilio { baseUrl, accountSid, from, messagingServiceSid, statusCallbackUrl }`, `generic { url, method, contentType, bodyTemplate, headers, apiKeyHeader, apiKeyPrefix, messageIdPath, successContains }`, `webhookAllowedIps[]` | `msg91AuthKey`, `twilioAuthToken`, `genericApiKey`, `webhookToken` |
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
-| `integrations.payment` | `enabled`, `provider` (`razorpay` \| `simulator`), `baseUrl`, `keyId`, `paymentLinkCallbackUrl`, `notifyByRazorpay` (false), `paymentLinkExpiryHours` (72) | `keySecret`, `webhookSecret`, `simulatorSecret` |
+| `integrations.payment` | `enabled`, `provider` (`razorpay` \| `simulator`), `baseUrl`, `keyId`, `paymentLinkCallbackUrl`, `notifyByRazorpay` (false), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret` |
 | `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
@@ -208,8 +208,23 @@ and Windows Server 2022 machine has.
 * **Razorpay**: orders (`POST v1/orders`), payment links (`POST v1/payment_links`, not sent by Razorpay unless
   `notifyByRazorpay`), status (`GET v1/orders/{id}/payments` or `v1/payment_links/{id}`) and refunds
   (`POST v1/payments/{id}/refund`). Amounts travel in paise and must be between ₹1 and ₹1,00,00,000. Ids are
-  validated (`order_…`, `plink_…`, `pay_…`) before they are put in a URL. When one order has several attempts, a
-  captured attempt wins over earlier failures.
+  validated (`order_…`, `plink_…`, `pay_…`, `rfnd_…`, `setl_…`) before they are put in a URL. When one order has
+  several attempts, a captured attempt wins over earlier failures.
+  * **Status** reports when the payment was taken (`PaidAt`, the captured attempt's `created_at`), which Billing uses
+    as the receipt's time. A link Razorpay reports `expired` or `cancelled` is `GatewayPaymentStatus.Expired` or
+    `Cancelled`, unless a payment was captured just before it closed, which is still reported as captured.
+  * **Settlements** (`GetSettlementsAsync`): every page of `GET v1/settlements/recon/combined?year&month&day`
+    (1,000 items a page, at most 100 pages), grouped by `settlement_id`, each completed with its header from
+    `GET v1/settlements/{id}` (status, amount paid to the bank, settlement-level fees and tax, UTR, time). Items without
+    a settlement id are not settled yet and are skipped. All or nothing: a failed call fails the day, so a half-read
+    settlement is never stored. From each item only the id, type, the payment a refund came from, the order, amount,
+    fee (GST included), GST, credit, debit, method and times are kept; the card network, issuer and type, the
+    description and the notes are left behind.
+  * **Refunds** carry the caller's idempotency key (`RefundAsync(…, idempotencyKey, …)`, at most 40 letters and
+    digits) in the `X-Refund-Idempotency` header and the refund's `receipt`, so Razorpay answers a repeated request,
+    such as a retry after a timeout or a second click, with the refund it already made.
+  * **Refund status** (`GetRefundStatusAsync`): `GET v1/refunds/{id}` → `pending`, `processed` or `failed`, with the
+    bank's reference (`acquirer_data.arn`, else `rrn` or `utr`). Normal-speed refunds take 5 to 7 working days.
 * **Every `IPaymentGateway` call names a facility.** A facility may have its own merchant account, and webhooks,
   patient checkouts and background re-checks have no signed-in facility, so callers pass the order's facility. Null
   means the signed-in facility, then the all-facility settings.
@@ -233,6 +248,15 @@ and Windows Server 2022 machine has.
   a random per-process key is used, so nobody outside the server can forge a "paid" simulator payment. A portal
   flow that insists on a checkout signature cannot complete in simulator mode unless test tooling signs with a
   configured `simulatorSecret`.
+  * Refunds are kept as their own simulator transactions (kind `PaymentRefund`, the refund id, the payment id in
+    `reference`) and are processed at once. With an idempotency key the refund id is derived from the payment and the
+    key, and a refund id already kept is not refunded again, as Razorpay does.
+  * **Settlements** work like a real gateway's, so the reconciliation can be practised: with
+    `simulatorSettlementDays` = 1 (the default), the payments and refunds of a day are paid to a pretend bank at 10:00
+    IST the next day, less a 2 % fee and 18 % GST on it; 2 to 7 days settle later. With 0, everything captured so far
+    settles when settlements are read. A run happens when a day's settlements are read and it is due; each
+    transaction is settled once (`settlement_id`, `settled_at` on `simulator_transactions`). Simulated UTRs start with
+    `SIMUTR`.
 
 ### Card/UPI POS (INT-POS)
 
@@ -718,7 +742,7 @@ HC360 Desktop keeps each workstation's printers for every Windows account on it,
 | POST | `/api/v1/admin/integrations/{name}/test` | `admin.integrations.manage` | `TestIntegrationRequest { to, message, dltTemplateId, templateName, languageCode }` → `IntegrationTestResult`. Sends a real test SMS, WhatsApp or e-mail, creates a ₹1 order, pings Tally, PACS or ICD, echoes the modality worklist server (`mwl`), and checks lab and label configuration. Audited as `integration.tested`. |
 | GET | `/api/v1/admin/integrations/logs` | `admin.integrations.manage` | paging + `integration, success, from, to, search` → `PagedResult<IntegrationLogDto>` |
 | GET | `/api/v1/admin/integrations/simulator/messages` | `admin.integrations.manage` | paging + `channel` → simulated SMS, WhatsApp, e-mail and Tally deliveries |
-| GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders and links, and POS sales |
+| GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders, links and refunds, and POS sales |
 | GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → `InboundWhatsAppMessageDto` (sender masked) with `keyword` and `keywordAction` (`OptedOut`, `OptedIn`, `Superseded`, `None`, or null for replies not acted on yet). The staff inbox shows it as the Result column |
 | GET | `/api/v1/integrations/lab/connections` | `integrations.lab.connections`, `integrations.lab.status` or `admin.integrations.manage` | → `LabConnectionsDto { gatewayEnabled, listVersion, connections[], agents[] }`: each analyser's connection with its Lab setup state, live status and orders waiting, and the facility's enrolled lab agents (online when seen in the last 3 minutes or relaying) |
 | PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
@@ -831,6 +855,14 @@ Permissions:
     C-FIND for modality worklist and C-ECHO only.
   * QIDO-RS searches by patient name, and searches with wildcards, are not offered.
 
+### Not covered yet: payment gateway
+* **PayU** and other gateways: only Razorpay (and the simulator) implement `IPaymentProvider`, settlements and refund
+  status included.
+* **Instant (on-demand) settlements** are read like any other settlement; HC360 does not request them.
+* **Settlement webhooks** (`settlement.processed`) are recorded but not acted on; the hourly reconciliation job reads
+  the settlements instead.
+* **Card/UPI POS settlement files** from the acquirer are not read (POS sales are reconciled at the counter only).
+
 ## Database
 
 The tables `integrations.simulator_messages`, `integrations.simulator_transactions`,
@@ -840,6 +872,8 @@ migration is created centrally. They have unique `external_id` and `provider_mes
 entities are `[NotAudited]` because the integration log already traces them. `whatsapp_inbound_messages.keyword_action`
 (text, nullable) records what a STOP or START did; rows stored before it existed stay empty until
 `WhatsAppReplyBacklog` acts on them. The number-level opt-out itself is the platform's `platform.whatsapp_opt_outs`.
+`simulator_transactions.settlement_id` and `settled_at` record which simulated settlement paid a payment or took a
+refund (indexed by `settled_at`); the gateway's real settlements are stored by Billing (`billing.gateway_settlements`).
 
 `integrations.lab_order_downloads` (`LabOrderDownload`, `Persistence/LabOrderDownloadConfiguration.cs`, migration
 `LabAnalyserOrders`) is the order download queue: one row per analyser and request, with `facility_id`,

@@ -115,6 +115,9 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
   - **ABHA numbers**: encrypted with AES-256-GCM.
   - Uploaded documents: encrypted at rest.
+  - **Online payments**: the gateway's settlement data is kept as ids, amounts, the UTR and the payment method only;
+    the card network, issuer and type, descriptions and notes are dropped. Webhook events are kept by event id with
+    the gateway's ids, never the body, which carries the patient's contact and card or bank details.
 - Masking:
   - Lists show masked phone numbers.
   - Every server log line is masked as it is written, exception text included: phone, Aadhaar and ABHA numbers keep only

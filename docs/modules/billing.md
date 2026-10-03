@@ -2,13 +2,15 @@
 
 Tariffs and pricing, charge capture from every clinical/support module, OP and IP billing, payments (counter, POS
 terminal, payment gateway), cashier shifts and day-end, patient advances (online appointment prepayments), refunds and
-credit notes, insurance/TPA (payers, policies, pre-authorisation, claims, receivable ageing), doctor fee accounting and
-the Tally day book. SRS **MB-01..06, OPB-01..07, IPB-01..08, INS-01..07, DFA-01..05**, business side of
-**INT-PG / INT-POS / INT-TALLY**, and OA-03 (appointment prepayments).
+credit notes, insurance/TPA (payers, policies, pre-authorisation, claims, receivable ageing), doctor fee accounting,
+the Tally day book and the reconciliation of the payment gateway. SRS **MB-01..06, OPB-01..07, IPB-01..08,
+INS-01..07, DFA-01..05**, business side of **INT-PG / INT-POS / INT-TALLY**, and OA-03 (appointment prepayments).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Billing` (layer 7; references Patients and Scheduling).
-Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (248 unit tests: pure domain and the
-printed bill's HTML, plus change-tracking checks on the real EF model without a database).
+Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (277 unit tests: pure domain and the
+printed bill's HTML, plus change-tracking checks on the real EF model without a database), and the end-to-end
+`GatewayReconciliationTests` in `tests/HyFib.HealthCare360.IntegrationTests` (payment link to settlement journal, a
+webhook delivered twice, who may reconcile).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
 fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).
@@ -46,6 +48,7 @@ fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
 | `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
 | `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
+| `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
@@ -135,7 +138,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | GET | `/api/v1/billing/refunds/{id}` | same | → `RefundDto` (incl. `advanceId`) |
 | POST | `/api/v1/billing/refunds` | `billing.refunds.request` | `RequestRefundRequest(billId? \| ipAccountId? \| advanceId?, amount, reason)` → 201 (`{FAC}RF{YY}{SEQ:6}`) |
 | POST | `/api/v1/billing/refunds/{id}/approve` · `/reject` | `billing.refunds.approve` | `ApproveRefundRequest` / `RejectRefundRequest` → 204 |
-| POST | `/api/v1/billing/refunds/{id}/pay` | `billing.payments.collect` | `PayRefundRequest(mode, reference)` → 204 (`PaymentGateway` reverses the original online payment) |
+| POST | `/api/v1/billing/refunds/{id}/pay` | `billing.payments.collect` | `PayRefundRequest(mode, reference)` → 204 (`PaymentGateway` reverses the original online payment; the refund is paid in HC360 when the gateway accepts it, and `RefundDto.gatewayStatus` then follows it: `Pending` until the bank confirms, `Processed` with the bank's reference in `gatewayReference`, or `Failed` with `gatewayError`) |
 
 Counter payment evidence (`PaymentLineRules`): card last 4 digits, UPI/net-banking/wallet reference, 6-digit cheque
 number + bank + date (no post-dated cheques, valid 3 months). Advance, insurance and gateway modes are never keyed at
@@ -148,9 +151,9 @@ the counter.
 | GET | `/pos/sales/{id}` | same | → `PosSaleDto` (polls the terminal; an approved sale records the receipt once, keyed on the terminal transaction id) |
 | POST | `/pos/sales/{id}/cancel` | same | → `PosSaleDto` |
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
-| GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` |
-| POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status) |
-| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `public`; the signature is checked with the merchant account of the facility that owns the order named in the payload (`?facility=` only when the payload names none of our orders) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. |
+| GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
+| POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
+| POST | `/api/v1/billing/webhooks/payment-gateway` (optional `?facility=<id>`) | anonymous, rate limit `public`; the signature is checked with the merchant account of the facility that owns the order, prepaid booking or refund named in the payload (`?facility=` only when the payload names none of them) | raw provider JSON (≤ 64 KB) → 200 `WebhookAck`; 401 bad signature (`X-Razorpay-Signature` / `X-PayU-Signature` / `X-Webhook-Signature` / `X-Signature`), 503 no gateway, 413 too large. The status is always re-fetched from the gateway; receipts are idempotent on the gateway payment id. Each verified event is kept by its id (`X-Razorpay-Event-Id`, else a SHA-256 of the body) in `gateway_webhook_events`: a redelivery of an event already handled gets `processed: false` and changes nothing. A webhook for a portal booking's prepayment confirms the booking and receipts its advance; one for a gateway refund updates the refund's status. |
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -230,6 +233,23 @@ holds and how posting, the checks and the transition for older days work.
 | POST | `/days/{date}/imported` | `billing.tally.export` | → `TallyExportDto`; marks the downloaded file imported (see below). Audited as `billing.tally.imported` |
 | GET | `/ledgers` | `billing.tally.export` or `billing.tally.configure` | → `TallyLedgerMap` in effect, built-in names filled in |
 | PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
+
+### Gateway reconciliation — `/api/v1/billing/gateway`
+Every route needs `billing.gateway.reconcile` and works on the signed-in facility; a user without one gets 422
+`facility.required` on every route. See
+[Gateway reconciliation](#gateway-reconciliation-int-pg) for what happens behind them.
+
+| Method | Path | Request → response |
+|---|---|---|
+| GET | `/summary` | → `ReconciliationSummaryDto` (reconciliation on or off, expected settlement days, open exceptions by kind with count and amount, last settlement day and when it was read) |
+| GET | `/settlements?from&to` (IST days, the last week by default, at most 92 days) | → `SettlementDayDto[]`: per day the count and totals (payments, refunds, adjustments, charges without GST, GST, paid to the bank, transactions not matched) with that day's `GatewaySettlementDto` rows (id, UTR, status, `difference` between the payout and its transactions). A settlement another facility holds on a shared merchant account counts with this facility's part only (`isShare`: its own transactions' amounts, charges and payout, no difference) |
+| GET | `/settlements/{id}` | → `GatewaySettlementDetail`: the settlement and its `SettlementLineDto` transactions (type, gateway id, method, time, amount, fee with GST, net, match, the receipt or refund number). A facility that shares the merchant account sees only its own transactions, and the settlement's totals as its part (`isShare`) |
+| POST | `/settlements/fetch` | `FetchSettlementsRequest(date)` → `SettlementFetchResult(date, settlements, added, updated, message)`; reads that day from the gateway now (today or up to a year back). 422 `billing.gateway_unavailable` with the gateway's reason |
+| GET | `/exceptions?status&kind` (paged) | → `PagedResult<GatewayDiscrepancyDto>`: open ones worst first (kind, then amount, then age); `status=Resolved` newest first with who resolved it and the note |
+| GET | `/exceptions/{id}` | → `GatewayDiscrepancyDto` (summary in words, amounts in HC360 and at the gateway, bill, receipt, refund and appointment by number, `canRecordReceipt`, `version`) |
+| POST | `/exceptions/{id}/record-receipt` | → `DiscrepancyActionResult(message, discrepancy)`; only for money taken without a receipt. Records the receipt against its bill, admission or booking after asking the gateway; if that can no longer take it (a closed admission, an older order of a booking), keeps it as a patient advance. 422 `billing.payment_unlinked` when HC360 does not know what the payment was for. Audited `billing.gateway.receipt_recorded` |
+| POST | `/exceptions/{id}/retry` | → `DiscrepancyActionResult`; by kind: asks the gateway again, reads the settlements of the next five days again, sends a failed gateway refund again (audited `billing.refund.gateway_retried`; 422 `billing.refund_retrying` while another request is sending it), or matches the settled transaction again. 422 `billing.nothing_to_retry` for a settlement-level difference |
+| POST | `/exceptions/{id}/resolve` | `ResolveDiscrepancyRequest(note, version)` (5–500 characters) → `GatewayDiscrepancyDto`; 409 when someone changed it meanwhile. Audited `billing.gateway.exception_resolved` |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
@@ -338,6 +358,97 @@ nothing collected twice); staff can also adjust any open advance with `POST /bil
 booking ends up cancelled, a refund request (purpose `Advance`) is raised for approval and, when paid by
 `PaymentGateway`, reversed on the original payment. Cancelling a bill gives its advance back.
 
+A portal patient who pays and then closes the page is still credited: the gateway's webhook for the booking's order,
+or the reconciliation job, confirms the booking through Scheduling's `AppointmentPaymentService` and receipts the
+advance at once (`PrepaymentChecker`). The advance is dated when the gateway took the money.
+
+## Gateway reconciliation (INT-PG)
+
+What the payment gateway paid to the bank is checked against HC360's receipts and refunds, and what does not match
+is listed for the accountants, worst first.
+
+**Settlements.** `IPaymentGateway.GetSettlementsAsync(day, facility)` returns a day's settlements with their
+transactions (Razorpay's settlement reconciliation API; the training gateway settles too, see
+[integrations.md](integrations.md#payment-gateway-int-pg-and-the-signature-convention)). `GatewaySettlementService`
+stores each settlement once (unique on provider and settlement id) with its lines: payment, refund or adjustment id,
+the payment a refund came from, the order, amount, fee with GST, GST, credit, debit, method, and the times. Only ids,
+amounts, the UTR and the method are kept, never card or bank details. A settlement already stored only has its status
+updated (created → processed or failed). The reconciliation job reads today and yesterday every hour for every active
+facility, in facility-code order; accountants can read any day of the last year from the screen.
+
+**Shared merchant accounts.** Facilities that use the same gateway account (the all-facility settings) share its
+settlements. The settlement is kept under the first facility that read it, and each line takes the facility of the
+receipt or refund it matched, else of its payment link, checkout or prepaid booking. Each facility's day book clears
+its own receipts; the facility holding the settlement also takes any settlement-level charge and any unexplained
+difference. A facility that does not hold a settlement sees only its own transactions and their totals in it, and
+each facility is alerted about the exceptions that are its own.
+
+**Matching** (by gateway id, prepaid bookings included): a payment line matches the receipt payment whose
+`ExternalId` is that payment id (mode `PaymentGateway`); a refund line matches the refund whose `GatewayRefundId` is
+that refund id. A line is `Matched`, `AmountDiffers`, `NoReceipt`, `NoRefund`, or `NotApplicable` (an adjustment or
+transfer by the gateway). Recording a receipt later matches the line again and raises or clears its exceptions (an
+amount difference when the receipt records another amount); when that moves the line to the receipt's facility, the
+settlement day's day books of both facilities are queued for Tally again.
+
+Exceptions are raised once a settlement is stored and saved on their own. A settlement is marked
+(`exceptions_raised`) only after its exceptions are saved, and every fetch of a day matches again and raises again
+the settlements not marked or with lines that still do not match, so a run that stopped or clashed with a webhook
+raising the same exception is made up by the next fetch; after a clash the exceptions are read again and saved, so
+only the one that clashed is merely refreshed.
+
+**Exceptions** (`GatewayDiscrepancy`, one per kind and gateway id, in `gateway_discrepancies`), worst first:
+
+| Rank | Kind | Raised when | Clears itself when |
+|---|---|---|---|
+| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert) | the receipt is recorded |
+| 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment |
+| 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
+| 4 | `RefundMismatch` | a settled refund is unknown to HC360 or has a different amount; a gateway refund failed (accountants get an alert) | the refund matches, or the bank confirms it; a failed refund only when it is sent again or the bank confirms it, never by a settlement line |
+
+An exception a person resolved stays resolved; one HC360 cleared opens again if the cause comes back. Accountants
+can record the receipt, try again or resolve it with a note (see the endpoints above); every action that records
+money or closes an exception is audited. The list never shows patients' names, only document numbers and gateway ids.
+
+**Closing the gaps.** `GatewayReconciliationJob` runs where `PlatformOptions.RunsJobs` is set, every 5 minutes:
+- payment links and portal checkouts still waiting (or paid but not recorded) are asked about again: every run for
+  two hours, then about hourly for two days, then about every six hours for 30 days. Each of these windows is asked
+  for its newest 200 per run, so fresh links are never crowded out by many older ones. A paid one is recorded. A link
+  the gateway reports expired or cancelled is marked `Expired` or `Cancelled`; a portal checkout nobody paid within
+  `checkoutExpiryHours` is marked `Expired`. Money taken after that is still recorded;
+- portal bookings whose online payment was started but not confirmed are asked about every run for two hours, then
+  hourly while the booking is recent or still ahead;
+- hourly: gateway refunds are followed until processed or failed, by when the latest attempt was sent (a refund sent
+  again weeks after it was first paid out is followed like a new one): the newest 200 of the last two days every hour,
+  the newest 200 of the rest of the month every six hours; the settlements of today and yesterday are read;
+  unsettled receipts are listed.
+
+**Sending a refund again.** A failed gateway refund is sent again by one request only: the retry is first claimed
+(`refunds.gateway_retry_started_at`) in a save of its own under the refund's concurrency token, so a second click is
+refused, and only then is the gateway called. Each attempt carries an idempotency key (the refund's id for the first
+payout, the refund with the gateway refund that failed for a retry; Razorpay's `X-Refund-Idempotency` header and the
+refund's `receipt`), so a request the gateway already acted on gets the same refund back rather than a second one. A
+gateway that refuses the retry returns the refund to failed; one that does not answer leaves the claim, which another
+request may take over after five minutes with the same key.
+
+**Dates.** A gateway receipt is dated when the gateway took the money (`PaymentStatusResult.PaidAt`, never later than
+now), so a payment recorded late belongs to the day the patient paid. When that day's day book was already posted to
+Tally, it is queued again (`TallyCorrections`); vouchers keep their numbers, so Tally alters rather than duplicates.
+
+**Settlement journal.** Each processed settlement is a Journal in the day book of its IST settlement day, numbered
+with the settlement id (a shared account's other facilities add a suffix): the bank (`gatewaySettlementBank`) is
+debited with the payout, `gatewayCharges` with the fees without GST, `gatewayInputGst` with the GST on them, and the
+payment-gateway clearing ledger (the `PaymentGateway` mode ledger, "Payment Gateway Clearing" by default) is credited
+with the gross (payments less refunds). The clearing ledger, debited by the day's online receipts and credited by
+gateway refunds, is cleared this way; whatever stays in it is unreconciled. A settlement read after its day was posted
+queues that day again.
+
+**Webhook events** (`gateway_webhook_events`): each verified delivery is kept with the provider, event id, event type,
+the gateway's order, payment, refund and settlement ids, the facility, when it arrived and was handled, the outcome
+and how many times it was delivered. A delivery of an event still being handled (for less than two minutes) is
+acknowledged and not acted on; after that, or after a failure, one delivery takes it over (a conditional update). An
+event recorded as processed stays processed. Never the payload, which carries the patient's contact and card or bank details.
+They are deleted with the integration log after its retention period (Privacy › Retention).
+
 ## The Tally day book
 
 `TallyService` builds one facility's day as balanced vouchers (`TallyVoucherBuilder`) with the ledger names of
@@ -354,7 +465,8 @@ booking ends up cancelled, a refund request (purpose `Advance`) is raised for ap
 * the pharmacy's and the canteen's day, read through the Platform contract `ICounterSalesSource` (implemented by
   Pharmacy and SupportServices): one summary Sales voucher (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST
   rate, a Credit Note for returns (`…-R`) and a Receipt for balances paid later (`…-C`). A counter can be left out with
-  `pharmacy.include` / `canteen.include` while its sales are still entered in Tally by hand.
+  `pharmacy.include` / `canteen.include` while its sales are still entered in Tally by hand;
+* a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg)).
 
 Every voucher carries a reference; Tally keeps it as `REMOTEID="HC360-<reference>"`, so posting a day again alters its
 vouchers instead of adding new ones. Narrations carry document numbers, never patient names.
@@ -432,9 +544,13 @@ the bill's day again, never to delete it.
   `PlatformOptions.RunsJobs`), posts again a day someone posted before it ended, and queues again days stuck in Queued.
 * `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
 * `billing.appointment.prepayment` — see above.
+* `GatewayReconciliationJob` — re-checks open online payments and prepaid bookings, follows gateway refunds, reads
+  settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg).
 * SMS/WhatsApp templates used: `bill.receipt` (every counter/POS/gateway receipt), `payment.link`.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
-  discharged with dues, admission cancelled (billing follow-up), cancelled order already billed.
+  discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
+  `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
+  not match.
 * Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ## Number series
@@ -455,8 +571,9 @@ the bill's day again, never to delete it.
 | `billing.registrationFee.enabled` | `true` | Charge `REG-NEW` on a patient's first visit |
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
-| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`); set on the Tally screen |
+| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
+| `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
 
@@ -473,13 +590,26 @@ draft final bill per admission; receipt payment (`mode`, `external_id`); gateway
 reference, gateway payment id; POS (provider, transaction id); patient advance gateway payment id and receipt;
 one open shift per cashier; one doctor-fee accrual per bill line (and one reversal per accrual); one Tally export per
 facility/day (`tally_exports`, with `xmin` as its concurrency token); one Tally voucher record per export and reference
-(`tally_vouchers`, also `xmin`). **No migration is included** — the maintainers generate the `billing` schema migration.
+(`tally_vouchers`, also `xmin`); refund `gateway_refund_id` (non-null); gateway settlement (provider, settlement id);
+gateway exception (kind, key); webhook event (provider, event id). Gateway settlements, their lines and webhook events
+are append-mostly and not data-audited; exceptions are. The migrations live in
+`HyFib.HealthCare360.Server/Persistence/Migrations`: `TallyReconciliation` adds the Tally voucher records and the
+export's tracking columns, and `GatewayReconciliation` adds `gateway_settlements`, `gateway_settlement_lines`,
+`gateway_discrepancies`, `gateway_webhook_events` and the gateway status, attempt and retry columns of `refunds`.
 
 ## Open items for maintainers
-* Generate the EF migration for the `billing` schema (new since the last review: `patient_advances`,
-  `receipts.advance_id`, `refunds.advance_id`, `ip_accounts.cancelled_at` / `cancel_reason`).
 * Health-checkup packages: no module posts the HC-* package charge yet. Clinical (booking owner) should post it
   through `IChargePoster` with `SourceModule = "healthcheck.package"`, `SourceReference = booking id` when the booking is
   made or checked in; Billing then bills it like any OP charge and Diagnostics can gate on its state.
-* Register `IPaymentGateway`, `IPosTerminal` and `IAccountingExporter` in the Integrations project (Billing resolves
-  them optionally).
+
+## Not covered yet
+* **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
+  pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
+* **Card/UPI POS settlements.** Terminal sales are recorded when approved, but the acquirer's settlement file is not
+  read yet, so POS money is not matched to the bank.
+* **Reversing a settlement journal.** A settlement the gateway reports as failed after it was journalled is not
+  reversed in Tally; the accountant corrects it there.
+* **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute
+  workflow.
+* **A payment on an older order of a prepaid booking** (the patient restarted the checkout and paid both) is found by
+  the settlement match, and "Record the receipt" keeps it as a patient advance for staff to refund.
