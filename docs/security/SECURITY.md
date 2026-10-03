@@ -19,14 +19,18 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 ### Network and transport
 - HTTPS only (TLS 1.2/1.3). The Server Node creates a **private hospital CA** and a server certificate naming its host
   name and addresses; the certificate is re-issued automatically when the address changes.
-- **HC360 Desktop pins the hospital CA**:
-  - The server's certificate must chain to exactly that CA and name the host being contacted.
+- **HC360 Desktop and the HC360 lab agent pin the hospital CA**:
+  - The server's certificate must chain to exactly that CA (through the intermediates the server sends, if any), be
+    issued for a TLS server (serverAuth), and name the host being contacted.
   - The public Windows trust store is not consulted.
   - The CA fingerprint is confirmed by a person, or pre-set by IT policy, when a workstation is set up. A certificate
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
+  - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
+    server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
 - Browsers keep to HTTPS for a year after their first visit (HSTS).
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
-  localhost only.
+  localhost only. Network lab analysers need their own ports, which the installer opens only when asked
+  (`-LabPorts`), limited to the analysers' addresses; each analyser's port also accepts only its listed IP addresses.
 
 ### Identity and sessions
 - Passwords:
@@ -52,6 +56,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - Selected roles can be limited to **enrolled devices**:
   - Each HC360 Desktop has a device secret, protected with Windows DPAPI.
   - Administrators can revoke a device at any time.
+  - Only HC360 Desktop kinds count (workstation, kiosk, queue display, tablet). An HC360 lab agent is also an enrolled
+    device, but its secret sits on an unattended lab PC (protected with machine DPAPI, in a folder only SYSTEM,
+    Administrators and the agent's service account can read), so it is refused for sign-in and for the desktop
+    heartbeat. It can only relay the analysers assigned to it, which the server checks on every call and again every
+    minute while a relay is open. Revoking it ends its relays within a minute.
 
 ### Authorisation and privacy
 - Permission-based access: every API endpoint requires a named permission, and screens hide what a role cannot use.
@@ -274,6 +283,7 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | Rule | Where | Why it is accepted |
 |---|---|---|
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
+| CA5359, certificate validation off | `ServerApi.FetchCaCertificateAsync` (lab agent) | The same, at enrolment: the CA it downloads is used only if its fingerprint equals the one IT passed to the installer |
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |

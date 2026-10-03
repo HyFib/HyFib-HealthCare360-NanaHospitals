@@ -56,7 +56,7 @@ Worklists are ordered by urgency (STAT, urgent, routine) with an explicit rank, 
 | PUT | `/tests/{id}/components` | `lab.masters.manage` | `SetComponentsRequest` (`ComponentEntry[]` testId/groupName, version) → 204; cycles are refused |
 | PUT | `/tests/{id}/ranges` | `lab.masters.manage` | `SetRangesRequest` (`ReferenceRangeDto[]`: gender, ageFromDays, ageToDays, low, high, criticalLow, criticalHigh, text, normalValues, criticalValues) → 204 |
 | GET | `/instruments?includeInactive` | masters.manage or qc.manage | → `LabInstrumentDto[]` |
-| POST · PUT | `/instruments` · `/instruments/{id}` | `lab.masters.manage` | `SaveLabInstrumentRequest` (code, name, section, protocol Hl7/Astm, isBidirectional, autoValidationEnabled) → 201 / 204 |
+| POST · PUT | `/instruments` · `/instruments/{id}` | `lab.masters.manage` | `SaveLabInstrumentRequest` (code, name, manufacturer, model, section, protocol Hl7/Astm, isBidirectional, autoValidationEnabled, location, isActive, version) → 201 / 204; codes are unique across facilities (409 `lab.instrument_code_exists`) |
 | GET | `/referral-labs?includeInactive` | masters.manage, samples.receive or orders.read | → `ReferralLabDto[]` |
 | POST · PUT | `/referral-labs` · `/referral-labs/{id}` | `lab.masters.manage` | `SaveReferralLabRequest` (code, name, contact, accreditationNumber, tatDays) → 201 / 204 |
 
@@ -350,13 +350,49 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
   TPL-MR-BRAIN, TPL-MR-LSSPINE, TPL-MG-BIRADS (one per seeded procedure).
 * **Notification templates**: `lab.report_ready` (Email), `diagnostics.critical_finding` (SMS).
 
-`DiagnosticsDemoSeeder` (Order 210, only with `SeedDemoData`): analysers XN550 (Sysmex XN-550), EM360 (Erba EM 360),
-CL900I (Mindray CL-900i), reference lab MRL, and two-level QC lots for glucose (FBS/PPBS), creatinine, potassium and
-haemoglobin with 21 days of Westgard-evaluated runs for Levey-Jennings charts.
+`DiagnosticsDemoSeeder` (Order 210, only with `SeedDemoData`): analysers XN550 (Sysmex XN-550, ASTM; earlier demo
+databases that have it as HL7 are corrected), EM360 (Erba EM 360), CL900I (Mindray CL-900i), reference lab MRL, and
+two-level QC lots for glucose (FBS/PPBS), creatinine, potassium and haemoglobin with 21 days of Westgard-evaluated runs
+for Levey-Jennings charts.
 
 ## Analyser interface
 
-`IInstrumentResultSink` is implemented by `InstrumentResultSink` (registered in `AddServices`). `ReceiveAsync` maps the
-instrument code + channel (`XN550:HGB` beats a generic `HGB`) to the analyte, finds the tube by barcode (a collected
-tube is received automatically), records unverified results, auto-validates when allowed and raises critical alerts.
-`GetOrderForSampleAsync` answers bidirectional host queries with the channels still pending for the barcode.
+The protocols, the gateway and the lab agent are in the Integrations module
+([integrations.md](integrations.md#laboratory-analysers-int-lab)). Diagnostics owns the analysers and what they are
+sent and receive.
+
+**Lab setup › Analysers** lists the facility's analysers (`/api/v1/lab/instruments`). For each one, staff with
+`integrations.lab.connections` (HospitalAdmin) set up its connection in the Connection drawer: a network port the
+analyser connects to (with its fixed IP), or a COM port on a lab PC whose HC360 lab agent relays it, with the line
+settings from the analyser's interface manual. Staff with `integrations.lab.status` (LabTechnician, Pathologist,
+HospitalAdmin) see whether each analyser and its agent are connected and how many orders wait for it. The screen warns
+when the laboratory gateway is off. **Bidirectional** on the analyser is the one switch for host queries and order
+download; Lab setup › Analysers shows only the signed-in facility's analysers and agents.
+
+`IInstrumentResultSink` is implemented by `InstrumentResultSink` (registered in `AddServices`):
+
+* `ReceiveAsync` maps the instrument code + channel (`XN550:HGB` beats a generic `HGB`) to the analyte, finds the tube
+  by barcode in the analyser's facility (a collected tube is received automatically, and the other bidirectional
+  analysers that run its tests are then sent its order), records unverified results, auto-validates when allowed and
+  raises critical alerts.
+* `GetOrderForSampleAsync` answers host queries with the channels still pending for the barcode (collected, received or
+  in-process tubes of the analyser's facility).
+* `GetOrderToSendAsync` builds an order to send unasked: the tests of a received or in-process tube that this analyser
+  runs and that are not yet verified, with the UHID, priority, collection time and specimen type. It is called when the
+  order is sent, so a test cancelled or resulted meanwhile is left out.
+* `GetInstrumentAsync` returns the analyser as Lab setup registers it (facility, active, bidirectional, protocol).
+
+**Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
+`lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so
+nothing is sent unless the change is saved:
+
+| Change | Action | Analysers told |
+|---|---|---|
+| A tube is received at the lab counter, or automatically by an analyser's results | `New` | Every active bidirectional analyser of the tube's facility that runs one of its tests, except the analyser whose results received it |
+| A verified result is reopened (rerun) | `Rerun` | Those that run that test, for a tube still in the lab |
+| A test is cancelled, or a received tube is rejected | `Cancel` | Those that run the tests, for a tube that reached the lab (the recollection is ordered when it arrives) |
+
+`AnalyserRouting` decides who runs what: an analyser runs an analyte when the test maps the analyser's own channel
+(`INSTR:CH`), or maps a plain code (`CH`) and the analyser works on the tube's bench. Plain codes are never sent to an
+analyser on another bench, so a haematology analyser is not sent a chemistry order because both use plain codes. Host
+queries still accept plain codes from any bench, because there the analyser already holds the tube.

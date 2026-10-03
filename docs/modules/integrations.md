@@ -7,9 +7,9 @@ server's PDF renderer, which drives headless Microsoft Edge.
 | | |
 |---|---|
 | Project | `src/server/HyFib.HealthCare360.Integrations` (module key `integrations`, registered by `IntegrationsModule`) |
-| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages` (the integration log itself is the platform's `integration_logs`) |
+| Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads` (the integration log itself is the platform's `integration_logs`) |
 | Requirements | SRS §5: INT-SMS, INT-WA, INT-PG, INT-POS, INT-TALLY, INT-PACS, INT-LAB, INT-BAR, INT-ICD; SEC-10 (PHI in logs) |
-| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: 473 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket, PHI masking, labels, validators and DI wiring |
+| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: 556 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`) covers the connection rules, facility scoping, the relay endpoint and the order queue's claims against PostgreSQL |
 
 ## How it fits together
 
@@ -274,16 +274,78 @@ would prompt a customer at a counter.
 
 ### Laboratory analysers (INT-LAB)
 
-`LabGatewayHostedService` runs only where `PlatformOptions.RunsJobs` is true. Every minute it reconciles one TCP
-listener per enabled instrument with the settings: it starts new listeners, restarts changed ones, stops removed
-ones and retries ports that could not be bound.
+Analysers send results to HC360, ask it which tests to run on a tube (host query), and are sent orders without asking
+(order download). The analyser's protocol always runs on the server, whichever way the analyser is connected.
 
-* **Connection limits**:
-  * Connections from outside `allowedIps` are closed at once. Use the analyser's fixed IP.
-  * At most `maxConnectionsPerInstrument` connections are served at a time.
-  * Idle connections close after `idleTimeoutSeconds`.
-  * A message larger than `maxMessageKilobytes` is refused: NAK for ASTM, connection closed for MLLP.
-* **HL7 v2 over MLLP** (`0x0B … 0x1C 0x0D`): ORU^R01/R30/R32 and OUL^R21–R24 are accepted.
+* **Setting up an analyser.** The analyser itself (code, name, bench, protocol HL7 or ASTM, Bidirectional, active) is
+  registered in Lab setup › Analysers (Diagnostics). Its connection is set up on the same screen (Connection), which
+  saves it in `integrations.lab.instruments` through `/api/v1/integrations/lab/connections`. The protocol is always
+  taken from Lab setup. The laboratory gateway as a whole is switched on in Administration › Integrations ›
+  Laboratory equipment (`integrations.lab.enabled`). Changes apply within a minute.
+* **Bidirectional is the one switch.** Host queries and order download are on exactly when the analyser is active and
+  Bidirectional in Lab setup. Otherwise a host query is acknowledged and answered with nothing (ASTM), or answered
+  `QAK|…|AR` (HL7), and no orders are queued for it. The retired per-connection `"hostQuery": false` still keeps both
+  off for a connection that carries it; saving the connection in Lab setup removes it, and the connection list flags
+  it until then.
+* **Facilities.** Analyser codes are unique across facilities, so the gateway finds an analyser by its code. Lab
+  setup › Analysers › Connection shows and edits only the signed-in facility's analysers and lab agents (an account
+  with no facility sees all). A serial analyser can only be relayed by a lab agent enrolled at its own facility.
+  Results, host queries and orders only ever reach tubes of the analyser's own facility.
+
+#### Network analysers (transport `Tcp`)
+
+`LabGatewayHostedService` runs only where `PlatformOptions.RunsJobs` is true. Every minute it reconciles one TCP
+listener per enabled network analyser with the settings: it starts new listeners, restarts changed ones, stops
+removed ones and retries ports that could not be bound.
+
+* Connections from outside `allowedIps` are closed at once. Use the analyser's fixed IP.
+* At most `maxConnectionsPerInstrument` connections are served at a time.
+* Idle connections close after `idleTimeoutSeconds`.
+* A port the HC360 server uses itself (HTTPS, the HTTP redirect, mDNS 5353) is refused, and two analysers cannot share
+  a port.
+* The Windows firewall must allow the port (`Install-HC360Server.ps1 -LabPorts … -LabAnalyserAddresses …`).
+
+#### Serial analysers through a lab agent (transport `Serial`)
+
+An analyser with an RS-232 port is cabled to a Windows PC in the lab that runs the **HC360 lab agent** (`src/agent`,
+`HC360LabAgent.exe`, Windows service `HC360LabAgent`). It is a separate program from HC360 Desktop, because analysers
+run day and night and HC360 Desktop closes when its user signs out. Installing and enrolling it is described in
+[DEPLOYMENT.md](../deployment/DEPLOYMENT.md#lab-analysers).
+
+* **Enrolment.** The agent is an enrolled device of kind `LabAgent` ("Lab analyser agent" in Administration ›
+  Devices), with a one-time code like HC360 Desktop. Its device secret is protected with machine DPAPI on the lab PC.
+  A lab agent's credential is accepted only by the lab agent endpoints: it never counts as an enrolled workstation for
+  sign-in, and the desktop heartbeat refuses it.
+* **Pinned CA.** Enrolment requires the hospital CA fingerprint (there is nobody at a service to confirm one). Every
+  call the agent makes, the relay included, accepts only a server certificate that chains to exactly that CA
+  (intermediates the server sends are used), is for a TLS server (serverAuth) and names the host the agent contacts.
+* **Heartbeat.** Every minute the agent calls `POST /api/v1/integrations/lab/agent/heartbeat` with its version and the
+  state of each COM port it was asked to open (open, or the Windows error). The answer lists its analysers and their
+  port settings (COM port, baud rate, data bits, parity, stop bits, handshake, DTR, RTS). The agent starts, restarts or
+  stops relays to match and leaves working lines alone.
+* **Relay.** For each analyser the agent opens the COM port and a WebSocket to
+  `/api/v1/integrations/lab/agent/relay/{code}` (sub-protocol `hc360.lab-relay.v1`, keep-alive pings every 15 s). Binary
+  messages carry the serial line's bytes both ways; a text message ends the relay as a protocol error. The server runs
+  the same protocol session on the relay as on a TCP socket, and a relayed line never times out as idle. The agent
+  never answers the analyser itself, and bytes read while no relay is open are dropped (E1381's timers make the
+  analyser send again).
+* **Checks.** Every agent request carries `X-Device-Id` and `X-Device-Key` and uses the `device` rate limit. An agent
+  that is not enrolled, is revoked, or is another kind of device gets 401; an analyser not assigned to that agent gets
+  404; with the gateway off the relay answers 503. One relay per analyser: a new one replaces the old. Every minute the
+  server checks again that the agent is enrolled and the analyser is still assigned to it, unchanged.
+* **Ending a relay.** The server sends a WebSocket close frame that says why (replaced by a newer relay, agent
+  revoked, analyser no longer assigned, its settings changed, gateway switched off, server stopping), waits up to 5 s
+  for the agent's reply, then closes the connection. The agent logs the reason and connects again after a wait that
+  grows to a minute.
+* **Logging.** The agent logs ports, connections and byte counts, never the bytes. Warnings and errors go to the
+  Windows Application log (source *HyFib HC360 Lab Agent*).
+
+#### HL7 v2 over MLLP
+
+Messages are framed `0x0B … 0x1C 0x0D`. Every message the analyser sends gets exactly one framed answer, and
+acknowledgements are never acknowledged in turn.
+
+* **Results**: ORU^R01/R30/R32 and OUL^R21–R24.
   * Samples are identified by `sampleIdFields`, default SPM-2, SAC-3, OBR-3, OBR-2.
   * OBX handling:
     * NM, ST and TX values are read as text.
@@ -291,26 +353,78 @@ ones and retries ports that could not be bound.
     * SN is joined, for example `<5` or `1:160`.
     * ED, RP and AD values, and D, W and X statuses, are skipped.
   * Results are timed from OBX-14, falling back to OBR-7 and then MSH-7, interpreted in the lab's zone.
-  * Acknowledgements:
-    * `MSA|AA` once the LIS has stored the results.
-    * `MSA|AE` when it could not, so the analyser keeps and resends them.
-    * `MSA|AR` for other message types or text that cannot be read.
-  * The ACK swaps sender and receiver and echoes the version.
-* **ASTM E1381/E1394**:
-  * Link layer: ENQ/ACK handshake, frame-number and checksum checks (NAK on error), duplicate frames re-ACKed
-    without being applied twice, ETB continuation, and E1381's 240-character frames with frame numbers modulo 8.
-  * The frame completing a message (the one with the L record) is ACKed **only after** the LIS stored the results.
-    If the LIS is unavailable or rejects a sample, that frame is NAKed and the analyser retransmits it, so a result
-    is never acknowledged and then lost.
-  * Records H/P/O/R/C/L use delimiters from the header. The sample comes from O.3, falling back to O.4. Results with
-    status X or I are skipped.
-  * **Host query**: Q records ask the LIS through `GetOrderForSampleAsync`. HC360 answers after the analyser's EOT
-    with ENQ, then H/P/O records (O.5 `^^^code` repeats, O.26 `Q`) and `L|1|F`, or `L|1|I` when no orders exist.
-    The instrument has priority on line contention. NAKed frames are retransmitted up to six times.
-* **LIS bridge**: every message gets its own DI scope and resolves `IInstrumentResultSink`, which the Diagnostics
-  module implements. If no sink is registered, results are refused (AE or NAK) and logged, never dropped silently.
-* Live listener status (state, connections, accepted and refused counts, last error) appears on the integration
-  dashboard.
+  * Acknowledgements: `MSA|AA` once the LIS has stored the results; `MSA|AE` when it could not, so the analyser keeps
+    and resends them; `MSA|AR` for other message types or text that cannot be read. The ACK swaps sender and receiver
+    and echoes the version.
+* **Host query**:
+  * `QBP^Q11` (HL7 2.5, IHE LAW): the sample is QPD-3, else QPD-4. The answer is `RSP^K11` with MSA, QAK (the query
+    tag; `OK` with orders, `NF` without, `AR` when host queries are off, `AE` when the LIS cannot answer), the QPD
+    echoed, then the patient and one order group per test.
+  * `QRY^Q02` (HL7 2.3.1): the sample is QRD-8. The answer is `QCK^Q02` (MSA, and QAK with QRD-4 as the tag); the
+    orders found then follow on the connection as order messages.
+* **Orders** are sent in the connection's `orderMessage`: `OML^O21` (HL7 2.5.1, the default) or `ORM^O01` (2.3.1, also
+  chosen for an analyser that writes 2.3 in MSH-12). PID with the UHID and the patient, then per test ORC (`NW` new,
+  `CA` cancel; ORC-2 the barcode), a TQ1 with the priority (OBR-5 in 2.3.1), OBR (OBR-2 the barcode, OBR-4 the
+  analyser's channel code, OBR-7 the collection time) and for 2.5.1 SPM (SPM-2 the barcode). Every value is escaped. One
+  sample goes per message, each waiting up to 30 s for the analyser's acknowledgement before the next, and at most 10
+  per quiet spell, so results never wait long behind a backlog.
+* A message larger than `maxMessageKilobytes` closes the connection.
+
+#### ASTM E1381/E1394
+
+* **Link layer**: ENQ/ACK handshake, frame-number and checksum checks (NAK on error), a frame repeated after a lost
+  ACK is acknowledged again without being applied twice, ETB continuation, frame numbers modulo 8. Frames up to 64 KB
+  are accepted, since some analysers exceed E1381's 247 bytes.
+* **Results**: the frame completing a message (the one with the L record) is ACKed **only after** the LIS stored the
+  results. If the LIS is unavailable or rejects a sample, that frame is NAKed and the analyser retransmits it, so a
+  result is never acknowledged and then lost. Records H/P/O/R/C/L use the delimiters from the header. The sample comes
+  from O.3, falling back to O.4. Results with status X or I are skipped.
+* **Size limit**: once a message passes `maxMessageKilobytes`, the transfer is refused as a whole: that frame and every
+  later one are NAKed until the analyser gives up with EOT, and nothing of it is stored, not even frames already
+  acknowledged. The rejection is logged without the message.
+* **Host query**: Q records ask the LIS through `GetOrderForSampleAsync`. HC360 answers after the analyser's EOT with
+  H, then P and O records (O.5 `^^^code` repeats, O.26 `Q`) and `L|1|F`, or `L|1|I` when there are no orders.
+* **Orders** (order download): H, then a P and an O record per sample (P.3 the UHID, O.6 priority `S`, `A` or `R`, O.12
+  the action `N` new, `A` add for a rerun, `C` cancel, O.26 `O`) and `L|1|N`, at most 10 samples per message, sent while
+  the line is idle.
+* **Sending and contention** (E1381): HC360 bids with ENQ. If the analyser bids at the same moment, the instrument has
+  priority: HC360 does not answer the colliding ENQ, answers the analyser's next ENQ and receives its message, and bids
+  again no sooner than 20 s after the contention. After a NAK (busy) it bids again no sooner than 10 s later. While it
+  waits it keeps listening, so the analyser can send at any time. After three refused bids the send is given up (EOT).
+  NAKed frames are retransmitted up to six times. A receiver interrupt (EOT instead of ACK) acknowledges the frame, and
+  the rest of the message is still sent so the analyser never holds half an order.
+
+#### Order download
+
+* **What is sent.** Diagnostics asks for orders in the same transaction as the change that causes them (see
+  [diagnostics.md](diagnostics.md#analyser-interface)): a tube received in the lab (`New`), a reopened result (`Rerun`),
+  a cancelled test or a rejected tube (`Cancel`). It writes one `lab.analyser.order` outbox message naming the active
+  bidirectional analysers of the tube's facility that run its tests, with their channel codes.
+* **Queue.** `LabOrderOutboxHandler` adds one `integrations.lab_order_downloads` row per analyser, in the dispatcher's
+  transaction; a redelivered message adds nothing. Rows hold the barcode and channel codes, never patient data. They
+  wait until the analyser is connected and its line is quiet (looked for every 3 s).
+* **Built when sent.** The order is built from the LIS when its turn comes (`GetOrderToSendAsync`), so a test
+  cancelled or resulted in the meantime is not sent. A row with nothing left to send is closed as `Skipped` with the
+  reason, and so are all of an analyser's rows when it is no longer active and bidirectional. A cancellation is sent
+  only to an analyser that was sent the sample.
+* **Claims.** A session claims the rows it sends for 2 minutes under a claim id of its own, and extends the claim every
+  30 s for as long as the send takes (bids, back-offs, the analyser's own messages in between). Only the holder of the
+  claim records the outcome, so a claim that lapsed (a crashed session) never lets two sessions record the same order.
+* **Retries.** A refused send is tried again after 30 s, 1, 2, 4 and 8 minutes, then every 10 minutes, at most 10
+  times (`Failed`). Rows not sent within 72 hours expire (`Expired`); finished rows are deleted after 30 days. The
+  hourly housekeeping runs in `LabGatewayHostedService`.
+
+#### LIS bridge, status and logging
+
+* Every message gets its own DI scope and resolves `IInstrumentResultSink`, which the Diagnostics module implements.
+  If no sink is registered, results are refused (AE or NAK) and logged, never dropped silently.
+* Raw messages, host queries and orders sent are written to the integration log only after `LabPhiMasking` has removed
+  names, dates of birth, addresses and phones and cut identifiers to their last four characters. Relay log rows hold the
+  agent, the line settings and byte counts.
+* Live status per analyser (listening, connected through its agent, waiting for its agent, COM port problem, failed;
+  connections, accepted and refused counts, last error, orders waiting) appears on the integration dashboard and in
+  Lab setup › Analysers. Administration › Integrations › Test reports how many network analysers are listening and
+  serial analysers connected, and which are not working.
 
 ### Barcode labels (INT-BAR)
 
@@ -357,6 +471,11 @@ ones and retries ports that could not be bound.
 | GET | `/api/v1/admin/integrations/simulator/messages` | `admin.integrations.manage` | paging + `channel` → simulated SMS, WhatsApp, e-mail and Tally deliveries |
 | GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders and links, and POS sales |
 | GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → `InboundWhatsAppMessageDto` (sender masked) with `keyword` and `keywordAction` (`OptedOut`, `OptedIn`, `Superseded`, `None`, or null for replies not acted on yet). The staff inbox shows it as the Result column |
+| GET | `/api/v1/integrations/lab/connections` | `integrations.lab.connections`, `integrations.lab.status` or `admin.integrations.manage` | → `LabConnectionsDto { gatewayEnabled, listVersion, connections[], agents[] }`: each analyser's connection with its Lab setup state, live status and orders waiting, and the facility's enrolled lab agents (online when seen in the last 3 minutes or relaying) |
+| PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
+| DELETE | `/api/v1/integrations/lab/connections/{code}?version` | `integrations.lab.connections` | → 204; 409 on a stale version. Audited as `lab.connection.removed` |
+| POST | `/api/v1/integrations/lab/agent/heartbeat` | anonymous, lab agent credential (`X-Device-Id`, `X-Device-Key`), `device` rate limit | `LabAgentHeartbeatRequest { appVersion, ports[] { code, open, error } }` (at most 64 ports) → `LabAgentAssignments { deviceId, deviceName, gatewayEnabled, heartbeatSeconds, instruments[] }`; 401 for a device that is not an enrolled lab agent |
+| GET | `/api/v1/integrations/lab/agent/relay/{code}` | anonymous, lab agent credential, `device` rate limit | WebSocket, sub-protocol `hc360.lab-relay.v1`: the analyser's serial bytes. 401 not an enrolled lab agent, 404 analyser not assigned to it, 503 gateway off |
 | POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language }` → `PrintLabelResponse { language, content, copies }` |
 | POST | `/api/v1/integrations/webhooks/sms/msg91` | anonymous, token | delivery reports (JSON or form `data`) |
 | POST | `/api/v1/integrations/webhooks/sms/twilio` | anonymous, `X-Twilio-Signature` | status callbacks (form) |
@@ -367,7 +486,10 @@ ones and retries ports that could not be bound.
 Webhooks use the platform's `public` rate-limit policy, read at most 256 KB and accept `?facility=<id>`.
 
 Permissions:
-* `IntegrationsModule` declares `integrations.labels.print` (all staff roles).
+* `IntegrationsModule` declares `integrations.labels.print` (all staff roles), `integrations.lab.connections` (set up
+  analyser connections: ports, allowed addresses, serial ports and lab agents; HospitalAdmin) and
+  `integrations.lab.status` (see whether analysers and their agents are connected; LabTechnician, Pathologist,
+  HospitalAdmin).
 * The dashboard, test sends, logs and inboxes need the platform's `admin.integrations.manage`. It has no default role:
   only Super Admin holds it until an administrator grants it, because it exposes message logs and live test sends.
 * Integration settings and credentials are saved through the platform settings API (`/api/v1/admin/settings`), which
@@ -399,11 +521,13 @@ Permissions:
   * `IIcdLookup` → `IcdLookupRouter`
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton
   * `IPdfRenderer` → `EdgePdfRenderer`, a singleton (disposed with the host, which closes the browser)
-* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, and `ILabMessageProcessor` →
-  `LabMessageProcessor`.
+* **Singletons**: `SimulatorSigningKey`, `IcdTokenCache`, `LabGatewayState`, `LabRelayRegistry` (the live relays), and
+  `ILabMessageProcessor` → `LabMessageProcessor`.
+* **Lab, scoped**: `LabOrderQueue`, `LabAgentAuthenticator`, `LabConnectionService`.
 * **Hosted service**: `LabGatewayHostedService`.
-* **Found by the module scan** (not in `AddIntegrations`): the outbox handler `WhatsAppReplyConfirmationHandler`
-  (`whatsapp.reply_confirmation`) and the seeder `WhatsAppReplyBacklog`.
+* **Found by the module scan** (not in `AddIntegrations`): the outbox handlers `WhatsAppReplyConfirmationHandler`
+  (`whatsapp.reply_confirmation`) and `LabOrderOutboxHandler` (`lab.analyser.order`), and the seeder
+  `WhatsAppReplyBacklog`.
 
 ## Security summary
 
@@ -414,6 +538,9 @@ Permissions:
   adapters, and patient data in analyser messages is masked.
 * Every network call has a timeout. The TCP listeners limit message size, connection count and idle time and apply
   per-instrument allow-lists.
+* Lab agents authenticate with their device id and secret (compared in constant time) on every call, may relay only
+  the analysers assigned to them, and are checked again every minute. A lab agent's credential is refused everywhere
+  else, sign-in included. The agent trusts only the pinned hospital CA.
 * External ids and paths (Razorpay ids, POS transaction ids, WhatsApp phone-number id and API version, ICD child
   links, PACS viewer templates) are validated before they are used in URLs.
 * Queries order only by timestamps. Enum columns (stored as text) are only compared for equality.
@@ -422,7 +549,6 @@ Permissions:
 
 * **Biometric attendance**: by design there is no biometric abstraction. HR receives ZKTeco/eSSL ADMS pushes on
   `/iclock/*` itself, so no adapter lives here.
-* **HL7 host query** (QRY^Q02 / QBP): not implemented. The ASTM host query is.
 * **ABDM (HIP/HIU)** is out of scope for this project. The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter:
   it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
@@ -435,3 +561,13 @@ migration is created centrally. They have unique `external_id` and `provider_mes
 entities are `[NotAudited]` because the integration log already traces them. `whatsapp_inbound_messages.keyword_action`
 (text, nullable) records what a STOP or START did; rows stored before it existed stay empty until
 `WhatsAppReplyBacklog` acts on them. The number-level opt-out itself is the platform's `platform.whatsapp_opt_outs`.
+
+`integrations.lab_order_downloads` (`LabOrderDownload`, `Persistence/LabOrderDownloadConfiguration.cs`, migration
+`LabAnalyserOrders`) is the order download queue: one row per analyser and request, with `facility_id`,
+`instrument_code`, `sample_barcode`, `action` and `status` (text), `channel_codes` (text array), `attempts`,
+`created_at`, `next_attempt_at`, `claimed_until` and `claimed_by` (the sending session's claim), `completed_at`,
+`last_error` and `source_message_id`. A unique index on (`source_message_id`, `instrument_code`) makes a redelivered
+outbox message add nothing, and (`instrument_code`, `status`, `next_attempt_at`) serves the sessions' look-ups. Rows
+hold no patient data and are `[NotAudited]`; finished rows are deleted after 30 days. The lab connections themselves are
+the global setting `integrations.lab.instruments`. Lab agents are rows of the platform's `identity.devices` with kind
+`LabAgent` (stored as text, so no schema change).

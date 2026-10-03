@@ -14,6 +14,7 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
   │   └─ UPS (USB)  ·  second disk / NAS for backups                            │
   │                                                                             │
   │  Workstations / kiosks / TVs: HC360 Desktop   Tablets: Edge or Chrome       │
+  │  Lab PCs with serial analysers: HC360 lab agent (Windows service)           │
   └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -41,7 +42,8 @@ Edge was removed, install Edge (or Google Chrome) for all users, or set its path
 (`HealthCare360:Pdf:BrowserPath`). Without it, everything else works and Administration › System health says that PDFs
 can't be made.
 
-**You need**: `HC360-Server-<version>-win-x64.zip` and `HC360-Desktop-<version>-win-x64.zip` from the release. Check them
+**You need**: `HC360-Server-<version>-win-x64.zip` and `HC360-Desktop-<version>-win-x64.zip` from the release, and
+`HC360-LabAgent-<version>-win-x64.zip` if analysers are cabled to lab PCs by serial (RS-232) cable. Check them
 against `SHA256SUMS.txt` (`Get-FileHash <file> -Algorithm SHA256`).
 
 ## 2. Install PostgreSQL (once)
@@ -137,8 +139,59 @@ Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and sho
 - Receipt/token printers (80 mm), label printers (50×25 mm) and A4/A5 printers are ordinary Windows printers on each
   workstation. HC360 prints silently to the default printer, or to one chosen per workstation.
 - Barcode scanners work as keyboards (no driver).
-- Lab analysers, PACS, biometric attendance devices, Tally and payment terminals are configured in
-  **Administration › Integrations**. See `docs/modules/integrations.md`.
+- PACS, biometric attendance devices, Tally and payment terminals are configured in **Administration ›
+  Integrations**. See `docs/modules/integrations.md`.
+- Lab analysers: see below.
+
+### Lab analysers
+
+Switch the gateway on in **Administration › Integrations › Laboratory equipment**. Register each analyser in **Lab
+setup › Analysers** (code, bench, protocol HL7 or ASTM; tick **Bidirectional** if it should ask HC360 for tests and be
+sent orders), then set up its **Connection** there. An analyser connects in one of two ways.
+
+**Network analysers** (Ethernet). The analyser connects to a port on the server, one port per analyser, for example
+5100. In the Connection drawer choose Network, enter the port and the analyser's fixed IP address. Open those ports in
+the server's firewall, limited to the analysers' addresses, by running the server installer again:
+
+```powershell
+.\Install-HC360Server.ps1 -LabPorts 5100,5200 -LabAnalyserAddresses 10.0.5.21,10.0.5.22
+```
+
+**Serial analysers** (RS-232). The analyser is cabled to a Windows 10/11 PC in the lab, which runs the **HC360 lab
+agent**. The agent is a Windows service: it keeps relaying when nobody is signed in to the PC, and it starts with
+Windows. It relays the COM port to the server over HTTPS (port 7360), so the lab PC needs no inbound firewall rule and
+the server needs none beyond 7360. One agent can relay several analysers on different COM ports.
+
+1. Signed in to the facility the lab belongs to, open **Administration › Devices › Enrol a device** and choose the
+   device type **Lab analyser agent**. Note the one-time code (valid 30 minutes by default). The agent belongs to that
+   facility, and an analyser can only be relayed by an agent of its own facility.
+2. On the lab PC, extract `HC360-LabAgent-<version>-win-x64.zip` and run, in an Administrator PowerShell:
+
+   ```powershell
+   .\Install-HC360LabAgent.ps1 -ServerUrl https://HC360-SRV:7360/ -CaFingerprint '<fingerprint from step 3>' `
+       -EnrolmentCode ABCD-EFGH -AgentName 'Haematology PC'
+   ```
+
+   The script copies the agent to `C:\Program Files\HyFib\HC360 Lab Agent`, registers the `HC360LabAgent` service
+   (its own virtual account `NT SERVICE\HC360LabAgent`, automatic start, restart on failure), enrols the PC and starts
+   the service. The CA fingerprint is required: the agent refuses a server whose CA does not match it, and from then
+   on trusts only that CA. The device secret is protected for this PC (machine DPAPI) in
+   `%ProgramData%\HyFib\HC360LabAgentgent.json`, which only SYSTEM, Administrators and the service account can read.
+3. In **Lab setup › Analysers › Connection**, choose "Serial cable to a lab PC", this agent, the COM port and the line
+   settings from the analyser's interface manual (most use 9600 baud, 8 data bits, no parity, one stop bit, no flow
+   control). Windows names the port in Device Manager › Ports (COM & LPT); a USB-to-serial adapter keeps its COM number
+   only on the same USB socket. The agent opens the port within a minute and shows as online.
+
+Upgrade an agent by running `.\Install-HC360LabAgent.ps1` from the new package without parameters; the enrolment is
+kept. `-Uninstall` removes it; revoke the device in Administration › Devices as well. A lab agent's credential is only
+good for relaying analysers: it cannot be used to sign in.
+
+**Before go-live, test each analyser on site.** The automated tests run the protocols, the relay and the agent against
+simulated analysers and COM ports, but they cannot check a real analyser's dialect, the cable and its wiring (straight
+or null-modem), a USB-to-serial adapter's driver, the Windows service account's access to the COM port, or the
+firewall. For each analyser: send a result for a test tube and check it reaches the worklist; if it is bidirectional,
+scan a received tube on the analyser (host query) and check that a newly received tube appears on the analyser's
+worklist (order download).
 
 ## 7. Upgrades
 
@@ -199,6 +252,9 @@ distribution tool).
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
+| A serial analyser shows "Waiting for agent" | Is the lab PC on and the `HC360LabAgent` service running? Administration › Devices shows when the agent last called in. Event Viewer › Application on the lab PC (source *HyFib HC360 Lab Agent*) says why it cannot connect |
+| A serial analyser shows "COM port problem" | The message gives the Windows error. "Access to the port is denied": another program has the port open. Otherwise check the COM number in Device Manager on the lab PC |
+| An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |
 | "PDFs can't be made on this server" (System health), or a PDF download fails | Is Microsoft Edge installed for all users? Set `HealthCare360:Pdf:BrowserPath` if it is somewhere unusual. The log says why the browser did not start. Printing from the screens still works |
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
