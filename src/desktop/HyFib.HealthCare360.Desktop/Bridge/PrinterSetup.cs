@@ -30,8 +30,22 @@ internal sealed record WorkstationPrinters(
     DateTimeOffset? UpdatedAt = null,
     string? UpdatedBy = null);
 
-/// <summary>What <c>printer.getSetup</c> answers: the printers, and whether IT fixed them in the machine policy.</summary>
-internal sealed record PrinterSetupInfo(WorkstationPrinters Setup, bool LockedByPolicy, string ComputerName);
+/// <summary>
+/// What <c>printer.getSetup</c> answers: the printers HC360 uses, whether IT fixed them in the machine policy, and why
+/// any printer that was set is not used (not installed any more, or not a valid setup): those kinds of print fall back
+/// to the page and the print dialog until someone sets them again.
+/// </summary>
+internal sealed record PrinterSetupInfo(
+    WorkstationPrinters Setup,
+    bool LockedByPolicy,
+    string ComputerName,
+    IReadOnlyList<string> Problems)
+{
+    public PrinterSetupInfo(WorkstationPrinters setup, bool lockedByPolicy, string computerName)
+        : this(setup, lockedByPolicy, computerName, [])
+    {
+    }
+}
 
 /// <summary>
 /// The workstation's printers, kept for the computer rather than the Windows account, so they are the same for everyone
@@ -39,7 +53,8 @@ internal sealed record PrinterSetupInfo(WorkstationPrinters Setup, bool LockedBy
 /// The folder lets every Windows user on the computer change the file, because HC360 Desktop saves it for whoever is
 /// signed in to Windows; HC360 itself offers the change only to staff with the "set up printers" permission, and the
 /// server records each change. IT can fix the printers instead with a <c>printers</c> entry in the read-only machine
-/// policy (<c>policy.json</c>); then HC360 shows them and refuses changes.
+/// policy (<c>policy.json</c>); then HC360 shows them and refuses changes. Whatever is read, saved file or policy, is
+/// checked as a save is: a printer that is not valid or not installed is not used.
 /// </summary>
 internal sealed class PrinterSetupStore(string folder, string? policyPath)
 {
@@ -53,6 +68,13 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
 
     private static readonly string[] LabelLanguages = ["zpl", "tspl", "driver"];
 
+    // Label rolls and wristband bands: width from, to; length from, to (mm).
+    private static readonly (decimal MinWidth, decimal MaxWidth, decimal MinHeight, decimal MaxHeight) LabelSizes =
+        (25m, 110m, 15m, 100m);
+
+    private static readonly (decimal MinWidth, decimal MaxWidth, decimal MinHeight, decimal MaxHeight) BandSizes =
+        (15m, 40m, 80m, 350m);
+
     public string FilePath => Path.Combine(folder, "printers.json");
 
     public static PrinterSetupStore ForThisComputer()
@@ -61,24 +83,84 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
         return new PrinterSetupStore(Path.Combine(root, "Workstation"), Path.Combine(root, "policy.json"));
     }
 
-    /// <summary>The policy's printers when IT set them, else the saved ones; nothing set when neither can be read.</summary>
-    public PrinterSetupInfo Load()
+    /// <summary>
+    /// The policy's printers when IT set them, else the saved ones; nothing set when neither can be read. A kind of
+    /// print whose printer is not valid or not installed is left unset, with the reason in the problems.
+    /// </summary>
+    /// <param name="installed">The printers installed on this computer.</param>
+    public PrinterSetupInfo Load(IReadOnlyCollection<string> installed)
     {
         if (ReadPolicy() is { } fixedByIt)
         {
-            return new PrinterSetupInfo(fixedByIt, true, Environment.MachineName);
+            var (usable, problems) = Usable(fixedByIt, installed);
+            LogProblems(problems, "machine policy");
+            return new PrinterSetupInfo(usable, true, Environment.MachineName, problems);
         }
 
         try
         {
             var saved = File.Exists(FilePath) ? JsonSerializer.Deserialize<WorkstationPrinters>(File.ReadAllText(FilePath), Json) : null;
-            return new PrinterSetupInfo(saved ?? new WorkstationPrinters(), false, Environment.MachineName);
+            var (usable, problems) = Usable(saved ?? new WorkstationPrinters(), installed);
+            LogProblems(problems, FilePath);
+            return new PrinterSetupInfo(usable, false, Environment.MachineName, problems);
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
             // Unreadable: print with the dialog until someone sets the printers again.
             Log.Warning(ex, "The printers of this computer could not be read from {Path}", FilePath);
-            return new PrinterSetupInfo(new WorkstationPrinters(), false, Environment.MachineName);
+            return new PrinterSetupInfo(
+                new WorkstationPrinters(),
+                false,
+                Environment.MachineName,
+                ["The saved printers could not be read. Set the printers again."]);
+        }
+    }
+
+    /// <summary>
+    /// The setup with every kind of print whose printer breaks the rules of <see cref="Validate"/> left unset, and why
+    /// each was left out (in words staff understand). A wristband code other than Code 128 or QR leaves the wristband
+    /// printer unset too, rather than guessing the code.
+    /// </summary>
+    internal static (WorkstationPrinters Usable, IReadOnlyList<string> Problems) Usable(
+        WorkstationPrinters setup,
+        IReadOnlyCollection<string> installed)
+    {
+        var problems = new List<string>();
+        RolePrinter? Keep(
+            RolePrinter? role, string what, (decimal, decimal, decimal, decimal)? stockSizes, bool band = false)
+        {
+            try
+            {
+                CheckRole(role, what, installed, stockSizes);
+                if (band)
+                {
+                    CheckCode(role);
+                }
+
+                return role;
+            }
+            catch (BridgeException ex)
+            {
+                problems.Add($"The {what} is not used: {ex.Message}");
+                return null;
+            }
+        }
+
+        var usable = setup with
+        {
+            Labels = Keep(setup.Labels, "label printer", LabelSizes),
+            Wristbands = Keep(setup.Wristbands, "wristband printer", BandSizes, band: true),
+            Receipts = Keep(setup.Receipts, "receipt printer", null),
+            Documents = Keep(setup.Documents, "document printer", null),
+        };
+        return (usable, problems);
+    }
+
+    private static void LogProblems(IReadOnlyList<string> problems, string source)
+    {
+        foreach (var problem in problems)
+        {
+            Log.Warning("Printer setup from {Source}: {Problem}", source, problem);
         }
     }
 
@@ -115,11 +197,16 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
     /// <summary>The rules the staff app's form follows too; the first problem is reported in words staff understand.</summary>
     internal static void Validate(WorkstationPrinters setup, IReadOnlyCollection<string> installed)
     {
-        CheckRole(setup.Labels, "label printer", installed, stockSizes: (25m, 110m, 15m, 100m));
-        CheckRole(setup.Wristbands, "wristband printer", installed, stockSizes: (15m, 40m, 80m, 350m));
+        CheckRole(setup.Labels, "label printer", installed, LabelSizes);
+        CheckRole(setup.Wristbands, "wristband printer", installed, BandSizes);
         CheckRole(setup.Receipts, "receipt printer", installed, stockSizes: null);
         CheckRole(setup.Documents, "document printer", installed, stockSizes: null);
-        if (setup.Wristbands?.Code is { } code && code is not ("code128" or "qr"))
+        CheckCode(setup.Wristbands);
+    }
+
+    private static void CheckCode(RolePrinter? wristbands)
+    {
+        if (wristbands?.Code is { } code && code is not ("code128" or "qr"))
         {
             throw Invalid("Choose Code 128 or QR code for wristbands.");
         }

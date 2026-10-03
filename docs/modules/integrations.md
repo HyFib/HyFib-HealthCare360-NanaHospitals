@@ -327,6 +327,9 @@ ones and retries ports that could not be bound.
   (`Recorded`, `NoKnownAllergies`, `NotRecorded`), and the band prints it three ways: a black ALLERGY mark, no mark,
   or an outlined "ALLERGIES / NOT RECORDED" mark, so a patient never assessed does not look like one with no known
   allergies. A band is not reprinted by itself when the first allergy is recorded; staff reprint it.
+* **Checked when read.** The saved file and the policy are checked like a save. A printer that is not installed any
+  more, or not a valid setup, is not used (that kind of print shows the print dialog), and Printers on this computer
+  says which and why.
 * **Raw jobs** (`printer.printRaw`) go only to printers installed on the workstation. A shared queue on another
   computer (`\\host\queue`) must be added in Windows first.
 

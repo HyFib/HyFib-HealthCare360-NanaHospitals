@@ -138,7 +138,7 @@ internal sealed class BridgeHost(
                 return PrintService.ListPrinters();
 
             case "printer.getSetup":
-                return printers.Load();
+                return printers.Load(PrintService.ListPrinters().Select(p => p.Name).ToList());
 
             case "printer.saveSetup":
             {

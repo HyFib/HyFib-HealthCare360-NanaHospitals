@@ -43,7 +43,7 @@ public sealed class PrinterSetupTests : IDisposable
         var store = Store();
 
         var saved = store.Save(Counter(), Installed, Now);
-        var loaded = store.Load();
+        var loaded = store.Load(Installed);
 
         saved.UpdatedAt.ShouldBe(Now);
         loaded.LockedByPolicy.ShouldBeFalse();
@@ -56,7 +56,7 @@ public sealed class PrinterSetupTests : IDisposable
     [Fact]
     public void Nothing_saved_means_every_print_asks()
     {
-        var loaded = Store().Load();
+        var loaded = Store().Load(Installed);
 
         loaded.Setup.ShouldBe(new WorkstationPrinters());
     }
@@ -68,7 +68,7 @@ public sealed class PrinterSetupTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(store.FilePath)!);
         File.WriteAllText(store.FilePath, "{ not json");
 
-        store.Load().Setup.ShouldBe(new WorkstationPrinters());
+        store.Load(Installed).Setup.ShouldBe(new WorkstationPrinters());
     }
 
     [Fact]
@@ -76,11 +76,60 @@ public sealed class PrinterSetupTests : IDisposable
     {
         var store = Store("""{ "serverUrl": "https://hc360-srv:7360/", "printers": { "labels": { "printer": "ZDesigner GK420t", "language": "tspl", "dpi": 300, "widthMm": 38, "heightMm": 25 } } }""");
 
-        var loaded = store.Load();
+        var loaded = store.Load(Installed);
 
         loaded.LockedByPolicy.ShouldBeTrue();
         loaded.Setup.Labels.ShouldBe(new RolePrinter("ZDesigner GK420t", "tspl", 300, 38, 25));
         Should.Throw<BridgeException>(() => store.Save(Counter(), Installed, Now)).Code.ShouldBe("not_allowed");
+    }
+
+    [Fact]
+    public void A_saved_printer_that_is_no_longer_installed_is_not_used_and_the_screen_says_why()
+    {
+        var store = Store();
+        store.Save(Counter(), Installed, Now);
+
+        var loaded = store.Load(["ZDesigner GK420t", "EPSON TM-T82 Receipt", "HP LaserJet M404"]);
+
+        loaded.Setup.Wristbands.ShouldBeNull("Wristbands fall back to the page and the print dialog.");
+        loaded.Setup.Labels.ShouldBe(Counter().Labels);
+        loaded.Problems.ShouldHaveSingleItem().ShouldBe(
+            "The wristband printer is not used: The printer 'ZDesigner HC100-300dpi' is not installed on this computer.");
+    }
+
+    [Fact]
+    public void A_saved_file_edited_by_hand_is_checked_like_a_save()
+    {
+        var store = Store();
+        Directory.CreateDirectory(Path.GetDirectoryName(store.FilePath)!);
+        File.WriteAllText(store.FilePath, """
+            {
+              "labels": { "printer": "ZDesigner GK420t", "language": "zpl", "dpi": 600, "widthMm": 50, "heightMm": 25 },
+              "wristbands": { "printer": "ZDesigner HC100-300dpi", "language": "zpl", "dpi": 300, "widthMm": 25, "heightMm": 254, "code": "pdf417" },
+              "receipts": { "printer": "\\\\print-srv\\receipts" },
+              "documents": { "printer": "HP LaserJet M404" }
+            }
+            """);
+
+        var loaded = store.Load(Installed);
+
+        loaded.Setup.ShouldBe(new WorkstationPrinters(Documents: new RolePrinter("HP LaserJet M404")));
+        loaded.Problems.Count.ShouldBe(3);
+        loaded.Problems[0].ShouldContain("label printer is not used: Choose the resolution");
+        loaded.Problems[1].ShouldContain("Code 128 or QR");
+        loaded.Problems[2].ShouldContain(@"'\\print-srv\receipts' is not installed");
+    }
+
+    [Fact]
+    public void Printers_in_the_policy_that_are_not_valid_are_not_used_either()
+    {
+        var store = Store("""{ "printers": { "labels": { "printer": "ZDesigner GK420t", "language": "zpl" } } }""");
+
+        var loaded = store.Load(Installed);
+
+        loaded.LockedByPolicy.ShouldBeTrue();
+        loaded.Setup.Labels.ShouldBeNull();
+        loaded.Problems.ShouldHaveSingleItem().ShouldContain("203 or 300 dpi");
     }
 
     [Fact]

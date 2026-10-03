@@ -96,6 +96,11 @@ export interface PrinterSetupInfo {
   /** IT fixed the printers in the HC360 Desktop policy: they are shown, not changed. */
   lockedByPolicy: boolean;
   computerName: string;
+  /**
+   * Why a printer that was set is not used (not installed any more, or not a valid setup): that kind of print uses the
+   * page and the print dialog until someone sets it again. Older HC360 Desktops leave it out.
+   */
+  problems?: string[] | null;
 }
 
 /** A desktop bridge call that failed, with the desktop's reason code (`printer_not_found`, `method_not_found`…). */

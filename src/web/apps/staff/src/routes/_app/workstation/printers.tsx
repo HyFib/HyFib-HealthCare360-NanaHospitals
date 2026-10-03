@@ -148,6 +148,18 @@ function DesktopPrinters() {
           </MessageBarBody>
         </MessageBar>
       )}
+      {info.problems && info.problems.length > 0 && (
+        <MessageBar intent="warning">
+          <MessageBarBody>
+            <MessageBarTitle>Some printers are not used</MessageBarTitle>
+            {info.problems.map((problem) => (
+              <div key={problem}>{problem}</div>
+            ))}
+            Those prints show the print dialog until the printer is set again
+            {info.lockedByPolicy ? ' in the HC360 Desktop policy (ask IT).' : '.'}
+          </MessageBarBody>
+        </MessageBar>
+      )}
       {installed.data.length === 0 && (
         <MessageBar intent="warning">
           <MessageBarBody>
