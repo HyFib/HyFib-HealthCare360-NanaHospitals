@@ -165,6 +165,7 @@ import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/servic
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
 import { Route as AppTelehealthSessionIdRouteImport } from './routes/_app/telehealth/$sessionId'
+import { Route as AppWorkstationPrintersRouteImport } from './routes/_app/workstation/printers'
 import { Route as AppAdminIntegrationsIndexRouteImport } from './routes/_app/admin/integrations/index'
 import { Route as AppAdminIntegrationsInboundRouteImport } from './routes/_app/admin/integrations/inbound'
 import { Route as AppAdminIntegrationsLogsRouteImport } from './routes/_app/admin/integrations/logs'
@@ -1082,6 +1083,11 @@ const AppTelehealthSessionIdRoute = AppTelehealthSessionIdRouteImport.update({
   path: '/telehealth/$sessionId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppWorkstationPrintersRoute = AppWorkstationPrintersRouteImport.update({
+  id: '/workstation/printers',
+  path: '/workstation/printers',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAdminIntegrationsIndexRoute =
   AppAdminIntegrationsIndexRouteImport.update({
     id: '/admin/integrations/',
@@ -1943,6 +1949,7 @@ export interface FileRoutesByFullPath {
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/analytics/': typeof AppAnalyticsIndexRoute
   '/assets/': typeof AppAssetsIndexRoute
   '/billing/': typeof AppBillingIndexRoute
@@ -2235,6 +2242,7 @@ export interface FileRoutesByTo {
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/workstation/printers': typeof AppWorkstationPrintersRoute
   '/analytics': typeof AppAnalyticsIndexRoute
   '/assets': typeof AppAssetsIndexRoute
   '/billing': typeof AppBillingIndexRoute
@@ -2529,6 +2537,7 @@ export interface FileRoutesById {
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
+  '/_app/workstation/printers': typeof AppWorkstationPrintersRoute
   '/_app/analytics/': typeof AppAnalyticsIndexRoute
   '/_app/assets/': typeof AppAssetsIndexRoute
   '/_app/billing/': typeof AppBillingIndexRoute
@@ -2823,6 +2832,7 @@ export interface FileRouteTypes {
     | '/setup/services'
     | '/setup/specialties'
     | '/telehealth/$sessionId'
+    | '/workstation/printers'
     | '/analytics/'
     | '/assets/'
     | '/billing/'
@@ -3115,6 +3125,7 @@ export interface FileRouteTypes {
     | '/setup/services'
     | '/setup/specialties'
     | '/telehealth/$sessionId'
+    | '/workstation/printers'
     | '/analytics'
     | '/assets'
     | '/billing'
@@ -3408,6 +3419,7 @@ export interface FileRouteTypes {
     | '/_app/setup/services'
     | '/_app/setup/specialties'
     | '/_app/telehealth/$sessionId'
+    | '/_app/workstation/printers'
     | '/_app/analytics/'
     | '/_app/assets/'
     | '/_app/billing/'
@@ -4678,6 +4690,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTelehealthSessionIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/workstation/printers': {
+      id: '/_app/workstation/printers'
+      path: '/workstation/printers'
+      fullPath: '/workstation/printers'
+      preLoaderRoute: typeof AppWorkstationPrintersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/admin/integrations/': {
       id: '/_app/admin/integrations/'
       path: '/admin/integrations'
@@ -5747,6 +5766,7 @@ interface AppRouteChildren {
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
+  AppWorkstationPrintersRoute: typeof AppWorkstationPrintersRoute
   AppAnalyticsIndexRoute: typeof AppAnalyticsIndexRoute
   AppAssetsIndexRoute: typeof AppAssetsIndexRoute
   AppBillingIndexRoute: typeof AppBillingIndexRoute
@@ -6038,6 +6058,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,
+  AppWorkstationPrintersRoute: AppWorkstationPrintersRoute,
   AppAnalyticsIndexRoute: AppAnalyticsIndexRoute,
   AppAssetsIndexRoute: AppAssetsIndexRoute,
   AppBillingIndexRoute: AppBillingIndexRoute,

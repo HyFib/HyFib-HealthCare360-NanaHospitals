@@ -28,18 +28,8 @@ import {
   ProhibitedRegular,
   WrenchRegular,
 } from '@fluentui/react-icons';
+import { formatDateOnly, formatDateTime, formatInr, formatRelative, todayIso } from '@hc360/core';
 import {
-  escapeHtml,
-  formatDateOnly,
-  formatDateTime,
-  formatInr,
-  formatRelative,
-  printDocument,
-  printHtml,
-  todayIso,
-} from '@hc360/core';
-import {
-  barcodeSvg,
   ConfirmDialog,
   DataTable,
   ErrorState,
@@ -72,6 +62,7 @@ import {
 } from '@/modules/assets/AssetDialogs';
 import { AssetDrawer } from '@/modules/assets/AssetDrawer';
 import { BreakdownDialog } from '@/modules/assets/BreakdownDialog';
+import { printAssetTag } from '@/modules/assets/print';
 import {
   assetCategoryLabel,
   assetStatusLabel,
@@ -159,19 +150,7 @@ function AssetPage() {
 
   const printTag = async () => {
     try {
-      const code = await barcodeSvg(a.assetTag, 'code128', { height: 9 });
-      const body = `<div style="width:46mm;font-family:'Segoe UI',sans-serif;text-align:center">
-        <div style="font-size:7px;font-weight:700">${escapeHtml(letterhead.name)}</div>
-        <div style="font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(a.name)}</div>
-        <div>${code}</div><div style="font-family:Consolas,monospace;font-size:9px;letter-spacing:1px">${escapeHtml(a.assetTag)}</div></div>`;
-      await printHtml(
-        printDocument(body, {
-          title: `Asset tag ${a.assetTag}`,
-          pageSize: 'Label50x25',
-          styles: 'svg { width: 100%; height: 9mm; }',
-        }),
-        { pageSize: 'Label50x25', silent: true },
-      );
+      await printAssetTag(a, letterhead.name);
     } catch (error) {
       notify.error(error, 'The tag did not print');
     }

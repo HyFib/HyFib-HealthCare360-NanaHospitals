@@ -438,6 +438,22 @@ export interface AdmissionListItem {
   isMlc: boolean;
 }
 
+/**
+ * What an in-patient's wristband shows: who, the UHID to scan, the admission and the bed, and whether active allergies
+ * are on the chart (the band's ALLERGY mark). The allergies themselves are not included.
+ */
+export interface WristbandDto {
+  admissionId: string;
+  uhid: string;
+  patientName: string;
+  gender: Gender;
+  age: string | null;
+  admissionNumber: string;
+  wardName: string | null;
+  bedLabel: string | null;
+  allergyAlert: boolean;
+}
+
 export interface AdmissionDetail {
   id: string;
   admissionNumber: string;
@@ -887,4 +903,6 @@ export const admissionApi = {
     api.post<ConsultantVisitDto>(`/api/v1/inpatient/admissions/${id}/consultant-visits`, body),
   cancelVisit: (visitId: string, reason: string) =>
     api.post<void>(`/api/v1/inpatient/admissions/consultant-visits/${visitId}/cancel`, { reason }),
+  /** What the patient's wristband shows, read fresh for each print (the allergy mark comes from the chart). */
+  wristband: (id: string) => api.get<WristbandDto>(`/api/v1/inpatient/admissions/${id}/wristband`),
 };

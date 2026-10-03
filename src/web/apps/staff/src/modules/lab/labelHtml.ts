@@ -1,10 +1,27 @@
 /**
  * 50 × 25 mm tube label (thermal label printer): patient name and UHID, Code 128 barcode with its digits, tube type and
- * bench, tests and collection time. Pure HTML builder: the barcode SVG is passed in so this stays testable.
+ * bench, tests and collection time. Pure builders: the barcode SVG is passed in so this stays testable, and
+ * `tubeLabelData` gives the same facts to the server for ZPL and TSPL label printers.
  */
-import { escapeHtml, HOSPITAL_TIME_ZONE } from '@hc360/core';
+import { escapeHtml, HOSPITAL_TIME_ZONE, type LabTubeLabel } from '@hc360/core';
 import type { SampleLabel } from './api';
 import { containerInfo, sectionShort } from './labels';
+
+/** The tube label as the server writes it for a ZPL or TSPL label printer: the same facts as the page below. */
+export function tubeLabelData(label: SampleLabel): LabTubeLabel {
+  return {
+    barcode: label.barcode,
+    patientName: label.patientName,
+    uhid: label.uhid,
+    ageSex: label.ageSex,
+    accessionNumber: label.accessionNumber,
+    stat: label.priority === 'Stat',
+    tube: containerInfo[label.container].short,
+    bench: sectionShort[label.section],
+    tests: label.tests,
+    collectedAt: label.collectedAt,
+  };
+}
 
 const timeFormat = new Intl.DateTimeFormat('en-IN', {
   timeZone: HOSPITAL_TIME_ZONE,

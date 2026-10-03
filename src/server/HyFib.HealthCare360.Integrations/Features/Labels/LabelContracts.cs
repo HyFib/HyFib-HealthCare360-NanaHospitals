@@ -155,7 +155,7 @@ public sealed class DispensingLabelValidator : AbstractValidator<DispensingLabel
         RuleFor(x => x.Medicine).NotEmpty().SafeText(200);
         RuleFor(x => x.Quantity).NotEmpty().SafeText(40);
         RuleFor(x => x.Directions).SafeText(500);
-        RuleFor(x => x.Batch).SafeText(40);
+        RuleFor(x => x.Batch).SafeText(120);
         RuleFor(x => x.Hospital).SafeText(200);
     }
 }
