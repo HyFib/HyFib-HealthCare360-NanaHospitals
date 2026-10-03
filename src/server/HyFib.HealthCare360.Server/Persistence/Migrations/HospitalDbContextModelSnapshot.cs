@@ -133,6 +133,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("channel_codes");
 
+                    b.Property<Guid?>("ClaimedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("claimed_by");
+
                     b.Property<DateTimeOffset?>("ClaimedUntil")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("claimed_until");

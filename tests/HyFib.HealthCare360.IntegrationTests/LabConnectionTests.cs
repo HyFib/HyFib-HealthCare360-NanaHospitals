@@ -1,9 +1,12 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Organization;
@@ -12,14 +15,16 @@ using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
-/// Lab setup › Analysers › connection over the real API and database (INT-LAB): the rules a connection is saved by
-/// and the facility it belongs to. Each test uses analysers and agents of its own, so the shared connection list only
-/// grows.
+/// Lab setup › Analysers › connection over the real API and database (INT-LAB): the rules a connection is saved by,
+/// the facility it belongs to, and the claim a session holds on the orders it sends. Each test uses analysers and
+/// agents of its own, so the shared connection list only grows.
 /// </summary>
 public sealed class LabConnectionTests(HospitalServer server)
 {
@@ -145,6 +150,65 @@ public sealed class LabConnectionTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task Only_the_session_holding_an_order_records_how_its_send_went()
+    {
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+        var code = "Q" + Letters(8);
+        var row = new LabOrderDownload
+        {
+            FacilityId = Guid.CreateVersion7(),
+            InstrumentCode = code,
+            SampleBarcode = "SMP-" + Letters(6),
+            Action = InstrumentOrderAction.New,
+            Status = LabOrderDownloadStatus.Pending,
+            CreatedAt = clock.Now.AddMinutes(-1),
+            NextAttemptAt = clock.Now.AddMinutes(-1),
+            SourceMessageId = Guid.CreateVersion7(),
+        };
+        await WithDbAsync(async db =>
+        {
+            db.Add(row);
+            await db.SaveChangesAsync(Ct);
+        });
+        var sink = Substitute.For<IInstrumentResultSink>();
+        sink.GetInstrumentAsync(code, Arg.Any<CancellationToken>())
+            .Returns(new InstrumentProfile(code, "Chemistry", row.FacilityId, true, true, "Astm"));
+        sink.GetOrderToSendAsync(code, row.SampleBarcode, Arg.Any<CancellationToken>())
+            .Returns(new InstrumentOrder(row.SampleBarcode, "TEST^PATIENT", "F", null, ["GLU"]));
+        var instrument = new LabInstrumentSettings { Code = code };
+
+        // Session A claims the order, but its send outlasts the claim without extending it: session B takes it over.
+        var a = await QueueAsync(clock, q => q.NextAsync(instrument, sink, 10, Ct));
+        a.ShouldHaveSingleItem();
+        clock.Now += LabOrderQueue.ClaimTime + TimeSpan.FromSeconds(1);
+        var b = await QueueAsync(clock, q => q.NextAsync(instrument, sink, 10, Ct));
+        b.ShouldHaveSingleItem().Claim.ShouldNotBe(a[0].Claim);
+
+        // A's outcome is not recorded, and A can no longer extend the claim; B's claim, extended, keeps C away.
+        await QueueAsync(clock, async q =>
+        {
+            await q.CompleteAsync([row.Id], a[0].Claim, delivered: true, null, Ct);
+            return 0;
+        });
+        (await LoadAsync(row.Id)).Status.ShouldBe(LabOrderDownloadStatus.Pending);
+        (await QueueAsync(clock, q => q.ExtendClaimAsync([row.Id], a[0].Claim, Ct))).ShouldBe(0);
+        clock.Now += LabOrderQueue.ClaimTime - TimeSpan.FromSeconds(10);
+        (await QueueAsync(clock, q => q.ExtendClaimAsync([row.Id], b[0].Claim, Ct))).ShouldBe(1);
+        clock.Now += TimeSpan.FromSeconds(30);
+        (await QueueAsync(clock, q => q.NextAsync(instrument, sink, 10, Ct))).ShouldBeEmpty();
+
+        await QueueAsync(clock, async q =>
+        {
+            await q.CompleteAsync([row.Id], b[0].Claim, delivered: true, null, Ct);
+            return 0;
+        });
+        var sent = await LoadAsync(row.Id);
+        sent.Status.ShouldBe(LabOrderDownloadStatus.Sent);
+        sent.Attempts.ShouldBe(1);
+        sent.ClaimedBy.ShouldBeNull();
+    }
+
     private static SaveLabConnectionRequest Tcp(int port, uint version) =>
         new("Tcp", true, port, null, null, null, null, null, null, version);
 
@@ -222,8 +286,31 @@ public sealed class LabConnectionTests(HospitalServer server)
         await work(scope.ServiceProvider.GetRequiredService<HospitalDbContext>());
     }
 
+    private async Task<LabOrderDownload> LoadAsync(Guid id)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        return await db.Set<LabOrderDownload>().IgnoreQueryFilters().AsNoTracking().SingleAsync(d => d.Id == id, Ct);
+    }
+
+    /// <summary>One session's call to the order queue, with its own database context, at the clock's time.</summary>
+    private async Task<T> QueueAsync<T>(TimeProvider clock, Func<LabOrderQueue, Task<T>> call)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var queue = new LabOrderQueue(db, clock, NullLogger<LabOrderQueue>.Instance);
+        return await call(queue);
+    }
+
     private static string Letters(int count) =>
         string.Concat(Enumerable.Range(0, count).Select(_ => (char)('A' + Random.Shared.Next(26))));
 
     private sealed record Created(Guid Id);
+
+    private sealed class MovableClock(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = now;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
 }

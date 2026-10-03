@@ -47,8 +47,14 @@ public sealed class LabOrderDownload : Entity, IFacilityScoped
 
     public DateTimeOffset NextAttemptAt { get; set; }
 
-    /// <summary>A session is sending it until then (a crashed session's claim simply lapses).</summary>
+    /// <summary>
+    /// A session is sending it until then. The session extends the claim while it sends; a crashed session's claim
+    /// simply lapses.
+    /// </summary>
     public DateTimeOffset? ClaimedUntil { get; set; }
+
+    /// <summary>The claim's own id: only the session holding the claim records how the send went.</summary>
+    public Guid? ClaimedBy { get; set; }
 
     public DateTimeOffset? CompletedAt { get; set; }
 

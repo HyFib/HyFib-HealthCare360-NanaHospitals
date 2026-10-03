@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+
 namespace HyFib.HealthCare360.Integrations.Laboratory.Hl7;
 
 /// <summary>
@@ -202,7 +204,10 @@ internal sealed class MllpSession(LabInstrumentSettings instrument, LabRuntimeOp
             }
 
             var download = downloads[0];
-            var (delivered, raw, error) = await SendOrderAsync(download.Order, download.Action, messageType, cancellationToken);
+            var (delivered, raw, error) = await LabDownloadClaim.HoldWhileAsync(
+                processor, instrument, downloads, options.ClaimRenewInterval, time,
+                () => SendOrderAsync(download.Order, download.Action, messageType, cancellationToken),
+                cancellationToken);
             await processor.CompleteDownloadsAsync(instrument, downloads, delivered, raw, error, cancellationToken);
             if (!delivered)
             {

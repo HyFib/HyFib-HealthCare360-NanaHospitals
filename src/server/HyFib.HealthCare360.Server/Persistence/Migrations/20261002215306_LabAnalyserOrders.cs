@@ -28,6 +28,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     next_attempt_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     claimed_until = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    claimed_by = table.Column<Guid>(type: "uuid", nullable: true),
                     completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     last_error = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     source_message_id = table.Column<Guid>(type: "uuid", nullable: false)

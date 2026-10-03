@@ -500,6 +500,30 @@ public sealed class AstmSessionTests
     }
 
     [Fact]
+    public async Task Keeps_the_claim_on_orders_for_as_long_as_their_send_takes()
+    {
+        QueueOneDownload();
+        var run = Start(options: LabSamples.Options() with { ClaimRenewInterval = TimeSpan.FromMilliseconds(50) });
+
+        // The analyser takes its time to accept the line: the claim must not lapse meanwhile.
+        await ExpectAsync(AstmControl.Enq);
+        await Task.Delay(TimeSpan.FromMilliseconds(400), Ct);
+        await SendAsync(AstmControl.Ack);
+        while (await _pipe.ReadByteAsync(Ct) != AstmControl.Eot)
+        {
+            await _pipe.ReadUntilAsync(b => b.Count >= 2 && b[^2] == AstmControl.Cr && b[^1] == AstmControl.Lf, Ct);
+            await SendAsync(AstmControl.Ack);
+        }
+
+        await FinishAsync(run);
+
+        var extended = _processor.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(ILabMessageProcessor.ExtendDownloadClaimAsync));
+        extended.ShouldBeGreaterThanOrEqualTo(2);
+        Completed().ShouldHaveSingleItem()[2].ShouldBe(true);
+    }
+
+    [Fact]
     public async Task An_order_the_analyser_refuses_is_tried_again_later()
     {
         QueueOneDownload();

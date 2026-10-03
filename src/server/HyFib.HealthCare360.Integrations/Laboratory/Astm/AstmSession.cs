@@ -128,7 +128,9 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         }
 
         var records = AstmMessageMapper.BuildOrderDownload(downloads, AstmDelimiters.Default, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone);
-        var outcome = await SendAsync(records, cancellationToken);
+        var outcome = await LabDownloadClaim.HoldWhileAsync(
+            processor, instrument, downloads, options.ClaimRenewInterval, time,
+            () => SendAsync(records, cancellationToken), cancellationToken);
         await processor.CompleteDownloadsAsync(instrument, downloads, outcome.Delivered, string.Join("\r", records), outcome.Error, cancellationToken);
     }
 

@@ -199,6 +199,13 @@ internal sealed record LabRuntimeOptions(Encoding Encoding, int MaxMessageBytes,
     /// <summary>While the line is idle, how often the session looks for orders to send unasked.</summary>
     public TimeSpan OrderPollInterval { get; init; } = TimeSpan.FromSeconds(3);
 
+    /// <summary>
+    /// While orders are being sent, how often their claim is extended: well within
+    /// <see cref="Orders.LabOrderQueue.ClaimTime"/>, since an ASTM send (bids, back-offs, the analyser's own
+    /// messages in between, retransmissions) has no fixed bound.
+    /// </summary>
+    public TimeSpan ClaimRenewInterval { get; init; } = TimeSpan.FromSeconds(30);
+
     /// <summary>HL7: how long to wait for the analyser's acknowledgement of an order.</summary>
     public TimeSpan Hl7ReplyTimeout { get; init; } = TimeSpan.FromSeconds(30);
 

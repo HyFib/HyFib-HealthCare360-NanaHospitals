@@ -41,6 +41,10 @@ internal interface ILabMessageProcessor
     /// <summary>The analyser's next orders to send unasked, built now (empty when there are none).</summary>
     Task<IReadOnlyList<LabDownload>> NextDownloadsAsync(LabInstrumentSettings instrument, int max, CancellationToken cancellationToken);
 
+    /// <summary>Extends the session's claim on orders it is still sending, so no other session takes them.</summary>
+    Task ExtendDownloadClaimAsync(
+        LabInstrumentSettings instrument, IReadOnlyList<LabDownload> downloads, CancellationToken cancellationToken);
+
     /// <summary>Records whether the analyser accepted the orders (they are tried again later when it did not).</summary>
     Task CompleteDownloadsAsync(LabInstrumentSettings instrument, IReadOnlyList<LabDownload> downloads, bool delivered, string rawMessage, string? error, CancellationToken cancellationToken);
 
@@ -175,6 +179,27 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         }
     }
 
+    public async Task ExtendDownloadClaimAsync(
+        LabInstrumentSettings instrument, IReadOnlyList<LabDownload> downloads, CancellationToken cancellationToken)
+    {
+        await using var scope = scopes.CreateAsyncScope();
+        var queue = scope.ServiceProvider.GetRequiredService<LabOrderQueue>();
+        try
+        {
+            foreach (var claim in downloads.GroupBy(d => d.Claim))
+            {
+                await queue.ExtendClaimAsync(claim.Select(d => d.Id).ToList(), claim.Key, cancellationToken);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The database is unavailable: tried again shortly; at worst the claim lapses and the order is sent twice,
+            // which analysers accept for the same sample.
+            logger.LogWarning(
+                ex, "The claim on orders being sent to instrument {Instrument} could not be extended", instrument.Code);
+        }
+    }
+
     public async Task CompleteDownloadsAsync(
         LabInstrumentSettings instrument, IReadOnlyList<LabDownload> downloads, bool delivered, string rawMessage, string? error, CancellationToken cancellationToken)
     {
@@ -184,7 +209,12 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         var reference = string.Join(",", downloads.Select(d => d.Order.SampleBarcode).Distinct(StringComparer.Ordinal).Take(10));
         try
         {
-            await scope.ServiceProvider.GetRequiredService<LabOrderQueue>().CompleteAsync(downloads.Select(d => d.Id).ToList(), delivered, error, CancellationToken.None);
+            var queue = scope.ServiceProvider.GetRequiredService<LabOrderQueue>();
+            foreach (var claim in downloads.GroupBy(d => d.Claim))
+            {
+                var ids = claim.Select(d => d.Id).ToList();
+                await queue.CompleteAsync(ids, claim.Key, delivered, error, CancellationToken.None);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
