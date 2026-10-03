@@ -15,6 +15,10 @@ namespace HyFib.HealthCare360.Integrations.Features.LabConnections;
 /// <item>Changes are made against the list version the person saw, so two edits at once give 409 instead of one
 /// overwriting the other. Each is audited.</item>
 /// <item>Saving drops the retired <c>hostQuery</c> flag: Bidirectional in Lab setup decides from then on.</item>
+/// <item>Staff see and edit only their facility's analysers and lab agents, as in Lab setup (an account with no
+/// facility sees every facility's), and an analyser can be relayed only by an agent enrolled at its own facility.
+/// Connections whose analyser is no longer in Lab setup belong to no facility: everyone sees them, to remove
+/// them.</item>
 /// </list>
 /// The gateway applies a change within a minute.
 /// </summary>
@@ -26,6 +30,7 @@ internal sealed class LabConnectionService(
     LabRelayRegistry relays,
     IOptions<PlatformOptions> platform,
     IServiceProvider services,
+    ICurrentUser currentUser,
     TimeProvider time,
     ILogger<LabConnectionService> logger)
 {
@@ -43,8 +48,10 @@ internal sealed class LabConnectionService(
         var statuses = state.Snapshot().ToDictionary(s => s.InstrumentCode, StringComparer.OrdinalIgnoreCase);
         var connected = relays.ConnectedAgents();
         var now = time.GetUtcNow();
+        var facility = currentUser.FacilityId;
         var agents = (await db.Set<Device>().AsNoTracking()
                 .Where(d => d.Kind == DeviceKind.LabAgent && !d.IsRevoked)
+                .Where(d => facility == null || d.FacilityId == facility)
                 .OrderBy(d => d.Name)
                 .ToListAsync(cancellationToken))
             .Select(d => new LabAgentDto(d.Id, d.Name, d.MachineName, d.Location, d.LastSeenAt,
@@ -60,6 +67,11 @@ internal sealed class LabConnectionService(
         foreach (var instrument in stored.Instruments.OrderBy(i => i.Code, StringComparer.OrdinalIgnoreCase))
         {
             var profile = sink is null ? null : await sink.GetInstrumentAsync(instrument.Code, cancellationToken);
+            if (profile is not null && !InScope(profile.FacilityId))
+            {
+                continue;
+            }
+
             var agent = instrument.AgentDeviceId is { } agentId ? agents.FirstOrDefault(a => a.Id == agentId) : null;
             var tcp = instrument.Transport == LabTransport.Tcp;
             connections.Add(new LabConnectionDto(
@@ -94,7 +106,7 @@ internal sealed class LabConnectionService(
     {
         var sink = services.GetService<IInstrumentResultSink>();
         var profile = sink is null ? null : await sink.GetInstrumentAsync(code, cancellationToken);
-        if (profile is null)
+        if (profile is null || !InScope(profile.FacilityId))
         {
             return Error.NotFound("Analyser", code);
         }
@@ -131,9 +143,15 @@ internal sealed class LabConnectionService(
         else
         {
             var agent = await db.Set<Device>().AsNoTracking().FirstOrDefaultAsync(d => d.Id == request.AgentDeviceId, cancellationToken);
-            if (agent is null || agent.IsRevoked || agent.Kind != DeviceKind.LabAgent)
+            if (agent is null || agent.IsRevoked || agent.Kind != DeviceKind.LabAgent || !InScope(agent.FacilityId))
             {
                 return Error.Field("agentDeviceId", "Choose an enrolled lab agent. Enrol one in Administration › Devices.");
+            }
+
+            if (agent.FacilityId != profile.FacilityId)
+            {
+                return Error.Field("agentDeviceId",
+                    $"{agent.Name} is enrolled at another facility. Choose a lab agent at the analyser's facility.");
             }
 
             agentName = agent.Name;
@@ -172,7 +190,7 @@ internal sealed class LabConnectionService(
         {
             EntityType = "LabConnection",
             EntityId = profile.Code,
-            Details = new { transport = transport.ToString(), entry.Enabled, entry.Port, entry.AllowedIps, entry.AgentDeviceId, port = entry.Serial?.PortName },
+            Details = new { transport = transport.ToString(), entry.Enabled, entry.Port, entry.AllowedIps, entry.AgentDeviceId, comPort = entry.Serial?.PortName },
             Severity = AuditSeverity.Warning,
         });
         await StoreAsync([.. others, entry], cancellationToken);
@@ -195,7 +213,9 @@ internal sealed class LabConnectionService(
         }
 
         var remaining = stored.Instruments.Where(i => !string.Equals(i.Code, code, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (remaining.Count == stored.Instruments.Count)
+        var sink = services.GetService<IInstrumentResultSink>();
+        var profile = sink is null ? null : await sink.GetInstrumentAsync(code, cancellationToken);
+        if (remaining.Count == stored.Instruments.Count || (profile is not null && !InScope(profile.FacilityId)))
         {
             return Error.NotFound("Analyser connection", code);
         }
@@ -249,6 +269,9 @@ internal sealed class LabConnectionService(
         var cleaned = (values ?? []).Select(v => v.Trim()).Where(v => v.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         return cleaned.Count == 0 ? null : cleaned;
     }
+
+    /// <summary>Whether <paramref name="facilityId"/> is the caller's facility (all are, if they have none).</summary>
+    private bool InScope(Guid? facilityId) => currentUser.FacilityId is not { } mine || facilityId == mine;
 
     private static Error InvalidList() => Error.Rule("lab.connections_invalid",
         "The stored analyser connections cannot be read. Correct integrations.lab.instruments in Administration › Settings first.");
