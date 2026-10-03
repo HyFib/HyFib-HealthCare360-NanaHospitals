@@ -581,41 +581,6 @@ export function checkTerminals(value: unknown): string | null {
   return null;
 }
 
-/** Analysers: `[{ code, name, protocol (Hl7v2 | Astm), port, enabled, allowedIps[], encoding, sampleIdFields[], hostQuery }]`. */
-export function checkInstruments(value: unknown): string | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const codes = new Set<string>();
-  const ports = new Set<number>();
-  for (const [index, item] of value.entries()) {
-    if (!isPlainObject(item) || typeof item.code !== 'string' || !IDENTIFIER.test(item.code)) {
-      return `Analyser ${index + 1} needs a "code" of 1–32 letters, digits, - or _.`;
-    }
-    const { code, port, protocol } = item;
-    if (typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
-      return `Analyser ${code}: "port" must be a number from 1 to 65535.`;
-    }
-    if (
-      protocol !== undefined &&
-      !(typeof protocol === 'string' && /^(hl7v2|astm)$/i.test(protocol)) &&
-      protocol !== 0 &&
-      protocol !== 1
-    ) {
-      return `Analyser ${code}: "protocol" must be Hl7v2 or Astm.`;
-    }
-    if (codes.has(code)) {
-      return `Two analysers have the code ${code}.`;
-    }
-    if (ports.has(port)) {
-      return `Two analysers use port ${port}.`;
-    }
-    codes.add(code);
-    ports.add(port);
-  }
-  return null;
-}
-
 const SMS = 'integrations.sms';
 const SMS_SECRET = 'integrations.sms.secret';
 const smsBy = (...providers: string[]) => when(SMS, 'provider', ...providers);
@@ -1453,11 +1418,11 @@ const labSpec: SettingsSpec = {
   id: 'lab',
   title: 'Laboratory equipment',
   intro:
-    'Receives results from analysers over the lab network (HL7 v2 over MLLP, or ASTM). One listening port per analyser; the server checks every minute.',
+    'Exchanges results and orders with analysers (HL7 v2 over MLLP, or ASTM). Set up each analyser’s connection, a network port or a serial port through a lab agent, in Lab setup › Analysers › Connection. Changes apply within a minute.',
   prefix: LAB,
   globalOnly: true,
   fields: [
-    { key: LAB, path: 'enabled', label: 'Receive results from analysers', kind: 'switch' },
+    { key: LAB, path: 'enabled', label: 'Exchange results and orders with analysers', kind: 'switch' },
     {
       key: LAB,
       path: 'bindAddress',
@@ -1478,7 +1443,7 @@ const labSpec: SettingsSpec = {
     {
       key: LAB,
       path: 'idleTimeoutSeconds',
-      label: 'Close idle connections after (seconds)',
+      label: 'Close idle network connections after (seconds)',
       kind: 'number',
       defaultNumber: 300,
       min: 30,
@@ -1494,15 +1459,6 @@ const labSpec: SettingsSpec = {
       max: 32,
     },
     { key: LAB, path: 'timeZone', label: 'Analyser time zone', kind: 'text', placeholder: 'Asia/Kolkata' },
-    {
-      key: 'integrations.lab.instruments',
-      label: 'Analysers',
-      kind: 'json',
-      shape: 'array',
-      check: checkInstruments,
-      group: 'Analysers',
-      hint: 'One entry per analyser, e.g. [{ "code": "XN550", "name": "Sysmex XN-550", "protocol": "Hl7v2", "port": 5100, "allowedIps": ["192.168.10.21"] }]. Protocol is Hl7v2 or Astm; ASTM analysers can also set "hostQuery".',
-    },
   ],
   secrets: [],
 };

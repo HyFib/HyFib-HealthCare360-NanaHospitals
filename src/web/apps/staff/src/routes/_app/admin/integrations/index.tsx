@@ -51,6 +51,9 @@ const LISTENER_STATES: Record<string, { label: string; tone: 'success' | 'warnin
   listening: { label: 'Listening', tone: 'success' },
   starting: { label: 'Starting', tone: 'warning' },
   failed: { label: 'Failed', tone: 'danger' },
+  connected: { label: 'Connected', tone: 'success' },
+  waiting: { label: 'Waiting for agent', tone: 'warning' },
+  port_error: { label: 'COM port problem', tone: 'danger' },
 };
 
 function shorten(text: string, length = 140): string {
@@ -216,7 +219,10 @@ function IntegrationsPage() {
       </Section>
 
       {listeners.length > 0 && (
-        <Section title="Laboratory analysers" description="Live status of each analyser’s listening port.">
+        <Section
+          title="Laboratory analysers"
+          description="Live status of each network analyser’s port and each serial analyser’s lab agent. Set them up in Lab setup › Analysers."
+        >
           <ListenerTable listeners={listeners} />
         </Section>
       )}
@@ -242,7 +248,7 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
     <DataTable
       ariaLabel="Analyser listeners"
       rows={listeners}
-      getRowId={(listener) => `${listener.instrumentCode}:${listener.port}`}
+      getRowId={(listener) => listener.instrumentCode}
       size="small"
       columns={[
         {
@@ -256,11 +262,18 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
           width: 100,
           render: (listener) => (listener.protocol.toLowerCase() === 'astm' ? 'ASTM' : 'HL7 v2'),
         },
-        { key: 'port', header: 'Port', width: 80, align: 'end', render: (listener) => listener.port },
+        {
+          key: 'port',
+          header: 'Connection',
+          render: (listener) =>
+            listener.transport === 'serial'
+              ? `${listener.serialPort ?? 'Serial'}${listener.agent ? ` on ${listener.agent}` : ''}`
+              : `Port ${listener.port}`,
+        },
         {
           key: 'state',
           header: 'State',
-          width: 120,
+          width: 150,
           render: (listener) => {
             const state = LISTENER_STATES[listener.state] ?? { label: listener.state, tone: 'warning' as const };
             return <StatusBadge status={listener.state} tone={state.tone} label={state.label} />;
