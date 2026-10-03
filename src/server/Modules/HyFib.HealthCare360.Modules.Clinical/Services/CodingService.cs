@@ -80,7 +80,8 @@ public sealed class CodingService(
             return Error.NotFound(nameof(EncounterCoding), id);
         }
 
-        var lines = await ResolveLinesAsync(request.Entries, ct);
+        var recorded = coding.Entries.Select(e => (e.Kind, e.Code)).ToHashSet();
+        var lines = await ResolveLinesAsync(request.Entries, recorded, ct);
         if (lines.IsFailure)
         {
             return lines.Error!;
@@ -204,23 +205,45 @@ public sealed class CodingService(
             c.Entries.OrderBy(e => e.Sequence).Select(e => new CodingEntryDto(e.Id, e.Kind, e.Code, e.Title, e.IsPrimary, e.Sequence)).ToList(), c.Version);
     }
 
-    private async Task<Result<IReadOnlyList<CodingLine>>> ResolveLinesAsync(IReadOnlyList<CodingLineRequest> entries, CancellationToken ct)
+    private async Task<Result<IReadOnlyList<CodingLine>>> ResolveLinesAsync(
+        IReadOnlyList<CodingLineRequest> entries,
+        IReadOnlySet<(CodingEntryKind Kind, string Code)> recorded,
+        CancellationToken ct)
     {
         var diagnosisCodes = entries.Where(e => e.Kind == CodingEntryKind.Diagnosis).Select(e => e.Code.Trim().ToUpperInvariant()).Distinct().ToList();
         var procedureCodes = entries.Where(e => e.Kind == CodingEntryKind.Procedure).Select(e => e.Code.Trim().ToUpperInvariant()).Distinct().ToList();
-        var icd = await db.Set<IcdCode>().AsNoTracking().Where(c => diagnosisCodes.Contains(c.Code) && c.IsActive).ToListAsync(ct);
-        var procedures = await db.Set<ProcedureCode>().AsNoTracking().Where(c => procedureCodes.Contains(c.Code) && c.IsActive).ToListAsync(ct);
+        var icd = await db.Set<IcdCode>().AsNoTracking().Where(c => diagnosisCodes.Contains(c.Code)).ToListAsync(ct);
+        var procedures = await db.Set<ProcedureCode>().AsNoTracking().Where(c => procedureCodes.Contains(c.Code))
+            .ToListAsync(ct);
+        return ResolveLines(entries, icd, procedures, recorded);
+    }
 
+    /// <summary>
+    /// The coding lines for the entries, from the catalogue rows of their codes. A code no longer in use (withdrawn by
+    /// an import, or switched off by MRD) is accepted only where the record already has it, so a record can be saved
+    /// again after an import; it cannot be newly added.
+    /// </summary>
+    internal static Result<IReadOnlyList<CodingLine>> ResolveLines(
+        IReadOnlyList<CodingLineRequest> entries,
+        IReadOnlyList<IcdCode> icd,
+        IReadOnlyList<ProcedureCode> procedures,
+        IReadOnlySet<(CodingEntryKind Kind, string Code)> recorded)
+    {
         var lines = new List<CodingLine>();
         foreach (var entry in entries)
         {
             var code = entry.Code.Trim().ToUpperInvariant();
+            var kept = recorded.Contains((entry.Kind, code));
             if (entry.Kind == CodingEntryKind.Diagnosis)
             {
-                var match = icd.Where(c => c.Code == code).OrderBy(c => c.Release == CodeReleases.Icd10 ? 0 : 1).FirstOrDefault();
+                var match = icd.Where(c => c.Code == code && (c.IsActive || kept))
+                    .OrderByDescending(c => c.IsActive).ThenBy(c => c.Release == CodeReleases.Icd10 ? 0 : 1)
+                    .FirstOrDefault();
                 if (match is null)
                 {
-                    return Error.Field("entries", $"{code} is not in the ICD catalogue. Search the catalogue or add the code first.");
+                    return Error.Field("entries", icd.Any(c => c.Code == code)
+                        ? $"{code} is no longer in use in the ICD catalogue. Choose a current code."
+                        : $"{code} is not in the ICD catalogue. Search the catalogue or add the code first.");
                 }
 
                 if (!match.IsBillable)
@@ -238,10 +261,13 @@ public sealed class CodingService(
             }
             else
             {
-                var match = procedures.FirstOrDefault(c => c.Code == code);
+                var match = procedures.Where(c => c.Code == code && (c.IsActive || kept))
+                    .OrderByDescending(c => c.IsActive).FirstOrDefault();
                 if (match is null)
                 {
-                    return Error.Field("entries", $"{code} is not in the procedure catalogue.");
+                    return Error.Field("entries", procedures.Any(c => c.Code == code)
+                        ? $"{code} is no longer in use in the procedure catalogue. Choose a current code."
+                        : $"{code} is not in the procedure catalogue.");
                 }
 
                 lines.Add(new CodingLine(CodingEntryKind.Procedure, match.Code, match.Title, entry.IsPrimary));

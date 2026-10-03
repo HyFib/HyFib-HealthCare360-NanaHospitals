@@ -18,7 +18,9 @@ public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess
             return allowed.Error!;
         }
 
-        var codes = await CheckCodesAsync(request.DiagnosisCodes, ct);
+        var recorded = await Summaries().Where(s => s.AdmissionId == admissionId).Select(s => s.DiagnosisCodes)
+            .FirstOrDefaultAsync(ct);
+        var codes = await CheckCodesAsync(request.DiagnosisCodes, recorded, ct);
         if (codes.IsFailure)
         {
             return codes.Error!;
@@ -78,7 +80,8 @@ public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess
 
     public async Task<Result<DischargeSummaryDto>> AmendAsync(Guid id, AmendDischargeSummaryRequest request, CancellationToken ct)
     {
-        var codes = await CheckCodesAsync(request.DiagnosisCodes, ct);
+        var recorded = await Summaries().Where(s => s.Id == id).Select(s => s.DiagnosisCodes).FirstOrDefaultAsync(ct);
+        var codes = await CheckCodesAsync(request.DiagnosisCodes, recorded, ct);
         if (codes.IsFailure)
         {
             return codes.Error!;
@@ -188,19 +191,56 @@ public sealed class DischargeSummaryService(HospitalDbContext db, ClinicalAccess
         return await ToDtoAsync(summary, ct);
     }
 
-    /// <summary>Discharge summaries must use valid catalogue codes so MRD coding and ABDM exports stay consistent.</summary>
-    private async Task<Result> CheckCodesAsync(IReadOnlyList<string>? codes, CancellationToken ct)
+    /// <summary>
+    /// Discharge summaries must use valid catalogue codes so MRD coding and ABDM exports stay consistent. A code no
+    /// longer in use (withdrawn by an import, or switched off by MRD) is accepted only where the summary already has
+    /// it.
+    /// </summary>
+    private async Task<Result> CheckCodesAsync(
+        IReadOnlyList<string>? codes, IReadOnlyCollection<string>? recorded, CancellationToken ct)
     {
-        var wanted = (codes ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()).Distinct().ToList();
+        var wanted = Normalized(codes);
         if (wanted.Count == 0)
         {
             return Result.Success();
         }
 
-        var known = await db.Set<IcdCode>().Where(c => wanted.Contains(c.Code) && c.IsActive).Select(c => c.Code).ToListAsync(ct);
-        var unknown = wanted.Except(known, StringComparer.Ordinal).ToList();
-        return unknown.Count == 0 ? Result.Success() : Error.Field("diagnosisCodes", $"Unknown ICD code(s): {string.Join(", ", unknown)}.");
+        var catalogue = await db.Set<IcdCode>().Where(c => wanted.Contains(c.Code))
+            .Select(c => new { c.Code, c.IsActive })
+            .ToListAsync(ct);
+        var inUse = catalogue.Where(c => c.IsActive).Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        var inCatalogue = catalogue.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        return CheckCodes(wanted, inUse, inCatalogue, recorded ?? []);
     }
+
+    /// <summary>
+    /// The rule of <see cref="CheckCodesAsync"/>, given the codes in use and every code in the catalogue.
+    /// </summary>
+    internal static Result CheckCodes(
+        IReadOnlyList<string>? codes,
+        IReadOnlySet<string> inUse,
+        IReadOnlySet<string> inCatalogue,
+        IReadOnlyCollection<string> recorded)
+    {
+        var wanted = Normalized(codes);
+        var kept = Normalized([.. recorded]).ToHashSet(StringComparer.Ordinal);
+        var unknown = wanted.Where(c => !inCatalogue.Contains(c)).ToList();
+        if (unknown.Count > 0)
+        {
+            return Error.Field("diagnosisCodes", $"Unknown ICD code(s): {string.Join(", ", unknown)}.");
+        }
+
+        var retired = wanted.Where(c => !inUse.Contains(c) && !kept.Contains(c)).ToList();
+        return retired.Count == 0
+            ? Result.Success()
+            : Error.Field("diagnosisCodes",
+                $"No longer in use in the ICD catalogue: {string.Join(", ", retired)}. Choose a current code; " +
+                "codes already on the summary can stay.");
+    }
+
+    private static List<string> Normalized(IReadOnlyList<string>? codes) =>
+        (codes ?? []).Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim().ToUpperInvariant()).Distinct()
+            .ToList();
 
     private async Task ResolveChartDeficiencyAsync(Guid admissionId, CancellationToken ct)
     {
