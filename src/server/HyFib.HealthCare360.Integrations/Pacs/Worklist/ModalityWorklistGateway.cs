@@ -30,6 +30,9 @@ internal sealed class ModalityWorklistGateway(
     TimeProvider time,
     ILogger<ModalityWorklistGateway> logger)
 {
+    /// <summary>Most worklist entries read from the source for one query.</summary>
+    internal const int MaxScanned = 5000;
+
     /// <summary>A refusal of the same kind is written to the integration log at most this often (the dashboard counts every one).</summary>
     private static readonly TimeSpan RefusalLogInterval = TimeSpan.FromMinutes(10);
 
@@ -194,7 +197,7 @@ internal sealed class ModalityWorklistGateway(
             }
 
             var answer = string.Create(CultureInfo.InvariantCulture, $"{datasets.Count} {(datasets.Count == 1 ? "entry" : "entries")}")
-                         + (items.Limited ? string.Create(CultureInfo.InvariantCulture, $" (the first {config.MaxResults})") : string.Empty)
+                         + (items.Limited ? " (more entries match; the answer was cut short)" : string.Empty)
                          + (unreadable > 0 ? string.Create(CultureInfo.InvariantCulture, $"; {unreadable} could not be put into DICOM") : string.Empty);
             await trace.LogAsync(IntegrationNames.Mwl, Provider(peer.AeTitle), "c-find", true, started, peer.AeTitle, summary, answer, null, IntegrationDirection.Inbound);
             state.Answered();
@@ -217,8 +220,11 @@ internal sealed class ModalityWorklistGateway(
 
     /// <summary>
     /// Asks the source for the modality's facility, the days the query names within the days offered (today minus
-    /// <c>daysBack</c> to today plus <c>daysAhead</c>), the kinds of study the modality does, and the exact keys the database
-    /// can filter on; then applies every key, wildcards included.
+    /// <c>daysBack</c> to today plus <c>daysAhead</c>), the start times it names, the kinds of study the modality does,
+    /// and the keys the database can filter on (the station, the accession number and patient ID with their wildcards,
+    /// the start of the family name); then applies every key, wildcards included. Entries nearest to now come first,
+    /// and the source is read page by page until <c>maxResults</c> entries match, so entries the database could not
+    /// rule out never crowd out matching ones. At most <see cref="MaxScanned"/> entries are read for one query.
     /// </summary>
     private async Task<(IReadOnlyList<ModalityWorklistItem> Matched, bool Limited)> FindAsync(
         IModalityWorklistSource source, WorklistPeer peer, WorklistKeys keys, WorklistConfig config, CancellationToken cancellationToken)
@@ -233,13 +239,47 @@ internal sealed class ModalityWorklistGateway(
             return ([], false);
         }
 
-        var items = await source.FindAsync(
-            new ModalityWorklistQuery(peer.FacilityId, from, to, modalities, Exact(keys.StationAeTitle), Exact(keys.AccessionNumber), Exact(keys.PatientId),
-                config.MaxResults + 1),
-            cancellationToken);
-        var matched = items.Where(i => i.FacilityId == peer.FacilityId && WorklistMatcher.Matches(i, keys)).ToList();
-        return (matched.Take(config.MaxResults).ToList(), items.Count > config.MaxResults);
+        if (TooLong(keys.AccessionNumber) || TooLong(keys.PatientId) || TooLong(keys.PatientName))
+        {
+            // Matches nothing (DicomWildcard.MaxPatternLength); the database need not be asked.
+            return ([], false);
+        }
+
+        var (fromTime, toTime) = keys.Times?.Clock() ?? (null, null);
+        var page = Math.Min(config.MaxResults + 1, ModalityWorklistQuery.MaxLimit);
+        var query = new ModalityWorklistQuery(peer.FacilityId, from, to, modalities, Exact(keys.StationAeTitle),
+            Pattern(keys.AccessionNumber), Pattern(keys.PatientId), page)
+        {
+            PatientNamePrefix = WorklistMatcher.FamilyNamePrefix(keys.PatientName),
+            FromTime = fromTime,
+            ToTime = toTime,
+            Around = time.GetUtcNow(),
+        };
+        var matched = new List<ModalityWorklistItem>();
+        for (var read = 0; read < MaxScanned;)
+        {
+            var items = await source.FindAsync(query with { Offset = read }, cancellationToken);
+            matched.AddRange(items.Where(i => i.FacilityId == peer.FacilityId && WorklistMatcher.Matches(i, keys)));
+            if (matched.Count > config.MaxResults)
+            {
+                return (matched.Take(config.MaxResults).ToList(), true);
+            }
+
+            if (items.Count < page)
+            {
+                return (matched, false);
+            }
+
+            read += items.Count;
+        }
+
+        return (matched, true);
     }
+
+    /// <summary>A key the database can match, wildcards included; null for universal matching.</summary>
+    private static string? Pattern(string? key) => DicomWildcard.IsUniversal(key) ? null : key!.Trim();
+
+    private static bool TooLong(string? key) => key is not null && key.Trim().Length > DicomWildcard.MaxPatternLength;
 
     /// <summary>A key the database can match exactly (no wildcards), or null.</summary>
     private static string? Exact(string? key) =>

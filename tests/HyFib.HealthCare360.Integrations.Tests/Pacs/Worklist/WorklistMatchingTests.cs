@@ -131,4 +131,40 @@ public sealed class WorklistMatchingTests
         WorklistMatcher.PresentedModality("CT", "CT", ["CT"]).ShouldBe("CT");
         WorklistMatcher.PresentedModality("CR", null, ["CT"]).ShouldBe("CR");
     }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("*", null)]
+    [InlineData("*ARMA", null)]
+    [InlineData("SHARMA", "SHARMA")]
+    [InlineData("sha*", "sha")]
+    [InlineData("SH?RMA", "SH")]
+    [InlineData("SHARMA^RAVI", "SHARMA")]
+    [InlineData(" RAVI KU* ", "RAVI KU")]
+    [InlineData("SHARMA=ideographic", "SHARMA")]
+    [InlineData("^RAVI", null)]
+    public void The_database_is_given_the_literal_start_of_the_family_name(string? key, string? prefix) =>
+        WorklistMatcher.FamilyNamePrefix(key).ShouldBe(prefix);
+
+    [Theory]
+    [InlineData("SHARMA^RAVI^KUMAR")]
+    [InlineData("RAVI KUMAR")]
+    [InlineData("SHARMAJI^RAVI")]
+    public void Every_name_a_key_matches_starts_with_its_family_name_prefix(string name)
+    {
+        foreach (var key in new[] { "SHARMA", "SHAR*", "SH*KUMAR", "sharma^ravi*", "RAVI K*", "RAVI KUMAR" })
+        {
+            if (WorklistMatcher.NameMatches(key, name))
+            {
+                name.Split('^')[0].ShouldStartWith(WorklistMatcher.FamilyNamePrefix(key)!, Case.Insensitive);
+            }
+        }
+    }
+
+    [Fact]
+    public void A_time_range_becomes_clock_times()
+    {
+        DicomRange.ParseTime("0900-1130")!.Clock().ShouldBe((new TimeOnly(9, 0), new TimeOnly(11, 30, 59)));
+        DicomRange.ParseTime("14-")!.Clock().ShouldBe((new TimeOnly(14, 0), (TimeOnly?)null));
+    }
 }

@@ -172,6 +172,84 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Passes_the_name_start_the_id_pattern_and_the_times_to_the_database()
+    {
+        Start(Settings());
+        TwoStudiesToday();
+        var request = DicomCFindRequest.CreateWorklistQuery(patientId: "NH26*", patientName: "ver*^an*", modality: "CT",
+            scheduledDateTime: new DicomDateRange(
+                Today.ToDateTime(new TimeOnly(9, 0)), Today.ToDateTime(new TimeOnly(11, 30))));
+
+        var (answers, _) = await FindAsync(request);
+
+        answers.ShouldHaveSingleItem().GetString(DicomTag.PatientID).ShouldBe("NH26000002");
+        var query = _source.Queries.ShouldHaveSingleItem();
+        query.PatientNamePrefix.ShouldBe("ver");
+        query.PatientId.ShouldBe("NH26*");
+        query.FromTime.ShouldBe(new TimeOnly(9, 0));
+        query.ToTime.ShouldBe(new TimeOnly(11, 30));
+        query.Around.ShouldNotBeNull();
+        query.Offset.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Reads_on_until_enough_entries_match_so_none_is_dropped()
+    {
+        Start(Settings() with { MaxResults = 3 });
+        var date = Today.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        for (var i = 0; i < 20; i++)
+        {
+            _source.Items.Add(WorklistMatchingTests.Item(patientName: "SHARMA^RAVI", date: date, facility: Facility));
+        }
+
+        _source.Items.Add(WorklistMatchingTests.Item(
+            patientName: "VERMA^ANITA", patientId: "NH26000002", date: date, facility: Facility));
+        _source.Items.Add(WorklistMatchingTests.Item(
+            patientName: "KUVERMA^ANU", patientId: "NH26000003", date: date, facility: Facility));
+
+        var (answers, _) = await FindAsync(TodaysCtWorklist(patientName: "*VERMA*"));
+
+        answers.Select(a => a.GetString(DicomTag.PatientID)).ShouldBe(["NH26000002", "NH26000003"]);
+        _source.Queries.Select(q => q.Offset).ShouldBe([0, 4, 8, 12, 16, 20]);
+        _source.Queries.ShouldAllBe(q => q.Limit == 4);
+        _tracing.Entries.ShouldHaveSingleItem().Response.ShouldBe("2 entries");
+    }
+
+    [Fact]
+    public async Task Cuts_the_answer_at_the_limit_and_says_so()
+    {
+        Start(Settings() with { MaxResults = 3 });
+        var date = Today.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        for (var i = 0; i < 10; i++)
+        {
+            _source.Items.Add(WorklistMatchingTests.Item(date: date, facility: Facility));
+        }
+
+        var (answers, _) = await FindAsync(TodaysCtWorklist());
+
+        answers.Count.ShouldBe(3);
+        _source.Queries.ShouldHaveSingleItem();
+        _tracing.Entries.ShouldHaveSingleItem().Response
+            .ShouldBe("3 entries (more entries match; the answer was cut short)");
+    }
+
+    [Fact]
+    public async Task Reads_past_the_largest_page_when_the_limit_is_the_largest_allowed()
+    {
+        Start(Settings() with { MaxResults = 1000 });
+        var date = Today.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+        for (var i = 0; i < 1500; i++)
+        {
+            _source.Items.Add(WorklistMatchingTests.Item(date: date, facility: Facility));
+        }
+
+        var (answers, _) = await FindAsync(TodaysCtWorklist(patientName: "NOBODY"));
+
+        answers.ShouldBeEmpty();
+        _source.Queries.Select(q => (q.Offset, q.Limit)).ShouldBe([(0, 1000), (1000, 1000)]);
+    }
+
+    [Fact]
     public async Task Writes_one_audit_entry_and_one_masked_log_line_per_query()
     {
         Start(Settings());
@@ -368,7 +446,11 @@ public sealed class ModalityWorklistServerTests : IAsyncDisposable
             Queries.Enqueue(query);
             return Failure is { } failure
                 ? Task.FromException<IReadOnlyList<ModalityWorklistItem>>(failure)
-                : Task.FromResult<IReadOnlyList<ModalityWorklistItem>>(Items.Where(i => i.FacilityId == query.FacilityId).ToList());
+                : Task.FromResult<IReadOnlyList<ModalityWorklistItem>>(Items
+                    .Where(i => i.FacilityId == query.FacilityId)
+                    .Skip(query.Offset)
+                    .Take(Math.Min(query.Limit, ModalityWorklistQuery.MaxLimit))
+                    .ToList());
         }
     }
 }

@@ -33,11 +33,20 @@ internal sealed record DicomRange(string? From, string? To)
     public bool Contains(string value) =>
         (From is null || string.CompareOrdinal(value, From) >= 0) && (To is null || string.CompareOrdinal(value, To) <= 0);
 
+    /// <summary>The times of a TM range as clock times (to the second); open ends stay open.</summary>
+    public (TimeOnly? From, TimeOnly? To) Clock() => (Clock(From), Clock(To));
+
     /// <summary>The dates of a DA range as calendar days; open ends stay open.</summary>
     public (DateOnly? From, DateOnly? To) Days() => (Day(From), Day(To));
 
     private static DateOnly? Day(string? value) =>
         value is not null && DateOnly.TryParseExact(value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
+
+    private static TimeOnly? Clock(string? value) =>
+        value is not null
+        && TimeOnly.TryParseExact(value, "HHmmss", CultureInfo.InvariantCulture, DateTimeStyles.None, out var clock)
+            ? clock
+            : null;
 
     private static DicomRange? Parse(string? value, Func<string, bool, string?> part)
     {
@@ -204,6 +213,24 @@ internal static class WorklistMatcher
         }
 
         return allowed.FirstOrDefault(Projection.Contains) ?? itemModality;
+    }
+
+    /// <summary>
+    /// The start of the family name that every name <see cref="NameMatches"/> finds must have: the key's literal text
+    /// up to its first wildcard or component separator. The database can filter on it without missing a match, because
+    /// a match starts with that text and the family name is the first component. Null when the key has no such text.
+    /// </summary>
+    public static string? FamilyNamePrefix(string? pattern)
+    {
+        if (DicomWildcard.IsUniversal(pattern))
+        {
+            return null;
+        }
+
+        var key = pattern!.Split('=')[0].Trim();
+        var end = key.IndexOfAny(['*', '?', '^']);
+        var prefix = (end < 0 ? key : key[..end]).Trim();
+        return prefix.Length == 0 ? null : prefix;
     }
 
     /// <summary>

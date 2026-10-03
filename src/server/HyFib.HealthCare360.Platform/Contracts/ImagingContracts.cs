@@ -45,9 +45,13 @@ public sealed record ModalityWorklistItem(
 /// The worklist entries a modality may see: one facility's imaging studies still to be done (ordered, scheduled,
 /// arrived or started) whose procedure step starts on a day from <see cref="From"/> to <see cref="To"/> (hospital time).
 /// <see cref="Modalities"/> are DICOM modality codes (CR, DX, CT, MR, US, MG, RF); empty means every modality.
-/// <see cref="StationAeTitle"/>, <see cref="AccessionNumber"/> and <see cref="PatientId"/> (the UHID) are exact matches,
-/// applied when set; a study with no station assigned matches every station. At most <see cref="Limit"/> entries are
-/// returned, earliest first.
+/// <see cref="StationAeTitle"/> is an exact match; a study with no station assigned matches every station.
+/// <see cref="AccessionNumber"/> and <see cref="PatientId"/> (the UHID) are exact, or DICOM wildcard patterns when they
+/// hold <c>*</c> or <c>?</c>, without regard to case. <see cref="PatientNamePrefix"/> keeps patients whose DICOM family
+/// name component starts with it (without regard to case). <see cref="FromTime"/> and <see cref="ToTime"/> (inclusive,
+/// hospital time) limit the start time on each day. Every filter is applied only when set. Entries come earliest
+/// first, or nearest to <see cref="Around"/> first when it is set; <see cref="Offset"/> entries in that order are
+/// skipped, and at most <see cref="Limit"/> (never more than <see cref="MaxLimit"/>) are returned.
 /// </summary>
 public sealed record ModalityWorklistQuery(
     Guid FacilityId,
@@ -57,7 +61,21 @@ public sealed record ModalityWorklistQuery(
     string? StationAeTitle = null,
     string? AccessionNumber = null,
     string? PatientId = null,
-    int Limit = 500);
+    int Limit = 500)
+{
+    /// <summary>Most entries returned for one query, whatever <see cref="Limit"/> asks for.</summary>
+    public const int MaxLimit = 1000;
+
+    public string? PatientNamePrefix { get; init; }
+
+    public TimeOnly? FromTime { get; init; }
+
+    public TimeOnly? ToTime { get; init; }
+
+    public DateTimeOffset? Around { get; init; }
+
+    public int Offset { get; init; }
+}
 
 /// <summary>
 /// Implemented by the Diagnostics module (radiology). The DICOM modality worklist server in Integrations resolves it in

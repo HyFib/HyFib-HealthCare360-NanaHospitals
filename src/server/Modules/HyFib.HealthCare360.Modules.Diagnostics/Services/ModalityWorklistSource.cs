@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Patients.Domain;
@@ -12,13 +13,16 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLookups lookups) : IModalityWorklistSource
 {
     /// <summary>Upper bound for one answer, whatever the caller asks for.</summary>
-    public const int MaxItems = 1000;
+    public const int MaxItems = ModalityWorklistQuery.MaxLimit;
 
-    public async Task<IReadOnlyList<ModalityWorklistItem>> FindAsync(ModalityWorklistQuery query, CancellationToken cancellationToken)
+    /// <summary>When the procedure step starts: on arrival, else at the appointment, else when ordered.</summary>
+    private static readonly Expression<Func<ImagingStudy, DateTimeOffset>> StartOf =
+        s => s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt;
+
+    public async Task<IReadOnlyList<ModalityWorklistItem>> FindAsync(
+        ModalityWorklistQuery query, CancellationToken cancellationToken)
     {
         var (first, last) = query.From <= query.To ? (query.From, query.To) : (query.To, query.From);
-        var start = DiagnosticsTime.StartOfDayUtc(first);
-        var end = DiagnosticsTime.StartOfDayUtc(last.AddDays(1));
         var modalities = query.Modalities.SelectMany(DicomConventions.ModalitiesFor).Distinct().ToList();
         if (query.Modalities.Count > 0 && modalities.Count == 0)
         {
@@ -29,7 +33,7 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
             .Where(s => s.FacilityId == query.FacilityId)
             .Where(s => s.Status == ImagingStudyStatus.Ordered || s.Status == ImagingStudyStatus.Scheduled
                         || s.Status == ImagingStudyStatus.Arrived || s.Status == ImagingStudyStatus.InProgress)
-            .Where(s => (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) >= start && (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) < end);
+            .Where(StartsWithin(first, last, query.FromTime, query.ToTime));
         if (modalities.Count > 0)
         {
             studies = studies.Where(s => modalities.Contains(s.Modality));
@@ -40,31 +44,120 @@ internal sealed class ModalityWorklistSource(HospitalDbContext db, DiagnosticsLo
             studies = studies.Where(s => s.StationAeTitle == null || s.StationAeTitle == station);
         }
 
-        if (Clean(query.AccessionNumber)?.ToUpperInvariant() is { } accession)
+        if (Clean(query.AccessionNumber) is { } accession)
         {
-            studies = studies.Where(s => s.AccessionNumber == accession);
+            studies = Like(accession) is { } pattern
+                ? studies.Where(s => EF.Functions.ILike(s.AccessionNumber, pattern))
+                : studies.Where(s => s.AccessionNumber == accession.ToUpperInvariant());
         }
 
-        if (Clean(query.PatientId)?.ToUpperInvariant() is { } uhid)
+        var patients = db.Set<Patient>().AsQueryable();
+        var byPatient = false;
+        if (Clean(query.PatientId) is { } uhid)
         {
-            var patients = db.Set<Patient>().Where(p => p.Uhid == uhid).Select(p => p.Id);
-            studies = studies.Where(s => patients.Contains(s.PatientId));
+            patients = Like(uhid) is { } pattern
+                ? patients.Where(p => EF.Functions.ILike(p.Uhid, pattern))
+                : patients.Where(p => p.Uhid == uhid.ToUpperInvariant());
+            byPatient = true;
         }
 
-        var rows = await studies
-            .OrderBy(s => s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt)
+        if (Clean(query.PatientNamePrefix) is { } prefix)
+        {
+            // The family name component as DicomConventions.PersonName makes it: the surname, or for a patient
+            // registered without one, the whole name.
+            var pattern = Escape(prefix) + "%";
+            patients = patients.Where(p => p.LastName != null && p.LastName != ""
+                ? EF.Functions.ILike(p.LastName, pattern)
+                : EF.Functions.ILike(p.FirstName + " " + (p.MiddleName ?? ""), pattern));
+            byPatient = true;
+        }
+
+        if (byPatient)
+        {
+            var ids = patients.Select(p => p.Id);
+            studies = studies.Where(s => ids.Contains(s.PatientId));
+        }
+
+        var ordered = query.Around is { } around
+            ? studies.OrderBy(s => (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) < around
+                ? around - (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt)
+                : (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) - around)
+            : studies.OrderBy(StartOf);
+        var rows = await ordered
             .ThenBy(s => s.Id)
+            .Skip(Math.Max(0, query.Offset))
             .Take(Math.Clamp(query.Limit, 1, MaxItems))
             .ToListAsync(cancellationToken);
 
-        var snapshots = await lookups.PatientsAsync(rows.Select(s => s.PatientId).Distinct().ToList(), cancellationToken);
-        var doctors = await lookups.PractitionerNamesAsync(rows.Select(s => s.OrderingPractitionerId), cancellationToken);
+        var snapshots = await lookups.PatientsAsync(rows.Select(s => s.PatientId).Distinct().ToList(),
+            cancellationToken);
+        var doctors = await lookups.PractitionerNamesAsync(rows.Select(s => s.OrderingPractitionerId),
+            cancellationToken);
         return rows
             .Where(s => snapshots.ContainsKey(s.PatientId))
-            .Select(s => ModalityWorklistMapping.ToItem(
-                s, snapshots[s.PatientId], s.OrderingPractitionerId is { } doctor ? doctors.GetValueOrDefault(doctor) : null))
+            .Select(s => ModalityWorklistMapping.ToItem(s, snapshots[s.PatientId],
+                s.OrderingPractitionerId is { } doctor ? doctors.GetValueOrDefault(doctor) : null))
             .ToList();
     }
+
+    /// <summary>
+    /// Studies whose step starts on a day from <paramref name="first"/> to <paramref name="last"/> (hospital time),
+    /// and, when a time range is given, within it on that day: one UTC window per day, so the database applies it.
+    /// </summary>
+    internal static Expression<Func<ImagingStudy, bool>> StartsWithin(
+        DateOnly first, DateOnly last, TimeOnly? from, TimeOnly? to)
+    {
+        if (from is null && to is null)
+        {
+            var start = DiagnosticsTime.StartOfDayUtc(first);
+            var end = DiagnosticsTime.StartOfDayUtc(last.AddDays(1));
+            return s => (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) >= start
+                        && (s.ArrivedAt ?? s.ScheduledAt ?? s.OrderedAt) < end;
+        }
+
+        var startOf = StartOf.Body;
+        Expression? any = null;
+        for (var day = first; day <= last; day = day.AddDays(1))
+        {
+            var (low, high) = Window(day, from, to);
+            if (low >= high)
+            {
+                continue;
+            }
+
+            var within = Expression.AndAlso(
+                Expression.GreaterThanOrEqual(startOf, Expression.Constant(low)),
+                Expression.LessThan(startOf, Expression.Constant(high)));
+            any = any is null ? within : Expression.OrElse(any, within);
+        }
+
+        return Expression.Lambda<Func<ImagingStudy, bool>>(any ?? Expression.Constant(false), StartOf.Parameters);
+    }
+
+    /// <summary>
+    /// The UTC window [low, high) of one day's time range; the upper bound takes in the whole last second.
+    /// </summary>
+    internal static (DateTimeOffset Low, DateTimeOffset High) Window(DateOnly day, TimeOnly? from, TimeOnly? to)
+    {
+        var dayStart = DiagnosticsTime.StartOfDayUtc(day);
+        var low = dayStart + (from ?? TimeOnly.MinValue).ToTimeSpan();
+        var high = to is { } until
+            ? dayStart + new TimeSpan(until.Hour, until.Minute, until.Second) + TimeSpan.FromSeconds(1)
+            : DiagnosticsTime.StartOfDayUtc(day.AddDays(1));
+        return (low, high);
+    }
+
+    /// <summary>A DICOM wildcard pattern as a LIKE pattern, or null when it has no wildcard (an exact match).</summary>
+    internal static string? Like(string pattern) =>
+        pattern.Contains('*', StringComparison.Ordinal) || pattern.Contains('?', StringComparison.Ordinal)
+            ? Escape(pattern).Replace('*', '%').Replace('?', '_')
+            : null;
+
+    /// <summary>Escapes LIKE's own wildcards (PostgreSQL's escape character is the backslash).</summary>
+    private static string Escape(string text) =>
+        text.Replace(@"\", @"\\", StringComparison.Ordinal)
+            .Replace("%", @"\%", StringComparison.Ordinal)
+            .Replace("_", @"\_", StringComparison.Ordinal);
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
