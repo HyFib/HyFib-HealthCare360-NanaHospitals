@@ -23,6 +23,7 @@ const STATUSES: TallyVoucherStatus[] = [
   'DiffersInTally',
   'NoLongerInHc360',
   'OnlyInTally',
+  'BillOfAnotherDay',
 ];
 
 function sending(overrides: Partial<TallySending> = {}): TallySending {
@@ -82,6 +83,14 @@ describe('Tally screen words', () => {
     expect(whatToDo({ status: 'NoLongerInHc360', match: 'Matched' })).toContain('Delete it in Tally');
   });
 
+  it("asks for the bill's own day to be posted again, not for the bill to be deleted", () => {
+    const advice = whatToDo({ status: 'BillOfAnotherDay', match: 'OnlyInTally', billDate: '2026-09-24' });
+    expect(advice).toContain('Post the day book of');
+    expect(advice).toContain('2026');
+    expect(advice).toContain('Do not delete it');
+    expect(whatToDo({ status: 'BillOfAnotherDay', match: 'OnlyInTally' })).toContain("the bill's own day");
+  });
+
   it('sums up a day in one sentence', () => {
     expect(sendingSummary(sending())).toBe('Nothing was billed, received or paid on this day.');
     expect(sendingSummary(sending({ vouchers: 1, inTally: 1 }))).toBe('All 1 voucher is in Tally.');
@@ -110,6 +119,7 @@ describe('Tally screen words', () => {
       voucher('NotSent', 'RC2', 250),
       voucher('NoLongerInHc360', 'DF-NH-20260925-DR005', 1200),
       voucher('OnlyInTally', 'DF-20260925-001', 900),
+      voucher('BillOfAnotherDay', 'NHOP260000042', 300),
     ]);
 
     expect(question.title).toBe('Mark the day book of 25 Sept 2026 imported into Tally?');

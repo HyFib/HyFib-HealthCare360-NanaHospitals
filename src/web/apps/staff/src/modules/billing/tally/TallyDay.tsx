@@ -114,13 +114,19 @@ export function ReconciliationPanel({ check }: { check: TallyDayCheck }) {
                   )}
                 </td>
                 <td className={mergeClasses(styles.cell, styles.num)}>
-                  <Amount value={line.records} />
+                  {line.informational ? '—' : <Amount value={line.records} />}
                 </td>
                 <td className={mergeClasses(styles.cell, styles.num)}>
                   <Amount value={line.dayBook} />
                 </td>
                 <td className={mergeClasses(styles.cell, styles.num)}>
-                  {line.matches ? '—' : <Amount value={line.difference} tone="negative" />}
+                  {line.informational ? (
+                    <Text className={styles.muted}>Totals only</Text>
+                  ) : line.matches ? (
+                    '—'
+                  ) : (
+                    <Amount value={line.difference} tone="negative" />
+                  )}
                 </td>
               </tr>
             ))}

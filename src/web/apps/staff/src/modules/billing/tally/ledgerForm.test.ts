@@ -84,6 +84,17 @@ describe('ledger names form', () => {
     expect(paths).toEqual(expect.arrayContaining(['roundOff', 'discount', 'departments.2.code']));
   });
 
+  it("refuses a doctors' payable prefix of spaces only, and keeps the space a prefix ends in", () => {
+    const form = toLedgerForm(map);
+
+    const blank = ledgerFormSchema.safeParse({ ...form, doctorPayablePrefix: '   ' });
+    expect(blank.success).toBe(false);
+    expect(blank.error!.issues.map((issue) => issue.path.join('.'))).toEqual(['doctorPayablePrefix']);
+
+    const saved = toLedgerMap(ledgerFormSchema.parse({ ...form, doctorPayablePrefix: '  Dr Payable - ' }));
+    expect(saved.doctorPayablePrefix).toBe('Dr Payable - ');
+  });
+
   it('names counter sales ledgers by GST rate when asked', () => {
     expect(counterSalesLedger('Pharmacy Sales', true, 12)).toBe('Pharmacy Sales @ 12%');
     expect(counterSalesLedger('Pharmacy Sales', false, 12)).toBe('Pharmacy Sales');

@@ -1,4 +1,4 @@
-import { formatInr } from '@hc360/core';
+import { formatDateOnly, formatInr } from '@hc360/core';
 import type { TallyExportStatus } from '../labels';
 import type {
   TallyCheckStatus,
@@ -48,6 +48,7 @@ export const VOUCHER_STATUS_LABEL: Record<TallyVoucherStatus, string> = {
   DiffersInTally: 'Differs in Tally',
   NoLongerInHc360: 'No longer in HC360',
   OnlyInTally: 'Only in Tally',
+  BillOfAnotherDay: 'Bill of another day',
 };
 
 export const VOUCHER_STATUS_TONE: Record<TallyVoucherStatus, Tone> = {
@@ -59,6 +60,7 @@ export const VOUCHER_STATUS_TONE: Record<TallyVoucherStatus, Tone> = {
   DiffersInTally: 'danger',
   NoLongerInHc360: 'danger',
   OnlyInTally: 'danger',
+  BillOfAnotherDay: 'warning',
 };
 
 export const ANSWER_LABEL: Record<TallyVoucherAnswer, string> = {
@@ -88,7 +90,7 @@ export function needsAttention(voucher: Pick<TallyVoucherDto, 'status'>): boolea
 }
 
 /** What to do about a voucher, in one sentence; null when nothing is needed. */
-export function whatToDo(voucher: Pick<TallyVoucherDto, 'status' | 'match'>): string | null {
+export function whatToDo(voucher: Pick<TallyVoucherDto, 'status' | 'match' | 'billDate'>): string | null {
   switch (voucher.status) {
     case 'InTally':
       return null;
@@ -108,6 +110,11 @@ export function whatToDo(voucher: Pick<TallyVoucherDto, 'status' | 'match'>): st
       return 'Delete it in Tally: HC360 no longer has this voucher.';
     case 'OnlyInTally':
       return 'Delete it in Tally: no day book in HC360 has this voucher.';
+    case 'BillOfAnotherDay':
+      return (
+        `Post the day book of ${voucher.billDate ? formatDateOnly(voucher.billDate) : "the bill's own day"} again: ` +
+        'Tally then moves this bill back to that day as a sale. Do not delete it in Tally.'
+      );
   }
 }
 
@@ -151,7 +158,9 @@ export function importQuestion(
   date: string,
   vouchers: Pick<TallyVoucherDto, 'status' | 'number' | 'amount' | 'voucherType'>[],
 ): { title: string; body: string; deleteFirst: string[] } {
-  const current = vouchers.filter((v) => v.status !== 'NoLongerInHc360' && v.status !== 'OnlyInTally');
+  const current = vouchers.filter(
+    (v) => v.status !== 'NoLongerInHc360' && v.status !== 'OnlyInTally' && v.status !== 'BillOfAnotherDay',
+  );
   const total = current.reduce((sum, v) => sum + v.amount, 0);
   return {
     title: `Mark the day book of ${date} imported into Tally?`,

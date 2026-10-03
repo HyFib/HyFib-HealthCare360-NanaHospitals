@@ -75,10 +75,11 @@ export const ledgerFormSchema = z
     writeOffs: ledger,
     insuranceDisallowances: ledger,
     doctorFeeExpense: ledger,
+    // Not trimmed at the end: the prefix usually ends in a space ("Doctor Fees Payable - ").
     doctorPayablePrefix: z
       .string()
-      .min(1, 'Enter the start of the doctors’ payable ledger names.')
-      .max(MAX_LEDGER, `Use at most ${MAX_LEDGER} characters.`)
+      .refine((v) => v.trim().length > 0, 'Enter the start of the doctors’ payable ledger names.')
+      .refine((v) => v.trimStart().length <= MAX_LEDGER, `Use at most ${MAX_LEDGER} characters.`)
       .refine(isOneLine, 'Keep the ledger name on one line.'),
     tdsPayable: ledger,
     doctorRecoveries: ledger,
@@ -212,7 +213,7 @@ export function toLedgerMap(form: LedgerForm): TallyLedgerMap {
     writeOffs: form.writeOffs.trim(),
     insuranceDisallowances: form.insuranceDisallowances.trim(),
     doctorFeeExpense: form.doctorFeeExpense.trim(),
-    doctorPayablePrefix: form.doctorPayablePrefix,
+    doctorPayablePrefix: form.doctorPayablePrefix.trimStart(),
     tdsPayable: form.tdsPayable.trim(),
     doctorRecoveries: form.doctorRecoveries.trim(),
     payoutBank: form.payoutBank.trim(),

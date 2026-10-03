@@ -106,6 +106,34 @@ describe('ReconciliationPanel', () => {
     expect(screen.getByText('Matched')).toBeInTheDocument();
     expect(screen.getByText(check.tallyMessage!)).toBeInTheDocument();
   });
+
+  it('shows pharmacy and canteen figures as totals only, never as matched', () => {
+    wrap(
+      <ReconciliationPanel
+        check={{
+          ...check,
+          lines: [
+            {
+              group: 'Pharmacy',
+              item: 'Sales',
+              records: 1250,
+              dayBook: 1250,
+              recordsCount: 4,
+              dayBookCount: 4,
+              note: "Totals only: the day book takes them from the pharmacy's own day, which HC360 has no second record of.",
+              informational: true,
+              difference: 0,
+              matches: true,
+            },
+          ],
+        }}
+      />,
+    );
+
+    const row = screen.getByText('Pharmacy: Sales').closest('tr')!;
+    expect(within(row).getByText('Totals only')).toBeInTheDocument();
+    expect(within(row).getAllByText('₹1,250.00')).toHaveLength(1);
+  });
 });
 
 describe('VoucherList', () => {

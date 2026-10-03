@@ -19,7 +19,8 @@ export type TallyVoucherStatus =
   | 'ChangedSinceSent'
   | 'DiffersInTally'
   | 'NoLongerInHc360'
-  | 'OnlyInTally';
+  | 'OnlyInTally'
+  | 'BillOfAnotherDay';
 
 /** What Tally last answered for a voucher (mirrors `TallyVoucherAnswer`). */
 export type TallyVoucherAnswer =
@@ -105,6 +106,8 @@ export interface TallyVoucherDto {
   tallyNumber: string | null;
   tallyDetail: string | null;
   checkedAt: string | null;
+  /** For a bill found only in Tally on this day: the day HC360 has it on, to be posted again. */
+  billDate?: string | null;
 }
 
 export interface TallyDayVouchers {
@@ -124,6 +127,7 @@ export interface TallyCheckLine {
   recordsCount: number | null;
   dayBookCount: number | null;
   note: string | null;
+  /** Totals only: HC360 has no second record of the figure to compare it with. */
   informational: boolean;
   difference: number;
   matches: boolean;
