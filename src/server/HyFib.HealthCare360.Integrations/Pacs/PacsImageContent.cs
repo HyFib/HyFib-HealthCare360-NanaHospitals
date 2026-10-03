@@ -18,6 +18,9 @@ internal static class PacsImageContent
 
     public const int MaxThumbnailBytes = 2 * 1024 * 1024;
 
+    /// <summary>First buffer for an image of undeclared size; it doubles as the image arrives.</summary>
+    private const int InitialBufferBytes = 256 * 1024;
+
     private static readonly byte[] JpegSignature = [0xFF, 0xD8, 0xFF];
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
@@ -32,7 +35,8 @@ internal static class PacsImageContent
         mediaType?.Trim().ToLowerInvariant() is Jpeg or "image/jpg" or Png;
 
     /// <exception cref="IntegrationException">The answer is not a JPEG or PNG image, or is larger than <paramref name="limit"/>.</exception>
-    public static async Task<(byte[] Content, string ContentType)> ReadAsync(HttpResponseMessage response, int limit, CancellationToken cancellationToken)
+    public static async Task<(ReadOnlyMemory<byte> Content, string ContentType)> ReadAsync(
+        HttpResponseMessage response, int limit, CancellationToken cancellationToken)
     {
         var declared = response.Content.Headers.ContentType?.MediaType;
         if (!IsAcceptedMediaType(declared))
@@ -46,28 +50,66 @@ internal static class PacsImageContent
         }
 
         var content = await ReadLimitedAsync(response.Content, limit, cancellationToken);
-        return Detect(content) is { } type
+        return Detect(content.Span) is { } type
             ? (content, type)
             : throw new IntegrationException("The PACS sent an image HC360 could not recognise as JPEG or PNG.");
     }
 
-    private static async Task<byte[]> ReadLimitedAsync(HttpContent content, int limit, CancellationToken cancellationToken)
+    /// <summary>
+    /// Reads the image into one buffer, never more than <paramref name="limit"/> bytes: of the declared size when the
+    /// PACS declares one, otherwise grown as the image arrives. The filled part is returned as it is, not copied again.
+    /// </summary>
+    private static async Task<ReadOnlyMemory<byte>> ReadLimitedAsync(
+        HttpContent content, int limit, CancellationToken cancellationToken)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
+        if (content.Headers.ContentLength is { } length)
         {
-            if (buffer.Length + read > limit)
+            var exact = new byte[length];
+            try
             {
-                throw new IntegrationException(TooLarge(limit));
+                await stream.ReadExactlyAsync(exact, cancellationToken);
+            }
+            catch (EndOfStreamException)
+            {
+                throw new IntegrationException("The PACS ended the image before its declared length.");
             }
 
-            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+            return await stream.ReadAsync(new byte[1], cancellationToken) == 0
+                ? exact
+                : throw new IntegrationException("The PACS sent more image data than it declared.");
         }
 
-        return buffer.ToArray();
+        var buffer = new byte[Math.Min(limit, InitialBufferBytes)];
+        var filled = 0;
+        while (true)
+        {
+            if (filled == buffer.Length)
+            {
+                if (buffer.Length == limit)
+                {
+                    // Full at the limit: the image fits only if nothing more comes.
+                    if (await stream.ReadAsync(new byte[1], cancellationToken) > 0)
+                    {
+                        throw new IntegrationException(TooLarge(limit));
+                    }
+
+                    break;
+                }
+
+                Array.Resize(ref buffer, (int)Math.Min(buffer.Length * 2L, limit));
+            }
+
+            var read = await stream.ReadAsync(buffer.AsMemory(filled), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            filled += read;
+        }
+
+        return buffer.AsMemory(0, filled);
     }
 
     private static string TooLarge(int limit) =>

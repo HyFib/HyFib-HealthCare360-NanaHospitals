@@ -73,9 +73,9 @@ public sealed class SimulatorPacsProviderTests
 
         small.Status.ShouldBe(PacsImageStatus.Ok);
         small.ContentType.ShouldBe("image/png");
-        PacsImageContent.Detect(small.Content).ShouldBe("image/png");
-        Width(small.Content!).ShouldBe(100);
-        Width(large.Content!).ShouldBe(512);
+        PacsImageContent.Detect(small.Content.Span).ShouldBe("image/png");
+        Width(small.Content.ToArray()).ShouldBe(100);
+        Width(large.Content.ToArray()).ShouldBe(512);
     }
 
     [Fact]

@@ -212,8 +212,12 @@ public enum PacsImageStatus
     NotAvailable,
 }
 
-/// <summary>A JPEG or PNG image (<see cref="PacsImageStatus.Ok"/>), or why there is none.</summary>
-public sealed record PacsImage(PacsImageStatus Status, byte[]? Content = null, string? ContentType = null);
+/// <summary>
+/// A JPEG or PNG image (<see cref="PacsImageStatus.Ok"/>), or why there is none. <see cref="Content"/> is the part of
+/// the buffer the image was read into that it fills, so it is handed on without another copy.
+/// </summary>
+public sealed record PacsImage(
+    PacsImageStatus Status, ReadOnlyMemory<byte> Content = default, string? ContentType = null);
 
 /// <summary>
 /// The PACS (INT-PACS, IMG-02). Searches and image retrieval that cannot run (PACS not configured, disabled, unreachable,

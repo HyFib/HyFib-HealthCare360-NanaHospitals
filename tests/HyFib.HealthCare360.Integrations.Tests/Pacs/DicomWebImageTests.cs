@@ -64,7 +64,7 @@ public sealed class DicomWebImageTests
 
         image.Status.ShouldBe(PacsImageStatus.Ok);
         image.ContentType.ShouldBe("image/jpeg");
-        image.Content.ShouldBe(Jpeg);
+        image.Content.ToArray().ShouldBe(Jpeg);
         _http.Requests.ShouldHaveSingleItem().AbsoluteUri.ShouldBe(
             "https://pacs.local/wado-rs/studies/1.2.3/series/1.2.3.1/instances/1.2.3.1.7/rendered?viewport=1024,1024");
         _http.Accept.ShouldHaveSingleItem().ShouldStartWith("image/jpeg");
@@ -132,6 +132,48 @@ public sealed class DicomWebImageTests
     }
 
     [Fact]
+    public async Task Reads_an_image_of_undeclared_size_up_to_the_limit()
+    {
+        var image = Png
+            .Concat(Enumerable.Range(0, PacsImageContent.MaxThumbnailBytes - Png.Length).Select(i => (byte)i))
+            .ToArray();
+        _http.Respond(HttpStatusCode.OK, image, "image/png", sendLength: false);
+
+        var thumbnail = new PacsImageRequest("1.2.3", "1.2.3.1", null, null, PacsImageKind.Thumbnail, 160);
+
+        var read = await Provider.RetrieveImageAsync(thumbnail, Settings, new PacsSecrets(), Ct);
+
+        read.Content.Length.ShouldBe(PacsImageContent.MaxThumbnailBytes);
+        read.Content.Span.SequenceEqual(image).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Reads_an_image_of_declared_size_into_one_buffer_of_that_size()
+    {
+        _http.Respond(HttpStatusCode.OK, Png, "image/png");
+
+        var read = await Provider.RetrieveImageAsync(Rendered(), Settings, new PacsSecrets(), Ct);
+
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(read.Content, out var buffer).ShouldBeTrue();
+        buffer.Array!.Length.ShouldBe(Png.Length);
+    }
+
+    [Fact]
+    public async Task Refuses_an_image_shorter_or_longer_than_declared()
+    {
+        _http.Respond(HttpStatusCode.OK, Png, "image/png", declaredLength: Png.Length + 10L)
+            .Respond(HttpStatusCode.OK, Png, "image/png", declaredLength: Png.Length - 1L);
+
+        var shorter = await Should.ThrowAsync<IntegrationException>(
+            () => Provider.RetrieveImageAsync(Rendered(), Settings, new PacsSecrets(), Ct));
+        var longer = await Should.ThrowAsync<IntegrationException>(
+            () => Provider.RetrieveImageAsync(Rendered(), Settings, new PacsSecrets(), Ct));
+
+        shorter.Message.ShouldContain("before its declared length");
+        longer.Message.ShouldContain("more image data than it declared");
+    }
+
+    [Fact]
     public async Task Refuses_a_declared_length_over_the_limit_before_reading()
     {
         _http.Respond(HttpStatusCode.OK, Png, "image/png", declaredLength: PacsImageContent.MaxRenderedBytes + 1L);
@@ -183,7 +225,9 @@ public sealed class DicomWebImageTests
         {
             _responses.Enqueue(() =>
             {
-                HttpContent content = sendLength ? new ByteArrayContent(body) : new StreamContent(new MemoryStream(body));
+                HttpContent content = sendLength
+                    ? new ByteArrayContent(body)
+                    : new StreamContent(new UnsizedStream(body));
                 content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
                 if (declaredLength is { } length)
                 {
@@ -201,5 +245,11 @@ public sealed class DicomWebImageTests
             Accept.Add(request.Headers.Accept.ToString());
             return Task.FromResult(_responses.Count > 0 ? _responses.Dequeue()() : throw new InvalidOperationException("No response queued for " + request.RequestUri));
         }
+    }
+
+    /// <summary>A body whose length is not known in advance (as a chunked response).</summary>
+    private sealed class UnsizedStream(byte[] body) : MemoryStream(body)
+    {
+        public override bool CanSeek => false;
     }
 }

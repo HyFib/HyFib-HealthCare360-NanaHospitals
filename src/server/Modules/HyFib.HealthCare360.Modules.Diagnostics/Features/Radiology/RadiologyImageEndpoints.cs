@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using System.Threading.RateLimiting;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -10,6 +12,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 /// and the PACS viewer link. Images are patient data: every call needs <see cref="DiagnosticsPermissions.RadiologyImages"/>,
 /// passes the restricted-record guard and is audited (<see cref="StudyImageService.AuditAsync"/>). Images reach the
 /// browser only as JPEG or PNG within a size limit, and API responses are never cached (<c>Cache-Control: no-store</c>).
+/// Thumbnails and images are fetched from PACS and held in memory while they are sent, so each person has at most
+/// <see cref="RadiologyImageLimits.PermitLimit"/> in flight (<see cref="RadiologyImageLimits"/>).
 /// </summary>
 internal static class RadiologyImageEndpoints
 {
@@ -19,8 +23,10 @@ internal static class RadiologyImageEndpoints
             .RequirePermission(DiagnosticsPermissions.RadiologyImages);
         images.MapGet("/images", Series);
         images.MapGet("/images/series/{seriesUid}", SeriesImages);
-        images.MapGet("/images/series/{seriesUid}/thumbnail", Thumbnail);
-        images.MapGet("/images/series/{seriesUid}/instances/{instanceUid}/rendered", Rendered);
+        images.MapGet("/images/series/{seriesUid}/thumbnail", Thumbnail)
+            .RequireRateLimiting(RadiologyImageLimits.Policy);
+        images.MapGet("/images/series/{seriesUid}/instances/{instanceUid}/rendered", Rendered)
+            .RequireRateLimiting(RadiologyImageLimits.Policy);
         images.MapGet("/viewer", Viewer);
     }
 
@@ -111,9 +117,35 @@ internal static class RadiologyImageEndpoints
         }
 
         await images.AuditAsync(study, always: false, ct);
+        // The image as PACS sent it, from the buffer it was read into (no copy).
         var image = result.Value;
-        return TypedResults.File(image.Content!, image.ContentType);
+        return MemoryMarshal.TryGetArray(image.Content, out var bytes)
+            ? TypedResults.File(
+                new MemoryStream(bytes.Array!, bytes.Offset, bytes.Count, writable: false), image.ContentType)
+            : TypedResults.File(image.Content.ToArray(), image.ContentType);
     }
 
     private static IResult NotFound(Guid id) => Error.NotFound(nameof(ImagingStudy), id).ToProblem();
+}
+
+/// <summary>
+/// The rate-limiting policy of the image endpoints: per signed-in person, at most <see cref="PermitLimit"/> thumbnails
+/// or images fetched from PACS at once; the next <see cref="QueueLimit"/> wait their turn (a viewer opening a study
+/// asks for every series' thumbnail together), and beyond that the answer is 429 Too Many Requests.
+/// </summary>
+internal static class RadiologyImageLimits
+{
+    public const string Policy = "radiology-images";
+    public const int PermitLimit = 6;
+    public const int QueueLimit = 32;
+
+    public static RateLimitPartition<string> Partition(HttpContext http) =>
+        RateLimitPartition.GetConcurrencyLimiter(
+            http.User.FindFirst(HcClaims.UserId)?.Value ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new ConcurrencyLimiterOptions
+            {
+                PermitLimit = PermitLimit,
+                QueueLimit = QueueLimit,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            });
 }

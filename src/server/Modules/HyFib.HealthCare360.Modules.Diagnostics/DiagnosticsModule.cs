@@ -14,6 +14,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.Verification;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics;
 
@@ -107,6 +108,8 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabResultService>();
         services.AddScoped<ImagingService>();
         services.AddScoped<StudyImageService>();
+        services.Configure<RateLimiterOptions>(options =>
+            options.AddPolicy(RadiologyImageLimits.Policy, RadiologyImageLimits.Partition));
         services.AddScoped<RadiologyReportService>();
         services.AddScoped<CardiologyService>();
 
