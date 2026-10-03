@@ -319,7 +319,7 @@ Priority uses MoSCoW. "Must" items make up the release-1 scope.
 | INT-SMS | **SMS** | Pluggable providers (MSG91, Twilio, generic HTTP). DLT entity/template IDs per template, OTP, appointment/billing/report notifications, delivery receipts, and outbox retries. | Must |
 | INT-TALLY | **Tally** | Push day-book vouchers (sales, receipts, payments, journals for doctor fees) to Tally Prime over its XML HTTP interface (port 9000), with ledger mapping, retry, reconciliation and an export-file fallback. | Must |
 | INT-BAR | **Barcode** | Code-128/QR generation for UHID cards, wristbands, sample labels, pharmacy and asset tags. ZPL/TSPL raw printing and scanner input (HID/serial) through Desktop. | Must |
-| INT-ICD | **ICD/ICP** | A local ICD-10 catalogue (seeded) plus online lookup through the WHO ICD-API (ICD-11 MMS), and procedure coding (ICD-10-PCS/ICHI) with a local procedure catalogue. | Must |
+| INT-ICD | **ICD/ICP** | A local ICD-10 catalogue (seeded, or imported from the hospital's licensed WHO ClaML file) plus online lookup through the WHO ICD-API (ICD-11 MMS), and procedure coding (ICD-10-PCS/ICHI) with a local procedure catalogue (seeded, or imported from the CMS ICD-10-PCS order file). | Must |
 | INT-BIO | **Biometric** | Staff attendance from biometric terminals (ZKTeco-style push/pull), fingerprint login/verification at workstations through the RD service, and patient identity verification (optional). | Must |
 | INT-PACS | **PACS** | DICOMweb QIDO/WADO/STOW, modality worklist, viewer launch URL templates, and study-to-order reconciliation by accession number. | Must |
 | INT-WA | **WhatsApp** | WhatsApp Business Cloud API with template messages, document messages (reports, bills), webhook delivery status and opt-in tracking. | Must |

@@ -5,9 +5,12 @@ using R4 = Hl7.Fhir.Model;
 namespace HyFib.HealthCare360.Modules.Interop.Mapping;
 
 /// <summary>
-/// Clinical diagnoses → FHIR <c>Condition</c>, coded with WHO ICD-10 (<c>http://hl7.org/fhir/sid/icd-10</c>) when a code
-/// was chosen from the catalogue (free-text working diagnoses are sent as text). A diagnosis made in an encounter is an
-/// <c>encounter-diagnosis</c>; active and chronic non-differential diagnoses also form the <c>problem-list-item</c>s.
+/// Clinical diagnoses → FHIR <c>Condition</c>, coded when a code was chosen from the catalogue (free-text working
+/// diagnoses are sent as text): WHO ICD-10 (<c>http://hl7.org/fhir/sid/icd-10</c>) or ICD-11 MMS
+/// (<c>http://id.who.int/icd/release/11/mms</c>). The system follows from the code's form, which WHO made distinct
+/// (<see cref="CodeReleases.OfDiagnosisCode"/>), so a diagnosis needs no stored release; a code of neither form is sent
+/// as text only rather than under the wrong system. A diagnosis made in an encounter is an <c>encounter-diagnosis</c>;
+/// active and chronic non-differential diagnoses also form the <c>problem-list-item</c>s.
 /// </summary>
 internal static class ConditionMapper
 {
@@ -73,9 +76,15 @@ internal static class ConditionMapper
         var code = FhirElements.Clean(icdCode)?.ToUpperInvariant();
         var text = FhirElements.Clean(title) ?? code ?? "Diagnosis";
         var concept = new R4.CodeableConcept { Text = text };
-        if (code is not null)
+        var system = CodeReleases.OfDiagnosisCode(code) switch
         {
-            concept.Coding.Add(FhirElements.Coding(FhirSystems.Icd10, code, FhirElements.Clean(title)));
+            CodeReleases.Icd10 => FhirSystems.Icd10,
+            CodeReleases.Icd11 => FhirSystems.Icd11Mms,
+            _ => null,
+        };
+        if (code is not null && system is not null)
+        {
+            concept.Coding.Add(FhirElements.Coding(system, code, FhirElements.Clean(title)));
         }
 
         return concept;

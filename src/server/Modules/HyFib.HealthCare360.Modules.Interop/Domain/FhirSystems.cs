@@ -9,6 +9,9 @@ internal static class FhirSystems
     // International terminologies.
     public const string Loinc = "http://loinc.org";
     public const string Icd10 = "http://hl7.org/fhir/sid/icd-10";
+
+    /// <summary>WHO ICD-11 for Mortality and Morbidity Statistics, as HL7 terminology names it.</summary>
+    public const string Icd11Mms = "http://id.who.int/icd/release/11/mms";
     public const string Snomed = "http://snomed.info/sct";
     public const string Ucum = "http://unitsofmeasure.org";
     public const string Language = "urn:ietf:bcp:47";

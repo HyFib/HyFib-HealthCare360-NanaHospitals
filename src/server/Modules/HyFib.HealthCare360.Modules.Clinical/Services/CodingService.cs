@@ -8,9 +8,15 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 /// <summary>
 /// Clinical coding at discharge (MRD-02, MB-03) and the morbidity index (MRD-06). Codes must exist in the local
 /// catalogue and ICD-10 categories that have subdivisions are rejected, so claims and statistics use codes of the
-/// highest specificity. Verification is done by a second coder.
+/// highest specificity. An asterisk code (a manifestation) cannot be the primary diagnosis. Verification is done by a
+/// second coder.
 /// </summary>
-public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, ICurrentUser currentUser, TimeProvider time)
+public sealed class CodingService(
+    HospitalDbContext db,
+    ClinicalAccess access,
+    ICurrentUser currentUser,
+    TimeProvider time,
+    Catalogue.IcdClassificationProvider classification)
 {
     public async Task<Result<CodingDto>> CreateAsync(CreateCodingRequest request, CancellationToken ct)
     {
@@ -74,7 +80,8 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
             return Error.NotFound(nameof(EncounterCoding), id);
         }
 
-        var lines = await ResolveLinesAsync(request.Entries, ct);
+        var recorded = coding.Entries.Select(e => (e.Kind, e.Code)).ToHashSet();
+        var lines = await ResolveLinesAsync(request.Entries, recorded, ct);
         if (lines.IsFailure)
         {
             return lines.Error!;
@@ -165,8 +172,9 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
                 .ToListAsync(ct);
 
         var mode = groupBy.ToLowerInvariant() is "block" or "chapter" ? groupBy.ToLowerInvariant() : "code";
+        var set = await classification.GetAsync(ct);
         var grouped = rows
-            .Select(r => (Fact: r, Group: KeyFor(r, mode)))
+            .Select(r => (Fact: r, Group: KeyFor(r, mode, set)))
             .GroupBy(x => x.Group.Key)
             .Select(g =>
             {
@@ -197,23 +205,45 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
             c.Entries.OrderBy(e => e.Sequence).Select(e => new CodingEntryDto(e.Id, e.Kind, e.Code, e.Title, e.IsPrimary, e.Sequence)).ToList(), c.Version);
     }
 
-    private async Task<Result<IReadOnlyList<CodingLine>>> ResolveLinesAsync(IReadOnlyList<CodingLineRequest> entries, CancellationToken ct)
+    private async Task<Result<IReadOnlyList<CodingLine>>> ResolveLinesAsync(
+        IReadOnlyList<CodingLineRequest> entries,
+        IReadOnlySet<(CodingEntryKind Kind, string Code)> recorded,
+        CancellationToken ct)
     {
         var diagnosisCodes = entries.Where(e => e.Kind == CodingEntryKind.Diagnosis).Select(e => e.Code.Trim().ToUpperInvariant()).Distinct().ToList();
         var procedureCodes = entries.Where(e => e.Kind == CodingEntryKind.Procedure).Select(e => e.Code.Trim().ToUpperInvariant()).Distinct().ToList();
-        var icd = await db.Set<IcdCode>().AsNoTracking().Where(c => diagnosisCodes.Contains(c.Code) && c.IsActive).ToListAsync(ct);
-        var procedures = await db.Set<ProcedureCode>().AsNoTracking().Where(c => procedureCodes.Contains(c.Code) && c.IsActive).ToListAsync(ct);
+        var icd = await db.Set<IcdCode>().AsNoTracking().Where(c => diagnosisCodes.Contains(c.Code)).ToListAsync(ct);
+        var procedures = await db.Set<ProcedureCode>().AsNoTracking().Where(c => procedureCodes.Contains(c.Code))
+            .ToListAsync(ct);
+        return ResolveLines(entries, icd, procedures, recorded);
+    }
 
+    /// <summary>
+    /// The coding lines for the entries, from the catalogue rows of their codes. A code no longer in use (withdrawn by
+    /// an import, or switched off by MRD) is accepted only where the record already has it, so a record can be saved
+    /// again after an import; it cannot be newly added.
+    /// </summary>
+    internal static Result<IReadOnlyList<CodingLine>> ResolveLines(
+        IReadOnlyList<CodingLineRequest> entries,
+        IReadOnlyList<IcdCode> icd,
+        IReadOnlyList<ProcedureCode> procedures,
+        IReadOnlySet<(CodingEntryKind Kind, string Code)> recorded)
+    {
         var lines = new List<CodingLine>();
         foreach (var entry in entries)
         {
             var code = entry.Code.Trim().ToUpperInvariant();
+            var kept = recorded.Contains((entry.Kind, code));
             if (entry.Kind == CodingEntryKind.Diagnosis)
             {
-                var match = icd.Where(c => c.Code == code).OrderBy(c => c.Release == CodeReleases.Icd10 ? 0 : 1).FirstOrDefault();
+                var match = icd.Where(c => c.Code == code && (c.IsActive || kept))
+                    .OrderByDescending(c => c.IsActive).ThenBy(c => c.Release == CodeReleases.Icd10 ? 0 : 1)
+                    .FirstOrDefault();
                 if (match is null)
                 {
-                    return Error.Field("entries", $"{code} is not in the ICD catalogue. Search the catalogue or add the code first.");
+                    return Error.Field("entries", icd.Any(c => c.Code == code)
+                        ? $"{code} is no longer in use in the ICD catalogue. Choose a current code."
+                        : $"{code} is not in the ICD catalogue. Search the catalogue or add the code first.");
                 }
 
                 if (!match.IsBillable)
@@ -221,14 +251,23 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
                     return Error.Field("entries", $"{code} is a category with subdivisions; choose the specific code.");
                 }
 
+                if (entry.IsPrimary && match.Usage == IcdUsage.Asterisk)
+                {
+                    return Error.Field("entries",
+                        $"{code}* is an asterisk code: it records how a disease shows in an organ. Make the underlying disease (its dagger code) the primary diagnosis and keep {code} as a secondary one.");
+                }
+
                 lines.Add(new CodingLine(CodingEntryKind.Diagnosis, match.Code, match.Title, entry.IsPrimary));
             }
             else
             {
-                var match = procedures.FirstOrDefault(c => c.Code == code);
+                var match = procedures.Where(c => c.Code == code && (c.IsActive || kept))
+                    .OrderByDescending(c => c.IsActive).FirstOrDefault();
                 if (match is null)
                 {
-                    return Error.Field("entries", $"{code} is not in the procedure catalogue.");
+                    return Error.Field("entries", procedures.Any(c => c.Code == code)
+                        ? $"{code} is no longer in use in the procedure catalogue. Choose a current code."
+                        : $"{code} is not in the procedure catalogue.");
                 }
 
                 lines.Add(new CodingLine(CodingEntryKind.Procedure, match.Code, match.Title, entry.IsPrimary));
@@ -238,9 +277,10 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
         return Result<IReadOnlyList<CodingLine>>.Ok(lines);
     }
 
-    private static (string Key, string Title, string? Chapter) KeyFor(MorbidityFact fact, string mode)
+    /// <summary>The group of a fact, by the chapters and blocks in use (the imported WHO file's, or the built-in list).</summary>
+    private static (string Key, string Title, string? Chapter) KeyFor(MorbidityFact fact, string mode, IcdClassificationSet set)
     {
-        var chapter = IcdClassification.ChapterOf(fact.Code);
+        var chapter = set.ChapterOf(fact.Code);
         if (mode == "chapter")
         {
             return chapter is null ? ("?", "Unclassified", null) : (chapter.Number, chapter.Title, chapter.Number);
@@ -248,7 +288,7 @@ public sealed class CodingService(HospitalDbContext db, ClinicalAccess access, I
 
         if (mode == "block")
         {
-            var block = IcdClassification.BlockOf(fact.Code);
+            var block = set.BlockOf(fact.Code);
             return block is null ? ("?", "Unclassified", chapter?.Number) : (block.Range, block.Title, chapter?.Number);
         }
 

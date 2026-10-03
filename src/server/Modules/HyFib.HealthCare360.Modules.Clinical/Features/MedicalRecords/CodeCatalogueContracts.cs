@@ -2,6 +2,10 @@ using HyFib.HealthCare360.Modules.Clinical.Domain;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 
+/// <summary>
+/// A catalogue code. <see cref="Usage"/> marks dagger (†, the underlying disease) and asterisk (*, its manifestation)
+/// codes; <see cref="IncludedTerms"/> are the WHO file's inclusion terms, joined with "; ".
+/// </summary>
 public sealed record IcdCodeDto(
     Guid Id,
     string Code,
@@ -11,13 +15,23 @@ public sealed record IcdCodeDto(
     string? Block,
     string? BlockTitle,
     bool IsBillable,
+    IcdUsage? Usage,
     string? Keywords,
+    string? IncludedTerms,
     CodeSource Source,
     bool IsActive);
 
+public sealed record IcdBlockDto(string Range, string Title);
+
+public sealed record IcdChapterDto(string Number, string Title, string Range, IReadOnlyList<IcdBlockDto> Blocks);
+
 public sealed record ProcedureCodeDto(Guid Id, string Code, string Title, string System, string? Category, string? Keywords, CodeSource Source, bool IsActive);
 
-/// <summary>Adds a code to the local catalogue (manual entry or caching a code found through the online ICD service).</summary>
+/// <summary>
+/// Adds a code to the local catalogue (manual entry or caching a code found through the online ICD service).
+/// <see cref="Release"/> is ICD-10 2019 (the default) or ICD-11 MMS, in any label <see cref="CodeReleases.Normalize"/>
+/// accepts, so a result of the WHO online search can be saved as it came ("ICD-11 MMS 2025-01").
+/// </summary>
 public sealed record SaveIcdCodeRequest(string Code, string Title, string? Release, bool IsBillable, string? Keywords, bool FromOnlineLookup, bool IsActive);
 
 public sealed record SaveProcedureCodeRequest(string Code, string Title, string? System, string? Category, string? Keywords, bool IsActive);

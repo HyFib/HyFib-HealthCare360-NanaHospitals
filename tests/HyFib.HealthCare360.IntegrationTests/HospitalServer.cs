@@ -45,6 +45,7 @@ public sealed class HospitalServer : IAsyncLifetime
     private static readonly Dictionary<string, string> RolesCreatedOnFirstUse = new(StringComparer.Ordinal)
     {
         [Users.Pathologist] = SystemRoles.Pathologist,
+        [Users.MrdOfficer] = SystemRoles.MrdOfficer,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -325,6 +326,11 @@ public sealed class HospitalServer : IAsyncLifetime
         /// seed has no pathologist, so the hospital administrator creates this account the first time a test signs in.
         /// </summary>
         public const string Pathologist = "pathologist";
+
+        /// <summary>
+        /// Codes episodes and keeps the ICD catalogue (Medical records). Created on first use, as the pathologist is.
+        /// </summary>
+        public const string MrdOfficer = "mrdofficer";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);
