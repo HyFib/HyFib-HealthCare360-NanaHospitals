@@ -3,7 +3,10 @@ using System.Globalization;
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
 /// <summary>One figure of a day as HC360's records have it and as the day book has it.</summary>
-/// <param name="Informational">Shown for completeness; never a difference (a counter left out of Tally on purpose, for example).</param>
+/// <param name="Informational">
+/// Totals only, never a difference: the day book takes the figure from the only record HC360 has of it (a counter's
+/// day), so there is nothing independent to compare it with. <paramref name="Records"/> is that record's figure.
+/// </param>
 public sealed record TallyCheckLine(
     string Group, string Item, decimal Records, decimal DayBook, int? RecordsCount = null, int? DayBookCount = null, string? Note = null, bool Informational = false)
 {
@@ -54,9 +57,10 @@ public sealed record TallyRecordsComparison(IReadOnlyList<TallyCheckLine> Lines,
 
 /// <summary>
 /// Compares a day book with the records it is built from, figure by figure. Money received and paid back is compared
-/// per payment mode with the cashier day-end report (OPB-07), which works from shifts rather than from the day; the
-/// pharmacy and canteen days are listed as they reach the day book. Cash shortages and excesses at day-end are not in
-/// the day book; they are listed so the accountant can record them in Tally.
+/// per payment mode with the cashier day-end report (OPB-07), which works from shifts rather than from the day. The
+/// pharmacy and canteen days are listed as totals only: the day book is built from the counter's own day, the only
+/// record HC360 has of those sales, so comparing the two could never find a difference. Cash shortages and excesses at day-end
+/// are not in the day book; they are listed so the accountant can record them in Tally.
 /// </summary>
 public static class TallyRecordsCheck
 {
@@ -119,7 +123,10 @@ public static class TallyRecordsCheck
         {
             var name = TallyCounters.NameOf(counter.Counter);
             var included = map.CounterLedgers(counter.Counter).Include;
-            var note = included ? null : "Not in the day book: switched off in the Tally ledger settings.";
+            var note = included
+                ? $"Totals only: the day book takes them from the {name.ToLowerInvariant()}'s own day, "
+                  + "which HC360 has no second record of."
+                : "Totals only, not in the day book: switched off in the Tally ledger settings.";
             lines.Add(new(name, "Sales", counter.Sales.Total, included ? counter.Sales.Total : 0, counter.Sales.Count, included ? counter.Sales.Count : 0, note, Informational: true));
             lines.Add(new(name, "Returns and cancellations", counter.Returns.Total, included ? counter.Returns.Total : 0, counter.Returns.Count, included ? counter.Returns.Count : 0, note,
                 Informational: true));

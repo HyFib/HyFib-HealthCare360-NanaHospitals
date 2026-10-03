@@ -105,4 +105,20 @@ public sealed class TallyRecordsCheckTests
         sales.ShouldSatisfyAllConditions(l => l.Records.ShouldBe(112m), l => l.DayBook.ShouldBe(0m), l => l.Matches.ShouldBeTrue(), l => l.Note.ShouldNotBeNull());
         comparison.Differences.ShouldBe(0);
     }
+
+    [Fact]
+    public void Counter_days_in_the_day_book_are_shown_as_totals_only()
+    {
+        var canteen = new CounterSalesDay(TallyCounters.Canteen, Day,
+            new CounterDocuments(3, [new CounterTaxLine(5m, 200m, 5m, 5m)], 0m, [new CounterMoney(CounterPaymentMode.Upi, 210m)]), CounterDocuments.None, []);
+
+        var comparison = TallyRecordsCheck.Compare(Records, Book with { Counters = [canteen] }, new TallyLedgerMap());
+
+        comparison.Lines.Where(l => l.Group == "Canteen").ShouldAllBe(l => l.Informational);
+        Line(comparison, "Canteen", "Sales").ShouldSatisfyAllConditions(
+            l => l.DayBook.ShouldBe(210m),
+            l => l.Note!.ShouldStartWith("Totals only"),
+            l => l.Note!.ShouldContain("no second record"));
+        comparison.Differences.ShouldBe(0);
+    }
 }
