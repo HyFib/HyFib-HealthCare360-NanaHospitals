@@ -343,7 +343,13 @@ function IcdBrowserPage() {
   const status = useQuery(mrdQueries.catalogue());
   const classification = useQuery({ ...mrdQueries.classification(), enabled: icd10 });
   const results = useQuery(
-    mrdQueries.icd(search.search ?? '', icd10 ? (search.chapter ?? null) : null, search.billable ?? false, 100, release),
+    mrdQueries.icd(
+      search.search ?? '',
+      icd10 ? (search.chapter ?? null) : null,
+      search.billable ?? false,
+      100,
+      release,
+    ),
   );
 
   useEffect(() => {
@@ -465,9 +471,7 @@ function IcdBrowserPage() {
           },
         ]}
         emptyTitle={search.search ? 'No local code matches' : 'Type to search the catalogue'}
-        emptyDescription={
-          search.search ? 'Try other words or the code, or search the WHO service online.' : undefined
-        }
+        emptyDescription={search.search ? 'Try other words or the code, or search the WHO service online.' : undefined}
       />
     </Section>
   );
@@ -568,7 +572,12 @@ function IcdBrowserPage() {
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
-              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={() => setOnline(null)} />
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                aria-label="Close"
+                onClick={() => setOnline(null)}
+              />
             }
           >
             WHO ICD online: “{online?.term}”
@@ -598,7 +607,12 @@ function IcdBrowserPage() {
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
-              <Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={() => setImporting(false)} />
+              <Button
+                appearance="subtle"
+                icon={<DismissRegular />}
+                aria-label="Close"
+                onClick={() => setImporting(false)}
+              />
             }
           >
             Import catalogue

@@ -394,7 +394,13 @@ export const mrdKeys = {
  */
 export function searchIcd(
   search: string,
-  options: { chapter?: string | null; billableOnly?: boolean; limit?: number; release?: string | null; signal?: AbortSignal } = {},
+  options: {
+    chapter?: string | null;
+    billableOnly?: boolean;
+    limit?: number;
+    release?: string | null;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<IcdCodeDto[]> {
   return api.get<IcdCodeDto[]>('/api/v1/mrd/icd-codes', {
     query: {
@@ -416,7 +422,13 @@ export function searchProcedures(search: string, signal?: AbortSignal): Promise<
 }
 
 export const mrdQueries = {
-  icd: (search: string, chapter: string | null = null, billableOnly = false, limit = 20, release: string | null = null) =>
+  icd: (
+    search: string,
+    chapter: string | null = null,
+    billableOnly = false,
+    limit = 20,
+    release: string | null = null,
+  ) =>
     queryOptions({
       queryKey: mrdKeys.icd(search, chapter, billableOnly, limit, release),
       queryFn: ({ signal }) => searchIcd(search, { chapter, billableOnly, limit, release, signal }),

@@ -160,9 +160,9 @@ export function CatalogueImportPanel({
   return (
     <div className={styles.panel}>
       <Text>
-        Import the hospital&rsquo;s copy of WHO&rsquo;s ICD-10 2019 ClaML file (icd102019en.xml, or the .zip WHO provides), or the
-        CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt). Check the file first: HC360 shows what would change, and
-        nothing changes until you choose Import.
+        Import the hospital&rsquo;s copy of WHO&rsquo;s ICD-10 2019 ClaML file (icd102019en.xml, or the .zip WHO
+        provides), or the CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt). Check the file first: HC360 shows what
+        would change, and nothing changes until you choose Import.
       </Text>
 
       <div className={styles.file}>

@@ -75,9 +75,9 @@ public enum IcdClassificationKind
 }
 
 /// <summary>
-/// A chapter or block of an imported classification (MRD-06). The ICD browser and the morbidity index use these once a
-/// WHO file has been imported, and the built-in list (<see cref="IcdClassification"/>) until then. An import replaces
-/// them, so they carry no audit columns.
+/// A chapter or block of an imported classification (MRD-06). The ICD catalogue screen and the morbidity index use these
+/// once a WHO file has been imported, and the built-in list (<see cref="IcdClassification"/>) until then. An import
+/// replaces them, so they carry no audit columns.
 /// </summary>
 [NotAudited]
 public sealed class IcdClassificationEntry : Entity

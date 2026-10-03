@@ -104,9 +104,11 @@ export function withdrawnNote(withdrawn: number, dryRun: boolean): string | null
   if (withdrawn === 0) {
     return null;
   }
+  const one = withdrawn === 1;
+  const they = one ? 'it' : 'they';
   return `${plural(withdrawn, 'code is', 'codes are')} not in this file. ${
-    dryRun ? 'After the import they will' : 'They'
-  } no longer be offered for new diagnoses or coding. Diagnoses already recorded keep them.`;
+    dryRun ? `After the import ${they} will` : one ? 'It will' : 'They will'
+  } no longer be offered for new diagnoses or coding. Diagnoses already recorded keep ${one ? 'it' : 'them'}.`;
 }
 
 /** The mark printed after a dagger or asterisk code. */
@@ -132,7 +134,7 @@ export function sourceLabel(source: CodeSource): string {
     case 'Seed':
       return 'Starter list';
     case 'Import':
-      return 'WHO file';
+      return 'Imported file';
     case 'Online':
       return 'WHO online';
     default:
