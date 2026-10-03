@@ -7,6 +7,7 @@ import {
   DialogSurface,
   DialogTitle,
   makeStyles,
+  mergeClasses,
   Select,
   Spinner,
   Text,
@@ -271,7 +272,7 @@ export function ImageViewerContent({
           </ToolbarButton>
         </Toolbar>
       </div>
-      <div className={zoom > MIN_ZOOM ? `${styles.stage} ${styles.scroll}` : styles.stage}>{stage}</div>
+      <div className={mergeClasses(styles.stage, zoom > MIN_ZOOM && styles.scroll)}>{stage}</div>
       <Caption1 className={styles.muted}>
         Arrow keys or Page Up and Page Down: previous and next image. Home and End: first and last. + and −: zoom. 0:
         fit to the screen. Esc: close. For measurements and windowing, use the PACS viewer.
