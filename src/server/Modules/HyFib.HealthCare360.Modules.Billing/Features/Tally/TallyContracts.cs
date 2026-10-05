@@ -92,13 +92,13 @@ public sealed class PostDayBookRequestValidator : AbstractValidator<PostDayBookR
 {
     public PostDayBookRequestValidator(TimeProvider time)
     {
-        // A day is an Indian calendar day: the UTC date plus one still allows "today" late in the Indian evening.
+        // A day is an Indian calendar day: the last one that may be posted is today in India.
         RuleFor(x => x.Date)
-            .Must(date => date <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1))
+            .Must(date => date <= BillingTime.Today(time))
             .WithMessage("The day book of a future date cannot be posted.");
         RuleFor(x => x.To)
             .Must((request, to) => to is null || to >= request.Date).WithMessage("The last day must not be before the first.")
-            .Must(to => to is null || to <= DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime).AddDays(1)).WithMessage("The day book of a future date cannot be posted.")
+            .Must(to => to is null || to <= BillingTime.Today(time)).WithMessage("The day book of a future date cannot be posted.")
             .Must((request, to) => to is null || to.Value.DayNumber - request.Date.DayNumber < TallyService.MaxDaysPerQueue)
             .WithMessage($"Post at most {TallyService.MaxDaysPerQueue} days at a time.");
     }

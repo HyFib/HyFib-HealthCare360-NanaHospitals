@@ -80,6 +80,20 @@ public sealed class TallySettingsAndRequestsTests
     }
 
     [Fact]
+    public void Tomorrow_in_India_is_a_future_day_until_Indian_midnight()
+    {
+        // 06:30 UTC on 25 September is 12:00 in India: 26 September has not begun there.
+        var noon = new PostDayBookRequestValidator(new FixedTimeProvider(new DateTimeOffset(2026, 9, 25, 6, 30, 0, TimeSpan.Zero)));
+        noon.Validate(new PostDayBookRequest(new DateOnly(2026, 9, 25))).IsValid.ShouldBeTrue();
+        noon.Validate(new PostDayBookRequest(new DateOnly(2026, 9, 26))).IsValid.ShouldBeFalse();
+        noon.Validate(new PostDayBookRequest(new DateOnly(2026, 9, 24), new DateOnly(2026, 9, 26))).IsValid.ShouldBeFalse();
+
+        // 19:00 UTC on 25 September is 00:30 on 26 September in India.
+        var pastMidnight = new PostDayBookRequestValidator(new FixedTimeProvider(new DateTimeOffset(2026, 9, 25, 19, 0, 0, TimeSpan.Zero)));
+        pastMidnight.Validate(new PostDayBookRequest(new DateOnly(2026, 9, 26))).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
     public void A_day_posted_before_it_ended_is_posted_again_the_next_night()
     {
         var dayEnded = BillingTime.StartOfDay(new DateOnly(2026, 9, 26));

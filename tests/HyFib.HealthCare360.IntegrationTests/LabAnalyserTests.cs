@@ -120,7 +120,9 @@ public sealed class LabAnalyserTests(HospitalServer server)
         (await RefusedRelayAsync(desktop, desktopSecret, code)).ShouldContain("401");
 
         // A relay replaced by a newer one is told why before it is closed.
+        // The server takes a relay on only after accepting its socket, so the second waits until the first is relaying.
         using var first = await ConnectRelayAsync(assigned, assignedSecret, code);
+        await WaitUntilRelayingAsync(admin, code);
         using var second = await ConnectRelayAsync(assigned, assignedSecret, code);
         var closed = await ReceiveAsync(first, new byte[16]);
         closed.MessageType.ShouldBe(WebSocketMessageType.Close);
@@ -234,6 +236,23 @@ public sealed class LabAnalyserTests(HospitalServer server)
         agent.Http.DefaultRequestHeaders.Add(LabAgentProtocol.DeviceIdHeader, deviceId.ToString());
         agent.Http.DefaultRequestHeaders.Add(LabAgentProtocol.DeviceKeyHeader, secret);
         return agent;
+    }
+
+    /// <summary>Waits until Lab setup shows the analyser's relay as connected.</summary>
+    private static async Task WaitUntilRelayingAsync(ApiClient admin, string code)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var connections = await admin.GetAsync<LabConnectionsDto>("/api/v1/integrations/lab/connections");
+            if (connections.Connections.Single(c => c.Code == code).Status?.State == "connected")
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
+        }
+
+        throw new TimeoutException($"The relay of analyser {code} was not taken on within 10 seconds.");
     }
 
     /// <summary>The server's next message on a relay, or a failure naming the wait if none comes in 30 seconds.</summary>
