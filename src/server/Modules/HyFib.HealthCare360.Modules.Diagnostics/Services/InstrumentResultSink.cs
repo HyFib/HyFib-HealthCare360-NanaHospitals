@@ -15,7 +15,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// was accepted today, the delta check passed and the analyser raised no flag. Everything else waits for a pathologist,
 /// and critical values alert the pathologists at once.</item>
 /// </list>
-/// A collected tube that reaches an analyser before it was scanned at the lab counter is received automatically.
+/// A collected tube that reaches an analyser before it was scanned at the lab counter is received automatically, and the
+/// other bidirectional analysers that run its tests are sent its order (<see cref="AnalyserOrders"/>).
 /// </summary>
 internal sealed class InstrumentResultSink(
     HospitalDbContext db,
@@ -26,6 +27,7 @@ internal sealed class InstrumentResultSink(
     CriticalValueNotifier critical,
     DiagnosticsLookups lookups,
     DiagnosticsRealtime realtime,
+    AnalyserOrders analyserOrders,
     TimeProvider time,
     ILogger<InstrumentResultSink> logger) : IInstrumentResultSink
 {
@@ -58,6 +60,9 @@ internal sealed class InstrumentResultSink(
             {
                 return received;
             }
+
+            // Saved only with the results below: a message that stores nothing receives nothing and orders nothing.
+            await analyserOrders.SamplesReceivedAsync([tube], instrument.Code, cancellationToken);
         }
         else if (tube.Status is not (SampleStatus.Received or SampleStatus.InProcess or SampleStatus.Completed))
         {
@@ -149,45 +154,79 @@ internal sealed class InstrumentResultSink(
     public async Task<InstrumentOrder?> GetOrderForSampleAsync(string instrumentCode, string sampleBarcode, CancellationToken cancellationToken)
     {
         var instrument = await FindInstrumentAsync(instrumentCode, cancellationToken);
-        if (instrument is null)
+        var tube = instrument is null ? null : await FindTubeAsync(instrument, sampleBarcode, cancellationToken);
+        if (instrument is null || tube is null || tube.Status is not (SampleStatus.Collected or SampleStatus.Received or SampleStatus.InProcess))
         {
             return null;
         }
 
+        return await BuildOrderAsync(tube, analyte => analyte.ChannelFor(instrument.Code), cancellationToken);
+    }
+
+    /// <summary>
+    /// Order download: the tests this analyser runs on a tube in the lab (its own channel codes, or plain codes on its
+    /// bench; see <see cref="AnalyserRouting"/>), not yet verified.
+    /// </summary>
+    public async Task<InstrumentOrder?> GetOrderToSendAsync(string instrumentCode, string sampleBarcode, CancellationToken cancellationToken)
+    {
+        var instrument = await FindInstrumentAsync(instrumentCode, cancellationToken);
+        var tube = instrument is null ? null : await FindTubeAsync(instrument, sampleBarcode, cancellationToken);
+        if (instrument is null || tube is null || tube.Status is not (SampleStatus.Received or SampleStatus.InProcess))
+        {
+            return null;
+        }
+
+        return await BuildOrderAsync(tube, analyte => AnalyserRouting.Channel(analyte, instrument, tube.Section), cancellationToken);
+    }
+
+    /// <summary>Codes are unique across facilities, so the analyser is found whichever facility the caller is in.</summary>
+    public async Task<InstrumentProfile?> GetInstrumentAsync(string instrumentCode, CancellationToken cancellationToken)
+    {
+        var code = instrumentCode.Trim().ToUpperInvariant();
+        var found = await db.Set<LabInstrument>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(i => i.Code == code)
+            .Select(i => new { i.Code, i.Name, i.FacilityId, i.IsActive, i.IsBidirectional, i.Protocol })
+            .FirstOrDefaultAsync(cancellationToken);
+        return found is null ? null : new InstrumentProfile(found.Code, found.Name, found.FacilityId, found.IsActive, found.IsBidirectional, found.Protocol.ToString());
+    }
+
+    private async Task<LabSample?> FindTubeAsync(LabInstrument instrument, string sampleBarcode, CancellationToken ct)
+    {
         var barcode = sampleBarcode.Trim();
-        var tube = await db.Set<LabSample>().AsNoTracking().FirstOrDefaultAsync(s => s.Barcode == barcode, cancellationToken);
-        if (tube is null || tube.FacilityId != instrument.FacilityId
-            || tube.Status is not (SampleStatus.Collected or SampleStatus.Received or SampleStatus.InProcess))
-        {
-            return null;
-        }
+        var tube = await db.Set<LabSample>().AsNoTracking().FirstOrDefaultAsync(s => s.Barcode == barcode, ct);
+        return tube is not null && tube.FacilityId == instrument.FacilityId ? tube : null;
+    }
 
+    /// <summary>The tube's tests not yet verified or released, as the analyser's channel codes, with the patient.</summary>
+    private async Task<InstrumentOrder> BuildOrderAsync(LabSample tube, Func<LabTest, string?> channelOf, CancellationToken ct)
+    {
         var items = await db.Set<LabOrderItem>().AsNoTracking()
             .Where(i => i.SampleId == tube.Id && i.Status != LabOrderItemStatus.Cancelled && i.Status != LabOrderItemStatus.Released)
             .Select(i => new { i.Id, i.LabTestId })
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
         var itemIds = items.Select(i => i.Id).ToList();
         var verified = await db.Set<LabResult>().AsNoTracking()
             .Where(r => itemIds.Contains(r.LabOrderItemId) && r.Status == LabResultStatus.Verified)
             .Select(r => r.LabTestId)
-            .ToListAsync(cancellationToken);
+            .ToListAsync(ct);
 
-        var layout = await workflow.AnalyteLayoutAsync(items.Select(i => i.LabTestId), cancellationToken);
+        var layout = await workflow.AnalyteLayoutAsync(items.Select(i => i.LabTestId), ct);
         var channels = items
             .SelectMany(i => layout.GetValueOrDefault(i.LabTestId) ?? [])
             .Where(slot => !verified.Contains(slot.Analyte.Id))
-            .Select(slot => slot.Analyte.ChannelFor(instrument.Code))
+            .Select(slot => channelOf(slot.Analyte))
             .OfType<string>()
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var patient = await lookups.PatientAsync(tube.PatientId, cancellationToken);
-        return new InstrumentOrder(
-            tube.Barcode,
-            patient?.FullName ?? string.Empty,
-            patient?.SexCode,
-            patient?.DateOfBirth,
-            channels);
+        var patient = await lookups.PatientAsync(tube.PatientId, ct);
+        return new InstrumentOrder(tube.Barcode, patient?.FullName ?? string.Empty, patient?.SexCode, patient?.DateOfBirth, channels)
+        {
+            PatientId = patient?.Uhid,
+            Priority = tube.Priority,
+            CollectedAt = tube.CollectedAt,
+            SpecimenType = tube.SpecimenType.ToString(),
+        };
     }
 
     private Task<LabInstrument?> FindInstrumentAsync(string code, CancellationToken ct)

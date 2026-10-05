@@ -13,7 +13,7 @@ This document describes how HC360 is built. It covers the runtime topology on th
 | Validation | FluentValidation | 12 |
 | Jobs | Hosted services + Quartz.NET (cron schedules) | Quartz 4 |
 | Observability | Serilog (file + Windows Event Log), OpenTelemetry (OTLP optional) | — |
-| Interop | HL7 FHIR R4 (Firely SDK), fo-dicom / DICOMweb, HL7 v2 + ASTM parsers | — |
+| Interop | HL7 FHIR R4 (Firely SDK), fo-dicom (DICOM modality worklist server), DICOMweb (QIDO-RS, WADO-RS), HL7 v2 + ASTM parsers | fo-dicom 5 |
 | Desktop | WPF shell + Microsoft Edge **WebView2** (same model as the new Microsoft Teams/Outlook) | .NET 10, WebView2 1.0.4191+ |
 | UI | React + TypeScript + **Fluent UI v9** (Fluent 2 / Windows 11 design), TanStack Router & Query, React Hook Form + Zod, ECharts | React 19.3, TS 6.0, Vite 8 |
 | Portal | Same UI stack, mobile-first PWA, i18n (en, hi) | — |
@@ -29,7 +29,7 @@ flowchart LR
     direction TB
     API[HC360 Server<br/>ASP.NET Core 10<br/>Windows Service :7360 HTTPS]
     WRK[Background jobs<br/>outbox · reminders · backups · WiFi monitor]
-    GW[Integration gateway<br/>HL7/ASTM listeners · Tally · PACS]
+    GW[Integration gateway<br/>HL7/ASTM listeners · lab agent relays · DICOM worklist · Tally · PACS]
     DB[(PostgreSQL 17<br/>Windows Service)]
     FS[[Encrypted file store<br/>%ProgramData%\HyFib\HC360]]
     MDNS((mDNS<br/>_hc360._tcp))
@@ -41,8 +41,12 @@ flowchart LR
   WS1[HC360 Desktop<br/>Front office] -- TLS + pinned cert --> API
   WS2[HC360 Desktop<br/>Doctor / Lab / Pharmacy] -- TLS --> API
   TAB[Tablet browser<br/>ward rounds] -- TLS --> API
-  AN[Lab analysers] -- HL7/ASTM TCP --> GW
-  PACS[(PACS)] -- DICOMweb --> GW
+  AN[Network lab analysers] -- HL7/ASTM TCP --> GW
+  LA[HC360 lab agent<br/>Windows service on a lab PC] -- WSS relay, pinned CA --> GW
+  SAN[Serial lab analysers] -- RS-232 --> LA
+  MOD[Modalities<br/>CT · MR · X-ray · US] -- DICOM worklist C-FIND :11112 --> GW
+  GW -- DICOMweb QIDO/WADO --> PACS[(PACS)]
+  MOD -- images (DICOM) --> PACS
   API -- outbox, when internet up --> EXT[SMS · WhatsApp · Payment gateway · ICD-API · Claude API]
   PAT[Patients — Portal PWA] -- HTTPS via published URL --> API
   WS1 -. discover .-> MDNS
@@ -106,7 +110,7 @@ docs/                                     SRS, architecture, security, deploymen
 |---|---|---|---|
 | 0 | SharedKernel | — | — |
 | 1 | Platform | Identity, users/roles/permissions, devices, facilities, departments, specialities, practitioners, service catalogue, numbering, audit, settings, files, notifications, realtime, printable documents and PDFs | SharedKernel |
-| 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
+| 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS (DICOMweb), the DICOM modality worklist server, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
 | 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents | Platform |
 | 2 | **SupplyChain** | Inventory (INV), purchase, stores, indents, vendors, Asset Management (AST) | Platform |
 | 2 | **HR** | HRMS (HR), biometric attendance | Platform |
@@ -218,7 +222,9 @@ sequenceDiagram
 2. **Connect.** Tries the last server, then `https://localhost:7360` (all-in-one), then mDNS discovery. Shows a native connection screen with WiFi SSID/signal, discovered servers, manual address, and enrolment.
 3. **Host the UI.** Navigates to the server origin and accepts the server certificate only if its SHA-256 fingerprint matches the pinned value. Other origins open in the system browser after confirmation. Camera and microphone are granted only to the server origin.
 4. **Native bridge.** JSON-RPC over `chrome.webview.postMessage`, with methods allow-listed:
-   `app.info`, `network.status`, `printer.list`, `printer.printHtml` (silent print to a named printer), `printer.printRaw` (ZPL/ESC-POS), `device.info`, `speech.dictate` (offline Windows speech), `biometric.capture` (RD service), `serial.*` (scanners/analysers), `shell.openExternal`, `notifications.show`. Events pushed to the UI: `network.changed`, `scanner.data`, `deeplink`.
+   `app.info`, `network.status`, `printer.list`, `printer.getSetup` and `printer.saveSetup` (the workstation's printer for labels, wristbands, receipts and documents, or the IT policy's), `printer.printHtml` (silent print to a named printer), `printer.printRaw` (ZPL, TSPL or ESC/POS); both print methods accept only printers installed on the workstation, `device.info`, `speech.dictate` (offline Windows speech), `biometric.capture` (RD service), `shell.openExternal`, `notifications.show`. Events pushed to the UI: `network.changed`, `scanner.data`, `deeplink`.
+   The shell has no serial port access. Barcode scanners work as keyboards, and serial lab analysers are relayed by the
+   HC360 lab agent (see §10), which keeps running when nobody is signed in.
 5. **Kiosk mode.** `--kiosk --route=/display/queue` for queue display TVs and self check-in kiosks.
 
 The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a plain browser. For example, printing falls back to `window.print()`.
@@ -238,7 +244,9 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 
 ## 10. Integration architecture
 
-Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSender`, `IPaymentGateway`, `IPosTerminal`, `IAccountingExporter` (Tally), `IPacsClient`, `ILabInstrumentGateway`, `ILabelPrinterService`, `IIcdLookup`). Biometric attendance terminals are the exception: they push to HR directly over the ZKTeco/eSSL ADMS protocol (INT-BIO), so there is no Platform abstraction for them. Each has one or more **providers** in `Integrations` (for example `Msg91SmsSender`, `TwilioSmsSender`, `SimulatorSmsSender`), selected per facility in configuration. Outbound calls go through the outbox dispatcher. Inbound calls (webhooks, analyser messages, device pushes) are authenticated (HMAC signatures, per-device keys, IP allow-lists) and logged to `integrations.message_log` with PHI masked.
+Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSender`, `IPaymentGateway`, `IPosTerminal`, `IAccountingExporter` (Tally), `IPacsClient`, `ILabelPrinterService`, `IIcdLookup`). Lab analysers are the other way round: Diagnostics implements `IInstrumentResultSink` (results, host queries, orders to send) and asks for orders through the `lab.analyser.order` outbox message, and the analyser gateway in Integrations calls it. The DICOM modality worklist server likewise reads the studies to be done through `IModalityWorklistSource`, which Diagnostics implements. Biometric attendance terminals are the exception: they push to HR directly over the ZKTeco/eSSL ADMS protocol (INT-BIO), so there is no Platform abstraction for them. Each has one or more **providers** in `Integrations` (for example `Msg91SmsSender`, `TwilioSmsSender`, `SimulatorSmsSender`), selected per facility in configuration. Outbound calls go through the outbox dispatcher. Inbound calls (webhooks, analyser messages, device pushes) are authenticated (HMAC signatures, per-device keys, IP allow-lists) and logged to the platform's `integration_logs` with PHI masked.
+
+**Lab analysers (INT-LAB).** The analyser protocols (HL7 v2 over MLLP, ASTM E1381/E1394) always run on the server, in the Integrations module. A network analyser connects to a port the gateway listens on. A serial analyser is cabled to a lab PC that runs the **HC360 lab agent** (`src/agent`, a Windows service separate from HC360 Desktop, enrolled as a device of kind `LabAgent`). The agent relays the COM port's bytes over a WebSocket (`/api/v1/integrations/lab/agent/relay/{code}`) that trusts only the pinned hospital CA, and never answers the analyser itself, so acknowledgements, host queries and orders behave the same on both transports. Orders for bidirectional analysers wait in `integrations.lab_order_downloads` until the analyser is connected. See [integrations.md](../modules/integrations.md#laboratory-analysers-int-lab).
 
 **Patient notifications and WhatsApp STOP.** Modules queue patient and staff messages with `INotificationService.Queue(templateKey, recipient, values, channels)`. Each channel gets a `platform.notification_logs` row and an outbox message (`notify.sms`, `notify.whatsapp`, `notify.email`); the outbox handler renders the template and calls the channel's sender. A number that replied **STOP** to the hospital's WhatsApp number has a row in `platform.whatsapp_opt_outs` (one per E.164 number, for the whole group, kept by the `WhatsAppOptOutChanged` integration event that Integrations raises once per new reply; see [integrations.md](../modules/integrations.md#stop-and-start-replies)). Before every WhatsApp send, the `notify.whatsapp` handler checks it: a non-essential message to an opted-out number is not sent, and its log is marked **`Suppressed`** with the reason, instead of failing and retrying. The check runs at delivery time, so messages queued earlier stop too, whichever module queued them. `WhatsAppOptOutPolicy` classifies templates: only messages that must reach the person for security are essential (today `auth.otp`, the portal sign-in code); everything else stops on WhatsApp, including a video consultation's join link, because the patient still has SMS, e-mail and the portal. Template keys that are not listed (module or administrator templates) are non-essential, and a unit test fails when a built-in template is added to `DefaultNotificationTemplates` without a classification. **START** lifts the opt-out. SMS and e-mail are never affected by a WhatsApp reply.
 

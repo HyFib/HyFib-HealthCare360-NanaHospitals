@@ -23,6 +23,7 @@ public sealed class BillingModuleTests
     [InlineData(BillingPermissions.RefundsApprove)]
     [InlineData(BillingPermissions.BillsCancel)]
     [InlineData(BillingPermissions.PayoutsManage)]
+    [InlineData(BillingPermissions.GatewayReconcile)]
     public void Approvals_are_not_granted_to_counter_roles_by_default(string permission)
     {
         var roles = BillingPermissions.All.Single(p => p.Name == permission).DefaultRoles!;
@@ -60,4 +61,9 @@ public sealed class BillingModuleTests
     {
         PaymentGatewayService.ExtractCandidates("not json").ShouldBeEmpty();
     }
+
+    [Fact]
+    public void Gateway_reconciliation_belongs_to_accountants_and_administrators() =>
+        BillingPermissions.All.Single(p => p.Name == BillingPermissions.GatewayReconcile).DefaultRoles!
+            .ShouldBe([SystemRoles.HospitalAdmin, SystemRoles.Accountant], ignoreOrder: true);
 }

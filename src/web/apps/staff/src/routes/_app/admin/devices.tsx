@@ -16,7 +16,14 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, DesktopRegular, ProhibitedRegular, TabletRegular, TvRegular } from '@fluentui/react-icons';
+import {
+  AddRegular,
+  DesktopRegular,
+  ProhibitedRegular,
+  SerialPortRegular,
+  TabletRegular,
+  TvRegular,
+} from '@fluentui/react-icons';
 import { formatDateTime, formatRelative, humanize } from '@hc360/core';
 import { ConfirmDialog, DataTable, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +37,11 @@ export const Route = createFileRoute('/_app/admin/devices')({
   component: DevicesPage,
 });
 
-const KINDS: DeviceKind[] = ['Workstation', 'Tablet', 'Kiosk', 'DisplayBoard'];
+const KINDS: DeviceKind[] = ['Workstation', 'Tablet', 'Kiosk', 'DisplayBoard', 'LabAgent'];
+
+function kindLabel(kind: DeviceKind): string {
+  return kind === 'DisplayBoard' ? 'Queue display (TV)' : kind === 'LabAgent' ? 'Lab analyser agent' : humanize(kind);
+}
 
 const useStyles = makeStyles({
   code: {
@@ -49,7 +60,15 @@ const useStyles = makeStyles({
 });
 
 function kindIcon(kind: DeviceKind) {
-  return kind === 'DisplayBoard' ? <TvRegular /> : kind === 'Tablet' ? <TabletRegular /> : <DesktopRegular />;
+  return kind === 'DisplayBoard' ? (
+    <TvRegular />
+  ) : kind === 'Tablet' ? (
+    <TabletRegular />
+  ) : kind === 'LabAgent' ? (
+    <SerialPortRegular />
+  ) : (
+    <DesktopRegular />
+  );
 }
 
 /** Enrolled HC360 Desktop installations (SRS DED-05): enrolment codes, WiFi quality per workstation, revocation. */
@@ -76,7 +95,7 @@ function DevicesPage() {
     <Page>
       <PageHeader
         title="Devices"
-        subtitle="Computers, tablets, kiosks and TV screens running HC360 Desktop on the hospital WiFi"
+        subtitle="Computers, tablets, kiosks and TV screens running HC360 Desktop, and lab PCs running the HC360 lab agent"
         actions={
           <Button appearance="primary" icon={<AddRegular />} onClick={() => setEnrolling(true)}>
             Enrol a device
@@ -102,7 +121,7 @@ function DevicesPage() {
                   <span>
                     <Text weight="semibold">{d.name}</Text>
                     <Caption1 block className={styles.muted}>
-                      {[d.kind === 'DisplayBoard' ? 'Queue display' : humanize(d.kind), d.machineName, d.location]
+                      {[d.kind === 'DisplayBoard' ? 'Queue display' : kindLabel(d.kind), d.machineName, d.location]
                         .filter(Boolean)
                         .join(' · ')}
                     </Caption1>
@@ -198,21 +217,34 @@ function EnrolDialog({ onClose }: { onClose: () => void }) {
           <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {create.data ? (
               <>
-                <Text>On the new device, open HC360 Desktop and enter this one-time code:</Text>
+                <Text>
+                  {kind === 'LabAgent'
+                    ? 'On the PC the analyser is cabled to, run Install-HC360LabAgent.ps1 as an administrator with this one-time code (-EnrolmentCode), the server address and the hospital CA fingerprint:'
+                    : 'On the new device, open HC360 Desktop and enter this one-time code:'}
+                </Text>
                 <div className={styles.code}>{create.data.code}</div>
                 <MessageBar intent="info">
                   <MessageBarBody>
                     The code works once and expires at {formatDateTime(create.data.expiresAt)}.
+                    {kind === 'LabAgent' &&
+                      ' Then set up each analyser on that PC in Lab setup › Analysers › Connection.'}
                   </MessageBarBody>
                 </MessageBar>
               </>
             ) : (
               <>
-                <Field label="Device type">
+                <Field
+                  label="Device type"
+                  hint={
+                    kind === 'LabAgent'
+                      ? 'A Windows service on the PC a serial analyser is cabled to. It relays the analyser to HC360, even when nobody is signed in.'
+                      : undefined
+                  }
+                >
                   <Select value={kind} onChange={(_, d) => setKind(d.value as DeviceKind)}>
                     {KINDS.map((k) => (
                       <option key={k} value={k}>
-                        {k === 'DisplayBoard' ? 'Queue display (TV)' : humanize(k)}
+                        {kindLabel(k)}
                       </option>
                     ))}
                   </Select>

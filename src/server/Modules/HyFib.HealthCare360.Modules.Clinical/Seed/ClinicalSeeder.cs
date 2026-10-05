@@ -39,9 +39,15 @@ internal sealed class ClinicalSeeder(ILogger<ClinicalSeeder> logger) : ISeeder
         }
     }
 
-    private static async Task SeedIcdCodesAsync(HospitalDbContext db, CancellationToken ct)
+    /// <summary>
+    /// Adds the starter codes the catalogue does not have yet. A code an import withdrew or that was deleted still counts
+    /// as present, so it is not added back.
+    /// </summary>
+    private async Task SeedIcdCodesAsync(HospitalDbContext db, CancellationToken ct)
     {
-        var existing = (await db.Set<IcdCode>().Where(c => c.Release == CodeReleases.Icd10).Select(c => c.Code).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        await NormalizeReleaseLabelsAsync(db, ct);
+        var existing = (await db.Set<IcdCode>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])
+            .Where(c => c.Release == CodeReleases.Icd10).Select(c => c.Code).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
         foreach (var entry in IcdCodeCatalogue.All.Where(e => !existing.Contains(e.Code)))
         {
             var code = new IcdCode
@@ -60,9 +66,44 @@ internal sealed class ClinicalSeeder(ILogger<ClinicalSeeder> logger) : ISeeder
         }
     }
 
+    /// <summary>
+    /// Codes saved from the WHO online search used to keep the API's release label ("ICD-11 MMS 2025-01"), which the rest
+    /// of HC360 did not recognise. They move to the catalogue's own label ("ICD-11 MMS"), unless the code is already
+    /// there under it.
+    /// </summary>
+    private async Task NormalizeReleaseLabelsAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        string[] canonical = [CodeReleases.Icd10, CodeReleases.Icd11, CodeReleases.Icd10Pcs];
+        var odd = await db.Set<IcdCode>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])
+            .Where(c => !canonical.Contains(c.Release)).ToListAsync(ct);
+        if (odd.Count == 0)
+        {
+            return;
+        }
+
+        var taken = (await db.Set<IcdCode>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])
+                .Where(c => canonical.Contains(c.Release)).Select(c => new { c.Code, c.Release }).ToListAsync(ct))
+            .Select(c => (c.Code, c.Release)).ToHashSet();
+        var moved = 0;
+        foreach (var code in odd)
+        {
+            if (CodeReleases.Normalize(code.Release) is { } release and (CodeReleases.Icd10 or CodeReleases.Icd11) && taken.Add((code.Code, release)))
+            {
+                code.Release = release;
+                moved++;
+            }
+        }
+
+        if (moved > 0)
+        {
+            logger.LogInformation("Moved {Count} ICD codes saved from the online search to the catalogue's release labels", moved);
+        }
+    }
+
     private static async Task SeedProcedureCodesAsync(HospitalDbContext db, CancellationToken ct)
     {
-        var existing = (await db.Set<ProcedureCode>().Where(c => c.System == CodeReleases.Icd10Pcs).Select(c => c.Code).ToListAsync(ct))
+        var existing = (await db.Set<ProcedureCode>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])
+                .Where(c => c.System == CodeReleases.Icd10Pcs).Select(c => c.Code).ToListAsync(ct))
             .ToHashSet(StringComparer.Ordinal);
         foreach (var entry in ProcedureCodeCatalogue.All.Where(e => !existing.Contains(e.Code)))
         {

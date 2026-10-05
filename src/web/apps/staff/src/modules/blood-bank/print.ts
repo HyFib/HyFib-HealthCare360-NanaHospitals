@@ -1,23 +1,46 @@
-import { escapeHtml, formatDate, formatDateTime, printDocument, printHtml } from '@hc360/core';
+import { escapeHtml, formatDate, formatDateTime, printDocument, printHtml, type BloodUnitLabel } from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
+import { printLabelJob } from '@/lib/labelPrinting';
 import type { BloodComponentType, BloodIssueDto, BloodRequestDetail, BloodUnitDto, CrossMatchDto } from './api';
 import { componentShort, crossmatchMethodLabel, groupLabel, storageCondition } from './labels';
 import { ttiState } from './rules';
 
+/** Whether the unit may be issued: screening complete and non-reactive, and out of quarantine. */
+function isCleared(unit: BloodUnitDto): boolean {
+  return ttiState(unit.tti).cleared && unit.status !== 'Quarantine';
+}
+
+/** A unit label as the server writes it for a ZPL or TSPL label printer: the same facts as the label page. */
+export function unitLabelData(unit: BloodUnitDto): BloodUnitLabel {
+  return {
+    unitNumber: unit.unitNumber,
+    bloodGroup: unit.bloodGroup === 'Unknown' ? 'UNGROUPED' : groupLabel(unit.bloodGroup),
+    component: componentShort[unit.componentType],
+    volumeMl: unit.volumeMl,
+    cleared: isCleared(unit),
+    expiresAt: unit.expiresAt,
+    storage: storageCondition[unit.componentType],
+  };
+}
+
 /**
  * Blood unit labels on 50 × 25 mm label stock: group in large type, component and volume, a Code 128 barcode of the
  * unit number for scanning at issue and at the bedside, expiry, and the screening status. A unit still in
- * quarantine is labelled NOT FOR ISSUE.
+ * quarantine is labelled NOT FOR ISSUE. Printed without a dialog on this computer's label printer.
  */
 export async function printUnitLabels(units: readonly BloodUnitDto[]): Promise<void> {
   if (units.length === 0) {
     return;
   }
+  await printLabelJob({ kind: 'blood-units', labels: units.map(unitLabelData), page: () => unitLabelsPage(units) });
+}
+
+/** The unit labels as a page, for label printers on their Windows driver and for browsers. */
+async function unitLabelsPage(units: readonly BloodUnitDto[]): Promise<string> {
   const labels = await Promise.all(
     units.map(async (unit) => {
       const barcode = await barcodeSvg(unit.unitNumber, 'code128', { height: 7, scale: 2 });
-      const tti = ttiState(unit.tti);
-      const cleared = tti.cleared && unit.status !== 'Quarantine';
+      const cleared = isCleared(unit);
       const group = unit.bloodGroup === 'Unknown' ? 'UNGROUPED' : groupLabel(unit.bloodGroup);
       return `
       <div class="label">
@@ -47,10 +70,11 @@ export async function printUnitLabels(units: readonly BloodUnitDto[]): Promise<v
     .bottom { display: flex; justify-content: space-between; font-size: 6.5pt; line-height: 1.1; }
     .number { font-family: Consolas, monospace; font-weight: 700; }
     .store { font-size: 5pt; }`;
-  await printHtml(
-    printDocument(labels.join(''), { title: `Blood unit labels (${units.length})`, pageSize: 'Label50x25', styles }),
-    { pageSize: 'Label50x25', silent: true },
-  );
+  return printDocument(labels.join(''), {
+    title: `Blood unit labels (${units.length})`,
+    pageSize: 'Label50x25',
+    styles,
+  });
 }
 
 export interface IssueSlipUnit {

@@ -32,7 +32,8 @@ import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { CARDIOLOGY_STUDY_READERS, cardiologyQueries } from '@/modules/cardiology/api';
 import type { ReportStudyRef } from '@/modules/lab/common/types';
-import { RADIOLOGY_STUDY_READERS, radiologyQueries } from '@/modules/radiology/api';
+import { RADIOLOGY_PERMISSIONS, RADIOLOGY_STUDY_READERS, radiologyQueries } from '@/modules/radiology/api';
+import { StudyThumbnails } from '@/modules/radiology/StudyImages';
 import { emrApi, emrKeys, emrQueries, type LabResultFlag, type WorklistResult } from './api';
 
 const useStyles = makeStyles({
@@ -146,6 +147,7 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
   const canReadLab = usePermission('lab.orders.read');
   const canReadRadiology = usePermission(RADIOLOGY_STUDY_READERS);
   const canReadCardiology = usePermission(CARDIOLOGY_STUDY_READERS);
+  const canSeeImages = usePermission(RADIOLOGY_PERMISSIONS.images);
   const canAcknowledge = usePermission('clinical.emr.write');
   const [note, setNote] = useState('');
   // Radiology and cardiology screens open by study: resolve the report id as soon as the result is shown.
@@ -205,7 +207,12 @@ function ReviewBody({ result, onClose }: { result: WorklistResult; onClose: () =
         {result.kind === 'Laboratory' && canReadLab ? (
           <LabResults reportId={result.reportId} />
         ) : study ? (
-          <StudyReportNote kind={study.kind} study={study.query} />
+          <>
+            <StudyReportNote kind={study.kind} study={study.query} />
+            {study.kind === 'Radiology' && studyId && canSeeImages && (
+              <StudyThumbnails studyId={studyId} onOpen={() => openStudy(studyId)} />
+            )}
+          </>
         ) : (
           <Caption1 className={styles.muted}>
             Open the patient's chart or the {result.kind.toLowerCase()} module to read the full report.

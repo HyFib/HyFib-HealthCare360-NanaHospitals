@@ -100,6 +100,20 @@ const manifest: ModuleManifest = {
       permission: 'billing.tally.export',
       keywords: ['tally', 'day book', 'accounts', 'vouchers'],
     },
+    {
+      label: 'Gateway reconciliation',
+      to: '/billing/reconciliation',
+      permission: 'billing.gateway.reconcile',
+      keywords: [
+        'settlement',
+        'razorpay',
+        'online payments',
+        'utr',
+        'reconcile',
+        'unrecorded payment',
+        'refund status',
+      ],
+    },
   ],
   quickActions: [
     {

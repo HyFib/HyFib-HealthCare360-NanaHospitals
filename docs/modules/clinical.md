@@ -41,6 +41,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | `clinical.discharge_summary.write` | Draft/sign/amend discharge summaries | Doctor |
 | `mrd.coding` | Clinical coding and verification | MrdOfficer |
 | `mrd.records` | Charts, deficiencies, record requests, archival, morbidity report | MrdOfficer, HospitalAdmin |
+| `mrd.catalogue.import` | Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists) | HospitalAdmin |
 | `healthcheck.manage` | Packages, bookings, corporate batches | HospitalAdmin, FrontOffice |
 
 ## Endpoints
@@ -202,10 +203,12 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 
 | Method | Path | Permission | Request → Response |
 |---|---|---|---|
-| GET | `/mrd/icd-codes?search&chapter&billableOnly&release&limit` | emr.read or mrd.coding | → ranked `IcdCodeDto[]` (code prefix incl. "e119" → E11.9, title words, shorthand keywords) |
+| GET | `/mrd/icd-codes?search&chapter&billableOnly&release&limit` | emr.read or mrd.coding or mrd.catalogue.import | → ranked `IcdCodeDto[]` (code prefix incl. "e119" → E11.9, title words, shorthand keywords) |
 | GET | `/mrd/icd-codes/online?search&release&limit` | emr.read or mrd.coding | → `OnlineIcdResult[]` via `IIcdLookup` (422 `icd.online_unavailable` / `icd.online_failed`) |
-| GET | `/mrd/icd-classification` | emr.read or mrd.coding | chapters with their blocks |
-| POST / PUT | `/mrd/icd-codes[/{id}]` | mrd.coding | `SaveIcdCodeRequest{code, title, release, isBillable, keywords, fromOnlineLookup, isActive}` |
+| GET | `/mrd/icd-classification` | emr.read or mrd.coding or mrd.catalogue.import | chapters with their blocks (the imported WHO file's, else the built-in list) |
+| POST / PUT | `/mrd/icd-codes[/{id}]` | mrd.coding | `SaveIcdCodeRequest{code, title, release, isBillable, keywords, fromOnlineLookup, isActive}` (see "Catalogue import" for what an edit means to later imports) |
+| GET | `/mrd/catalogue` | emr.read or mrd.coding or mrd.catalogue.import | → `CatalogueStatusDto`: per catalogue the active, codable, withdrawn and switched-off codes, codes by source, the last import; the 10 latest imports |
+| POST | `/mrd/catalogue/imports` | mrd.catalogue.import | multipart `file` (at most 100 MB) and `dryRun` → `CatalogueImportResult` (200 for a dry run, 201 for an import; 400 `file` with the reason; 409 `catalogue.import_running`) |
 | GET / POST / PUT | `/mrd/procedure-codes[/{id}]` | emr.read or mrd.coding / mrd.coding | `SaveProcedureCodeRequest` |
 | GET | `/mrd/codings?status&from&to&page` | mrd.coding | coding worklist (pending first) |
 | POST | `/mrd/codings` | mrd.coding | `CreateCodingRequest{patientId, encounterId?, admissionId?, visitId?, episodeDate?, notes}` |
@@ -221,6 +224,37 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | POST | `/mrd/records/{id}/complete`, `/archive` | mrd.records | `ArchiveMedicalRecordRequest{location}`; completion sets `retainUntil` (OP 3 y, IP 5 y, MLC permanent) |
 | GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported |
 | POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn}` / — / `CancelRecordRequest{reason}` |
+
+#### Catalogue import
+
+HC360 ships a starter list of common ICD-10 and ICD-10-PCS codes. A hospital can load the full catalogues from files it
+supplies, in Medical records > ICD catalogue > Import or with the server command
+`HyFib.HealthCare360.Server.exe catalogue import --file <file> [--dry-run]` on the Server Node.
+
+* **Files accepted.** The WHO ICD-10 2019 ClaML file (`icd102019en.xml`, or the `icd102019en.xml.zip` WHO provides) and
+  the CMS ICD-10-PCS order file (`icd10pcs_order_YYYY.txt`, or its zip). The file is recognised by its content. A zip
+  must hold exactly one catalogue file; the `__MACOSX/` folder and `._` files a Mac adds are ignored. A file with fewer
+  than 5,000 ICD-10 categories, or an order file with fewer than 40,000 valid codes, is refused as partial.
+* **Licensing.** HC360 does not include the WHO file. The hospital obtains its own copy under its WHO licence and
+  imports it; the import record keeps the file name, its SHA-256 and the title and version the file states, which serve
+  as the attribution of the source. The CMS ICD-10-PCS order file is in the public domain.
+* **Dry run.** `dryRun=true` (or `--dry-run`) reads the file and reports what would be added, updated, brought back and
+  withdrawn, and changes nothing. Check the file this way first.
+* **What an import changes.** A code in the file is added, or brought in line with it: title, chapter, block, whether it
+  is codable, dagger or asterisk, inclusion terms. Search words are kept. Starter-list PCS codes keep their everyday
+  titles. An ICD-10 import also replaces the chapters and blocks used by the browser and the morbidity index.
+* **Withdrawals.** A code from the starter list or an earlier import that the file no longer has, and that is in use, is
+  withdrawn: switched off with the date, never deleted. A later file that has it again brings it back. Diagnoses,
+  codings and discharge summaries that already have a withdrawn code keep it and can be saved again; it cannot be added
+  to a record that does not have it.
+* **What is left alone.** Codes MRD added by hand or saved from the WHO online search; starter or imported codes MRD
+  edited by hand (code, title, whether it is codable, PCS category), which become `Source = Manual`; and a withdrawn code
+  MRD switched back on, which also becomes `Manual`. Switching a code off or changing its search words is not such an
+  edit: the import keeps updating the code, and a code MRD switched off stays off.
+* **Record.** Each import is saved in one transaction with a `CatalogueImport` row (file, SHA-256, counts, who, when,
+  upload or server console) and the audit entry `mrd.catalogue.imported`. Only one import runs at a time (a PostgreSQL
+  advisory lock). Every server node and the server command see a new import at once: the cached chapters and blocks are
+  tagged with the latest import and read again when it changes.
 
 ### Health checkups (`/health-checkups`, tag Health Checkups)
 

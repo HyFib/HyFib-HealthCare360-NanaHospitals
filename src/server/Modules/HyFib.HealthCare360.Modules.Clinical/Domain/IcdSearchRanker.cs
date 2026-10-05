@@ -1,13 +1,14 @@
 namespace HyFib.HealthCare360.Modules.Clinical.Domain;
 
-/// <summary>A catalogue entry as seen by the ranker.</summary>
-public sealed record CodeCandidate(string Code, string Title, string? Keywords, bool IsBillable);
+/// <summary>A catalogue entry as seen by the ranker; <see cref="IncludedTerms"/> are the WHO file's inclusion terms.</summary>
+public sealed record CodeCandidate(string Code, string Title, string? Keywords, bool IsBillable, string? IncludedTerms = null);
 
 /// <summary>
 /// Ranks local ICD/procedure search results (MRD-01). The database narrows candidates with ILIKE (code prefix or
-/// every query word); this pure function orders them the way coders expect: exact code, then code prefix
-/// (category before its subdivisions), then titles that start with the query, whole-word title matches, keyword
-/// (shorthand) matches and finally loose matches. Shorter titles win ties because they are usually the intended term.
+/// every query word) and orders them in these same tiers before the candidate limit; this pure function then
+/// orders them the way coders expect: exact code, then code prefix (category before its subdivisions), then titles
+/// that start with the query, whole-word title matches, keyword (shorthand) matches, inclusion-term matches and finally
+/// loose matches. Shorter titles win ties because they are usually the intended term.
 /// </summary>
 public static class IcdSearchRanker
 {
@@ -76,7 +77,7 @@ public static class IcdSearchRanker
             return 0;
         }
 
-        var titleWords = Words(candidate.Title);
+        var titleWords = Tokens(title);
         if (words.All(w => titleWords.Any(t => t.StartsWith(w, StringComparison.Ordinal))))
         {
             // Bonus when the words appear in the order typed ("acute appendicitis" before "appendicitis, acute").
@@ -85,15 +86,29 @@ public static class IcdSearchRanker
         }
 
         var keywords = candidate.Keywords?.ToLowerInvariant() ?? string.Empty;
-        var keywordWords = Words(keywords);
+        var keywordWords = Tokens(keywords);
         if (keywords.Length > 0 && words.All(w => keywordWords.Any(k => k.StartsWith(w, StringComparison.Ordinal)) || titleWords.Any(t => t.StartsWith(w, StringComparison.Ordinal))))
         {
             return 400 + tieBreak;
         }
 
-        var haystack = $"{title} {keywords}";
+        // The WHO file's inclusion terms ("Includes: classical cholera") rank below the curated shorthand.
+        var included = candidate.IncludedTerms?.ToLowerInvariant() ?? string.Empty;
+        var includedWords = Tokens(included);
+        if (included.Length > 0
+            && words.All(w => includedWords.Any(i => i.StartsWith(w, StringComparison.Ordinal)) || keywordWords.Any(k => k.StartsWith(w, StringComparison.Ordinal))
+                              || titleWords.Any(t => t.StartsWith(w, StringComparison.Ordinal))))
+        {
+            return 300 + tieBreak;
+        }
+
+        var haystack = $"{title} {keywords} {included}";
         return words.All(w => haystack.Contains(w, StringComparison.Ordinal)) ? 100 + tieBreak : 0;
     }
+
+    /// <summary>Every word of a candidate's text (the query's own words are capped by <see cref="Words"/>).</summary>
+    private static HashSet<string> Tokens(string text) =>
+        text.Split(Separators, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>Scores, drops non-matches and returns the best <paramref name="limit"/> candidates.</summary>
     public static IReadOnlyList<T> Rank<T>(IEnumerable<T> items, Func<T, CodeCandidate> candidate, string query, int limit) =>

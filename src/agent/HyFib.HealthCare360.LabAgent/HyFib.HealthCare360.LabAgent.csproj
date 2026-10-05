@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    HC360 lab agent: a small Windows service for the PC a serial analyser is cabled to. It opens the analyser's COM port
+    and relays its bytes, both ways, to the HC360 server over a TLS WebSocket that trusts only the hospital's CA. The
+    analyser's protocol (ASTM E1381/E1394 or HL7 over MLLP) runs on the server, so the agent never answers the analyser
+    itself and keeps running when nobody is signed in to the PC (SRS DED-01, INT-LAB, A-06).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>HyFib.HealthCare360.LabAgent</RootNamespace>
+    <AssemblyName>HC360LabAgent</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" />
+    <PackageReference Include="System.IO.Ports" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="HyFib.HealthCare360.LabAgent.Tests" />
+    <!-- NSubstitute (Castle DynamicProxy) proxies the agent's internal interfaces in the unit tests. -->
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+  </ItemGroup>
+</Project>

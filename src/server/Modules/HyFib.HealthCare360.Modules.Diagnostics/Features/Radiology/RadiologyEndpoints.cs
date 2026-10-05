@@ -7,8 +7,8 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 namespace HyFib.HealthCare360.Modules.Diagnostics.Features.Radiology;
 
 /// <summary>
-/// /api/v1/radiology: study lists, scheduling and the technologist workflow (IMG-01), the DICOM modality worklist and
-/// PACS reconciliation/viewer (IMG-02), TAT and reject analysis (IMG-04), and AI triage findings (IMG-05).
+/// /api/v1/radiology: study lists, scheduling and the technologist workflow (IMG-01), the DICOM modality worklist, PACS
+/// linking, the images and the viewer (IMG-02), TAT and reject analysis (IMG-04), and AI triage findings (IMG-05).
 /// </summary>
 internal static class RadiologyEndpoints
 {
@@ -19,6 +19,7 @@ internal static class RadiologyEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         var readers = StudyReaders;
+        RadiologyImageEndpoints.Map(app);
 
         var studies = app.MapGroup("/api/v1/radiology/studies").WithTags("Radiology");
         studies.MapGet("/", List).RequireAnyPermission(readers);
@@ -37,7 +38,6 @@ internal static class RadiologyEndpoints
             .RequirePermission(DiagnosticsPermissions.RadiologyWorklist).WithValidation<CancelStudyRequest>();
         studies.MapPost("/{id:guid}/reconcile", async (Guid id, ImagingService s, CancellationToken ct) => (await s.ReconcileAsync(id, ct)).ToOk())
             .RequirePermission(DiagnosticsPermissions.RadiologyWorklist);
-        studies.MapGet("/{id:guid}/viewer", Viewer).RequireAnyPermission(readers);
         studies.MapGet("/{id:guid}/ai-findings", async (Guid id, ImagingService s, CancellationToken ct) => TypedResults.Ok(await s.AiFindingsAsync(id, ct)))
             .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsWrite, DiagnosticsPermissions.RadiologyReportsVerify);
         studies.MapPost("/{id:guid}/ai-findings", async (Guid id, SubmitAiFindingRequest r, ImagingService s, CancellationToken ct) =>
@@ -46,9 +46,7 @@ internal static class RadiologyEndpoints
 
         var radiology = app.MapGroup("/api/v1/radiology").WithTags("Radiology");
         radiology.MapGet("/reports/{reportId:guid}", ReportById).RequireAnyPermission(readers);
-        radiology.MapGet("/worklist/mwl", async (DateOnly? date, string? station, Modality? modality, ImagingService s, CancellationToken ct) =>
-                TypedResults.Ok(await s.WorklistAsync(date, station, modality, ct)))
-            .RequirePermission(DiagnosticsPermissions.RadiologyWorklist);
+        radiology.MapGet("/worklist/mwl", ModalityWorklist).RequirePermission(DiagnosticsPermissions.RadiologyWorklist);
         radiology.MapGet("/reporting-worklist", ReportingWorklist)
             .RequireAnyPermission(DiagnosticsPermissions.RadiologyReportsWrite, DiagnosticsPermissions.RadiologyReportsVerify);
         radiology.MapPost("/pacs/reconcile", async (ImagingService s, CancellationToken ct) => (await s.ReconcileRecentAsync(ct)).ToOk())
@@ -158,28 +156,26 @@ internal static class RadiologyEndpoints
         return TypedResults.Ok(detail);
     }
 
-    /// <summary>Opens the PACS viewer for the study (from the patient record); image access is a PHI read and is audited.</summary>
-    private static async Task<IResult> Viewer(Guid id, ImagingService service, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
+    /// <summary>
+    /// The facility's DICOM modality worklist for one day as JSON, exactly as the worklist server offers it to modalities
+    /// (for checking what a modality should see).
+    /// </summary>
+    private static async Task<IResult> ModalityWorklist(
+        DateOnly? date, string? station, Modality? modality, IModalityWorklistSource source, ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
-        var study = await db.Set<ImagingStudy>().AsNoTracking().Where(s => s.Id == id).Select(s => new { s.PatientId, s.AccessionNumber }).FirstOrDefaultAsync(ct);
-        if (study is null)
+        if (user.FacilityId is not { } facilityId)
         {
-            return Error.NotFound(nameof(ImagingStudy), id).ToProblem();
+            return Error.Rule("facility.required", "Select a facility first.").ToProblem();
         }
 
-        var access = await guard.EnsureCanOpenAsync(study.PatientId, ct);
-        if (access.IsFailure)
+        if (station is { Length: > DicomConventions.MaxShortStringLength })
         {
-            return access.Error!.ToProblem();
+            return Error.Field("station", "An AE title has at most 16 characters.").ToProblem();
         }
 
-        var link = await service.ViewerAsync(id, ct);
-        if (link.IsSuccess)
-        {
-            await audit.PatientRecordAccessedAsync(study.PatientId, $"Opened images of {study.AccessionNumber}", ct);
-        }
-
-        return link.ToOk();
+        var day = date ?? DiagnosticsTime.Today(time);
+        string[] codes = modality is { } m ? [DicomConventions.ModalityCode(m)] : [];
+        return TypedResults.Ok(await source.FindAsync(new ModalityWorklistQuery(facilityId, day, day, codes, station), ct));
     }
 
     private static async Task<PagedResult<ImagingStudyListItem>> ToListItemsAsync(

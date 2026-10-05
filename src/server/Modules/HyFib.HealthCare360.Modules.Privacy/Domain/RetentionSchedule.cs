@@ -79,7 +79,7 @@ public static class RetentionSchedule
             "Which message went to which number or address (masked), and whether it was delivered.",
             LogsBasis, RetentionAction.Delete, RetentionUnit.Days, 365, 365, 3650, Editable: true),
         new(IntegrationLog, "Integration log",
-            "Calls to laboratory machines and to payment, messaging and other providers, with personal data removed from what was sent.",
+            "Calls to laboratory machines and to payment, messaging and other providers, with personal data removed from what was sent, and the payment gateway's notifications (their ids only).",
             LogsBasis, RetentionAction.Delete, RetentionUnit.Days, 365, 365, 3650, Editable: true),
         new(SignInLog, "Sign-in records",
             "Requests for sign-in codes, and sessions that have ended: when, from which address and on which device.",

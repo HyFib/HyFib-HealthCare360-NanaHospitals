@@ -20,8 +20,74 @@ internal static class DicomJson
     public const string StudyDescription = "00081030";
     public const string NumberOfSeries = "00201206";
     public const string NumberOfInstances = "00201208";
+    public const string SeriesInstanceUid = "0020000E";
+    public const string Modality = "00080060";
+    public const string SeriesNumber = "00200011";
+    public const string SeriesDescription = "0008103E";
+    public const string BodyPartExamined = "00180015";
+    public const string NumberOfSeriesInstances = "00201209";
+    public const string SopClassUid = "00080016";
+    public const string SopInstanceUid = "00080018";
+    public const string InstanceNumber = "00200013";
+    public const string NumberOfFrames = "00280008";
+    public const string Rows = "00280010";
+    public const string Columns = "00280011";
 
-    public static IReadOnlyList<ImagingStudyInfo> ParseStudies(string json, TimeZoneInfo zone)
+    /// <summary>Series of objects that are not pictures: structured reports, key objects, presentation states, raw data.</summary>
+    private static readonly HashSet<string> NonImageModalities = new(StringComparer.OrdinalIgnoreCase) { "SR", "KO", "PR", "REG", "RWV", "FID", "DOC", "PLAN" };
+
+    /// <summary>
+    /// SOP classes that are not pictures (structured reports and key objects, presentation states, waveforms, raw data,
+    /// encapsulated documents), by UID prefix.
+    /// </summary>
+    private static readonly string[] NonImageSopClasses =
+    [
+        "1.2.840.10008.5.1.4.1.1.88.", "1.2.840.10008.5.1.4.1.1.11.", "1.2.840.10008.5.1.4.1.1.9.", "1.2.840.10008.5.1.4.1.1.66",
+        "1.2.840.10008.5.1.4.1.1.104.",
+    ];
+
+    public static IReadOnlyList<ImagingStudyInfo> ParseStudies(string json, TimeZoneInfo zone) =>
+        Parse(json, item => Text(item, StudyInstanceUid) is { Length: > 0 } uid
+            ? new ImagingStudyInfo(
+                uid,
+                Text(item, AccessionNumber),
+                Text(item, PatientId),
+                PersonName(item, PatientName),
+                StudyDateTime(item, zone),
+                Joined(item, ModalitiesInStudy),
+                Text(item, StudyDescription),
+                Integer(item, NumberOfSeries),
+                Integer(item, NumberOfInstances))
+            : null);
+
+    /// <summary>
+    /// Series that hold pictures, by series number. Series of reports, key objects and presentation states are left out:
+    /// they have no image to show.
+    /// </summary>
+    public static IReadOnlyList<ImagingSeriesInfo> ParseSeries(string json) =>
+        Parse(json, item => Text(item, SeriesInstanceUid) is { Length: > 0 } uid && !NonImageModalities.Contains(Text(item, Modality) ?? string.Empty)
+                ? new ImagingSeriesInfo(uid, Text(item, Modality), Integer(item, SeriesNumber), Text(item, SeriesDescription), Text(item, BodyPartExamined),
+                    Integer(item, NumberOfSeriesInstances))
+                : null)
+            .OrderBy(s => s.SeriesNumber ?? int.MaxValue)
+            .ThenBy(s => s.SeriesInstanceUid, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>
+    /// The pictures of a series. Objects that are not pictures (a report or presentation state filed in an image
+    /// series, or an object without rows) are left out; the number of frames is at least 1.
+    /// </summary>
+    public static IReadOnlyList<ImagingInstanceInfo> ParseInstances(string json) =>
+        Parse(json, item => Text(item, SopInstanceUid) is { Length: > 0 } uid && Integer(item, Rows) is not 0 && IsImageClass(Text(item, SopClassUid))
+            ? new ImagingInstanceInfo(uid, Text(item, SopClassUid), Integer(item, InstanceNumber), Math.Max(1, Integer(item, NumberOfFrames) ?? 1),
+                Integer(item, Rows), Integer(item, Columns))
+            : null);
+
+    private static bool IsImageClass(string? sopClassUid) =>
+        sopClassUid is null || !NonImageSopClasses.Any(prefix => sopClassUid.StartsWith(prefix, StringComparison.Ordinal));
+
+    private static List<T> Parse<T>(string json, Func<JsonElement, T?> read)
+        where T : class
     {
         if (string.IsNullOrWhiteSpace(json) || !IntegrationHttp.TryParseJson(json, out var document))
         {
@@ -30,33 +96,9 @@ internal static class DicomJson
 
         using (document)
         {
-            if (document.RootElement.ValueKind != JsonValueKind.Array)
-            {
-                return [];
-            }
-
-            var studies = new List<ImagingStudyInfo>();
-            foreach (var item in document.RootElement.EnumerateArray())
-            {
-                var uid = Text(item, StudyInstanceUid);
-                if (string.IsNullOrWhiteSpace(uid))
-                {
-                    continue;
-                }
-
-                studies.Add(new ImagingStudyInfo(
-                    uid,
-                    Text(item, AccessionNumber),
-                    Text(item, PatientId),
-                    PersonName(item, PatientName),
-                    StudyDateTime(item, zone),
-                    Joined(item, ModalitiesInStudy),
-                    Text(item, StudyDescription),
-                    Integer(item, NumberOfSeries),
-                    Integer(item, NumberOfInstances)));
-            }
-
-            return studies;
+            return document.RootElement.ValueKind != JsonValueKind.Array
+                ? []
+                : document.RootElement.EnumerateArray().Select(read).OfType<T>().ToList();
         }
     }
 

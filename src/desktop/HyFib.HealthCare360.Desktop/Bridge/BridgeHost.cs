@@ -24,6 +24,7 @@ internal sealed class BridgeHost(
     DesktopSettings settings,
     NetworkStatusService network,
     PrintService printing,
+    PrinterSetupStore printers,
     TrayNotifier tray)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -136,6 +137,23 @@ internal sealed class BridgeHost(
             case "printer.list":
                 return PrintService.ListPrinters();
 
+            case "printer.getSetup":
+                return printers.Load(PrintService.ListPrinters().Select(p => p.Name).ToList());
+
+            case "printer.saveSetup":
+            {
+                // The staff app offers this only to staff allowed to set up printers, after the server approved the
+                // change (and records it once saved). Nothing here can confirm that: the machine policy is what locks
+                // the setup against local users and scripts (PrinterSetupStore).
+                var setup = Required(parameters).TryGetProperty("setup", out var value) && value.ValueKind == JsonValueKind.Object
+                    ? value.Deserialize<WorkstationPrinters>(Json)
+                    : null;
+                return printers.Save(
+                    setup ?? throw new BridgeException("bad_request", "No printers to save."),
+                    PrintService.ListPrinters().Select(p => p.Name).ToList(),
+                    DateTimeOffset.UtcNow);
+            }
+
             case "printer.printHtml":
             {
                 var request = Required(parameters).Deserialize<PrintHtmlRequest>(Json) ?? throw new BridgeException("bad_request", "Nothing to print.");
@@ -145,7 +163,10 @@ internal sealed class BridgeHost(
 
             case "printer.printRaw":
             {
-                var printer = String(parameters, "printerName") ?? throw new BridgeException("bad_request", "Choose a printer.");
+                // Only printers installed on this computer: never a queue on another computer the page names.
+                var printer = PrintService.InstalledPrinter(
+                    String(parameters, "printerName"),
+                    PrintService.ListPrinters().Select(p => p.Name));
                 var data = String(parameters, "data") ?? throw new BridgeException("bad_request", "Nothing to print.");
                 RawPrinter.Send(printer, data);
                 return null;

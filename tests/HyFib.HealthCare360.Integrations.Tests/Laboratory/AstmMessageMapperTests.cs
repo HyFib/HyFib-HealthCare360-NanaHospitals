@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 using HyFib.HealthCare360.Platform.Contracts;
 
 namespace HyFib.HealthCare360.Integrations.Tests.Laboratory;
@@ -94,7 +95,7 @@ public sealed class AstmMessageMapperTests
             new("SMP-2", "No Tests", null, null, []),
         };
 
-        var records = AstmMessageMapper.BuildOrderResponse(orders, AstmDelimiters.Default, new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist));
+        var records = AstmMessageMapper.BuildOrderResponse(orders, AstmDelimiters.Default, new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist), LabSamples.India);
 
         records.Count.ShouldBe(4);
         records[0].ShouldBe(@"H|\^&|||HC360^1.0|||||||P|1|20260925103000");
@@ -111,5 +112,46 @@ public sealed class AstmMessageMapperTests
 
     [Fact]
     public void Reports_no_information_when_no_sample_has_tests() =>
-        AstmMessageMapper.BuildOrderResponse([], AstmDelimiters.Default, DateTimeOffset.UnixEpoch)[^1].ShouldBe("L|1|I");
+        AstmMessageMapper.BuildOrderResponse([], AstmDelimiters.Default, DateTimeOffset.UnixEpoch, LabSamples.India)[^1].ShouldBe("L|1|I");
+
+    [Fact]
+    public void Sends_orders_unasked_with_the_action_priority_collection_time_and_hospital_id()
+    {
+        var order = new InstrumentOrder("000000123", "Ravi Sharma", "M", new DateOnly(1980, 1, 15), ["GLU", "CREA"])
+        {
+            PatientId = "NH-UH-26001",
+            Priority = OrderPriority.Stat,
+            CollectedAt = new DateTimeOffset(2026, 9, 25, 4, 0, 0, TimeSpan.Zero),
+            SpecimenType = "Serum",
+        };
+        IReadOnlyList<LabDownload> downloads =
+        [
+            new(Guid.CreateVersion7(), InstrumentOrderAction.New, order),
+            new(Guid.CreateVersion7(), InstrumentOrderAction.Cancel, new InstrumentOrder("000000124", string.Empty, null, null, ["TSH"])),
+            new(Guid.CreateVersion7(), InstrumentOrderAction.Rerun, new InstrumentOrder("000000125", "Asha", "F", null, ["K"])),
+        ];
+
+        var records = AstmMessageMapper.BuildOrderDownload(downloads, AstmDelimiters.Default, new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist), LabSamples.India);
+
+        records.Count.ShouldBe(8);
+        records[1].ShouldBe("P|1|NH-UH-26001|||Ravi Sharma||19800115|M");
+        var parsed = AstmRecords.Parse(string.Join("\r", records));
+        var first = parsed[2];
+        first.Field(3).ShouldBe("000000123");
+        first.Field(5).ShouldBe(@"^^^GLU\^^^CREA");
+        first.Field(6).ShouldBe("S");
+        first.Field(8).ShouldBe("20260925093000");
+        first.Field(12).ShouldBe("N");
+        first.Field(16).ShouldBe("Serum");
+        first.Field(26).ShouldBe("O");
+        parsed[4].Field(12).ShouldBe("C");
+        parsed[6].Field(12).ShouldBe("A");
+        records[^1].ShouldBe("L|1|N");
+    }
+
+    [Theory]
+    [InlineData(OrderPriority.Routine, "R")]
+    [InlineData(OrderPriority.Urgent, "A")]
+    [InlineData(OrderPriority.Stat, "S")]
+    public void Maps_priorities_to_astm(OrderPriority priority, string expected) => AstmMessageMapper.Priority(priority).ShouldBe(expected);
 }

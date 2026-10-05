@@ -6,9 +6,18 @@ import {
   humanize,
   printDocument,
   printHtml,
+  type WristbandLabel,
 } from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
-import { ADMISSION_SOURCE_LABEL, ADMISSION_TYPE_LABEL, PAYER_LABEL, type AdmissionDetail } from './api';
+import { printLabelJob } from '@/lib/labelPrinting';
+import {
+  ADMISSION_SOURCE_LABEL,
+  ADMISSION_TYPE_LABEL,
+  admissionApi,
+  PAYER_LABEL,
+  type AdmissionDetail,
+  type WristbandDto,
+} from './api';
 
 function row(label: string, value: string | null | undefined): string {
   return `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || '—')}</td></tr>`;
@@ -77,34 +86,77 @@ export async function printAdmissionSlip(admission: AdmissionDetail, facilityNam
   });
 }
 
+/** Age and sex as the band shows them: "46Y/M"; only the sex when the age is not known. */
+export function bandAgeSex(band: Pick<WristbandDto, 'age' | 'gender'>): string {
+  return [band.age, band.gender.charAt(0)].filter(Boolean).join('/');
+}
+
+/** The wristband as the server writes it for a ZPL or TSPL band printer: the same facts as the band page. */
+export function wristbandData(band: WristbandDto): WristbandLabel {
+  return {
+    uhid: band.uhid,
+    patientName: band.patientName,
+    ageSex: bandAgeSex(band),
+    admissionNumber: band.admissionNumber,
+    ward: band.wardName,
+    bed: band.bedLabel,
+    allergies: band.allergies,
+  };
+}
+
+/** The band's allergy mark: black for allergies on the chart, outlined when nobody has recorded them, none for NKA. */
+function allergyMark(allergies: WristbandDto['allergies']): string {
+  switch (allergies) {
+    case 'Recorded':
+      return '<div class="allergy">ALLERGY</div>';
+    case 'NotRecorded':
+      return '<div class="allergy-unknown">ALLERGIES<br>NOT RECORDED</div>';
+    default:
+      return '';
+  }
+}
+
 /**
- * Patient wristband on a 50 × 25 mm label: name, age/sex, admission number and a Code 128 of the UHID, which bedside
- * scanners read before medicines, samples and blood. Printed silently on the label printer inside HC360 Desktop.
+ * The wristband as a page on an adult band (1 × 11 inches), printed along its length: name, UHID, age/sex, admission
+ * number, ward and bed, a black ALLERGY mark when allergies are on the chart (an outlined ALLERGIES NOT RECORDED mark
+ * when nobody has recorded them, none for no known allergies), and a Code 128 of the UHID. For band printers on their
+ * Windows driver, and for browsers.
  */
-export async function printWristband(
-  admission: Pick<
-    AdmissionDetail,
-    'uhid' | 'patientName' | 'age' | 'gender' | 'admissionNumber' | 'wardName' | 'bedLabel'
-  >,
-): Promise<void> {
-  const barcode = await barcodeSvg(admission.uhid, 'code128', { height: 7, scale: 2 });
-  const place = [admission.wardName, admission.bedLabel].filter(Boolean).join(' ');
+export async function wristbandHtml(band: WristbandDto): Promise<string> {
+  const barcode = await barcodeSvg(band.uhid, 'code128', { height: 9, scale: 2 });
+  const place = [band.wardName, band.bedLabel].filter(Boolean).join(' / ');
   const body = `
     <div class="band">
-      <div class="name">${escapeHtml(admission.patientName)}</div>
-      <div class="meta">${escapeHtml(admission.age ?? '—')}/${escapeHtml(admission.gender.charAt(0))} · ${escapeHtml(admission.admissionNumber)}${place ? ` · ${escapeHtml(place)}` : ''}</div>
+      <div class="text">
+        <div class="name">${escapeHtml(band.patientName)}</div>
+        <div class="meta">UHID ${escapeHtml(band.uhid)} · ${escapeHtml(bandAgeSex(band))}</div>
+        <div class="meta">${escapeHtml(band.admissionNumber)}${place ? ` · ${escapeHtml(place)}` : ''}</div>
+      </div>
+      ${allergyMark(band.allergies)}
       <div class="code">${barcode}</div>
-      <div class="uhid">${escapeHtml(admission.uhid)}</div>
     </div>`;
+  // The band is laid out 250 × 20 mm and turned a quarter turn clockwise, so it reads along the wrist (letter tops
+  // towards the band's right-hand edge as printed, as on raw ZPL and TSPL bands).
   const styles = `
-    body { font-size: 7pt; }
-    .band { width: 46mm; height: 21mm; overflow: hidden; display: flex; flex-direction: column; }
-    .name { font-weight: 700; font-size: 8pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .meta { font-size: 6pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .code svg { width: 100%; height: 9mm; display: block; }
-    .uhid { font-family: Consolas, monospace; font-size: 7pt; letter-spacing: 1px; text-align: center; }`;
-  await printHtml(printDocument(body, { title: `Wristband ${admission.uhid}`, pageSize: 'Label50x25', styles }), {
-    pageSize: 'Label50x25',
-    silent: true,
-  });
+    .band { position: absolute; top: 0; left: 22mm; width: 250mm; height: 20mm; transform: rotate(90deg); transform-origin: top left;
+            display: flex; align-items: center; gap: 4mm; padding: 0 4mm; font-family: 'Segoe UI', Arial, sans-serif; }
+    .text { flex: 0 1 110mm; min-width: 0; }
+    .name { font-weight: 800; font-size: 11pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .meta { font-size: 8pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .allergy { background: #000; color: #fff; font-weight: 800; font-size: 10pt; letter-spacing: 1px; padding: 3mm 4mm;
+               -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .allergy-unknown { border: 0.6mm solid #000; font-weight: 800; font-size: 7pt; line-height: 1.15; text-align: center;
+                       white-space: nowrap; padding: 1.5mm 2mm; }
+    .code svg { height: 15mm; width: auto; display: block; }`;
+  return printDocument(body, { title: `Wristband ${band.uhid}`, pageSize: 'Wristband', styles });
+}
+
+/**
+ * The patient's wristband on this computer's wristband printer, without a dialog (FO-03): name, age/sex, admission
+ * number, ward and bed, the UHID that bedside scanners read before medicines, samples and blood, and the ALLERGY mark
+ * from the chart. The band's data is read fresh, so a band printed after an allergy is recorded carries the mark.
+ */
+export async function printWristband(admission: Pick<AdmissionDetail, 'id'>): Promise<void> {
+  const band = await admissionApi.wristband(admission.id);
+  await printLabelJob({ kind: 'wristbands', labels: [wristbandData(band)], page: () => wristbandHtml(band) });
 }

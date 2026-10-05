@@ -1,15 +1,18 @@
 using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Hosting;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory;
 
 /// <summary>
 /// Laboratory equipment gateway (INT-LAB). Every minute it reconciles the TCP listeners with
-/// <c>integrations.lab</c>/<c>integrations.lab.instruments</c>: new analysers start listening, removed or changed ones
-/// are restarted, and a port that could not be bound is retried. It runs only on nodes that run jobs
-/// (<see cref="PlatformOptions.RunsJobs"/>), so a scaled-out API node never competes for analyser ports.
+/// <c>integrations.lab</c>/<c>integrations.lab.instruments</c>: new network analysers start listening, removed or changed
+/// ones are restarted, and a port that could not be bound is retried. Serial analysers have no listener: their lab agent
+/// connects to the relay endpoint, and until it does they show as waiting. Every hour it expires and prunes the order
+/// queue. It runs only on nodes that run jobs (<see cref="PlatformOptions.RunsJobs"/>), so a scaled-out API node never
+/// competes for analyser ports.
 /// </summary>
 internal sealed class LabGatewayHostedService(
     IServiceScopeFactory scopes,
@@ -20,9 +23,11 @@ internal sealed class LabGatewayHostedService(
     ILoggerFactory loggers) : BackgroundService
 {
     private static readonly TimeSpan RefreshInterval = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan HousekeepingInterval = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions SignatureJson = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<string, (LabInstrumentListener Listener, string Signature)> _listeners = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger _logger = loggers.CreateLogger<LabGatewayHostedService>();
+    private DateTimeOffset _nextHousekeeping;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -37,6 +42,7 @@ internal sealed class LabGatewayHostedService(
             do
             {
                 await ReconcileAsync(stoppingToken);
+                await HousekeepAsync(stoppingToken);
             }
             while (await timer.WaitForNextTickAsync(stoppingToken));
         }
@@ -74,6 +80,7 @@ internal sealed class LabGatewayHostedService(
         }
 
         var desired = new Dictionary<string, LabInstrumentSettings>(StringComparer.OrdinalIgnoreCase);
+        var serial = new List<LabInstrumentSettings>();
         if (gateway.Enabled)
         {
             foreach (var instrument in instruments.Where(i => i.Enabled))
@@ -82,12 +89,23 @@ internal sealed class LabGatewayHostedService(
                 {
                     _logger.LogWarning("Laboratory instrument {Instrument} ignored: {Problem}", instrument.Code, problem);
                 }
+                else if (instrument.Transport == LabTransport.Serial)
+                {
+                    serial.Add(instrument);
+                }
                 else
                 {
                     desired.TryAdd(instrument.Code, instrument);
                 }
             }
         }
+
+        foreach (var instrument in serial)
+        {
+            state.SerialExpected(instrument.Code, instrument.Protocol, instrument.Serial!.PortName.ToUpperInvariant());
+        }
+
+        state.RetainSerial(serial.Select(i => i.Code).ToList());
 
         foreach (var (code, entry) in _listeners.ToList())
         {
@@ -116,6 +134,36 @@ internal sealed class LabGatewayHostedService(
                 state.Failed(code, instrument.Protocol, instrument.Port, $"Port {instrument.Port} could not be opened: {ex.SocketErrorCode}");
                 _logger.LogError(ex, "Could not listen for instrument {Instrument} on port {Port}", code, instrument.Port);
             }
+        }
+    }
+
+    /// <summary>Orders not sent within their lifetime expire; finished ones are deleted after 30 days.</summary>
+    private async Task HousekeepAsync(CancellationToken cancellationToken)
+    {
+        var now = time.GetUtcNow();
+        if (now < _nextHousekeeping)
+        {
+            return;
+        }
+
+        _nextHousekeeping = now + HousekeepingInterval;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var (expired, deleted) = await scope.ServiceProvider.GetRequiredService<LabOrderQueue>().HousekeepAsync(cancellationToken);
+            if (expired > 0)
+            {
+                _logger.LogWarning("{Count} analyser order(s) expired: their analysers were not connected within {Hours} hours", expired, LabOrderQueue.Lifetime.TotalHours);
+            }
+
+            if (deleted > 0)
+            {
+                _logger.LogInformation("Deleted {Count} finished analyser order(s)", deleted);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Analyser order housekeeping failed; it runs again in an hour");
         }
     }
 

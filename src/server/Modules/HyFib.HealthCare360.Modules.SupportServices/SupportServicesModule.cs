@@ -75,6 +75,9 @@ public sealed class SupportServicesModule : IModule
         services.AddScoped<MealPlanService>();
         services.AddScoped<CanteenService>();
         services.AddScoped<StaffCreditService>();
+
+        // The canteen's day for Billing's Tally day book (Billing reads it without referencing this module).
+        services.AddScoped<ICounterSalesSource, CanteenDayBookSource>();
         services.AddHostedService<DailyMealPlanJob>();
     }
 

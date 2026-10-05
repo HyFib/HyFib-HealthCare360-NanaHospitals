@@ -78,7 +78,13 @@ internal sealed class RefundConfiguration : IEntityTypeConfiguration<Refund>
         b.Property(x => x.Reference).HasMaxLength(64);
         b.Property(x => x.Counter).HasMaxLength(64);
         b.Property(x => x.GatewayRefundId).HasMaxLength(128);
+        b.Property(x => x.GatewayReference).HasMaxLength(64);
+        b.Property(x => x.GatewayError).HasMaxLength(300);
         b.Ignore(x => x.IsOutstanding);
+        b.Ignore(x => x.IsGatewayRefundOpen);
+
+        // Settlement lines and refund webhooks find the refund by the gateway's id.
+        b.HasIndex(x => x.GatewayRefundId).IsUnique().HasFilter("gateway_refund_id IS NOT NULL");
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.RefundNumber).IsUnique();
         b.HasIndex(x => x.BillId);
@@ -145,6 +151,7 @@ internal sealed class GatewayOrderConfiguration : IEntityTypeConfiguration<Gatew
         b.Property(x => x.GatewayPaymentId).HasMaxLength(128);
         b.Property(x => x.Method).HasMaxLength(32);
         b.Property(x => x.LastError).HasMaxLength(500);
+        b.Ignore(x => x.IsAwaitingPayment);
         b.HasIndex(x => new { x.Provider, x.OrderId }).IsUnique();
         b.HasIndex(x => x.MerchantReference).IsUnique();
         b.HasIndex(x => x.GatewayPaymentId).IsUnique().HasFilter("gateway_payment_id IS NOT NULL");

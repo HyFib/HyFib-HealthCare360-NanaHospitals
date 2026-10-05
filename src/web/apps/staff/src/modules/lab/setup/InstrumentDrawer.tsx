@@ -21,7 +21,7 @@ const schema = z.object({
   code: z
     .string()
     .trim()
-    .min(1, 'Enter the analyser code used by the equipment gateway, e.g. XN550.')
+    .min(1, 'Enter the code the analyser sends, e.g. XN550.')
     .max(32)
     .regex(/^[A-Za-z0-9_-]+$/, 'Use letters, digits, - or _.'),
   name: z.string().trim().min(1, 'Enter a name.').max(200),
@@ -39,7 +39,7 @@ type InstrumentValues = z.infer<typeof schema>;
 
 const useStyles = makeStyles({ form: { display: 'flex', flexDirection: 'column', gap: '12px' } });
 
-/** Analyser connected through the equipment gateway (HL7 or ASTM; bidirectional analysers query the worklist). */
+/** An analyser (HL7 or ASTM). Bidirectional ones ask which tests to run and are sent the orders of received samples. */
 export function InstrumentDrawer({
   instrument,
   onClose,
@@ -112,7 +112,7 @@ export function InstrumentDrawer({
                 label="Code"
                 required
                 disabled={Boolean(instrument)}
-                hint="As configured in the equipment gateway"
+                hint="The code the analyser sends with its results"
               />
               <TextField control={form.control} name="name" label="Name" required />
               <TextField control={form.control} name="manufacturer" label="Manufacturer" />
@@ -142,7 +142,8 @@ export function InstrumentDrawer({
             <SwitchField
               control={form.control}
               name="isBidirectional"
-              label="Bidirectional (the analyser asks which tests to run)"
+              label="Bidirectional"
+              hint="The analyser may ask which tests to run, and HC360 sends it the orders of each sample received in the lab. Set the analyser to match."
             />
             <SwitchField
               control={form.control}

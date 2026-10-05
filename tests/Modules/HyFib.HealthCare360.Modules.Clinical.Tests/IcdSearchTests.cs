@@ -108,4 +108,35 @@ public sealed class IcdSearchTests
 
         code.SearchText.ShouldBe("i10 essential (primary) hypertension htn");
     }
+
+    [Fact]
+    public void Search_text_includes_the_who_inclusion_terms()
+    {
+        var code = new IcdCode { Code = "A00.0", Title = "Cholera due to Vibrio cholerae 01, biovar cholerae", IncludedTerms = "Classical cholera" };
+        code.RefreshSearchText();
+
+        code.SearchText.ShouldEndWith("classical cholera");
+    }
+
+    [Fact]
+    public void Inclusion_terms_find_a_code_but_rank_below_title_and_shorthand_matches()
+    {
+        CodeCandidate[] catalogue =
+        [
+            new("A00.0", "Cholera due to Vibrio cholerae 01, biovar cholerae", null, true, "Classical cholera"),
+            new("A00.9", "Cholera, unspecified", "classical", true),
+            new("B99", "Other and unspecified infectious diseases", null, true),
+        ];
+
+        IcdSearchRanker.Rank(catalogue, c => c, "classical", 10).Select(c => c.Code).ShouldBe(["A00.9", "A00.0"]);
+        IcdSearchRanker.Score(catalogue[0], "classical cholera").ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Words_late_in_a_long_title_still_count_as_title_words()
+    {
+        var candidate = new CodeCandidate("W00.09", "Fall on same level involving ice and snow, home, during unspecified activity", null, true);
+
+        IcdSearchRanker.Score(candidate, "unspecified activity").ShouldBeGreaterThanOrEqualTo(500);
+    }
 }

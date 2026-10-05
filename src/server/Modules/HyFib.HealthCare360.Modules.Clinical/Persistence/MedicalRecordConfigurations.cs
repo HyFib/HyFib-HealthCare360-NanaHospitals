@@ -14,10 +14,12 @@ internal sealed class IcdCodeConfiguration : IEntityTypeConfiguration<IcdCode>
         b.Property(x => x.Chapter).HasMaxLength(8);
         b.Property(x => x.Block).HasMaxLength(16);
         b.Property(x => x.Keywords).HasMaxLength(300);
-        b.Property(x => x.SearchText).HasMaxLength(700);
+        b.Property(x => x.IncludedTerms).HasMaxLength(IcdCode.MaxIncludedTermsLength);
+        // Code, title, keywords and inclusion terms with the spaces between them.
+        b.Property(x => x.SearchText).HasMaxLength(2700);
         b.HasIndex(x => new { x.Code, x.Release }).IsUnique();
         b.HasIndex(x => x.Block);
-        // Title/keyword search with ILIKE (MRD-01) is served by a trigram index.
+        // Title/keyword search with ILIKE (MRD-01) is served by a trigram index, which also serves the similarity ordering.
         b.HasIndex(x => x.SearchText).HasMethod("gin").HasOperators("gin_trgm_ops");
     }
 }
@@ -35,6 +37,38 @@ internal sealed class ProcedureCodeConfiguration : IEntityTypeConfiguration<Proc
         b.Property(x => x.SearchText).HasMaxLength(700);
         b.HasIndex(x => new { x.Code, x.System }).IsUnique();
         b.HasIndex(x => x.SearchText).HasMethod("gin").HasOperators("gin_trgm_ops");
+    }
+}
+
+internal sealed class CatalogueImportConfiguration : IEntityTypeConfiguration<CatalogueImport>
+{
+    public void Configure(EntityTypeBuilder<CatalogueImport> b)
+    {
+        b.ToTable("catalogue_imports", ClinicalSchema.Name);
+        b.Property(x => x.Release).HasMaxLength(32);
+        b.Property(x => x.FileName).HasMaxLength(300);
+        b.Property(x => x.FileSha256).HasMaxLength(64);
+        b.Property(x => x.SourceTitle).HasMaxLength(200);
+        b.Property(x => x.SourceVersion).HasMaxLength(32);
+        b.Property(x => x.ImportedByName).HasMaxLength(200);
+        b.HasIndex(x => new { x.Catalogue, x.ImportedAt });
+    }
+}
+
+internal sealed class IcdClassificationEntryConfiguration : IEntityTypeConfiguration<IcdClassificationEntry>
+{
+    public void Configure(EntityTypeBuilder<IcdClassificationEntry> b)
+    {
+        b.ToTable("icd_classification_entries", ClinicalSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Release).HasMaxLength(32);
+        b.Property(x => x.Code).HasMaxLength(16);
+        b.Property(x => x.Start).HasMaxLength(8);
+        b.Property(x => x.End).HasMaxLength(8);
+        b.Property(x => x.Title).HasMaxLength(300);
+        b.Property(x => x.ChapterNumber).HasMaxLength(8);
+        b.Property(x => x.ParentCode).HasMaxLength(16);
+        b.HasIndex(x => new { x.Release, x.Kind, x.Code }).IsUnique();
     }
 }
 
