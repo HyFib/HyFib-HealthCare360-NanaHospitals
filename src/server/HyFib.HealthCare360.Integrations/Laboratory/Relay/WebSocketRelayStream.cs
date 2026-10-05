@@ -90,7 +90,7 @@ internal sealed class WebSocketRelayStream : Stream
             await _socket.SendAsync(buffer, WebSocketMessageType.Binary, endOfMessage: true, _stopping.Token);
             Interlocked.Add(ref _sent, buffer.Length);
         }
-        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException)
         {
             throw new IOException("The lab agent's relay was lost.", ex);
         }
@@ -135,7 +135,7 @@ internal sealed class WebSocketRelayStream : Stream
             // The agent answers with its own close frame, which ends the pump.
             await _pump.WaitAsync(timeout.Token);
         }
-        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException)
         {
             // The connection is already gone, or the agent did not answer in time.
         }
@@ -198,7 +198,7 @@ internal sealed class WebSocketRelayStream : Stream
                 }
             }
         }
-        catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+        catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException)
         {
             // The agent went away, the relay was replaced or the server is stopping: the session reads end of stream.
         }
