@@ -123,6 +123,12 @@ and write a PHI-access audit entry. Donor detail views write a `donor.accessed` 
 | GET | `/reactions?status=` | `bloodbank.read` | → paged `TransfusionReactionDto` |
 | POST | `/reactions/{id}/investigate` · `/close` | `bloodbank.reactions.investigate` | `CloseReactionRequest` (type (HvPI classification), severity, findings, reportedToHaemovigilance) → 204 |
 
+**Unit labels (BB-03).** From a donation's components and from a unit, the staff app prints a label per unit,
+without a dialog, on the workstation's label printer: blood group with POS or NEG in full, component and volume, the
+unit number as Code 128 for scanning at issue and at the bedside, expiry and storage. A unit not yet cleared by
+screening is labelled QUARANTINE / NOT FOR ISSUE in white on black. On a ZPL or TSPL printer the server writes the
+label (`blood-units`); otherwise the label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ## Permissions and default roles
 | Permission | Default roles |
 |---|---|

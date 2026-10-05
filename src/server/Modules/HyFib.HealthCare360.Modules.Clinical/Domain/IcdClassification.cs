@@ -8,9 +8,39 @@ public sealed record IcdBlock(string Start, string End, string Title)
 }
 
 /// <summary>
-/// ICD-10 (WHO 2019) chapter and block structure. Used to file every catalogue code under its chapter/block and to
-/// group the morbidity index by block (MRD-06). Lookup works on the three-character category, so it also
-/// classifies codes cached later from the online ICD-10 service.
+/// A set of ICD-10 chapters and blocks, and where a code falls in it. Lookup works on the three-character category, so
+/// it also classifies codes added by hand or cached from the online ICD-10 service. The set in use is the imported WHO
+/// file's once there is one (<c>IcdClassificationProvider</c>), and <see cref="BuiltIn"/> until then.
+/// </summary>
+public sealed class IcdClassificationSet(IReadOnlyList<IcdChapter> chapters, IReadOnlyList<IcdBlock> blocks, bool fromFile)
+{
+    public static IcdClassificationSet BuiltIn { get; } = new(IcdClassification.Chapters, IcdClassification.Blocks, fromFile: false);
+
+    public IReadOnlyList<IcdChapter> Chapters { get; } = chapters;
+
+    /// <summary>The blocks that hold categories, in order (a block of blocks such as C00-C97 is not listed).</summary>
+    public IReadOnlyList<IcdBlock> Blocks { get; } = blocks;
+
+    /// <summary>True when the chapters and blocks came from an imported WHO file.</summary>
+    public bool FromFile { get; } = fromFile;
+
+    public IcdChapter? ChapterOf(string? code) =>
+        IcdClassification.CategoryOf(code) is { } category ? Chapters.FirstOrDefault(c => InRange(category, c.Start, c.End)) : null;
+
+    public IcdBlock? BlockOf(string? code) =>
+        IcdClassification.CategoryOf(code) is { } category ? Blocks.FirstOrDefault(b => InRange(category, b.Start, b.End)) : null;
+
+    public IEnumerable<IcdBlock> BlocksIn(IcdChapter chapter) =>
+        Blocks.Where(b => string.CompareOrdinal(b.Start, chapter.Start) >= 0 && string.CompareOrdinal(b.End, chapter.End) <= 0);
+
+    private static bool InRange(string category, string start, string end) =>
+        string.CompareOrdinal(category, start) >= 0 && string.CompareOrdinal(category, end) <= 0;
+}
+
+/// <summary>
+/// ICD-10 (WHO 2019) chapter and block structure built into HC360. Used to file every catalogue code under its
+/// chapter/block and to group the morbidity index by block (MRD-06) until the hospital imports the WHO file, whose own
+/// chapters and blocks then take over (<see cref="IcdClassificationSet"/>).
 /// </summary>
 public static class IcdClassification
 {
@@ -327,12 +357,7 @@ public static class IcdClassification
             : null;
     }
 
-    public static IcdChapter? ChapterOf(string? code) =>
-        CategoryOf(code) is { } category ? Chapters.FirstOrDefault(c => InRange(category, c.Start, c.End)) : null;
+    public static IcdChapter? ChapterOf(string? code) => IcdClassificationSet.BuiltIn.ChapterOf(code);
 
-    public static IcdBlock? BlockOf(string? code) =>
-        CategoryOf(code) is { } category ? Blocks.FirstOrDefault(b => InRange(category, b.Start, b.End)) : null;
-
-    private static bool InRange(string category, string start, string end) =>
-        string.CompareOrdinal(category, start) >= 0 && string.CompareOrdinal(category, end) <= 0;
+    public static IcdBlock? BlockOf(string? code) => IcdClassificationSet.BuiltIn.BlockOf(code);
 }

@@ -15,13 +15,19 @@ internal sealed record TallyImportOptions(string? CompanyName, string CostCatego
 
 /// <summary>
 /// Tally Prime XML: voucher import envelopes (<c>ENVELOPE/HEADER/TALLYREQUEST=Import Data</c>, <c>IMPORTDATA/REQUESTDESC</c>
-/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher) and the company-list request used as a
-/// health check. Built with LINQ to XML so every value is escaped.
+/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher), the company-list request used as a health
+/// check and the day's voucher collection read back for reconciliation. Built with LINQ to XML so every value is escaped.
 /// </summary>
 internal static class TallyXml
 {
     public const string AccountingVoucherView = "Accounting Voucher View";
     public const string CompanyCollection = "HC360Companies";
+    public const string DayVoucherCollection = "HC360DayVouchers";
+
+    /// <summary>What the read-back asks Tally for each voucher: enough to match it by remote id and compare its ledgers.</summary>
+    public const string DayVoucherFields =
+        "Date, VoucherTypeName, VoucherNumber, GUID, RemoteID, IsCancelled, IsOptional, IsDeleted, "
+        + "AllLedgerEntries.LedgerName, AllLedgerEntries.IsDeemedPositive, AllLedgerEntries.Amount";
 
     public static string BuildImport(IReadOnlyList<AccountingVoucher> vouchers, TallyImportOptions options)
     {
@@ -55,6 +61,34 @@ internal static class TallyXml
                                 new XElement("FETCH", "NAME"))))))).ToString();
 
     /// <summary>
+    /// Exports the company's vouchers of one day: a TDL collection of type Voucher, whose period Tally takes from
+    /// <c>SVFROMDATE</c> and <c>SVTODATE</c>. The answer is <c>ENVELOPE/BODY/DATA/COLLECTION/VOUCHER</c>, read by
+    /// <see cref="TallyVoucherReader"/>.
+    /// </summary>
+    public static string BuildDayVouchersRequest(DateOnly date, string? companyName)
+    {
+        var day = date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+        return new XElement("ENVELOPE",
+            new XElement("HEADER",
+                new XElement("VERSION", "1"),
+                new XElement("TALLYREQUEST", "Export"),
+                new XElement("TYPE", "Collection"),
+                new XElement("ID", DayVoucherCollection)),
+            new XElement("BODY",
+                new XElement("DESC",
+                    new XElement("STATICVARIABLES",
+                        new XElement("SVEXPORTFORMAT", "$$SysName:XML"),
+                        string.IsNullOrWhiteSpace(companyName) ? null : new XElement("SVCURRENTCOMPANY", Clean(companyName)),
+                        new XElement("SVFROMDATE", new XAttribute("TYPE", "Date"), day),
+                        new XElement("SVTODATE", new XAttribute("TYPE", "Date"), day)),
+                    new XElement("TDL",
+                        new XElement("TDLMESSAGE",
+                            new XElement("COLLECTION", new XAttribute("NAME", DayVoucherCollection), new XAttribute("ISMODIFY", "No"),
+                                new XElement("TYPE", "Voucher"),
+                                new XElement("FETCH", DayVoucherFields))))))).ToString();
+    }
+
+    /// <summary>
     /// Tally sign convention: debit lines are "deemed positive" and carry a negative amount; credit lines are not
     /// deemed positive and carry a positive amount. Amounts use two decimals and the invariant culture.
     /// </summary>
@@ -68,7 +102,7 @@ internal static class TallyXml
     /// REMOTEID makes the import idempotent: Tally alters the voucher it already holds with this id instead of
     /// creating a duplicate when the outbox retries a batch (ADR-008).
     /// </summary>
-    public static string RemoteId(string reference) => "HC360-" + reference.Trim();
+    public static string RemoteId(string reference) => AccountingVoucher.RemoteIdPrefix + reference.Trim();
 
     /// <summary>Why Tally would reject the voucher, or null. Checked before sending so one bad voucher is reported clearly.</summary>
     public static string? Validate(AccountingVoucher voucher)
@@ -114,12 +148,13 @@ internal static class TallyXml
         return new XElement("TALLYMESSAGE", new XAttribute(XNamespace.Xmlns + "UDF", udf.NamespaceName), Voucher(voucher, options));
     }
 
-    private static XElement Voucher(AccountingVoucher voucher, TallyImportOptions options)
+    /// <summary>One voucher as it is imported, ledgers mapped (the simulator keeps this as its copy of the voucher).</summary>
+    public static XElement Voucher(AccountingVoucher voucher, TallyImportOptions options)
     {
         var date = voucher.Date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
         var type = Clean(voucher.VoucherType);
         return new XElement("VOUCHER",
-            string.IsNullOrWhiteSpace(voucher.Reference) ? null : new XAttribute("REMOTEID", Clean(RemoteId(voucher.Reference))),
+            voucher.RemoteId is { } remoteId ? new XAttribute("REMOTEID", Clean(remoteId)) : null,
             new XAttribute("VCHTYPE", type),
             new XAttribute("ACTION", "Create"),
             new XAttribute("OBJVIEW", AccountingVoucherView),

@@ -36,7 +36,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { mrdApi, mrdKeys, mrdQueries, type CodingDto } from '@/modules/mrd/api';
+import { ICD10_RELEASE, mrdApi, mrdKeys, mrdQueries, type CodingDto } from '@/modules/mrd/api';
 import { IcdCodePicker, ProcedureCodePicker } from '@/modules/mrd/CodePicker';
 import {
   addLine,
@@ -216,7 +216,8 @@ function CodingEditor({ coding }: { coding: CodingDto }) {
                 <IcdCodePicker
                   label="Add diagnosis (ICD-10)"
                   billableOnly
-                  hint="Only codes valid for claims are offered"
+                  release={ICD10_RELEASE}
+                  hint="Only ICD-10 codes valid for claims are offered"
                   onPick={(code) => change(addLine(lines, { kind: 'Diagnosis', code: code.code, title: code.title }))}
                 />
                 <ProcedureCodePicker

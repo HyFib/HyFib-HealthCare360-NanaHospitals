@@ -60,11 +60,18 @@ internal static class LabSamples
 
     public static LabInstrumentSettings AstmInstrument { get; } = new() { Code = "C311", Name = "Biochemistry", Protocol = LabProtocol.Astm, Port = 5200 };
 
-    /// <summary>Short ASTM timers so protocol tests run in milliseconds; waits still fail fast if a reply never comes.</summary>
+    /// <summary>
+    /// Short ASTM timers and a quick look for queued orders, so protocol tests run in milliseconds; waits still fail fast
+    /// if a reply never comes.
+    /// </summary>
     public static LabRuntimeOptions Options(int maxMessageBytes = 64 * 1024) => new(
         Encoding.Latin1,
         maxMessageBytes,
         TimeSpan.FromSeconds(10),
         India,
-        new AstmTimings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10)));
+        new AstmTimings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10)))
+    {
+        OrderPollInterval = TimeSpan.FromMilliseconds(50),
+        Hl7ReplyTimeout = TimeSpan.FromSeconds(5),
+    };
 }

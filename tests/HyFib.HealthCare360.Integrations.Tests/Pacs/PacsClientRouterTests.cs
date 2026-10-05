@@ -83,4 +83,41 @@ public sealed class PacsClientRouterTests
 
         Router.BuildViewerUrl("1.2.3", "ACC-1").ShouldBeNull();
     }
+
+    [Fact]
+    public async Task Reads_the_pacs_settings_of_the_facility_it_is_given()
+    {
+        // Background linking has no signed-in facility: each call names the study's facility.
+        var facility = Guid.NewGuid();
+        _dicomWeb.FindSeriesAsync(default!, default!, default!, Ct).ReturnsForAnyArgs([new ImagingSeriesInfo("1.2.3.1", "CT", 1, null, null, 2)]);
+
+        var series = await Router.FindSeriesAsync("1.2.3", facility, Ct);
+
+        series.ShouldHaveSingleItem();
+        await _settings.Received().GetAsync<PacsSettings>("integrations.pacs", facility, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("1.2.3/../../patients")]
+    [InlineData("")]
+    public async Task Refuses_values_that_are_not_dicom_uids_before_a_provider_sees_them(string uid)
+    {
+        await Should.ThrowAsync<HttpRequestException>(() => Router.FindInstancesAsync("1.2.3", uid, null, Ct));
+        await Should.ThrowAsync<HttpRequestException>(() =>
+            Router.RetrieveImageAsync(new PacsImageRequest("1.2.3", "1.2.3.1", uid, null, PacsImageKind.Rendered, 512), Ct));
+
+        _dicomWeb.ReceivedCalls().Where(c => c.GetMethodInfo().Name != "get_Key").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Images_the_pacs_will_not_give_surface_as_http_request_exceptions()
+    {
+        _dicomWeb.RetrieveImageAsync(default!, default!, default!, Ct)
+            .ReturnsForAnyArgs<PacsImage>(_ => throw new IntegrationException("The PACS sent an image larger than 16 MB, which HC360 does not pass on."));
+
+        var failure = await Should.ThrowAsync<HttpRequestException>(() =>
+            Router.RetrieveImageAsync(new PacsImageRequest("1.2.3", "1.2.3.1", "1.2.3.1.1", null, PacsImageKind.Rendered, 512), Ct));
+
+        failure.Message.ShouldContain("larger than 16 MB");
+    }
 }

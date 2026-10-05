@@ -179,6 +179,43 @@ public sealed class AdvanceService(
         }
     }
 
+    /// <summary>
+    /// Keeps money the gateway took as a patient advance when it cannot be applied where it was meant to go (the
+    /// admission was closed, or the patient paid an older order of a booking). Staff then adjust it on a bill or refund
+    /// it. Idempotent on the gateway payment id. Stages in the caller's transaction (the receipt number is allocated
+    /// there); the caller saves.
+    /// </summary>
+    internal async Task<PatientAdvance> RecordOnlinePaymentAsync(
+        Guid facilityId, Guid patientId, decimal amount, string gatewayPaymentId, string? gatewayOrderId, string? provider, string notes,
+        DateTimeOffset receivedAt, Guid? appointmentId, string? appointmentNumber, CancellationToken ct)
+    {
+        if (await FindAsync(gatewayPaymentId, ct) is { } existing)
+        {
+            return existing;
+        }
+
+        var survivor = await SurvivingPatientAsync(patientId, ct)
+            ?? throw new InvalidOperationException($"Patient {patientId} of online payment {gatewayPaymentId} was not found.");
+        var receipt = await receipts.RecordPatientAdvanceAsync(facilityId, survivor, Money.Round(amount), gatewayPaymentId, gatewayOrderId, notes, receivedAt, ct);
+        var advance = new PatientAdvance
+        {
+            FacilityId = facilityId,
+            PatientId = survivor,
+            ReceiptId = receipt.Id,
+            ReceiptNumber = receipt.ReceiptNumber,
+            AppointmentId = appointmentId,
+            AppointmentNumber = appointmentNumber,
+            Provider = provider,
+            GatewayOrderId = gatewayOrderId ?? string.Empty,
+            GatewayPaymentId = gatewayPaymentId,
+            Amount = Money.Round(amount),
+            ReceivedAt = receivedAt,
+        };
+        receipt.AdvanceId = advance.Id;
+        db.Add(advance);
+        return advance;
+    }
+
     /// <summary>A patient's advances with what is left of each and any refund awaiting approval or payment.</summary>
     public async Task<IReadOnlyList<PatientAdvanceDto>> ListAsync(Guid patientId, bool openOnly, CancellationToken ct)
     {

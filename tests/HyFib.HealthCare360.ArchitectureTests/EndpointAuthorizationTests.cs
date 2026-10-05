@@ -88,6 +88,11 @@ public sealed class EndpointAuthorizationTests
         "POST /api/v1/hr/attendance/device-punches",
         "POST /api/v1/rpm/ingest",
 
+        // HC360 lab agents: an enrolled, unrevoked lab agent's device id and secret (hash compared in constant time); the
+        // relay serves only the analysers assigned to that agent.
+        "POST /api/v1/integrations/lab/agent/heartbeat",
+        "GET /api/v1/integrations/lab/agent/relay/{code}",
+
         // FHIR requires a public capability statement; the catch-all only answers "not found" in FHIR's format.
         "GET /fhir/r4/metadata",
         "ANY /fhir/{**rest}",

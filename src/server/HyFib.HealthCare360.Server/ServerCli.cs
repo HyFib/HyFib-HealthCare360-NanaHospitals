@@ -29,12 +29,20 @@ internal static class ServerCli
         The recovery key is shown once in Administration > Backups > Recovery key; keep it offline. Without --key it is
         read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or from a hidden
         prompt, so it never appears in the process list.
+
+          catalogue import --file <file> [--dry-run]
+              Imports the hospital's WHO ICD-10 ClaML file (icd102019en.xml, or the icd102019en.xml.zip WHO provides) or the
+              CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt, or its zip) into the local code catalogue, as Medical
+              records > ICD catalogue > Import does. --dry-run reads the file and says what would change, and changes nothing.
+              Run it on the Server Node from an elevated prompt while the database is running.
         """;
 
-    public static bool IsCommand(string argument) => argument is "backup" or "help" or "--help" or "-h";
+    public static bool IsCommand(string argument) => argument is "backup" or "catalogue" or "help" or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
+        var dryRun = args.Contains("--dry-run", StringComparer.OrdinalIgnoreCase);
+        args = [.. args.Where(a => !string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase))];
         var options = args.Length > 2 ? ParseOptions(args[2..]) : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
@@ -43,6 +51,7 @@ internal static class ServerCli
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
+                ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 _ => PrintUsage(args),
             };
         }

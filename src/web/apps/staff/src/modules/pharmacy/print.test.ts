@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { PharmacySaleDetail } from './api';
-import { addressLine, buildLabelsHtml, buildReceiptHtml, directionsText, gstSummaryByRate } from './print';
+import {
+  addressLine,
+  buildLabelsHtml,
+  buildReceiptHtml,
+  directionsText,
+  dispensingLabelData,
+  gstSummaryByRate,
+} from './print';
 
 const sale: PharmacySaleDetail = {
   id: 's1',
@@ -131,6 +138,36 @@ describe('pharmacy prints', () => {
     expect(html.match(/class="label"/g)).toHaveLength(2);
     expect(html).toContain('Amoxicillin 500 × 10 TAB');
     expect(html).toContain('Exp Mar 2027');
+  });
+
+  it('gives a label printer the same facts as the label page', () => {
+    expect(
+      dispensingLabelData(
+        {
+          patientName: 'Asha Rao',
+          drugName: 'Amoxicillin 500',
+          quantity: 10,
+          unit: 'TAB',
+          directions: '1 tab · thrice a day',
+          batchNumber: 'AMX1, AMX2',
+          expiryDate: '2027-03-31',
+          dispensedOn: '2026-09-26',
+        },
+        'Nana Hospitals',
+      ),
+    ).toEqual({
+      patientName: 'Asha Rao',
+      medicine: 'Amoxicillin 500',
+      quantity: '10 TAB',
+      directions: '1 tab · thrice a day',
+      batch: 'AMX1, AMX2',
+      expiry: '2027-03-31',
+      dispensedOn: '2026-09-26',
+      hospital: 'Nana Hospitals',
+    });
+    expect(
+      dispensingLabelData({ patientName: 'Asha Rao', drugName: 'ORS', quantity: 2, dispensedOn: '2026-09-26' }, ''),
+    ).toMatchObject({ directions: null, batch: null, expiry: null, hospital: null, quantity: '2' });
   });
 
   it('writes directions and addresses in plain words', () => {

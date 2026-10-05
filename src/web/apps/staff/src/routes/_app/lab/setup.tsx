@@ -4,6 +4,9 @@ import {
   Caption1,
   Field,
   makeStyles,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
   SearchBox,
   Select,
   Switch,
@@ -12,13 +15,15 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular } from '@fluentui/react-icons';
+import { AddRegular, PlugConnectedRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { usePermission } from '@/lib/permissions';
 import {
+  LAB_PERMISSIONS,
   LAB_SECTIONS,
   labQueries,
   type LabInstrumentDto,
@@ -29,6 +34,8 @@ import {
 import { TubeChip } from '@/modules/lab/badges';
 import { searchFlag, searchId, searchOneOf, searchPage, searchText } from '@/modules/lab/common/search';
 import { resultTypeLabel, sectionLabel } from '@/modules/lab/labels';
+import { ConnectionDrawer } from '@/modules/lab/setup/ConnectionDrawer';
+import { connectionStatus, connectionSummary } from '@/modules/lab/setup/connections';
 import { InstrumentDrawer } from '@/modules/lab/setup/InstrumentDrawer';
 import { ReferralLabDrawer } from '@/modules/lab/setup/ReferralLabDrawer';
 import { TestDrawer } from '@/modules/lab/setup/TestDrawer';
@@ -291,15 +298,36 @@ function AnalysersTab({
 }) {
   const styles = useStyles();
   const instruments = useQuery(labQueries.instruments(includeInactive));
+  const canEditConnections = usePermission(LAB_PERMISSIONS.connections);
+  const canSeeConnections = usePermission([
+    LAB_PERMISSIONS.connections,
+    LAB_PERMISSIONS.connectionStatus,
+    'admin.integrations.manage',
+  ]);
+  const connections = useQuery({ ...labQueries.connections(), enabled: canSeeConnections });
   const [editing, setEditing] = useState<LabInstrumentDto | null>(null);
+  const [connecting, setConnecting] = useState<LabInstrumentDto | null>(null);
+  const connectionOf = (instrument: LabInstrumentDto) =>
+    connections.data?.connections.find((c) => c.code.toUpperCase() === instrument.code.toUpperCase());
 
   return (
     <Section
       title="Analysers"
-      description="Connected through the equipment gateway; results arrive on the worklist by barcode"
+      description="Each analyser's details, and how it connects: over the network, or by serial cable to a lab PC with the HC360 lab agent"
       actions={<InactiveSwitch includeInactive={includeInactive} />}
       flush
     >
+      {connections.data && !connections.data.gatewayEnabled && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <MessageBar intent="warning">
+            <MessageBarBody>
+              <MessageBarTitle>The laboratory gateway is off</MessageBarTitle>
+              No analyser can send results or receive orders. An administrator turns it on in Administration ›
+              Integrations › Laboratory equipment.
+            </MessageBarBody>
+          </MessageBar>
+        </div>
+      )}
       <DataTable
         ariaLabel="Analysers"
         rows={instruments.data}
@@ -336,6 +364,27 @@ function AnalysersTab({
             render: (instrument: LabInstrumentDto) =>
               `${instrument.protocol === 'Hl7' ? 'HL7' : 'ASTM'}${instrument.isBidirectional ? ', bidirectional' : ''}`,
           },
+          ...(canSeeConnections
+            ? [
+                {
+                  key: 'connection',
+                  header: 'Connection',
+                  render: (instrument: LabInstrumentDto) => {
+                    if (!connections.data) {
+                      return connections.isLoading ? <Caption1 className={styles.muted}>Checking…</Caption1> : '—';
+                    }
+                    const connection = connectionOf(instrument);
+                    const status = connectionStatus(connection, connections.data);
+                    return (
+                      <span className={styles.cell}>
+                        <StatusBadge status={status.label} tone={status.tone} label={status.label} />
+                        {connection && <Caption1 className={styles.muted}>{connectionSummary(connection)}</Caption1>}
+                      </span>
+                    );
+                  },
+                },
+              ]
+            : []),
           {
             key: 'auto',
             header: 'Auto-verify',
@@ -354,8 +403,22 @@ function AnalysersTab({
             ),
           },
         ]}
+        rowActions={
+          canSeeConnections && connections.data
+            ? (instrument: LabInstrumentDto) => (
+                <Button
+                  size="small"
+                  appearance="subtle"
+                  icon={<PlugConnectedRegular />}
+                  onClick={() => setConnecting(instrument)}
+                >
+                  Connection
+                </Button>
+              )
+            : undefined
+        }
         emptyTitle="No analysers"
-        emptyDescription="Add each analyser with the code configured in the equipment gateway."
+        emptyDescription="Add each analyser with the code it sends, then set up its connection."
       />
       {(editing || creating) && (
         <InstrumentDrawer
@@ -365,6 +428,15 @@ function AnalysersTab({
             setEditing(null);
             onCreated();
           }}
+        />
+      )}
+      {connecting && connections.data && (
+        <ConnectionDrawer
+          key={connecting.id}
+          instrument={connecting}
+          list={connections.data}
+          canEdit={canEditConnections}
+          onClose={() => setConnecting(null)}
         />
       )}
     </Section>

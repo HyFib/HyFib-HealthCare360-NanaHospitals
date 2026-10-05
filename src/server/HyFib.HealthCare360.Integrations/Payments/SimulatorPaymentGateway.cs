@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Simulator;
 
@@ -14,10 +15,11 @@ internal sealed class SimulatorSigningKey
 }
 
 /// <summary>
-/// Training gateway: orders and links are captured immediately (auto-captured), refunds succeed, and links point to a
-/// reserved <c>.invalid</c> host so a link sent to a patient during training can never be opened by mistake.
+/// Training gateway: orders and links are captured immediately (auto-captured), refunds succeed and are processed at
+/// once, payments and refunds are settled like a real gateway's (see <see cref="SimulatorSettlements"/>), and links
+/// point to a reserved <c>.invalid</c> host so a link sent to a patient during training can never be opened by mistake.
 /// </summary>
-internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSigningKey signingKey, IntegrationTrace trace) : IPaymentProvider
+internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSigningKey signingKey, IntegrationTrace trace, TimeProvider time) : IPaymentProvider
 {
     public string Key => ProviderKeys.Simulator;
 
@@ -39,36 +41,62 @@ internal sealed class SimulatorPaymentGateway(SimulatorInbox inbox, SimulatorSig
         {
             SimulatorTransactionStatus.Refunded => GatewayPaymentStatus.Refunded,
             SimulatorTransactionStatus.Captured => GatewayPaymentStatus.Captured,
-            SimulatorTransactionStatus.Cancelled => GatewayPaymentStatus.Failed,
+            SimulatorTransactionStatus.Cancelled => GatewayPaymentStatus.Cancelled,
             _ => GatewayPaymentStatus.Pending,
         };
-        return new PaymentStatusResult(orderId, status, transaction.PaymentId, transaction.Amount - transaction.RefundedAmount, "simulator", null);
+        return new PaymentStatusResult(orderId, status, transaction.PaymentId, transaction.Amount - transaction.RefundedAmount, "simulator", null, transaction.CreatedAt);
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    /// <summary>
+    /// Like Razorpay, a repeated request with the same idempotency key gets the refund already made: its id is derived
+    /// from the key, and the inbox refunds once per id.
+    /// </summary>
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        string? error = null;
-        await inbox.UpdateTransactionAsync(paymentId, (transaction, _) =>
+        var refundId = "rfnd_sim" + (idempotencyKey is null
+            ? Guid.CreateVersion7().ToString("N")[..16]
+            : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes($"{paymentId}:{idempotencyKey}")))[..16]);
+        var error = await inbox.RefundAsync(paymentId, amount, refundId, cancellationToken);
+        await trace.LogAsync(IntegrationNames.Payment, Key, "refund", error is null, started, paymentId, $"{{\"amount\":{amount}}}", error is null ? refundId : null, error);
+        return error is null ? new RefundResult(true, refundId, null) : new RefundResult(false, null, error);
+    }
+
+    /// <summary>Simulated refunds are processed at once. Ones made before refunds were kept count as processed too.</summary>
+    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        var refund = await inbox.FindRefundAsync(refundId, cancellationToken);
+        if (refund is not null)
         {
-            if (transaction.PaymentId != paymentId || amount <= 0 || amount > transaction.Amount - transaction.RefundedAmount)
-            {
-                error = "The refund exceeds the simulated payment.";
-                return false;
-            }
+            return new RefundStatusResult(refundId, PaymentRefundStatus.Processed, refund.Amount, refund.Reference, "SIMARN" + refundId[^8..].ToUpperInvariant(), refund.CreatedAt, null);
+        }
 
-            transaction.RefundedAmount += amount;
-            if (transaction.RefundedAmount >= transaction.Amount)
-            {
-                transaction.Status = SimulatorTransactionStatus.Refunded;
-            }
+        return refundId.StartsWith("rfnd_sim", StringComparison.Ordinal)
+            ? new RefundStatusResult(refundId, PaymentRefundStatus.Processed, null, null, null, null, null)
+            : new RefundStatusResult(refundId, PaymentRefundStatus.Failed, null, null, null, null, "The simulator has no such refund.");
+    }
 
-            return true;
-        }, cancellationToken);
+    /// <summary>
+    /// Runs the day's simulated settlement if it is due (see <see cref="SimulatorSettlements.Plan"/>), then reports every
+    /// simulated settlement made on that day.
+    /// </summary>
+    public async Task<IReadOnlyList<PaymentSettlement>> GetSettlementsAsync(
+        DateOnly settledOn, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        if (SimulatorSettlements.Plan(settledOn, settings.SimulatorSettlementDays, time.GetUtcNow()) is { } run)
+        {
+            await inbox.SettleAsync(run.SettleAt, run.CoverBefore, "setl_sim" + Guid.CreateVersion7().ToString("N")[..16], cancellationToken);
+        }
 
-        var refundId = error is null ? "rfnd_sim" + Guid.CreateVersion7().ToString("N")[..16] : null;
-        await trace.LogAsync(IntegrationNames.Payment, Key, "refund", error is null, started, paymentId, $"{{\"amount\":{amount}}}", refundId, error);
-        return new RefundResult(error is null, refundId, error);
+        var (from, to) = SimulatorSettlements.Day(settledOn);
+        var settlements = SimulatorSettlements.Build(await inbox.SettledBetweenAsync(from, to, cancellationToken));
+        var day = settledOn.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        await trace.LogAsync(IntegrationNames.Payment, Key, "settlement.recon", true, started, day, $"{{\"day\":\"{day}\"}}",
+            $"settlements={settlements.Count} items={settlements.Sum(s => s.Items.Count)}");
+        return settlements;
     }
 
     public bool VerifySignature(string payload, string signature, PaymentSecrets secrets) =>

@@ -63,6 +63,9 @@ internal sealed class AppointmentConfiguration : IEntityTypeConfiguration<Appoin
         b.HasIndex(x => x.VisitId);
         b.HasIndex(x => x.RescheduledFromId);
 
+        // Payment-gateway webhooks and Billing's payment re-check find a prepaid booking by its gateway order.
+        b.HasIndex(x => x.GatewayOrderId).HasFilter("gateway_order_id IS NOT NULL");
+
         // Capacity is enforced by the database as well as by the booking lock: one active booking per seat.
         b.HasIndex(x => new { x.PractitionerId, x.StartsAt, x.SeatNumber })
             .IsUnique()

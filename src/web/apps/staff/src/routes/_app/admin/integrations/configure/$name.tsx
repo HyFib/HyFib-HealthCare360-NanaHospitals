@@ -99,7 +99,7 @@ function ConfigureIntegrationPage() {
         <Section>
           <EmptyState
             title={`${title} need no settings`}
-            description="Labels are built on the server as ZPL or TSPL and printed by HC360 Desktop on each workstation’s label printer. Send a test to get a sample label."
+            description="Each workstation chooses its label and wristband printers in HC360 Desktop, under Printers on this computer, and prints a test label there. For a ZPL or TSPL printer the server writes the printer commands; HC360 Desktop sends them to the printer. Send a test here to see a sample ZPL label."
           />
         </Section>
       )}

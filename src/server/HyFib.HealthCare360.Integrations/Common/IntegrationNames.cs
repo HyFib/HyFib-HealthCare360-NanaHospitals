@@ -14,11 +14,12 @@ internal static class IntegrationNames
     public const string Pos = "pos";
     public const string Tally = "tally";
     public const string Pacs = "pacs";
+    public const string Mwl = "mwl";
     public const string Lab = "lab";
     public const string Labels = "labels";
     public const string Icd = "icd";
 
-    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Lab, Labels, Icd];
+    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Mwl, Lab, Labels, Icd];
 
     public static string SettingsKey(string integration) => $"integrations.{integration}";
 
@@ -33,6 +34,7 @@ internal static class IntegrationNames
         Pos => "Card/UPI POS",
         Tally => "Tally",
         Pacs => "PACS",
+        Mwl => "Modality worklist",
         Lab => "Laboratory equipment",
         Labels => "Barcode labels",
         Icd => "ICD lookup",

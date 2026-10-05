@@ -4,7 +4,11 @@ using HyFib.HealthCare360.Integrations.Features.Webhooks;
 using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
+using HyFib.HealthCare360.Integrations.Laboratory.Orders;
+using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Integrations.Pdf;
 using HyFib.HealthCare360.Integrations.Pos;
@@ -27,8 +31,9 @@ internal static class IntegrationsServiceCollectionExtensions
     private static readonly TimeSpan CloudAttempt = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CloudTotal = TimeSpan.FromSeconds(20);
 
-    // Tally imports large voucher batches slowly on the accounts PC.
-    private static readonly TimeSpan TallyTimeout = TimeSpan.FromSeconds(60);
+    // Tally imports large voucher batches slowly on the accounts PC, but a post attempt runs as an outbox message with
+    // 30 s in all, and stops calling Tally after 24 s (TallyService.CallDeadline): one call must fit well inside that.
+    private static readonly TimeSpan TallyTimeout = TimeSpan.FromSeconds(20);
 
     public static IServiceCollection AddIntegrations(this IServiceCollection services)
     {
@@ -90,6 +95,7 @@ internal static class IntegrationsServiceCollectionExtensions
     {
         services.AddIntegrationHttpClient<TallyPrimeExporter>(TallyTimeout, TallyTimeout);
         services.AddScoped<IAccountingProvider>(sp => sp.GetRequiredService<TallyPrimeExporter>());
+        services.AddScoped<SimulatedTallyCompany>();
         services.AddScoped<IAccountingProvider, SimulatorAccountingExporter>();
         services.AddScoped<IAccountingExporter, AccountingExporterRouter>();
 
@@ -97,6 +103,7 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<IPacsProvider>(sp => sp.GetRequiredService<DicomWebPacsProvider>());
         services.AddScoped<IPacsProvider, SimulatorPacsProvider>();
         services.AddScoped<IPacsClient, PacsClientRouter>();
+        services.AddModalityWorklist();
 
         services.AddSingleton<IcdTokenCache>();
         services.AddIntegrationHttpClient<WhoIcdApiClient>(CloudAttempt, CloudTotal);
@@ -108,5 +115,11 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddSingleton<LabGatewayState>();
         services.AddSingleton<ILabMessageProcessor, LabMessageProcessor>();
         services.AddHostedService<LabGatewayHostedService>();
+
+        // Orders sent to analysers unasked, serial analysers relayed by lab agents, and their set-up in Lab setup.
+        services.AddScoped<LabOrderQueue>();
+        services.AddSingleton<LabRelayRegistry>();
+        services.AddScoped<LabAgentAuthenticator>();
+        services.AddScoped<LabConnectionService>();
     }
 }

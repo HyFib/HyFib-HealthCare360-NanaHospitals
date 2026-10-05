@@ -20,9 +20,10 @@ import {
   DarkThemeRegular,
   LockClosedRegular,
   PersonAccountsRegular,
+  PrintRegular,
   SignOutRegular,
 } from '@fluentui/react-icons';
-import { auth, humanize, useSession, type AuthResult } from '@hc360/core';
+import { auth, humanize, isDesktop, useSession, type AuthResult } from '@hc360/core';
 import { useNotify, useThemeMode, type ThemeMode } from '@hc360/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -100,6 +101,11 @@ export function UserMenu({ onLock }: { onLock: () => void }) {
           <MenuItem icon={<LockClosedRegular />} secondaryContent="Ctrl+Shift+L" onClick={onLock}>
             Lock screen
           </MenuItem>
+          {isDesktop && (
+            <MenuItem icon={<PrintRegular />} onClick={() => void navigate({ to: '/workstation/printers' })}>
+              Printers on this computer
+            </MenuItem>
+          )}
           {user.facilities.length > 1 && (
             <>
               <MenuDivider />

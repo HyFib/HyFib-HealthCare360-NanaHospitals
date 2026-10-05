@@ -7,6 +7,7 @@
     Produces, in .\artifacts:
       HC360-Server-<version>-win-x64.zip   server (self-contained, web apps included) + deployment scripts
       HC360-Desktop-<version>-win-x64.zip  HC360 Desktop (self-contained) + workstation installer
+      HC360-LabAgent-<version>-win-x64.zip HC360 lab agent (self-contained) + installer, for PCs with serial analysers
       SHA256SUMS.txt                       checksums to verify the downloads on the hospital network
 
 .EXAMPLE
@@ -69,6 +70,14 @@ try {
     }
     Copy-Item (Join-Path $PSScriptRoot 'Install-HC360Desktop.ps1') $desktopOut
 
+    Write-Step 'Publishing the HC360 lab agent'
+    $agentOut = Join-Path $OutputDir 'labagent'
+    Invoke-Checked 'Lab agent publish' {
+        dotnet publish src\agent\HyFib.HealthCare360.LabAgent\HyFib.HealthCare360.LabAgent.csproj -c $Configuration -r $Runtime --self-contained true -o $agentOut `
+            -p:DebugType=None -p:DebugSymbols=false
+    }
+    Copy-Item (Join-Path $PSScriptRoot 'Install-HC360LabAgent.ps1') $agentOut
+
     Write-Step 'Packaging'
     $deployOut = Join-Path $OutputDir 'deploy'
     New-Item -ItemType Directory -Force -Path $deployOut | Out-Null
@@ -77,8 +86,10 @@ try {
 
     $serverZip = Join-Path $OutputDir "HC360-Server-$version-$Runtime.zip"
     $desktopZip = Join-Path $OutputDir "HC360-Desktop-$version-$Runtime.zip"
+    $agentZip = Join-Path $OutputDir "HC360-LabAgent-$version-$Runtime.zip"
     Compress-Archive -Path $serverOut, $deployOut -DestinationPath $serverZip
     Compress-Archive -Path (Join-Path $desktopOut '*') -DestinationPath $desktopZip
+    Compress-Archive -Path (Join-Path $agentOut '*') -DestinationPath $agentZip
 
     Get-ChildItem $OutputDir -Filter '*.zip' | ForEach-Object {
         '{0}  {1}' -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $_.Name
