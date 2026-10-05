@@ -1,0 +1,18 @@
+# CodeQL code scanning (.github/workflows/codeql.yml). The security-extended suite adds the lower-precision security
+# queries to the default ones. Test code, generated files and the database migrations are left out: they never run in
+# a hospital, and alerts in them would only be noise.
+name: HC360 code scanning
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - tests
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/test/**"
+  - src/web/apps/staff/src/routeTree.gen.ts
+  - src/web/apps/portal/src/routeTree.gen.ts
+  - src/server/HyFib.HealthCare360.Server/Persistence/Migrations
+  - "**/node_modules/**"
+  - "**/dist/**"

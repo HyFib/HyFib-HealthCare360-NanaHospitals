@@ -307,6 +307,24 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     React's escaping does not apply. A reviewed use carries an `eslint-disable` comment saying why its markup is safe.
     The only one is the portal's in-page print, whose templates escape every value.
 
+- **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
+  the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
+  on main, and every Monday so that new queries reach code nobody is changing.
+  - Alerts appear under Security › Code scanning. The `CodeQL` check fails a pull request that adds an alert of high
+    or critical severity.
+  - It needs GitHub Code Security on the repository, with CodeQL's default setup off (this workflow is the advanced
+    setup).
+  - Test code, generated route files and the database migrations are left out (`.github/codeql/codeql-config.yml`).
+  - An alert is fixed in the code. One reviewed as a false positive or an accepted risk is dismissed on GitHub with
+    the reason, never hidden by turning a query off. The first run's alerts and how each was handled are in the table
+    below.
+
+| CodeQL alert | Where | How it was handled |
+|---|---|---|
+| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | Accepted risk: the first administrator's one-time password goes to `initial-admin-password.txt` so the installer can show it. The data directory is open only to administrators and the service, and HC360 now deletes the file as soon as `admin` sets a new password (and at start-up if that already happened). Dismiss as "won't fix" |
+| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. Dismiss as "false positive" |
+| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). Dismiss as "false positive" |
+
 | Rule | Where | Why it is accepted |
 |---|---|---|
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |

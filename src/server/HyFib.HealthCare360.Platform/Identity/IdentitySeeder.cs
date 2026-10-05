@@ -73,6 +73,13 @@ internal sealed class IdentitySeeder(
         {
             await CreateInitialAdministratorAsync(db, superAdmin, cancellationToken);
         }
+        else if (await db.Set<User>().AnyAsync(
+                     u => u.UserName == InitialAdminPassword.UserName && u.PasswordChangedAt != null, cancellationToken)
+                 && InitialAdminPassword.Delete(directories))
+        {
+            // The administrator changed the password before this clean-up existed, or the file could not be deleted then.
+            logger.LogInformation("Deleted the initial administrator's one-time password file: the password was changed");
+        }
 
         if (options.Value.SeedDemoData)
         {
@@ -108,10 +115,10 @@ internal sealed class IdentitySeeder(
 
         if (string.IsNullOrWhiteSpace(configured))
         {
-            var path = Path.Combine(directories.Root, "initial-admin-password.txt");
+            var path = InitialAdminPassword.PathIn(directories);
             await File.WriteAllTextAsync(path,
                 $"HyFib HealthCare360 — initial administrator{Environment.NewLine}User name: admin{Environment.NewLine}Password: {password}{Environment.NewLine}" +
-                $"You will be asked to change this password at first sign-in. Delete this file afterwards.{Environment.NewLine}", ct);
+                $"You will be asked to change this password at first sign-in. HC360 deletes this file once you have.{Environment.NewLine}", ct);
             logger.LogWarning("Created the initial administrator 'admin'. The one-time password was written to {Path}", path);
         }
     }

@@ -268,6 +268,7 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 * CI (`.github/workflows/ci.yml`) runs on every pull request and on main, and a pull request cannot merge until both of its jobs pass:
   * **.NET:** the C# formatting check (`dotnet format whitespace`, from `.editorconfig`); restore, whose NuGet audit fails on any known-vulnerable package, direct or transitive; `dotnet build` with warnings as errors and every security analyzer rule on; `dotnet test` (unit, integration and architecture).
   * **Web:** a gitleaks secret scan of every commit, `pnpm audit`, the Prettier check (`pnpm format:check`), `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
+* **CodeQL** code scanning analyses the C# apps, the web apps and the workflows on every pull request, on main and weekly.
 * The weekly **Security audit** workflow runs both package audits on main, and Dependabot proposes updates every week. `docs/security/SECURITY.md` ("Dependencies, secrets and code scanning") explains how an advisory is accepted and how a finding is handled.
 * Every module ships domain unit tests for its rules (for example billing totals, bed state machine, Westgard rules, FEFO batch selection) and integration tests for its main workflow.
 * **End-to-end journeys (SRS §9)** run in `HyFib.HealthCare360.IntegrationTests`.

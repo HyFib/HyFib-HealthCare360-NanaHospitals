@@ -86,7 +86,8 @@ At the end it prints two things. Write them down:
 On the server open `https://localhost:7360/`. The browser warns once, because the hospital CA is private. Then:
 
 1. Sign in as `admin` and choose a new password. Set up two-step verification; administrators must use it.
-2. Delete `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt`.
+2. Check that `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt` is gone: HC360 deletes it once `admin`
+   has a new password. If it is still there, delete it.
 3. **Administration › Backups › Recovery key**: write the key down or print it, and store it in the hospital safe.
    Without it, backups cannot be restored on new hardware.
 4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs.
