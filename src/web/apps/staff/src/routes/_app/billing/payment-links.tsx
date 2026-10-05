@@ -59,10 +59,12 @@ export const Route = createFileRoute('/_app/billing/payment-links')({
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
   muted: { color: tokens.colorNeutralForeground3 },
+  problem: { color: tokens.colorPaletteRedForeground1 },
 });
 
 /** Payment links (INT-PG): links sent by SMS/WhatsApp for bills and IP advances, their status, and a refresh from the gateway. */
 function PaymentLinksPage() {
+  const styles = useStyles();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -105,7 +107,7 @@ function PaymentLinksPage() {
     <Page>
       <PageHeader
         title="Payment links"
-        subtitle="Online payment requests sent to patients; receipts are recorded automatically when paid"
+        subtitle="Online payment requests sent to patients; receipts are recorded automatically when paid, dated when the patient paid"
         icon={<LinkRegular />}
         actions={
           canCreate && (
@@ -163,7 +165,19 @@ function PaymentLinksPage() {
               priority: 'low',
               render: (o) => (o.paidAt ? formatDateTime(o.paidAt) : '—'),
             },
-            { key: 'status', header: 'Status', width: 170, render: (o) => <LinkStatusBadge status={o.status} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 220,
+              render: (o) => (
+                <span style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  <LinkStatusBadge status={o.status} />
+                  {o.lastError && (
+                    <Caption1 className={o.paymentId ? styles.problem : styles.muted}>{o.lastError}</Caption1>
+                  )}
+                </span>
+              ),
+            },
           ]}
           rowActions={(o) => (
             <Menu>
@@ -172,9 +186,9 @@ function PaymentLinksPage() {
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  {o.status === 'Created' && canCreate && (
+                  {(o.status === 'Created' || o.status === 'Failed') && canCreate && (
                     <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => check.mutate(o.id)}>
-                      Check payment now
+                      {o.paymentId ? 'Try recording the receipt again' : 'Check payment now'}
                     </MenuItem>
                   )}
                   {o.linkUrl && (

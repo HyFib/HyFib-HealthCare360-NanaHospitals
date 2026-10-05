@@ -11,6 +11,12 @@ internal sealed record PacsSettings : IIntegrationSettings
     /// <summary>DICOMweb root, for example <c>http://orthanc:8042/dicom-web</c> (QIDO-RS lives under <c>/studies</c>).</summary>
     public string? QidoUrl { get; init; }
 
+    /// <summary>
+    /// DICOMweb root for WADO-RS (rendered images and thumbnails) when the PACS serves it at another address; empty means
+    /// <see cref="QidoUrl"/>.
+    /// </summary>
+    public string? WadoUrl { get; init; }
+
     /// <summary><c>none</c>, <c>basic</c> or <c>bearer</c>.</summary>
     public string AuthType { get; init; } = "none";
 
@@ -26,6 +32,9 @@ internal sealed record PacsSettings : IIntegrationSettings
 
     /// <summary>Time zone of study dates/times the PACS returns without an explicit offset.</summary>
     public string TimeZone { get; init; } = "Asia/Kolkata";
+
+    /// <summary>The WADO-RS root: <see cref="WadoUrl"/>, or the QIDO-RS one when that is empty.</summary>
+    public string? WadoRoot => string.IsNullOrWhiteSpace(WadoUrl) ? QidoUrl : WadoUrl;
 }
 
 /// <summary>Secret PACS configuration (<c>integrations.pacs.secret</c>).</summary>
@@ -43,4 +52,11 @@ internal interface IPacsProvider
     Task<bool> PingAsync(PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<ImagingStudyInfo>> FindStudiesAsync(PacsStudyQuery query, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ImagingSeriesInfo>> FindSeriesAsync(string studyInstanceUid, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ImagingInstanceInfo>> FindInstancesAsync(
+        string studyInstanceUid, string seriesInstanceUid, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
+
+    Task<PacsImage> RetrieveImageAsync(PacsImageRequest request, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
 }

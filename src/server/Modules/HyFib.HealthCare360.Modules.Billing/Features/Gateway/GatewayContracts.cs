@@ -25,6 +25,9 @@ public sealed record PosSaleDto(
 /// <summary>Payment link for a bill (defaults to its balance) or an advance for an admission (amount required).</summary>
 public sealed record CreatePaymentLinkRequest(Guid? BillId, Guid? IpAccountId, decimal? Amount, bool SendSms = true, bool SendWhatsApp = false);
 
+/// <param name="PaidAt">When the gateway took the payment (the receipt's time).</param>
+/// <param name="LastError">Why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet.</param>
+/// <param name="PaymentId">The gateway's payment id once someone paid.</param>
 public sealed record GatewayOrderDto(
     Guid Id,
     string Provider,
@@ -40,7 +43,9 @@ public sealed record GatewayOrderDto(
     Guid? ReceiptId,
     PaymentChannel Channel,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? PaidAt);
+    DateTimeOffset? PaidAt,
+    string? LastError = null,
+    string? PaymentId = null);
 
 public sealed record WebhookAck(bool Processed);
 

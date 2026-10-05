@@ -152,6 +152,10 @@ and re-receipt of the same batch number/expiry/MRP averages the cost.
 | POST | `/condemnations/{id}/approve` · `/reject` | `assets.manage` | `DecideCondemnationRequest` (remarks) → 204; decided by a second person |
 | POST | `/{id}/dispose` | `assets.manage` | `DisposeAssetRequest` (disposedOn, disposalValue, method) → 204 (condemned assets only) |
 
+**Asset tag (AST-01).** From the asset page the staff app prints the tag, without a dialog, on the workstation's
+label printer: hospital, asset name and the tag as Code 128 for the biomedical team's scanner. On a ZPL or TSPL
+printer the server writes the tag (`asset-tags`); otherwise the tag page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ### Maintenance and calibration — `/api/v1/assets` (AST-03/04/05)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

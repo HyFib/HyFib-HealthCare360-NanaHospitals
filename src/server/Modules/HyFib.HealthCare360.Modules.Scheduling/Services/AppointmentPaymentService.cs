@@ -97,15 +97,17 @@ public sealed class AppointmentPaymentService(
         }
 
         var amount = appointment.FeeAmount;
+        var paidAt = time.GetUtcNow();
         try
         {
             var status = await Gateway.GetStatusAsync(orderId, appointment.FacilityId, ct);
-            if (status.Status is GatewayPaymentStatus.Failed or GatewayPaymentStatus.Created or GatewayPaymentStatus.Refunded)
+            if (status.Status is not (GatewayPaymentStatus.Captured or GatewayPaymentStatus.Pending))
             {
                 return Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
             }
 
             amount = status.AmountPaid ?? amount;
+            paidAt = PaidAt(status, paidAt);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -113,7 +115,7 @@ public sealed class AppointmentPaymentService(
             logger.LogInformation(ex, "Could not fetch gateway status for order {OrderId}; relying on the verified signature", orderId);
         }
 
-        return appointment.MarkPaidOnline(orderId, paymentId, amount, time.GetUtcNow());
+        return appointment.MarkPaidOnline(orderId, paymentId, amount, paidAt);
     }
 
     /// <summary>
@@ -150,7 +152,11 @@ public sealed class AppointmentPaymentService(
         }
 
         return status is { Status: GatewayPaymentStatus.Captured, PaymentId: { } paymentId }
-            ? appointment.MarkPaidOnline(orderId, paymentId, status.AmountPaid ?? appointment.FeeAmount, time.GetUtcNow())
+            ? appointment.MarkPaidOnline(orderId, paymentId, status.AmountPaid ?? appointment.FeeAmount, PaidAt(status, time.GetUtcNow()))
             : Error.Rule("payment.not_captured", "The payment has not been completed. Please try again or pay at the hospital.");
     }
+
+    /// <summary>When the gateway took the money (the advance receipt's time), never later than now.</summary>
+    private static DateTimeOffset PaidAt(PaymentStatusResult status, DateTimeOffset now) =>
+        status.PaidAt is { } paidAt && paidAt < now ? paidAt : now;
 }

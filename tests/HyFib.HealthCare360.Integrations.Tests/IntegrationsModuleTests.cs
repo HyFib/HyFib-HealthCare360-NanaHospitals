@@ -3,12 +3,15 @@ using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Pacs;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Payments;
 using HyFib.HealthCare360.Integrations.Pos;
 using HyFib.HealthCare360.Integrations.Sms;
 using HyFib.HealthCare360.Integrations.Tally;
 using HyFib.HealthCare360.Integrations.WhatsApp;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -29,8 +32,29 @@ public sealed class IntegrationsModuleTests
     public void Module_key_is_integrations() => new IntegrationsModule().Name.ShouldBe("integrations");
 
     [Fact]
-    public void Declares_the_label_printing_permission() =>
-        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe([IntegrationsPermissions.LabelsPrint]);
+    public void Declares_label_printing_printer_setup_and_the_analyser_connection_permissions() =>
+        new IntegrationsModule().Permissions.Select(p => p.Name).ShouldBe(
+        [
+            IntegrationsPermissions.LabelsPrint,
+            IntegrationsPermissions.LabConnectionsManage,
+            IntegrationsPermissions.LabStatusRead,
+            IntegrationsPermissions.PrintersSetup,
+        ]);
+
+    [Fact]
+    public void Only_administrators_set_up_analyser_connections_and_lab_staff_see_their_state()
+    {
+        var permissions = new IntegrationsModule().Permissions.ToDictionary(p => p.Name);
+
+        permissions[IntegrationsPermissions.LabConnectionsManage].DefaultRoles.ShouldBe([SystemRoles.HospitalAdmin]);
+        permissions[IntegrationsPermissions.LabStatusRead].DefaultRoles.ShouldBe(
+            [SystemRoles.LabTechnician, SystemRoles.Pathologist, SystemRoles.HospitalAdmin], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Only_hospital_administrators_set_up_workstation_printers_until_others_are_given_it() =>
+        new IntegrationsModule().Permissions.Single(p => p.Name == IntegrationsPermissions.PrintersSetup).DefaultRoles
+            .ShouldBe([SystemRoles.HospitalAdmin]);
 
     [Theory]
     [InlineData(typeof(ISmsSender), typeof(SmsRouter))]
@@ -61,4 +85,17 @@ public sealed class IntegrationsModuleTests
     [Fact]
     public void Runs_the_laboratory_gateway_as_a_hosted_service() =>
         Services().ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(LabGatewayHostedService));
+
+    [Fact]
+    public void Runs_the_modality_worklist_server_as_a_hosted_service_sharing_one_gateway()
+    {
+        var services = Services();
+
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(ModalityWorklistHostedService));
+        services.ShouldContain(d => d.ServiceType == typeof(ModalityWorklistGateway) && d.Lifetime == ServiceLifetime.Singleton);
+        services.ShouldContain(d => d.ServiceType == typeof(ModalityWorklistState) && d.Lifetime == ServiceLifetime.Singleton);
+
+        // The worklist itself comes from Diagnostics through the platform contract, never from this module.
+        services.ShouldNotContain(d => d.ServiceType == typeof(IModalityWorklistSource));
+    }
 }

@@ -21,6 +21,7 @@ internal sealed class LabOrderService(
     ChargeService charges,
     LabWorkflow workflow,
     DiagnosticsRealtime realtime,
+    AnalyserOrders analyserOrders,
     ICurrentUser currentUser,
     TimeProvider time,
     ILogger<LabOrderService> logger)
@@ -292,6 +293,9 @@ internal sealed class LabOrderService(
 
         await workflow.RefreshAsync([item.LabOrderId], now, ct);
         await charges.CancelLabAsync(item, reason, ct);
+
+        // Analysers that were sent the test cancel it (in the caller's unit of work, the clinician's one included).
+        await analyserOrders.TestCancelledAsync(item, ct);
         return Result.Success();
     }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
@@ -68,6 +69,16 @@ public sealed class TallyVoucherBuilderTests
         ShouldBalance(voucher);
         Entry(voucher, "Patient Receivables").IsDebit.ShouldBeFalse();
         Entry(voucher, "Laboratory Income").IsDebit.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void A_bill_finalised_and_cancelled_on_the_same_day_gives_two_vouchers_tally_keeps_apart()
+    {
+        var vouchers = TallyVoucherBuilder.Build(Book(sales: [InsuredSale, InsuredSale with { IsCancellation = true }]), Ledgers);
+
+        vouchers.Count.ShouldBe(2);
+        vouchers.Select(v => v.RemoteId).ShouldBe(["HC360-NHOB260000001", "HC360-NHOB260000001/C"]);
+        TallyTracking.DuplicateKeys(vouchers).ShouldBeEmpty();
     }
 
     [Fact]
@@ -172,6 +183,71 @@ public sealed class TallyVoucherBuilderTests
     }
 
     [Fact]
+    public void A_doctors_journal_keeps_its_number_whatever_order_the_doctors_come_in()
+    {
+        TallyDoctorFee[] fees = [new("Dr. Arjun Mehta", 1_200m, "DR005"), new("Dr. Kavya Nair", 800m, "dr009")];
+        var book = Book(fees: fees) with { FacilityCode = "NH" };
+
+        var first = TallyVoucherBuilder.Build(book, Ledgers);
+        var again = TallyVoucherBuilder.Build(book with { DoctorFees = Enumerable.Reverse(fees).ToList() }, Ledgers);
+
+        first.Select(v => (v.Number, v.Amount)).ShouldBe([("DF-NH-20260925-DR005", 1_200m), ("DF-NH-20260925-DR009", 800m)]);
+        again.Select(v => (v.Number, v.Amount)).ShouldBe(first.Select(v => (v.Number, v.Amount)));
+        first.ShouldAllBe(v => v.Reference == v.Number);
+    }
+
+    [Fact]
+    public void Doctors_without_a_code_get_a_number_from_their_name_and_a_shared_code_is_told_apart_by_their_ids()
+    {
+        var kavya = Guid.Parse("0198a1b2-0000-7000-8000-00000000aaaa");
+        var ravi = Guid.Parse("0198a1b2-0000-7000-8000-00000000bbbb");
+        TallyDoctorFee[] fees =
+        [
+            new("Dr. Arjun Mehta", 100m),
+            new("Dr. Kavya Nair", 200m, "DR001", kavya),
+            new("Dr. Ravi Rao", 300m, "DR001", ravi),
+            new("Dr. Meena Iyer", 400m, "DR001-2"),
+        ];
+
+        var vouchers = TallyVoucherBuilder.Build(Book(fees: fees), Ledgers);
+        var reversed = TallyVoucherBuilder.Build(Book(fees: fees.Reverse().ToList()), Ledgers);
+
+        vouchers.Select(v => (v.Number, v.Amount)).ShouldBe(
+        [
+            ($"DF-20260925-{TallyCounters.ShortHash("Dr. Arjun Mehta")}", 100m),
+            ("DF-20260925-DR001-0000AAAA", 200m),
+            ("DF-20260925-DR001-0000BBBB", 300m),
+            ("DF-20260925-DR001-2", 400m),
+        ], ignoreOrder: true);
+        reversed.Select(v => (v.Number, v.Amount)).ShouldBe(vouchers.Select(v => (v.Number, v.Amount)), ignoreOrder: true);
+        TallyTracking.DuplicateKeys(vouchers).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_day_posted_before_per_voucher_tracking_keeps_its_doctor_fee_numbers()
+    {
+        TallyDoctorFee[] fees = [new("Dr. Kavya Nair", 800m, "DR009"), new("Dr. Arjun Mehta", 1_200m, "DR005")];
+        var book = Book(fees: fees) with { FacilityCode = "NH", LegacyDoctorFeeNumbers = true };
+
+        var vouchers = TallyVoucherBuilder.Build(book, Ledgers);
+
+        vouchers.Select(v => (v.Number, v.Reference, v.Amount)).ShouldBe([("DF-20260925-001", "DF-20260925-001", 1_200m), ("DF-20260925-002", "DF-20260925-002", 800m)]);
+        vouchers[0].RemoteId.ShouldBe("HC360-DF-20260925-001");
+    }
+
+    [Fact]
+    public void Claim_deduction_references_stay_as_before_unless_two_settlements_of_a_claim_share_them()
+    {
+        var first = Guid.Parse("0198a1b2-0000-7000-8000-00000000aaaa");
+        var sameHours = Guid.Parse("0198a1b2-ffff-7000-8000-00000000bbbb");
+        var later = Guid.Parse("0198ff00-0000-7000-8000-00000000cccc");
+
+        TallyVoucherBuilder.ClaimDeductionReference("NHCL26000001", first, [first, later]).ShouldBe("NHCL26000001/0198a1");
+        TallyVoucherBuilder.ClaimDeductionReference("NHCL26000001", first, [first, sameHours, later]).ShouldBe("NHCL26000001/0198a1aaaa");
+        TallyVoucherBuilder.ClaimDeductionReference("NHCL26000001", sameHours, [first, sameHours, later]).ShouldBe("NHCL26000001/0198a1bbbb");
+    }
+
+    [Fact]
     public void A_payout_debits_the_doctor_and_credits_tds_recoveries_and_bank()
     {
         var voucher = TallyVoucherBuilder.Build(Book(payouts: [new TallyPayout("NHDP2600001", Day, "Dr. Arjun Mehta", 50_000m, 5_000m, 2_000m, 43_000m)]), Ledgers).Single();
@@ -202,5 +278,89 @@ public sealed class TallyVoucherBuilderTests
     {
         Book().IsEmpty.ShouldBeTrue();
         TallyVoucherBuilder.Build(Book(), Ledgers).ShouldBeEmpty();
+    }
+
+    private static readonly CounterSalesDay PharmacyDay = new(
+        TallyCounters.Pharmacy,
+        Day,
+        new CounterDocuments(
+            3,
+            [new CounterTaxLine(12m, 1_000m, 60m, 60m), new CounterTaxLine(5m, 400m, 10m, 10m), new CounterTaxLine(12m, 100m, 6m, 6m)],
+            0.40m,
+            [new CounterMoney(CounterPaymentMode.Cash, 1_000m), new CounterMoney(CounterPaymentMode.Upi, 252.40m)]),
+        new CounterDocuments(1, [new CounterTaxLine(12m, 100m, 6m, 6m)], 0m, [new CounterMoney(CounterPaymentMode.Cash, 62m)]),
+        [new CounterMoney(CounterPaymentMode.Card, 150m)]);
+
+    [Fact]
+    public void A_pharmacy_day_gives_sales_returns_and_collections_vouchers_that_balance()
+    {
+        var vouchers = TallyVoucherBuilder.Build(Book() with { FacilityCode = "NH", Counters = [PharmacyDay] }, Ledgers);
+
+        vouchers.Select(v => (v.VoucherType, v.Number)).ShouldBe([
+            (TallyVoucherBuilder.SalesType, "PH-NH-20260925"),
+            (TallyVoucherBuilder.CreditNoteType, "PH-NH-20260925-R"),
+            (TallyVoucherBuilder.ReceiptType, "PH-NH-20260925-C"),
+        ]);
+        vouchers.ToList().ForEach(ShouldBalance);
+
+        var sales = vouchers[0];
+        Entry(sales, "Pharmacy Sales @ 12%").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(1_100m), e => e.IsDebit.ShouldBeFalse());
+        Entry(sales, "Pharmacy Sales @ 5%").Amount.ShouldBe(400m);
+        Entry(sales, "Output CGST").Amount.ShouldBe(76m);
+        Entry(sales, "Round Off").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(0.40m), e => e.IsDebit.ShouldBeFalse());
+        Entry(sales, "Cash").Amount.ShouldBe(1_000m);
+        Entry(sales, "UPI Settlement Account").Amount.ShouldBe(252.40m);
+        Entry(sales, "Pharmacy Receivables").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(400m), e => e.IsDebit.ShouldBeTrue());
+        sales.Narration.ShouldBe("Pharmacy sales of 25-Sep-2026: 3 invoices");
+
+        var returns = vouchers[1];
+        Entry(returns, "Pharmacy Sales @ 12%").IsDebit.ShouldBeTrue();
+        Entry(returns, "Cash").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(62m), e => e.IsDebit.ShouldBeFalse());
+        Entry(returns, "Pharmacy Receivables").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(50m), e => e.IsDebit.ShouldBeFalse());
+
+        Entry(vouchers[2], "Card Settlement Account").IsDebit.ShouldBeTrue();
+        Entry(vouchers[2], "Pharmacy Receivables").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(150m), e => e.IsDebit.ShouldBeFalse());
+    }
+
+    [Fact]
+    public void Canteen_staff_credit_goes_to_its_recoverable_ledger_and_a_counter_can_use_its_own_cash_ledger()
+    {
+        var canteen = new CounterSalesDay(TallyCounters.Canteen, Day,
+            new CounterDocuments(40, [new CounterTaxLine(5m, 2_000m, 50m, 50m)], 0m, [new CounterMoney(CounterPaymentMode.Cash, 1_600m)]),
+            CounterDocuments.None, []);
+        var ledgers = Ledgers with
+        {
+            SalesLedgerPerGstRate = false,
+            Canteen = new TallyCounterLedgers { ModeLedgers = new Dictionary<string, string> { ["cash"] = "Canteen Cash" } },
+        };
+
+        var voucher = TallyVoucherBuilder.Build(Book() with { Counters = [canteen] }, ledgers).ShouldHaveSingleItem();
+
+        ShouldBalance(voucher);
+        voucher.Number.ShouldBe("CT-20260925");
+        Entry(voucher, "Canteen Sales").Amount.ShouldBe(2_000m);
+        Entry(voucher, "Canteen Cash").Amount.ShouldBe(1_600m);
+        Entry(voucher, "Staff Canteen Recoverable").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(500m), e => e.IsDebit.ShouldBeTrue());
+    }
+
+    [Fact]
+    public void A_counter_switched_off_in_the_ledger_settings_stays_out_of_the_day_book()
+    {
+        var book = Book() with { Counters = [PharmacyDay] };
+
+        TallyVoucherBuilder.Build(book, Ledgers with { Pharmacy = new TallyCounterLedgers { Include = false } }).ShouldBeEmpty();
+        book.IsEmpty.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Counter_ledgers_come_from_the_settings_json_with_built_in_names_for_the_rest()
+    {
+        var map = JsonSerializer.Deserialize<TallyLedgerMap>(
+            """{"pharmacy":{"sales":"Medicine Sales","modeLedgers":{"Upi":"Pharmacy UPI"}}}""", new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        var pharmacy = map.CounterLedgers(TallyCounters.Pharmacy);
+        pharmacy.ShouldSatisfyAllConditions(p => p.Sales.ShouldBe("Medicine Sales"), p => p.OnAccount.ShouldBe("Pharmacy Receivables"), p => p.Include.ShouldBeTrue());
+        map.CounterLedgers(TallyCounters.Canteen).Sales.ShouldBe("Canteen Sales");
+        map.SalesLedgerPerGstRate.ShouldBeTrue();
     }
 }

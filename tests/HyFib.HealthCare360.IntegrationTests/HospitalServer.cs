@@ -45,6 +45,7 @@ public sealed class HospitalServer : IAsyncLifetime
     private static readonly Dictionary<string, string> RolesCreatedOnFirstUse = new(StringComparer.Ordinal)
     {
         [Users.Pathologist] = SystemRoles.Pathologist,
+        [Users.MrdOfficer] = SystemRoles.MrdOfficer,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -145,9 +146,33 @@ public sealed class HospitalServer : IAsyncLifetime
             await _database.DisposeAsync();
         }
 
-        if (Directory.Exists(_dataDirectory))
+        await DeleteDataDirectoryAsync();
+    }
+
+    /// <summary>
+    /// Deletes the run's data directory. On Windows a helper of the PDF renderer's browser can hold a file in its
+    /// profile for a moment after the browser closes, so the delete is tried for a few seconds; a folder still in use
+    /// after that is left in the temp directory rather than failing a run whose tests all finished.
+    /// </summary>
+    private async Task DeleteDataDirectoryAsync()
+    {
+        for (var attempt = 1; Directory.Exists(_dataDirectory); attempt++)
         {
-            Directory.Delete(_dataDirectory, recursive: true);
+            try
+            {
+                Directory.Delete(_dataDirectory, recursive: true);
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 20)
+                {
+                    TestContext.Current.SendDiagnosticMessage($"The test data directory {_dataDirectory} was left behind: {ex.Message}");
+                    return;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(250));
+            }
         }
     }
 
@@ -163,6 +188,23 @@ public sealed class HospitalServer : IAsyncLifetime
         using var response = await PostLoginAsync(http, userName, _password);
         await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
         return RefreshCookieOf(response) ?? throw new InvalidOperationException($"Signing in as '{userName}' set no refresh cookie.");
+    }
+
+    /// <summary>
+    /// A new sign-in of a seeded staff account presenting an enrolled device's credential, as HC360 Desktop does: a
+    /// client for the new session. It comes from the test's own address, so the test has a rate-limit budget of its
+    /// own.
+    /// </summary>
+    public async Task<ApiClient> SignInFromDeviceAsync(string userName, Guid deviceId, string deviceSecret)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var http = CreateHttpClient(ownAddress: true);
+        using var response = await http.PostAsJsonAsync("/api/v1/auth/login",
+            new LoginRequest(userName, _password, DeviceId: deviceId, DeviceSecret: deviceSecret), ApiClient.Json, ct);
+        var result = await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/login");
+        var token = FullAccess(userName, result);
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return new ApiClient(http);
     }
 
     /// <summary>A refresh of the session behind <paramref name="refreshCookie"/>, as the staff app sends it.</summary>
@@ -308,6 +350,11 @@ public sealed class HospitalServer : IAsyncLifetime
         /// seed has no pathologist, so the hospital administrator creates this account the first time a test signs in.
         /// </summary>
         public const string Pathologist = "pathologist";
+
+        /// <summary>
+        /// Codes episodes and keeps the ICD catalogue (Medical records). Created on first use, as the pathologist is.
+        /// </summary>
+        public const string MrdOfficer = "mrdofficer";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

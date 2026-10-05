@@ -54,6 +54,11 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
   allowed only for registered patients (`payment.credit_not_allowed`).
 
+**Medicine labels.** After dispensing (automatically when the pharmacist's preference is on, or from the dispensed
+entry) the staff app prints one label per medicine, without a dialog, on the workstation's label printer: patient,
+medicine and quantity, directions, batch and expiry, hospital and date. On a ZPL or TSPL printer the server writes the
+label (`dispensing`); otherwise the label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ### Counter sales, payments, returns, stock — `/sales`, `/stock` (PH-02, PH-06)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|

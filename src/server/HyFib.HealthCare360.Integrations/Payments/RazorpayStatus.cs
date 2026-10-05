@@ -1,7 +1,9 @@
 namespace HyFib.HealthCare360.Integrations.Payments;
 
 /// <summary>One payment attempt as Razorpay reports it (orders' <c>/payments</c> or a payment link's <c>payments</c>).</summary>
-internal sealed record RazorpayPayment(string Id, string Status, long AmountPaise, long AmountRefundedPaise, string? Method, string? Error);
+/// <param name="CreatedAt">Razorpay's <c>created_at</c>: when the patient paid (the receipt's time once captured).</param>
+internal sealed record RazorpayPayment(
+    string Id, string Status, long AmountPaise, long AmountRefundedPaise, string? Method, string? Error, DateTimeOffset? CreatedAt = null);
 
 /// <summary>
 /// Collapses Razorpay's per-attempt payment states into one order status. A patient may fail a card attempt and then
@@ -16,12 +18,12 @@ internal static class RazorpayStatus
         {
             var fullyRefunded = captured.AmountPaise > 0 && captured.AmountRefundedPaise >= captured.AmountPaise;
             return new PaymentStatusResult(orderId, fullyRefunded ? GatewayPaymentStatus.Refunded : GatewayPaymentStatus.Captured, captured.Id,
-                PaymentAmounts.FromPaise(captured.AmountPaise - captured.AmountRefundedPaise), captured.Method, null);
+                PaymentAmounts.FromPaise(captured.AmountPaise - captured.AmountRefundedPaise), captured.Method, null, captured.CreatedAt);
         }
 
         if (payments.FirstOrDefault(p => p.Status == "refunded") is { } refunded)
         {
-            return new PaymentStatusResult(orderId, GatewayPaymentStatus.Refunded, refunded.Id, 0m, refunded.Method, null);
+            return new PaymentStatusResult(orderId, GatewayPaymentStatus.Refunded, refunded.Id, 0m, refunded.Method, null, refunded.CreatedAt);
         }
 
         if (payments.FirstOrDefault(p => p.Status == "authorized") is { } authorized)
@@ -48,13 +50,15 @@ internal static class RazorpayStatus
                 var paid = FromPayments(linkId, payments);
                 return paid.Status is GatewayPaymentStatus.Captured or GatewayPaymentStatus.Refunded
                     ? paid
-                    : new PaymentStatusResult(linkId, GatewayPaymentStatus.Captured, payments.FirstOrDefault()?.Id, null, payments.FirstOrDefault()?.Method, null);
+                    : new PaymentStatusResult(linkId, GatewayPaymentStatus.Captured, payments.FirstOrDefault()?.Id, null, payments.FirstOrDefault()?.Method, null,
+                        payments.FirstOrDefault()?.CreatedAt);
             case "partially_paid":
                 return new PaymentStatusResult(linkId, GatewayPaymentStatus.Pending, payments.FirstOrDefault()?.Id,
                     PaymentAmounts.FromPaise(payments.Where(p => p.Status == "captured").Sum(p => p.AmountPaise)), null, null);
             case "expired":
+                return ClosedLink(linkId, GatewayPaymentStatus.Expired, "The payment link expired before it was paid.", payments);
             case "cancelled":
-                return new PaymentStatusResult(linkId, GatewayPaymentStatus.Failed, null, null, null, $"The payment link was {linkStatus}.");
+                return ClosedLink(linkId, GatewayPaymentStatus.Cancelled, "The payment link was cancelled at the gateway.", payments);
             default:
                 return FromPayments(linkId, payments);
         }
@@ -74,11 +78,34 @@ internal static class RazorpayStatus
                 ReadLong(p, "amount"),
                 ReadLong(p, "amount_refunded"),
                 IntegrationHttp.Property(p, "method"),
-                IntegrationHttp.Property(p, "error_description")))
+                IntegrationHttp.Property(p, "error_description"),
+                ReadTime(p, "created_at")))
             .Where(p => p.Id.Length > 0)
             .ToList();
     }
 
-    private static long ReadLong(JsonElement element, string name) =>
-        element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var number) ? number : 0;
+    /// <summary>Unix seconds (Razorpay's timestamps) as an instant; absent, zero or out of range reads as unknown.</summary>
+    public static DateTimeOffset? ReadTime(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt64(out var seconds) && seconds is > 0 and < 32_503_680_000
+            ? DateTimeOffset.FromUnixTimeSeconds(seconds)
+            : null;
+
+    public static long ReadLong(JsonElement element, string name) =>
+        element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
+        && value.TryGetInt64(out var number)
+            ? number
+            : 0;
+
+    /// <summary>
+    /// An expired or cancelled link can still carry a payment captured just before it closed; that payment wins, so
+    /// money taken is never reported as an unpaid link.
+    /// </summary>
+    private static PaymentStatusResult ClosedLink(string linkId, GatewayPaymentStatus status, string reason, IReadOnlyList<RazorpayPayment> payments)
+    {
+        var fromPayments = FromPayments(linkId, payments);
+        return fromPayments.Status is GatewayPaymentStatus.Captured or GatewayPaymentStatus.Refunded
+            ? fromPayments
+            : new PaymentStatusResult(linkId, status, null, null, null, reason);
+    }
 }

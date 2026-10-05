@@ -3,12 +3,13 @@ import {
   AI_SETTINGS,
   buildSecretChanges,
   buildSettingChanges,
-  checkInstruments,
   checkTerminals,
+  checkWorklistModalities,
   defaultScope,
   fieldId,
   INTEGRATION_SETTINGS,
   isFeatureSettingKey,
+  isIpAddress,
   isValidSettingKey,
   parseFieldValue,
   replaceFlagId,
@@ -17,6 +18,7 @@ import {
   toFormValues,
   urlProblem,
   validateSettings,
+  viewerLinkProblem,
   type SettingRow,
   type SettingsSpec,
 } from './settingsForms';
@@ -145,9 +147,15 @@ describe('form → settings to save', () => {
   });
 
   it('keeps a stored value it cannot parse instead of dropping it', () => {
-    const stored = { 'integrations.lab.instruments': [{ code: 'XN550', port: 5100 }] };
-    const values = { ...toFormValues(lab, stored), [id('integrations.lab.instruments')]: '[ broken' };
-    expect(buildSettingChanges(lab, values, stored)).toEqual([]);
+    const pos = INTEGRATION_SETTINGS.pos as SettingsSpec;
+    const stored = { 'integrations.pos': { enabled: true, provider: 'simulator', terminals: [{ id: 'OPD-1' }] } };
+    const values = { ...toFormValues(pos, stored), [id('integrations.pos', 'terminals')]: '[ broken' };
+    expect(buildSettingChanges(pos, values, stored)).toEqual([]);
+  });
+
+  it('leaves analyser connections to Lab setup instead of a JSON list', () => {
+    expect(lab.fields.some((field) => field.key === 'integrations.lab.instruments')).toBe(false);
+    expect(lab.intro).toContain('Lab setup');
   });
 });
 
@@ -179,14 +187,12 @@ describe('checks', () => {
       error: expect.stringContaining('name = value'),
     });
 
-    const instruments = lab.fields.find((field) => field.key === 'integrations.lab.instruments')!;
-    expect(parseFieldValue(instruments, '{"code":"A"}')).toMatchObject({
+    const terminals = INTEGRATION_SETTINGS.pos!.fields.find((field) => field.path === 'terminals')!;
+    expect(parseFieldValue(terminals, '{"id":"OPD-1"}')).toMatchObject({
       ok: false,
       error: expect.stringContaining('square brackets'),
     });
-    expect(parseFieldValue(instruments, '[{"code":"XN550","protocol":"Hl7v2","port":5100}]')).toMatchObject({
-      ok: true,
-    });
+    expect(parseFieldValue(terminals, '[{"id":"OPD-1","name":"OPD counter"}]')).toMatchObject({ ok: true });
   });
 
   it('keeps the space in an API key prefix', () => {
@@ -194,24 +200,10 @@ describe('checks', () => {
     expect(parseFieldValue(prefix, 'Bearer ')).toEqual({ ok: true, value: 'Bearer ' });
   });
 
-  it('checks POS terminals and analysers', () => {
+  it('checks POS terminals', () => {
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'IPD_2', name: 'IP counter' }])).toBeNull();
     expect(checkTerminals([{ id: 'OPD 1' }])).toContain('Terminal 1');
     expect(checkTerminals([{ id: 'OPD-1' }, { id: 'OPD-1' }])).toContain('Two terminals');
-    expect(
-      checkInstruments([
-        { code: 'XN550', protocol: 'Hl7v2', port: 5100 },
-        { code: 'C311', protocol: 'astm', port: 5101 },
-      ]),
-    ).toBeNull();
-    expect(checkInstruments([{ code: 'XN550', port: 0 }])).toContain('port');
-    expect(checkInstruments([{ code: 'XN550', port: 5100, protocol: 'FTP' }])).toContain('Hl7v2 or Astm');
-    expect(
-      checkInstruments([
-        { code: 'A', port: 5100 },
-        { code: 'B', port: 5100 },
-      ]),
-    ).toContain('port 5100');
   });
 
   it('checks only the fields on screen, and needs a provider when switched on', () => {
@@ -305,5 +297,61 @@ describe('setting names', () => {
   it('knows a feature switch by its prefix', () => {
     expect(isFeatureSettingKey('features.telehealth')).toBe(true);
     expect(isFeatureSettingKey('telehealth.earlyJoinMinutes')).toBe(false);
+  });
+});
+
+describe('modality worklist and PACS settings', () => {
+  const mwl = INTEGRATION_SETTINGS.mwl as SettingsSpec;
+  const ct = { aeTitle: 'CT1', name: 'CT scanner', allowedIps: ['10.0.5.31'], facility: 'NH', modalities: ['CT'] };
+
+  it('is one form for all facilities, off until turned on', () => {
+    expect(mwl.globalOnly).toBe(true);
+    expect(mwl.prefix).toBe('integrations.mwl');
+    expect(mwl.secrets).toEqual([]);
+    expect(toFormValues(mwl, {})[id('integrations.mwl', 'enabled')]).toBe(false);
+  });
+
+  it('accepts modalities with their address and kinds of study', () => {
+    expect(
+      checkWorklistModalities([
+        ct,
+        { aeTitle: 'DR_ROOM 1', allowedIps: ['10.0.5.40', 'fe80::1'], modalities: ['dx', 'XR'] },
+      ]),
+    ).toBeNull();
+  });
+
+  it('says what a modality entry lacks', () => {
+    expect(checkWorklistModalities([{ ...ct, aeTitle: 'THIS_TITLE_IS_TOO_LONG' }])).toContain('aeTitle');
+    expect(checkWorklistModalities([{ ...ct, allowedIps: [] }])).toContain('allowedIps');
+    expect(checkWorklistModalities([{ ...ct, allowedIps: ['scanner.local'] }])).toContain('allowedIps');
+    expect(checkWorklistModalities([{ ...ct, modalities: ['NM'] }])).toContain('CR or DX');
+    expect(checkWorklistModalities([{ ...ct, facility: 7 }])).toContain('facility code');
+    expect(checkWorklistModalities([ct, { ...ct, aeTitle: 'ct1' }])).toContain('Two modalities');
+  });
+
+  it('checks the listen address and the server AE title', () => {
+    expect(isIpAddress('0.0.0.0')).toBe(true);
+    expect(isIpAddress('10.0.5.256')).toBe(false);
+    expect(isIpAddress('::')).toBe(true);
+    expect(isIpAddress('hc360-srv')).toBe(false);
+    const values = { ...toFormValues(mwl, {}), [id('integrations.mwl', 'aeTitle')]: 'HC360 MWL\\X' };
+    expect(validateSettings(mwl, values)[id('integrations.mwl', 'aeTitle')]).toContain('AE title');
+  });
+
+  it('wants a viewer link that names the study', () => {
+    expect(viewerLinkProblem('https://pacs.local/ohif/viewer?StudyInstanceUIDs={studyUid}')).toBeNull();
+    expect(viewerLinkProblem('https://pacs.local/view?acc={accession}')).toBeNull();
+    expect(viewerLinkProblem('https://pacs.local/home')).toContain('{studyUid} or {accession}');
+    expect(viewerLinkProblem('javascript:alert(1)//{studyUid}')).toContain('http');
+  });
+
+  it('keeps the image address with the DICOMweb settings', () => {
+    const pacs = INTEGRATION_SETTINGS.pacs as SettingsSpec;
+    const wado = pacs.fields.find((field) => field.path === 'wadoUrl');
+    expect(wado?.kind).toBe('url');
+    expect(parseFieldValue(wado!, 'http://pacs.local/wado-rs')).toEqual({
+      ok: true,
+      value: 'http://pacs.local/wado-rs',
+    });
   });
 });

@@ -24,6 +24,9 @@ public static class BillingTime
 
     public static DateOnly LocalDate(DateTimeOffset instant) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, Zone.Value).DateTime);
 
+    /// <summary>The instant in hospital time, for messages that name a time.</summary>
+    public static DateTimeOffset ToLocal(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, Zone.Value);
+
     /// <summary>UTC instant at which the local calendar day begins.</summary>
     public static DateTimeOffset StartOfDay(DateOnly date)
     {

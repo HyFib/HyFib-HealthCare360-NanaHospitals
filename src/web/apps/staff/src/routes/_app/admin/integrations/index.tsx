@@ -51,6 +51,9 @@ const LISTENER_STATES: Record<string, { label: string; tone: 'success' | 'warnin
   listening: { label: 'Listening', tone: 'success' },
   starting: { label: 'Starting', tone: 'warning' },
   failed: { label: 'Failed', tone: 'danger' },
+  connected: { label: 'Connected', tone: 'success' },
+  waiting: { label: 'Waiting for agent', tone: 'warning' },
+  port_error: { label: 'COM port problem', tone: 'danger' },
 };
 
 function shorten(text: string, length = 140): string {
@@ -78,6 +81,7 @@ function IntegrationsPage() {
   const rows = status.data ?? [];
   const count = (...health: string[]) => rows.filter((row) => health.includes(row.health)).length;
   const listeners = rows.find((row) => row.name === 'lab')?.listeners ?? [];
+  const worklist = rows.find((row) => row.name === 'mwl')?.listeners ?? [];
   const hasSettings = (row: IntegrationStatusDto) =>
     isIntegrationName(row.name) && INTEGRATION_SETTINGS[row.name] !== undefined;
   const configure = (row: IntegrationStatusDto) =>
@@ -216,8 +220,20 @@ function IntegrationsPage() {
       </Section>
 
       {listeners.length > 0 && (
-        <Section title="Laboratory analysers" description="Live status of each analyser’s listening port.">
+        <Section
+          title="Laboratory analysers"
+          description="Live status of each network analyser’s port and each serial analyser’s lab agent. Set them up in Lab setup › Analysers."
+        >
           <ListenerTable listeners={listeners} />
+        </Section>
+      )}
+
+      {worklist.length > 0 && (
+        <Section
+          title="Modality worklist"
+          description="The DICOM worklist server that modalities ask for their patients."
+        >
+          <ListenerTable listeners={worklist} worklist />
         </Section>
       )}
 
@@ -236,31 +252,41 @@ function IntegrationsPage() {
   );
 }
 
-function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
+const PROTOCOLS: Record<string, string> = { astm: 'ASTM', hl7v2: 'HL7 v2', dicom: 'DICOM' };
+
+/** Analyser listeners, or the worklist server (its AE title, queries answered and associations refused). */
+function ListenerTable({ listeners, worklist = false }: { listeners: LabListenerStatus[]; worklist?: boolean }) {
   const styles = useStyles();
   return (
     <DataTable
-      ariaLabel="Analyser listeners"
+      ariaLabel={worklist ? 'Worklist server' : 'Analyser listeners'}
       rows={listeners}
-      getRowId={(listener) => `${listener.instrumentCode}:${listener.port}`}
+      getRowId={(listener) => listener.instrumentCode}
       size="small"
       columns={[
         {
           key: 'code',
-          header: 'Analyser',
+          header: worklist ? 'AE title' : 'Analyser',
           render: (listener) => <Text weight="semibold">{listener.instrumentCode}</Text>,
         },
         {
           key: 'protocol',
           header: 'Protocol',
           width: 100,
-          render: (listener) => (listener.protocol.toLowerCase() === 'astm' ? 'ASTM' : 'HL7 v2'),
+          render: (listener) => PROTOCOLS[listener.protocol.toLowerCase()] ?? listener.protocol,
         },
-        { key: 'port', header: 'Port', width: 80, align: 'end', render: (listener) => listener.port },
+        {
+          key: 'port',
+          header: 'Connection',
+          render: (listener) =>
+            listener.transport === 'serial'
+              ? `${listener.serialPort ?? 'Serial'}${listener.agent ? ` on ${listener.agent}` : ''}`
+              : `Port ${listener.port}`,
+        },
         {
           key: 'state',
           header: 'State',
-          width: 120,
+          width: 150,
           render: (listener) => {
             const state = LISTENER_STATES[listener.state] ?? { label: listener.state, tone: 'warning' as const };
             return <StatusBadge status={listener.state} tone={state.tone} label={state.label} />;
@@ -268,7 +294,7 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
         },
         {
           key: 'connections',
-          header: 'Connected',
+          header: worklist ? 'Open' : 'Connected',
           width: 100,
           align: 'end',
           priority: 'low',
@@ -276,14 +302,14 @@ function ListenerTable({ listeners }: { listeners: LabListenerStatus[] }) {
         },
         {
           key: 'messages',
-          header: 'Accepted / refused',
+          header: worklist ? 'Answered / refused' : 'Accepted / refused',
           priority: 'low',
           render: (listener) =>
             `${formatNumber(listener.messagesAccepted)} / ${formatNumber(listener.messagesRefused)}`,
         },
         {
           key: 'last',
-          header: 'Last message',
+          header: worklist ? 'Last query' : 'Last message',
           priority: 'low',
           render: (listener) => (listener.lastMessageAt ? formatRelative(listener.lastMessageAt) : 'None yet'),
         },
