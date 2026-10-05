@@ -13,9 +13,9 @@
   },
   "dependencies": {
     "@fluentui/react-components": "9.74.9",
-    "@fluentui/react-icons": "2.0.342",
+    "@fluentui/react-icons": "2.0.343",
     "bwip-js": "4.11.4",
-    "react-hook-form": "7.88.0"
+    "react-hook-form": "7.89.0"
   },
   "peerDependencies": {
     "react": "19.3.0",

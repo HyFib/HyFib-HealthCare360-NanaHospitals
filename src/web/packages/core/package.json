@@ -16,11 +16,11 @@
     "zustand": "5.0.15"
   },
   "peerDependencies": {
-    "@tanstack/react-query": "5.103.2",
+    "@tanstack/react-query": "5.104.0",
     "react": "19.3.0"
   },
   "devDependencies": {
-    "@tanstack/react-query": "5.103.2",
+    "@tanstack/react-query": "5.104.0",
     "@types/react": "19.3.0",
     "jsdom": "30.1.1",
     "react": "19.3.0",
