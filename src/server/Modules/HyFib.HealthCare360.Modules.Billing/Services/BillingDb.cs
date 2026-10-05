@@ -10,6 +10,13 @@ internal static class BillingDb
     public static Error SignInRequired { get; } = Error.Forbidden("auth.required", "Sign in first.");
 
     /// <summary>
+    /// Another writer saved first: a row with the same unique key, or the row changed since it was read (xmin).
+    /// </summary>
+    public static bool IsConflict(DbUpdateException exception) =>
+        exception is DbUpdateConcurrencyException
+        || exception.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
+
+    /// <summary>
     /// Starts a transaction unless the caller already runs inside one. Document numbers are allocated inside it, so a
     /// failed save rolls the number back and every series stays gap-free.
     /// </summary>

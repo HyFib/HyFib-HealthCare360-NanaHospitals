@@ -409,6 +409,31 @@ export interface RefundDto {
   reference: string | null;
   paidAt: string | null;
   advanceId: string | null;
+  /** A refund through the payment gateway: whether the bank has returned the money yet. */
+  gatewayStatus?: GatewayRefundStatus | null;
+  /** The bank's reference for it (ARN, RRN or UTR), which the patient's bank can trace. */
+  gatewayReference?: string | null;
+  gatewayError?: string | null;
+}
+
+export type GatewayRefundStatus = 'Pending' | 'Processed' | 'Failed';
+
+/** Where an online refund stands, in words for staff (and to read out to the patient). */
+export function gatewayRefundText(
+  status: GatewayRefundStatus,
+  reference?: string | null,
+  error?: string | null,
+): string {
+  switch (status) {
+    case 'Processed':
+      return reference
+        ? `Returned to the patient's account (bank reference ${reference})`
+        : "Returned to the patient's account";
+    case 'Failed':
+      return `Failed at the gateway: ${error ?? 'the money was not returned'}. Accounts can send it again from Gateway reconciliation.`;
+    default:
+      return 'With the bank; it usually takes 5 to 7 working days';
+  }
 }
 
 export interface RequestRefundRequest {
@@ -543,7 +568,12 @@ export interface GatewayOrderDto {
   receiptId: string | null;
   channel: PaymentChannel;
   createdAt: string;
+  /** When the gateway took the payment (the receipt's time). */
   paidAt: string | null;
+  /** Why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet. */
+  lastError?: string | null;
+  /** The gateway's payment id once someone paid. */
+  paymentId?: string | null;
 }
 
 export interface PaymentLinkFilters {

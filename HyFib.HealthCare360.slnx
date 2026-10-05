@@ -29,6 +29,9 @@
   <Folder Name="/src/desktop/">
     <Project Path="src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj" />
   </Folder>
+  <Folder Name="/src/agent/">
+    <Project Path="src/agent/HyFib.HealthCare360.LabAgent/HyFib.HealthCare360.LabAgent.csproj" />
+  </Folder>
   <Folder Name="/src/shared/">
     <Project Path="src/shared/HyFib.HealthCare360.WindowsInterop/HyFib.HealthCare360.WindowsInterop.csproj" />
   </Folder>
@@ -37,6 +40,7 @@
     <Project Path="tests/HyFib.HealthCare360.Desktop.Tests/HyFib.HealthCare360.Desktop.Tests.csproj" />
     <Project Path="tests/HyFib.HealthCare360.Integrations.Tests/HyFib.HealthCare360.Integrations.Tests.csproj" />
     <Project Path="tests/HyFib.HealthCare360.IntegrationTests/HyFib.HealthCare360.IntegrationTests.csproj" />
+    <Project Path="tests/HyFib.HealthCare360.LabAgent.Tests/HyFib.HealthCare360.LabAgent.Tests.csproj" />
     <Project Path="tests/HyFib.HealthCare360.Platform.Tests/HyFib.HealthCare360.Platform.Tests.csproj" />
   </Folder>
   <Folder Name="/tests/Modules/">

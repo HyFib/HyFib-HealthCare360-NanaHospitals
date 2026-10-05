@@ -34,6 +34,13 @@ public static class ClinicalPermissions
     public const string TemplatesManage = "clinical.templates.manage";
     public const string MrdCoding = "mrd.coding";
     public const string MrdRecords = "mrd.records";
+
+    /// <summary>
+    /// Import the WHO ICD-10 and CMS ICD-10-PCS files into the local catalogues. Separate from coding because an import
+    /// changes the code lists every doctor and coder uses.
+    /// </summary>
+    public const string CatalogueImport = "mrd.catalogue.import";
+
     public const string HealthCheckManage = "healthcheck.manage";
 
     private const string Emr = "EMR / Physician Desktop";
@@ -69,6 +76,8 @@ public static class ClinicalPermissions
         new(MrdCoding, Records, "Clinical coding (ICD-10 / ICD-10-PCS) and verification", [SystemRoles.MrdOfficer]),
         new(MrdRecords, Records, "Chart tracking, deficiencies, record requests, archival and morbidity reports",
             [SystemRoles.MrdOfficer, SystemRoles.HospitalAdmin]),
+        new(CatalogueImport, Records, "Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists)",
+            [SystemRoles.HospitalAdmin]),
         new(HealthCheckManage, Checkups, "Maintain health packages, book and run health checkups (including corporate batches)",
             [SystemRoles.HospitalAdmin, SystemRoles.FrontOffice]),
     ];

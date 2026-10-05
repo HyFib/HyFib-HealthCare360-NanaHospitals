@@ -16,11 +16,17 @@ internal static class Hl7Ack
     public static string Build(Hl7Message? original, string code, string? text, string controlId, DateTimeOffset now)
     {
         var encoding = original?.Encoding ?? Hl7Encoding.Default;
-        var header = original?.Header;
         var trigger = original?.TriggerEvent;
         var messageType = string.IsNullOrEmpty(trigger) ? "ACK" : string.Join(encoding.Component, "ACK", trigger, "ACK");
+        return Header(original, messageType, controlId, now) + "\r" + Msa(original, code, text) + "\r";
+    }
 
-        var msh = string.Join(encoding.Field,
+    /// <summary>MSH answering <paramref name="original"/>: applications and facilities swapped, version echoed.</summary>
+    public static string Header(Hl7Message? original, string messageType, string controlId, DateTimeOffset now)
+    {
+        var encoding = original?.Encoding ?? Hl7Encoding.Default;
+        var header = original?.Header;
+        return string.Join(encoding.Field,
             "MSH",
             encoding.EncodingCharacters,
             header?.Field(5) is { Length: > 0 } receivingApp ? receivingApp : "HC360",
@@ -33,14 +39,17 @@ internal static class Hl7Ack
             encoding.Encode(controlId),
             header?.Field(11) is { Length: > 0 } processing ? processing : "P",
             header?.Field(12) is { Length: > 0 } version ? version : "2.5.1");
+    }
 
-        var msa = string.Join(encoding.Field,
+    /// <summary>MSA: the code, the original's control id and the (escaped, shortened) text.</summary>
+    public static string Msa(Hl7Message? original, string code, string? text)
+    {
+        var encoding = original?.Encoding ?? Hl7Encoding.Default;
+        return string.Join(encoding.Field,
             "MSA",
             code,
             original is null ? string.Empty : encoding.Encode(original.ControlId),
-            string.IsNullOrWhiteSpace(text) ? string.Empty : encoding.Encode(IntegrationTrace.Truncate(text, 80)!));
-
-        return msh + "\r" + msa.TrimEnd(encoding.Field) + "\r";
+            string.IsNullOrWhiteSpace(text) ? string.Empty : encoding.Encode(IntegrationTrace.Truncate(text, 80)!)).TrimEnd(encoding.Field);
     }
 
     /// <summary>A new message control id (MSH-10 allows 20 characters in v2.3.1).</summary>

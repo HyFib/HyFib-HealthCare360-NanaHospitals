@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SampleLabel } from './api';
-import { labelTests, labelTime, sampleLabelHtml } from './labelHtml';
+import { labelTests, labelTime, sampleLabelHtml, tubeLabelData } from './labelHtml';
 
 const label: SampleLabel = {
   sampleId: 's1',
@@ -49,5 +49,21 @@ describe('tube label', () => {
     );
     expect(labelTests(['A very long single test name that never fits'], 20)).toBe('A very long single …');
     expect(labelTests([])).toBe('');
+  });
+
+  it('gives a label printer the same facts as the page', () => {
+    expect(tubeLabelData({ ...label, priority: 'Stat' })).toEqual({
+      barcode: '000123456',
+      patientName: 'Asha <Rao>',
+      uhid: 'NH26000001',
+      ageSex: '31Y / F',
+      accessionNumber: 'NHLB260000123',
+      stat: true,
+      tube: 'EDTA',
+      bench: 'HAEM',
+      tests: ['Complete blood count', 'ESR'],
+      collectedAt: '2026-09-26T05:02:00Z',
+    });
+    expect(tubeLabelData(label).stat).toBe(false);
   });
 });

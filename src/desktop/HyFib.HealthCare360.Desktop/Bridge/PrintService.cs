@@ -10,19 +10,34 @@ internal sealed record PrintHtmlRequest(string Html, string? PrinterName, bool? 
 
 /// <summary>
 /// Prints HTML documents (bills, token slips, wristbands, reports) through an invisible WebView2 with scripts
-/// disabled. Silent jobs go straight to the chosen or default printer, which is what counters and wards need; the
-/// Windows print dialog is shown otherwise.
+/// disabled. Silent jobs go straight to the printer they name, which is what counters and wards need (the staff app
+/// names the printer this computer uses for that kind of print). A silent job that names no printer gets the Windows
+/// print dialog, so nothing is printed on whichever printer happens to be the Windows default.
 /// </summary>
 internal sealed class PrintService(CoreWebView2Environment environment, IntPtr ownerWindow)
 {
-    // Width × height in inches for the page sizes the web app uses (see packages/core/src/print/print.ts).
-    private static readonly Dictionary<string, (double Width, double Height)> PageSizes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["A4"] = (8.27, 11.69),
-        ["A5"] = (5.83, 8.27),
-        ["Receipt80"] = (3.15, 11.0),
-        ["Label50x25"] = (1.97, 0.98),
-    };
+    // Width × height in inches for the page sizes the web app uses (see packages/core/src/print/print.ts). The wristband
+    // is an adult band, 1 × 11 inches, printed along its length.
+    internal static readonly IReadOnlyDictionary<string, (double Width, double Height)> PageSizes =
+        new Dictionary<string, (double Width, double Height)>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["A4"] = (8.27, 11.69),
+            ["A5"] = (5.83, 8.27),
+            ["Receipt80"] = (3.15, 11.0),
+            ["Label50x25"] = (1.97, 0.98),
+            ["Wristband"] = (1.0, 11.0),
+        };
+
+    /// <summary>Thermal stock (receipts, labels, wristbands) prints almost to the edge; paper keeps a 0.4 inch margin.</summary>
+    internal static double Margin(string pageSize) =>
+        pageSize.StartsWith("Receipt", StringComparison.OrdinalIgnoreCase)
+        || pageSize.StartsWith("Label", StringComparison.OrdinalIgnoreCase)
+        || pageSize.Equals("Wristband", StringComparison.OrdinalIgnoreCase)
+            ? 0.05
+            : 0.4;
+
+    /// <summary>Silent only to a named printer: without one the person chooses in the print dialog.</summary>
+    internal static bool PrintsSilently(PrintHtmlRequest request) => request.Silent == true && !string.IsNullOrWhiteSpace(request.PrinterName);
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -34,6 +49,28 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
             .OrderByDescending(p => p.IsDefault)
             .ThenBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    /// <summary>
+    /// The installed printer a job names, as Windows spells it. Pages may print only to printers installed on this
+    /// computer: a name Windows does not list, a shared queue on another computer (<c>\\host\queue</c>) among them,
+    /// is refused rather than opened, so a page cannot send printer commands anywhere on the network.
+    /// </summary>
+    /// <exception cref="BridgeException">The printer is not installed on this computer.</exception>
+    internal static string InstalledPrinter(string? name, IEnumerable<string> installed)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new BridgeException("bad_request", "Choose a printer.");
+        }
+
+        return installed.FirstOrDefault(p => string.Equals(p, name, StringComparison.OrdinalIgnoreCase))
+               ?? throw new BridgeException(
+                   "printer_not_found",
+                   name.StartsWith(@"\\", StringComparison.Ordinal)
+                       ? $"The printer '{name}' is not installed on this computer. "
+                         + "Add it in Windows Settings › Printers and scanners first."
+                       : $"The printer '{name}' is not installed on this computer.");
     }
 
     public async Task PrintHtmlAsync(PrintHtmlRequest request)
@@ -67,23 +104,20 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
                 throw new BridgeException("print_failed", "The document could not be prepared for printing.");
             }
 
-            if (request.Silent == true)
+            if (PrintsSilently(request))
             {
                 var settings = environment.CreatePrintSettings();
                 settings.ShouldPrintBackgrounds = true;
                 settings.ShouldPrintHeaderAndFooter = false;
                 settings.Copies = Math.Clamp(request.Copies ?? 1, 1, 20);
                 settings.Orientation = request.Landscape == true ? CoreWebView2PrintOrientation.Landscape : CoreWebView2PrintOrientation.Portrait;
-                if (request.PrinterName is not null)
-                {
-                    settings.PrinterName = request.PrinterName;
-                }
+                settings.PrinterName = request.PrinterName;
 
                 if (request.PageSize is not null && PageSizes.TryGetValue(request.PageSize, out var size))
                 {
                     settings.PageWidth = size.Width;
                     settings.PageHeight = size.Height;
-                    settings.MarginTop = settings.MarginBottom = settings.MarginLeft = settings.MarginRight = request.PageSize.StartsWith("Receipt", StringComparison.OrdinalIgnoreCase) || request.PageSize.StartsWith("Label", StringComparison.OrdinalIgnoreCase) ? 0.05 : 0.4;
+                    settings.MarginTop = settings.MarginBottom = settings.MarginLeft = settings.MarginRight = Margin(request.PageSize);
                 }
 
                 var status = await view.PrintAsync(settings);

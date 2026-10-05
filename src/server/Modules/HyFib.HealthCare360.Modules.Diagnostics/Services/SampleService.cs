@@ -20,6 +20,7 @@ internal sealed class SampleService(
     DiagnosticsLookups lookups,
     LabWorkflow workflow,
     DiagnosticsRealtime realtime,
+    AnalyserOrders analyserOrders,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -127,6 +128,7 @@ internal sealed class SampleService(
         {
             await workflow.PrepareResultsAsync(received, ct);
             await workflow.RefreshAsync(received.Select(s => s.LabOrderId).ToList(), now, ct);
+            await analyserOrders.SamplesReceivedAsync(received, null, ct);
             await db.SaveChangesAsync(ct);
             foreach (var facility in received.GroupBy(s => s.FacilityId))
             {
@@ -172,6 +174,9 @@ internal sealed class SampleService(
         }
 
         var items = await db.Set<LabOrderItem>().Where(i => i.SampleId == sampleId && i.Status != LabOrderItemStatus.Cancelled).ToListAsync(ct);
+
+        // Analysers that were sent the tube's order cancel it; the recollection is ordered when it reaches the lab.
+        await analyserOrders.SampleRejectedAsync(tube, items, ct);
         foreach (var item in items)
         {
             item.AwaitRecollection(replacement?.Value.Id ?? sampleId);

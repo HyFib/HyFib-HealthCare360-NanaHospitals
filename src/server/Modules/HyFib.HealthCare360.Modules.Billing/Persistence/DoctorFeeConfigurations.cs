@@ -57,14 +57,3 @@ internal sealed class DoctorPayoutDeductionConfiguration : IEntityTypeConfigurat
         b.HasIndex(x => x.PayoutId);
     }
 }
-
-internal sealed class TallyExportConfiguration : IEntityTypeConfiguration<TallyExport>
-{
-    public void Configure(EntityTypeBuilder<TallyExport> b)
-    {
-        b.ToTable("tally_exports", BillingSchema.Name);
-        b.HasKey(x => x.Id);
-        b.Property(x => x.Message).HasMaxLength(2000);
-        b.HasIndex(x => new { x.FacilityId, x.Date }).IsUnique();
-    }
-}

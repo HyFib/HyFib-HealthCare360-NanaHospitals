@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using HyFib.HealthCare360.Integrations.Laboratory.Astm;
-using HyFib.HealthCare360.Integrations.Laboratory.Hl7;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory;
 
@@ -135,15 +133,7 @@ internal sealed class LabInstrumentListener : IAsyncDisposable
             {
                 client.NoDelay = true;
                 client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
-                var stream = client.GetStream();
-                if (Instrument.Protocol == LabProtocol.Hl7v2)
-                {
-                    await new MllpSession(Instrument, _options, _processor, _time, _logger).RunAsync(stream, cancellationToken);
-                }
-                else
-                {
-                    await new AstmSession(Instrument, _options, _processor, _time, _logger).RunAsync(stream, cancellationToken);
-                }
+                await LabSessionRunner.RunAsync(Instrument, _options, client.GetStream(), _processor, _time, _logger, cancellationToken);
             }
         }
         catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)

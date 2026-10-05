@@ -32,6 +32,9 @@ public enum SimulatorTransactionKind
     PaymentOrder = 0,
     PaymentLink,
     PosSale,
+
+    /// <summary>Money returned on a simulated payment: <c>ExternalId</c> is the refund id, <c>Reference</c> the payment id.</summary>
+    PaymentRefund,
 }
 
 public enum SimulatorTransactionStatus
@@ -45,8 +48,9 @@ public enum SimulatorTransactionStatus
 }
 
 /// <summary>
-/// A simulated payment-gateway order/link or POS sale. Gateway orders are captured immediately; POS sales are
+/// A simulated payment-gateway order/link, refund or POS sale. Gateway orders are captured immediately; POS sales are
 /// approved a few seconds after they are pushed, so the billing screens' polling and cancel flows can be practised.
+/// Payments and refunds are later settled to a pretend bank (<see cref="SettlementId"/>, <see cref="SettledAt"/>).
 /// </summary>
 [NotAudited]
 public sealed class SimulatorTransaction : Entity
@@ -65,4 +69,9 @@ public sealed class SimulatorTransaction : Entity
     public string? ApprovalCode { get; set; }
     public decimal RefundedAmount { get; set; }
     public string? Description { get; set; }
+
+    /// <summary>The simulated settlement that paid this payment (or took this refund) to the bank.</summary>
+    public string? SettlementId { get; set; }
+
+    public DateTimeOffset? SettledAt { get; set; }
 }

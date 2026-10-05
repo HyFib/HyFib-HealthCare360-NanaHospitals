@@ -63,6 +63,11 @@ public sealed record ImagingStudyDetail(
     string? DoseNote,
     string? TechnicianNotes,
     string StudyInstanceUid,
+
+    // False when the accession number is longer than DICOM's 16 characters: the worklist then sends the study without
+    // it, with WorklistProcedureId as its procedure id, and the images are linked by StudyInstanceUid.
+    bool AccessionFitsDicom,
+    string WorklistProcedureId,
     DateTimeOffset? PacsLinkedAt,
     int? SeriesCount,
     int? InstanceCount,
@@ -91,28 +96,17 @@ public sealed record ViewerLink(Guid StudyId, string Url, string StudyInstanceUi
 
 public sealed record PacsReconciliationSummary(int Checked, int Linked, IReadOnlyList<string> Messages);
 
-/// <summary>
-/// One DICOM Modality Worklist entry, already formatted for the MWL gateway (IMG-01/02): names as PN
-/// (FAMILY^GIVEN), dates as YYYYMMDD, times as HHMMSS, modality as the DICOM code.
-/// </summary>
-public sealed record ModalityWorklistItem(
-    Guid StudyId,
-    string AccessionNumber,
-    string RequestedProcedureId,
-    string ScheduledProcedureStepId,
-    string StudyInstanceUid,
-    string PatientId,
-    string PatientName,
-    string? PatientBirthDate,
-    string PatientSex,
-    string Modality,
-    string? ScheduledStationAeTitle,
-    string ScheduledStepStartDate,
-    string ScheduledStepStartTime,
-    string RequestedProcedureDescription,
-    string? BodyPartExamined,
-    string? ReferringPhysicianName,
-    string RequestedProcedurePriority);
+/// <summary>A series of the study's images in PACS (picture series only).</summary>
+public sealed record ImageSeriesDto(string SeriesInstanceUid, int? SeriesNumber, string? Modality, string? Description, string? BodyPart, int? ImageCount);
+
+/// <summary>The study's images in PACS: its series, for thumbnails and the image viewer (IMG-02).</summary>
+public sealed record StudyImagesDto(Guid StudyId, string AccessionNumber, string StudyInstanceUid, IReadOnlyList<ImageSeriesDto> Series);
+
+/// <summary>One object of a series. <c>Frames</c> is 1 for a single picture, more for a cine loop or multi-frame image.</summary>
+public sealed record ImageInstanceDto(string SopInstanceUid, int? InstanceNumber, int Frames);
+
+/// <summary>The objects of one series, in instance-number order, for the image viewer.</summary>
+public sealed record ImageSeriesDetail(Guid StudyId, ImageSeriesDto Series, IReadOnlyList<ImageInstanceDto> Instances);
 
 public sealed record RadiologyAddendumDto(Guid Id, string Text, string? Reason, bool IsCriticalFinding, DateTimeOffset AddedAt, string? AddedBy);
 

@@ -22,6 +22,7 @@ import {
   ArrowSyncRegular,
   BookRegular,
   MoreHorizontalRegular,
+  OpenRegular,
   SendRegular,
 } from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, todayIso } from '@hc360/core';
@@ -41,24 +42,40 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { TALLY_EXPORT_STATUS_LABEL, type TallyExportStatus } from '@/modules/billing/labels';
+import { TALLY_EXPORT_STATUS_LABEL } from '@/modules/billing/labels';
 import { fromPaise, toPaise } from '@/modules/billing/money';
 import { dateParam } from '@/modules/billing/searchParams';
-import { tallyApi, tallyQueries, type AccountingVoucher } from '@/modules/billing/tallyApi';
+import { TallyDayDrawer } from '@/modules/billing/tally/TallyDay';
+import { TallyLedgerSettings } from '@/modules/billing/tally/TallyLedgerForm';
+import { CHECK_LABEL, CHECK_TONE, confirmedSummary, EXPORT_STATUS_TONE } from '@/modules/billing/tally/tallyView';
+import {
+  tallyApi,
+  tallyKeys,
+  tallyQueries,
+  type AccountingVoucher,
+  type TallyExportDto,
+} from '@/modules/billing/tallyApi';
 import { ActionError, Amount, NoAccess } from '@/modules/billing/ui';
 
+type TallyView = 'exports' | 'daybook' | 'ledgers';
+
 interface TallySearch {
-  view?: 'exports' | 'daybook';
+  view?: TallyView;
   date?: string;
+  /** The day open in the drawer. */
+  day?: string;
 }
 
 export const Route = createFileRoute('/_app/billing/tally')({
   validateSearch: (s: Record<string, unknown>): TallySearch => ({
-    view: s.view === 'daybook' ? 'daybook' : undefined,
+    view: s.view === 'daybook' || s.view === 'ledgers' ? s.view : undefined,
     date: dateParam(s.date),
+    day: dateParam(s.day),
   }),
   component: TallyPage,
 });
+
+const MAX_DAYS = 31;
 
 const useStyles = makeStyles({
   voucher: {
@@ -72,37 +89,42 @@ const useStyles = makeStyles({
   head: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
   muted: { color: tokens.colorNeutralForeground3 },
   num: { textAlign: 'end' },
+  checks: { display: 'flex', gap: '4px', flexWrap: 'wrap' },
+  ledgers: { padding: '8px 16px 16px' },
 });
 
-const STATUS_TONE: Record<TallyExportStatus, 'success' | 'warning' | 'danger' | 'informative'> = {
-  Posted: 'success',
-  Queued: 'warning',
-  NotConfigured: 'informative',
-  Failed: 'danger',
-};
-
-/** Saves the Tally import file of a date (used when Tally cannot be reached from the server). */
+/** Saves the Tally import file of a date (for Tally on a computer the server cannot reach). */
 async function download(date: string): Promise<void> {
-  const blob = await tallyApi.exportFile(date);
-  const extension = blob.type.includes('xml') ? 'xml' : blob.type.includes('json') ? 'json' : 'txt';
-  const url = URL.createObjectURL(blob);
+  const file = await tallyApi.exportFile(date);
+  const extension = file.blob.type.includes('xml') ? 'xml' : file.blob.type.includes('json') ? 'json' : 'txt';
+  const url = URL.createObjectURL(file.blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `Tally-day-book-${date}.${extension}`;
+  link.download = file.fileName ?? `Tally-day-book-${date}.${extension}`;
   document.body.appendChild(link);
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** Tally day book (INT-TALLY): the posting log per day, re-posting, the import file, and a preview of the vouchers. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+}
+
+/**
+ * Tally day book (INT-TALLY): the posting log with each day's reconciliation, re-posting, the import file for Tally
+ * the server cannot reach, a preview of the vouchers, and the ledger names the day book posts to. A day opens in a
+ * panel with every voucher and what Tally answered for it.
+ */
 function TallyPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canExport = usePermission('billing.tally.export');
+  const canConfigure = usePermission('billing.tally.configure');
+  const styles = useStyles();
   const view = search.view ?? 'exports';
 
-  if (!canExport) {
+  if (!canExport && !canConfigure) {
     return (
       <Page>
         <PageHeader title="Tally export" />
@@ -115,23 +137,33 @@ function TallyPage() {
     <Page>
       <PageHeader
         title="Tally export"
-        subtitle="The day book of bills, receipts, refunds, credit notes and doctor fees, posted to Tally every night"
+        subtitle="The day book of bills, receipts, refunds, credit notes, doctor fees, pharmacy and canteen, posted to Tally every night and checked against it"
         icon={<BookRegular />}
       />
       <Section flush>
         <div style={{ padding: '0 8px' }}>
           <TabList
-            selectedValue={view}
+            selectedValue={canExport ? view : 'ledgers'}
             onTabSelect={(_, d) =>
-              void navigate({ search: (prev) => ({ ...prev, view: d.value === 'daybook' ? 'daybook' : undefined }) })
+              void navigate({
+                search: (prev) => ({ ...prev, view: d.value === 'exports' ? undefined : (d.value as TallyView) }),
+              })
             }
           >
-            <Tab value="exports">Posting log</Tab>
-            <Tab value="daybook">Day book preview</Tab>
+            {canExport && <Tab value="exports">Posting log</Tab>}
+            {canExport && <Tab value="daybook">Day book preview</Tab>}
+            <Tab value="ledgers">Ledger names</Tab>
           </TabList>
         </div>
-        {view === 'exports' ? (
-          <ExportsView />
+        {!canExport || view === 'ledgers' ? (
+          <div className={styles.ledgers}>
+            <TallyLedgerSettings canEdit={canConfigure} />
+          </div>
+        ) : view === 'exports' ? (
+          <ExportsView
+            openDay={search.day}
+            onOpenDay={(day) => void navigate({ search: (prev) => ({ ...prev, day }) })}
+          />
         ) : (
           <DayBookView
             date={search.date ?? todayIso(-1)}
@@ -143,22 +175,60 @@ function TallyPage() {
   );
 }
 
-function ExportsView() {
+function CheckBadges({ day }: { day: TallyExportDto }) {
+  const styles = useStyles();
+  return (
+    <div className={styles.checks}>
+      <StatusBadge
+        status={day.recordsCheck}
+        tone={CHECK_TONE[day.recordsCheck]}
+        label={`Records: ${CHECK_LABEL[day.recordsCheck].toLowerCase()}`}
+      />
+      <StatusBadge
+        status={day.tallyCheck}
+        tone={CHECK_TONE[day.tallyCheck]}
+        label={`Tally: ${CHECK_LABEL[day.tallyCheck].toLowerCase()}`}
+      />
+    </div>
+  );
+}
+
+function ExportsView({
+  openDay,
+  onOpenDay,
+}: {
+  openDay: string | undefined;
+  onOpenDay: (day: string | undefined) => void;
+}) {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [from, setFrom] = useState(todayIso(-30));
   const [to, setTo] = useState(todayIso());
-  const [postDate, setPostDate] = useState(todayIso(-1));
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [postFrom, setPostFrom] = useState(todayIso(-1));
+  const [postTo, setPostTo] = useState('');
+  const [confirming, setConfirming] = useState<{ from: string; to?: string } | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const exports = useQuery(tallyQueries.exports(from, to));
+  const rangeProblem =
+    postTo && postFrom
+      ? daysBetween(postFrom, postTo) < 0
+        ? 'The last day must not be before the first.'
+        : daysBetween(postFrom, postTo) >= MAX_DAYS
+          ? `Post at most ${MAX_DAYS} days at a time.`
+          : null
+      : null;
 
   const queue = useMutation({
-    mutationFn: (date: string) => tallyApi.queue(date),
-    onSuccess: (_, date) => {
-      notify.success('Day book queued', `${formatDateOnly(date)} will be posted to Tally in a moment.`);
+    mutationFn: (range: { from: string; to?: string }) => tallyApi.queue(range.from, range.to),
+    onSuccess: (_, range) => {
+      notify.success(
+        'Day book queued',
+        range.to
+          ? `The days from ${formatDateOnly(range.from)} to ${formatDateOnly(range.to)} will be posted to Tally in a moment.`
+          : `${formatDateOnly(range.from)} will be posted to Tally in a moment.`,
+      );
       setConfirming(null);
-      void queryClient.invalidateQueries({ queryKey: ['billing', 'tally'] });
+      void queryClient.invalidateQueries({ queryKey: tallyKeys.all });
     },
   });
 
@@ -166,6 +236,7 @@ function ExportsView() {
     setDownloading(date);
     try {
       await download(date);
+      void queryClient.invalidateQueries({ queryKey: tallyKeys.all });
     } catch (error) {
       notify.error(error, 'Could not download the day book');
     } finally {
@@ -184,20 +255,27 @@ function ExportsView() {
             <Input type="date" value={to} max={todayIso()} onChange={(_, d) => setTo(d.value || todayIso())} />
           </Field>
           <Field label="Post the day book of">
-            <Input type="date" value={postDate} max={todayIso()} onChange={(_, d) => setPostDate(d.value)} />
+            <Input type="date" value={postFrom} max={todayIso()} onChange={(_, d) => setPostFrom(d.value)} />
+          </Field>
+          <Field
+            label="Up to (optional)"
+            validationState={rangeProblem ? 'error' : 'none'}
+            validationMessage={rangeProblem ?? undefined}
+          >
+            <Input type="date" value={postTo} min={postFrom} max={todayIso()} onChange={(_, d) => setPostTo(d.value)} />
           </Field>
           <Button
             appearance="primary"
             icon={<SendRegular />}
-            disabled={!postDate}
-            onClick={() => setConfirming(postDate)}
+            disabled={!postFrom || !!rangeProblem}
+            onClick={() => setConfirming({ from: postFrom, to: postTo && postTo !== postFrom ? postTo : undefined })}
           >
             Post to Tally
           </Button>
           <Button
-            icon={downloading === postDate ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
-            disabled={!postDate || downloading !== null}
-            onClick={() => void save(postDate)}
+            icon={downloading === postFrom ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
+            disabled={!postFrom || downloading !== null}
+            onClick={() => void save(postFrom)}
           >
             Download file
           </Button>
@@ -210,6 +288,7 @@ function ExportsView() {
         error={exports.error}
         onRetry={() => void exports.refetch()}
         getRowId={(e) => e.id}
+        onRowClick={(e) => onOpenDay(e.date)}
         columns={[
           {
             key: 'date',
@@ -220,18 +299,17 @@ function ExportsView() {
           {
             key: 'status',
             header: 'Status',
-            width: 170,
+            width: 190,
             render: (e) => (
-              <StatusBadge status={e.status} tone={STATUS_TONE[e.status]} label={TALLY_EXPORT_STATUS_LABEL[e.status]} />
+              <StatusBadge
+                status={e.status}
+                tone={EXPORT_STATUS_TONE[e.status]}
+                label={TALLY_EXPORT_STATUS_LABEL[e.status]}
+              />
             ),
           },
-          { key: 'vouchers', header: 'Vouchers', align: 'end', render: (e) => e.voucherCount },
-          {
-            key: 'result',
-            header: 'Created / altered / errors',
-            priority: 'low',
-            render: (e) => `${e.createdCount} / ${e.alteredCount} / ${e.errorCount}`,
-          },
+          { key: 'vouchers', header: 'Vouchers', width: 150, render: (e) => confirmedSummary(e) },
+          { key: 'checks', header: 'Reconciliation', width: 260, render: (e) => <CheckBadges day={e} /> },
           {
             key: 'attempt',
             header: 'Last attempt',
@@ -257,7 +335,10 @@ function ExportsView() {
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
-                <MenuItem icon={<ArrowSyncRegular />} onClick={() => setConfirming(e.date)}>
+                <MenuItem icon={<OpenRegular />} onClick={() => onOpenDay(e.date)}>
+                  Open the day
+                </MenuItem>
+                <MenuItem icon={<ArrowSyncRegular />} onClick={() => setConfirming({ from: e.date })}>
                   Post again
                 </MenuItem>
                 <MenuItem icon={<ArrowDownloadRegular />} onClick={() => void save(e.date)}>
@@ -271,9 +352,23 @@ function ExportsView() {
         emptyDescription="The previous day is queued automatically every night after 00:30."
         size="small"
       />
+      {openDay && (
+        <TallyDayDrawer
+          date={openDay}
+          day={exports.data?.find((e) => e.date === openDay)}
+          onClose={() => onOpenDay(undefined)}
+          onPost={() => setConfirming({ from: openDay })}
+          onDownload={() => void save(openDay)}
+          downloading={downloading === openDay}
+        />
+      )}
       <ConfirmDialog
         open={confirming !== null}
-        title={`Post the day book of ${confirming ? formatDateOnly(confirming) : ''}?`}
+        title={
+          confirming?.to
+            ? `Post the day books of ${formatDateOnly(confirming.from)} to ${formatDateOnly(confirming.to)}?`
+            : `Post the day book of ${confirming ? formatDateOnly(confirming.from) : ''}?`
+        }
         confirmLabel="Post to Tally"
         busy={queue.isPending}
         onConfirm={() => confirming && queue.mutate(confirming)}
@@ -282,8 +377,8 @@ function ExportsView() {
           queue.reset();
         }}
       >
-        Vouchers already in Tally are updated, not duplicated. When no Tally connection is configured, the day book
-        stays ready to download.
+        Vouchers already in Tally are updated, not duplicated. When Tally is not set up, the day waits for its file to
+        be imported.
         <ActionError error={queue.error} />
       </ConfirmDialog>
     </>
@@ -337,7 +432,7 @@ function DayBookView({ date, onDate }: { date: string; onDate: (date: string) =>
                 <Text weight="semibold">{v.number}</Text>
                 <Caption1 className={styles.muted}>
                   {v.narration}
-                  {v.reference ? ` · ${v.reference}` : ''}
+                  {v.remoteId ? ` · ${v.remoteId}` : ''}
                 </Caption1>
               </div>
               <div className={styles.entries}>

@@ -35,16 +35,61 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         }
     }
 
-    public async Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, Guid? facilityId, CancellationToken cancellationToken)
+    public async Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, Guid? facilityId,
+        CancellationToken cancellationToken)
     {
         try
         {
             var (provider, config) = await ResolveAsync(facilityId, cancellationToken);
-            return await provider.RefundAsync(paymentId, amount, reason, config.Settings!, config.Secrets, cancellationToken);
+            return await provider.RefundAsync(
+                paymentId, amount, reason, idempotencyKey, config.Settings!, config.Secrets, cancellationToken);
         }
         catch (IntegrationException ex)
         {
             return new RefundResult(false, null, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Settlements of one day for the facility's merchant account. Read even while online payments are switched off, so
+    /// the money taken before that is still reconciled; a gateway that is not set up reports itself unavailable.
+    /// </summary>
+    public async Task<PaymentSettlementReport> GetSettlementsAsync(DateOnly settledOn, Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var (provider, config, problem) = await ResolveForReadingAsync(facilityId, cancellationToken);
+        if (provider is null)
+        {
+            return PaymentSettlementReport.Unavailable(config.Settings?.Provider ?? "none", problem!);
+        }
+
+        try
+        {
+            var settlements = await provider.GetSettlementsAsync(settledOn, config.Settings!, config.Secrets, cancellationToken);
+            return new PaymentSettlementReport(provider.Key, true, settlements, null);
+        }
+        catch (IntegrationException ex)
+        {
+            return PaymentSettlementReport.Unavailable(provider.Key, ex.Message);
+        }
+    }
+
+    /// <summary>A refund's status at the gateway; when the gateway cannot be asked, Pending with the reason.</summary>
+    public async Task<RefundStatusResult> GetRefundStatusAsync(string refundId, Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var (provider, config, problem) = await ResolveForReadingAsync(facilityId, cancellationToken);
+        if (provider is null)
+        {
+            return new RefundStatusResult(refundId, PaymentRefundStatus.Pending, null, null, null, null, problem);
+        }
+
+        try
+        {
+            return await provider.GetRefundStatusAsync(refundId, config.Settings!, config.Secrets, cancellationToken);
+        }
+        catch (IntegrationException ex)
+        {
+            return new RefundStatusResult(refundId, PaymentRefundStatus.Pending, null, null, null, null, ex.Message);
         }
     }
 
@@ -78,5 +123,22 @@ internal sealed class PaymentGatewayRouter(IEnumerable<IPaymentProvider> provide
         var provider = providers.FirstOrDefault(p => p.Key == key)
             ?? throw new IntegrationException($"Unknown payment gateway '{key}'. Use razorpay or simulator.");
         return (provider, config);
+    }
+
+    /// <summary>The configured provider whether or not online payments are switched on (reconciliation of past payments).</summary>
+    private async Task<(IPaymentProvider? Provider, IntegrationConfig<PaymentSettings, PaymentSecrets> Config, string? Problem)> ResolveForReadingAsync(
+        Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var config = await settings.ReadAsync<PaymentSettings, PaymentSecrets>(IntegrationNames.Payment, facilityId, requireEnabled: false, cancellationToken);
+        if (config.Problem is { } problem)
+        {
+            return (null, config, problem);
+        }
+
+        var key = config.Settings?.Provider?.Trim().ToLowerInvariant();
+        var provider = providers.FirstOrDefault(p => p.Key == key);
+        return provider is null
+            ? (null, config, string.IsNullOrEmpty(key) ? "No payment gateway is chosen. Set it up in Administration → Integrations." : $"Unknown payment gateway '{key}'. Use razorpay or simulator.")
+            : (provider, config, null);
     }
 }

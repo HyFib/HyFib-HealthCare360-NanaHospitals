@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net.Mail;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Labels;
+using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 using HyFib.HealthCare360.Integrations.Pos;
 using HyFib.HealthCare360.Integrations.WhatsApp;
 
@@ -20,6 +21,7 @@ internal sealed class IntegrationTestService(
     IPosTerminal pos,
     IAccountingExporter accounting,
     IPacsClient pacs,
+    ModalityWorklistSelfTest worklist,
     IIcdLookup icd,
     ILabelPrinterService labels,
     IntegrationSettingsReader settings,
@@ -43,6 +45,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Pacs => await pacs.PingAsync(cancellationToken)
                 ? new IntegrationTestResult(true, "The PACS answered a QIDO-RS study query.")
                 : new IntegrationTestResult(false, "The PACS did not answer. See the integration log for details."),
+            IntegrationNames.Mwl => await worklist.RunAsync(cancellationToken),
             IntegrationNames.Icd => await IcdAsync(cancellationToken),
             IntegrationNames.Lab => Lab(),
             IntegrationNames.Labels => Labels(),
@@ -167,22 +170,32 @@ internal sealed class IntegrationTestService(
 
     private IntegrationTestResult Lab()
     {
-        var listeners = lab.Snapshot();
-        if (listeners.Count == 0)
+        var analysers = lab.Snapshot();
+        if (analysers.Count == 0)
         {
-            return new IntegrationTestResult(false, "No analyser listener is running. Enable the gateway and add instruments in integrations.lab.instruments.");
+            return new IntegrationTestResult(false,
+                "No analyser is set up. Turn on the laboratory gateway, then set up each analyser's connection in Lab setup › Analysers.");
         }
 
-        var failed = listeners.Where(l => l.State == "failed").ToList();
-        return failed.Count == 0
-            ? new IntegrationTestResult(true, $"{listeners.Count} analyser listener(s) running.")
-            : new IntegrationTestResult(false, "Listeners failed: " + string.Join("; ", failed.Select(f => $"{f.InstrumentCode} ({f.LastError})")));
+        var listening = analysers.Count(a => a.Transport == "tcp" && a.State == "listening");
+        var relayed = analysers.Count(a => a.Transport == "serial" && a.State == "connected");
+        var problems = analysers.Where(a => a.State is "failed" or "port_error" or "waiting").Select(Problem).ToList();
+        var summary = $"{listening} network analyser(s) listening, {relayed} serial analyser(s) connected through their lab agent.";
+        return problems.Count == 0
+            ? new IntegrationTestResult(true, summary)
+            : new IntegrationTestResult(false, $"{summary} Not working: {string.Join("; ", problems)}");
+
+        static string Problem(LabListenerStatus analyser) => analyser.State == "waiting"
+            ? $"{analyser.InstrumentCode} (waiting for its lab agent {analyser.Agent})".Replace(" )", ")", StringComparison.Ordinal)
+            : $"{analyser.InstrumentCode} ({analyser.LastError})";
     }
 
     private IntegrationTestResult Labels()
     {
         var zpl = labels.Build(new LabelRequest("HC360-TEST", LabelSymbology.Code128, ["HC360 test label"]), "zpl");
-        return new IntegrationTestResult(true, "Sample ZPL label built; print it from a workstation to check the printer.",
+        return new IntegrationTestResult(
+            true,
+            "A sample ZPL label was built. To check a printer, open Printers on this computer in HC360 Desktop on that workstation and print a test.",
             new Dictionary<string, string?> { ["zpl"] = zpl });
     }
 

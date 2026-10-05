@@ -10,6 +10,8 @@
     - Registers hc360:// links so other applications can open HC360 screens.
     - Optionally writes a machine policy that pins the server and its CA fingerprint (no setup questions for staff),
       turns on kiosk mode and starts HC360 at sign-in (queue TVs, registration kiosks).
+    - Prepares the folder where HC360 keeps this computer's printers (Printers on this computer), so the printers set
+      there are the same for every Windows account on the computer.
 
 .EXAMPLE
     # Reception workstation, pre-configured
@@ -111,6 +113,18 @@ if ($ServerUrl -or $CaFingerprint -or $Kiosk -or $StartPath) {
     $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule('BUILTIN\Users', 'Read', 'Allow')))
     Set-Acl -Path $policyPath -AclObject $acl
 }
+
+# ---------------------------------------------------------------- this computer's printers
+# HC360 Desktop saves the printers of this computer (labels, wristbands, receipts, documents) for whoever is signed in
+# to Windows, so every user may change the files in this folder. HC360 offers the change only to staff allowed to set
+# up printers. To fix the printers instead, add a "printers" entry to policy.json (see docs/deployment/DEPLOYMENT.md).
+Write-Step 'Preparing the folder for this computer''s printers'
+$printersDir = Join-Path $env:ProgramData 'HyFib\HC360Desktop\Workstation'
+New-Item -ItemType Directory -Force -Path $printersDir | Out-Null
+$printersAcl = Get-Acl -Path $printersDir
+$usersSid = New-Object System.Security.Principal.SecurityIdentifier([System.Security.Principal.WellKnownSidType]::BuiltinUsersSid, $null)
+$printersAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($usersSid, 'Modify', 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
+Set-Acl -Path $printersDir -AclObject $printersAcl
 
 # ---------------------------------------------------------------- start with Windows (kiosks / TV boards)
 $runKey = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'

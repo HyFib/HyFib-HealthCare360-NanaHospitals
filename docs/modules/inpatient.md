@@ -70,12 +70,28 @@ Bed board alerts (`BedAlert`): `Mlc`, `Restricted` (VIP — name shown as "Restr
 | PUT | `/{id}` | `inpatient.admissions.admit` | `UpdateAdmissionRequest` (+`version`; consultant, department, diagnosis, expected discharge, policy number, MLC, attendant, notes) → 204. The payer is fixed at admission (changed in Billing). |
 | POST | `/{id}/transfer` | `inpatient.admissions.transfer` | `TransferPatientRequest` (toBedId, reason, consultant/department change, transferredAt ≤ 24 h back) → 204 |
 | POST | `/{id}/cancel` | `inpatient.admissions.admit` | `CancelAdmissionRequest` → 204; reverses this module's charges in the same transaction (422 `admission.charges_billed` if Billing refuses) |
+| GET | `/{id}/wristband` | `inpatient.admissions.read` | → `WristbandDto` (admissionId, uhid, patientName, gender, age, admissionNumber, wardName, bedLabel, `allergies`: `Recorded` \| `NoKnownAllergies` \| `NotRecorded`). Patients still in a bed only (422 `admission.not_in_bed`); restricted-record guard; audited "Printed a wristband". See *Wristband* below |
 | GET | `/{id}/bed-history` | `inpatient.admissions.read` | → `BedAssignmentDto[]` |
 | GET | `/{id}/charges` | `inpatient.admissions.read` | → `DailyChargeDto[]` (bed/nursing days posted, for reconciliation) |
 | GET | `/{id}/consultant-visits` | admissions.read or `nursing.chart` | → `ConsultantVisitDto[]` |
 | POST | `/{id}/consultant-visits` | `nursing.chart` | `RecordConsultantVisitRequest` (practitionerId defaults to the signed-in doctor, visitedAt, notes) → 201 `ConsultantVisitDto`; 409 within 30 min of the same doctor's visit |
 | POST | `/consultant-visits/{visitId}/cancel` | `nursing.chart` | `CancelConsultantVisitRequest` → 204 (charge reversed) |
 | GET | `/api/v1/patients/{patientId}/admissions` | `inpatient.admissions.read` | → `PatientAdmissionItem[]` (guard + PHI audit) |
+
+**Wristband (FO-03).** The staff app prints the band at admission and from the admission page, reading
+`/{id}/wristband` fresh for each print. The allergy status comes from the chart (Clinical's allergies and "no known
+allergies" statement), so a band printed at the admission desk carries the mark even though the front office cannot
+read the allergies themselves; only the status is shared. The band prints it three ways:
+
+| `allergies` | Band |
+|---|---|
+| `Recorded` (an active allergy on the chart) | Black ALLERGY mark |
+| `NoKnownAllergies` (a clinician recorded "no known allergies") | No mark |
+| `NotRecorded` (nobody has recorded allergies or their absence) | Outlined "ALLERGIES / NOT RECORDED" mark |
+
+A printed band does not change when the chart does. After allergies are first recorded (or "no known allergies" is
+recorded), staff reprint the band from the admission page. On a ZPL or TSPL band printer the server writes the band
+(see [integrations.md](integrations.md#barcode-labels-int-bar)); otherwise the staff app prints its band page.
 
 Conflicts: 409 `admission.already_admitted`, `bed.unavailable`, `bed.taken` (concurrent allocation; the bed's `xmin`
 version and partial unique indexes on active admissions per patient/bed make double allocation impossible).
