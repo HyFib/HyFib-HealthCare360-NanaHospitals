@@ -12,6 +12,7 @@ namespace HyFib.HealthCare360.WindowsInterop;
 /// </summary>
 public sealed class ProcessJob : IDisposable
 {
+    private const int JobObjectBasicAccountingInformation = 1;
     private const int JobObjectExtendedLimitInformation = 9;
     private const uint JobObjectLimitKillOnJobClose = 0x2000;
 
@@ -55,8 +56,37 @@ public sealed class ProcessJob : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ends every process in the job and waits, up to <paramref name="timeout"/>, until none is still running, so the
+    /// files they had open are free. Returns false when some were still running at the end of the wait.
+    /// </summary>
+    public async Task<bool> TerminateAndWaitAsync(TimeSpan timeout)
+    {
+        TerminateJobObject(_handle, 1);
+        var started = Stopwatch.GetTimestamp();
+        while (ActiveProcesses() > 0)
+        {
+            if (Stopwatch.GetElapsedTime(started) >= timeout)
+            {
+                return false;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return true;
+    }
+
     /// <summary>Ends every process still in the job.</summary>
     public void Dispose() => _handle.Dispose();
+
+    private uint ActiveProcesses()
+    {
+        var length = (uint)Marshal.SizeOf<JobObjectBasicAccounting>();
+        return QueryInformationJobObject(_handle, JobObjectBasicAccountingInformation, out var info, length, 0)
+            ? info.ActiveProcesses
+            : 0;
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern SafeJobHandle CreateJobObjectW(IntPtr securityAttributes, string? name);
@@ -68,6 +98,15 @@ public sealed class ProcessJob : IDisposable
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool AssignProcessToJobObject(SafeJobHandle job, SafeProcessHandle process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TerminateJobObject(SafeJobHandle job, uint exitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryInformationJobObject(
+        SafeJobHandle job, int informationClass, out JobObjectBasicAccounting info, uint length, IntPtr returnLength);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -90,6 +129,19 @@ public sealed class ProcessJob : IDisposable
         public UIntPtr Affinity;
         public uint PriorityClass;
         public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectBasicAccounting
+    {
+        public long TotalUserTime;
+        public long TotalKernelTime;
+        public long ThisPeriodTotalUserTime;
+        public long ThisPeriodTotalKernelTime;
+        public uint TotalPageFaultCount;
+        public uint TotalProcesses;
+        public uint ActiveProcesses;
+        public uint TotalTerminatedProcesses;
     }
 
     [StructLayout(LayoutKind.Sequential)]

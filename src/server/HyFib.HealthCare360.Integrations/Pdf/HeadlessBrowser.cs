@@ -229,7 +229,17 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
             }
         }
 
-        _job?.Dispose();
+        if (_job is not null)
+        {
+            // Edge's helper processes outlive the browser for a moment and keep the profile open until they end.
+            if (!await _job.TerminateAndWaitAsync(TimeSpan.FromSeconds(10)))
+            {
+                _logger.LogDebug("Some PDF browser processes were still running 10 seconds after it closed");
+            }
+
+            _job.Dispose();
+        }
+
         _process.Dispose();
 
         // Edge releases its profile files a moment after it exits.
