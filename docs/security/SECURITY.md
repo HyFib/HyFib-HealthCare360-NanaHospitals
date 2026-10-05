@@ -314,7 +314,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     or critical severity.
   - It needs GitHub Code Security on the repository, with CodeQL's default setup off (this workflow is the advanced
     setup).
-  - Test code, generated route files and the database migrations are left out (`.github/codeql/codeql-config.yml`).
+  - Test code and generated route files are left out. For TypeScript and the workflows the filter is
+    `.github/codeql/codeql-config.yml`; for C#, which CodeQL analyses as it is compiled, the workflow builds only the
+    shipped projects, so the tests are left out but the database migrations, part of the server, are analysed.
   - An alert is fixed in the code. One reviewed as a false positive or an accepted risk is dismissed on GitHub with
     the reason, never hidden by turning a query off. The first run's alerts and how each was handled are in the table
     below.
