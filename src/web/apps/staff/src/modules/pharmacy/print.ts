@@ -1,4 +1,13 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  printDocument,
+  printHtml,
+  type DispensingLabel,
+} from '@hc360/core';
+import { printLabelJob } from '@/lib/labelPrinting';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import type { IpIssueDetail, PharmacySaleDetail } from './api';
@@ -216,7 +225,7 @@ export function buildIpIssueSlipHtml(
   return printDocument(body, { title: `Ward issue ${issue.number}`, pageSize: 'A5', styles });
 }
 
-/** Counter receipt: silent on HC360 Desktop (default receipt printer), print dialog in a browser. */
+/** Counter receipt: straight to this computer's receipt printer on HC360 Desktop, print dialog in a browser. */
 export async function printReceipt(
   sale: PharmacySaleDetail,
   letterhead: Letterhead,
@@ -225,11 +234,30 @@ export async function printReceipt(
   await printHtml(buildReceiptHtml(sale, letterhead, { copyLabel }), { pageSize: 'Receipt80', silent: true });
 }
 
+/** A medicine label as the server writes it for a ZPL or TSPL label printer: the same facts as the label page. */
+export function dispensingLabelData(label: DrugLabel, hospitalName: string): DispensingLabel {
+  return {
+    patientName: label.patientName,
+    medicine: label.drugName,
+    quantity: formatQty(label.quantity, label.unit),
+    directions: label.directions || null,
+    batch: label.batchNumber || null,
+    expiry: label.expiryDate ?? null,
+    dispensedOn: label.dispensedOn,
+    hospital: hospitalName || null,
+  };
+}
+
+/** One label per medicine on this computer's label printer, without a dialog. */
 export async function printLabels(labels: readonly DrugLabel[], hospitalName: string): Promise<void> {
   if (labels.length === 0) {
     return;
   }
-  await printHtml(buildLabelsHtml(labels, hospitalName), { pageSize: 'Label50x25', silent: true });
+  await printLabelJob({
+    kind: 'dispensing',
+    labels: labels.map((label) => dispensingLabelData(label, hospitalName)),
+    page: () => buildLabelsHtml(labels, hospitalName),
+  });
 }
 
 export async function printIpIssueSlip(

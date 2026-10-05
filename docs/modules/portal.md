@@ -151,6 +151,12 @@ audio-only, switch cameras, or drop to audio when the connection is poor. The sc
 * **Appointments.** Paying online uses `…/payment`, then `…/payment/confirm` with Razorpay's order id, payment id and
   signature. The training gateway gives no signature, so its payments are confirmed with `…/payment/verify`, a
   server-to-server check. A payment problem never loses the booked slot.
+* **When the page is closed after paying.** The patient is still credited. The gateway's webhook, or the server's
+  re-check every few minutes, records the bill's receipt or confirms the booking and receipts its advance; the bill
+  or appointment shows it the next time the patient looks. Receipts are dated when the gateway took the money, not
+  when HC360 heard of it.
+* **Refunds** of online payments go back to the card or UPI account the patient paid from. The hospital follows each
+  one until the bank confirms it (usually 5 to 7 working days) and can give the patient the bank's reference.
 
 ## Printing and downloads
 
@@ -209,8 +215,9 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 ## Known gaps (server follow-ups)
 
 * **Hosted payment pages for appointments.** Appointments are paid with Razorpay Checkout (or the training gateway).
-  A hosted payment link is used for bills only, because nothing would confirm an appointment payment when the patient
-  comes back from the gateway's page.
+  The server would now confirm a payment made on a hosted page (by the webhook or its re-check), but the portal still
+  opens a hosted payment link for bills only.
+* **Refund status in the portal.** Patients do not see where a refund stands; the hospital tells them.
 * **English-only server text.** Business-rule messages (409 and 422 details, validation messages) arrive in English
   only and are shown as sent.
 * **Official PDFs in English.** The hospital's PDF of a report, prescription, discharge summary or bill is the English

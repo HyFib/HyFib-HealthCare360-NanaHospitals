@@ -7,7 +7,7 @@ using System.Text;
 namespace HyFib.HealthCare360.Desktop.Bridge;
 
 /// <summary>
-/// Sends printer-language data straight to the spooler (ZPL/EPL for barcode label printers, ESC/POS for thermal
+/// Sends printer-language data straight to the spooler (ZPL or TSPL for label printers, ESC/POS for thermal
 /// receipt printers), bypassing the page renderer. Binary jobs are passed as <c>base64:…</c>.
 /// </summary>
 internal static partial class RawPrinter

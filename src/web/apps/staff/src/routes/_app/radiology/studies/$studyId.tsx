@@ -13,7 +13,7 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { ImageMultipleRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
+import { MoreHorizontalRegular, OpenRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -28,6 +28,7 @@ import { RADIOLOGY_PERMISSIONS, radiologyQueries, type ImagingStudyDetail } from
 import { ModalityBadge, StudyStatusBadge } from '@/modules/radiology/badges';
 import { modalityLabel, repeatReasonLabel } from '@/modules/radiology/labels';
 import { RadiologyReportPanel } from '@/modules/radiology/ReportEditor';
+import { StudyImages } from '@/modules/radiology/StudyImages';
 import { useStudyActions } from '@/modules/radiology/useStudyActions';
 import { nextStudyAction, studyActionLabel, studyActions } from '@/modules/radiology/workflow';
 
@@ -84,6 +85,7 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
   const styles = useStyles();
   const navigate = useNavigate();
   const canWork = usePermission(RADIOLOGY_PERMISSIONS.worklist);
+  const canSeeImages = usePermission(RADIOLOGY_PERMISSIONS.images);
   const actions = useStudyActions();
   const next = canWork ? nextStudyAction(study.status) : null;
   const others = canWork ? studyActions(study.status).filter((action) => action !== next && action !== 'report') : [];
@@ -117,9 +119,11 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
                 {studyActionLabel[next]}
               </Button>
             )}
-            <Button icon={<ImageMultipleRegular />} onClick={() => void actions.openImages(study.id)}>
-              View images
-            </Button>
+            {canSeeImages && (
+              <Button icon={<OpenRegular />} onClick={() => void actions.openImages(study.id)}>
+                Open in PACS viewer
+              </Button>
+            )}
             {others.length > 0 && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
@@ -161,6 +165,16 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
           <MessageBarBody>
             <MessageBarTitle>Charge not posted to the bill</MessageBarTitle>
             {study.chargeError}
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {!study.accessionFitsDicom && study.status !== 'Cancelled' && (
+        <MessageBar intent="info" layout="multiline">
+          <MessageBarBody>
+            <MessageBarTitle>The accession number is too long for DICOM</MessageBarTitle>
+            {study.accessionNumber} has {study.accessionNumber.length} characters; DICOM allows 16. The modality
+            worklist sends this study without it, with {study.worklistProcedureId} as its procedure id, and the images
+            link by the study instance UID. In PACS, look the study up by the patient&apos;s UHID or name.
           </MessageBarBody>
         </MessageBar>
       )}
@@ -210,6 +224,16 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
           </Fact>
         </div>
       </Section>
+
+      {canSeeImages && (
+        <StudyImages
+          study={study}
+          canLink={canWork}
+          linking={actions.busy}
+          onLink={() => actions.run('reconcile', ref)}
+          onOpenPacsViewer={() => void actions.openImages(study.id)}
+        />
+      )}
 
       <RadiologyReportPanel study={study} />
       {actions.dialogs}

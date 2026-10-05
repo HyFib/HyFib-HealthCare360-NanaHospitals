@@ -243,13 +243,14 @@ export const TARIFF_TYPE_LABEL: Record<TariffType, string> = {
   Staff: 'Staff',
 };
 
-export const TALLY_EXPORT_STATUSES = ['Queued', 'Posted', 'NotConfigured', 'Failed'] as const;
+export const TALLY_EXPORT_STATUSES = ['Queued', 'Posted', 'NotConfigured', 'Failed', 'Imported'] as const;
 export type TallyExportStatus = (typeof TALLY_EXPORT_STATUSES)[number];
 export const TALLY_EXPORT_STATUS_LABEL: Record<TallyExportStatus, string> = {
   Queued: 'Waiting to post',
   Posted: 'Posted to Tally',
-  NotConfigured: 'Ready to download',
+  NotConfigured: 'Waiting for file import',
   Failed: 'Failed',
+  Imported: 'Imported from file',
 };
 
 export const PAYER_TYPES = ['Self', 'Insurance', 'Corporate', 'GovernmentScheme', 'Staff', 'Charity'] as const;

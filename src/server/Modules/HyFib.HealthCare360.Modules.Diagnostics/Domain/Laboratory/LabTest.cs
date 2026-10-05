@@ -110,7 +110,13 @@ public sealed class LabTest : AuditableEntity
     }
 
     /// <summary>The channel the given analyser uses for this analyte (host query), or null when it is not mapped.</summary>
-    public string? ChannelFor(string instrumentCode)
+    public string? ChannelFor(string instrumentCode) => ChannelFor(instrumentCode, allowPlain: true);
+
+    /// <summary>
+    /// The analyser's own channel (<c>INSTR:CH</c>) for this analyte; a plain code (<c>CH</c>) only when
+    /// <paramref name="allowPlain"/>. Null when the analyser has no channel for it.
+    /// </summary>
+    public string? ChannelFor(string instrumentCode, bool allowPlain)
     {
         string? generic = null;
         foreach (var mapping in InstrumentChannelCodes)
@@ -126,7 +132,7 @@ public sealed class LabTest : AuditableEntity
             }
         }
 
-        return generic;
+        return allowPlain ? generic : null;
     }
 }
 

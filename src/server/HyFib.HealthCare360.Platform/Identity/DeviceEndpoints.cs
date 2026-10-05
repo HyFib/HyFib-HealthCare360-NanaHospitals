@@ -148,7 +148,10 @@ internal static class DeviceEndpoints
     private static async Task<IResult> Heartbeat(DeviceHeartbeatRequest request, HospitalDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var device = await db.Set<Device>().FirstOrDefaultAsync(d => d.Id == request.DeviceId, ct);
-        if (device is null || device.IsRevoked || !SecretTokens.FixedTimeEquals(device.SecretHash, SecretTokens.Hash(request.DeviceSecret ?? string.Empty)))
+        // The desktop heartbeat is for HC360 Desktop only; lab agents call their own (LabAgentProtocol.HeartbeatPath).
+        if (device is null || device.IsRevoked || !device.Kind.IsDesktop()
+            || !SecretTokens.FixedTimeEquals(
+                device.SecretHash, SecretTokens.Hash(request.DeviceSecret ?? string.Empty)))
         {
             return TypedResults.Problem(title: "Device not recognised", statusCode: StatusCodes.Status401Unauthorized);
         }

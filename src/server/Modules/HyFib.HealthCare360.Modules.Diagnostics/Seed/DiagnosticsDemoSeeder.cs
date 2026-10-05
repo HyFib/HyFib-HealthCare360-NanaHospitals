@@ -41,9 +41,11 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
     {
         if (await db.Set<LabInstrument>().IgnoreQueryFilters().AnyAsync(ct))
         {
+            await CorrectXn550Async(db, ct);
             return;
         }
 
+        // Sysmex XN analysers talk to a LIS over ASTM (E1381/E1394); host query and order download both need it.
         db.Add(new LabInstrument
         {
             FacilityId = facilityId,
@@ -52,7 +54,7 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
             Manufacturer = "Sysmex",
             Model = "XN-550",
             Section = LabSection.Hematology,
-            Protocol = InstrumentProtocol.Hl7,
+            Protocol = InstrumentProtocol.Astm,
             IsBidirectional = true,
             Location = "Haematology bench",
         });
@@ -81,6 +83,18 @@ internal sealed class DiagnosticsDemoSeeder(IOptions<PlatformOptions> options, T
             Location = "Immunoassay bench",
         });
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Earlier demo databases have the XN-550 as HL7, which a Sysmex XN does not speak to a LIS.</summary>
+    private static async Task CorrectXn550Async(HospitalDbContext db, CancellationToken ct)
+    {
+        var xn550 = await db.Set<LabInstrument>().IgnoreQueryFilters()
+            .FirstOrDefaultAsync(i => i.Code == "XN550" && i.Manufacturer == "Sysmex" && i.Protocol == InstrumentProtocol.Hl7, ct);
+        if (xn550 is not null)
+        {
+            xn550.Protocol = InstrumentProtocol.Astm;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     private static async Task SeedReferralLabAsync(HospitalDbContext db, CancellationToken ct)

@@ -234,6 +234,102 @@ export interface LabInstrumentDto {
 
 export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> & { version: number | null };
 
+// ---------------------------------------------------------------------------------------------------- connections
+
+/**
+ * How an analyser reaches HC360 (Integrations: `/api/v1/integrations/lab/connections`): a network port it connects to,
+ * or a serial port on a lab PC whose HC360 lab agent relays it. Names follow Windows (System.IO.Ports).
+ */
+export type LabTransport = 'Tcp' | 'Serial';
+export const SERIAL_BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] as const;
+export const SERIAL_PARITIES = ['None', 'Odd', 'Even', 'Mark', 'Space'] as const;
+export const SERIAL_STOP_BITS = ['One', 'OnePointFive', 'Two'] as const;
+export const SERIAL_HANDSHAKES = ['None', 'XOnXOff', 'RequestToSend', 'RequestToSendXOnXOff'] as const;
+export const HL7_ORDER_MESSAGES = ['OML^O21', 'ORM^O01'] as const;
+
+export interface LabSerialPortDto {
+  portName: string;
+  baudRate: number;
+  dataBits: number;
+  parity: (typeof SERIAL_PARITIES)[number];
+  stopBits: (typeof SERIAL_STOP_BITS)[number];
+  handshake: (typeof SERIAL_HANDSHAKES)[number];
+  dtrEnable: boolean;
+  rtsEnable: boolean;
+}
+
+/**
+ * Live state on the server. `state`: `listening`, `starting` or `failed` for a network port; `waiting` (no relay from
+ * its agent), `connected` or `port_error` (the agent could not open the COM port) for a serial analyser.
+ */
+export interface LabConnectionStatusDto {
+  state: string;
+  activeConnections: number;
+  connectedSince: string | null;
+  lastMessageAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  messagesAccepted: number;
+  messagesRefused: number;
+}
+
+export interface LabConnectionDto {
+  code: string;
+  name: string | null;
+  protocol: 'Hl7v2' | 'Astm';
+  transport: LabTransport;
+  enabled: boolean;
+  port: number | null;
+  allowedIps: string[];
+  encoding: string | null;
+  sampleIdFields: string[];
+  orderMessage: string | null;
+  agentDeviceId: string | null;
+  agentName: string | null;
+  serial: LabSerialPortDto | null;
+  /** The connection still carries the retired `"hostQuery": false`, which keeps host queries and orders off. */
+  hostQueryRetiredOff: boolean;
+  inLabSetup: boolean;
+  bidirectional: boolean | null;
+  /** Why the gateway ignores this connection, when it does. */
+  problem: string | null;
+  status: LabConnectionStatusDto | null;
+  pendingOrders: number;
+}
+
+/** An enrolled HC360 lab agent. Online: it called in during the last three minutes, or relays an analyser now. */
+export interface LabAgentDto {
+  id: string;
+  name: string;
+  machineName: string | null;
+  location: string | null;
+  lastSeenAt: string | null;
+  online: boolean;
+  appVersion: string | null;
+  lastIpAddress: string | null;
+}
+
+export interface LabConnectionsDto {
+  gatewayEnabled: boolean;
+  /** Sent back with a change: someone else's change in between gives 409. */
+  listVersion: number;
+  connections: LabConnectionDto[];
+  agents: LabAgentDto[];
+}
+
+export interface SaveLabConnectionRequest {
+  transport: LabTransport;
+  enabled: boolean;
+  port: number | null;
+  allowedIps: string[] | null;
+  encoding: string | null;
+  sampleIdFields: string[] | null;
+  orderMessage: string | null;
+  agentDeviceId: string | null;
+  serial: LabSerialPortDto | null;
+  listVersion: number;
+}
+
 export interface ReferralLabDto {
   id: string;
   code: string;
@@ -922,6 +1018,7 @@ export const labKeys = {
   reports: ['lab', 'reports'] as const,
   qc: ['lab', 'qc'] as const,
   outsourcing: ['lab', 'outsourcing'] as const,
+  connections: ['lab', 'connections'] as const,
 };
 
 export const labQueries = {
@@ -948,6 +1045,12 @@ export const labQueries = {
       queryFn: ({ signal }) =>
         api.get<LabInstrumentDto[]>('/api/v1/lab/instruments', { query: { includeInactive }, signal }),
       staleTime: 10 * 60_000,
+    }),
+  connections: () =>
+    queryOptions({
+      queryKey: labKeys.connections,
+      queryFn: ({ signal }) => api.get<LabConnectionsDto>('/api/v1/integrations/lab/connections', { signal }),
+      refetchInterval: 30_000,
     }),
   referralLabs: (includeInactive = false) =>
     queryOptions({
@@ -1154,6 +1257,14 @@ export const labApi = {
     id
       ? api.put<undefined>(`/api/v1/lab/referral-labs/${id}`, request)
       : api.post<Created>('/api/v1/lab/referral-labs', request),
+
+  // analyser connections (Integrations)
+  saveConnection: (code: string, request: SaveLabConnectionRequest) =>
+    api.put<void>(`/api/v1/integrations/lab/connections/${encodeURIComponent(code)}`, request),
+  removeConnection: (code: string, listVersion: number) =>
+    api.delete<void>(`/api/v1/integrations/lab/connections/${encodeURIComponent(code)}`, {
+      query: { version: listVersion },
+    }),
 };
 
 /** The A4 lab report as the server prints it and makes its PDF (see `@/lib/documents`). */
@@ -1169,4 +1280,8 @@ export const LAB_PERMISSIONS = {
   verify: 'lab.results.verify',
   qc: 'lab.qc.manage',
   masters: 'lab.masters.manage',
+  /** Set up how analysers connect (network ports, serial ports through lab agents). */
+  connections: 'integrations.lab.connections',
+  /** See whether analysers and their lab agents are connected. */
+  connectionStatus: 'integrations.lab.status',
 } as const;

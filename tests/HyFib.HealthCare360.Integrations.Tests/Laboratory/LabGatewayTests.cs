@@ -19,6 +19,8 @@ public sealed class LabGatewayTests
     private static readonly InstrumentResultMessage Sample = new("BC5380", "SMP-26090042",
         [new InstrumentResult("WBC", "7.8", "10*3/uL", null, null)], LabSamples.HematologyOru, LabSamples.ReceivedAt);
 
+    private static readonly InstrumentProfile Bidirectional = new("C311", "Biochemistry", Guid.CreateVersion7(), IsActive: true, IsBidirectional: true, "Astm");
+
     private readonly Tracing _tracing = new();
     private readonly LabGatewayState _state = new(TimeProvider.System);
 
@@ -38,17 +40,47 @@ public sealed class LabGatewayTests
         return new LabMessageProcessor(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), _state, NullLogger<LabMessageProcessor>.Instance);
     }
 
+    private static IInstrumentResultSink Sink(InstrumentProfile? profile = null)
+    {
+        var sink = Substitute.For<IInstrumentResultSink>();
+        sink.GetInstrumentAsync(default!, Ct).ReturnsForAnyArgs(profile ?? Bidirectional);
+        return sink;
+    }
+
     [Fact]
-    public void Reads_the_instrument_list_as_administrators_write_it()
+    public void Reads_the_instrument_list_as_administrators_wrote_it_before_serial_analysers()
     {
         const string json = """[{"code":"C311","name":"Biochemistry","protocol":"astm","port":5200,"allowedIps":["10.0.5.21"],"hostQuery":false}]""";
 
         var instrument = JsonSerializer.Deserialize<List<LabInstrumentSettings>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.ShouldHaveSingleItem();
 
         instrument.Protocol.ShouldBe(LabProtocol.Astm);
+        instrument.Transport.ShouldBe(LabTransport.Tcp);
         instrument.Port.ShouldBe(5200);
         instrument.Enabled.ShouldBeTrue();
-        instrument.HostQuery.ShouldBeFalse();
+        instrument.HostQuery.ShouldBe(false);
+        instrument.Validate().ShouldBeNull();
+    }
+
+    [Fact]
+    public void Reads_a_serial_analyser_and_its_port_settings()
+    {
+        var agent = Guid.CreateVersion7();
+        var json = $$$"""[{"code":"XN550","protocol":"Astm","transport":"Serial","agentDeviceId":"{{{agent}}}","serial":{"portName":"com3","baudRate":9600,"parity":"Even","dataBits":7,"stopBits":"Two","handshake":"XOnXOff","rtsEnable":false}}]""";
+
+        var instrument = JsonSerializer.Deserialize<List<LabInstrumentSettings>>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.ShouldHaveSingleItem();
+
+        instrument.Transport.ShouldBe(LabTransport.Serial);
+        instrument.AgentDeviceId.ShouldBe(agent);
+        instrument.HostQuery.ShouldBeNull();
+        var serial = instrument.Serial.ShouldNotBeNull();
+        serial.PortName.ShouldBe("com3");
+        serial.Parity.ShouldBe(LabParity.Even);
+        serial.DataBits.ShouldBe(7);
+        serial.StopBits.ShouldBe(LabStopBits.Two);
+        serial.Handshake.ShouldBe(LabHandshake.XOnXOff);
+        serial.DtrEnable.ShouldBeTrue();
+        serial.RtsEnable.ShouldBeFalse();
         instrument.Validate().ShouldBeNull();
     }
 
@@ -60,6 +92,27 @@ public sealed class LabGatewayTests
     public void Validates_instruments(string code, int port, string problem) =>
         new LabInstrumentSettings { Code = code, Port = port }.Validate().ShouldNotBeNull().ShouldContain(problem);
 
+    [Theory]
+    [InlineData(false, "COM3", 9600, 8, "lab agent")]
+    [InlineData(true, "LPT1", 9600, 8, "COM port")]
+    [InlineData(true, "COM0", 9600, 8, "COM port")]
+    [InlineData(true, "COM257", 9600, 8, "COM port")]
+    [InlineData(true, "COM3", 9601, 8, "baud rate")]
+    [InlineData(true, "COM3", 9600, 6, "data bits")]
+    public void Validates_serial_analysers(bool withAgent, string port, int baud, int dataBits, string problem) =>
+        new LabInstrumentSettings
+        {
+            Code = "XN550",
+            Transport = LabTransport.Serial,
+            AgentDeviceId = withAgent ? Guid.CreateVersion7() : null,
+            Serial = new LabSerialSettings { PortName = port, BaudRate = baud, DataBits = dataBits },
+        }.Validate().ShouldNotBeNull().ShouldContain(problem);
+
+    [Fact]
+    public void A_serial_analyser_needs_its_port_settings() =>
+        new LabInstrumentSettings { Code = "XN550", Transport = LabTransport.Serial, AgentDeviceId = Guid.CreateVersion7() }
+            .Validate().ShouldNotBeNull().ShouldContain("port settings");
+
     [Fact]
     public void Clamps_runtime_limits_to_safe_bounds()
     {
@@ -70,6 +123,11 @@ public sealed class LabGatewayTests
         options.Encoding.ShouldBe(Encoding.Latin1);
         LabGatewaySettings.ResolveEncoding("UTF-8").WebName.ShouldBe("utf-8");
     }
+
+    [Fact]
+    public void A_relayed_serial_line_never_idles_out() =>
+        LabRuntimeOptions.From(new LabGatewaySettings(), LabSamples.AstmInstrument with { Transport = LabTransport.Serial })
+            .IdleTimeout.ShouldBe(Timeout.InfiniteTimeSpan);
 
     [Fact]
     public void Allow_lists_accept_ipv4_mapped_addresses_and_skip_invalid_entries()
@@ -94,6 +152,7 @@ public sealed class LabGatewayTests
 
         snapshot.Select(s => s.InstrumentCode).ShouldBe(["C311", "XN"]);
         snapshot[0].State.ShouldBe("listening");
+        snapshot[0].Transport.ShouldBe("tcp");
         snapshot[0].ActiveConnections.ShouldBe(1);
         snapshot[0].MessagesAccepted.ShouldBe(1);
         snapshot[0].MessagesRefused.ShouldBe(1);
@@ -103,6 +162,34 @@ public sealed class LabGatewayTests
         _state.ConnectionClosed("C311");
         _state.Stopped("XN");
         _state.Snapshot().ShouldHaveSingleItem().ActiveConnections.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Tracks_serial_analysers_from_waiting_to_connected_and_port_errors()
+    {
+        _state.SerialExpected("XN550", LabProtocol.Astm, "COM3");
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("waiting");
+
+        _state.RelayConnected("XN550", LabProtocol.Astm, "Lab PC 1", "COM3");
+        var connected = _state.Snapshot().ShouldHaveSingleItem();
+        connected.State.ShouldBe("connected");
+        connected.Transport.ShouldBe("serial");
+        connected.Agent.ShouldBe("Lab PC 1");
+        connected.SerialPort.ShouldBe("COM3");
+        connected.ConnectedSince.ShouldNotBeNull();
+
+        _state.SerialPortReported("XN550", "Lab PC 1", open: false, "Access to the port 'COM3' is denied.");
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("port_error");
+        _state.SerialPortReported("XN550", "Lab PC 1", open: true, null);
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("connected");
+
+        _state.RelayClosed("XN550");
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("waiting");
+        _state.SerialExpected("XN550", LabProtocol.Astm, "COM3");
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("waiting");
+
+        _state.RetainSerial([]);
+        _state.Snapshot().ShouldBeEmpty();
     }
 
     [Fact]
@@ -155,15 +242,47 @@ public sealed class LabGatewayTests
     [Fact]
     public async Task Answers_host_queries_from_the_lis_or_refuses_without_one()
     {
-        var sink = Substitute.For<IInstrumentResultSink>();
+        var sink = Sink();
         var order = new InstrumentOrder("SMP-1", "SHARMA^RAVI", "M", null, ["GLU"]);
         sink.GetOrderForSampleAsync("C311", "SMP-1", Arg.Any<CancellationToken>()).Returns(order);
 
-        var orders = await Processor(sink).QueryOrdersAsync(LabSamples.AstmInstrument, ["SMP-1", "SMP-404"], "Q|1|^SMP-1", Ct);
+        var answer = await Processor(sink).QueryOrdersAsync(LabSamples.AstmInstrument, ["SMP-1", "SMP-404"], "Q|1|^SMP-1", Ct);
         var refused = await Processor(sink: null).QueryOrdersAsync(LabSamples.AstmInstrument, ["SMP-1"], "Q|1|^SMP-1", Ct);
 
-        orders.ShouldNotBeNull().ShouldHaveSingleItem().ShouldBe(order);
-        refused.ShouldBeNull();
+        answer.Status.ShouldBe(HostQueryStatus.Answered);
+        answer.Orders.ShouldHaveSingleItem().ShouldBe(order);
+        refused.Status.ShouldBe(HostQueryStatus.Unavailable);
         _tracing.Entries.Select(e => e.Provider).ShouldAllBe(p => p == "astm:C311");
+    }
+
+    [Theory]
+    [InlineData(false, true, true, "not bidirectional in Lab setup")]
+    [InlineData(true, false, true, "not in use")]
+    [InlineData(true, true, false, "retired \"hostQuery\": false")]
+    public async Task Host_queries_follow_bidirectional_in_lab_setup(bool bidirectional, bool active, bool hostQueryFlag, string reason)
+    {
+        var sink = Sink(Bidirectional with { IsBidirectional = bidirectional, IsActive = active });
+        var instrument = LabSamples.AstmInstrument with { HostQuery = hostQueryFlag ? null : false };
+
+        var answer = await Processor(sink).QueryOrdersAsync(instrument, ["SMP-1"], "Q|1|^SMP-1", Ct);
+
+        answer.Status.ShouldBe(HostQueryStatus.TurnedOff);
+        answer.Error.ShouldNotBeNull().ShouldContain(reason);
+        await sink.DidNotReceiveWithAnyArgs().GetOrderForSampleAsync(default!, default!, Ct);
+        var entry = _tracing.Entries.ShouldHaveSingleItem();
+        entry.Success.ShouldBeFalse();
+        entry.Error!.ShouldContain(reason);
+    }
+
+    [Fact]
+    public async Task A_host_query_for_an_analyser_missing_from_lab_setup_is_turned_off()
+    {
+        var sink = Substitute.For<IInstrumentResultSink>();
+        sink.GetInstrumentAsync(default!, Ct).ReturnsForAnyArgs((InstrumentProfile?)null);
+
+        var answer = await Processor(sink).QueryOrdersAsync(LabSamples.AstmInstrument, ["SMP-1"], "Q|1|^SMP-1", Ct);
+
+        answer.Status.ShouldBe(HostQueryStatus.TurnedOff);
+        answer.Error.ShouldNotBeNull().ShouldContain("is not set up in Lab setup");
     }
 }

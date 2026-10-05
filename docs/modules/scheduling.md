@@ -134,8 +134,12 @@ the scope answers 404.
 
 **Online payment.** `IPaymentGateway` is optional: if no gateway is registered, order creation fails, or the fee is
 zero, the booking stays and becomes `PayAtHospital`. Confirmation verifies `VerifySignature("{orderId}|{paymentId}",
-signature)` (Razorpay convention) and, when the gateway can report it, rejects orders that are not captured. Nothing is
-posted to billing; `AppointmentPaymentCaptured` is raised instead.
+signature)` (Razorpay convention) and, when the gateway can report it, rejects orders that are not captured (failed,
+expired, cancelled or refunded). The payment's `PaidAt` is when the gateway took the money (never later than now), so
+the advance Billing receipts is dated that day. Nothing is posted to billing; `AppointmentPaymentCaptured` is raised
+instead. When the patient closes the page after paying, Billing's gateway webhook or its re-check job calls
+`VerifyWithGatewayAsync` for the booking (found by its gateway order, indexed), so the booking is still confirmed; see
+[billing.md](billing.md#gateway-reconciliation-int-pg).
 
 ## Events
 
@@ -198,3 +202,11 @@ plain http value reads as "not configured", because patient links can carry pers
   online, walk-in, one video consultation, one cancellation). Demo rows raise no events (no SMS).
 
 No billable service codes are seeded (consultation charges come from Billing's catalogue: `CONS-NEW`, `CONS-FU`, `CONS-TELE`).
+
+## Not covered yet
+
+* **A payment on an older order of a booking.** When a patient restarts the online payment, the booking keeps only
+  the newest gateway order. A payment made on the older one is not linked to the booking: Billing's gateway
+  reconciliation lists it and keeps it as a patient advance for staff to refund.
+* **Cancelling unpaid online bookings.** A portal booking whose online payment was started but never made stays
+  booked; nothing cancels it for non-payment (`PaymentNotReceived` exists for staff to choose).

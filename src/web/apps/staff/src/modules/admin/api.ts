@@ -70,7 +70,7 @@ export interface PermissionGroup {
   permissions: { name: string; description: string }[];
 }
 
-export type DeviceKind = 'Workstation' | 'Kiosk' | 'DisplayBoard' | 'Tablet';
+export type DeviceKind = 'Workstation' | 'Kiosk' | 'DisplayBoard' | 'Tablet' | 'LabAgent';
 
 export interface DeviceDto {
   id: string;

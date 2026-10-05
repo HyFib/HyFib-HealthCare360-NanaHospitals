@@ -16,6 +16,8 @@ regexes = [
   '''Zk3_9aB-qR7tLm2xWv5c''',             # tests/Modules/HyFib.HealthCare360.Modules.Clinical.Tests/PrescriptionVerificationLinksTests.cs
   '''test-security-token-0001''',         # tests/HyFib.HealthCare360.Integrations.Tests/Pos/PineLabsPosTerminalTests.cs
   '''auth-token-123''',                   # tests/HyFib.HealthCare360.Integrations.Tests/Sms/TwilioSmsProviderTests.cs
+  '''pay_A1B2C3D4E5''',                   # src/web/apps/staff/src/modules/billing/GatewayExceptions.test.tsx (a fake gateway payment id)
+  '''rfnd_K1L2M3N4O5''',                  # src/web/apps/staff/src/modules/billing/GatewayExceptions.test.tsx (a fake gateway refund id)
 ]
 
 [[allowlists]]

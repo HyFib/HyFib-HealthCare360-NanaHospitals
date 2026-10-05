@@ -59,6 +59,9 @@ public sealed class PharmacyModule : IModule
         services.AddScoped<ControlledDrugRegisterService>();
         services.AddScoped<RefillService>();
         services.AddScoped<PharmacyRealtime>();
+
+        // The pharmacy counter's day for Billing's Tally day book (Billing reads it without referencing this module).
+        services.AddScoped<ICounterSalesSource, PharmacyDayBookSource>();
         services.AddHostedService<RefillReminderJob>();
     }
 

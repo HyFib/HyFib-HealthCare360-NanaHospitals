@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { billingQueries } from '@/modules/billing/api';
+import { billingQueries, gatewayRefundText } from '@/modules/billing/api';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
 import { useBillingLive, useBillingPrint } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL, REFUND_PURPOSE_LABEL } from '@/modules/billing/labels';
@@ -129,6 +129,11 @@ function RefundPage() {
               ? `${formatDateTime(r.paidAt)} · ${r.mode ? PAYMENT_MODE_LABEL[r.mode] : ''}${r.reference ? ` · ref ${r.reference}` : ''}`
               : 'Not paid yet'}
           </Detail>
+          {r.gatewayStatus && (
+            <Detail label="Online refund">
+              {gatewayRefundText(r.gatewayStatus, r.gatewayReference, r.gatewayError)}
+            </Detail>
+          )}
         </DetailGrid>
       </Section>
       {action === 'pay' && <PayRefundDialog refund={r} onClose={() => setAction(null)} />}

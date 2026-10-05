@@ -108,6 +108,10 @@ export interface ImagingStudyDetail {
   doseNote: string | null;
   technicianNotes: string | null;
   studyInstanceUid: string;
+  /** False when the accession number is longer than DICOM's 16 characters (see `worklistProcedureId`). */
+  accessionFitsDicom: boolean;
+  /** The procedure id the modality worklist sends: the accession number, or an id of its own when that does not fit. */
+  worklistProcedureId: string;
   pacsLinkedAt: string | null;
   seriesCount: number | null;
   instanceCount: number | null;
@@ -147,6 +151,37 @@ export interface PacsReconciliationSummary {
   checked: number;
   linked: number;
   messages: string[];
+}
+
+/** A series of a study's pictures in PACS (ImageSeriesDto). */
+export interface ImageSeries {
+  seriesInstanceUid: string;
+  seriesNumber: number | null;
+  modality: string | null;
+  description: string | null;
+  bodyPart: string | null;
+  imageCount: number | null;
+}
+
+/** StudyImagesDto: the study's picture series in PACS. */
+export interface StudyImages {
+  studyId: string;
+  accessionNumber: string;
+  studyInstanceUid: string;
+  series: ImageSeries[];
+}
+
+/** One object of a series; `frames` is more than 1 for a cine loop or multi-frame image. */
+export interface ImageInstance {
+  sopInstanceUid: string;
+  instanceNumber: number | null;
+  frames: number;
+}
+
+export interface ImageSeriesDetail {
+  studyId: string;
+  series: ImageSeries;
+  instances: ImageInstance[];
 }
 
 // ------------------------------------------------------------------------------------------------ reports
@@ -289,7 +324,14 @@ export const radiologyKeys = {
   report: (studyId: string) => ['radiology', 'report', studyId] as const,
   reportStudy: (reportId: string) => ['radiology', 'report-study', reportId] as const,
   masters: ['radiology', 'masters'] as const,
+  images: (studyId: string) => ['radiology', 'images', studyId] as const,
 };
+
+const images = (studyId: string) => `/api/v1/radiology/studies/${studyId}/images`;
+const seriesPath = (studyId: string, seriesUid: string) => `${images(studyId)}/series/${encodeURIComponent(seriesUid)}`;
+
+/** Images stay in memory a short while only: they are patient data, and the server forbids storing them. */
+const IMAGE_CACHE_MS = 2 * 60_000;
 
 export const radiologyQueries = {
   studies: (filters: StudyFilters) =>
@@ -367,6 +409,42 @@ export const radiologyQueries = {
         }),
       staleTime: 10 * 60_000,
     }),
+  /** The study's picture series in PACS (422 `pacs.not_linked` until the study is linked). */
+  images: (studyId: string) =>
+    queryOptions({
+      queryKey: radiologyKeys.images(studyId),
+      queryFn: ({ signal }) => api.get<StudyImages>(images(studyId), { signal }),
+      staleTime: 60_000,
+      retry: false,
+    }),
+  seriesImages: (studyId: string, seriesUid: string) =>
+    queryOptions({
+      queryKey: [...radiologyKeys.images(studyId), 'series', seriesUid],
+      queryFn: ({ signal }) => api.get<ImageSeriesDetail>(seriesPath(studyId, seriesUid), { signal }),
+      staleTime: 60_000,
+      retry: false,
+    }),
+  thumbnail: (studyId: string, seriesUid: string) =>
+    queryOptions({
+      queryKey: [...radiologyKeys.images(studyId), 'thumbnail', seriesUid],
+      queryFn: ({ signal }) => api.blob(`${seriesPath(studyId, seriesUid)}/thumbnail`, { signal }),
+      staleTime: IMAGE_CACHE_MS,
+      gcTime: IMAGE_CACHE_MS,
+      retry: false,
+    }),
+  /** One picture (a frame of a multi-frame object when `frame` is set), rendered by PACS within `size` pixels. */
+  image: (studyId: string, seriesUid: string, instanceUid: string, frame: number | null, size: number) =>
+    queryOptions({
+      queryKey: [...radiologyKeys.images(studyId), 'image', seriesUid, instanceUid, frame ?? 0, size],
+      queryFn: ({ signal }) =>
+        api.blob(`${seriesPath(studyId, seriesUid)}/instances/${encodeURIComponent(instanceUid)}/rendered`, {
+          query: { frame: frame ?? undefined, size },
+          signal,
+        }),
+      staleTime: IMAGE_CACHE_MS,
+      gcTime: IMAGE_CACHE_MS,
+      retry: false,
+    }),
   tat: (from?: string, to?: string, modality?: Modality) =>
     queryOptions({
       queryKey: ['radiology', 'tat', from ?? 'today', to ?? 'today', modality ?? 'all'],
@@ -422,6 +500,8 @@ export const RADIOLOGY_PERMISSIONS = {
   write: 'radiology.reports.write',
   verify: 'radiology.reports.verify',
   mastersManage: 'masters.manage',
+  /** See a study's images, in HC360 and in the PACS viewer (doctors, radiographers and radiologists). */
+  images: 'radiology.images.view',
 } as const;
 
 /** Who may open imaging studies and resolve a report id to its study (server `RadiologyEndpoints.StudyReaders`). */

@@ -110,7 +110,10 @@ public sealed record RefundDto(
     PaymentMode? Mode,
     string? Reference,
     DateTimeOffset? PaidAt,
-    Guid? AdvanceId);
+    Guid? AdvanceId,
+    Platform.Integrations.PaymentRefundStatus? GatewayStatus = null,
+    string? GatewayReference = null,
+    string? GatewayError = null);
 
 public sealed record ApproveRefundRequest(string? Remarks);
 

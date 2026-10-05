@@ -50,6 +50,24 @@ public sealed class ConditionMapperTests
         code.Text.ShouldBe("Viral fever");
     }
 
+    [Fact]
+    public void An_icd11_code_is_sent_under_the_icd11_system()
+    {
+        var coding = ConditionMapper.Map(Diabetes() with { IcdCode = "5a11", Title = "Type 2 diabetes mellitus" }).Code.Coding.ShouldHaveSingleItem();
+
+        coding.System.ShouldBe("http://id.who.int/icd/release/11/mms");
+        coding.Code.ShouldBe("5A11");
+    }
+
+    [Fact]
+    public void A_code_of_neither_form_is_sent_as_text_rather_than_under_the_wrong_system()
+    {
+        var code = ConditionMapper.Map(Diabetes() with { IcdCode = "LOCAL7", Title = "Hospital-specific diagnosis" }).Code;
+
+        code.Coding.ShouldBeEmpty();
+        code.Text.ShouldBe("Hospital-specific diagnosis");
+    }
+
     [Theory]
     [InlineData(DiagnosisStatus.Active, "active", null)]
     [InlineData(DiagnosisStatus.Chronic, "active", "Chronic")]

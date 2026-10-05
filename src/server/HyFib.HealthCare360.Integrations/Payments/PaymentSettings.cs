@@ -20,6 +20,12 @@ internal sealed record PaymentSettings : IIntegrationSettings
     public bool NotifyByRazorpay { get; init; }
 
     public int PaymentLinkExpiryHours { get; init; } = 72;
+
+    /// <summary>
+    /// Simulator only: days until captured payments are settled (1 is next day at 10:00 IST, like a real gateway's
+    /// T+1; 0 settles at once when settlements are fetched, for training and tests).
+    /// </summary>
+    public int SimulatorSettlementDays { get; init; } = 1;
 }
 
 /// <summary>Secret payment configuration (<c>integrations.payment.secret</c>).</summary>
@@ -45,9 +51,16 @@ internal interface IPaymentProvider
 
     Task<PaymentStatusResult> GetStatusAsync(string orderId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
 
-    Task<RefundResult> RefundAsync(string paymentId, decimal amount, string reason, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
+    Task<RefundResult> RefundAsync(
+        string paymentId, decimal amount, string reason, string? idempotencyKey, PaymentSettings settings,
+        PaymentSecrets secrets, CancellationToken cancellationToken);
 
     bool VerifySignature(string payload, string signature, PaymentSecrets secrets);
+
+    /// <summary>The settlements of one Indian calendar day; throws <see cref="IntegrationException"/> when they cannot be read in full.</summary>
+    Task<IReadOnlyList<PaymentSettlement>> GetSettlementsAsync(DateOnly settledOn, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
+
+    Task<RefundStatusResult> GetRefundStatusAsync(string refundId, PaymentSettings settings, PaymentSecrets secrets, CancellationToken cancellationToken);
 }
 
 /// <summary>Rupee ↔ paise conversion with the validation every gateway call needs.</summary>

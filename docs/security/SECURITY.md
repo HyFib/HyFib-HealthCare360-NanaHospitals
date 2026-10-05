@@ -19,14 +19,35 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 ### Network and transport
 - HTTPS only (TLS 1.2/1.3). The Server Node creates a **private hospital CA** and a server certificate naming its host
   name and addresses; the certificate is re-issued automatically when the address changes.
-- **HC360 Desktop pins the hospital CA**:
-  - The server's certificate must chain to exactly that CA and name the host being contacted.
+- **HC360 Desktop and the HC360 lab agent pin the hospital CA**:
+  - The server's certificate must chain to exactly that CA (through the intermediates the server sends, if any), be
+    issued for a TLS server (serverAuth), and name the host being contacted.
   - The public Windows trust store is not consulted.
   - The CA fingerprint is confirmed by a person, or pre-set by IT policy, when a workstation is set up. A certificate
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
+  - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
+    server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
 - Browsers keep to HTTPS for a year after their first visit (HSTS).
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
-  localhost only.
+  localhost only. Network lab analysers need their own ports, which the installer opens only when asked
+  (`-LabPorts`), limited to the analysers' addresses; each analyser's port also accepts only its listed IP addresses.
+- **The DICOM modality worklist** (off by default) listens on its own TCP port, 11112 unless changed, for the CT, MR,
+  X-ray and ultrasound consoles. DICOM there has no encryption or passwords, as on most modality networks, so other
+  controls apply:
+  - Only modalities on the allow-list may speak, identified by their AE title and their IP address together. A
+    connection from any other address is closed before a byte is read; a wrong AE title is refused.
+  - Each modality sees only its own facility's studies, of the kinds it does, within a few days of today. It is checked
+    again against the settings on every query, so removing it takes effect at once, even on an open connection.
+  - It answers only the worklist query and the echo test: no images, no retrieval, no storage.
+  - Connections, their idle time and the size of an answer are limited.
+  - Every answer writes one PHI access audit entry (which modality, from where, how many patients) before anything is
+    sent; if the audit cannot be written, nothing is sent. The integration log masks the patient keys of each query,
+    and DICOM data is never written to the service log.
+  - Refused connections are counted, and logged at most once per ten minutes per network, so a scan cannot flood the
+    logs.
+
+  The installer does not open this port. The hospital opens it for the modalities' addresses only (DEPLOYMENT.md §6),
+  and should keep it on the imaging network.
 
 ### Identity and sessions
 - Passwords:
@@ -52,6 +73,11 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 - Selected roles can be limited to **enrolled devices**:
   - Each HC360 Desktop has a device secret, protected with Windows DPAPI.
   - Administrators can revoke a device at any time.
+  - Only HC360 Desktop kinds count (workstation, kiosk, queue display, tablet). An HC360 lab agent is also an enrolled
+    device, but its secret sits on an unattended lab PC (protected with machine DPAPI, in a folder only SYSTEM,
+    Administrators and the agent's service account can read), so it is refused for sign-in and for the desktop
+    heartbeat. It can only relay the analysers assigned to it, which the server checks on every call and again every
+    minute while a relay is open. Revoking it ends its relays within a minute.
 
 ### Authorisation and privacy
 - Permission-based access: every API endpoint requires a named permission, and screens hide what a role cannot use.
@@ -78,10 +104,20 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
 - Every access to a patient record is audited.
+- **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
+  people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
+  study's images are found by the study UID in HC360's database, and only series and objects PACS lists for that study
+  are served, so naming another study's UIDs reaches nothing. Responses are never cached, opening a study's images is
+  audited, and each person has a limited number of images in flight. A study is linked with PACS, or opened in the
+  PACS viewer before linking, only when PACS holds exactly one study under its accession number with the patient's
+  UHID as patient ID, so a mistyped accession at a modality never shows another patient's images.
 - Only what is needed is stored:
   - **Aadhaar**: the last 4 digits plus a keyed blind index, used for duplicate detection. The full number is never stored.
   - **ABHA numbers**: encrypted with AES-256-GCM.
   - Uploaded documents: encrypted at rest.
+  - **Online payments**: the gateway's settlement data is kept as ids, amounts, the UTR and the payment method only;
+    the card network, issuer and type, descriptions and notes are dropped. Webhook events are kept by event id with
+    the gateway's ids, never the body, which carries the patient's contact and card or bank details.
 - Masking:
   - Lists show masked phone numbers.
   - Every server log line is masked as it is written, exception text included: phone, Aadhaar and ABHA numbers keep only
@@ -274,6 +310,7 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | Rule | Where | Why it is accepted |
 |---|---|---|
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
+| CA5359, certificate validation off | `ServerApi.FetchCaCertificateAsync` (lab agent) | The same, at enrolment: the CA it downloads is used only if its fingerprint equals the one IT passed to the installer |
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
@@ -297,7 +334,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    `privacy.breach.notice`); without them those SMS are not sent.
 9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
    review the charts it lists as past their period.
-10. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
+10. If the modality worklist is used, open its port in the firewall for the modalities' addresses only, keep it on the
+    imaging network, and remove a modality from the worklist settings the day it is retired or moved.
+11. Keep Microsoft Edge updating on the Server Node: it makes the PDFs, and HC360 restarts it regularly so updates apply.
     Decide whether report PDFs may go by e-mail and WhatsApp (`diagnostics.reports.sendPdf`, on by default), and say so
     in the privacy notice.
 

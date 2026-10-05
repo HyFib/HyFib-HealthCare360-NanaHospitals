@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <!-- DICOM networking for the modality worklist server (MS-PL). -->
+    <PackageReference Include="fo-dicom" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,6 +47,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="HyFib.HealthCare360.Integrations.Tests" />
+    <!-- The integration tests drive the analyser order queue and the connection service against PostgreSQL. -->
+    <InternalsVisibleTo Include="HyFib.HealthCare360.IntegrationTests" />
+    <!-- The lab agent's tests run the server's relay and protocol session end to end. -->
+    <InternalsVisibleTo Include="HyFib.HealthCare360.LabAgent.Tests" />
     <!-- NSubstitute (Castle DynamicProxy) proxies internal adapter interfaces in the unit tests. -->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

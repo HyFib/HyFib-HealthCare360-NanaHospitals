@@ -67,4 +67,25 @@ public sealed class DiagnosticsModuleTests
 
         services.ShouldContain(d => d.ServiceType == typeof(IInstrumentResultSink) && d.Lifetime == ServiceLifetime.Scoped);
     }
+
+    [Fact]
+    public void Doctors_radiographers_and_radiologists_see_images_and_nurses_read_the_report()
+    {
+        var images = Permissions.Single(p => p.Name == DiagnosticsPermissions.RadiologyImages);
+
+        images.Name.ShouldBe("radiology.images.view");
+        images.DefaultRoles.ShouldBe([SystemRoles.Doctor, SystemRoles.Radiographer, SystemRoles.Radiologist], ignoreOrder: true);
+        Permissions.Single(p => p.Name == DiagnosticsPermissions.RadiologyRead).DefaultRoles!.ShouldContain(SystemRoles.Nurse);
+    }
+
+    [Fact]
+    public void The_worklist_server_can_resolve_the_worklist_and_studies_are_linked_on_a_schedule()
+    {
+        var services = new ServiceCollection();
+
+        new DiagnosticsModule().AddServices(services, new ConfigurationBuilder().Build());
+
+        services.ShouldContain(d => d.ServiceType == typeof(IModalityWorklistSource) && d.Lifetime == ServiceLifetime.Scoped);
+        services.ShouldContain(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(Services.PacsLinkJob));
+    }
 }

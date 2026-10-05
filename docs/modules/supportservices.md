@@ -66,6 +66,11 @@ released load's biological indicator fails, every issue from the load is flagged
 whose patients are listed for infection-control review), shelf and ward packs are marked Recalled, a critical audit
 entry is written and `cssd.recalls` holders get a critical in-app alert.
 
+**Pack labels (CSSD-04).** From a load the staff app prints a label per pack, without a dialog, on the workstation's
+label printer: set name, the pack number as Code 128 (scanned at issue and use), method and use-by date. Until the
+load is released the label says NOT RELEASED in white on black. On a ZPL or TSPL printer the server writes the label
+(`cssd-packs`); otherwise the label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ## Dietary — `/api/v1/dietary`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
