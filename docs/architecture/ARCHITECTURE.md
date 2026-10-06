@@ -64,7 +64,7 @@ flowchart LR
 | Lost typing on disconnect | Draft auto-save (`useDraft`) every 5 s to local storage, cleared on sign-out | `web/packages/core/src/hooks/useDraft.ts` |
 | Silent disconnects | Connection store (browser online/offline + heartbeat + SignalR state), banner and status pill. Desktop reports WiFi SSID/signal through the bridge | `web/apps/staff/src/app/connection/*` |
 | Server link quality | `WifiMonitor` samples the WLAN API every 30 s, persists samples, raises alerts | `Platform/Networking/WifiMonitor.cs` |
-| Internet outage | Transactional outbox with exponential backoff; integrations never block clinical flows | `Platform/Messaging/Outbox*.cs` |
+| Internet outage | Transactional outbox: each message is retried, waiting 10 s doubling to an hour, until it is delivered or expires (7 days, or sooner when its sender says so: a sign-in code with the code, a reminder at the appointment); integrations never block clinical flows | `Platform/Messaging/Outbox*.cs` |
 | Airtime efficiency | Brotli/Gzip response compression, paginated payloads, HTTP caching of static assets (immutable hashed files) | `Server/Program.cs` |
 
 ---

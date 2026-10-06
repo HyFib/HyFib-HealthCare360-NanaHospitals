@@ -104,7 +104,10 @@ public sealed class SystemHealthService(
         var dayAgo = now.AddDays(-1);
         var outbox = new OutboxInfo(
             await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Pending, ct),
-            await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Failed && m.CreatedAt > dayAgo, ct),
+            // When it failed, not when it was queued: a message is retried for up to its lifetime (days) before
+            // it fails.
+            await db.Set<OutboxMessage>()
+                .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
             await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
 
         var certificate = new CertificateInfo(certificates.CaFingerprint, certificates.ServerExpiresAt, certificates.SubjectAlternativeNames);
