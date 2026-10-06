@@ -139,6 +139,8 @@ On first start HC360 Desktop:
 - names the computer (e.g. "OPD Reception 2").
 
 Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and shows the fingerprint for staff to compare.
+On an all-in-one machine (server and Desktop on one computer), setup also lists "This computer" when the server
+listens on port 7360 there, because the network search does not always find the computer it runs on.
 
 **Tablets and browsers**:
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.

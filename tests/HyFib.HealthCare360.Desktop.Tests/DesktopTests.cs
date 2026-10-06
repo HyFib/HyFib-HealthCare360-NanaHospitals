@@ -360,6 +360,40 @@ public sealed class DiscoveryTests
     }
 
     [Fact]
+    public async Task Finds_the_server_on_this_computer_when_something_listens_on_its_port()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var server = await ServerDiscovery.ThisComputerAsync(port, TestContext.Current.CancellationToken);
+
+            server.ShouldNotBeNull().OnThisComputer.ShouldBeTrue();
+            server.Display.ShouldBe($"This computer · {Environment.MachineName} (all-in-one)");
+            var machine = Environment.MachineName.ToLowerInvariant();
+            server.CandidateUris().First().AbsoluteUri.ShouldBe($"https://{machine}:{port}/");
+            server.CandidateUris().Last().AbsoluteUri.ShouldBe($"https://127.0.0.1:{port}/");
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task Finds_no_server_on_this_computer_when_nothing_listens()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        (await ServerDiscovery.ThisComputerAsync(port, TestContext.Current.CancellationToken)).ShouldBeNull();
+    }
+
+    [Fact]
     public void Ignores_other_services() =>
         ServerDiscovery.Assemble([new SRVRecord { Name = new DomainName("printer._ipp._tcp.local"), Target = new DomainName("printer.local"), Port = 631 }])
             .ShouldBeEmpty();
