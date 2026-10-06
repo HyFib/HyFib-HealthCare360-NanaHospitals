@@ -130,6 +130,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     their last digits, e-mail and ABHA addresses only their domain, and tokens and passwords are removed.
   - Provider error text is masked the same way before it is stored, and integration logs strip PHI and secrets from
     payloads.
+  - PostgreSQL logs statements slower than two seconds for tuning, but never their parameter values
+    (`log_parameter_max_length = 0`, set by `Install-PostgreSQL.ps1`): those can be patient details.
 - Patient links carry their secret in the address (feedback and unsubscribe tokens, verification codes). Request
   logs, error logs, traces and idempotency records hold the route template for those endpoints and for portal
   pages, for example `/api/v1/public/unsubscribe/{token}`, never the token itself (`LoggedPath`,

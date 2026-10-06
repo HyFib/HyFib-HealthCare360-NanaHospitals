@@ -9,7 +9,8 @@
     option file readable only by Administrators, never on the command line), then:
       - listens on localhost only (HC360 is the only client; workstations never talk to the database),
       - enforces scram-sha-256 password authentication,
-      - sizes memory settings from the installed RAM.
+      - sizes memory settings from the installed RAM,
+      - logs slow statements without their parameter values, which can be patient details.
 
 .EXAMPLE
     .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
@@ -82,6 +83,9 @@ try {
         "ALTER SYSTEM SET max_connections = 300",
         "ALTER SYSTEM SET wal_compression = on",
         "ALTER SYSTEM SET log_min_duration_statement = 2000",
+        # Slow statements are logged for tuning, but never their parameter values: those can be patient details.
+        "ALTER SYSTEM SET log_parameter_max_length = 0",
+        "ALTER SYSTEM SET log_parameter_max_length_on_error = 0",
         "ALTER SYSTEM SET timezone = 'Asia/Kolkata'"
     )
     foreach ($sql in $statements) {

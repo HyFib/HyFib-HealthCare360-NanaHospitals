@@ -54,11 +54,21 @@ Open **PowerShell as Administrator** in the extracted `deploy` folder:
 .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
 ```
 
-This does four things:
+This does five things:
 - Installs PostgreSQL through winget.
 - Restricts it to localhost, with scram-sha-256 authentication only.
 - Sizes its memory settings from the machine's RAM.
+- Logs statements slower than two seconds, without their parameter values, which can be patient details.
 - Sets the time zone to IST.
+
+A server installed with an earlier version of this script logged the parameter values of slow statements. Turn that
+off once, as the postgres user, then delete the old PostgreSQL log files in its `data\log` folder:
+
+```sql
+ALTER SYSTEM SET log_parameter_max_length = 0;
+ALTER SYSTEM SET log_parameter_max_length_on_error = 0;
+SELECT pg_reload_conf();
+```
 
 Keep the postgres password in the hospital's password safe.
 
