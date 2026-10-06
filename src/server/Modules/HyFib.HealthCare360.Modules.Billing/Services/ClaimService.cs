@@ -9,7 +9,13 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// coding and documents; settlements are recorded as payer receipts (mode Insurance) and deductions reduce the bill's
 /// payer balance, which drives the receivable ageing.
 /// </summary>
-public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, ReceiptService receipts, IAuditLogger audit, TimeProvider time)
+public sealed class ClaimService(
+    HospitalDbContext db,
+    INumberSeries numbers,
+    ReceiptService receipts,
+    IVerifiedCodingSource verifiedCoding,
+    IAuditLogger audit,
+    TimeProvider time)
 {
     public async Task<Result<Guid>> CreateAsync(CreateClaimRequest request, CancellationToken ct)
     {
@@ -46,6 +52,8 @@ public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, Re
         var tpaId = preAuth?.TpaId ?? (bill.PolicyId is { } policyId
             ? await db.Set<PatientPolicy>().Where(p => p.Id == policyId).Select(p => p.TpaId).FirstOrDefaultAsync(ct)
             : null);
+        var verified = await VerifiedCodingAsync(bill.PatientId, bill.AdmissionId, bill.VisitId, ct);
+        var (diagnosisCodes, procedureCodes) = InitialCoding(verified, preAuth);
 
         await using var transaction = await db.BeginOwnedTransactionAsync(ct);
         var claim = new InsuranceClaim
@@ -59,8 +67,8 @@ public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, Re
             PolicyId = bill.PolicyId,
             PreAuthorizationId = bill.PreAuthorizationId,
             ClaimedAmount = claimed,
-            DiagnosisCodes = Clean(request.DiagnosisCodes) ?? preAuth?.DiagnosisCodes,
-            ProcedureCodes = Clean(request.ProcedureCodes) ?? preAuth?.ProcedureCodes,
+            DiagnosisCodes = Clean(request.DiagnosisCodes) ?? diagnosisCodes,
+            ProcedureCodes = Clean(request.ProcedureCodes) ?? procedureCodes,
             DocumentFileIds = request.DocumentFileIds?.Distinct().ToList() ?? preAuth?.DocumentFileIds.ToList() ?? [],
             PayerClaimReference = Clean(request.PayerClaimReference),
             Status = ClaimStatus.Submitted,
@@ -230,6 +238,29 @@ public sealed class ClaimService(HospitalDbContext db, INumberSeries numbers, Re
         await db.SaveChangesAsync(ct);
         return Result.Success();
     }
+
+    /// <summary>
+    /// The coding medical records verified for a bill's stay or visit, as the text of a claim's codes; null until a second
+    /// coder has verified it.
+    /// </summary>
+    public async Task<VerifiedClaimCoding?> VerifiedCodingAsync(
+        Guid patientId, Guid? admissionId, Guid? visitId, CancellationToken ct) =>
+        await verifiedCoding.FindAsync(patientId, admissionId, visitId, ct) is { } coding
+            ? new VerifiedClaimCoding(
+                VerifiedEpisodeCoding.AsText(coding.Diagnoses, InsuranceClaim.CodesMaxLength),
+                VerifiedEpisodeCoding.AsText(coding.Procedures, InsuranceClaim.CodesMaxLength),
+                coding.VerifiedAt)
+            : null;
+
+    /// <summary>
+    /// The codes a new claim takes where the desk typed none: the coding medical records verified, procedures included
+    /// (none coded means none done), or else the pre-authorisation's codes, which were provisional.
+    /// </summary>
+    internal static (string? Diagnoses, string? Procedures) InitialCoding(
+        VerifiedClaimCoding? verified, PreAuthorization? preAuth) =>
+        verified is not null
+            ? (verified.DiagnosisCodes, verified.ProcedureCodes)
+            : (preAuth?.DiagnosisCodes, preAuth?.ProcedureCodes);
 
     private Task<InsuranceClaim?> LoadAsync(Guid id, CancellationToken ct) =>
         db.Set<InsuranceClaim>().Include(c => c.Settlements).Include(c => c.Deductions).FirstOrDefaultAsync(c => c.Id == id, ct);

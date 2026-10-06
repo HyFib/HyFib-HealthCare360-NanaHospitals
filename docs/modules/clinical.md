@@ -213,7 +213,7 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | GET | `/mrd/codings?status&from&to&page` | mrd.coding | coding worklist (pending first) |
 | POST | `/mrd/codings` | mrd.coding | `CreateCodingRequest{patientId, encounterId?, admissionId?, visitId?, episodeDate?, notes}` |
 | GET / PUT | `/mrd/codings/{id}` | mrd.coding | `SaveCodingRequest{entries[{kind, code, isPrimary}], notes, version}` (catalogue codes only; categories with subdivisions rejected) |
-| POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify) |
+| POST | `/mrd/codings/{id}/verify` | mrd.coding | `VerifyCodingRequest{version}` (a different coder must verify); insurance claims then take the coding (MB-03) |
 | GET | `/mrd/codings/{id}/suggestions` | mrd.coding | → `CodingSuggestion[]` |
 | GET | `/mrd/reports/morbidity?from&to&groupBy=code|block|chapter&source=clinical|coded` | mrd.records | → `MorbidityReport` (episodes, patients, sex and age bands; ≤ 1 year) |
 | GET / POST | `/mrd/records` | mrd.records | list (`status`, `overdue`, `retentionDue`, `assignedPractitionerId`, `search`) / `CreateMedicalRecordRequest` |
@@ -224,6 +224,16 @@ isControlled, controlledSchedule, requiresPrescription, isColdChain, baseUnit, a
 | POST | `/mrd/records/{id}/complete`, `/archive` | mrd.records | `ArchiveMedicalRecordRequest{location}`; completion sets `retainUntil` (OP 3 y, IP 5 y, MLC permanent) |
 | GET / POST | `/mrd/record-requests` | mrd.records | `CreateRecordRequestRequest{patientId, medicalRecordId?, requestedByName, requestingDepartment, purpose, details}`; status filter `Overdue` supported |
 | POST | `/mrd/record-requests/{id}/issue` / `return` / `cancel` | mrd.records | `IssueRecordRequest{dueBackOn}` / — / `CancelRecordRequest{reason}` |
+
+#### Coding for insurance claims
+
+Once a second coder has verified a coding, Billing's insurance claims use it (MB-03), through the Platform contract
+`IVerifiedCodingSource` that this module implements. A claim on an in-patient bill takes its admission's coding; a claim
+on any other bill takes the out-patient coding of its visit or of an encounter in that visit. A new claim takes the verified codes
+where the insurance desk typed none, ahead of the pre-authorisation's provisional codes, and the claim screen offers them
+while the claim's codes differ. The claim gets each code with its catalogue title, or the codes alone when the titles do
+not fit in the 1,000 characters each of the claim's two code fields holds. A coding that is coded but not yet verified
+is never used, and re-coding a verified coding withdraws it until it is verified again.
 
 #### Catalogue import
 

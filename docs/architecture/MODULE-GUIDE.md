@@ -17,7 +17,8 @@ EF migrations. If you need something there, stop and report it (the maintainers 
 ## 2. Layering
 A module may reference only **lower** modules (see ARCHITECTURE.md §4). Everything upward goes through Platform:
 * **Contracts** (`HyFib.HealthCare360.Platform.Contracts`): `IChargePoster` (post billable charges; idempotent on
-  `SourceModule`+`SourceReference`), `IBillingStatusProvider`, `IInstrumentResultSink`, `IPortalAccountResolver`.
+  `SourceModule`+`SourceReference`), `IBillingStatusProvider`, `IInstrumentResultSink`, `IPortalAccountResolver`,
+  `IVerifiedCodingSource` (Clinical's verified coding of an episode, for Billing's claims).
 * **Integration events** (`Platform/Contracts/IntegrationEvents.cs`): `ServiceOrderPlaced`, `PrescriptionSigned`,
   `PatientAdmitted`, `PatientTransferred`, `PatientDischarged`, `AdmissionCancelled`, `DiagnosticReportReleased`, `AppointmentBooked`,
   `MedicationDispensed`, `PaymentReceived`, `BillFinalized`, … Raise them from your aggregate

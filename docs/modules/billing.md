@@ -13,7 +13,8 @@ printed bill's HTML, plus change-tracking checks on the real EF model without a 
 webhook delivered twice, who may reconcile).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
-fallbacks) — see [Contracts for other modules](#contracts-for-other-modules).
+fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
+medical records verified for a stay or visit through `IVerifiedCodingSource`, which the Clinical module implements.
 
 ## Money rules
 
@@ -198,8 +199,8 @@ advances or packages; leftover services can still be billed; any advance is refu
 | GET | `/preauths?status&patientId&admissionId` (paged) · `/preauths/{id}` | pre-auth/claims manage, `ip.manage` | → `PreAuthListItem` / `PreAuthDetail` |
 | POST · PUT | `/preauths` · `/preauths/{id}` | `insurance.preauth.manage` | `SavePreAuthRequest` → 201 / 204 (`{FAC}PA{YY}{SEQ:6}` on submit) |
 | POST | `/preauths/{id}/submit` · `/query` · `/answer` · `/approve` · `/reject` · `/enhancements` · `/enhancements/{enhancementId}/respond` · `/final-approval` | `insurance.preauth.manage` | `PreAuthTextRequest`, `ApprovePreAuthRequest`, `RejectPreAuthRequest`, `RequestEnhancementRequest`, `RespondEnhancementRequest`, `FinalApprovalRequest` → 204 |
-| GET | `/claims?status&payerId&patientId` (paged) · `/claims/{id}` | `insurance.claims.manage` | → `ClaimListItem` / `ClaimDetail` |
-| POST | `/claims` | `insurance.claims.manage` | `CreateClaimRequest(billId, …)` → 201 (`{FAC}CL{YY}{SEQ:6}`) |
+| GET | `/claims?status&payerId&patientId` (paged) · `/claims/{id}` | `insurance.claims.manage` | → `ClaimListItem` / `ClaimDetail` (`verifiedCoding`: the coding medical records verified for the bill's admission, or for its visit on any other bill, as claim text; null until verified) |
+| POST | `/claims` | `insurance.claims.manage` | `CreateClaimRequest(billId, …)` → 201 (`{FAC}CL{YY}{SEQ:6}`); codes left empty are the verified coding, procedures included, or else the pre-authorisation's |
 | PUT | `/claims/{id}/coding` | `insurance.claims.manage` | `UpdateClaimCodingRequest` (ICD / procedure codes as text) → 204 |
 | POST | `/claims/{id}/query` · `/answer` · `/approve` · `/settle` · `/reject` | `insurance.claims.manage` | `ClaimTextRequest`, `ApproveClaimRequest`, `SettleClaimRequest` (tranche, deductions with reasons, UTR), `RejectClaimRequest` → 204; a rejection is a full disallowance |
 | GET | `/receivables/ageing?asOf` | `insurance.claims.manage` | → `ReceivablesAgeingReport` (0-30 / 31-60 / 61-90 / 90+ by payer) |

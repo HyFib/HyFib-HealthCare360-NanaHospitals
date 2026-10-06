@@ -19,6 +19,9 @@ public sealed record DeductionInput(string Reason, decimal Amount);
 /// </summary>
 public sealed class InsuranceClaim : AuditableEntity, IFacilityScoped
 {
+    /// <summary>Longest text <see cref="DiagnosisCodes"/> and <see cref="ProcedureCodes"/> each hold.</summary>
+    public const int CodesMaxLength = 1000;
+
     public Guid FacilityId { get; set; }
     public string ClaimNumber { get; set; } = string.Empty;
     public Guid BillId { get; set; }

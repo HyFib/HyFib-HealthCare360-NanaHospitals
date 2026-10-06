@@ -207,10 +207,11 @@ public static class PlatformServiceCollectionExtensions
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
 
-        // Fallbacks replaced by the Billing module / Integrations project when present.
+        // Fallbacks replaced by the Billing, Patients and Clinical modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
         services.TryAddScoped<IBillingStatusProvider, NullBillingStatusProvider>();
         services.TryAddScoped<IPortalAccountResolver, NullPortalAccountResolver>();
+        services.TryAddScoped<IVerifiedCodingSource, NullVerifiedCodingSource>();
 
         services.AddSignalR(hub =>
         {

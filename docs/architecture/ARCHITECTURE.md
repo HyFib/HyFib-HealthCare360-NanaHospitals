@@ -136,9 +136,14 @@ docs/                                     SRS, architecture, security, deploymen
 |---|---|---|
 | `IChargePoster` — post/cancel billable charges against a visit or admission | Billing | Clinical, Diagnostics, Pharmacy, Inpatient, SpecialtyCare, SupportServices |
 | `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance | Billing | Diagnostics, Inpatient, Front office |
+| `IVerifiedCodingSource` — the medical records coding of an admission or visit, once a second coder has verified it | Clinical | Billing (insurance claims) |
 | `INotificationService` — patient/staff notifications (SMS, WhatsApp, e-mail, in-app) | Platform + Integrations | all |
 | `IRealtimePublisher` — push events to SignalR groups | Platform | all |
 | `IAuditLogger` — explicit PHI-access audit entries | Platform | all |
+
+Billing may reference any module below it, but it references only Patients and Scheduling: it keeps its own record of
+admissions from the integration events, and reads the verified coding through `IVerifiedCodingSource` rather than from
+Clinical's tables.
 
 ### 4.1 Inside a module
 ```
