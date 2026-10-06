@@ -14,14 +14,15 @@ import {
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
+  DismissRegular,
   PlugDisconnectedRegular,
   Wifi1Regular,
   Wifi3Regular,
   WifiWarningRegular,
 } from '@fluentui/react-icons';
-import { connectionHealth, formatRelative, useConnection } from '@hc360/core';
+import { connectionHealth, formatRelative, useConnection, weakWifiSignal } from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const useStyles = makeStyles({
   pill: { minWidth: 'auto' },
@@ -133,6 +134,68 @@ export function OfflineBanner() {
           Check again
         </Button>
       </MessageBarActions>
+    </MessageBar>
+  );
+}
+
+/** How long the connection must stay weak before the banner says so: a reconnect that takes a moment is not news. */
+export const DEGRADED_NOTICE_AFTER_MS = 15_000;
+
+/**
+ * Banner while the connection stays weak (SRS DED-07): live updates are off, or the WiFi signal is weak. Work goes on,
+ * so it only says what may be out of date or slow. Hidden by the user, it stays hidden until the connection is good
+ * again. While the server is unreachable, the offline banner speaks instead.
+ */
+export function DegradedBanner() {
+  const styles = useStyles();
+  const state = useConnection();
+  const health = connectionHealth(state);
+  const [due, setDue] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  const [lastHealth, setLastHealth] = useState(health);
+
+  // A new spell of weak connection waits its own time; one that ends in a good connection forgets the dismissal.
+  if (health !== lastHealth) {
+    setLastHealth(health);
+    setDue(false);
+    if (health === 'good') {
+      setHidden(false);
+    }
+  }
+
+  useEffect(() => {
+    if (health !== 'degraded') {
+      return;
+    }
+    const timer = window.setTimeout(() => setDue(true), DEGRADED_NOTICE_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [health]);
+
+  if (health !== 'degraded' || !due || hidden) {
+    return null;
+  }
+
+  const liveUpdatesOff = state.realtime !== 'connected';
+  const signal = weakWifiSignal(state);
+  const weakWifi = signal !== null ? `This computer's WiFi signal is weak (${signal}%).` : '';
+  return (
+    <MessageBar intent="info" layout="multiline" className={styles.banner} icon={<Wifi1Regular />}>
+      <MessageBarBody>
+        <MessageBarTitle>{liveUpdatesOff ? 'Live updates are paused' : 'The WiFi signal is weak'}</MessageBarTitle>
+        {liveUpdatesOff
+          ? `Queues, bed boards and alerts on this screen may be out of date until the connection recovers. HC360 keeps trying, and you can keep working. ${weakWifi}`.trim()
+          : `${weakWifi} Screens may be slow and saving may take longer.`}
+      </MessageBarBody>
+      <MessageBarActions
+        containerAction={
+          <Button
+            appearance="transparent"
+            aria-label="Hide this message"
+            icon={<DismissRegular />}
+            onClick={() => setHidden(true)}
+          />
+        }
+      />
     </MessageBar>
   );
 }

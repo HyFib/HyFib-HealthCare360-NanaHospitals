@@ -233,7 +233,7 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 
 ## 9. Web UI architecture (staff app)
 
-* **Shell:** Fluent 2 layout (nav drawer grouped by domain, top bar with global patient search, facility switcher, connection pill, notifications, AI voice button, user menu), a command palette (Ctrl+K), keyboard shortcuts, theme (light/dark/high-contrast following Windows), and an idle lock screen.
+* **Shell:** Fluent 2 layout (nav drawer grouped by domain, top bar with global patient search, facility switcher, connection pill, notifications, AI voice button, user menu), a command palette (Ctrl+K), keyboard shortcuts, theme (light/dark/high-contrast following Windows), and an idle lock screen. Under the top bar, a banner says when the server cannot be reached, and another, which the user can hide, when the connection has stayed weak for 15 seconds (live updates off, or a WiFi signal under 40%) (DED-07).
 * **Modules:** `src/modules/<module>/` contains `manifest.ts` (navigation entries, permissions, commands), `api.ts` (types + TanStack Query hooks), `components/` and `pages/`. Manifests are discovered with `import.meta.glob`, so adding a module needs no shared-file edits. Routes are file-based (`src/routes/_app/<area>/…`), which gives type-safe links.
 * **Data:** TanStack Query (server cache, retries, refetch on reconnect), the `@hc360/core` API client (auth refresh, idempotency keys, backoff, Problem Details → form errors), SignalR for pushes. Minimal client state lives in Zustand (session, UI preferences, connection).
 * **Forms:** React Hook Form + Zod schemas that mirror the server validators, with draft auto-save for long free-text forms.
