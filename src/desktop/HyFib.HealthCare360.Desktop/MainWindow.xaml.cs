@@ -16,6 +16,13 @@ namespace HyFib.HealthCare360.Desktop;
 /// the default browser), the server certificate must chain to the hospital CA, password autosave/autofill are off
 /// (shared workstations), and DevTools are disabled unless IT enables them.
 /// </summary>
+/// <remarks>
+/// WebView2 shows the app a server certificate only when Windows rejects it, which the hospital CA's certificates
+/// always are. A certificate Windows trusts (from a company's TLS-inspection proxy, say) would reach the view without
+/// the pin check, so the pinned <see cref="ServerClient"/> checks the path before the staff app loads and every 10
+/// seconds after (<see cref="NetworkStatusService"/>). When it is offered a certificate that is not from the hospital
+/// CA, the window unloads the staff app and stays locked until a check passes again (<see cref="Lock"/>).
+/// </remarks>
 public partial class MainWindow : Window
 {
     private static readonly HashSet<CoreWebView2WebErrorStatus> ConnectivityErrors =
@@ -40,6 +47,11 @@ public partial class MainWindow : Window
     private TrayNotifier? _tray;
     private bool _pageLoaded;
 
+    // Set on the connection's thread when a pinned check is offered a certificate that is not from the hospital CA;
+    // cleared when a retry reaches the server and is offered the hospital's certificate. While set, the staff app is
+    // not loaded.
+    private RejectedCertificate? _rejected;
+
     internal MainWindow(DesktopSettings settings, string[] args)
     {
         InitializeComponent();
@@ -50,6 +62,7 @@ public partial class MainWindow : Window
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
         _retry.Tick += async (_, _) => await RetryAsync();
+        _trust.CertificateRejected += OnCertificateRejected;
 
         if (settings.Kiosk)
         {
@@ -109,13 +122,63 @@ public partial class MainWindow : Window
         _network.Start();
         _ = HeartbeatLoopAsync(_lifetime.Token);
 
+        // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
+        await _client.PingAsync(_lifetime.Token);
         Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
     }
 
+    private bool Locked => Volatile.Read(ref _rejected) is not null;
+
     private void Navigate(string path)
     {
+        if (Locked)
+        {
+            return;
+        }
+
         var target = DeepLinks.IsSafePath(path) ? new Uri(_server, path) : _server;
         Web.CoreWebView2?.Navigate(target.AbsoluteUri);
+    }
+
+    private void OnCertificateRejected(RejectedCertificate rejected)
+    {
+        if (Interlocked.Exchange(ref _rejected, rejected) is null)
+        {
+            Log.Warning(
+                "Locked: {Host} presented a certificate that is not from the hospital CA "
+                + "(subject {Subject}, issuer {Issuer}, SHA-256 {Fingerprint})",
+                rejected.Host, rejected.Subject, rejected.Issuer, rejected.Fingerprint);
+        }
+
+        Dispatcher.InvokeAsync(() => Lock(rejected));
+    }
+
+    /// <summary>
+    /// Unloads the staff app, so it sends nothing more through a connection that may be intercepted, and explains why.
+    /// "Try again now" loads it again once the server presents the hospital's certificate; "Change server…" sets up a
+    /// server whose certificate authority really changed.
+    /// </summary>
+    private void Lock(RejectedCertificate rejected)
+    {
+        if (!Locked)
+        {
+            return;
+        }
+
+        _retry.Stop();
+        _pageLoaded = false;
+        if (Web.CoreWebView2 is { } core && !string.Equals(core.Source, "about:blank", StringComparison.Ordinal))
+        {
+            core.Navigate("about:blank");
+        }
+
+        var fingerprint = ServerTrust.Format(rejected.Fingerprint[..Math.Min(16, rejected.Fingerprint.Length)]);
+        ShowOffline(
+            "HC360 stopped: the server could not be verified",
+            "The server answered with a certificate this computer does not accept. Something on the network may be "
+            + "intercepting the connection, or the server's certificate was replaced or has expired. Do not sign in on "
+            + "this computer until IT has checked it.",
+            $"{rejected.Host} · certificate from {rejected.Issuer} · fingerprint {fingerprint}…");
     }
 
     /// <summary>Second launch or <c>hc360://</c> link: bring the window forward and open the requested screen.</summary>
@@ -169,6 +232,10 @@ public partial class MainWindow : Window
             if (!trusted)
             {
                 Log.Warning("Rejected certificate for {Uri} ({Status}); subject {Subject}", e.RequestUri, e.ErrorStatus, certificate.Subject);
+                if (IsServerOrigin(uri))
+                {
+                    OnCertificateRejected(RejectedCertificate.From(certificate, uri.Host));
+                }
             }
         }
         finally
@@ -185,8 +252,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (IsServerOrigin(target) || target.Scheme is "about" or "data")
+        if (target.Scheme is "about" or "data")
         {
+            return;
+        }
+
+        if (IsServerOrigin(target))
+        {
+            e.Cancel = Locked;
             return;
         }
 
@@ -255,6 +328,11 @@ public partial class MainWindow : Window
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        if (Locked)
+        {
+            return;
+        }
+
         if (e.IsSuccess)
         {
             _pageLoaded = true;
@@ -299,7 +377,22 @@ public partial class MainWindow : Window
 
     private async Task RetryAsync()
     {
-        if (await _client.PingAsync(_lifetime.Token) is null)
+        var rejected = Volatile.Read(ref _rejected);
+        var latency = await _client.PingAsync(_lifetime.Token);
+        if (latency is not null && rejected is not null)
+        {
+            // The pinned check reached the server and was offered the hospital's certificate, so the lock lifts, unless
+            // another check was refused in the meantime. A check that cannot reach the server leaves the lock as it is.
+            Interlocked.CompareExchange(ref _rejected, null, rejected);
+        }
+
+        if (Volatile.Read(ref _rejected) is { } still)
+        {
+            Lock(still);
+            return;
+        }
+
+        if (latency is null)
         {
             OfflineDetails.Text = $"{_server.Host} · last try {DateTime.Now:HH:mm:ss}";
             return;
@@ -369,6 +462,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _trust.CertificateRejected -= OnCertificateRejected;
         _lifetime.Cancel();
         _retry.Stop();
         _network.Dispose();

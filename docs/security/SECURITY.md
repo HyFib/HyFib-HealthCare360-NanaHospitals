@@ -27,6 +27,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
   - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
     server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
+  - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
+    rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
+    So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10
+    seconds after. When it is offered a certificate that is not from the hospital CA, it unloads the staff app and
+    shows "HC360 stopped: the server could not be verified" until a check passes. Between two checks (10 seconds at
+    most) the staff app could still use such a connection.
 - Browsers keep to HTTPS for a year after their first visit (HSTS).
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
   localhost only. Network lab analysers need their own ports, which the installer opens only when asked

@@ -6,6 +6,15 @@ using System.Security.Cryptography.X509Certificates;
 namespace HyFib.HealthCare360.Desktop.Services;
 
 /// <summary>
+/// A certificate a pinned connection refused: the server presented it, and it is not from the pinned CA.
+/// </summary>
+internal sealed record RejectedCertificate(string Host, string Subject, string Issuer, string Fingerprint)
+{
+    public static RejectedCertificate From(X509Certificate2 certificate, string host) =>
+        new(host, certificate.Subject, certificate.Issuer, ServerTrust.ComputeFingerprint(certificate));
+}
+
+/// <summary>
 /// Certificate pinning to the hospital's private CA (SRS DED-04/SEC-06). The server's LAN certificate must chain
 /// to exactly this CA and name the host being contacted; the public Windows trust store is not consulted, so a
 /// device on the WiFi cannot impersonate the server with some other valid certificate.
@@ -29,6 +38,13 @@ internal sealed class ServerTrust : IDisposable
     public DateTime NotAfter => _ca.NotAfter;
 
     public string Subject => _ca.Subject;
+
+    /// <summary>
+    /// Raised, on the connection's thread, when a pinned connection is refused because the server presented a
+    /// certificate that is not from the pinned CA or does not name the host. Someone may be intercepting the
+    /// connection (a TLS-inspection proxy, say), or the server's certificate was replaced.
+    /// </summary>
+    public event Action<RejectedCertificate>? CertificateRejected;
 
     public static string ComputeFingerprint(X509Certificate2 certificate) => Convert.ToHexString(SHA256.HashData(certificate.RawData));
 
@@ -87,6 +103,25 @@ internal sealed class ServerTrust : IDisposable
         return IsTrusted(certificate2, host, Intermediates(handshake, certificate2));
     }
 
+    /// <summary>
+    /// <see cref="Validate"/>, raising <see cref="CertificateRejected"/> when a presented certificate is refused.
+    /// </summary>
+    internal bool Check(X509Certificate? certificate, X509Chain? handshake, string host)
+    {
+        if (Validate(certificate, handshake, host))
+        {
+            return true;
+        }
+
+        if (certificate is not null && CertificateRejected is { } rejected)
+        {
+            using var certificate2 = new X509Certificate2(certificate);
+            rejected(RejectedCertificate.From(certificate2, host));
+        }
+
+        return false;
+    }
+
     /// <summary>Every certificate of the handshake other than the server's own.</summary>
     internal static X509Certificate2Collection Intermediates(X509Chain? handshake, X509Certificate2 server)
     {
@@ -118,7 +153,7 @@ internal sealed class ServerTrust : IDisposable
             ConnectTimeout = TimeSpan.FromSeconds(5),
             SslOptions =
             {
-                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Validate(certificate, chain, host),
+                RemoteCertificateValidationCallback = (_, certificate, chain, _) => Check(certificate, chain, host),
             },
         };
         return new HttpClient(handler) { BaseAddress = baseAddress, Timeout = timeout };

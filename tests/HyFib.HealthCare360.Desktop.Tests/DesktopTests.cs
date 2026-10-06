@@ -1,4 +1,9 @@
+using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Desktop;
@@ -188,8 +193,104 @@ public sealed class ServerTrustTests
     }
 
     [Fact]
+    public void Reports_a_certificate_it_refuses()
+    {
+        using var pinned = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var proxy = CreateCa("CN=Inspection Proxy CA");
+        using var forged = CreateServerCertificate(proxy, "HC360-SRV", IPAddress.Parse("192.168.1.20"));
+        using var trust = new ServerTrust(pinned.ExportCertificatePem());
+        var rejected = new List<RejectedCertificate>();
+        trust.CertificateRejected += rejected.Add;
+
+        trust.Check(forged, null, "HC360-SRV").ShouldBeFalse();
+
+        var report = rejected.ShouldHaveSingleItem();
+        report.Host.ShouldBe("HC360-SRV");
+        report.Issuer.ShouldBe("CN=Inspection Proxy CA");
+        report.Fingerprint.ShouldBe(Convert.ToHexString(SHA256.HashData(forged.RawData)));
+    }
+
+    [Fact]
+    public void Reports_nothing_for_the_hospital_certificate()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var server = CreateServerCertificate(ca, "HC360-SRV", IPAddress.Parse("192.168.1.20"));
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+        var rejected = 0;
+        trust.CertificateRejected += _ => rejected++;
+
+        trust.Check(server, null, "HC360-SRV").ShouldBeTrue();
+
+        rejected.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_pinned_request_refuses_and_reports_a_server_that_presents_another_certificate()
+    {
+        // A TLS-inspection proxy answers with a certificate of its own, from a CA that Windows may well trust.
+        using var pinned = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var proxy = CreateCa("CN=Inspection Proxy CA");
+        using var forged = UsableForTls(CreateServerCertificate(proxy, "localhost", IPAddress.Loopback));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var serving = ServeOnceAsync(listener, forged);
+            using var trust = new ServerTrust(pinned.ExportCertificatePem());
+            var rejected = new List<RejectedCertificate>();
+            trust.CertificateRejected += report =>
+            {
+                lock (rejected)
+                {
+                    rejected.Add(report);
+                }
+            };
+            using var http = trust.CreateHttpClient(
+                new Uri($"https://localhost:{((IPEndPoint)listener.LocalEndpoint).Port}/"), TimeSpan.FromSeconds(10));
+
+            await Should.ThrowAsync<HttpRequestException>(
+                () => http.GetAsync(new Uri("health/live", UriKind.Relative), TestContext.Current.CancellationToken));
+
+            rejected.ShouldHaveSingleItem().Fingerprint.ShouldBe(ServerTrust.ComputeFingerprint(forged));
+            await serving;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    [Fact]
     public void Formats_fingerprints_in_groups_of_four() =>
         ServerTrust.Format("AB12CD34EF56").ShouldBe("AB12 CD34 EF56");
+
+    /// <summary>
+    /// Accepts one connection and offers <paramref name="certificate"/>; the client is expected to refuse it.
+    /// </summary>
+    private static async Task ServeOnceAsync(TcpListener listener, X509Certificate2 certificate)
+    {
+        using var client = await listener.AcceptTcpClientAsync(TestContext.Current.CancellationToken);
+        await using var tls = new SslStream(client.GetStream());
+        try
+        {
+            await tls.AuthenticateAsServerAsync(
+                new SslServerAuthenticationOptions { ServerCertificate = certificate },
+                TestContext.Current.CancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or AuthenticationException)
+        {
+            // The client closed the handshake when it refused the certificate.
+        }
+    }
+
+    /// <summary>A copy whose private key Windows TLS can use (it cannot use an in-memory key).</summary>
+    private static X509Certificate2 UsableForTls(X509Certificate2 certificate)
+    {
+        using (certificate)
+        {
+            return X509CertificateLoader.LoadPkcs12(certificate.Export(X509ContentType.Pkcs12), null);
+        }
+    }
 
     private static X509Certificate2 CreateCa(string subject)
     {
