@@ -233,8 +233,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
 - Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
   never runs without it.
-- Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM), and their stored name takes the matching
-  extension, so a download can never produce a program or a web page.
+- Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM, SCP-ECG), and their stored name takes the
+  matching extension, so a download can never produce a program or a web page.
 - **Server documents** (reports, prescriptions, discharge summaries, bills, MIS reports):
   - Templates build their HTML only through an encoder that escapes every value unless it is already safe HTML, so
     data in a document (a patient's name, a doctor's note) can never become markup. Images can only be embedded as
