@@ -23,7 +23,9 @@ Telehealth video consultations (WebRTC signalling, waiting room, chat) and Remot
   fallback (TEL-05). `TelehealthMessage` stores the in-call chat.
 * **Visit for EMR (TEL-04)** – `POST …/start` creates a `Telehealth` visit through `VisitService` (no queue token) and
   moves the appointment to `InConsultation`; Clinical writes notes/prescriptions against that visit. When a
-  prescription is signed for a teleconsultation visit, the patient is told it is on the portal.
+  prescription is signed for a teleconsultation visit, the patient is told it is on the portal. The call screen's
+  "Open chart" and "Notes and prescription" open in a new browser tab, or in HC360 Desktop in a second window, so the
+  call keeps running while the doctor writes.
 * Sessions nobody started become `Missed` one hour after their scheduled end (job).
 * **Switched off** ([features.md](features.md), `features.telehealth`): every `/api/v1/telehealth` and
   `/api/v1/portal/telehealth` endpoint answers 503 `feature.disabled`, except `end` and `cancel`, so a call already

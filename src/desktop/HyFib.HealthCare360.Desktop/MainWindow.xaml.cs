@@ -44,6 +44,8 @@ public partial class MainWindow : Window
     private readonly NetworkStatusService _network;
     private readonly DispatcherTimer _retry = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly List<StaffWindow> _windows = [];
+    private CoreWebView2Environment? _environment;
     private TrayNotifier? _tray;
     private bool _pageLoaded;
 
@@ -82,11 +84,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            var environment = await CoreWebView2Environment.CreateAsync(
+            _environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: Path.Combine(DesktopSettings.AppDataDirectory, "WebView2"),
                 options: new CoreWebView2EnvironmentOptions { Language = "en-IN" });
-            await Web.EnsureCoreWebView2Async(environment);
+            await Web.EnsureCoreWebView2Async(_environment);
         }
         catch (WebView2RuntimeNotFoundException ex)
         {
@@ -97,6 +99,28 @@ public partial class MainWindow : Window
         }
 
         var core = Web.CoreWebView2;
+        ApplyViewRules(core);
+        core.NavigationCompleted += OnNavigationCompleted;
+        core.ProcessFailed += OnProcessFailed;
+        core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
+
+        _tray = new TrayNotifier(() => Activate([]));
+        CreateBridge(core, new WindowInteropHelper(this).Handle).Attach();
+        _network.Start();
+        _ = HeartbeatLoopAsync(_lifetime.Token);
+
+        // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
+        await _client.PingAsync(_lifetime.Token);
+        Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
+    }
+
+    /// <summary>
+    /// The rules every view of the staff app follows, in this window and in the second windows it opens: only the
+    /// server's pages, its certificate checked against the hospital CA, no saved passwords, and the permission and
+    /// download policies below.
+    /// </summary>
+    internal void ApplyViewRules(CoreWebView2 core)
+    {
         var kiosk = _settings.Kiosk;
         core.Settings.AreDevToolsEnabled = _settings.AllowDevTools;
         core.Settings.IsPasswordAutosaveEnabled = false;
@@ -110,21 +134,18 @@ public partial class MainWindow : Window
         core.ServerCertificateErrorDetected += OnServerCertificateError;
         core.NavigationStarting += OnNavigationStarting;
         core.NewWindowRequested += OnNewWindowRequested;
-        core.NavigationCompleted += OnNavigationCompleted;
-        core.ProcessFailed += OnProcessFailed;
         core.PermissionRequested += OnPermissionRequested;
         core.DownloadStarting += OnDownloadStarting;
-        core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
+    }
 
-        _tray = new TrayNotifier(() => Activate([]));
-        var printing = new PrintService(core.Environment, new WindowInteropHelper(this).Handle);
-        new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), _tray).Attach();
-        _network.Start();
-        _ = HeartbeatLoopAsync(_lifetime.Token);
-
-        // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
-        await _client.PingAsync(_lifetime.Token);
-        Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
+    /// <summary>
+    /// The native bridge for a view of the staff app; it prints over the window <paramref name="owner"/>.
+    /// </summary>
+    internal BridgeHost CreateBridge(CoreWebView2 core, IntPtr owner)
+    {
+        var tray = _tray ?? throw new InvalidOperationException("The tray icon is created before any view.");
+        var printing = new PrintService(core.Environment, owner);
+        return new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), tray);
     }
 
     private bool Locked => Volatile.Read(ref _rejected) is not null;
@@ -167,6 +188,7 @@ public partial class MainWindow : Window
 
         _retry.Stop();
         _pageLoaded = false;
+        CloseWindows();
         if (Web.CoreWebView2 is { } core && !string.Equals(core.Source, "about:blank", StringComparison.Ordinal))
         {
             core.Navigate("about:blank");
@@ -197,8 +219,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool IsServerOrigin(Uri uri) =>
-        Uri.Compare(uri, _server, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
+    private bool IsServerOrigin(Uri uri) => NewWindowPolicy.IsSameOrigin(uri, _server);
 
     private void OnServerCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
@@ -270,16 +291,41 @@ public partial class MainWindow : Window
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
+        switch (NewWindowPolicy.Decide(e.Uri, _server, _settings.Kiosk, Locked))
         {
-            if (IsServerOrigin(target))
-            {
-                Web.CoreWebView2.Navigate(target.AbsoluteUri);
-            }
-            else
-            {
-                TryOpenExternally(target);
-            }
+            case NewWindowAction.OpenExternally:
+                TryOpenExternally(new Uri(e.Uri));
+                break;
+            case NewWindowAction.OpenHere:
+                (sender as CoreWebView2 ?? Web.CoreWebView2)?.Navigate(e.Uri);
+                break;
+            case NewWindowAction.OpenWindow:
+                OpenWindow(new Uri(e.Uri));
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A second HC360 window for <paramref name="target"/>, so the screen that opened it stays as it is.
+    /// </summary>
+    private void OpenWindow(Uri target)
+    {
+        if (_environment is null)
+        {
+            return;
+        }
+
+        var window = new StaffWindow(this, _environment, target);
+        _windows.Add(window);
+        window.Closed += (_, _) => _windows.Remove(window);
+        window.Show();
+    }
+
+    private void CloseWindows()
+    {
+        foreach (var window in _windows.ToList())
+        {
+            window.Close();
         }
     }
 
@@ -462,6 +508,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        CloseWindows();
         _trust.CertificateRejected -= OnCertificateRejected;
         _lifetime.Cancel();
         _retry.Stop();

@@ -332,6 +332,37 @@ public sealed class ServerTrustTests
     }
 }
 
+public sealed class NewWindowPolicyTests
+{
+    private static readonly Uri Server = new("https://hc360-srv:7360/");
+
+    [Fact]
+    public void Opens_a_page_of_the_server_in_another_window_so_a_video_call_keeps_its_own() =>
+        NewWindowPolicy.Decide("https://HC360-SRV:7360/emr/patients/p1", Server, kiosk: false, locked: false)
+            .ShouldBe(NewWindowAction.OpenWindow);
+
+    [Fact]
+    public void A_kiosk_keeps_one_window() =>
+        NewWindowPolicy.Decide("https://hc360-srv:7360/display/queue", Server, kiosk: true, locked: false)
+            .ShouldBe(NewWindowAction.OpenHere);
+
+    [Fact]
+    public void Opens_nothing_of_the_server_while_the_window_is_locked() =>
+        NewWindowPolicy.Decide("https://hc360-srv:7360/emr/patients/p1", Server, kiosk: false, locked: true)
+            .ShouldBe(NewWindowAction.Refuse);
+
+    [Theory]
+    [InlineData("https://example.org/help")]
+    [InlineData("https://hc360-srv:7443/emr")]
+    [InlineData("http://hc360-srv:7360/emr")]
+    public void Sends_other_sites_to_the_system_browser(string address) =>
+        NewWindowPolicy.Decide(address, Server, kiosk: false, locked: false).ShouldBe(NewWindowAction.OpenExternally);
+
+    [Fact]
+    public void Refuses_an_address_that_is_not_one() =>
+        NewWindowPolicy.Decide("not an address", Server, kiosk: false, locked: false).ShouldBe(NewWindowAction.Refuse);
+}
+
 public sealed class DiscoveryTests
 {
     [Fact]
