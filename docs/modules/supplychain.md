@@ -232,29 +232,10 @@ analysis.
 for example when a wrongly entered OT material is removed. A second call finds nothing outstanding and returns no
 movements.
 
-Suggested wiring for SpecialtyCare `OtClinicalService.AddMaterialAsync` / `RemoveMaterialAsync` (not done here;
-SpecialtyCare needs a project reference to SupplyChain, or the contract moved to Platform.Contracts, see Open items):
-
-```csharp
-await using var tx = await db.Database.BeginTransactionAsync(ct);
-db.Add(material);
-if (material.SupplyItemId is { } itemId)   // null = item not taken from the OT store (consignment, patient-supplied)
-{
-    var store = await stock.ResolveStoreAsync(booking.FacilityId, StoreType.OT, ct);   // or a store chosen on screen
-    if (store.IsFailure) return store.Error!;
-    var used = await stock.ConsumeAsync(new StockConsumption(store.Value, itemId, material.Quantity,
-        new StockReference("specialtycare.ot", material.Id, booking.Number, $"Surgery {booking.Number}"),
-        material.LotNumber, material.ExpiryDate), ct);
-    if (used.IsFailure) return used.Error!;     // before posting the charge; nothing has been saved yet
-}
-// ... post the charge as today ...
-var saved = await stock.SaveAsync(ct);          // stock.concurrent_update / stock.negative → retry
-if (saved.IsFailure) return saved.Error!;
-await tx.CommitAsync(ct);
-
-// Removing the entry:
-await stock.ReverseConsumptionAsync(new StockReference("specialtycare.ot", material.Id, booking.Number, "Entry removed"), ct);
-```
+SpecialtyCare uses both for operation theatre materials (`OtClinicalService`, which references SupplyChain). Recording a
+material that names a supply item consumes it from the facility's OT store, in the same transaction as its charge;
+consignment and patient-supplied items name none and take no stock. Removing the entry reverses the consumption and
+withdraws the charge.
 
 ### Read helpers (`InventoryQueries`, static)
 
@@ -316,10 +297,4 @@ so queries that rank by an enum (indent priority, store type) rank explicitly or
 
 ## Open items for maintainers
 
-* **Migrations** for the `supplychain` schema, including `ck_stock_batches_quantities`, the NULLS NOT DISTINCT batch
-  index, the filtered GRN invoice index and the `pg_trgm` extension for the item-name index.
-* **SpecialtyCare stock deduction**: wire `ConsumeAsync` / `ReverseConsumptionAsync` into OT materials as shown
-  above. SpecialtyCare needs a project reference to SupplyChain. Alternatively, move a small `IStockConsumer`
-  contract (resolve store, consume, reverse) into Platform.Contracts, and SupplyChain registers
-  `StockService` behind it. The same API suits CSSD and procedure-room consumption.
 * Please verify the seeded GST rates and HSN headings with the hospital's tax consultant before go-live.

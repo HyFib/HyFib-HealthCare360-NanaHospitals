@@ -311,9 +311,10 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
   bill is paid) / `Cancelled`, for any source key, across facilities, keyed by the caller's strings. Charges posted or
   cancelled earlier in the caller's unit of work count, so a job that checks and posts in one pass (a mid-day diet change)
   never charges the same day twice.
-* Health-checkup packages: the state of a package is available as `GetStatesAsync("healthcheck.package",
-  [packageBookingId.ToString()])` **once the package's HC-* service item is posted under that key** (see open items).
-  Component tests (`ServiceOrderPlaced.IsPackageComponent`) are never charged individually by Billing.
+* Health-checkup packages: Clinical posts the package's HC-* service item when the patient checks in (`PackageBilling`,
+  see `clinical.md`), so the state of a package is available as `GetStatesAsync("healthcheck.package",
+  [packageBookingId.ToString()])`. Component tests (`ServiceOrderPlaced.IsPackageComponent`) are never charged
+  individually by Billing.
 * `GetOutstandingAsync(patientId)` → the patient's unpaid share of finalized bills (all facilities).
 * `GetDischargeClearanceAsync(admissionId)` → cleared when every IP charge is on a finalized bill, the final bill exists
   and the patient's share is paid, or management approved discharge with dues.
@@ -597,11 +598,6 @@ are append-mostly and not data-audited; exceptions are. The migrations live in
 `HyFib.HealthCare360.Server/Persistence/Migrations`: `TallyReconciliation` adds the Tally voucher records and the
 export's tracking columns, and `GatewayReconciliation` adds `gateway_settlements`, `gateway_settlement_lines`,
 `gateway_discrepancies`, `gateway_webhook_events` and the gateway status, attempt and retry columns of `refunds`.
-
-## Open items for maintainers
-* Health-checkup packages: no module posts the HC-* package charge yet. Clinical (booking owner) should post it
-  through `IChargePoster` with `SourceModule = "healthcheck.package"`, `SourceReference = booking id` when the booking is
-  made or checked in; Billing then bills it like any OP charge and Diagnostics can gate on its state.
 
 ## Not covered yet
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
