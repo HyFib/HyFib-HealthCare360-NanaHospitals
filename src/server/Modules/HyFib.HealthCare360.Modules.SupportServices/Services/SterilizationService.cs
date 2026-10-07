@@ -1,3 +1,6 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd;
@@ -41,24 +44,40 @@ public sealed class SterilizationService(
             return Error.Rule("cssd.method_mismatch", $"{wrongMethod.Name} is processed by {wrongMethod.Method}; this load is {request.Method}.");
         }
 
-        // Packs that name their wash cycle must come from a cycle that passed and washed their set.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // Packs that name their wash cycle must come from a cycle that passed and washed their set, and no more of them
+        // than it washed trays. Loads that name the same cycle take turns until this one is saved, so two loads cannot
+        // both pack its last tray.
         var washIds = request.Packs.Select(p => p.WashCycleId).OfType<Guid>().Distinct().ToList();
-        var washes = await db.Set<WashCycle>().AsNoTracking().Include(w => w.Trays).Where(w => washIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, ct);
-        foreach (var line in request.Packs.Where(p => p.WashCycleId is not null))
+        foreach (var key in washIds.Select(WashLockKey).Distinct().Order())
         {
-            if (!washes.TryGetValue(line.WashCycleId!.Value, out var wash))
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", ct);
+        }
+
+        var washes = await db.Set<WashCycle>().AsNoTracking().Include(w => w.Trays).Where(w => washIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, ct);
+
+        // A pack of a load that failed before release is packed again from the same wash, so it does not use up a tray.
+        var packed = await db.Set<SterilePack>().AsNoTracking()
+            .Where(p => p.WashCycleId != null && washIds.Contains(p.WashCycleId.Value) && p.Status != PackStatus.Reprocess)
+            .GroupBy(p => new { WashCycleId = p.WashCycleId!.Value, p.InstrumentSetId })
+            .Select(g => new { g.Key.WashCycleId, g.Key.InstrumentSetId, Count = g.Count() })
+            .ToListAsync(ct);
+        foreach (var lines in request.Packs.Where(p => p.WashCycleId is not null).GroupBy(p => (WashCycleId: p.WashCycleId!.Value, p.InstrumentSetId)))
+        {
+            if (!washes.TryGetValue(lines.Key.WashCycleId, out var wash))
             {
                 return Error.Field("packs", "A wash cycle named in the load was not found.");
             }
 
-            var washed = wash.CanPack(line.InstrumentSetId, sets[line.InstrumentSetId].Name);
+            var alreadyPacked = packed.Where(p => p.WashCycleId == lines.Key.WashCycleId && p.InstrumentSetId == lines.Key.InstrumentSetId).Sum(p => p.Count);
+            var washed = wash.CanPack(lines.Key.InstrumentSetId, sets[lines.Key.InstrumentSetId].Name, lines.Sum(p => p.Quantity), alreadyPacked);
             if (washed.IsFailure)
             {
                 return washed.Error!;
             }
         }
 
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var load = new SterilizationLoad
         {
             FacilityId = facilityId,
@@ -98,6 +117,10 @@ public sealed class SterilizationService(
         await transaction.CommitAsync(ct);
         return await ToDtoAsync(load, ct);
     }
+
+    /// <summary>A lock key for a wash cycle; two cycles sharing a key only wait for each other.</summary>
+    private static long WashLockKey(Guid washCycleId) =>
+        BinaryPrimitives.ReadInt64LittleEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"cssd.wash:{washCycleId:N}")));
 
     public Task<Result<LoadDto>> StartAsync(Guid loadId, CancellationToken ct) =>
         ChangeAsync(loadId, (load, now) => Task.FromResult(load.Start(now)), ct);

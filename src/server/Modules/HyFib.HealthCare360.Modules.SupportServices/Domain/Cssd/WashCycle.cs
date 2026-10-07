@@ -100,9 +100,11 @@ public sealed class WashCycle : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
-    /// Whether trays of the set may be packed from this cycle: it passed and washed that set. The error says why not.
+    /// Whether <paramref name="quantity"/> trays of the set may be packed from this cycle: it passed, washed that set, and
+    /// washed that many trays of it beyond the <paramref name="alreadyPacked"/> already packed (each washed tray makes one
+    /// pack). The error says why not.
     /// </summary>
-    public Result CanPack(Guid instrumentSetId, string setName)
+    public Result CanPack(Guid instrumentSetId, string setName, int quantity = 1, int alreadyPacked = 0)
     {
         if (Status != WashCycleStatus.Passed)
         {
@@ -111,10 +113,26 @@ public sealed class WashCycle : AuditableEntity, IFacilityScoped
                 : $"Wash cycle {CycleNumber} failed. Wash its trays again before packing them.");
         }
 
-        return Trays.Any(t => t.InstrumentSetId == instrumentSetId)
-            ? Result.Success()
-            : Error.Rule("cssd.wash_set_mismatch", $"{setName} was not washed in cycle {CycleNumber}.");
+        var washed = Trays.Where(t => t.InstrumentSetId == instrumentSetId).Sum(t => t.Quantity);
+        if (washed == 0)
+        {
+            return Error.Rule("cssd.wash_set_mismatch", $"{setName} was not washed in cycle {CycleNumber}.");
+        }
+
+        var left = Math.Max(washed - alreadyPacked, 0);
+        if (quantity <= left)
+        {
+            return Result.Success();
+        }
+
+        return Error.Rule("cssd.wash_trays_used", left == 0
+            ? $"The {TrayCount(washed)} of {setName} washed in cycle {CycleNumber} {(washed == 1 ? "is" : "are")} already packed. Wash any others in a new cycle."
+            : alreadyPacked == 0
+                ? $"Wash cycle {CycleNumber} washed {TrayCount(washed)} of {setName}: pack at most {left} from it."
+                : $"Wash cycle {CycleNumber} washed {TrayCount(washed)} of {setName}, and {alreadyPacked} {(alreadyPacked == 1 ? "is" : "are")} already packed: pack at most {left} more from it.");
     }
+
+    private static string TrayCount(int count) => count == 1 ? "1 tray" : $"{count} trays";
 
     private void Fail(string reason)
     {
