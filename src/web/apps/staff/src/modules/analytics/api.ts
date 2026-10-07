@@ -461,10 +461,11 @@ export const analyticsQueries = {
       queryKey: [...analyticsKeys.dashboards, id],
       queryFn: ({ signal }) => api.get<DashboardDetail>(`${BASE}/dashboards/${id}`, { signal }),
     }),
-  schedules: () =>
+  /** The facility's e-mails or extracts (the server lists at most 500 of the kind asked for). */
+  schedules: (destination: ScheduleDestination) =>
     queryOptions({
-      queryKey: analyticsKeys.schedules,
-      queryFn: ({ signal }) => api.get<ScheduleDto[]>(`${BASE}/schedules`, { signal }),
+      queryKey: [...analyticsKeys.schedules, 'list', destination],
+      queryFn: ({ signal }) => api.get<ScheduleDto[]>(`${BASE}/schedules`, { query: { destination }, signal }),
     }),
   extractFolder: () =>
     queryOptions({

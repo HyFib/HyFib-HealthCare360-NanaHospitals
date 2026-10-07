@@ -21,9 +21,16 @@ internal sealed class ScheduleService(
     ExtractMonitor monitor,
     TimeProvider time)
 {
-    public async Task<IReadOnlyList<ScheduleDto>> ListAsync(ReportActor actor, CancellationToken ct)
+    /// <summary>The facility's schedules by name, at most 500: e-mails and extracts, or only <paramref name="destination"/>.</summary>
+    public async Task<IReadOnlyList<ScheduleDto>> ListAsync(ReportActor actor, ScheduleDestination? destination, CancellationToken ct)
     {
-        var schedules = await db.Set<ReportSchedule>().AsNoTracking().OrderBy(s => s.Name).Take(500).ToListAsync(ct);
+        var query = db.Set<ReportSchedule>().AsNoTracking();
+        if (destination is { } kind)
+        {
+            query = query.Where(s => s.Destination == kind);
+        }
+
+        var schedules = await query.OrderBy(s => s.Name).Take(500).ToListAsync(ct);
         return schedules.Select(s => ToDto(s, actor)).ToList();
     }
 

@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Analytics.Features.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports;
 using HyFib.HealthCare360.Modules.Analytics.Reports.Export;
+using HyFib.HealthCare360.Modules.Analytics.Services;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Tests.Reports;
 
@@ -99,6 +100,15 @@ public sealed class ReportShapingAndExportTests
             "NH,Orthopaedics,200,90000.00,49.3",
             "NH,,5,100.00,0.5",
         ]);
+    }
+
+    [Fact]
+    public void A_bi_extract_of_a_report_cut_at_its_row_limit_is_not_written()
+    {
+        ReportDeliveryService.IncompleteExtractProblem(new ReportData([["Cardiology", 120]])).ShouldBeNull();
+        ReportDeliveryService.IncompleteExtractProblem(new ReportData([["Cardiology", 120]]) { Truncated = true })
+            .ShouldNotBeNull().ShouldContain("row limit");
+        ReportRunner.ExtractRowCap.ShouldBeGreaterThan(ReportRunner.RowCap, "an extract runs with a higher limit than a screen");
     }
 
     [Theory]

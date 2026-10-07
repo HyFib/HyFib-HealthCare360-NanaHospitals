@@ -27,8 +27,9 @@ internal static class ScheduleEndpoints
     private static async Task<IResult> Folder(ICurrentUser user, ScheduleService schedules, CancellationToken ct) =>
         TypedResults.Ok(await schedules.FolderAsync(user.FacilityId, ct));
 
-    private static async Task<IResult> List(ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
-        await actors.CurrentAsync(ct) is { } actor ? TypedResults.Ok(await schedules.ListAsync(actor, ct)) : SignInRequired();
+    /// <summary>The facility's schedules; <c>?destination=Email</c> or <c>ExtractFolder</c> lists one kind (each screen its own).</summary>
+    private static async Task<IResult> List(ScheduleDestination? destination, ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
+        await actors.CurrentAsync(ct) is { } actor ? TypedResults.Ok(await schedules.ListAsync(actor, destination, ct)) : SignInRequired();
 
     private static async Task<IResult> Get(Guid id, ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
         await actors.CurrentAsync(ct) is { } actor ? (await schedules.GetAsync(actor, id, ct)).ToOk() : SignInRequired();

@@ -79,6 +79,8 @@ public sealed class BiExtractTests(HospitalServer server)
         var refreshed = await admin.GetAsync<ScheduleDto>($"{Schedules}/{extract.Id}");
         refreshed.ExtractState.ShouldBe(ExtractState.Fresh);
         refreshed.LastSucceededAt.ShouldNotBeNull();
+        (await admin.GetAsync<List<ScheduleDto>>($"{Schedules}?destination=ExtractFolder")).ShouldContain(s => s.Id == extract.Id);
+        (await admin.GetAsync<List<ScheduleDto>>($"{Schedules}?destination=Email")).ShouldNotContain(s => s.Id == extract.Id, "each screen lists its own kind");
         var status = await admin.GetAsync<AnalyticsStatusDto>("/api/v1/analytics/status");
         status.ActiveExtracts.ShouldBeGreaterThanOrEqualTo(1);
         status.LastExtractRefreshAt.ShouldNotBeNull();

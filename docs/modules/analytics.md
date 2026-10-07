@@ -115,7 +115,7 @@ is stored as JSON (`dashboards.layout_json`, jsonb): `[{"id","reportId","title",
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/schedules` | → `ScheduleDto[]` (the facility's e-mails and extracts; `destination` tells them apart) |
+| GET | `/schedules?destination=` | → `ScheduleDto[]`: the facility's schedules by name, at most 500; `destination` `Email` or `ExtractFolder` lists one kind (each screen asks for its own) |
 | GET | `/schedules/{id}` | → `ScheduleDto {id, name, reportId, reportTitle, parameters, format, frequency, time, dayOfWeek, dayOfMonth, when, recipients, isActive, ownerName, isMine, nextRunAt, lastRunAt, lastStatus, lastError, version, destination, extractName, extractFile, lastSucceededAt, extractState}`; the last four are for extracts (`extractState`: `Waiting`, `Fresh`, `Late`, `Failing`, `Paused`; null for e-mails) |
 | POST | `/schedules` | `SaveScheduleRequest {name, reportId, parameters, format: Xlsx\|Csv\|Pdf, frequency: Hourly\|Daily\|Weekly\|Monthly, time "HH:mm" (IST; only the minutes for hourly), dayOfWeek (weekly), dayOfMonth 1–28 or 31 = last day (monthly), recipients (1–20), isActive, destination: Email\|ExtractFolder (default Email), extractName}` → 201 |
 | PUT | `/schedules/{id}` | same with `version`; **the person who saves becomes the owner** (the report runs with the owner's permissions and facility access) |
@@ -319,6 +319,10 @@ BI extracts.
   are plain (`55000.50`), dates `yyyy-MM-dd` (months `yyyy-MM`, times `yyyy-MM-dd HH:mm` in IST), and a cell that is
   not a number and starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'` (formula injection). The file is written to `.writing` in the folder and moved over the old one, so a
   reader never sees half a file; a file held open by a reader is retried for about a second.
+* **Row limit**: an extract's report reads up to 100,000 rows (`ReportRunner.ExtractRowCap`; screens and e-mails stop
+  at 5,000), and is never served from or kept in the one-minute report cache. A report that still reaches its limit is
+  not written: the refresh fails ("The report reached its row limit, so the file would leave out data. Narrow the
+  extract's inputs…") and the last complete file stays, so a BI tool never reads part of the data unknowingly.
 * **Run**: the same job, claim and owner check as e-mails (*Scheduled delivery*). A run writes the file, records a
   delivery (status `Ready`, rows, size and period; the content is not kept in HC360, so `fileAvailable` is false),
   sets the schedule's `lastSucceededAt`, and audits it as an export (`analytics.report.exported`, "BI extract

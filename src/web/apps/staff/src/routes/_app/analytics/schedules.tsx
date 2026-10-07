@@ -99,7 +99,7 @@ function SchedulesPage() {
   const queryClient = useQueryClient();
   const canManage = usePermission(A.schedulesManage);
   const catalogue = useQuery(analyticsQueries.catalogue());
-  const schedules = useQuery({ ...analyticsQueries.schedules(), enabled: canManage });
+  const schedules = useQuery({ ...analyticsQueries.schedules('Email'), enabled: canManage });
   const status = useQuery({ ...analyticsQueries.status(), enabled: canManage });
   const [editing, setEditing] = useState<{ schedule: ScheduleDto | null; draft: ScheduleDraft | null } | null>(() =>
     search.create ? { schedule: null, draft: { reportId: search.create, inputs: search.inputs ?? {} } } : null,
@@ -165,7 +165,7 @@ function SchedulesPage() {
     );
   }
 
-  const list = schedules.data?.filter((schedule) => schedule.destination === 'Email');
+  const list = schedules.data;
   const s = status.data;
   const togglePause = (schedule: ScheduleDto) =>
     schedule.isMine ? act.mutate({ kind: 'pause', schedule }) : setPending({ kind: 'pause', schedule });

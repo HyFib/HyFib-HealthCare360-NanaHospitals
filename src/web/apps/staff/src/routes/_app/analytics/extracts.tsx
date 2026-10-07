@@ -102,7 +102,7 @@ function ExtractsPage() {
   const canManage = usePermission(A.schedulesManage);
   const facilityName = useSession((s) => s.user?.facilityName);
   const catalogue = useQuery(analyticsQueries.catalogue());
-  const schedules = useQuery({ ...analyticsQueries.schedules(), enabled: canManage });
+  const schedules = useQuery({ ...analyticsQueries.schedules('ExtractFolder'), enabled: canManage });
   const folder = useQuery({ ...analyticsQueries.extractFolder(), enabled: canManage });
   const status = useQuery({ ...analyticsQueries.status(), enabled: canManage });
   const [editing, setEditing] = useState<{ extract: ScheduleDto | null } | null>(null);
@@ -165,7 +165,7 @@ function ExtractsPage() {
     );
   }
 
-  const list = schedules.data?.filter((s) => s.destination === 'ExtractFolder');
+  const list = schedules.data;
   const s = status.data;
   const where = folder.data;
   const togglePause = (extract: ScheduleDto) =>
