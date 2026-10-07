@@ -147,8 +147,9 @@ export function DataTable<T>(props: DataTableProps<T>) {
   const colClass = (column: Column<T>) =>
     mergeClasses(column.priority === 'low' && styles.lowPriority, column.align === 'end' && styles.alignEnd);
 
+  // Only Enter on the row itself opens it: buttons in the row, and menus opened from them, keep their own Enter.
   const onRowKey = (event: KeyboardEvent, row: T) => {
-    if (event.key === 'Enter' && props.onRowClick) {
+    if (event.key === 'Enter' && props.onRowClick && event.target === event.currentTarget) {
       event.preventDefault();
       props.onRowClick(row);
     }
