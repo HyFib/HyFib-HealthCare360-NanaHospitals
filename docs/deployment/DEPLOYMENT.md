@@ -338,8 +338,9 @@ whose Accession Number and Patient ID are a study's accession number and the pat
 ### BI tools: Power BI and the extract folder
 
 HC360 writes BI extracts (Analytics › BI extracts) as CSV files to one folder, and the BI tool reads them from there.
-Each facility's files are in a sub-folder named by its code (`NH\daily-revenue.csv`), and `refresh-log.csv` at the top
-lists every extract with when it was last refreshed.
+Each facility's files are in a sub-folder named by its code (`NH\daily-revenue.csv`; a facility coded `CON`, `PRN`,
+`AUX` or `NUL`, names Windows keeps for devices, gets `CON_`), and `refresh-log.csv` at the top lists every extract with
+when it was last refreshed.
 
 1. Make a folder for the extracts outside HC360's data folder, for example `D:\HC360-BI`. Give the HC360 service
    *Modify* and the BI tool's account *Read*, and nobody else access:

@@ -42,8 +42,11 @@ internal sealed partial class ExtractFolder(IConfiguration configuration, DataDi
     /// <summary><c>con</c>, <c>nul</c>, <c>com1</c> and the like: Windows opens a device, not a file, by such a name.</summary>
     public static bool IsDeviceName(string? name) => name is not null && DeviceNamePattern().IsMatch(name);
 
-    /// <summary>The facility's sub-folder: its code (2–6 upper-case letters).</summary>
-    public string FacilityFolder(string facilityCode) => Path.Combine(Root, FolderName(facilityCode));
+    /// <summary>The facility's sub-folder (<see cref="FolderNameFor"/>); a code that is not letters and digits is refused.</summary>
+    public string FacilityFolder(string facilityCode) =>
+        facilityCode is { Length: > 0 } && facilityCode.All(char.IsAsciiLetterOrDigit)
+            ? Path.Combine(Root, FolderNameFor(facilityCode))
+            : throw new ArgumentException($"'{facilityCode}' is not a facility code.", nameof(facilityCode));
 
     public string FilePath(string facilityCode, string extractName) => Path.Combine(FacilityFolder(facilityCode), FileName(extractName));
 
@@ -120,10 +123,12 @@ internal sealed partial class ExtractFolder(IConfiguration configuration, DataDi
         }
     }
 
-    private static string FolderName(string facilityCode) =>
-        facilityCode is { Length: > 0 } && facilityCode.All(char.IsAsciiLetterOrDigit)
-            ? facilityCode
-            : throw new ArgumentException($"'{facilityCode}' is not a facility code.", nameof(facilityCode));
+    /// <summary>
+    /// The name of a facility's sub-folder, as the refresh log and the audit show it: its code (2–6 upper-case letters),
+    /// with an underscore after a code Windows keeps for a device (CON, PRN, AUX, NUL), which cannot name a folder: CON_.
+    /// </summary>
+    public static string FolderNameFor(string facilityCode) =>
+        IsDeviceName(facilityCode.ToLowerInvariant()) ? facilityCode + "_" : facilityCode;
 
     private static void TryDelete(string path)
     {

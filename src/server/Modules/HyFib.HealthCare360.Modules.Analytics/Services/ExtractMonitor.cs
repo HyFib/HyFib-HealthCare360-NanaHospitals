@@ -57,7 +57,7 @@ internal sealed class ExtractMonitor(
                     csv,
                     code,
                     extract.Name,
-                    Path.Combine(code, ExtractFolder.FileName(extract.ExtractName!)),
+                    Path.Combine(ExtractFolder.FolderNameFor(code), ExtractFolder.FileName(extract.ExtractName!)),
                     catalog.Find(extract.ReportId)?.Descriptor.Title ?? extract.ReportId,
                     extract.Describe(),
                     extract.LastSucceededAt is { } at ? AnalyticsClock.ToLocal(at).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) : null,

@@ -208,7 +208,7 @@ internal sealed class ReportDeliveryService(
         schedule.RecordRun(now, ScheduleRunStatus.Succeeded, null);
 
         // Saves the delivery and the schedule together with the audit entry.
-        await auditor.ExportedAsync(execution, ExportFormat.Csv, document.Rows.Count, actor, $"BI extract {Path.Combine(facilityCode, delivery.FileName)}", [], ct);
+        await auditor.ExportedAsync(execution, ExportFormat.Csv, document.Rows.Count, actor, $"BI extract {Path.Combine(ExtractFolder.FolderNameFor(facilityCode), delivery.FileName)}", [], ct);
         await monitor.WriteRefreshLogAsync(ct);
         logger.LogInformation("BI extract {ScheduleId} written ({Rows} rows)", schedule.Id, document.Rows.Count);
         return delivery;

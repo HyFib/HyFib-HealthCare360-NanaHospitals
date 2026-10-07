@@ -310,7 +310,9 @@ BI extracts.
   the machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory`; `%VARIABLES%` in it are
   expanded, and a relative path is taken from the data folder), by default `bi-extracts` in the data folder
   (`%ProgramData%\HyFib\HealthCare360\bi-extracts`).
-  Each facility has a sub-folder named by its code, so `NH\daily-revenue.csv`. Only the server's settings choose the
+  Each facility has a sub-folder named by its code, so `NH\daily-revenue.csv`; a code Windows keeps for a device
+  (`CON`, `PRN`, `AUX`, `NUL`) gets an underscore, `CON_`, because Windows cannot make a folder by that name. The
+  refresh log's *File* column and the export audit name the same folder. Only the server's settings choose the
   folder; the staff app chooses file names, which are checked, so nothing is written outside it. IT shares the folder,
   read-only, with the BI tool (`docs/deployment/DEPLOYMENT.md`, *BI tools*).
 * **File** (`ReportExporter.ExtractCsv`): UTF-8 with a byte-order mark, CRLF lines, a header row (`Facility code`, then
