@@ -102,14 +102,14 @@ const failedRefund = exception({
 });
 
 function renderList(onFilters = vi.fn()) {
-  render(
+  const { container } = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <FluentProvider theme={webLightTheme}>
         <GatewayExceptions filters={{}} onFilters={onFilters} />
       </FluentProvider>
     </QueryClientProvider>,
   );
-  return { onFilters };
+  return { onFilters, container };
 }
 
 async function openActions(key: string) {
@@ -183,6 +183,53 @@ describe('GatewayExceptions', () => {
 
     await waitFor(() => expect(gatewayApi.resolve).toHaveBeenCalledWith('e1', 'Refunded by NEFT, UTR 1234', 7));
     expect(notify.success).toHaveBeenCalledWith('Exception resolved', 'Your note is kept with it.');
+  });
+
+  it('opens the note from the row menu with focus in it, and hides the list behind it, not the dialog', async () => {
+    const { container } = renderList();
+
+    await openActions('pay_A1B2C3D4E5');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark resolved…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('textbox')).toHaveFocus();
+
+    // Fluent hides what is behind a modal dialog a moment after it opens; the dialog itself stays readable.
+    await waitFor(() => expect(container).toHaveAttribute('aria-hidden', 'true'));
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
+  });
+
+  it('returns focus to the row menu button when the note is closed from the keyboard', async () => {
+    renderList();
+    const actions = await screen.findByRole('button', { name: 'Actions for pay_A1B2C3D4E5' });
+
+    actions.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Record the receipt' })).toHaveFocus());
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'Mark resolved…' })).toHaveFocus();
+    await userEvent.keyboard('{Enter}');
+    expect(within(await screen.findByRole('alertdialog')).getByRole('textbox')).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(actions).toHaveFocus());
+  });
+
+  it('keeps focus on the confirm button while the note is saved', async () => {
+    vi.mocked(gatewayApi.resolve).mockReturnValue(new Promise<GatewayDiscrepancyDto>(() => {}));
+    renderList();
+
+    await openActions('pay_A1B2C3D4E5');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark resolved…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Refunded by NEFT, UTR 1234');
+    const confirm = within(dialog).getByRole('button', { name: 'Mark resolved' });
+    await userEvent.click(confirm);
+
+    // A disabled button loses focus in the browser, and focus that leaves the dialog goes back to the row behind it.
+    await waitFor(() => expect(confirm).toHaveAttribute('aria-disabled', 'true'));
+    expect(confirm).not.toBeDisabled();
+    expect(confirm).toHaveFocus();
   });
 
   it('tells the accountant when there is nothing to look at', async () => {
