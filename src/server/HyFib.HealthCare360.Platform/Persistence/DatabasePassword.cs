@@ -32,7 +32,11 @@ public interface IDatabaseRolePassword
     /// </summary>
     Task ChangeAsync(string verifier, Func<Task> beforeCommit, CancellationToken ct);
 
-    /// <summary>Whether the account can sign in with <paramref name="password"/> now.</summary>
+    /// <summary>
+    /// Whether the account signs in with <paramref name="password"/> now. Only a sign-in that succeeds counts: a refusal,
+    /// and a connection that fails or is dropped, are all false. PostgreSQL on Windows can close the connection before
+    /// its refusal reaches the client, so a failure cannot tell a wrong password from a database out of reach.
+    /// </summary>
     Task<bool> SignsInWithAsync(string password, CancellationToken ct);
 }
 
@@ -68,8 +72,9 @@ internal sealed partial class PostgresRolePassword(IConfiguration configuration,
             await connection.OpenAsync(ct);
             return true;
         }
-        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.InvalidPassword or PostgresErrorCodes.InvalidAuthorizationSpecification)
+        catch (NpgsqlException)
         {
+            // A refusal (28P01), or on Windows often "connection forcibly closed" for the same refusal.
             return false;
         }
     }
@@ -172,6 +177,20 @@ public sealed class DatabasePasswordService(
                     var temp = path + ".tmp";
                     await File.WriteAllBytesAsync(temp, original, CancellationToken.None);
                     File.Move(temp, path, overwrite: true);
+
+                    // Before the commit nothing can have changed. After it, the old password must be seen to work.
+                    if (fileWritten && !await database.SignsInWithAsync(credentials.Password, CancellationToken.None))
+                    {
+                        logger.LogCritical(ex,
+                            "The database could not be reached to confirm whether the password of {Username} changed, so the settings file keeps the " +
+                            "old one. If HC360 cannot sign in to the database once it is back, set a new password for that account as the postgres " +
+                            "superuser, write the connection string with it in plain text in {File}, run \"HyFib.HealthCare360.Server.exe settings " +
+                            "protect\" and restart the HC360Server service",
+                            credentials.Username, ProtectedSettings.FileName);
+                        return Error.Rule("database.password_unconfirmed",
+                            "The database could not be reached to confirm the change, so HC360 kept the old password. If it stops working, the server log says what to do.");
+                    }
+
                     logger.LogError(ex, "The database password could not be changed; the old password stays");
                     return Error.Rule("database.password_not_changed",
                         "The database password could not be changed, and the old one still works. The server log says why.");
