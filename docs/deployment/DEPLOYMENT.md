@@ -342,6 +342,12 @@ whose Accession Number and Patient ID are a study's accession number and the pat
 3. Run `.\Install-HC360Server.ps1` again, **without** `-CreateDatabase`.
 
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
+Every setting in `hc360.settings.json` stays as it is, including those added by hand (such as
+`HealthCare360:Pdf:BrowserPath` or a reporting replica) and protected values. Of its own settings, the installer changes
+only those given to it again as parameters (`-HttpsPort`, `-FacilityCode`, `-FacilityName`, `-SecondaryBackupDir`), and
+`HealthCare360:Backup:PgDumpPath`, which follows the newest PostgreSQL under Program Files. The same holds when it runs
+again for `-LabPorts`. Leave comments out of the file: Windows PowerShell cannot read them (the installer then stops
+before it changes anything), and they are lost when the file is rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
 done), and checks BitLocker again.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
@@ -398,6 +404,7 @@ distribution tool).
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | "The database could not be reached to confirm the change" after Change password | HC360 kept the old password. If it cannot sign in to the database once the database is back, set a new password for its account as `postgres` (`\password hc360_app` in psql), write the connection string with it in plain text in `hc360.settings.json`, run `settings protect` and restart the `HC360Server` service |
+| `Install-HC360Server.ps1` stops at the start: "… hc360.settings.json is not valid JSON" | Nothing was changed, and HC360 keeps running. Correct the file where the message says (Windows PowerShell does not accept comments in it), then run the installer again |
 | Service will not start: "The setting … cannot be opened on this machine" | The configuration was copied from another server, or the value was damaged. Write that setting's plain value in `hc360.settings.json` and run `settings protect` (see "Changing a protected setting") |
 | "BitLocker is off on D:" or "BitLocker is not installed" (System health) | Turn on BitLocker, with the TPM, for that disk (Control Panel › BitLocker Drive Encryption). The warning clears after the next daily check, or run the *HC360 disk encryption check* task in Task Scheduler › HyFib |
 | "BitLocker was last checked on …" or "has not been checked" (System health) | Is the *HC360 disk encryption check* task in Task Scheduler › HyFib, enabled, and does its last run show success? Run `Install-HC360Server.ps1` again to recreate it |
