@@ -5,11 +5,13 @@ import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { clientType } from './lib/api';
+import { keepFocusInOpenDialogs } from './lib/dialogFocus';
 import { createAppRouter } from './router';
 import './styles.css';
 
 configureAuth({ clientType });
 startConnectionMonitor();
+keepFocusInOpenDialogs();
 
 const queryClient = createHc360QueryClient();
 const router = createAppRouter(queryClient);
