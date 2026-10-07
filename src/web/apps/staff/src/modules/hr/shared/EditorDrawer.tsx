@@ -37,7 +37,18 @@ export function EditorDrawer({
 }) {
   return (
     <OverlayDrawer open={open} position="end" size={size} onOpenChange={(_, data) => !data.open && !busy && onClose()}>
-      <form onSubmit={onSubmit} noValidate style={{ display: 'contents' }}>
+      <form
+        onSubmit={(event) => {
+          // Save stays focusable while saving, so Enter can still submit the form: one save at a time.
+          if (busy) {
+            event.preventDefault();
+          } else {
+            onSubmit(event);
+          }
+        }}
+        noValidate
+        style={{ display: 'contents' }}
+      >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={
@@ -57,7 +68,15 @@ export function EditorDrawer({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: 12 }}>{children}</div>
         </DrawerBody>
         <DrawerFooter>
-          <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy}
+            // While saving the button stays focusable (aria-disabled): a disabled button drops focus out of the open
+            // drawer, and Fluent then returns it to the button that opened the drawer, behind it.
+            disabledFocusable={busy}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             {submitLabel}
           </Button>
           <Button onClick={onClose} disabled={busy}>
