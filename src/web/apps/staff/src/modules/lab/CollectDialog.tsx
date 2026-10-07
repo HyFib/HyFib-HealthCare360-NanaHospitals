@@ -204,7 +204,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
             <DialogActions>
               <Button
                 icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-                disabled={printing}
+                // While printing it stays focusable (aria-disabled) and ignores clicks: a disabled button drops focus
+                // out of the open dialog, and Fluent then returns it to a button behind the dialog.
+                disabledFocusable={printing}
                 onClick={() => void print(labels)}
               >
                 {printLabels ? 'Print labels again' : 'Print labels'}
@@ -333,7 +335,9 @@ export function CollectDialog({ target, onClose }: { target: CollectTarget; onCl
                 <Button
                   type="submit"
                   appearance="primary"
-                  disabled={selected.length === 0 || Boolean(timeProblem) || collect.isPending}
+                  disabled={selected.length === 0 || Boolean(timeProblem)}
+                  // Likewise while collecting; the form ignores a submit while one is running.
+                  disabledFocusable={collect.isPending}
                   icon={collect.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
                 >
                   {selected.length === target.tubes.length
