@@ -36,7 +36,7 @@ import {
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import {
@@ -189,7 +189,8 @@ export function CollectPaymentDialog({
     }
   };
 
-  useHotkey('mod+enter', submit, { enabled: open && !done && side === null, allowInInputs: true });
+  const surface = useRef<HTMLDivElement>(null);
+  useHotkey('mod+enter', submit, { enabled: open && !done && side === null, allowInInputs: true, within: surface });
 
   const shiftMissing = canShift && shift.data === null;
   const shiftRequired =
@@ -201,7 +202,7 @@ export function CollectPaymentDialog({
   return (
     <>
       <Dialog open={open && side === null} onOpenChange={(_, data) => !data.open && !collect.isPending && onClose()}>
-        <DialogSurface style={{ maxWidth: 820, width: '100%' }}>
+        <DialogSurface ref={surface} style={{ maxWidth: 820, width: '100%' }}>
           <DialogBody>
             <DialogTitle>{done ? 'Payment recorded' : 'Collect payment'}</DialogTitle>
             <DialogContent className={styles.body}>

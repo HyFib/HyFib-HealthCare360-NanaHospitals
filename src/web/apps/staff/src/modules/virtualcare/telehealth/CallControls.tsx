@@ -84,8 +84,15 @@ export function CallControls({ state, call, canEnd, onEnd, onLeave }: CallContro
   const canUseMic = active && state.media.hasAudio;
   const canUseCamera = active && state.media.hasVideo;
 
-  useHotkey('mod+shift+m', () => canUseMic && call.setMicrophone(!state.micOn), { allowInInputs: true });
-  useHotkey('mod+shift+o', () => canUseCamera && call.setCamera(!state.cameraOn), { allowInInputs: true });
+  // Muting must work even while a dialog is open over the call.
+  useHotkey('mod+shift+m', () => canUseMic && call.setMicrophone(!state.micOn), {
+    allowInInputs: true,
+    overDialogs: true,
+  });
+  useHotkey('mod+shift+o', () => canUseCamera && call.setCamera(!state.cameraOn), {
+    allowInInputs: true,
+    overDialogs: true,
+  });
 
   return (
     <div className={styles.bar} role="toolbar" aria-label="Call controls">

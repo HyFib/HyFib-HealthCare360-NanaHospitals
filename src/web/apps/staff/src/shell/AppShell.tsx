@@ -119,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     typeof settings.data?.['ui.idleLockMinutes'] === 'number' ? (settings.data['ui.idleLockMinutes'] as number) : 10;
   useIdle(lockMinutes * 60_000, () => setLocked(true), lockMinutes > 0);
   useHotkey('mod+k', () => setPaletteOpen(true), { allowInInputs: true });
-  useHotkey('mod+shift+l', () => setLocked(true), { allowInInputs: true });
+  useHotkey('mod+shift+l', () => setLocked(true), { allowInInputs: true, overDialogs: true });
 
   const sections = NAV_SECTIONS.map((section) => ({
     ...section,

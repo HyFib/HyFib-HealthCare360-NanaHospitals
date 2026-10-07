@@ -98,7 +98,9 @@ export const bedQueries = {
 * Forms: react-hook-form + zod (`zodResolver`) + `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
   `DateField`, `SwitchField`, `ChoiceField`, `LookupField`, laid out with `FormGrid`. On submit errors call
   `applyServerErrors(error, form.setError)` so server validation lands on the right field. Long clinical forms use
-  `useFormDraft(form, key)` (auto-save to the workstation) and `useHotkey('mod+s', …)`.
+  `useFormDraft(form, key)` (auto-save to the workstation) and `useHotkey('mod+s', …)`. A page's shortcuts do nothing
+  while a dialog or drawer is open over it; a shortcut that belongs to a dialog passes its surface as `within` (a ref
+  on `DialogSurface` or `OverlayDrawer`).
 * Patient context: show `PatientBannerWithFlags` (`src/modules/emr/PatientBannerWithFlags.tsx`) on every
   patient-specific screen. It is `PatientBanner` plus the patient's allergies and alerts (EHR-03), loaded for staff
   allowed to see them and kept live. A dialog or counter that acts on a patient without a banner shows
