@@ -17,6 +17,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { adminQueries, formatBytes, type SystemHealthReport, type WifiSample } from '@/modules/admin/api';
+import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
 
 export const Route = createFileRoute('/_app/admin/system')({
@@ -152,6 +153,7 @@ function SystemHealthPage() {
             <Row label="Connections">{h.database.connections}</Row>
             <Row label="Schema">{h.database.lastMigration}</Row>
           </div>
+          <DatabasePassword />
         </Section>
         <Section title="Storage">
           <div className={styles.rows}>

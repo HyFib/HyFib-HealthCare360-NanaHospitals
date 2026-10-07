@@ -78,15 +78,21 @@ public static class PlatformServiceCollectionExtensions
         // ---------------- persistence
         var connectionString = configuration.GetConnectionString("Hospital")
             ?? throw new InvalidOperationException("Connection string 'Hospital' is not configured.");
+
+        // The password is supplied as each connection opens, so Administration can change it while the server runs.
+        var credentials = new DatabaseCredentials(connectionString);
+        services.AddSingleton(credentials);
+        var (hospitalConnection, supplyPassword) = credentials.For(connectionString);
         services.AddScoped<DomainEventDispatcher>();
         services.AddScoped<UnitOfWorkInterceptor>();
         services.AddDbContextFactory<HospitalDbContext>((sp, db) =>
         {
-            db.UseNpgsql(connectionString, npgsql =>
+            db.UseNpgsql(hospitalConnection, npgsql =>
                 {
                     npgsql.MigrationsAssembly(migrationsAssembly);
                     npgsql.MigrationsHistoryTable(MigrationBaseline.HistoryTable, MigrationBaseline.HistorySchema);
                     npgsql.CommandTimeout(60);
+                    npgsql.ConfigureDataSource(supplyPassword);
                 })
                 .UseSnakeCaseNamingConvention()
                 .AddInterceptors(sp.GetRequiredService<UnitOfWorkInterceptor>());
@@ -96,6 +102,9 @@ public static class PlatformServiceCollectionExtensions
             }
         }, ServiceLifetime.Scoped);
         services.AddScoped(sp => sp.GetRequiredService<IDbContextFactory<HospitalDbContext>>().CreateDbContext());
+        services.TryAddSingleton(new SettingsFileProtection(ProtectedSettings.ForThisMachine()));
+        services.AddSingleton<IDatabaseRolePassword, PostgresRolePassword>();
+        services.AddScoped<DatabasePasswordService>();
         services.AddSingleton<DatabaseInitializer>();
 
         // ---------------- security

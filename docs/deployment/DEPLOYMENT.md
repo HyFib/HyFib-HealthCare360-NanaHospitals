@@ -114,6 +114,24 @@ A protected value opens only on the machine that protected it. When the server m
 values in plain text on the new machine and protect them there (Install-HC360Server.ps1 does this for the database).
 Administration › System health warns while a secret in the file is in plain text.
 
+### Changing the database password
+
+The password of HC360's database account is changed from Administration › System health, while HC360 runs (SRS
+SEC-07). It needs the permission *Change the server's database password* (`admin.system.manage`), which only
+SuperAdmin has until it is given to another role in Administration › Roles and permissions. Then:
+
+1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
+2. Select **Change password** and confirm.
+
+HC360 makes a new random password that nobody sees, sets it on the database and writes it protected in the settings
+file together, and uses it for every new connection. Screens keep working, and no restart is needed. When either step
+fails, both keep the old password. A reporting replica in the settings file that signs in as the same account gets the
+new password too. Each change is recorded in the audit log. Change the password when someone who knew the old one
+leaves, and at least once a year.
+
+It works on the Windows Server Node when the connection string is in the settings file. When the connection is set
+somewhere else, such as in environment variables, System health says so, and the password is changed there.
+
 ## 4. First sign-in and security set-up
 
 On the server open `https://localhost:7360/`. The browser warns once, because the hospital CA is private. Then:

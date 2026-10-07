@@ -297,6 +297,11 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   the file, so a copy of the file is no use on another computer, and the file itself can be read only by SYSTEM,
   Administrators and the service. The installer protects them on every install and upgrade, and System health warns
   while one is in plain text. Integration keys are stored encrypted in the database, as before.
+- **The database password is changed from System health** (SRS SEC-07), by holders of `admin.system.manage`, which
+  only SuperAdmin has by default. HC360 makes a new random password that nobody sees and sends PostgreSQL only its SCRAM-SHA-256
+  verifier, so the password never appears in a statement or the database's logs. The settings file is written before
+  the change is committed and put back if the commit fails, so the two always agree. New connections use the new
+  password at once, and each change is audited.
 - **BitLocker** must protect every fixed disk of the Server Node (SRS SEC-05). Reading BitLocker's state needs
   administrator rights, which the service does not have, so a scheduled task checks it as SYSTEM every day and at
   start-up, and the installer checks it too. System health shows the result, and warns when a disk is not encrypted,

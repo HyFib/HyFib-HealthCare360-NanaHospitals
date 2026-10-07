@@ -11,7 +11,7 @@ internal sealed class ReportingDatabase
     public const string ConnectionName = "Analytics";
     public const string LegacyConnectionName = "Reporting";
 
-    public ReportingDatabase(IConfiguration configuration)
+    public ReportingDatabase(IConfiguration configuration, DatabaseCredentials credentials)
     {
         var connectionString = configuration.GetConnectionString(ConnectionName) ?? configuration.GetConnectionString(LegacyConnectionName);
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -19,9 +19,13 @@ internal sealed class ReportingDatabase
             return;
         }
 
+        // A replica signing in as the server's own account follows its password when Administration changes it: the
+        // change reaches the replica with the rest of the database.
+        var (replica, supplyPassword) = credentials.For(connectionString);
+
         // Built once: EF Core caches the internal services and the model per options instance.
         Options = new DbContextOptionsBuilder<HospitalDbContext>()
-            .UseNpgsql(connectionString, npgsql => npgsql.CommandTimeout(120))
+            .UseNpgsql(replica, npgsql => npgsql.CommandTimeout(120).ConfigureDataSource(supplyPassword))
             .UseSnakeCaseNamingConvention()
             .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking)
             .Options;

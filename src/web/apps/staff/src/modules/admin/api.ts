@@ -129,6 +129,23 @@ export interface DiskEncryptionReport {
   volumes: VolumeEncryption[];
 }
 
+/** Whether Administration can change the database password (SRS SEC-07), and when it was last changed. */
+export interface DatabasePasswordStatus {
+  /** The PostgreSQL account the server signs in as. */
+  username: string;
+  canChange: boolean;
+  /** Why it cannot be changed here, when it cannot. */
+  reason: string | null;
+  lastChangedAt: string | null;
+  lastChangedBy: string | null;
+}
+
+export interface DatabasePasswordChanged {
+  changedAt: string;
+  /** The settings that now hold the new password, e.g. ConnectionStrings:Hospital. */
+  settingsChanged: string[];
+}
+
 export interface SystemHealthReport {
   server: {
     machineName: string;
@@ -311,6 +328,11 @@ export const adminQueries = {
       queryFn: ({ signal }) => api.get<SystemHealthReport>('/api/v1/admin/system/health', { signal }),
       refetchInterval: 30_000,
     }),
+  databasePassword: () =>
+    queryOptions({
+      queryKey: ['admin', 'database-password'],
+      queryFn: ({ signal }) => api.get<DatabasePasswordStatus>('/api/v1/admin/system/database-password', { signal }),
+    }),
   wifiSamples: (hours: number) =>
     queryOptions({
       queryKey: ['admin', 'wifi-samples', hours],
@@ -349,4 +371,13 @@ export function formatBytes(bytes: number | null | undefined): string {
     unit++;
   }
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+/**
+ * Gives the server's database account a new random password, needing `admin.system.manage`. 422 when it cannot be
+ * changed here (`database.password_none`, `database.password_not_windows`, `database.password_elsewhere`) or the change
+ * failed and the old password stays (`database.password_not_changed`).
+ */
+export function changeDatabasePassword() {
+  return api.post<DatabasePasswordChanged>('/api/v1/admin/system/database-password/change');
 }

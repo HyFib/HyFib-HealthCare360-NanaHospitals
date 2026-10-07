@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.Json;
+using Microsoft.Extensions.FileProviders;
 
 namespace HyFib.HealthCare360.Platform.Hosting;
 
@@ -115,30 +116,76 @@ public static class ProtectedSettings
     /// it whole, and with a byte order mark when it had one (Windows PowerShell 5.1 reads UTF-8 without one as ANSI).
     /// Comments in the file are not kept.
     /// </summary>
-    public static IReadOnlyList<string> ProtectFile(string path, ISettingProtector protector)
-    {
-        var hadByteOrderMark = File.ReadAllBytes(path).AsSpan().StartsWith(Encoding.UTF8.Preamble);
-        var root = Read(path);
-        var protectedKeys = new List<string>();
-        Visit(root, null, (key, value) =>
+    public static IReadOnlyList<string> ProtectFile(string path, ISettingProtector protector) =>
+        Rewrite(path, (key, value) =>
+            !IsSecret(key) || string.IsNullOrEmpty(value) || IsProtected(value) ? null : Prefix + protector.Protect(value));
+
+    /// <summary>
+    /// Changes secrets of the file: <paramref name="change"/> gets each secret's key and plain value, and returns its new
+    /// plain value, or null to leave it. New values are written protected, as <see cref="ProtectFile"/> writes them.
+    /// Returns the keys it changed.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">A protected value cannot be opened on this machine.</exception>
+    public static IReadOnlyList<string> ChangeSecrets(string path, ISettingProtector protector, Func<string, string, string?> change) =>
+        Rewrite(path, (key, value) =>
         {
-            if (!IsSecret(key) || string.IsNullOrEmpty(value) || IsProtected(value))
+            if (!IsSecret(key) || string.IsNullOrEmpty(value))
             {
                 return null;
             }
 
-            protectedKeys.Add(key);
-            return Prefix + protector.Protect(value);
+            var plain = IsProtected(value) ? Reveal(key, value, protector) : value;
+            return change(key, plain) is { } changed ? Prefix + protector.Protect(changed) : null;
         });
 
-        if (protectedKeys.Count > 0)
+    /// <summary>
+    /// Replaces the string values <paramref name="replace"/> gives a new value for, and returns their keys. The file is
+    /// rewritten only when something changed, through a temporary file, so a failure leaves it whole.
+    /// </summary>
+    private static List<string> Rewrite(string path, Func<string, string, string?> replace)
+    {
+        var hadByteOrderMark = File.ReadAllBytes(path).AsSpan().StartsWith(Encoding.UTF8.Preamble);
+        var root = Read(path);
+        var changed = new List<string>();
+        Visit(root, null, (key, value) =>
+        {
+            if (replace(key, value) is not { } replaced)
+            {
+                return null;
+            }
+
+            changed.Add(key);
+            return replaced;
+        });
+
+        if (changed.Count > 0)
         {
             var temp = path + ".tmp";
             File.WriteAllText(temp, root.ToJsonString(WriteOptions) + Environment.NewLine, new UTF8Encoding(hadByteOrderMark));
             File.Move(temp, path, overwrite: true);
         }
 
-        return protectedKeys;
+        return changed;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="key"/>'s value comes from the settings file at <paramref name="path"/>, rather than a source
+    /// read after it (environment variables) or before it that it does not override.
+    /// </summary>
+    public static bool ComesFromFile(IConfiguration configuration, string key, string path)
+    {
+        if (configuration is not IConfigurationRoot root
+            || root.Providers.Reverse().FirstOrDefault(p => p.TryGet(key, out _)) is not ProtectedJsonConfigurationProvider provider
+            || provider.Source.FileProvider is not PhysicalFileProvider files
+            || provider.Source.Path is not { } relative)
+        {
+            return false;
+        }
+
+        return string.Equals(
+            Path.GetFullPath(Path.Combine(files.Root, relative)),
+            Path.GetFullPath(path),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
     }
 
     /// <summary>A protected value opened, or a clear error that names the setting (never its value).</summary>

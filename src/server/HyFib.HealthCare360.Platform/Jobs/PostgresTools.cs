@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -27,9 +28,11 @@ public interface IPostgresTools
     Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct);
 }
 
-internal sealed class PostgresTools(IConfiguration configuration, IOptions<PlatformOptions> options, ILogger<PostgresTools> logger) : IPostgresTools
+internal sealed class PostgresTools(
+    IConfiguration configuration, DatabaseCredentials credentials, IOptions<PlatformOptions> options, ILogger<PostgresTools> logger) : IPostgresTools
 {
-    private NpgsqlConnectionStringBuilder Connection => new(configuration.GetConnectionString("Hospital"));
+    // With the current password, which Administration may have changed since the server started.
+    private NpgsqlConnectionStringBuilder Connection => new(credentials.WithCurrentPassword(configuration.GetConnectionString("Hospital")!));
 
     public string DatabaseName => Connection.Database ?? string.Empty;
 
