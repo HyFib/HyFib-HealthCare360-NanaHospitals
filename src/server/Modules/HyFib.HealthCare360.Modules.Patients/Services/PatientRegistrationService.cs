@@ -223,6 +223,8 @@ public sealed class PatientRegistrationService(
             document.PatientId = target.Id;
         }
 
+        await MovePortalFamilyLinksAsync(source, target, ct);
+
         target.AbhaNumberCipher ??= source.AbhaNumberCipher;
         target.AbhaNumberIndex ??= source.AbhaNumberIndex;
         target.AbhaNumberMasked ??= source.AbhaNumberMasked;
@@ -241,6 +243,35 @@ public sealed class PatientRegistrationService(
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Family members who saw the duplicate in the portal see the surviving record instead. A link that the surviving
+    /// record already has for the same number, or one to the number the surviving record is registered with, is ended.
+    /// Open portal codes for the duplicate are left to expire.
+    /// </summary>
+    private async Task MovePortalFamilyLinksAsync(Patient source, Patient target, CancellationToken ct)
+    {
+        var links = await db.Set<PortalFamilyLink>().Where(l => l.PatientId == source.Id).ToListAsync(ct);
+        if (links.Count == 0)
+        {
+            return;
+        }
+
+        var targetNumbers = await db.Set<PortalFamilyLink>()
+            .Where(l => l.PatientId == target.Id && l.RevokedAt == null)
+            .Select(l => l.AccountPhone)
+            .ToListAsync(ct);
+        var now = time.GetUtcNow();
+        foreach (var link in links)
+        {
+            if (link.IsActive && (targetNumbers.Contains(link.AccountPhone) || link.AccountPhone == target.Phone))
+            {
+                link.Revoke($"Merged into {target.Uhid}, which this number already sees.", currentUser.UserId, now);
+            }
+
+            link.PatientId = target.Id;
+        }
     }
 
     private async Task<Error?> CheckIdentifierConflictsAsync(PatientInput input, Guid? excludeId, CancellationToken ct)

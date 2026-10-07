@@ -162,6 +162,7 @@ public sealed class DataDirectories
     public DataDirectories(PlatformOptions options)
     {
         Root = ResolveRoot(options.DataDirectory);
+        Config = Path.Combine(Root, "config");
         Keys = Path.Combine(Root, "keys");
         Certificates = Path.Combine(Root, "certs");
         Files = Path.Combine(Root, "files");
@@ -171,6 +172,10 @@ public sealed class DataDirectories
     }
 
     public string Root { get; }
+
+    /// <summary>The site's settings (<c>hc360.settings.json</c>) and what the elevated checks record for the server.</summary>
+    public string Config { get; }
+
     public string Keys { get; }
     public string Certificates { get; }
     public string Files { get; }
@@ -180,7 +185,7 @@ public sealed class DataDirectories
 
     public void EnsureCreated()
     {
-        foreach (var dir in new[] { Root, Keys, Certificates, Files, Logs, Backups, Temp })
+        foreach (var dir in new[] { Root, Config, Keys, Certificates, Files, Logs, Backups, Temp })
         {
             Directory.CreateDirectory(dir);
         }

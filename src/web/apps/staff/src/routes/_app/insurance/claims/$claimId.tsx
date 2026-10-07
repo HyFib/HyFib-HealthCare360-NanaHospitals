@@ -44,6 +44,7 @@ import { insuranceApi, insuranceKeys, insuranceQueries, type ClaimDetail } from 
 import { Attachments } from '@/modules/insurance/Attachments';
 import { ApproveClaimDialog, SettleClaimDialog } from '@/modules/insurance/ClaimDialogs';
 import { CLAIM_STATUS_LABEL, claimTone } from '@/modules/insurance/labels';
+import { VerifiedCodingNotice } from '@/modules/insurance/VerifiedCoding';
 
 export const Route = createFileRoute('/_app/insurance/claims/$claimId')({
   component: ClaimPage,
@@ -305,7 +306,10 @@ function ClaimPage() {
   );
 }
 
-/** Claim coding (MB-03): ICD-10 diagnoses and procedures as text, the documents sent and the insurer's claim number. */
+/**
+ * Claim coding (MB-03): ICD-10 diagnoses and procedures as text, the documents sent and the insurer's claim number. The
+ * coding medical records verified for the stay or visit can be copied in.
+ */
 function CodingSection({ claim }: { claim: ClaimDetail }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -353,6 +357,19 @@ function CodingSection({ claim }: { claim: ClaimDetail }) {
       }
     >
       <div className={styles.form}>
+        <VerifiedCodingNotice
+          verified={claim.verifiedCoding}
+          diagnosis={diagnosis}
+          procedures={procedures}
+          onUse={
+            closed
+              ? undefined
+              : (verified) => {
+                  setDiagnosis(verified.diagnosisCodes ?? '');
+                  setProcedures(verified.procedureCodes ?? '');
+                }
+          }
+        />
         <div className={styles.grid}>
           <Field label="Diagnosis (ICD-10)">
             <Textarea

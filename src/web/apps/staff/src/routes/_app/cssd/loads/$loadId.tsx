@@ -327,6 +327,13 @@ function Packs({ load }: { load: LoadDto }) {
         { key: 'number', header: 'Pack', width: 200, render: (p) => <Text font="monospace">{p.packNumber}</Text> },
         { key: 'set', header: 'Set', render: (p) => p.setName ?? '—' },
         {
+          key: 'wash',
+          header: 'Washed in',
+          width: 170,
+          priority: 'low',
+          render: (p) => (p.washCycleNumber ? <Text font="monospace">{p.washCycleNumber}</Text> : 'Not recorded'),
+        },
+        {
           key: 'expiry',
           header: 'Use by',
           width: 150,

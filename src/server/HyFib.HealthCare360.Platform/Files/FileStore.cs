@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -57,6 +58,10 @@ public interface IFileStore
 internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories directories, IFieldProtector protector, ICurrentUser currentUser, TimeProvider time) : IFileStore
 {
     public const long MaxBytes = 25 * 1024 * 1024;
+
+    /// <summary>SCP-ECG has no registered media type; HC360 stores it under this one.</summary>
+    public const string ScpEcgContentType = "application/x-scp-ecg";
+
     private const string Purpose = "files";
 
     public async Task<Result<StoredFile>> SaveAsync(Stream content, string fileName, string category, Guid? patientId, string? ownerModule, CancellationToken cancellationToken)
@@ -77,7 +82,7 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
         var contentType = SniffContentType(bytes);
         if (contentType is null)
         {
-            return Error.Field("file", "Only PDF, PNG, JPEG and WebP files are accepted.");
+            return Error.Field("file", "Only PDF, PNG, JPEG, WebP, DICOM and SCP-ECG files are accepted.");
         }
 
         var now = time.GetUtcNow();
@@ -138,14 +143,43 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
     // DICOM Part 10: a 128-byte preamble followed by "DICM" (ECG/echo/cardiology device output, key images).
     private static bool IsDicom(ReadOnlySpan<byte> bytes) => bytes.Length > 132 && bytes.Slice(128, 4).SequenceEqual("DICM"u8);
 
-    internal static string? SniffContentType(ReadOnlySpan<byte> bytes) => IsDicom(bytes) ? "application/dicom" : bytes switch
+    /// <summary>
+    /// An SCP-ECG record (EN 1064), the format ECG machines export: a CRC and the record's length, then section 0, whose
+    /// header holds the section number 0 and "SCPECG" in its reserved bytes. A record without that text is taken when its
+    /// length and its CRC-CCITT agree with the file.
+    /// </summary>
+    private static bool IsScpEcg(ReadOnlySpan<byte> bytes) =>
+        bytes.Length >= 22
+        && BinaryPrimitives.ReadUInt32LittleEndian(bytes[2..]) == bytes.Length
+        && BinaryPrimitives.ReadUInt16LittleEndian(bytes[8..]) == 0
+        && (bytes.Slice(16, 6).SequenceEqual("SCPECG"u8)
+            || Crc16Ccitt(bytes[2..]) == BinaryPrimitives.ReadUInt16LittleEndian(bytes));
+
+    /// <summary>CRC-CCITT as SCP-ECG computes it: polynomial 0x1021, starting from 0xFFFF.</summary>
+    internal static ushort Crc16Ccitt(ReadOnlySpan<byte> bytes)
     {
-        [0x25, 0x50, 0x44, 0x46, 0x2D, ..] => "application/pdf",
-        [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ..] => "image/png",
-        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
-        [0x52, 0x49, 0x46, 0x46, _, _, _, _, 0x57, 0x45, 0x42, 0x50, ..] => "image/webp",
-        _ => null,
-    };
+        var crc = 0xFFFF;
+        foreach (var value in bytes)
+        {
+            crc ^= value << 8;
+            for (var bit = 0; bit < 8; bit++)
+            {
+                crc = ((crc << 1) ^ ((crc & 0x8000) != 0 ? 0x1021 : 0)) & 0xFFFF;
+            }
+        }
+
+        return (ushort)crc;
+    }
+
+    internal static string? SniffContentType(ReadOnlySpan<byte> bytes) =>
+        IsDicom(bytes) ? "application/dicom" : IsScpEcg(bytes) ? ScpEcgContentType : bytes switch
+        {
+            [0x25, 0x50, 0x44, 0x46, 0x2D, ..] => "application/pdf",
+            [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, ..] => "image/png",
+            [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
+            [0x52, 0x49, 0x46, 0x46, _, _, _, _, 0x57, 0x45, 0x42, 0x50, ..] => "image/webp",
+            _ => null,
+        };
 
     // The extensions each accepted type may carry; the first is the one given when the uploaded name's does not fit.
     private static readonly Dictionary<string, string[]> Extensions = new(StringComparer.Ordinal)
@@ -155,6 +189,7 @@ internal sealed class EncryptedFileStore(HospitalDbContext db, DataDirectories d
         ["image/jpeg"] = [".jpg", ".jpeg"],
         ["image/webp"] = [".webp"],
         ["application/dicom"] = [".dcm"],
+        [ScpEcgContentType] = [".scp"],
     };
 
     /// <summary>

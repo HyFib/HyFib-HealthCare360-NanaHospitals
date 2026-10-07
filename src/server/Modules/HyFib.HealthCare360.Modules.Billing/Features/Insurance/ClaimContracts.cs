@@ -53,9 +53,19 @@ public sealed record ClaimDetail(
     string? RejectionReason,
     IReadOnlyList<ClaimSettlementDto> Settlements,
     IReadOnlyList<ClaimDeductionDto> Deductions,
+    VerifiedClaimCoding? VerifiedCoding,
     uint Version);
 
-/// <summary>Claim on the payer share of a finalized bill; codes default to those of the pre-authorisation.</summary>
+/// <summary>
+/// The coding medical records verified for the bill's stay or visit (MRD-02, MB-03), as the text of a claim's codes: what
+/// a new claim takes, and what the claim screen offers when the claim's codes differ.
+/// </summary>
+public sealed record VerifiedClaimCoding(string? DiagnosisCodes, string? ProcedureCodes, DateTimeOffset VerifiedAt);
+
+/// <summary>
+/// Claim on the payer share of a finalized bill. Codes left empty are those medical records verified for the stay or
+/// visit, or else those of the pre-authorisation.
+/// </summary>
 public sealed record CreateClaimRequest(
     Guid BillId,
     decimal? ClaimedAmount,

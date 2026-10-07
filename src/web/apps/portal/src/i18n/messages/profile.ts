@@ -42,7 +42,7 @@ export const profileMessages = defineMessages({
       'Medical records are kept for as long as the law and medical rules require. Security records are kept for a limited time and then deleted.',
     'privacy.family.title': 'Family members',
     'privacy.family.body':
-      'Everyone registered at the hospital with your mobile number appears in your portal. If someone should not be linked to your number, ask the front desk to change it.',
+      'Everyone registered at the hospital with your mobile number appears in your portal. A family member with their own number appears too once they agree, by giving you a code sent to their number or at the front desk. In your profile you can see who else sees your records, and stop it at any time. If someone should not be linked to your number, ask the front desk to change it.',
     'privacy.rights.title': 'Your rights',
     'privacy.rights.1':
       'See your information: it is in this portal, with a free summary of all the data we hold about you, and you can ask for a copy of your records.',
@@ -103,7 +103,7 @@ export const profileMessages = defineMessages({
       'मेडिकल रिकॉर्ड उतने समय तक रखे जाते हैं जितना कानून और चिकित्सा नियम कहते हैं। सुरक्षा रिकॉर्ड सीमित समय तक रखे जाते हैं और फिर हटा दिए जाते हैं।',
     'privacy.family.title': 'परिवार के सदस्य',
     'privacy.family.body':
-      'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
+      'अस्पताल में आपके मोबाइल नंबर से पंजीकृत हर व्यक्ति आपके पोर्टल में दिखता है। अपने अलग नंबर वाले परिवार के सदस्य भी दिखते हैं, जब वे सहमति दें: उनके नंबर पर भेजा गया कोड आपको देकर, या फ्रंट डेस्क पर। अपनी प्रोफ़ाइल में आप देख सकते हैं कि आपके रिकॉर्ड और कौन देखता है, और इसे कभी भी बंद कर सकते हैं। अगर किसी को आपके नंबर से नहीं जुड़ा होना चाहिए, तो फ्रंट डेस्क से इसे बदलवाएँ।',
     'privacy.rights.title': 'आपके अधिकार',
     'privacy.rights.1':
       'अपनी जानकारी देखना: यह इस पोर्टल में है, जहाँ हमारे पास मौजूद आपके पूरे डेटा का मुफ़्त सारांश भी है, और आप अपने रिकॉर्ड की कॉपी माँग सकते हैं।',

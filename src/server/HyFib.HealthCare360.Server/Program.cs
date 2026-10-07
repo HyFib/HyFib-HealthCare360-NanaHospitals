@@ -32,11 +32,12 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
-// Site-specific settings live beside the data (survive upgrades): %ProgramData%\HyFib\HealthCare360\config\hc360.settings.json
+// Site-specific settings live beside the data (survive upgrades): %ProgramData%\HyFib\HealthCare360\config\hc360.settings.json.
+// Its secrets (the database password) are kept protected with DPAPI and opened as the file loads (SRS SEC-07).
 var platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();
 var directories = new DataDirectories(platformOptions);
 directories.EnsureCreated();
-builder.Configuration.AddJsonFile(Path.Combine(directories.Root, "config", "hc360.settings.json"), optional: true, reloadOnChange: false);
+builder.Configuration.AddProtectedJsonFile(ProtectedSettings.PathIn(directories));
 builder.Configuration.AddEnvironmentVariables("HC360_");
 platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? platformOptions;
 

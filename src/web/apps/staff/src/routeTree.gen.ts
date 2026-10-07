@@ -203,6 +203,8 @@ import { Route as AppCrmReferralsIndexRouteImport } from './routes/_app/crm/refe
 import { Route as AppCrmReferralsDoctorIdRouteImport } from './routes/_app/crm/referrals/$doctorId'
 import { Route as AppCssdLoadsIndexRouteImport } from './routes/_app/cssd/loads/index'
 import { Route as AppCssdLoadsLoadIdRouteImport } from './routes/_app/cssd/loads/$loadId'
+import { Route as AppCssdWashesIndexRouteImport } from './routes/_app/cssd/washes/index'
+import { Route as AppCssdWashesWashIdRouteImport } from './routes/_app/cssd/washes/$washId'
 import { Route as AppDialysisPatientsIndexRouteImport } from './routes/_app/dialysis/patients/index'
 import { Route as AppDialysisPatientsPatientIdRouteImport } from './routes/_app/dialysis/patients/$patientId'
 import { Route as AppDialysisSessionsIndexRouteImport } from './routes/_app/dialysis/sessions/index'
@@ -1291,6 +1293,16 @@ const AppCssdLoadsLoadIdRoute = AppCssdLoadsLoadIdRouteImport.update({
   path: '/cssd/loads/$loadId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCssdWashesIndexRoute = AppCssdWashesIndexRouteImport.update({
+  id: '/cssd/washes/',
+  path: '/cssd/washes/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCssdWashesWashIdRoute = AppCssdWashesWashIdRouteImport.update({
+  id: '/cssd/washes/$washId',
+  path: '/cssd/washes/$washId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDialysisPatientsIndexRoute =
   AppDialysisPatientsIndexRouteImport.update({
     id: '/dialysis/patients/',
@@ -2012,6 +2024,7 @@ export interface FileRoutesByFullPath {
   '/crm/patients/$patientId': typeof AppCrmPatientsPatientIdRoute
   '/crm/referrals/$doctorId': typeof AppCrmReferralsDoctorIdRoute
   '/cssd/loads/$loadId': typeof AppCssdLoadsLoadIdRoute
+  '/cssd/washes/$washId': typeof AppCssdWashesWashIdRoute
   '/dialysis/patients/$patientId': typeof AppDialysisPatientsPatientIdRoute
   '/dialysis/sessions/$id': typeof AppDialysisSessionsIdRoute
   '/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
@@ -2082,6 +2095,7 @@ export interface FileRoutesByFullPath {
   '/crm/patients/': typeof AppCrmPatientsIndexRoute
   '/crm/referrals/': typeof AppCrmReferralsIndexRoute
   '/cssd/loads/': typeof AppCssdLoadsIndexRoute
+  '/cssd/washes/': typeof AppCssdWashesIndexRoute
   '/dialysis/patients/': typeof AppDialysisPatientsIndexRoute
   '/dialysis/sessions/': typeof AppDialysisSessionsIndexRoute
   '/feedback/complaints/': typeof AppFeedbackComplaintsIndexRoute
@@ -2306,6 +2320,7 @@ export interface FileRoutesByTo {
   '/crm/patients/$patientId': typeof AppCrmPatientsPatientIdRoute
   '/crm/referrals/$doctorId': typeof AppCrmReferralsDoctorIdRoute
   '/cssd/loads/$loadId': typeof AppCssdLoadsLoadIdRoute
+  '/cssd/washes/$washId': typeof AppCssdWashesWashIdRoute
   '/dialysis/patients/$patientId': typeof AppDialysisPatientsPatientIdRoute
   '/dialysis/sessions/$id': typeof AppDialysisSessionsIdRoute
   '/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
@@ -2376,6 +2391,7 @@ export interface FileRoutesByTo {
   '/crm/patients': typeof AppCrmPatientsIndexRoute
   '/crm/referrals': typeof AppCrmReferralsIndexRoute
   '/cssd/loads': typeof AppCssdLoadsIndexRoute
+  '/cssd/washes': typeof AppCssdWashesIndexRoute
   '/dialysis/patients': typeof AppDialysisPatientsIndexRoute
   '/dialysis/sessions': typeof AppDialysisSessionsIndexRoute
   '/feedback/complaints': typeof AppFeedbackComplaintsIndexRoute
@@ -2602,6 +2618,7 @@ export interface FileRoutesById {
   '/_app/crm/patients/$patientId': typeof AppCrmPatientsPatientIdRoute
   '/_app/crm/referrals/$doctorId': typeof AppCrmReferralsDoctorIdRoute
   '/_app/cssd/loads/$loadId': typeof AppCssdLoadsLoadIdRoute
+  '/_app/cssd/washes/$washId': typeof AppCssdWashesWashIdRoute
   '/_app/dialysis/patients/$patientId': typeof AppDialysisPatientsPatientIdRoute
   '/_app/dialysis/sessions/$id': typeof AppDialysisSessionsIdRoute
   '/_app/emr/encounters/$encounterId': typeof AppEmrEncountersEncounterIdRoute
@@ -2672,6 +2689,7 @@ export interface FileRoutesById {
   '/_app/crm/patients/': typeof AppCrmPatientsIndexRoute
   '/_app/crm/referrals/': typeof AppCrmReferralsIndexRoute
   '/_app/cssd/loads/': typeof AppCssdLoadsIndexRoute
+  '/_app/cssd/washes/': typeof AppCssdWashesIndexRoute
   '/_app/dialysis/patients/': typeof AppDialysisPatientsIndexRoute
   '/_app/dialysis/sessions/': typeof AppDialysisSessionsIndexRoute
   '/_app/feedback/complaints/': typeof AppFeedbackComplaintsIndexRoute
@@ -2898,6 +2916,7 @@ export interface FileRouteTypes {
     | '/crm/patients/$patientId'
     | '/crm/referrals/$doctorId'
     | '/cssd/loads/$loadId'
+    | '/cssd/washes/$washId'
     | '/dialysis/patients/$patientId'
     | '/dialysis/sessions/$id'
     | '/emr/encounters/$encounterId'
@@ -2968,6 +2987,7 @@ export interface FileRouteTypes {
     | '/crm/patients/'
     | '/crm/referrals/'
     | '/cssd/loads/'
+    | '/cssd/washes/'
     | '/dialysis/patients/'
     | '/dialysis/sessions/'
     | '/feedback/complaints/'
@@ -3192,6 +3212,7 @@ export interface FileRouteTypes {
     | '/crm/patients/$patientId'
     | '/crm/referrals/$doctorId'
     | '/cssd/loads/$loadId'
+    | '/cssd/washes/$washId'
     | '/dialysis/patients/$patientId'
     | '/dialysis/sessions/$id'
     | '/emr/encounters/$encounterId'
@@ -3262,6 +3283,7 @@ export interface FileRouteTypes {
     | '/crm/patients'
     | '/crm/referrals'
     | '/cssd/loads'
+    | '/cssd/washes'
     | '/dialysis/patients'
     | '/dialysis/sessions'
     | '/feedback/complaints'
@@ -3487,6 +3509,7 @@ export interface FileRouteTypes {
     | '/_app/crm/patients/$patientId'
     | '/_app/crm/referrals/$doctorId'
     | '/_app/cssd/loads/$loadId'
+    | '/_app/cssd/washes/$washId'
     | '/_app/dialysis/patients/$patientId'
     | '/_app/dialysis/sessions/$id'
     | '/_app/emr/encounters/$encounterId'
@@ -3557,6 +3580,7 @@ export interface FileRouteTypes {
     | '/_app/crm/patients/'
     | '/_app/crm/referrals/'
     | '/_app/cssd/loads/'
+    | '/_app/cssd/washes/'
     | '/_app/dialysis/patients/'
     | '/_app/dialysis/sessions/'
     | '/_app/feedback/complaints/'
@@ -4969,6 +4993,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCssdLoadsLoadIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/cssd/washes/': {
+      id: '/_app/cssd/washes/'
+      path: '/cssd/washes'
+      fullPath: '/cssd/washes/'
+      preLoaderRoute: typeof AppCssdWashesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/cssd/washes/$washId': {
+      id: '/_app/cssd/washes/$washId'
+      path: '/cssd/washes/$washId'
+      fullPath: '/cssd/washes/$washId'
+      preLoaderRoute: typeof AppCssdWashesWashIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dialysis/patients/': {
       id: '/_app/dialysis/patients/'
       path: '/dialysis/patients'
@@ -5842,6 +5880,7 @@ interface AppRouteChildren {
   AppCrmPatientsPatientIdRoute: typeof AppCrmPatientsPatientIdRoute
   AppCrmReferralsDoctorIdRoute: typeof AppCrmReferralsDoctorIdRoute
   AppCssdLoadsLoadIdRoute: typeof AppCssdLoadsLoadIdRoute
+  AppCssdWashesWashIdRoute: typeof AppCssdWashesWashIdRoute
   AppDialysisPatientsPatientIdRoute: typeof AppDialysisPatientsPatientIdRoute
   AppDialysisSessionsIdRoute: typeof AppDialysisSessionsIdRoute
   AppEmrEncountersEncounterIdRoute: typeof AppEmrEncountersEncounterIdRoute
@@ -5912,6 +5951,7 @@ interface AppRouteChildren {
   AppCrmPatientsIndexRoute: typeof AppCrmPatientsIndexRoute
   AppCrmReferralsIndexRoute: typeof AppCrmReferralsIndexRoute
   AppCssdLoadsIndexRoute: typeof AppCssdLoadsIndexRoute
+  AppCssdWashesIndexRoute: typeof AppCssdWashesIndexRoute
   AppDialysisPatientsIndexRoute: typeof AppDialysisPatientsIndexRoute
   AppDialysisSessionsIndexRoute: typeof AppDialysisSessionsIndexRoute
   AppFeedbackComplaintsIndexRoute: typeof AppFeedbackComplaintsIndexRoute
@@ -6137,6 +6177,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCrmPatientsPatientIdRoute: AppCrmPatientsPatientIdRoute,
   AppCrmReferralsDoctorIdRoute: AppCrmReferralsDoctorIdRoute,
   AppCssdLoadsLoadIdRoute: AppCssdLoadsLoadIdRoute,
+  AppCssdWashesWashIdRoute: AppCssdWashesWashIdRoute,
   AppDialysisPatientsPatientIdRoute: AppDialysisPatientsPatientIdRoute,
   AppDialysisSessionsIdRoute: AppDialysisSessionsIdRoute,
   AppEmrEncountersEncounterIdRoute: AppEmrEncountersEncounterIdRoute,
@@ -6213,6 +6254,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCrmPatientsIndexRoute: AppCrmPatientsIndexRoute,
   AppCrmReferralsIndexRoute: AppCrmReferralsIndexRoute,
   AppCssdLoadsIndexRoute: AppCssdLoadsIndexRoute,
+  AppCssdWashesIndexRoute: AppCssdWashesIndexRoute,
   AppDialysisPatientsIndexRoute: AppDialysisPatientsIndexRoute,
   AppDialysisSessionsIndexRoute: AppDialysisSessionsIndexRoute,
   AppFeedbackComplaintsIndexRoute: AppFeedbackComplaintsIndexRoute,

@@ -23,7 +23,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular } from '@fluentui/react-icons';
-import { isApiError, useSession } from '@hc360/core';
+import { formatDateTime, isApiError, todayIso, useSession } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -45,13 +45,57 @@ const useStyles = makeStyles({
     gap: '12px',
     '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr)' },
   },
-  line: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 90px auto', gap: '8px', alignItems: 'end' },
+  line: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) 90px auto',
+    gap: '8px',
+    alignItems: 'end',
+    '@media (max-width: 560px)': { gridTemplateColumns: 'minmax(0, 1fr) 90px auto' },
+  },
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
 interface PackLine {
   setId: string;
   quantity: number | '';
+  /** The passed wash cycle the trays came from; empty when it is not recorded. */
+  washCycleId: string;
+}
+
+const NEW_LINE: PackLine = { setId: '', quantity: 1, washCycleId: '' };
+
+/**
+ * The passed wash cycles of the last three days that washed the set, newest first, for the line of a load. Choosing one
+ * records where the trays were washed, so each pack traces back to its wash.
+ */
+function WashSelect({
+  setId,
+  value,
+  label,
+  onChange,
+}: {
+  setId: string;
+  value: string;
+  label: string;
+  onChange: (washCycleId: string) => void;
+}) {
+  const washes = useQuery({
+    ...cssdQueries.washes({ status: 'Passed', setId, from: todayIso(-2), pageSize: 50 }),
+    enabled: setId !== '',
+  });
+  const items = washes.data?.items ?? [];
+  return (
+    <Select aria-label={label} value={value} disabled={!setId} onChange={(_, d) => onChange(d.value)}>
+      <option value="">
+        {setId && washes.data && items.length === 0 ? 'No passed wash in 3 days' : 'Wash cycle not recorded'}
+      </option>
+      {items.map((w) => (
+        <option key={w.id} value={w.id}>
+          Washed in {w.cycleNumber} ({w.washerName}, {formatDateTime(w.completedAt)})
+        </option>
+      ))}
+    </Select>
+  );
 }
 
 /** Load a sterilizer: sets must suit the method; each pack gets "{cycle}-001…" and a label. */
@@ -68,7 +112,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
   const [implants, setImplants] = useState(false);
   const [operator, setOperator] = useState(userName);
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<PackLine[]>([{ setId: '', quantity: 1 }]);
+  const [lines, setLines] = useState<PackLine[]>([NEW_LINE]);
 
   const methodSets = (sets.data ?? []).filter((s) => s.method === method);
   const filled = lines.filter((l) => l.setId && l.quantity !== '' && l.quantity > 0);
@@ -88,7 +132,11 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
         containsImplants: implants,
         operatorName: operator.trim() || null,
         notes: notes.trim() || null,
-        packs: filled.map((l) => ({ instrumentSetId: l.setId, quantity: Number(l.quantity) })),
+        packs: filled.map((l) => ({
+          instrumentSetId: l.setId,
+          quantity: Number(l.quantity),
+          washCycleId: l.washCycleId || null,
+        })),
       }),
     onSuccess: (load) => {
       setLastSterilizer(sterilizer.trim());
@@ -104,7 +152,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
   const changeMethod = (next: SterilizationMethod) => {
     setMethod(next);
     // Sets of another method cannot go in this load.
-    setLines([{ setId: '', quantity: 1 }]);
+    setLines([NEW_LINE]);
   };
 
   return (
@@ -158,7 +206,9 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
                       <Select
                         aria-label={`Set ${index + 1}`}
                         value={line.setId}
-                        onChange={(_, d) => setLines(lines.map((l, i) => (i === index ? { ...l, setId: d.value } : l)))}
+                        onChange={(_, d) =>
+                          setLines(lines.map((l, i) => (i === index ? { ...l, setId: d.value, washCycleId: '' } : l)))
+                        }
                       >
                         <option value="">Choose a set</option>
                         {methodSets.map((s) => (
@@ -167,6 +217,14 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
                           </option>
                         ))}
                       </Select>
+                      <WashSelect
+                        setId={line.setId}
+                        value={line.washCycleId}
+                        label={`Wash cycle of set ${index + 1}`}
+                        onChange={(washCycleId) =>
+                          setLines(lines.map((l, i) => (i === index ? { ...l, washCycleId } : l)))
+                        }
+                      />
                       <Input
                         type="number"
                         min={1}
@@ -191,11 +249,7 @@ export function CreateLoadDialog({ onCreated, onClose }: { onCreated: (load: Loa
                     </div>
                   ))}
                   <div>
-                    <Button
-                      size="small"
-                      icon={<AddRegular />}
-                      onClick={() => setLines([...lines, { setId: '', quantity: 1 }])}
-                    >
+                    <Button size="small" icon={<AddRegular />} onClick={() => setLines([...lines, NEW_LINE])}>
                       Add another set
                     </Button>
                   </div>

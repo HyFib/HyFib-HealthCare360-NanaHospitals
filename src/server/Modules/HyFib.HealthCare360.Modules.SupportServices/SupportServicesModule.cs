@@ -32,7 +32,7 @@ public static class SupportServicesPermissions
             [SystemRoles.CssdTechnician, SystemRoles.Nurse, SystemRoles.OtCoordinator, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
         new(CssdRequests, "CSSD", "Request sterile sets for a department and record packs used on patients",
             [SystemRoles.Nurse, SystemRoles.OtCoordinator, SystemRoles.CssdTechnician, SystemRoles.HospitalAdmin]),
-        new(CssdProcess, "CSSD", "Receive soiled trays, run sterilizer loads and issue sterile packs", [SystemRoles.CssdTechnician, SystemRoles.HospitalAdmin]),
+        new(CssdProcess, "CSSD", "Receive soiled trays, run wash cycles and sterilizer loads, and issue sterile packs", [SystemRoles.CssdTechnician, SystemRoles.HospitalAdmin]),
         new(CssdRelease, "CSSD", "Release loads and record biological indicator results (triggers recalls)", [SystemRoles.CssdTechnician, SystemRoles.HospitalAdmin]),
         new(CssdRecalls, "CSSD", "Receive CSSD recall and count-discrepancy alerts and acknowledge recalled packs",
             [SystemRoles.CssdTechnician, SystemRoles.OtCoordinator, SystemRoles.Nurse, SystemRoles.QualityManager, SystemRoles.HospitalAdmin]),
@@ -70,6 +70,7 @@ public sealed class SupportServicesModule : IModule
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<SterilizationService>();
+        services.AddScoped<WashCycleService>();
         services.AddScoped<CssdService>();
         services.AddScoped<DietOrderService>();
         services.AddScoped<MealPlanService>();
@@ -85,6 +86,7 @@ public sealed class SupportServicesModule : IModule
     {
         CssdEndpoints.Map(endpoints);
         SterilizationEndpoints.Map(endpoints);
+        WashCycleEndpoints.Map(endpoints);
         DietaryEndpoints.Map(endpoints);
         MealPlanEndpoints.Map(endpoints);
         CanteenEndpoints.Map(endpoints);

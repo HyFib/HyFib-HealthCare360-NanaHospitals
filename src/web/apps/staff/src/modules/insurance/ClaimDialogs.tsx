@@ -44,7 +44,12 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
-/** Raises a claim on the payer share of a finalised bill (INS-05); codes default to the pre-authorisation's. */
+const CODES_HINT = 'Empty uses the coding verified by medical records, or else the codes of the pre-authorisation';
+
+/**
+ * Raises a claim on the payer share of a finalised bill (INS-05). Codes left empty are those medical records verified
+ * for the stay or visit, or else the pre-authorisation's.
+ */
 export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -147,10 +152,10 @@ export function CreateClaimDialog({ onClose, onCreated }: { onClose: () => void;
                       <Input value={reference} onChange={(_, d) => setReference(d.value)} maxLength={64} />
                     </Field>
                   </div>
-                  <Field label="Diagnosis (ICD-10)" hint="Empty uses the codes of the pre-authorisation">
+                  <Field label="Diagnosis (ICD-10)" hint={CODES_HINT}>
                     <Textarea value={diagnosis} onChange={(_, d) => setDiagnosis(d.value)} maxLength={1000} rows={2} />
                   </Field>
-                  <Field label="Procedures" hint="Empty uses the codes of the pre-authorisation">
+                  <Field label="Procedures" hint={CODES_HINT}>
                     <Textarea
                       value={procedures}
                       onChange={(_, d) => setProcedures(d.value)}

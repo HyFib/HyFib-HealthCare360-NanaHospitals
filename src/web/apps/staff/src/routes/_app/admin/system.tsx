@@ -17,6 +17,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
 import { adminQueries, formatBytes, type SystemHealthReport, type WifiSample } from '@/modules/admin/api';
+import { DatabasePassword } from '@/modules/admin/DatabasePassword';
+import { encryptionSummary } from '@/modules/admin/diskEncryption';
 
 export const Route = createFileRoute('/_app/admin/system')({
   component: SystemHealthPage,
@@ -46,6 +48,20 @@ function Row({ label, children, tone }: { label: string; children: ReactNode; to
       <Caption1 className={styles.label}>{label}</Caption1>
       <Text className={tone ? styles[tone] : undefined}>{children ?? '—'}</Text>
     </>
+  );
+}
+
+/** BitLocker on the server's fixed disks, as the last daily check recorded it (SRS SEC-05). */
+function EncryptionRow({ report }: { report: NonNullable<SystemHealthReport['storage']['encryption']> }) {
+  const styles = useStyles();
+  const summary = encryptionSummary(report);
+  return (
+    <Row label="BitLocker" tone={summary.tone}>
+      {summary.text}
+      <Caption1 block className={styles.label}>
+        Checked {formatDateTime(report.checkedAt)}
+      </Caption1>
+    </Row>
   );
 }
 
@@ -137,6 +153,7 @@ function SystemHealthPage() {
             <Row label="Connections">{h.database.connections}</Row>
             <Row label="Schema">{h.database.lastMigration}</Row>
           </div>
+          <DatabasePassword />
         </Section>
         <Section title="Storage">
           <div className={styles.rows}>
@@ -155,6 +172,7 @@ function SystemHealthPage() {
             >
               {formatBytes(h.storage.freeBytes)} of {formatBytes(h.storage.totalBytes)}
             </Row>
+            {h.storage.encryption && <EncryptionRow report={h.storage.encryption} />}
           </div>
         </Section>
         <Section title="Backups">

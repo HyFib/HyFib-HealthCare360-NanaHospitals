@@ -112,6 +112,9 @@ public static class PlatformPermissions
     public const string NumberingManage = "admin.numbering.manage";
     public const string NotificationTemplatesManage = "admin.notifications.manage";
     public const string SystemRead = "admin.system.read";
+
+    /// <summary>Change the server's own credentials, such as its database password. Only SuperAdmin has it by default.</summary>
+    public const string SystemManage = "admin.system.manage";
     public const string BackupsManage = "admin.backups.manage";
     public const string MastersRead = "masters.read";
     public const string MastersManage = "masters.manage";
@@ -136,6 +139,7 @@ public static class PlatformPermissions
         new(NumberingManage, "Administration", "Configure number series (UHID, bill numbers)", Admins),
         new(NotificationTemplatesManage, "Administration", "Edit SMS/WhatsApp/e-mail templates", [SystemRoles.HospitalAdmin, SystemRoles.CrmExecutive]),
         new(SystemRead, "Administration", "View server health, WiFi link and backups", Admins),
+        new(SystemManage, "Administration", "Change the server's database password"),
         new(BackupsManage, "Administration", "Run backups and download recovery keys"),
         new(MastersRead, "Masters", "View facilities, departments, doctors and services", AllStaff),
         new(MastersManage, "Masters", "Edit facilities, departments, doctors and services", Admins),

@@ -30,6 +30,17 @@ internal static class ServerCli
         read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or from a hidden
         prompt, so it never appears in the process list.
 
+          settings protect [--data-dir <folder>]
+              Protects the secrets in config\hc360.settings.json with Windows DPAPI for this machine: every connection string
+              (they hold the database password) and every setting whose name ends in Password, Secret or ApiKey. The server
+              reads them as before, and a copy of the file is no use on another machine. To change one, write its new plain
+              value in the file and run this again. Install-HC360Server.ps1 runs it on every install and upgrade.
+
+          disk-encryption check [--data-dir <folder>]
+              Records whether BitLocker protects each fixed disk of this machine, for System health. It needs administrator
+              rights; the "HC360 disk encryption check" scheduled task runs it as SYSTEM every day and at start-up. Exit code
+              0 when every disk is protected, 3 when one is not.
+
           catalogue import --file <file> [--dry-run]
               Imports the hospital's WHO ICD-10 ClaML file (icd102019en.xml, or the icd102019en.xml.zip WHO provides) or the
               CMS ICD-10-PCS order file (icd10pcs_order_YYYY.txt, or its zip) into the local code catalogue, as Medical
@@ -37,7 +48,8 @@ internal static class ServerCli
               Run it on the Server Node from an elevated prompt while the database is running.
         """;
 
-    public static bool IsCommand(string argument) => argument is "backup" or "catalogue" or "help" or "--help" or "-h";
+    public static bool IsCommand(string argument) =>
+        argument is "backup" or "catalogue" or "settings" or "disk-encryption" or "help" or "--help" or "-h";
 
     public static async Task<int> RunAsync(string[] args)
     {
@@ -52,6 +64,8 @@ internal static class ServerCli
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
+                ["settings", "protect", ..] => ProtectSettings(options),
+                ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
                 _ => PrintUsage(args),
             };
         }
@@ -141,6 +155,75 @@ internal static class ServerCli
         }
 
         return 0;
+    }
+
+    /// <summary>Protects the settings file's plain-text secrets with DPAPI for this machine (SRS SEC-07).</summary>
+    private static int ProtectSettings(Dictionary<string, string> options)
+    {
+        var path = ProtectedSettings.PathIn(new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") }));
+        if (ProtectedSettings.ForThisMachine() is not { } protector)
+        {
+            Console.Error.WriteLine("Settings can be protected only on Windows, with DPAPI.");
+            return 1;
+        }
+
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"There is no settings file at {path}.");
+            return 1;
+        }
+
+        IReadOnlyList<string> keys;
+        try
+        {
+            keys = ProtectedSettings.ProtectFile(path, protector);
+        }
+        catch (Exception ex) when (ex is CryptographicException or System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"The settings file could not be protected: {ex.Message}");
+            return 2;
+        }
+
+        Console.WriteLine(keys.Count == 0
+            ? "Every secret in the settings file is already protected."
+            : $"Protected with DPAPI for this machine: {string.Join(", ", keys)}.");
+        return 0;
+    }
+
+    /// <summary>Records BitLocker's state of every fixed disk for System health (SRS SEC-05). Needs administrator rights.</summary>
+    private static int CheckDiskEncryption(Dictionary<string, string> options)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Console.Error.WriteLine("BitLocker exists only on Windows.");
+            return 1;
+        }
+
+        DiskEncryptionReport report;
+        try
+        {
+            report = DiskEncryption.Check(DateTimeOffset.UtcNow);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            // Nothing is recorded, so System health keeps the last check that worked.
+            Console.Error.WriteLine($"{ex.Message} Run it from an elevated prompt.");
+            return 2;
+        }
+        catch (System.Management.ManagementException ex)
+        {
+            Console.Error.WriteLine($"BitLocker's state could not be read: {ex.Message}");
+            return 2;
+        }
+
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        DiskEncryption.Save(DiskEncryption.PathIn(directories), report);
+        foreach (var line in DiskEncryption.Describe(report))
+        {
+            Console.WriteLine(line);
+        }
+
+        return DiskEncryption.AllProtected(report) ? 0 : 3;
     }
 
     /// <summary>

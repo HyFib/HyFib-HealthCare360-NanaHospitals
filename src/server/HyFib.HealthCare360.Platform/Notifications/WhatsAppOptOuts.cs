@@ -94,6 +94,9 @@ public static class WhatsAppOptOutPolicy
         // Asked for just now, but the portal has the link too.
         "telehealth.link",
 
+        // Asked for by someone else, and sent only by SMS.
+        "portal.family_code",
+
         // Alerts to staff numbers: they also go by SMS and in-app.
         "rpm.alert", "lab.critical", "system.alert",
     };

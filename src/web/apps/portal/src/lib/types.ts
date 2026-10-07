@@ -41,6 +41,52 @@ export interface PortalProfile {
   photoFileId: string | null;
 }
 
+// ------------------------------------------------------------------ family on other numbers (PP-01)
+
+/** What the relative is to the person who sees their records. */
+export type FamilyRelation = 'Parent' | 'Child' | 'Spouse' | 'Sibling' | 'Grandparent' | 'Grandchild' | 'Other';
+
+export type FamilyLinkSource = 'FrontDesk' | 'PortalCode';
+
+/** A family member on another number whose records this account sees. */
+export interface PortalLinkedRelative {
+  linkId: string;
+  patientId: string;
+  fullName: string;
+  uhid: string;
+  relation: FamilyRelation;
+  source: FamilyLinkSource;
+  linkedAt: string;
+}
+
+/** Another account that sees the records of someone on this account's own number. */
+export interface PortalSharing {
+  linkId: string;
+  patientId: string;
+  patientName: string;
+  accountPhoneMasked: string;
+  /** What the patient is to the person on the other number. */
+  relation: FamilyRelation;
+  linkedAt: string;
+}
+
+export interface PortalFamily {
+  linked: PortalLinkedRelative[];
+  sharedWith: PortalSharing[];
+}
+
+export interface RequestFamilyCode {
+  uhid: string;
+  phone: string;
+  relation: FamilyRelation;
+}
+
+/** The same answer whether or not the UHID and the number belong together. */
+export interface FamilyCodeSent {
+  codeId: string;
+  expiresAt: string;
+}
+
 // ------------------------------------------------------------------ scheduling
 
 export type ConsultationMode = 'InPerson' | 'Telehealth' | 'Both';

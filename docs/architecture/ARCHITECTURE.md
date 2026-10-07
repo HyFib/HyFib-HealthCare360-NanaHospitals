@@ -64,7 +64,7 @@ flowchart LR
 | Lost typing on disconnect | Draft auto-save (`useDraft`) every 5 s to local storage, cleared on sign-out | `web/packages/core/src/hooks/useDraft.ts` |
 | Silent disconnects | Connection store (browser online/offline + heartbeat + SignalR state), banner and status pill. Desktop reports WiFi SSID/signal through the bridge | `web/apps/staff/src/app/connection/*` |
 | Server link quality | `WifiMonitor` samples the WLAN API every 30 s, persists samples, raises alerts | `Platform/Networking/WifiMonitor.cs` |
-| Internet outage | Transactional outbox with exponential backoff; integrations never block clinical flows | `Platform/Messaging/Outbox*.cs` |
+| Internet outage | Transactional outbox: each message is retried, waiting 10 s doubling to an hour, until it is delivered or expires (7 days, or sooner when its sender says so: a sign-in code with the code, a reminder at the appointment); integrations never block clinical flows | `Platform/Messaging/Outbox*.cs` |
 | Airtime efficiency | Brotli/Gzip response compression, paginated payloads, HTTP caching of static assets (immutable hashed files) | `Server/Program.cs` |
 
 ---
@@ -111,7 +111,7 @@ docs/                                     SRS, architecture, security, deploymen
 | 0 | SharedKernel | — | — |
 | 1 | Platform | Identity, users/roles/permissions, devices, facilities, departments, specialities, practitioners, service catalogue, numbering, audit, settings, files, notifications, realtime, printable documents and PDFs | SharedKernel |
 | 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS (DICOMweb), the DICOM modality worklist server, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
-| 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents | Platform |
+| 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents, patient portal scope and family links | Platform |
 | 2 | **SupplyChain** | Inventory (INV), purchase, stores, indents, vendors, Asset Management (AST) | Platform |
 | 2 | **HR** | HRMS (HR), biometric attendance | Platform |
 | 3 | **Scheduling** | PMS schedules/appointments, Online Doctor Appointment (OA) | Patients |
@@ -136,9 +136,14 @@ docs/                                     SRS, architecture, security, deploymen
 |---|---|---|
 | `IChargePoster` — post/cancel billable charges against a visit or admission | Billing | Clinical, Diagnostics, Pharmacy, Inpatient, SpecialtyCare, SupportServices |
 | `IBillingStatusProvider` — paid status of order lines, outstanding dues, discharge clearance | Billing | Diagnostics, Inpatient, Front office |
+| `IVerifiedCodingSource` — the medical records coding of an admission or visit, once a second coder has verified it | Clinical | Billing (insurance claims) |
 | `INotificationService` — patient/staff notifications (SMS, WhatsApp, e-mail, in-app) | Platform + Integrations | all |
 | `IRealtimePublisher` — push events to SignalR groups | Platform | all |
 | `IAuditLogger` — explicit PHI-access audit entries | Platform | all |
+
+Billing may reference any module below it, but it references only Patients and Scheduling: it keeps its own record of
+admissions from the integration events, and reads the verified coding through `IVerifiedCodingSource` rather than from
+Clinical's tables.
 
 ### 4.1 Inside a module
 ```
@@ -219,8 +224,8 @@ sequenceDiagram
 `HyFib.HealthCare360.Desktop` is a small WPF application whose main surface is a WebView2 control.
 
 1. **Start-up.** Single instance (a mutex plus a named pipe forwards `hc360://` deep links). Loads `%LocalAppData%\HyFib\HC360\desktop.json` (server URL, pinned fingerprint, device ID). The device secret is DPAPI-protected.
-2. **Connect.** Tries the last server, then `https://localhost:7360` (all-in-one), then mDNS discovery. Shows a native connection screen with WiFi SSID/signal, discovered servers, manual address, and enrolment.
-3. **Host the UI.** Navigates to the server origin and accepts the server certificate only if its SHA-256 fingerprint matches the pinned value. Other origins open in the system browser after confirmation. Camera and microphone are granted only to the server origin.
+2. **Connect.** Uses the last server it set up. Setup finds servers through mDNS discovery and lists "This computer" when something listens on port 7360 locally (all-in-one; multicast does not always loop back to the sender), or takes a typed address. Shows a native connection screen with WiFi SSID/signal, discovered servers, manual address, and enrolment.
+3. **Host the UI.** Navigates to the server origin. The view accepts a server certificate only if it chains to the pinned hospital CA. WebView2 asks the shell only about certificates Windows rejects, so the shell also checks the connection with its own pinned client before it loads the staff app and every 10 seconds after; a certificate from any other CA, even one Windows trusts, unloads the staff app and locks the window until a check passes. Other origins open in the system browser after confirmation. A server page the staff app opens in a new window (the chart or the notes beside a video call) opens in a second HC360 window that shares the profile and follows the same rules, closes with the main window and when it locks; kiosks keep one window. Camera and microphone are granted only to the server origin.
 4. **Native bridge.** JSON-RPC over `chrome.webview.postMessage`, with methods allow-listed:
    `app.info`, `network.status`, `printer.list`, `printer.getSetup` and `printer.saveSetup` (the workstation's printer for labels, wristbands, receipts and documents, or the IT policy's), `printer.printHtml` (silent print to a named printer), `printer.printRaw` (ZPL, TSPL or ESC/POS); both print methods accept only printers installed on the workstation, `device.info`, `speech.dictate` (offline Windows speech), `biometric.capture` (RD service), `shell.openExternal`, `notifications.show`. Events pushed to the UI: `network.changed`, `scanner.data`, `deeplink`.
    The shell has no serial port access. Barcode scanners work as keyboards, and serial lab analysers are relayed by the
@@ -233,7 +238,7 @@ The UI detects the host (`window.chrome?.webview`) and degrades gracefully in a 
 
 ## 9. Web UI architecture (staff app)
 
-* **Shell:** Fluent 2 layout (nav drawer grouped by domain, top bar with global patient search, facility switcher, connection pill, notifications, AI voice button, user menu), a command palette (Ctrl+K), keyboard shortcuts, theme (light/dark/high-contrast following Windows), and an idle lock screen.
+* **Shell:** Fluent 2 layout (nav drawer grouped by domain, top bar with global patient search, facility switcher, connection pill, notifications, AI voice button, user menu), a command palette (Ctrl+K), keyboard shortcuts, theme (light/dark/high-contrast following Windows), and an idle lock screen. Under the top bar, a banner says when the server cannot be reached, and another, which the user can hide, when the connection has stayed weak for 15 seconds (live updates off, or a WiFi signal under 40%) (DED-07).
 * **Modules:** `src/modules/<module>/` contains `manifest.ts` (navigation entries, permissions, commands), `api.ts` (types + TanStack Query hooks), `components/` and `pages/`. Manifests are discovered with `import.meta.glob`, so adding a module needs no shared-file edits. Routes are file-based (`src/routes/_app/<area>/…`), which gives type-safe links.
 * **Data:** TanStack Query (server cache, retries, refetch on reconnect), the `@hc360/core` API client (auth refresh, idempotency keys, backoff, Problem Details → form errors), SignalR for pushes. Minimal client state lives in Zustand (session, UI preferences, connection).
 * **Forms:** React Hook Form + Zod schemas that mirror the server validators, with draft auto-save for long free-text forms.
@@ -268,6 +273,7 @@ Each integration is an **abstraction in Platform** (`ISmsSender`, `IWhatsAppSend
 * CI (`.github/workflows/ci.yml`) runs on every pull request and on main, and a pull request cannot merge until both of its jobs pass:
   * **.NET:** the C# formatting check (`dotnet format whitespace`, from `.editorconfig`); restore, whose NuGet audit fails on any known-vulnerable package, direct or transitive; `dotnet build` with warnings as errors and every security analyzer rule on; `dotnet test` (unit, integration and architecture).
   * **Web:** a gitleaks secret scan of every commit, `pnpm audit`, the Prettier check (`pnpm format:check`), `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
+* **CodeQL** code scanning analyses the C# apps, the web apps and the workflows on every pull request, on main and weekly.
 * The weekly **Security audit** workflow runs both package audits on main, and Dependabot proposes updates every week. `docs/security/SECURITY.md` ("Dependencies, secrets and code scanning") explains how an advisory is accepted and how a finding is handled.
 * Every module ships domain unit tests for its rules (for example billing totals, bed state machine, Westgard rules, FEFO batch selection) and integration tests for its main workflow.
 * **End-to-end journeys (SRS §9)** run in `HyFib.HealthCare360.IntegrationTests`.

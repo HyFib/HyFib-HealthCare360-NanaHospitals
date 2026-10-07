@@ -17,7 +17,8 @@ EF migrations. If you need something there, stop and report it (the maintainers 
 ## 2. Layering
 A module may reference only **lower** modules (see ARCHITECTURE.md §4). Everything upward goes through Platform:
 * **Contracts** (`HyFib.HealthCare360.Platform.Contracts`): `IChargePoster` (post billable charges; idempotent on
-  `SourceModule`+`SourceReference`), `IBillingStatusProvider`, `IInstrumentResultSink`, `IPortalAccountResolver`.
+  `SourceModule`+`SourceReference`), `IBillingStatusProvider`, `IInstrumentResultSink`, `IPortalAccountResolver`,
+  `IVerifiedCodingSource` (Clinical's verified coding of an episode, for Billing's claims).
 * **Integration events** (`Platform/Contracts/IntegrationEvents.cs`): `ServiceOrderPlaced`, `PrescriptionSigned`,
   `PatientAdmitted`, `PatientTransferred`, `PatientDischarged`, `AdmissionCancelled`, `DiagnosticReportReleased`, `AppointmentBooked`,
   `MedicationDispensed`, `PaymentReceived`, `BillFinalized`, … Raise them from your aggregate
@@ -87,7 +88,10 @@ generate them after all modules compile.
 * PHI: when returning clinical/patient data call `await audit.PatientRecordAccessedAsync(patientId, "what", ct)` once
   per request, and guard restricted records with `PatientAccessGuard.EnsureCanOpenAsync(patientId, ct)`.
 * Patient-portal endpoints live under `/api/v1/portal/<area>`, require `PatientsPermissions.Portal` and must scope
-  data with `PortalPatientScope` (`EnsureAccessAsync` / `AccessiblePatientIdsAsync`).
+  data with `PortalPatientScope` (`EnsureAccessAsync` / `AccessiblePatientIdsAsync`). The scope covers the patients on
+  the account's own number and the family members its family links give it (PP-01). A step that relies on the
+  patient having signed in with their own number, such as taking the sign-in as proof of identity, checks
+  `OwnNumberPatientIdsAsync` instead.
 * Dates arriving as query parameters are local (IST) calendar dates; convert with the helpers in
   `PatientQueries` (`time.Today()`, `IndiaTime`).
 

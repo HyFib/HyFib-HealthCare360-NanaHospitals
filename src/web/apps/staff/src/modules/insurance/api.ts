@@ -281,7 +281,16 @@ export interface ClaimDetail {
   rejectionReason: string | null;
   settlements: ClaimSettlementDto[];
   deductions: ClaimDeductionDto[];
+  /** The coding medical records verified for the bill's stay or visit; null until a second coder verifies it. */
+  verifiedCoding: VerifiedClaimCoding | null;
   version: number;
+}
+
+/** Verified medical records coding (MB-03), as the text of a claim's codes. */
+export interface VerifiedClaimCoding {
+  diagnosisCodes: string | null;
+  procedureCodes: string | null;
+  verifiedAt: string;
 }
 
 export interface CreateClaimRequest {

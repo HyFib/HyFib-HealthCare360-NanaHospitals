@@ -13,8 +13,8 @@ internal static class DownloadPolicy
     {
         // Reports, exports and accounts files.
         ".pdf", ".csv", ".xlsx", ".xml", ".json", ".txt",
-        // Stored documents: scans, images and voice recordings.
-        ".png", ".jpg", ".jpeg", ".webp", ".dcm", ".webm", ".ogg", ".mp3", ".wav", ".m4a",
+        // Stored documents: scans, images, ECG and DICOM files from the machines, and voice recordings.
+        ".png", ".jpg", ".jpeg", ".webp", ".dcm", ".scp", ".webm", ".ogg", ".mp3", ".wav", ".m4a",
         // The hospital CA certificate, for installing on tablets.
         ".crt",
     };

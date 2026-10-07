@@ -1,0 +1,72 @@
+name: CodeQL
+
+# Code scanning with CodeQL: the server, HC360 Desktop and the lab agent (C#), the web apps (TypeScript) and these
+# workflows (GitHub Actions). Alerts appear under Security › Code scanning, and the "CodeQL" check on a pull request
+# fails for a new alert of high or critical severity. A weekly run on main picks up new queries while nobody changes
+# the code. Needs GitHub Code Security on the repository, with CodeQL default setup turned off (this is the advanced
+# setup). What to do with an alert is in docs/security/SECURITY.md.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "45 0 * * 1" # Mondays 06:15 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # uploads the results
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # HC360 Desktop and the lab agent target Windows, so C# is built on Windows, as in CI.
+          - language: csharp
+            build-mode: manual
+            runner: windows-latest
+          - language: javascript-typescript
+            build-mode: none
+            runner: ubuntu-latest
+          - language: actions
+            build-mode: none
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - if: matrix.language == 'csharp'
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # Only what ships: the server (with every module), HC360 Desktop and the lab agent. Building the solution would
+      # also put the tests in the database, and paths-ignore does not apply to a compiled language.
+      - if: matrix.language == 'csharp'
+        name: Build
+        run: |
+          dotnet build src/server/HyFib.HealthCare360.Server/HyFib.HealthCare360.Server.csproj -c Release
+          dotnet build src/desktop/HyFib.HealthCare360.Desktop/HyFib.HealthCare360.Desktop.csproj -c Release
+          dotnet build src/agent/HyFib.HealthCare360.LabAgent/HyFib.HealthCare360.LabAgent.csproj -c Release
+
+      - uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: /language:${{ matrix.language }}

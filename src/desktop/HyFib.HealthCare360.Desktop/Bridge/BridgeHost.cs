@@ -32,10 +32,26 @@ internal sealed class BridgeHost(
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };
 
+    private Action<NetworkStatus>? _networkChanged;
+
     public void Attach()
     {
         webView.WebMessageReceived += OnWebMessageReceived;
-        network.Changed += status => PostEvent("network.changed", status);
+        _networkChanged = status => PostEvent("network.changed", status);
+        network.Changed += _networkChanged;
+    }
+
+    /// <summary>
+    /// Stops the bridge before its window closes (a second window, say), so no event goes to a closed view.
+    /// </summary>
+    public void Detach()
+    {
+        webView.WebMessageReceived -= OnWebMessageReceived;
+        if (_networkChanged is not null)
+        {
+            network.Changed -= _networkChanged;
+            _networkChanged = null;
+        }
     }
 
     public void PostEvent(string name, object? payload)

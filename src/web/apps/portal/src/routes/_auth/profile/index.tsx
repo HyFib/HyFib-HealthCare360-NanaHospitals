@@ -2,6 +2,7 @@ import { Avatar, Button, makeStyles, Spinner, tokens } from '@fluentui/react-com
 import {
   DocumentCheckmarkRegular,
   MegaphoneRegular,
+  PeopleRegular,
   ShieldLockRegular,
   ShieldPersonRegular,
   SignOutRegular,
@@ -86,11 +87,12 @@ function ProfilePage() {
         </TextLink>
       </ReportCard>
 
-      {profiles.length > 1 && (
-        <ReportCard title={t('profile.family')}>
-          <ProfileList profiles={profiles} activeId={profile.id} />
-        </ReportCard>
-      )}
+      <ReportCard title={t('profile.family')}>
+        {profiles.length > 1 && <ProfileList profiles={profiles} activeId={profile.id} />}
+        <CardLink to="/profile/family">
+          <ListRow icon={<PeopleRegular />} title={t('family.title')} subtitle={t('family.profileLink.hint')} />
+        </CardLink>
+      </ReportCard>
 
       <ReportCard title={t('profile.language')}>
         <LanguageChoice />

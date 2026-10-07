@@ -22,6 +22,14 @@ export const METHOD_HINT: Record<SterilizationMethod, string> = {
 
 export const STEAM_MAX_C = 138;
 
+/** The A0 a wash cycle must reach (ISO 15883-1): 90 °C held for 5 minutes gives 3000. The server applies the same rule. */
+export const REQUIRED_A0 = 3000;
+
+/** A0 of a temperature held for a time: each second counts 10^((T − 80) / 10), computed as the server does. */
+export function washA0(temperatureC: number, holdMinutes: number): number {
+  return Math.floor(10 ** ((temperatureC - 80) / 10) * (holdMinutes * 60));
+}
+
 export interface ParameterCheck {
   ok: boolean;
   message: string | null;

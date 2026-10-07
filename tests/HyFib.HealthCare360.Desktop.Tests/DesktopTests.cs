@@ -1,4 +1,9 @@
+using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using HyFib.HealthCare360.Desktop;
@@ -86,6 +91,7 @@ public sealed class DownloadPolicyTests
     [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000001", @"C:\Users\nurse\Downloads\pharmacy-register.csv")]
     [InlineData("data:text/csv;charset=utf-8,a,b", @"C:\Users\nurse\Downloads\morbidity.csv")]
     [InlineData("https://hc360-srv:7360/api/v1/system/ca-certificate", @"C:\Users\it\Downloads\hc360-hospital-ca.crt")]
+    [InlineData("blob:https://hc360-srv:7360/5b1d2c9e-0000-4000-8000-000000000002", @"C:\Users\tech\Downloads\ecg-0412.scp")]
     public void Documents_from_the_hospital_server_are_saved(string source, string path) =>
         DownloadPolicy.IsAllowed(source, path, Server).ShouldBeTrue();
 
@@ -188,8 +194,104 @@ public sealed class ServerTrustTests
     }
 
     [Fact]
+    public void Reports_a_certificate_it_refuses()
+    {
+        using var pinned = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var proxy = CreateCa("CN=Inspection Proxy CA");
+        using var forged = CreateServerCertificate(proxy, "HC360-SRV", IPAddress.Parse("192.168.1.20"));
+        using var trust = new ServerTrust(pinned.ExportCertificatePem());
+        var rejected = new List<RejectedCertificate>();
+        trust.CertificateRejected += rejected.Add;
+
+        trust.Check(forged, null, "HC360-SRV").ShouldBeFalse();
+
+        var report = rejected.ShouldHaveSingleItem();
+        report.Host.ShouldBe("HC360-SRV");
+        report.Issuer.ShouldBe("CN=Inspection Proxy CA");
+        report.Fingerprint.ShouldBe(Convert.ToHexString(SHA256.HashData(forged.RawData)));
+    }
+
+    [Fact]
+    public void Reports_nothing_for_the_hospital_certificate()
+    {
+        using var ca = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var server = CreateServerCertificate(ca, "HC360-SRV", IPAddress.Parse("192.168.1.20"));
+        using var trust = new ServerTrust(ca.ExportCertificatePem());
+        var rejected = 0;
+        trust.CertificateRejected += _ => rejected++;
+
+        trust.Check(server, null, "HC360-SRV").ShouldBeTrue();
+
+        rejected.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task A_pinned_request_refuses_and_reports_a_server_that_presents_another_certificate()
+    {
+        // A TLS-inspection proxy answers with a certificate of its own, from a CA that Windows may well trust.
+        using var pinned = CreateCa("CN=Nana Hospitals HC360 CA");
+        using var proxy = CreateCa("CN=Inspection Proxy CA");
+        using var forged = UsableForTls(CreateServerCertificate(proxy, "localhost", IPAddress.Loopback));
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var serving = ServeOnceAsync(listener, forged);
+            using var trust = new ServerTrust(pinned.ExportCertificatePem());
+            var rejected = new List<RejectedCertificate>();
+            trust.CertificateRejected += report =>
+            {
+                lock (rejected)
+                {
+                    rejected.Add(report);
+                }
+            };
+            using var http = trust.CreateHttpClient(
+                new Uri($"https://localhost:{((IPEndPoint)listener.LocalEndpoint).Port}/"), TimeSpan.FromSeconds(10));
+
+            await Should.ThrowAsync<HttpRequestException>(
+                () => http.GetAsync(new Uri("health/live", UriKind.Relative), TestContext.Current.CancellationToken));
+
+            rejected.ShouldHaveSingleItem().Fingerprint.ShouldBe(ServerTrust.ComputeFingerprint(forged));
+            await serving;
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    [Fact]
     public void Formats_fingerprints_in_groups_of_four() =>
         ServerTrust.Format("AB12CD34EF56").ShouldBe("AB12 CD34 EF56");
+
+    /// <summary>
+    /// Accepts one connection and offers <paramref name="certificate"/>; the client is expected to refuse it.
+    /// </summary>
+    private static async Task ServeOnceAsync(TcpListener listener, X509Certificate2 certificate)
+    {
+        using var client = await listener.AcceptTcpClientAsync(TestContext.Current.CancellationToken);
+        await using var tls = new SslStream(client.GetStream());
+        try
+        {
+            await tls.AuthenticateAsServerAsync(
+                new SslServerAuthenticationOptions { ServerCertificate = certificate },
+                TestContext.Current.CancellationToken);
+        }
+        catch (Exception ex) when (ex is IOException or AuthenticationException)
+        {
+            // The client closed the handshake when it refused the certificate.
+        }
+    }
+
+    /// <summary>A copy whose private key Windows TLS can use (it cannot use an in-memory key).</summary>
+    private static X509Certificate2 UsableForTls(X509Certificate2 certificate)
+    {
+        using (certificate)
+        {
+            return X509CertificateLoader.LoadPkcs12(certificate.Export(X509ContentType.Pkcs12), null);
+        }
+    }
 
     private static X509Certificate2 CreateCa(string subject)
     {
@@ -231,6 +333,37 @@ public sealed class ServerTrustTests
     }
 }
 
+public sealed class NewWindowPolicyTests
+{
+    private static readonly Uri Server = new("https://hc360-srv:7360/");
+
+    [Fact]
+    public void Opens_a_page_of_the_server_in_another_window_so_a_video_call_keeps_its_own() =>
+        NewWindowPolicy.Decide("https://HC360-SRV:7360/emr/patients/p1", Server, kiosk: false, locked: false)
+            .ShouldBe(NewWindowAction.OpenWindow);
+
+    [Fact]
+    public void A_kiosk_keeps_one_window() =>
+        NewWindowPolicy.Decide("https://hc360-srv:7360/display/queue", Server, kiosk: true, locked: false)
+            .ShouldBe(NewWindowAction.OpenHere);
+
+    [Fact]
+    public void Opens_nothing_of_the_server_while_the_window_is_locked() =>
+        NewWindowPolicy.Decide("https://hc360-srv:7360/emr/patients/p1", Server, kiosk: false, locked: true)
+            .ShouldBe(NewWindowAction.Refuse);
+
+    [Theory]
+    [InlineData("https://example.org/help")]
+    [InlineData("https://hc360-srv:7443/emr")]
+    [InlineData("http://hc360-srv:7360/emr")]
+    public void Sends_other_sites_to_the_system_browser(string address) =>
+        NewWindowPolicy.Decide(address, Server, kiosk: false, locked: false).ShouldBe(NewWindowAction.OpenExternally);
+
+    [Fact]
+    public void Refuses_an_address_that_is_not_one() =>
+        NewWindowPolicy.Decide("not an address", Server, kiosk: false, locked: false).ShouldBe(NewWindowAction.Refuse);
+}
+
 public sealed class DiscoveryTests
 {
     [Fact]
@@ -256,6 +389,40 @@ public sealed class DiscoveryTests
         server.CaFingerprint.ShouldBe(new string('A', 64));
         server.Addresses.ShouldContain(IPAddress.Parse("192.168.1.20"));
         server.CandidateUris().First().AbsoluteUri.ShouldBe("https://hc360-srv:7360/");
+    }
+
+    [Fact]
+    public async Task Finds_the_server_on_this_computer_when_something_listens_on_its_port()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var server = await ServerDiscovery.ThisComputerAsync(port, TestContext.Current.CancellationToken);
+
+            server.ShouldNotBeNull().OnThisComputer.ShouldBeTrue();
+            server.Display.ShouldBe($"This computer · {Environment.MachineName} (all-in-one)");
+            var machine = Environment.MachineName.ToLowerInvariant();
+            server.CandidateUris().First().AbsoluteUri.ShouldBe($"https://{machine}:{port}/");
+            server.CandidateUris().Last().AbsoluteUri.ShouldBe($"https://127.0.0.1:{port}/");
+        }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task Finds_no_server_on_this_computer_when_nothing_listens()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+
+        (await ServerDiscovery.ThisComputerAsync(port, TestContext.Current.CancellationToken)).ShouldBeNull();
     }
 
     [Fact]

@@ -537,6 +537,12 @@ public sealed class AuthService(
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.password_changed", "Password changed") { UserId = user.Id });
         await db.SaveChangesAsync(ct);
 
+        // The first administrator now has a password of their own: the one-time password's file is no longer needed.
+        if (user.UserName == InitialAdminPassword.UserName)
+        {
+            InitialAdminPassword.Delete(new DataDirectories(options.Value));
+        }
+
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
         var access = tokens.CreateAccessToken(Subject(user, roles, session, restriction));

@@ -114,6 +114,38 @@ export interface WifiConnectionInfo {
   note: string | null;
 }
 
+/** BitLocker on one fixed disk of the server (Win32_EncryptableVolume). */
+export interface VolumeEncryption {
+  drive: string;
+  protection: 'Off' | 'On' | 'Unknown';
+  conversion:
+    'NotEncrypted' | 'Encrypted' | 'Encrypting' | 'Decrypting' | 'EncryptionPaused' | 'DecryptionPaused' | 'Unknown';
+}
+
+/** What the last disk encryption check recorded (SRS SEC-05). `available` is false when BitLocker is not installed. */
+export interface DiskEncryptionReport {
+  checkedAt: string;
+  available: boolean;
+  volumes: VolumeEncryption[];
+}
+
+/** Whether Administration can change the database password (SRS SEC-07), and when it was last changed. */
+export interface DatabasePasswordStatus {
+  /** The PostgreSQL account the server signs in as. */
+  username: string;
+  canChange: boolean;
+  /** Why it cannot be changed here, when it cannot. */
+  reason: string | null;
+  lastChangedAt: string | null;
+  lastChangedBy: string | null;
+}
+
+export interface DatabasePasswordChanged {
+  changedAt: string;
+  /** The settings that now hold the new password, e.g. ConnectionStrings:Hospital. */
+  settingsChanged: string[];
+}
+
 export interface SystemHealthReport {
   server: {
     machineName: string;
@@ -145,7 +177,13 @@ export interface SystemHealthReport {
     lastMigration: string | null;
     error: string | null;
   };
-  storage: { dataDirectory: string; freeBytes: number | null; totalBytes: number | null };
+  storage: {
+    dataDirectory: string;
+    freeBytes: number | null;
+    totalBytes: number | null;
+    /** Null when the check has never run on this server, and on servers without Windows. */
+    encryption: DiskEncryptionReport | null;
+  };
   backup: {
     enabled: boolean;
     lastSuccessAt: string | null;
@@ -290,6 +328,11 @@ export const adminQueries = {
       queryFn: ({ signal }) => api.get<SystemHealthReport>('/api/v1/admin/system/health', { signal }),
       refetchInterval: 30_000,
     }),
+  databasePassword: () =>
+    queryOptions({
+      queryKey: ['admin', 'database-password'],
+      queryFn: ({ signal }) => api.get<DatabasePasswordStatus>('/api/v1/admin/system/database-password', { signal }),
+    }),
   wifiSamples: (hours: number) =>
     queryOptions({
       queryKey: ['admin', 'wifi-samples', hours],
@@ -328,4 +371,13 @@ export function formatBytes(bytes: number | null | undefined): string {
     unit++;
   }
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+/**
+ * Gives the server's database account a new random password, needing `admin.system.manage`. 422 when it cannot be
+ * changed here (`database.password_none`, `database.password_not_windows`, `database.password_elsewhere`) or the change
+ * failed and the old password stays (`database.password_not_changed`).
+ */
+export function changeDatabasePassword() {
+  return api.post<DatabasePasswordChanged>('/api/v1/admin/system/database-password/change');
 }
