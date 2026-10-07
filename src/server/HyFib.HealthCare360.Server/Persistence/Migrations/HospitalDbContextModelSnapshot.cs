@@ -31578,6 +31578,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<Guid?>("WashCycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("wash_cycle_id");
+
                     b.HasKey("Id")
                         .HasName("pk_sterile_packs");
 
@@ -31590,6 +31594,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("PackNumber")
                         .IsUnique()
                         .HasDatabaseName("ix_sterile_packs_pack_number");
+
+                    b.HasIndex("WashCycleId")
+                        .HasDatabaseName("ix_sterile_packs_wash_cycle_id");
 
                     b.HasIndex("InstrumentSetId", "Status")
                         .HasDatabaseName("ix_sterile_packs_instrument_set_id_status");
@@ -31776,6 +31783,167 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_sterilization_loads_status_loaded_at");
 
                     b.ToTable("sterilization_loads", "supportservices");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("A0")
+                        .HasColumnType("integer")
+                        .HasColumnName("a0");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("CycleNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("cycle_number");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<decimal?>("DisinfectionTemperatureC")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("disinfection_temperature_c");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("failure_reason");
+
+                    b.Property<decimal?>("HoldMinutes")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)")
+                        .HasColumnName("hold_minutes");
+
+                    b.Property<bool?>("InspectedClean")
+                        .HasColumnType("boolean")
+                        .HasColumnName("inspected_clean");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("notes");
+
+                    b.Property<string>("OperatorName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("operator_name");
+
+                    b.Property<Guid?>("OperatorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("operator_user_id");
+
+                    b.Property<string>("Program")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("program");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("WasherName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("washer_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_wash_cycles");
+
+                    b.HasIndex("CycleNumber")
+                        .IsUnique()
+                        .HasDatabaseName("ix_wash_cycles_cycle_number");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_wash_cycles_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_wash_cycles_is_deleted");
+
+                    b.HasIndex("Status", "StartedAt")
+                        .HasDatabaseName("ix_wash_cycles_status_started_at");
+
+                    b.ToTable("wash_cycles", "supportservices");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycleTray", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("InstrumentSetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("instrument_set_id");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<Guid>("WashCycleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("wash_cycle_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_wash_cycle_trays");
+
+                    b.HasIndex("WashCycleId")
+                        .HasDatabaseName("ix_wash_cycle_trays_wash_cycle_id");
+
+                    b.HasIndex("InstrumentSetId", "WashCycleId")
+                        .HasDatabaseName("ix_wash_cycle_trays_instrument_set_id_wash_cycle_id");
+
+                    b.ToTable("wash_cycle_trays", "supportservices");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Dietary.DietOrder", b =>
@@ -37826,6 +37994,29 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_sterile_packs_sterilization_loads_load_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycle", null)
+                        .WithMany()
+                        .HasForeignKey("WashCycleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_sterile_packs_wash_cycle_wash_cycle_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycleTray", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.InstrumentSet", null)
+                        .WithMany()
+                        .HasForeignKey("InstrumentSetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_wash_cycle_trays_instrument_sets_instrument_set_id");
+
+                    b.HasOne("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycle", null)
+                        .WithMany("Trays")
+                        .HasForeignKey("WashCycleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_wash_cycle_trays_wash_cycles_wash_cycle_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Dietary.DietOrder", b =>
@@ -38231,6 +38422,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
             modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.SterilizationLoad", b =>
                 {
                     b.Navigation("Packs");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd.WashCycle", b =>
+                {
+                    b.Navigation("Trays");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Identity.Role", b =>

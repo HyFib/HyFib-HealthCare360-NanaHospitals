@@ -9,6 +9,7 @@ export type LoadStatus = 'Loaded' | 'Running' | 'Completed' | 'Released' | 'Fail
 export type IndicatorResult = 'Pending' | 'Pass' | 'Fail';
 export type PackStatus = 'InProcess' | 'Available' | 'Issued' | 'Returned' | 'Recalled' | 'Reprocess';
 export type SetIssueStatus = 'Issued' | 'Used' | 'Returned' | 'Recalled';
+export type WashCycleStatus = 'Running' | 'Passed' | 'Failed';
 
 export const LOAD_STATUSES: readonly LoadStatus[] = ['Loaded', 'Running', 'Completed', 'Released', 'Failed'];
 export const LOAD_STATUS_LABEL: Record<LoadStatus, string> = {
@@ -27,6 +28,17 @@ export function loadStatusTone(status: LoadStatus): 'success' | 'danger' | 'warn
       : status === 'Completed'
         ? 'warning'
         : 'brand';
+}
+
+export const WASH_STATUSES: readonly WashCycleStatus[] = ['Running', 'Passed', 'Failed'];
+export const WASH_STATUS_LABEL: Record<WashCycleStatus, string> = {
+  Running: 'In the washer',
+  Passed: 'Passed',
+  Failed: 'Failed',
+};
+/** Badge colour of a wash cycle status (the badge also shows the status word). */
+export function washStatusTone(status: WashCycleStatus): 'success' | 'danger' | 'brand' {
+  return status === 'Passed' ? 'success' : status === 'Failed' ? 'danger' : 'brand';
 }
 
 export const REQUEST_STATUS_LABEL: Record<CssdRequestStatus, string> = {
@@ -160,6 +172,9 @@ export interface SterilePackDto {
   sterileUntil: string | null;
   isExpired: boolean;
   issuedToDepartmentId: string | null;
+  /** The wash cycle the pack's tray went through, when the load named it. */
+  washCycleId: string | null;
+  washCycleNumber: string | null;
 }
 
 export interface SetIssueDto {
@@ -258,7 +273,76 @@ export interface CreateLoadRequest {
   containsImplants: boolean;
   operatorName: string | null;
   notes: string | null;
-  packs: { instrumentSetId: string; quantity: number }[];
+  /** `washCycleId`: the passed wash cycle the trays came from. */
+  packs: { instrumentSetId: string; quantity: number; washCycleId: string | null }[];
+}
+
+export interface WashCycleListItem {
+  id: string;
+  cycleNumber: string;
+  washerName: string;
+  program: string | null;
+  status: WashCycleStatus;
+  startedAt: string;
+  completedAt: string | null;
+  a0: number | null;
+  trays: number;
+  failureReason: string | null;
+}
+
+export interface WashTrayDto {
+  instrumentSetId: string;
+  setName: string | null;
+  quantity: number;
+}
+
+/** A pack made from the cycle's trays, and the sterilizer load it went into. */
+export interface WashPackDto {
+  packId: string;
+  packNumber: string;
+  loadId: string;
+  loadCycleNumber: string | null;
+  setName: string | null;
+  status: PackStatus;
+}
+
+export interface WashCycleDto {
+  id: string;
+  cycleNumber: string;
+  washerName: string;
+  program: string | null;
+  status: WashCycleStatus;
+  startedAt: string;
+  completedAt: string | null;
+  disinfectionTemperatureC: number | null;
+  holdMinutes: number | null;
+  a0: number | null;
+  requiredA0: number;
+  inspectedClean: boolean | null;
+  failureReason: string | null;
+  operatorName: string | null;
+  notes: string | null;
+  trays: WashTrayDto[];
+  packs: WashPackDto[];
+  version: number;
+}
+
+export interface StartWashCycleRequest {
+  washerName: string;
+  program: string | null;
+  operatorName: string | null;
+  notes: string | null;
+  trays: { instrumentSetId: string; quantity: number }[];
+}
+
+export interface WashFilters {
+  status?: WashCycleStatus;
+  setId?: string;
+  from?: string;
+  to?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface RecallItem {
@@ -320,6 +404,8 @@ export const cssdKeys = {
   loads: (filters: LoadFilters) => ['cssd', 'loads', filters] as const,
   load: (id: string) => ['cssd', 'load', id] as const,
   recall: (id: string) => ['cssd', 'load', id, 'recall'] as const,
+  washes: (filters: WashFilters) => ['cssd', 'washes', filters] as const,
+  wash: (id: string) => ['cssd', 'wash', id] as const,
 };
 
 export const cssdQueries = {
@@ -379,6 +465,21 @@ export const cssdQueries = {
       queryKey: cssdKeys.recall(id),
       queryFn: ({ signal }) => api.get<RecallReport>(`/api/v1/cssd/loads/${id}/recall`, { signal }),
     }),
+  washes: (filters: WashFilters) =>
+    queryOptions({
+      queryKey: cssdKeys.washes(filters),
+      queryFn: ({ signal }) =>
+        api.get<PagedResult<WashCycleListItem>>('/api/v1/cssd/wash-cycles', {
+          query: { pageSize: 25, ...filters },
+          signal,
+        }),
+      placeholderData: keepPreviousData,
+    }),
+  wash: (id: string) =>
+    queryOptions({
+      queryKey: cssdKeys.wash(id),
+      queryFn: ({ signal }) => api.get<WashCycleDto>(`/api/v1/cssd/wash-cycles/${id}`, { signal }),
+    }),
 };
 
 export const cssdApi = {
@@ -407,4 +508,8 @@ export const cssdApi = {
   recordBiological: (id: string, body: { result: 'Pass' | 'Fail'; lot: string | null }) =>
     api.post<LoadDto>(`/api/v1/cssd/loads/${id}/biological-indicator`, body),
   abortLoad: (id: string, reason: string) => api.post<LoadDto>(`/api/v1/cssd/loads/${id}/abort`, { reason }),
+  startWash: (body: StartWashCycleRequest) => api.post<WashCycleDto>('/api/v1/cssd/wash-cycles', body),
+  completeWash: (id: string, body: { temperatureC: number; holdMinutes: number; inspectedClean: boolean }) =>
+    api.post<WashCycleDto>(`/api/v1/cssd/wash-cycles/${id}/complete`, body),
+  abortWash: (id: string, reason: string) => api.post<WashCycleDto>(`/api/v1/cssd/wash-cycles/${id}/abort`, { reason }),
 };

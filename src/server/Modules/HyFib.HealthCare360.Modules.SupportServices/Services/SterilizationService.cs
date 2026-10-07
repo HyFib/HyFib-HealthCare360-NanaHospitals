@@ -41,6 +41,23 @@ public sealed class SterilizationService(
             return Error.Rule("cssd.method_mismatch", $"{wrongMethod.Name} is processed by {wrongMethod.Method}; this load is {request.Method}.");
         }
 
+        // Packs that name their wash cycle must come from a cycle that passed and washed their set.
+        var washIds = request.Packs.Select(p => p.WashCycleId).OfType<Guid>().Distinct().ToList();
+        var washes = await db.Set<WashCycle>().AsNoTracking().Include(w => w.Trays).Where(w => washIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, ct);
+        foreach (var line in request.Packs.Where(p => p.WashCycleId is not null))
+        {
+            if (!washes.TryGetValue(line.WashCycleId!.Value, out var wash))
+            {
+                return Error.Field("packs", "A wash cycle named in the load was not found.");
+            }
+
+            var washed = wash.CanPack(line.InstrumentSetId, sets[line.InstrumentSetId].Name);
+            if (washed.IsFailure)
+            {
+                return washed.Error!;
+            }
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var load = new SterilizationLoad
         {
@@ -68,6 +85,7 @@ public sealed class SterilizationService(
                     FacilityId = facilityId,
                     LoadId = load.Id,
                     InstrumentSetId = line.InstrumentSetId,
+                    WashCycleId = line.WashCycleId,
                     PackNumber = $"{load.CycleNumber}-{sequence:000}",
                     ShelfLifeDays = sets[line.InstrumentSetId].ShelfLifeDays,
                     Status = PackStatus.InProcess,
@@ -213,6 +231,8 @@ public sealed class SterilizationService(
     {
         var setIds = load.Packs.Select(p => p.InstrumentSetId).Distinct().ToList();
         var setNames = await db.Set<InstrumentSet>().AsNoTracking().Where(s => setIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+        var washIds = load.Packs.Select(p => p.WashCycleId).OfType<Guid>().Distinct().ToList();
+        var washNumbers = await db.Set<WashCycle>().AsNoTracking().Where(w => washIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.CycleNumber, ct);
         var today = time.Today();
         return new LoadDto(
             load.Id, load.CycleNumber, load.SterilizerName, load.Method, load.Program, load.ContainsImplants, load.Status, load.LoadedAt, load.StartedAt,
@@ -220,7 +240,8 @@ public sealed class SterilizationService(
             load.BiologicalIndicatorLot, load.BiologicalReadAt, load.OperatorName, load.ReleasedAt, load.ReleasedByName, load.FailureReason, load.Notes,
             load.Packs.OrderBy(p => p.PackNumber)
                 .Select(p => new SterilePackDto(p.Id, p.PackNumber, p.LoadId, load.CycleNumber, p.InstrumentSetId, setNames.GetValueOrDefault(p.InstrumentSetId),
-                    p.Status, p.SterileUntil, p.IsExpired(today), p.IssuedToDepartmentId))
+                    p.Status, p.SterileUntil, p.IsExpired(today), p.IssuedToDepartmentId, p.WashCycleId,
+                    p.WashCycleId is { } washId ? washNumbers.GetValueOrDefault(washId) : null))
                 .ToList(),
             load.Version);
     }

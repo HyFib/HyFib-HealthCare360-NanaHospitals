@@ -28,6 +28,12 @@ const manifest: ModuleManifest = {
       keywords: ['used trays', 'instrument count', 'returned'],
     },
     {
+      label: 'Wash cycles',
+      to: '/cssd/washes',
+      permission: ['cssd.read', 'cssd.process'],
+      keywords: ['washer-disinfector', 'decontamination', 'A0', 'cleaning'],
+    },
+    {
       label: 'Sterilizer loads',
       to: '/cssd/loads',
       permission: ['cssd.read', 'cssd.process'],

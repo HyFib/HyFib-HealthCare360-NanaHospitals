@@ -31,6 +31,10 @@ public sealed class SterilePack : Entity, IFacilityScoped
     public Guid FacilityId { get; set; }
     public Guid LoadId { get; set; }
     public Guid InstrumentSetId { get; set; }
+
+    /// <summary>The wash cycle the pack's tray went through before packing, when the load names it.</summary>
+    public Guid? WashCycleId { get; set; }
+
     public string PackNumber { get; set; } = string.Empty;
 
     /// <summary>Snapshot of the set's shelf life when the pack was loaded.</summary>

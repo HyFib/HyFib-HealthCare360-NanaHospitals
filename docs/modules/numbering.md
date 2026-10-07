@@ -191,6 +191,7 @@ numbers stay gap-free.
 | Clinical | Prescription | `prescription` | `{FAC}RX{YY}{SEQ:7}` | every year | per facility | 24 |
 | CSSD | CSSD request | `cssd-request` | `{FAC}CQ{YY}{SEQ:6}` | every year | per facility | 24 |
 | CSSD | Sterilisation cycle | `cssd-cycle` | `{FAC}CS{YY}{SEQ:6}` | every year | per facility | 24 |
+| CSSD | Wash cycle | `cssd-wash` | `{FAC}CW{YY}{SEQ:6}` | every year | per facility | 24 |
 | Dialysis | Dialysis session | `dialysis-session` | `{FAC}DL{YY}{SEQ:6}` | every year | per facility | 24 |
 | Doctor fees | Doctor payout | `doctorfees.payout` | `{FAC}DP{YY}{SEQ:5}` | every year | per facility | 24 |
 | Equipment and assets | Asset tag | `supplychain.asset` | `{FAC}AS{SEQ:6}` | never | per facility | 24 |

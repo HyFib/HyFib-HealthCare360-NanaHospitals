@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkParameters, compareCounts, daysToExpiry, minimumSteamMinutes } from './rules';
+import { checkParameters, compareCounts, daysToExpiry, minimumSteamMinutes, REQUIRED_A0, washA0 } from './rules';
 
 describe('sterilizer parameters (mirror of the server)', () => {
   it.each([
@@ -87,5 +87,22 @@ describe('pack expiry', () => {
     expect(daysToExpiry('2026-09-28', '2026-09-26')).toBe(2);
     expect(daysToExpiry('2026-09-25', '2026-09-26')).toBe(-1);
     expect(daysToExpiry(null, '2026-09-26')).toBeNull();
+  });
+});
+
+describe('wash cycle disinfection (mirror of the server)', () => {
+  it.each([
+    [90, 5, 3000],
+    [90, 1, 600],
+    [85, 5, 948],
+    [93, 10, 11971],
+  ])('%i °C held for %i min reaches A0 %i', (temperature, minutes, a0) => {
+    expect(washA0(temperature, minutes)).toBe(a0);
+  });
+
+  it('needs A0 3000, which 90 °C held for 5 minutes just reaches', () => {
+    expect(REQUIRED_A0).toBe(3000);
+    expect(washA0(90, 5)).toBeGreaterThanOrEqual(REQUIRED_A0);
+    expect(washA0(90, 4.9)).toBeLessThan(REQUIRED_A0);
   });
 });
