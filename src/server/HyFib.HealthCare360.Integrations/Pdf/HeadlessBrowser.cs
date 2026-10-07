@@ -2,22 +2,19 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.Management;
-using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
+using System.IO.Pipes;
 using System.Security.Cryptography;
-using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.WindowsInterop;
 
 namespace HyFib.HealthCare360.Integrations.Pdf;
 
 /// <summary>
-/// One headless Edge process with its pipe, a private profile folder and a pool of tabs. A job object ties it to the
-/// server, so it never outlives the server even after a crash. Renders lease it; once retired (it failed, sat idle or
-/// made enough PDFs) it closes when the last lease ends.
+/// One headless Edge process with its pipe, a private profile folder and a pool of tabs. Edge starts inside a job object
+/// that ties all of its processes to the server, so none outlives the server even after a crash. Renders lease it; once
+/// retired (it failed, sat idle or made enough PDFs) it closes when the last lease ends.
 /// </summary>
-internal sealed partial class HeadlessBrowser : IAsyncDisposable
+internal sealed class HeadlessBrowser : IAsyncDisposable
 {
     // Headless, nothing that phones home, no extensions, no crash uploads. The sandbox stays on.
     private static readonly string[] Switches =
@@ -49,7 +46,6 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
     private bool _retired;
     private int _renders;
     private int _disposed;
-    private DateTime _assignedAt;
 
     private HeadlessBrowser(Process process, ProcessJob? job, DevToolsPipe pipe, string profile, ILogger logger)
     {
@@ -72,24 +68,11 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
         Directory.CreateDirectory(profile);
         var pipe = new DevToolsPipe();
         var job = ProcessJob.TryCreateKillOnClose();
-        var start = new ProcessStartInfo(browserPath)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
-        foreach (var argument in Switches.Append($"--user-data-dir={profile}").Concat(pipe.BrowserArguments).Append("about:blank"))
-        {
-            start.ArgumentList.Add(argument);
-        }
-
+        string[] arguments = [.. Switches, $"--user-data-dir={profile}", .. pipe.BrowserArguments, "about:blank"];
         Process process;
-        long started;
         try
         {
-            process = Process.Start(start) ?? throw new InvalidOperationException($"{browserPath} did not start.");
-            started = Stopwatch.GetTimestamp();
+            process = job is null ? Start(browserPath, arguments, logger) : StartInJob(job, browserPath, arguments, pipe, logger);
         }
         catch
         {
@@ -99,38 +82,68 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
             throw;
         }
 
-        var assigned = "no job";
+        pipe.Start();
+
+        var browser = new HeadlessBrowser(process, job, pipe, profile, logger);
         try
         {
-            job?.Assign(process);
-            assigned = job is null ? "no job" : "ok";
+            var version = await pipe.SendAsync("Browser.getVersion", null, null, cancellationToken);
+            browser.Product = version.GetProperty("product").GetString();
+            return browser;
         }
-        catch (Win32Exception ex)
+        catch
         {
-            assigned = $"failed: {ex.NativeErrorCode} {ex.Message}";
-            logger.LogWarning(ex, "The PDF browser could not be tied to the server process; it is closed on shutdown instead");
+            await browser.DisposeAsync();
+            throw;
+        }
+    }
+
+    // Edge starts its crash handler first thing, so it has to start inside the job. On a busy machine, Process.Start can
+    // return after the crash handler has started (one start in five on a loaded CI runner). A browser put in the job only
+    // then leaves the crash handler outside, where it keeps running after the server and the browser have gone.
+    private static Process StartInJob(ProcessJob job, string browserPath, IReadOnlyList<string> arguments, DevToolsPipe pipe, ILogger logger)
+    {
+        var output = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+        Process? process = null;
+        try
+        {
+            process = job.Start(browserPath, arguments, output.ClientSafePipeHandle, pipe.BrowserHandles);
+            output.DisposeLocalCopyOfClientHandle();
+
+            // Edge writes diagnostics to stderr. The pipe must be drained or Edge blocks once its buffer fills, and reads
+            // block (anonymous pipes have no overlapped I/O on Windows), so they get a thread of their own.
+            new Thread(() => LogOutput(output, logger)) { IsBackground = true, Name = "HC360 PDF browser output" }.Start();
+            return process;
+        }
+        catch
+        {
+            process?.Dispose();
+            output.Dispose();
+            throw;
+        }
+    }
+
+    // Without a job (not on Windows, or Windows would not make one): as any other program.
+    private static Process Start(string browserPath, IReadOnlyList<string> arguments, ILogger logger)
+    {
+        var start = new ProcessStartInfo(browserPath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
         }
 
-        var assignedAt = DateTime.Now;
-        EdgeDiag.Note(profile, $"main pid {process.Id}: Assign {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F2} ms after Process.Start returned: {assigned}");
-        process.EnableRaisingEvents = true;
-        process.Exited += (_, _) => EdgeDiag.Note(profile, "main process exited");
+        var process = Process.Start(start) ?? throw new InvalidOperationException($"{browserPath} did not start.");
 
         // Edge writes diagnostics to stderr. The pipes must be drained or it blocks once their buffers fill.
-        process.OutputDataReceived += (_, line) =>
-        {
-            if (line.Data is null)
-            {
-                EdgeDiag.Note(profile, "stdout EOF");
-            }
-        };
+        process.OutputDataReceived += (_, _) => { };
         process.ErrorDataReceived += (_, line) =>
         {
-            if (line.Data is null)
-            {
-                EdgeDiag.Note(profile, "stderr EOF");
-            }
-
             if (!string.IsNullOrWhiteSpace(line.Data))
             {
                 logger.LogTrace("PDF browser: {Line}", line.Data);
@@ -138,20 +151,25 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
         };
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        pipe.Start();
+        return process;
+    }
 
-        var browser = new HeadlessBrowser(process, job, pipe, profile, logger) { _assignedAt = assignedAt };
+    private static void LogOutput(AnonymousPipeServerStream output, ILogger logger)
+    {
+        using var lines = new StreamReader(output);
         try
         {
-            var version = await pipe.SendAsync("Browser.getVersion", null, null, cancellationToken);
-            browser.Product = version.GetProperty("product").GetString();
-            EdgeDiag.Snapshot(profile, $"started {browser.Product}", pid => job?.Contains(pid) ?? false, process.Id, assignedAt);
-            return browser;
+            while (lines.ReadLine() is { } line)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    logger.LogTrace("PDF browser: {Line}", line);
+                }
+            }
         }
-        catch
+        catch (IOException)
         {
-            await browser.DisposeAsync();
-            throw;
+            // The pipe broke: the browser has gone.
         }
     }
 
@@ -227,93 +245,62 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
             return;
         }
 
-        var mainPid = _process.Id;
-        EdgeDiag.Snapshot(_profile, $"closing after {Renders} PDFs", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
         try
         {
             using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             if (!_pipe.Closed.IsCompleted)
             {
                 // The browser may close the pipe before it answers; either way it is on its way out.
-                EdgeDiag.Note(_profile, "Browser.close sent");
                 await _pipe.SendAsync("Browser.close", null, null, wait.Token);
-                EdgeDiag.Note(_profile, "Browser.close answered");
             }
 
             await _process.WaitForExitAsync(wait.Token);
-            EdgeDiag.Note(_profile, "WaitForExitAsync returned");
         }
         catch (Exception ex) when (ex is DevToolsException or OperationCanceledException or InvalidOperationException)
         {
-            EdgeDiag.Note(_profile, $"close wait ended with {ex.GetType().Name}: {ex.Message}");
-            _diagProblem |= ex is OperationCanceledException;
             _logger.LogDebug(ex, "The PDF browser did not close on request");
         }
 
         _pipe.Dispose();
-        if (!HasExited())
+        if (_job is not null)
         {
-            _diagProblem = true;
-            EdgeDiag.Snapshot(_profile, "main still running after the close wait", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
-            try
+            // Every process of the browser is in the job, which ends whatever is left of it. A process closes its files
+            // only once it has finished exiting, and on a busy machine that takes many seconds after it is ended.
+            if (!await _job.TerminateAndWaitAsync(TimeSpan.FromSeconds(30)))
             {
-                _process.Kill(entireProcessTree: true);
-                EdgeDiag.Note(_profile, "Kill(entireProcessTree) done");
+                _logger.LogWarning("Some PDF browser processes were still exiting 30 seconds after they were ended");
             }
-            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException)
-            {
-                EdgeDiag.Note(_profile, $"Kill failed: {ex.Message}");
-                _logger.LogDebug(ex, "The PDF browser could not be stopped; the job object ends it");
-            }
+
+            _job.Dispose();
         }
         else
         {
-            EdgeDiag.Snapshot(_profile, "main has exited", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
+            // The browser and every process it started, including any still running after the browser exited.
+            try
+            {
+                _process.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException or AggregateException)
+            {
+                _logger.LogDebug(ex, "The PDF browser could not be stopped");
+            }
         }
 
-        if (_job is not null)
+        // The browser itself may still be exiting: it may have ended on its own just before the job's processes were
+        // listed, or have been killed just now. Until it has exited, it holds its files.
+        for (var waited = 0; !HasExited() && waited < 10_000; waited += 50)
         {
-            // Edge's helper processes outlive the browser for a moment and keep the profile open until they end.
-            var jobWait = Stopwatch.GetTimestamp();
-            if (!await _job.TerminateAndWaitAsync(TimeSpan.FromSeconds(10)))
-            {
-                _diagProblem = true;
-                _logger.LogDebug("Some PDF browser processes were still running 10 seconds after it closed");
-            }
-
-            EdgeDiag.Note(_profile, $"job wait took {Stopwatch.GetElapsedTime(jobWait).TotalMilliseconds:F0} ms");
-            EdgeDiag.Snapshot(_profile, "after the job wait", pid => _job.Contains(pid), mainPid, _assignedAt);
-            _job.Dispose();
+            await Task.Delay(50);
         }
 
         _process.Dispose();
 
-        // Before the sweep: is anything still holding the profile, and if so what?
-        if (Directory.Exists(_profile) && !TryDeleteDirectory(_profile))
-        {
-            _diagProblem = true;
-            EdgeDiag.Note(_profile, "first delete, before the sweep, failed");
-            EdgeDiag.Lockers(_profile);
-        }
-
-        if (OperatingSystem.IsWindows())
-        {
-            await EndLeftoverProcessesAsync();
-        }
-
-        // Edge releases its profile files a moment after it exits, longer on a busy machine.
+        // Edge's processes have all exited by now; a virus scanner or the search indexer may still hold a file a moment.
         for (var attempt = 0; attempt < 8 && Directory.Exists(_profile); attempt++)
         {
             if (TryDeleteDirectory(_profile))
             {
-                EdgeDiag.Note(_profile, $"profile deleted on attempt {attempt + 1}");
                 break;
-            }
-
-            _diagProblem = true;
-            if (attempt == 0)
-            {
-                EdgeDiag.Lockers(_profile);
             }
 
             await Task.Delay(250 * (attempt + 1));
@@ -321,93 +308,9 @@ internal sealed partial class HeadlessBrowser : IAsyncDisposable
 
         if (Directory.Exists(_profile))
         {
-            _diagProblem = true;
-            EdgeDiag.Snapshot(_profile, "profile still there", null, mainPid, _assignedAt);
-            EdgeDiag.Lockers(_profile);
             _logger.LogWarning("The PDF browser's folder {Folder} could not be deleted; the next start removes it", _profile);
         }
-
-        EdgeDiag.Flush(_profile, _diagProblem);
     }
-
-    private bool _diagProblem;
-
-    /// <summary>
-    /// Ends the browser's processes that are still running outside its job. Edge can start one before the job takes the
-    /// browser in, and such a process keeps the profile open. Every Edge process names the profile folder on its command
-    /// line, so they are found by it.
-    /// </summary>
-    [SupportedOSPlatform("windows")]
-    private async Task EndLeftoverProcessesAsync()
-    {
-        var leftovers = await Task.Run(FindProcessesUsingProfile);
-        if (leftovers.Count > 0)
-        {
-            _diagProblem = true;
-            EdgeDiag.Snapshot(_profile, $"the sweep found {leftovers.Count} processes", null, -1, _assignedAt);
-        }
-
-        foreach (var process in leftovers)
-        {
-            using (process)
-            {
-                try
-                {
-                    _logger.LogWarning("Ending PDF browser process {ProcessId}, which outlived the browser", process.Id);
-                    EdgeDiag.Note(_profile, $"sweep ends pid {process.Id}");
-                    process.Kill(entireProcessTree: true);
-                    using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                    await process.WaitForExitAsync(wait.Token);
-                }
-                catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or AggregateException or OperationCanceledException)
-                {
-                    _logger.LogDebug(ex, "PDF browser process {ProcessId} could not be ended", process.Id);
-                }
-            }
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private List<Process> FindProcessesUsingProfile()
-    {
-        // The folder is named after the server's process id and random hex digits, so it is safe in the query as it is.
-        var folder = Path.GetFileName(_profile);
-        if (!ProfileFolderName().IsMatch(folder))
-        {
-            return [];
-        }
-
-        var found = new List<Process>();
-        try
-        {
-            using var searcher = new ManagementObjectSearcher($"SELECT ProcessId FROM Win32_Process WHERE CommandLine LIKE '%{folder}%'");
-            searcher.Options.Timeout = TimeSpan.FromSeconds(10);
-            foreach (var item in searcher.Get())
-            {
-                using var entry = (ManagementObject)item;
-                if (entry["ProcessId"] is uint id && id != Environment.ProcessId)
-                {
-                    try
-                    {
-                        found.Add(Process.GetProcessById((int)id));
-                    }
-                    catch (ArgumentException)
-                    {
-                        // It ended on its own.
-                    }
-                }
-            }
-        }
-        catch (Exception ex) when (ex is ManagementException or COMException or UnauthorizedAccessException)
-        {
-            _logger.LogDebug(ex, "Could not look for PDF browser processes that outlived the browser");
-        }
-
-        return found;
-    }
-
-    [GeneratedRegex("^[0-9]+-[0-9a-f]+$")]
-    private static partial Regex ProfileFolderName();
 
     /// <summary>
     /// Removes profile folders left behind by a server that stopped without closing its browser. A folder whose server

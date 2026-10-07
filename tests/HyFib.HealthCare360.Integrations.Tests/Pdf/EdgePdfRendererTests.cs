@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Management;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -17,7 +20,8 @@ namespace HyFib.HealthCare360.Integrations.Tests.Pdf;
 /// </summary>
 public sealed partial class EdgePdfRendererTests : IDisposable
 {
-    private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-pdf-tests", Guid.NewGuid().ToString("N")[..8]);
+    // The space makes the profile folder one that has to be quoted on the browser's command line.
+    private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360 pdf tests", Guid.NewGuid().ToString("N")[..8]);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -101,9 +105,11 @@ public sealed partial class EdgePdfRendererTests : IDisposable
     {
         var renderer = Renderer();
         await renderer.RenderAsync(new PdfSource("<!doctype html><p>x</p>"), Ct);
+        var profile = Path.GetFileName(Directory.EnumerateDirectories(Path.Combine(_dataDirectory, "temp", "pdf")).ShouldHaveSingleItem());
 
         await renderer.DisposeAsync();
 
+        RunningProcessesNaming(profile).ShouldBeEmpty();
         Directory.EnumerateDirectories(Path.Combine(_dataDirectory, "temp", "pdf")).ShouldBeEmpty();
         await Should.ThrowAsync<ObjectDisposedException>(() => renderer.RenderAsync(new PdfSource("<p>x</p>"), Ct));
     }
@@ -155,6 +161,38 @@ public sealed partial class EdgePdfRendererTests : IDisposable
     }
 
     private static int Pages(byte[] pdf) => PageObject().Matches(Encoding.Latin1.GetString(pdf)).Count;
+
+    // Edge names the profile folder on the command line of every process it starts. The folder's name is digits, letters
+    // and a dash, safe in the query as it is. A process that has exited but is still listed doesn't count.
+    private static List<int> RunningProcessesNaming(string folder)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        var running = new List<int>();
+        using var searcher = new ManagementObjectSearcher($"SELECT ProcessId FROM Win32_Process WHERE CommandLine LIKE '%{folder}%'");
+        foreach (var item in searcher.Get())
+        {
+            using var entry = (ManagementObject)item;
+            var id = Convert.ToInt32(entry["ProcessId"], CultureInfo.InvariantCulture);
+            try
+            {
+                using var process = Process.GetProcessById(id);
+                if (!process.HasExited)
+                {
+                    running.Add(id);
+                }
+            }
+            catch (ArgumentException)
+            {
+                // It has gone.
+            }
+        }
+
+        return running;
+    }
 
     [GeneratedRegex(@"/Type\s*/Page(?![s\w])")]
     private static partial Regex PageObject();

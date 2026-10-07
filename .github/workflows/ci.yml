@@ -26,26 +26,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      # TEMPORARY (diagnostics branch): how headless Edge starts and closes on this runner.
-      - name: Edge diagnostics, quiet runner
-        shell: pwsh
-        env:
-          DIAG_ITERATIONS: '4'
-          DIAG_VERBOSE: '1'
-        run: |
-          $dir = Join-Path $env:RUNNER_TEMP 'edgediag'
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          Copy-Item .github/edge-diag/edgediag.cs $dir
-          dotnet run --file (Join-Path $dir 'edgediag.cs')
-
-      - name: Edge diagnostics, busy runner
-        shell: pwsh
-        env:
-          DIAG_ITERATIONS: '4'
-          DIAG_LOAD: '8'
-          DIAG_VERBOSE: '1'
-        run: dotnet run --file (Join-Path $env:RUNNER_TEMP 'edgediag/edgediag.cs')
-
       # NuGet audit: a package with a known vulnerability, direct or transitive, fails restore (Directory.Build.props).
       - name: Restore and audit packages
         run: dotnet restore HyFib.HealthCare360.slnx
@@ -68,36 +48,44 @@ jobs:
           $password = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { 'root' }
           "HC360_TEST_DATABASE=Host=localhost;Port=5432;Username=$user;Password=$password;Database=postgres" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      # A hung run fails in half an hour instead of the runner's six.
-      - name: Test, with Edge diagnostics alongside
-        shell: pwsh
-        env:
-          DIAG_ITERATIONS: '30'
-        run: |
-          $out = Join-Path $env:RUNNER_TEMP 'diag-alongside.txt'
-          $err = Join-Path $env:RUNNER_TEMP 'diag-alongside-err.txt'
-          $diag = Start-Process dotnet -ArgumentList @('run', '--file', (Join-Path $env:RUNNER_TEMP 'edgediag/edgediag.cs')) -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
-          dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
-          $testExit = $LASTEXITCODE
-          $diag.WaitForExit()
-          Get-Content $out
-          Get-Content $err
-          exit $testExit
-
-      - name: Edge PDF tests three more times
-        if: always()
+      # TEMPORARY (stress branch): the Edge PDF and job tests over and over, beside the full suite, then with the CPU busy.
+      - name: Test, with the Edge PDF and job tests repeated alongside
         shell: pwsh
         run: |
-          foreach ($i in 1..3) {
-            dotnet test --project tests/HyFib.HealthCare360.Integrations.Tests --no-build -c Release --filter-class HyFib.HealthCare360.Integrations.Tests.Pdf.EdgePdfRendererTests
+          $log = Join-Path $env:RUNNER_TEMP 'suite.txt'
+          $suite = Start-Process dotnet -ArgumentList @('test', '--solution', 'HyFib.HealthCare360.slnx', '--no-build', '-c', 'Release', '--timeout', '30m') -NoNewWindow -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          $null = $suite.Handle
+          $runs = 0; $failed = 0
+          while (-not $suite.HasExited -and $runs -lt 30) {
+            $runs++
+            $out = dotnet test --project tests/HyFib.HealthCare360.Integrations.Tests --no-build -c Release --filter-class HyFib.HealthCare360.Integrations.Tests.Pdf.EdgePdfRendererTests --filter-class HyFib.HealthCare360.Integrations.Tests.Pdf.ProcessJobTests 2>&1
+            $code = $LASTEXITCODE
+            if ($code -ne 0) { $failed++; $out | Select-String -Pattern 'failed |Exception|being used' | Select-Object -First 12 }
+            "alongside run ${runs}: exit $code"
           }
+          $suite.WaitForExit()
+          Get-Content $log | Select-Object -Last 45
+          "$runs runs beside the suite, $failed failed; the suite exited with $($suite.ExitCode)"
+          if ($failed -gt 0 -or $suite.ExitCode -ne 0) { exit 1 }
 
-      - name: Show the PDF browser report
+      - name: The Edge PDF and job tests six times with the CPU busy
         if: always()
         shell: pwsh
         run: |
-          $report = Join-Path $env:TEMP 'hc360-edge-diag-report.txt'
-          if (Test-Path $report) { Get-Content $report } else { 'No report: every PDF browser closed cleanly.' }
+          $burners = 1..8 | ForEach-Object { Start-Process pwsh -ArgumentList '-NoProfile', '-Command', 'while ($true) { }' -PassThru -WindowStyle Hidden }
+          $failed = 0
+          try {
+            foreach ($i in 1..6) {
+              $out = dotnet test --project tests/HyFib.HealthCare360.Integrations.Tests --no-build -c Release --filter-class HyFib.HealthCare360.Integrations.Tests.Pdf.EdgePdfRendererTests --filter-class HyFib.HealthCare360.Integrations.Tests.Pdf.ProcessJobTests 2>&1
+              $code = $LASTEXITCODE
+              if ($code -ne 0) { $failed++; $out | Select-String -Pattern 'failed |Exception|being used' | Select-Object -First 12 }
+              "busy run ${i}: exit $code"
+            }
+          } finally {
+            $burners | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          "$failed of 6 busy runs failed"
+          if ($failed -gt 0) { exit 1 }
 
   web:
     name: Web apps (TypeScript)

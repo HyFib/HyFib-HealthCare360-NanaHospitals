@@ -197,9 +197,11 @@ and Windows Server 2022 machine has.
   (`Network.setBlockedURLs`). The document's own content security policy forbids scripts and network access a second
   time. Images must be `data:` URIs: logos and signatures are embedded by the platform's `DocumentAssets`.
 * **No leftovers.** The browser runs in a Windows job object that ends it and its child processes when the server
-  stops, even after a crash. Its profile lives in `<data root>\temp\pdf\<server process id>-<random>`, is deleted when
-  it closes, and a later start deletes any profile whose server process is gone. Extensions, sync, background
-  networking, crash uploads and pings are switched off. The sandbox stays on.
+  stops, even after a crash. It starts inside the job, because Edge starts its crash handler at once; a browser put in
+  the job after it started could leave that process outside. Its profile lives in
+  `<data root>\temp\pdf\<server process id>-<random>`. Closing the browser waits until every one of its processes has
+  exited, so the profile's files are free, then deletes it; a later start deletes any profile whose server process is
+  gone. Extensions, sync, background networking, crash uploads and pings are switched off. The sandbox stays on.
 * **Finding the browser.** `HealthCare360:Pdf:BrowserPath` if set. Otherwise Edge from Program Files or its App Paths
   registry entry, then Google Chrome. Without one, `Status` explains what to install.
 
