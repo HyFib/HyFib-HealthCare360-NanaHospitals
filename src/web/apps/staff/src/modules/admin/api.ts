@@ -114,6 +114,21 @@ export interface WifiConnectionInfo {
   note: string | null;
 }
 
+/** BitLocker on one fixed disk of the server (Win32_EncryptableVolume). */
+export interface VolumeEncryption {
+  drive: string;
+  protection: 'Off' | 'On' | 'Unknown';
+  conversion:
+    'NotEncrypted' | 'Encrypted' | 'Encrypting' | 'Decrypting' | 'EncryptionPaused' | 'DecryptionPaused' | 'Unknown';
+}
+
+/** What the last disk encryption check recorded (SRS SEC-05). `available` is false when BitLocker is not installed. */
+export interface DiskEncryptionReport {
+  checkedAt: string;
+  available: boolean;
+  volumes: VolumeEncryption[];
+}
+
 export interface SystemHealthReport {
   server: {
     machineName: string;
@@ -145,7 +160,13 @@ export interface SystemHealthReport {
     lastMigration: string | null;
     error: string | null;
   };
-  storage: { dataDirectory: string; freeBytes: number | null; totalBytes: number | null };
+  storage: {
+    dataDirectory: string;
+    freeBytes: number | null;
+    totalBytes: number | null;
+    /** Null when the check has never run on this server, and on servers without Windows. */
+    encryption: DiskEncryptionReport | null;
+  };
   backup: {
     enabled: boolean;
     lastSuccessAt: string | null;

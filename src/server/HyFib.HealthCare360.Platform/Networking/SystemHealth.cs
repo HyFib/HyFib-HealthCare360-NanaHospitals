@@ -30,7 +30,11 @@ public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, D
 
 public sealed record DatabaseInfo(bool Reachable, string? Version, long? SizeBytes, int? Connections, string? LastMigration, string? Error);
 
-public sealed record StorageInfo(string DataDirectory, long? FreeBytes, long? TotalBytes);
+/// <summary>
+/// The data drive, and on Windows what the last BitLocker check recorded (<see cref="DiskEncryption"/>): null when it has
+/// never run, and always null on other systems.
+/// </summary>
+public sealed record StorageInfo(string DataDirectory, long? FreeBytes, long? TotalBytes, DiskEncryptionReport? Encryption = null);
 
 public sealed record BackupInfo(bool Enabled, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastFailureAt, string? LastError, long? LastSizeBytes);
 
@@ -98,7 +102,8 @@ public sealed class SystemHealthService(
             options.Value.HttpsPort, options.Value.Network.EnableMdns);
 
         var database = await ReadDatabaseAsync(ct);
-        var storage = ReadStorage();
+        var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
+        var storage = ReadStorage() with { Encryption = encryption };
         var backup = await ReadBackupAsync(ct);
 
         var dayAgo = now.AddDays(-1);
@@ -122,6 +127,18 @@ public sealed class SystemHealthService(
         if (storage.FreeBytes is { } free && storage.TotalBytes is { } total && total > 0 && free < total / 10)
         {
             warnings.Add(new("disk.low", "critical", $"Less than 10% disk space free on the data drive ({free / (1024 * 1024 * 1024)} GB)."));
+        }
+
+        // BitLocker and the settings file's secrets exist only on the Windows Server Node (SRS SEC-05, SEC-07).
+        if (OperatingSystem.IsWindows())
+        {
+            warnings.AddRange(DiskEncryption.Warnings(encryption, now));
+            if (PlainSecrets() is { Count: > 0 } plain)
+            {
+                warnings.Add(new("settings.unprotected", "warning",
+                    $"The settings file holds {(plain.Count == 1 ? "a secret" : $"{plain.Count} secrets")} in plain text ({string.Join(", ", plain)}). " +
+                    "Run Install-HC360Server.ps1 again, or \"HyFib.HealthCare360.Server.exe settings protect\" from an elevated prompt, to protect them with DPAPI."));
+            }
         }
 
         if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
@@ -195,6 +212,18 @@ public sealed class SystemHealthService(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new DatabaseInfo(false, null, null, null, null, ex.Message);
+        }
+    }
+
+    private IReadOnlyList<string> PlainSecrets()
+    {
+        try
+        {
+            return ProtectedSettings.PlainSecrets(ProtectedSettings.PathIn(directories));
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or IOException or UnauthorizedAccessException)
+        {
+            return [];
         }
     }
 

@@ -2,8 +2,8 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Removes the HC360 Server service, firewall rules and program files. Hospital data is KEPT unless -RemoveData is
-    given and confirmed by typing the facility code.
+    Removes the HC360 Server service, its scheduled task, firewall rules and program files. Hospital data is KEPT unless
+    -RemoveData is given and confirmed by typing the facility code.
 
 .EXAMPLE
     .\Uninstall-HC360Server.ps1
@@ -30,6 +30,8 @@ if ($service) {
     }
 }
 
+Get-ScheduledTask -TaskName 'HC360 disk encryption check' -TaskPath '\HyFib\' -ErrorAction SilentlyContinue |
+    Unregister-ScheduledTask -Confirm:$false
 Get-NetFirewallRule -Group 'HyFib HealthCare360' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 
 if ((Test-Path $InstallDir) -and $PSCmdlet.ShouldProcess($InstallDir, 'Remove program files')) {

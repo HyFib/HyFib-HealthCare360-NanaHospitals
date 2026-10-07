@@ -8,7 +8,10 @@
     - Copies the published server to Program Files (the data folder is kept across upgrades).
     - Creates the PostgreSQL database and a least-privilege application role (optional, -CreateDatabase).
     - Writes the site configuration (%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json), readable only by
-      SYSTEM, Administrators and the service's own virtual account.
+      SYSTEM, Administrators and the service's own virtual account, with the database password protected by DPAPI for
+      this machine (SRS SEC-07).
+    - Checks that BitLocker protects the fixed disks, and registers the "HC360 disk encryption check" scheduled task,
+      which checks again as SYSTEM every day and at start-up for System health (SRS SEC-05).
     - Registers the "HC360Server" Windows service (virtual account NT SERVICE\HC360Server, delayed auto-start,
       automatic restart on failure) and its Event Log source.
     - Opens HTTPS (7360) and mDNS (UDP 5353) in Windows Firewall for Private/Domain networks only. Serial analysers
@@ -215,6 +218,31 @@ $config = [ordered]@{
     }
 }
 $config | ConvertTo-Json -Depth 6 | Set-Content -Path $settingsPath -Encoding UTF8
+
+# The database password, and any other secret in the file, is kept protected with DPAPI for this machine, so a copy of
+# the file is no use elsewhere (SRS SEC-07). A value carried over from an earlier install is already protected.
+$exe = Join-Path $InstallDir $ExeName
+& $exe settings protect --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+if ($LASTEXITCODE -ne 0) { throw "Protecting the secrets in $settingsPath failed (exit code $LASTEXITCODE)." }
+
+# ---------------------------------------------------------------- disk encryption
+# The keys that open HC360's stored data are on this machine, so its disks must be encrypted (SRS SEC-05). Reading
+# BitLocker's state needs administrator rights, which the service does not have: the check runs here, and then as
+# SYSTEM every day and at start-up, and System health shows what it found.
+Write-Step 'Checking BitLocker on the fixed disks'
+& $exe disk-encryption check --data-dir $DataDir | ForEach-Object { Write-Host "    $_" }
+switch ($LASTEXITCODE) {
+    0 { }
+    3 { Write-Warning 'BitLocker does not protect every fixed disk. Turn it on, with the TPM, for every disk that holds HC360 data, backups or the database. System health warns until it is on.' }
+    default { Write-Warning "The BitLocker check did not run (exit code $LASTEXITCODE). System health says so until the daily check runs." }
+}
+$taskAction = New-ScheduledTaskAction -Execute $exe -Argument "disk-encryption check --data-dir `"$($DataDir.TrimEnd('\'))`""
+$taskTriggers = @((New-ScheduledTaskTrigger -Daily -At '06:15'), (New-ScheduledTaskTrigger -AtStartup))
+$taskPrincipal = New-ScheduledTaskPrincipal -UserId 'NT AUTHORITY\SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$taskSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+Register-ScheduledTask -TaskName 'HC360 disk encryption check' -TaskPath '\HyFib\' -Action $taskAction -Trigger $taskTriggers `
+    -Principal $taskPrincipal -Settings $taskSettings -Force `
+    -Description 'Records whether BitLocker protects the disks of the HC360 Server Node, for System health (SRS SEC-05).' | Out-Null
 
 # ---------------------------------------------------------------- firewall
 if (-not $SkipFirewall) {

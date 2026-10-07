@@ -291,6 +291,16 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   earlier step fails, the previous database is put back and the machine keeps its own key.
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
+- **Secrets in the settings file** (`config\hc360.settings.json`) are protected with Windows DPAPI for the machine:
+  every connection string, which carries the database password, and every setting whose name ends in Password, Secret
+  or ApiKey, such as an administrator-supplied certificate's password (SRS SEC-07). The server opens them as it loads
+  the file, so a copy of the file is no use on another computer, and the file itself can be read only by SYSTEM,
+  Administrators and the service. The installer protects them on every install and upgrade, and System health warns
+  while one is in plain text. Integration keys are stored encrypted in the database, as before.
+- **BitLocker** must protect every fixed disk of the Server Node (SRS SEC-05). Reading BitLocker's state needs
+  administrator rights, which the service does not have, so a scheduled task checks it as SYSTEM every day and at
+  start-up, and the installer checks it too. System health shows the result, and warns when a disk is not encrypted,
+  when protection is suspended or unfinished, and when the check has not run for three days.
 
 ### Dependencies, secrets and code scanning
 CI runs these checks on every pull request and on main. A pull request cannot merge while one fails.
@@ -357,7 +367,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 1. Use WPA2/WPA3-Enterprise for the clinical SSID. Keep guests on a separate network that cannot reach the server.
 2. Keep the Server Node patched (Windows Update during a maintenance window), physically secured, and on a UPS. Turn on
    BitLocker, with the TPM, for every disk that holds HC360 data, backups or the database: the keys that decrypt the
-   stored data live on the same disk (SRS SEC-05).
+   stored data live on the same disk (SRS SEC-05). Administration › System health warns until every fixed disk is
+   protected.
 3. Give each person their own account and the smallest set of roles. Review users and roles every quarter, and
    deactivate leavers the same day.
 4. Turn on two-step verification for everyone who handles finance or administration, not only administrators.

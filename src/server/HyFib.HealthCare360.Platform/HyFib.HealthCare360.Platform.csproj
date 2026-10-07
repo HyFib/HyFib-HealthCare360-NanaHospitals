@@ -29,6 +29,7 @@
     <PackageReference Include="Quartz.Extensions.Hosting" />
     <PackageReference Include="Makaretu.Dns.Multicast.New" />
     <PackageReference Include="System.Management" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
     <PackageReference Include="QRCoder" />
   </ItemGroup>
