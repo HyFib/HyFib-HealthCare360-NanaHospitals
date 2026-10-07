@@ -1,5 +1,5 @@
+import type { Letterhead } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import type { Letterhead } from '@/modules/pharmacy/print';
 import type { CanteenSaleDto, DailySalesSummary } from './api';
 import { buildCanteenReceiptHtml, buildDailyReportHtml, canteenBillTitle } from './print';
 
@@ -68,7 +68,7 @@ describe('canteen receipt', () => {
     expect(html).not.toMatch(/bill of supply/i);
     expect(html).toContain('Nana Hospitals Pvt Ltd');
     expect(html).toContain('12 MG Road, Pune, Maharashtra, 411001');
-    expect(html).toContain('<div class="small">GSTIN 27AAACN1234F1Z5</div>');
+    expect(html).toContain('<div class="lh-line">GSTIN 27AAACN1234F1Z5</div>');
     expect(html).toContain('Bill <strong>NHCN260000123</strong>');
     expect(html).toContain('2 × 10.00 · SAC 996333 · GST 5%');
     expect(html).toContain('1 × 20.00 · HSN 220190 · GST 18%');

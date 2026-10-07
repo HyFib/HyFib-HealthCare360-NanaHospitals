@@ -1,9 +1,11 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace HyFib.HealthCare360.Platform.Documents;
 
+[JsonConverter(typeof(JsonStringEnumConverter<DocumentPageSize>))]
 public enum DocumentPageSize
 {
     A4 = 0,
@@ -45,19 +47,35 @@ public sealed partial record PrintableDocument
     /// <summary>The document's language (the html lang attribute).</summary>
     public string Language { get; init; } = "en";
 
+    /// <summary>
+    /// How the hospital prints this kind of document (<see cref="PrintTemplate"/>): on pre-printed stationery the margins
+    /// leave its letterhead and footer blank, and the closing note ends the document. The letterhead itself is part of the
+    /// body, which leaves it out on pre-printed paper (<see cref="DocumentParts.Letterhead"/>).
+    /// </summary>
+    public PrintTemplate? Template { get; init; }
+
     private readonly string _fileName = "document";
 
     /// <summary>The complete page. Scripts and network access are forbidden by its own content security policy.</summary>
     public string ToHtml()
     {
         var landscape = Landscape ? " landscape" : "";
-        var (size, margin) = PageSize switch
+        var template = Template ?? PrintTemplate.Default;
+        var (size, top, side, bottom) = PageSize switch
         {
-            DocumentPageSize.A5 => ("A5", "10mm 10mm 14mm"),
-            _ => ("A4", "12mm 12mm 16mm"),
+            DocumentPageSize.A5 => ("A5", 10, 10, 14),
+            _ => ("A4", 12, 12, 16),
         };
+        var (topSpace, bottomSpace) = template.PrintsLetterhead
+            ? (0, 0)
+            : (Math.Clamp(template.TopSpaceMm, 0, PrintTemplate.MaxSpaceMm), Math.Clamp(template.BottomSpaceMm, 0, PrintTemplate.MaxSpaceMm));
+        var margin = string.Create(CultureInfo.InvariantCulture, $"{top + topSpace}mm {side}mm {bottom + bottomSpace}mm");
+        var closing = template.ClosingNote is { Length: > 0 } note ? Html.Of($"<div class=\"closing-note\">{Html.Lines(note)}</div>") : Html.Empty;
+
+        // The running footer keeps to the document's own band, above the stationery's printed footer.
+        var footerBox = bottomSpace > 0 ? string.Create(CultureInfo.InvariantCulture, $"padding-bottom: {bottomSpace}mm; ") : "";
         var footer = Footer is { Length: > 0 } text
-            ? $"@bottom-left {{ content: {CssString(text)}; {FooterFont} }}"
+            ? $"@bottom-left {{ content: {CssString(text)}; {footerBox}{FooterFont} }}"
             : "";
 
         var html = new StringBuilder(Body.ToString().Length + 4096);
@@ -65,11 +83,12 @@ public sealed partial record PrintableDocument
             .Append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:\">\n")
             .Append("<title>").Append(Html.Encode(Title)).Append("</title>\n<style>\n")
             .Append(CultureInfo.InvariantCulture, $"@page {{ size: {size}{landscape}; margin: {margin}; {footer} ")
-            .Append(CultureInfo.InvariantCulture, $"@bottom-right {{ content: \"Page \" counter(page) \" of \" counter(pages); {FooterFont} }} }}\n")
+            .Append(CultureInfo.InvariantCulture, $"@bottom-right {{ content: \"Page \" counter(page) \" of \" counter(pages); {footerBox}{FooterFont} }} }}\n")
             .Append(HouseStyle)
             .Append(Styles)
             .Append("\n</style>\n</head>\n<body>\n")
             .Append(Body.ToString())
+            .Append(closing.ToString())
             .Append("\n</body>\n</html>\n");
         return html.ToString();
     }
@@ -125,6 +144,7 @@ public sealed partial record PrintableDocument
         .center { text-align: center; }
         .nowrap { white-space: nowrap; }
         .mono { font-family: Consolas, "Cascadia Mono", monospace; }
+        .closing-note { margin-top: 10px; font-size: 8.5pt; color: #333; break-inside: avoid; }
 
         """;
 

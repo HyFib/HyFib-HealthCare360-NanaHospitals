@@ -37,7 +37,7 @@ describe('encounterSummaryHtml', () => {
 
   it('prints the note and flags an unsigned draft', () => {
     const html = encounterSummaryHtml({
-      facilityName: 'Nana Hospitals',
+      letterhead: { name: 'Nana Hospitals', address: '12 MG Road, Pune' },
       patient: { fullName: 'Ravi Kumar', uhid: 'NH0001', age: '45Y', gender: 'Male' },
       encounter,
       diagnoses: [],
@@ -46,7 +46,9 @@ describe('encounterSummaryHtml', () => {
       prescriptions: [],
       allergies: [],
     });
-    expect(html).toContain('<div class="facility">Nana Hospitals</div>');
+    expect(html).toContain('<div class="lh-name">Nana Hospitals</div>');
+    expect(html).toContain('12 MG Road, Pune');
+    expect(html).toContain('<div class="lh-aside"><div class="doctor"><div class="name">Dr. Asha Rao</div>');
     expect(html).toContain('Fever &lt;3 days&gt;');
     expect(html).toContain('Throat congested');
     expect(html).toContain('Unsigned draft');

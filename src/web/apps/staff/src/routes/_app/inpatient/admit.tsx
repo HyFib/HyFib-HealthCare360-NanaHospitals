@@ -56,6 +56,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { useLetterhead } from '@/lib/letterhead';
 import { enumOptions, toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
@@ -192,7 +193,7 @@ function AdmitPatientPage() {
   const navigate = useNavigate();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const ownPractitionerId = useSession((s) => s.user?.practitionerId ?? null);
   const canRegister = usePermission('patients.register');
   const [autoPrint, setAutoPrint] = useStoredState('hc360:inpatient:admit-autoprint', '1');
@@ -302,7 +303,7 @@ function AdmitPatientPage() {
         try {
           const admission = await queryClient.fetchQuery(inpatientQueries.admission(result.id));
           await printWristband(admission);
-          await printAdmissionSlip(admission, facilityName);
+          await printAdmissionSlip(admission, letterhead);
         } catch (error) {
           notify.error(error, 'Printing failed. Use the print buttons to try again.');
         }
@@ -332,7 +333,7 @@ function AdmitPatientPage() {
       if (what === 'wristband') {
         await printWristband(admission);
       } else {
-        await printAdmissionSlip(admission, facilityName);
+        await printAdmissionSlip(admission, letterhead);
       }
     } catch (error) {
       notify.error(error, 'Printing failed');

@@ -1,6 +1,16 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+} from '@hc360/core';
 import { formatPercent } from '@/modules/inventory/format';
-import { gstSummaryByRate, type Letterhead } from '@/modules/pharmacy/print';
+import { gstSummaryByRate } from '@/modules/pharmacy/print';
 import {
   CUSTOMER_LABEL,
   hsnSacLabel,
@@ -28,7 +38,6 @@ export function canteenBillTitle(lines: readonly { gstRate: number }[]): string 
 
 const RECEIPT_STYLES = `
   body { width: 72mm; }
-  .hospital { font-weight: 700; font-size: 11pt; }
   .small { font-size: 9px; }
   .title { font-weight: 800; margin-top: 4px; letter-spacing: 0.5px; }
   .dup { font-weight: 800; letter-spacing: 2px; margin-top: 2px; }
@@ -44,7 +53,7 @@ const RECEIPT_STYLES = `
  * 80 mm thermal receipt, printed silently at the counter inside HC360 Desktop (the browser dialog elsewhere). A bill that
  * charges GST is a tax invoice (CGST Rules, rule 46): the supplier's name, address and GSTIN (left out when the facility
  * has none), the bill number and date, each line's HSN/SAC code and GST rate, the taxable value with CGST and SGST (also
- * by rate) and the total.
+ * by rate) and the total. It follows the pharmacy and canteen bills print template (logo, closing note).
  */
 export function buildCanteenReceiptHtml(
   sale: CanteenSaleDto,
@@ -71,11 +80,10 @@ export function buildCanteenReceiptHtml(
     sale.customerType === 'Staff' && sale.employeeCode
       ? `Staff ${escapeHtml(sale.employeeCode)}${sale.employeeName ? ` · ${escapeHtml(sale.employeeName)}` : ''}`
       : `${escapeHtml(CUSTOMER_LABEL[sale.customerType])}${sale.customerName ? ` · ${escapeHtml(sale.customerName)}` : ''}`;
+  const template = templateFor(letterhead, 'sales-invoice');
   const body = `
+    ${letterheadHtml(letterhead, template, { compact: true, taxIds: true })}
     <div class="center">
-      <div class="hospital">${escapeHtml(letterhead.name)}</div>
-      ${letterhead.address ? `<div class="small">${escapeHtml(letterhead.address)}</div>` : ''}
-      ${letterhead.gstin ? `<div class="small">GSTIN ${escapeHtml(letterhead.gstin)}</div>` : ''}
       <div class="title">${escapeHtml(canteenBillTitle(sale.lines))}</div>
       <div class="small">Canteen</div>
       ${options.duplicate ? '<div class="dup">DUPLICATE</div>' : ''}
@@ -101,7 +109,12 @@ export function buildCanteenReceiptHtml(
     ${sale.paymentMode === 'StaffCredit' ? '<div class="muted">Deducted from salary at month end.</div>' : ''}
     <div class="muted">Cashier: ${escapeHtml(sale.cashierName ?? '')}</div>
     <div class="center thanks">Thank you</div>`;
-  return printDocument(body, { title: `Bill ${sale.billNumber}`, pageSize: 'Receipt80', styles: RECEIPT_STYLES });
+  return printDocument(body, {
+    title: `Bill ${sale.billNumber}`,
+    pageSize: 'Receipt80',
+    styles: RECEIPT_STYLES,
+    template,
+  });
 }
 
 export async function printCanteenReceipt(
@@ -142,10 +155,10 @@ export function buildDailyReportHtml(report: DailySalesSummary, letterhead: Lett
         `<tr><td>${escapeHtml(i.itemName)}</td><td>${escapeHtml(i.category ?? '')}</td><td class="right">${escapeHtml(i.quantitySold)}</td><td class="right">${money(i.amount)}</td><td class="right">${escapeHtml(i.closingStock ?? '')}</td></tr>`,
     )
     .join('');
+  const template = templateFor(letterhead, 'other');
   const body = `
-    <div class="hospital">${escapeHtml(letterhead.name)} · Canteen</div>
-    ${letterhead.gstin ? `<div class="muted">GSTIN ${escapeHtml(letterhead.gstin)}</div>` : ''}
-    <h1>Day-end report · ${escapeHtml(formatDateOnly(report.date))}</h1>
+    ${letterheadHtml(letterhead, template, { taxIds: true })}
+    <h1>Canteen day-end report · ${escapeHtml(formatDateOnly(report.date))}</h1>
     <table class="summary">
       <tr><td>Bills</td><td class="right">${escapeHtml(report.bills)} (${escapeHtml(report.cancelledBills)} cancelled)</td></tr>
       <tr><td>Taxable value</td><td class="right">${money(report.taxableAmount)}</td></tr>
@@ -164,7 +177,6 @@ export function buildDailyReportHtml(report: DailySalesSummary, letterhead: Lett
     <table><thead><tr><th>Item</th><th>Category</th><th class="right">Qty</th><th class="right">Amount</th><th class="right">Closing stock</th></tr></thead><tbody>${items}</tbody></table>
     <div class="signs"><span>Cashier</span><span>Canteen manager</span></div>`;
   const styles = `
-    .hospital { font-weight: 700; color: #045E80; }
     h1 { font-size: 14pt; }
     h2 { font-size: 11pt; margin-top: 12px; }
     th { border-bottom: 1px solid #888; }
@@ -173,7 +185,7 @@ export function buildDailyReportHtml(report: DailySalesSummary, letterhead: Lett
     .summary { width: 60%; }
     .signs { display: flex; justify-content: space-between; margin-top: 36px; }
     .signs span { border-top: 1px solid #555; padding-top: 3px; min-width: 35%; text-align: center; }`;
-  return printDocument(body, { title: `Canteen ${report.date}`, pageSize: 'A4', styles });
+  return printDocument(body, { title: `Canteen ${report.date}`, pageSize: 'A4', styles, template });
 }
 
 export async function printDailyReport(report: DailySalesSummary, letterhead: Letterhead): Promise<void> {

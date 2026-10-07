@@ -1,4 +1,13 @@
-import { escapeHtml, formatDateTime, formatTime, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateTime,
+  formatTime,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+} from '@hc360/core';
 import type { OperationNoteDto, OtCalendar, SurgeryDetail } from './api';
 import { anaesthesiaLabel, lateralityLabel, specimenLabel, surgeryStatusLabel } from './labels';
 import { procedureWithSide } from './logic';
@@ -8,12 +17,13 @@ const block = (label: string, value: string | null | undefined) =>
     ? `<div class="block"><div class="label">${escapeHtml(label)}</div><div class="text">${escapeHtml(value)}</div></div>`
     : '';
 
-/** Operation note and post-operative orders on A4, for the case file and the ward. */
+/** Operation note and post-operative orders on A4, for the case file and the ward ("Clinical notes" template). */
 export async function printOperationNote(
-  facilityName: string,
+  letterhead: Letterhead,
   booking: SurgeryDetail,
   note: OperationNoteDto,
 ): Promise<void> {
+  const template = templateFor(letterhead, 'clinical-note');
   const patient = booking.patient;
   const specimens = note.specimens.length
     ? `<table class="grid"><thead><tr><th>Specimen</th><th>Sent to</th><th>Label</th></tr></thead><tbody>${note.specimens
@@ -25,10 +35,8 @@ export async function printOperationNote(
     : '<div class="text">None</div>';
 
   const body = `
-    <header>
-      <div class="hospital">${escapeHtml(facilityName)}</div>
-      <h1>Operation note</h1>
-    </header>
+    ${letterheadHtml(letterhead, template)}
+    <h1>Operation note</h1>
     <table class="meta">
       <tr><th>Patient</th><td>${escapeHtml(patient?.fullName ?? '')}</td><th>UHID</th><td>${escapeHtml(patient?.uhid ?? '')}</td></tr>
       <tr><th>Age / sex</th><td>${escapeHtml(`${patient?.age ?? '—'} / ${patient?.gender ?? ''}`)}</td><th>Booking</th><td>${escapeHtml(booking.bookingNumber)}</td></tr>
@@ -53,9 +61,7 @@ export async function printOperationNote(
     }</div>`;
 
   const styles = `
-    header { border-bottom: 2px solid #045E80; margin-bottom: 8px; padding-bottom: 4px; }
-    .hospital { font-weight: 700; color: #045E80; font-size: 13pt; }
-    h1 { font-size: 15pt; margin: 2px 0 0; }
+    h1 { font-size: 15pt; margin: 2px 0 6px; }
     table.meta th { width: 16%; color: #555; font-weight: 600; }
     table.meta td { width: 34%; }
     .block { margin-top: 8px; page-break-inside: avoid; }
@@ -65,13 +71,15 @@ export async function printOperationNote(
     .orders { border: 1px solid #333; padding: 4px 8px; margin-top: 10px; }
     .sign { margin-top: 24px; text-align: right; }`;
 
-  await printHtml(printDocument(body, { title: `Operation note ${booking.bookingNumber}`, pageSize: 'A4', styles }), {
-    pageSize: 'A4',
-  });
+  await printHtml(
+    printDocument(body, { title: `Operation note ${booking.bookingNumber}`, pageSize: 'A4', styles, template }),
+    { pageSize: 'A4' },
+  );
 }
 
 /** The day's OT list by theatre (A4), for the notice board and the theatre sister. */
-export async function printOtList(facilityName: string, calendar: OtCalendar, dateLabel: string): Promise<void> {
+export async function printOtList(letterhead: Letterhead, calendar: OtCalendar, dateLabel: string): Promise<void> {
+  const template = templateFor(letterhead, 'other');
   const sections = calendar.theatres
     .map((theatre) => {
       const rows = theatre.bookings
@@ -91,12 +99,13 @@ export async function printOtList(facilityName: string, calendar: OtCalendar, da
       }`;
     })
     .join('');
-  const body = `<div class="hospital">${escapeHtml(facilityName)}</div><h1>OT list · ${escapeHtml(dateLabel)}</h1>${sections}<div class="muted" style="margin-top:12px">Printed ${escapeHtml(
+  const body = `${letterheadHtml(letterhead, template)}<h1>OT list · ${escapeHtml(dateLabel)}</h1>${sections}<div class="muted" style="margin-top:12px">Printed ${escapeHtml(
     formatDateTime(new Date().toISOString()),
   )}. Confirm the side and site at the WHO Time-out for every case.</div>`;
   const styles = `
-    .hospital { font-weight: 700; color: #045E80; }
     h1 { font-size: 15pt; } h2 { font-size: 12pt; margin-top: 12px; border-bottom: 1px solid #999; }
     table.grid th, table.grid td { border: 1px solid #aaa; }`;
-  await printHtml(printDocument(body, { title: `OT list ${dateLabel}`, pageSize: 'A4', styles }), { pageSize: 'A4' });
+  await printHtml(printDocument(body, { title: `OT list ${dateLabel}`, pageSize: 'A4', styles, template }), {
+    pageSize: 'A4',
+  });
 }

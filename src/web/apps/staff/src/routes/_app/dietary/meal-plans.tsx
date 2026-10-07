@@ -19,7 +19,7 @@ import {
   PrintRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, formatTime, isApiError, todayIso, useSession } from '@hc360/core';
+import { formatDateOnly, formatTime, isApiError, todayIso } from '@hc360/core';
 import {
   ConfirmDialog,
   DataTable,
@@ -35,6 +35,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   DELIVERY_LABEL,
@@ -82,7 +83,7 @@ function MealPlansPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canManage = usePermission('dietary.meals.manage');
   const canReadWards = usePermission('inpatient.admissions.read');
   const today = todayIso();
@@ -239,7 +240,7 @@ function MealPlansPage() {
                       size="small"
                       icon={<PrintRegular />}
                       onClick={() =>
-                        void printWardMealList(plan, date, facilityName).catch((error: unknown) =>
+                        void printWardMealList(plan, date, letterhead).catch((error: unknown) =>
                           notify.error(error, 'Printing failed'),
                         )
                       }

@@ -207,6 +207,7 @@ public static class PlatformServiceCollectionExtensions
         // Staff always join their own facility's topic on connect; re-subscribing is allowed for that facility only.
         services.AddRealtimeTopic(new RealtimeTopicPolicy("facility", RealtimeTopicScope.Facility, []));
         services.AddScoped<IFileStore, EncryptedFileStore>();
+        services.AddScoped<IPrintTemplates, PrintTemplates>();
         services.AddScoped<DocumentAssets>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IFeatureFlags, FeatureFlags>();
@@ -309,6 +310,7 @@ public static class PlatformServiceCollectionExtensions
         OrganizationEndpoints.Map(endpoints);
         AuditEndpoints.Map(endpoints);
         NumberSeriesEndpoints.Map(endpoints);
+        PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);
         SettingsEndpoints.Map(endpoints);

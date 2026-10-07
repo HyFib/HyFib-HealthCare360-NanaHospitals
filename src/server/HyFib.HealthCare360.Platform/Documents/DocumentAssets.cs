@@ -7,7 +7,10 @@ using QRCoder;
 
 namespace HyFib.HealthCare360.Platform.Documents;
 
-/// <summary>The hospital as printed at the top of its documents, with its logo ready to embed.</summary>
+/// <summary>
+/// The hospital as printed at the top of its documents, with its logo ready to embed, and how this kind of document is
+/// printed (<see cref="Template"/>). The logo is left out when the template hides it.
+/// </summary>
 public sealed record DocumentLetterhead(
     string Name,
     string? LegalName,
@@ -20,13 +23,18 @@ public sealed record DocumentLetterhead(
     string? Gstin,
     string? Pan,
     string? Note,
-    ImageData? Logo);
+    ImageData? Logo)
+{
+    public PrintTemplate Template { get; init; } = PrintTemplate.Default;
+}
 
 /// <summary>
-/// What documents print besides their data: the facility's letterhead and logo, doctors' signatures and QR codes.
-/// Images are read from the encrypted file store and kept for 10 minutes, since every copy of a document needs them.
+/// What documents print besides their data: the facility's letterhead and logo, how the hospital prints each kind of
+/// document (<see cref="PrintTemplate"/>), doctors' signatures and QR codes. Images are read from the encrypted file
+/// store and kept for 10 minutes, since every copy of a document needs them.
 /// </summary>
-public sealed class DocumentAssets(HospitalDbContext db, IFileStore files, IMemoryCache cache)
+/// <param name="templates">Null (in tests) prints every document with the default template.</param>
+public sealed class DocumentAssets(HospitalDbContext db, IFileStore files, IMemoryCache cache, IPrintTemplates? templates = null)
 {
     /// <summary>
     /// The largest logo or signature a document embeds. Logos and signatures are small; a bigger image is left out rather
@@ -36,7 +44,23 @@ public sealed class DocumentAssets(HospitalDbContext db, IFileStore files, IMemo
     public const int MaxImageBytes = 300 * 1024;
     private static readonly TimeSpan CacheFor = TimeSpan.FromMinutes(10);
 
-    /// <summary>The facility's letterhead; the first facility's when <paramref name="facilityId"/> is null or unknown.</summary>
+    /// <summary>
+    /// The facility's letterhead with the template of <paramref name="templateKey"/> (<see cref="PrintTemplateCatalog"/>),
+    /// the first facility's when <paramref name="facilityId"/> is null or unknown. The logo is left out when the template
+    /// hides it.
+    /// </summary>
+    public async Task<DocumentLetterhead> LetterheadAsync(Guid? facilityId, string templateKey, CancellationToken cancellationToken)
+    {
+        var template = await TemplateAsync(templateKey, facilityId, cancellationToken);
+        var letterhead = await LetterheadAsync(facilityId, cancellationToken);
+        return letterhead with { Logo = template.ShowLogo ? letterhead.Logo : null, Template = template };
+    }
+
+    /// <summary>How the facility prints <paramref name="templateKey"/>; the defaults without a template service (in tests).</summary>
+    public Task<PrintTemplate> TemplateAsync(string templateKey, Guid? facilityId, CancellationToken cancellationToken) =>
+        templates?.GetAsync(templateKey, facilityId, cancellationToken) ?? Task.FromResult(PrintTemplate.Default);
+
+    /// <summary>The facility's letterhead with the default template; the first facility's when <paramref name="facilityId"/> is null or unknown.</summary>
     public async Task<DocumentLetterhead> LetterheadAsync(Guid? facilityId, CancellationToken cancellationToken)
     {
         var facilities = db.Set<Facility>().AsNoTracking();

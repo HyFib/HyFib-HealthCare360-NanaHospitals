@@ -48,6 +48,9 @@ public interface ISettingsService
     Task<T?> GetAsync<T>(string key, Guid? facilityId = null, CancellationToken cancellationToken = default);
 
     Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes the value of <paramref name="key"/> for the facility (or the global one). False when there was none.</summary>
+    Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -100,6 +103,13 @@ internal sealed class SettingsService(HospitalDbContext db, IFieldProtector prot
 
         await db.SaveChangesAsync(cancellationToken);
         Changed(key);
+    }
+
+    public async Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default)
+    {
+        var removed = await db.Set<SystemSetting>().Where(s => s.Key == key && s.FacilityId == facilityId).ExecuteDeleteAsync(cancellationToken);
+        Changed(key);
+        return removed > 0;
     }
 
     private static string TokenKey(string key) => $"setting-changed:{key}";

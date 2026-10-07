@@ -25,22 +25,27 @@ internal static class PrescriptionDocument
 
         """;
 
-    /// <summary>The document with the facility logo and, once signed, the prescriber's signature image.</summary>
+    /// <summary>
+    /// The document as the facility's prescriptions template says (HMS-04: A5 or A4, letterhead or pre-printed paper,
+    /// logo, closing note), with the facility logo and, once signed, the prescriber's signature image.
+    /// </summary>
     public static async Task<PrintableDocument> BuildAsync(PrescriptionPrintModel model, DocumentAssets assets, CancellationToken cancellationToken)
     {
-        var logo = await assets.ImageAsync(model.Letterhead?.LogoFileId, cancellationToken);
+        var template = await assets.TemplateAsync(PrintTemplateCatalog.Prescription, model.Letterhead?.FacilityId, cancellationToken);
+        var logo = template.ShowLogo ? await assets.ImageAsync(model.Letterhead?.LogoFileId, cancellationToken) : null;
         var signature = model.SignedAt is null ? null : await assets.ImageAsync(model.Prescriber?.SignatureFileId, cancellationToken);
-        return Build(model, logo, signature);
+        return Build(model, logo, signature, template);
     }
 
-    public static PrintableDocument Build(PrescriptionPrintModel model, ImageData? logo, ImageData? signature) => new()
+    public static PrintableDocument Build(PrescriptionPrintModel model, ImageData? logo, ImageData? signature, PrintTemplate? template = null) => new()
     {
         Title = $"Prescription {model.PrescriptionNumber}",
         FileName = $"prescription-{model.PrescriptionNumber}",
-        PageSize = DocumentPageSize.A5,
+        PageSize = template?.Paper ?? DocumentPageSize.A5,
         Footer = Footer(model),
         Styles = ClinicalDocumentParts.Styles + Styles,
-        Body = Body(model, logo, signature),
+        Template = template,
+        Body = Body(model, logo, signature, template),
     };
 
     /// <summary>"Asha Rao · UHID NH-000123 · Prescription NHRX260000123", and the warning on a copy that is not valid.</summary>
@@ -48,7 +53,7 @@ internal static class PrescriptionDocument
         string.Join(" · ", new[] { model.Patient.Name, $"UHID {model.Patient.Uhid}", $"Prescription {model.PrescriptionNumber}", StatusWarning(model.Status) }
             .Where(part => part is not null));
 
-    public static Html Body(PrescriptionPrintModel model, ImageData? logo, ImageData? signature)
+    public static Html Body(PrescriptionPrintModel model, ImageData? logo, ImageData? signature, PrintTemplate? template = null)
     {
         var patient = model.Patient;
         var warning = StatusWarning(model.Status) is { } text ? Html.Of($"<div class=\"draft\">{text}</div>") : Html.Empty;
@@ -58,7 +63,7 @@ internal static class PrescriptionDocument
         var refills = model.RefillsAllowed > 0 ? Html.Of($"<div class=\"small\">Refills allowed: {model.RefillsAllowed}</div>") : Html.Empty;
         var signed = model.SignedAt is { } at ? Html.Of($"<div class=\"small\">Digitally signed on {DocumentFormat.DateTime(at)}</div>") : Html.Empty;
         return Html.Of($"""
-            {ClinicalDocumentParts.Letterhead(model.Letterhead, logo, ClinicalDocumentParts.Prescriber(model.Prescriber))}
+            {ClinicalDocumentParts.Letterhead(model.Letterhead, logo, ClinicalDocumentParts.Prescriber(model.Prescriber), template)}
             {warning}
             <div class="patient">
               {ClinicalDocumentParts.Field("Patient", patient.Name)}

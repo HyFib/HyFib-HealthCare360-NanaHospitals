@@ -148,6 +148,27 @@ public sealed class BillDocumentTests
     }
 
     [Fact]
+    public void On_pre_printed_stationery_the_bill_keeps_its_tax_ids_and_number_and_leaves_the_rest_to_the_paper()
+    {
+        var template = new PrintTemplate
+        {
+            Letterhead = PrintLetterhead.Preprinted,
+            TopSpaceMm = 40,
+            ClosingNote = "Goods once sold are not taken back.",
+        };
+
+        var html = BillDocument.Build(Bill(), Letterhead with { Template = template }).ToHtml();
+
+        html.ShouldNotContain("class=\"h-name\"");
+        html.ShouldNotContain("12 MG Road");
+        html.ShouldNotContain("<img");
+        html.ShouldContain("GSTIN 27AAACN1234F1Z5 · PAN AAACN1234F", Case.Sensitive, "a tax invoice shows the tax ids whatever the paper has on it");
+        html.ShouldContain("<div>Bill no.: <b>NHOB260000001</b></div>");
+        html.ShouldContain("margin: 52mm 12mm 16mm;");
+        html.ShouldContain("<div class=\"closing-note\">Goods once sold are not taken back.</div>");
+    }
+
+    [Fact]
     public void Text_from_records_is_encoded_everywhere()
     {
         var bill = Bill() with

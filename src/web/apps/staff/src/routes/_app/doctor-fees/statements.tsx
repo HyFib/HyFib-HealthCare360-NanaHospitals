@@ -17,8 +17,8 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
-import { usePrintFacility } from '@/modules/billing/hooks';
 import { SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
 import { formatPercent } from '@/modules/billing/money';
 import { sendToPrinter } from '@/modules/billing/print';
@@ -54,7 +54,7 @@ function StatementsPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
-  const facility = usePrintFacility();
+  const letterhead = useLetterhead();
   const canPayouts = usePermission('doctorfees.payouts.manage');
   const [doctor, setDoctor] = useState<PickedDoctor | null>(null);
   const from = search.from ?? monthStart();
@@ -77,7 +77,7 @@ function StatementsPage() {
   const s = statement.data;
   const print = () => {
     if (s) {
-      void sendToPrinter(buildStatementHtml(s, facility, new Date().toISOString()), 'A4').catch((error: unknown) =>
+      void sendToPrinter(buildStatementHtml(s, letterhead, new Date().toISOString()), 'A4').catch((error: unknown) =>
         notify.error(error, 'Printing failed'),
       );
     }

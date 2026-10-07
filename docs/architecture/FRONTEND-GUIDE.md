@@ -110,8 +110,12 @@ export const bedQueries = {
   (`src/lib/documents.ts`): Print fetches `<path>/document` and prints it, Download PDF saves `<path>/pdf` and explains a
   503 (`pdf.unavailable`). Never rebuild these documents in the browser.
 * Printing anything else (slips, labels, 80 mm receipts, internal lists): build HTML with
-  `printDocument(body, { title, pageSize, styles })` and send it with `printHtml(...)` (`@hc360/core`); silent printing
-  on counters (`{ silent: true, pageSize: 'Receipt80' }`), dialog otherwise. Barcodes/QR:
+  `printDocument(body, { title, pageSize, styles, template })` and send it with `printHtml(...)` (`@hc360/core`); silent
+  printing on counters (`{ silent: true, pageSize: 'Receipt80' }`), dialog otherwise. Start a document (not a label)
+  with the facility letterhead: `const letterhead = useLetterhead()` (`src/lib/letterhead.ts`), then
+  `letterheadHtml(letterhead, templateFor(letterhead, key), { compact, taxIds, aside })` at the top and
+  `template: templateFor(letterhead, key)` for `printDocument`, where `key` is the document's print template (`bill`,
+  `receipt`, `sales-invoice`, `purchase`, `clinical-note` or `other`; see `docs/modules/print-templates.md`). Barcodes/QR:
   `await barcodeSvg(value, 'code128' | 'qrcode')` (the encoder loads on demand). Escape every value with `escapeHtml`.
 * Formatting (`@hc360/core`): `formatInr`, `formatDate`, `formatDateTime`, `formatTime`, `formatDateOnly`,
   `formatRelative`, `formatPhone`, `humanize` (enum → words). The hospital runs on IST (`HOSPITAL_TIME_ZONE`).

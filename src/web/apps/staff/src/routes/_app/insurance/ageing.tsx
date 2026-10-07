@@ -5,9 +5,12 @@ import {
   formatDateOnly,
   formatDateTime,
   formatInr,
+  letterheadHtml,
   printDocument,
+  templateFor,
   todayIso,
   useSession,
+  type Letterhead,
 } from '@hc360/core';
 import {
   DataTable,
@@ -24,9 +27,9 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
-import { usePrintFacility } from '@/modules/billing/hooks';
-import { sendToPrinter, type PrintFacility } from '@/modules/billing/print';
+import { sendToPrinter } from '@/modules/billing/print';
 import { dateParam } from '@/modules/billing/searchParams';
 import { Amount, NoAccess } from '@/modules/billing/ui';
 import { insuranceQueries, type ReceivablesAgeingReport } from '@/modules/insurance/api';
@@ -49,8 +52,9 @@ const BUCKETS = [
   { key: 'over90', label: 'Over 90 days' },
 ] as const;
 
-function buildAgeingHtml(report: ReceivablesAgeingReport, facility: PrintFacility, printedBy: string): string {
+function buildAgeingHtml(report: ReceivablesAgeingReport, letterhead: Letterhead, printedBy: string): string {
   const e = escapeHtml;
+  const template = templateFor(letterhead, 'other');
   const money = (value: number) => e(formatInr(value));
   const rows = report.payers
     .map(
@@ -58,7 +62,7 @@ function buildAgeingHtml(report: ReceivablesAgeingReport, facility: PrintFacilit
         `<tr><td>${e(p.payerName)}</td><td>${e(p.category ? PAYER_CATEGORY_LABEL[p.category] : '')}</td><td class="right">${e(p.creditDays)}</td>${BUCKETS.map((b) => `<td class="right">${money(p[b.key])}</td>`).join('')}<td class="right"><b>${money(p.total)}</b></td></tr>`,
     )
     .join('');
-  const body = `<h2>${e(facility.legalName || facility.name)}</h2>
+  const body = `${letterheadHtml(letterhead, template)}
     <h3>Insurance receivables ageing as on ${e(formatDateOnly(report.asOf))}</h3>
     <table style="margin-top:8px"><tr><th>Payer</th><th>Kind</th><th class="right">Credit days</th>${BUCKETS.map((b) => `<th class="right">${e(b.label)}</th>`).join('')}<th class="right">Total</th></tr>
     ${rows}
@@ -67,8 +71,8 @@ function buildAgeingHtml(report: ReceivablesAgeingReport, facility: PrintFacilit
   return printDocument(body, {
     title: `Receivables ageing ${report.asOf}`,
     pageSize: 'A4',
-    styles:
-      'th { border-bottom: 1px solid #555; background: #f2f2f2; } td { border-bottom: 1px solid #e3e3e3; } h2 { color: #045E80; }',
+    styles: 'th { border-bottom: 1px solid #555; background: #f2f2f2; } td { border-bottom: 1px solid #e3e3e3; }',
+    template,
   });
 }
 
@@ -109,7 +113,7 @@ function AgeingPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
-  const facility = usePrintFacility();
+  const letterhead = useLetterhead();
   const printedBy = useSession((s) => s.user?.displayName) ?? '';
   const canClaims = usePermission('insurance.claims.manage');
   const report = useQuery({ ...insuranceQueries.ageing(search.asOf), enabled: canClaims });
@@ -137,7 +141,7 @@ function AgeingPage() {
             disabled={!r}
             onClick={() =>
               r &&
-              void sendToPrinter(buildAgeingHtml(r, facility, printedBy), 'A4').catch((error: unknown) =>
+              void sendToPrinter(buildAgeingHtml(r, letterhead, printedBy), 'A4').catch((error: unknown) =>
                 notify.error(error, 'Printing failed'),
               )
             }

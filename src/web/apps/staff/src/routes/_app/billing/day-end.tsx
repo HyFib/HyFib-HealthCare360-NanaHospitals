@@ -26,9 +26,10 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { billingQueries } from '@/modules/billing/api';
-import { useBillingLive, usePrintFacility } from '@/modules/billing/hooks';
+import { useBillingLive } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL } from '@/modules/billing/labels';
 import { buildDayEndHtml, sendToPrinter } from '@/modules/billing/print';
 import { dateParam, textParam } from '@/modules/billing/searchParams';
@@ -65,7 +66,7 @@ function DayEndPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
-  const facility = usePrintFacility();
+  const letterhead = useLetterhead();
   const printedBy = useSession((s) => s.user?.displayName) ?? '';
   const canShifts = usePermission('billing.shifts');
   const [counter, setCounter] = useState(search.counter ?? '');
@@ -86,7 +87,7 @@ function DayEndPage() {
   const r = report.data;
   const print = () => {
     if (r) {
-      void sendToPrinter(buildDayEndHtml(r, facility, printedBy, new Date().toISOString()), 'A4').catch(
+      void sendToPrinter(buildDayEndHtml(r, letterhead, printedBy, new Date().toISOString()), 'A4').catch(
         (error: unknown) => notify.error(error, 'Printing failed'),
       );
     }

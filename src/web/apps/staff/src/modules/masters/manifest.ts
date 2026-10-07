@@ -2,7 +2,7 @@ import { BuildingMultipleRegular } from '@fluentui/react-icons';
 import type { ModuleManifest } from '@/lib/modules';
 import { MASTERS_MANAGE } from './api';
 
-/** Hospital setup (HMS-03, HMS-04): the organisation masters, how the hospital's numbers and documents read, and which features are on. */
+/** Hospital setup (HMS-03, HMS-04): the organisation masters, how the hospital's numbers read and its documents print, and which features are on. */
 const manifest: ModuleManifest = {
   id: 'masters',
   title: 'Hospital setup',
@@ -62,6 +62,23 @@ const manifest: ModuleManifest = {
         'invoice number',
         'prefix',
         'format',
+      ],
+    },
+    {
+      label: 'Print templates',
+      to: '/setup/print-templates',
+      permission: 'admin.print.manage',
+      keywords: [
+        'print',
+        'printing',
+        'letterhead',
+        'pre-printed',
+        'stationery',
+        'logo',
+        'closing note',
+        'terms',
+        'paper',
+        'a5',
       ],
     },
     {

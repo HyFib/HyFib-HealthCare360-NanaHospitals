@@ -25,9 +25,9 @@ import { formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { ErrorState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 import { canteenApi, canteenKeys, canteenQueries, CUSTOMER_LABEL, hsnSacLabel, PAYMENT_LABEL } from './api';
 import { printCanteenReceipt } from './print';
 

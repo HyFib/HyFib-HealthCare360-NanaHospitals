@@ -50,9 +50,9 @@ internal static class BillDocument
 
         """;
 
-    /// <summary>The bill under the letterhead of the facility that issued it.</summary>
+    /// <summary>The bill under the letterhead of the facility that issued it, as its bills template says (HMS-04).</summary>
     public static async Task<PrintableDocument> BuildAsync(BillDetail bill, DocumentAssets assets, CancellationToken cancellationToken) =>
-        Build(bill, await assets.LetterheadAsync(bill.FacilityId, cancellationToken));
+        Build(bill, await assets.LetterheadAsync(bill.FacilityId, PrintTemplateCatalog.Bill, cancellationToken));
 
     public static PrintableDocument Build(BillDetail bill, DocumentLetterhead letterhead)
     {
@@ -65,6 +65,7 @@ internal static class BillDocument
             FileName = FileName(bill),
             Footer = Footer(bill),
             Styles = Styles,
+            Template = letterhead.Template,
             Body = Html.Of($"""
                 <div class="bill">
                   {Stamp(bill)}
@@ -198,12 +199,26 @@ internal static class BillDocument
 
     /// <summary>
     /// The bill's own header (not the reports' letterhead): logo, name, address, contact, tax ids and registration on the
-    /// left; the title with the number and date on the right.
+    /// left; the title with the number and date on the right. On pre-printed stationery the left keeps only the tax ids,
+    /// which a tax invoice must show whatever the paper has on it.
     /// </summary>
     public static Html Header(DocumentLetterhead letterhead, string title, IReadOnlyList<(string Label, string Value)> meta)
     {
         var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? $"Phone {phone}" : null, letterhead.Email }.Where(c => c is not null));
         var tax = string.Join(" · ", new[] { letterhead.Gstin is { } gstin ? $"GSTIN {gstin}" : null, letterhead.Pan is { } pan ? $"PAN {pan}" : null }.Where(t => t is not null));
+        if (!letterhead.Template.PrintsLetterhead)
+        {
+            return Html.Of($"""
+                <table class="hdr"><tr>
+                  <td>{Muted(tax)}</td>
+                  <td class="right">
+                    <div class="h-title">{title}</div>
+                    {meta.Select(m => Html.Of($"<div>{m.Label}: <b>{m.Value}</b></div>"))}
+                  </td>
+                </tr></table>
+                """);
+        }
+
         return Html.Of($"""
             <table class="hdr"><tr>
               <td>

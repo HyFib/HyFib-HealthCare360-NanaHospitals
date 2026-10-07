@@ -26,11 +26,12 @@ import {
   DeleteRegular,
   PrintRegular,
 } from '@fluentui/react-icons';
-import { formatDateOnly, isApiError, todayIso, useSession } from '@hc360/core';
+import { formatDateOnly, isApiError, todayIso } from '@hc360/core';
 import { DataTable, EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type FormEvent } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { cssdApi, cssdKeys, cssdQueries, type SetIssueDto, type SterilePackDto } from '@/modules/cssd/api';
@@ -86,7 +87,7 @@ function IssuePacksPage() {
   const navigate = useNavigate();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canIssue = usePermission('cssd.process');
   const departments = useDepartments();
   const [departmentId, setDepartmentId] = useState(search.departmentId ?? '');
@@ -400,7 +401,7 @@ function IssuePacksPage() {
                 icon={<PrintRegular />}
                 onClick={() =>
                   issued &&
-                  void printIssueSlip(issued, facilityName).catch((error: unknown) =>
+                  void printIssueSlip(issued, letterhead).catch((error: unknown) =>
                     notify.error(error, 'Printing failed'),
                   )
                 }

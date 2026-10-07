@@ -162,6 +162,7 @@ import { Route as AppSetupFacilitiesRouteImport } from './routes/_app/setup/faci
 import { Route as AppSetupFeaturesRouteImport } from './routes/_app/setup/features'
 import { Route as AppSetupNumberingRouteImport } from './routes/_app/setup/numbering'
 import { Route as AppSetupPractitionersRouteImport } from './routes/_app/setup/practitioners'
+import { Route as AppSetupPrintTemplatesRouteImport } from './routes/_app/setup/print-templates'
 import { Route as AppSetupServicesRouteImport } from './routes/_app/setup/services'
 import { Route as AppSetupSpecialtiesRouteImport } from './routes/_app/setup/specialties'
 import { Route as AppTelehealthIndexRouteImport } from './routes/_app/telehealth/index'
@@ -1072,6 +1073,11 @@ const AppSetupPractitionersRoute = AppSetupPractitionersRouteImport.update({
   path: '/setup/practitioners',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSetupPrintTemplatesRoute = AppSetupPrintTemplatesRouteImport.update({
+  id: '/setup/print-templates',
+  path: '/setup/print-templates',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSetupServicesRoute = AppSetupServicesRouteImport.update({
   id: '/setup/services',
   path: '/setup/services',
@@ -1966,6 +1972,7 @@ export interface FileRoutesByFullPath {
   '/setup/features': typeof AppSetupFeaturesRoute
   '/setup/numbering': typeof AppSetupNumberingRoute
   '/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
@@ -2262,6 +2269,7 @@ export interface FileRoutesByTo {
   '/setup/features': typeof AppSetupFeaturesRoute
   '/setup/numbering': typeof AppSetupNumberingRoute
   '/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/setup/services': typeof AppSetupServicesRoute
   '/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
@@ -2560,6 +2568,7 @@ export interface FileRoutesById {
   '/_app/setup/features': typeof AppSetupFeaturesRoute
   '/_app/setup/numbering': typeof AppSetupNumberingRoute
   '/_app/setup/practitioners': typeof AppSetupPractitionersRoute
+  '/_app/setup/print-templates': typeof AppSetupPrintTemplatesRoute
   '/_app/setup/services': typeof AppSetupServicesRoute
   '/_app/setup/specialties': typeof AppSetupSpecialtiesRoute
   '/_app/telehealth/$sessionId': typeof AppTelehealthSessionIdRoute
@@ -2858,6 +2867,7 @@ export interface FileRouteTypes {
     | '/setup/features'
     | '/setup/numbering'
     | '/setup/practitioners'
+    | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
     | '/telehealth/$sessionId'
@@ -3154,6 +3164,7 @@ export interface FileRouteTypes {
     | '/setup/features'
     | '/setup/numbering'
     | '/setup/practitioners'
+    | '/setup/print-templates'
     | '/setup/services'
     | '/setup/specialties'
     | '/telehealth/$sessionId'
@@ -3451,6 +3462,7 @@ export interface FileRouteTypes {
     | '/_app/setup/features'
     | '/_app/setup/numbering'
     | '/_app/setup/practitioners'
+    | '/_app/setup/print-templates'
     | '/_app/setup/services'
     | '/_app/setup/specialties'
     | '/_app/telehealth/$sessionId'
@@ -4706,6 +4718,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSetupPractitionersRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/setup/print-templates': {
+      id: '/_app/setup/print-templates'
+      path: '/setup/print-templates'
+      fullPath: '/setup/print-templates'
+      preLoaderRoute: typeof AppSetupPrintTemplatesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/setup/services': {
       id: '/_app/setup/services'
       path: '/setup/services'
@@ -5822,6 +5841,7 @@ interface AppRouteChildren {
   AppSetupFeaturesRoute: typeof AppSetupFeaturesRoute
   AppSetupNumberingRoute: typeof AppSetupNumberingRoute
   AppSetupPractitionersRoute: typeof AppSetupPractitionersRoute
+  AppSetupPrintTemplatesRoute: typeof AppSetupPrintTemplatesRoute
   AppSetupServicesRoute: typeof AppSetupServicesRoute
   AppSetupSpecialtiesRoute: typeof AppSetupSpecialtiesRoute
   AppTelehealthSessionIdRoute: typeof AppTelehealthSessionIdRoute
@@ -6117,6 +6137,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSetupFeaturesRoute: AppSetupFeaturesRoute,
   AppSetupNumberingRoute: AppSetupNumberingRoute,
   AppSetupPractitionersRoute: AppSetupPractitionersRoute,
+  AppSetupPrintTemplatesRoute: AppSetupPrintTemplatesRoute,
   AppSetupServicesRoute: AppSetupServicesRoute,
   AppSetupSpecialtiesRoute: AppSetupSpecialtiesRoute,
   AppTelehealthSessionIdRoute: AppTelehealthSessionIdRoute,

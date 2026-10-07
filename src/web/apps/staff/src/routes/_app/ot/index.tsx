@@ -18,6 +18,7 @@ import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Secti
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { otKeys, otQueries, type OtCalendarBooking } from '@/modules/ot/api';
 import { procedureWithSide } from '@/modules/ot/logic';
@@ -70,7 +71,7 @@ function OtCalendarPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const facilityId = useFacilityId();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const practitionerId = useSession((s) => s.user?.practitionerId ?? null);
   const canRead = usePermission('ot.read');
   const canBook = usePermission('ot.bookings.manage');
@@ -126,7 +127,7 @@ function OtCalendarPage() {
               disabled={!calendar.data || view === 'week'}
               onClick={() =>
                 calendar.data &&
-                void printOtList(facilityName, calendar.data, dayLabel(date)).catch((error: unknown) =>
+                void printOtList(letterhead, calendar.data, dayLabel(date)).catch((error: unknown) =>
                   notify.error(error, 'Printing failed'),
                 )
               }

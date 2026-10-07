@@ -20,21 +20,26 @@ internal static class DischargeSummaryDocument
 
     private const string DraftWarning = "DRAFT — not signed";
 
-    /// <summary>The document with the facility logo and, once signed, the consultant's signature image.</summary>
+    /// <summary>
+    /// The document as the facility's discharge summaries template says (HMS-04), with the facility logo and, once signed,
+    /// the consultant's signature image.
+    /// </summary>
     public static async Task<PrintableDocument> BuildAsync(DischargeSummaryPrint print, DocumentAssets assets, CancellationToken cancellationToken)
     {
-        var logo = await assets.ImageAsync(print.Letterhead?.LogoFileId, cancellationToken);
+        var template = await assets.TemplateAsync(PrintTemplateCatalog.ClinicalNote, print.Letterhead?.FacilityId, cancellationToken);
+        var logo = template.ShowLogo ? await assets.ImageAsync(print.Letterhead?.LogoFileId, cancellationToken) : null;
         var signature = IsDraft(print) ? null : await assets.ImageAsync(print.Consultant?.SignatureFileId, cancellationToken);
-        return Build(print, logo, signature);
+        return Build(print, logo, signature, template);
     }
 
-    public static PrintableDocument Build(DischargeSummaryPrint print, ImageData? logo, ImageData? signature) => new()
+    public static PrintableDocument Build(DischargeSummaryPrint print, ImageData? logo, ImageData? signature, PrintTemplate? template = null) => new()
     {
         Title = $"Discharge summary {print.Patient.Uhid}",
         FileName = FileName(print),
         Footer = Footer(print),
         Styles = ClinicalDocumentParts.Styles + Styles,
-        Body = Body(print, logo, signature),
+        Template = template,
+        Body = Body(print, logo, signature, template),
     };
 
     /// <summary>"discharge-summary-NH-000123-2026-09-25": the UHID and the discharge date (else the signing or admission date).</summary>
@@ -57,7 +62,7 @@ internal static class DischargeSummaryDocument
             IsDraft(print) ? DraftWarning : null,
         }.Where(part => part is not null));
 
-    public static Html Body(DischargeSummaryPrint print, ImageData? logo, ImageData? signature)
+    public static Html Body(DischargeSummaryPrint print, ImageData? logo, ImageData? signature, PrintTemplate? template = null)
     {
         var s = print.Summary;
         var p = print.Patient;
@@ -69,7 +74,7 @@ internal static class DischargeSummaryDocument
             .Where(part => !string.IsNullOrEmpty(part)));
         var stay = $"{DocumentFormat.Date(s.AdmittedAt)} → {DocumentFormat.Date(s.DischargedAt)}";
         return Html.Of($"""
-            {ClinicalDocumentParts.Letterhead(print.Letterhead, logo, ClinicalDocumentParts.Prescriber(print.Consultant))}
+            {ClinicalDocumentParts.Letterhead(print.Letterhead, logo, ClinicalDocumentParts.Prescriber(print.Consultant), template)}
             <h2 class="summary-title">Discharge summary</h2>
             {status}
             <div class="patient">

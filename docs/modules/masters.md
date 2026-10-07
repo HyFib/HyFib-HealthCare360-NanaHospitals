@@ -2,7 +2,7 @@
 
 The records every module builds on: facilities (with the letterhead documents print), departments, specialities,
 practitioners (doctors and other clinicians) and the service catalogue. SRS **HMS-03**, with the configuration centre of
-**HMS-04**. Tariff plans, prices and packages are in Billing (`docs/modules/billing.md`); wards, rooms and beds in
+**HMS-04** (number formats, print templates, features). Tariff plans, prices and packages are in Billing (`docs/modules/billing.md`); wards, rooms and beds in
 Inpatient.
 
 Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Screens:
@@ -27,6 +27,7 @@ Code: `src/server/HyFib.HealthCare360.Platform/Organization` (schema `org`). Scr
 | Doctors and clinical staff | `/setup/practitioners` | Name and role, council registration (required for doctors), department, speciality, facilities, fees and follow-up days, online and video booking, languages, profile, photo and signature |
 | Services and prices | `/setup/services` | Category, department, base price, GST, SAC, whether discounts and price changes are allowed |
 | Number formats | `/setup/numbering` | The format of every number the hospital issues, set before the first one if needed (`admin.numbering.manage`; see `docs/modules/numbering.md`) |
+| Print templates | `/setup/print-templates` | How each kind of document prints: the letterhead or pre-printed stationery, the logo, a closing note and the paper, hospital-wide or for one facility (`admin.print.manage`; see `docs/modules/print-templates.md`) |
 | Features | `/setup/features` | Switch the patient portal and video consultations on or off (`admin.settings.manage`; see `docs/modules/features.md`) |
 
 The five masters need `masters.manage`. Each list keeps its search and filters in the address, and opens a record with
@@ -95,10 +96,14 @@ the next document. Lab, radiology, cardiology and health check-up reports and MI
 (`DocumentParts.Letterhead`); prescriptions and discharge summaries put the same details beside the doctor's block; the
 A4 bill uses its own header.
 
+The staff app's own prints (80 mm bills and receipts, pharmacy, canteen, store and purchase documents, slips and lists)
+print the same letterhead with the logo and the letterhead line: `letterheadHtml` in `@hc360/core`, from
+`GET /api/v1/print/letterhead`, which every staff member may read, whatever their masters permission. Each kind of
+document follows its print template: the letterhead or pre-printed stationery, the logo and a closing note (see
+`docs/modules/print-templates.md`).
+
 ## Not covered yet
 
-- Counter receipts, the day-end report and other prints made in the browser show the name, address and GSTIN but not the
-  logo or the letterhead line.
 - The facility's time zone and currency can't be edited (India only).
 - Nothing warns, before a doctor is taken out of use, how many future appointments they have.
 - Taking a service out of use is not checked against the wards, lab tests and packages that charge it.

@@ -30,6 +30,7 @@ import { DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNoti
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   inventoryApi,
@@ -45,7 +46,6 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { printIndentIssue } from '@/modules/inventory/print';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, DocStatus } from '@/modules/inventory/StockBits';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 export const Route = createFileRoute('/_app/inventory/indents/$indentId')({
   component: IndentDetailPage,

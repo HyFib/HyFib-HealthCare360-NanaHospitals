@@ -323,7 +323,7 @@ internal static class HealthCheckupReportDocument
             ? new ReportLetterhead("Hospital", null, null, null, null, null, null)
             : new ReportLetterhead(
                 letterhead.Name, Blank(letterhead.Address), Blank(letterhead.Phone), Blank(letterhead.Email), Blank(letterhead.NabhNumber),
-                Blank(letterhead.LetterheadNote), letterhead.LogoFileId);
+                Blank(letterhead.LetterheadNote), letterhead.LogoFileId, letterhead.FacilityId);
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

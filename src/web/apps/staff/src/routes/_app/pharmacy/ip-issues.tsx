@@ -30,6 +30,7 @@ import { DataTable, ErrorState, FilterBar, LoadingState, Page, PageHeader, Secti
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
@@ -42,7 +43,6 @@ import {
   type IpIssueDetail,
   type IpIssueListItem,
 } from '@/modules/pharmacy/api';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { ipIssueAmount } from '@/modules/pharmacy/pricing';
 import { printIpIssueSlip } from '@/modules/pharmacy/print';

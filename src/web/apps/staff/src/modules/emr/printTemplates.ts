@@ -1,4 +1,4 @@
-import { escapeHtml, formatDateOnly, formatDateTime } from '@hc360/core';
+import { escapeHtml, formatDateOnly, formatDateTime, letterheadHtml, templateFor, type Letterhead } from '@hc360/core';
 import type { DiagnosisDto, EncounterDetail, VitalsDto } from './api';
 import { directionsText } from './dosing';
 import type { OrderDto } from './ordersApi';
@@ -7,14 +7,12 @@ import { formatBp, formatTemperature } from './vitals';
 
 /**
  * HTML body of the consultation summary print-out (pure string builder; every value is escaped); print.ts sends it to
- * the printer. Prescriptions and discharge summaries are made by the server instead (see `@/lib/documents`), so the
- * printed copy matches their PDF.
+ * the printer with the "Clinical notes" print template. Prescriptions and discharge summaries are made by the server
+ * instead (see `@/lib/documents`), so the printed copy matches their PDF.
  */
 
 export const CLINICAL_PRINT_STYLES = `
   body { font-family: 'Segoe UI', 'Nirmala UI', 'Mangal', system-ui, sans-serif; }
-  .letterhead { display: flex; justify-content: space-between; gap: 12px; border-bottom: 2px solid #045E80; padding-bottom: 6px; margin-bottom: 8px; }
-  .facility { font-size: 14pt; font-weight: 700; color: #045E80; }
   .small { font-size: 8.5pt; color: #444; }
   .doctor { text-align: right; }
   .doctor .name { font-weight: 700; font-size: 11pt; }
@@ -45,7 +43,7 @@ function genderShortOf(gender: string): string {
 }
 
 export interface EncounterPrintData {
-  facilityName: string;
+  letterhead: Letterhead;
   patient: { fullName: string; uhid: string; age: string | null; gender: string };
   encounter: EncounterDetail;
   diagnoses: readonly DiagnosisDto[];
@@ -124,10 +122,9 @@ export function encounterSummaryHtml(data: EncounterPrintData): string {
       : `<div class="small">Signed ${escapeHtml(formatDateTime(e.signedAt))}${e.amendedAt ? ` · amended ${escapeHtml(formatDateTime(e.amendedAt))}` : ''}</div>`;
 
   return `
-    <div class="letterhead">
-      <div class="facility">${escapeHtml(data.facilityName)}</div>
-      <div class="doctor"><div class="name">${escapeHtml(e.practitionerName ?? '')}</div><div class="small">${escapeHtml(e.departmentName ?? '')}</div></div>
-    </div>
+    ${letterheadHtml(data.letterhead, templateFor(data.letterhead, 'clinical-note'), {
+      aside: `<div class="doctor"><div class="name">${escapeHtml(e.practitionerName ?? '')}</div><div class="small">${escapeHtml(e.departmentName ?? '')}</div></div>`,
+    })}
     <h2>Consultation summary</h2>
     <div class="patient">
       ${field('Patient', data.patient.fullName)}

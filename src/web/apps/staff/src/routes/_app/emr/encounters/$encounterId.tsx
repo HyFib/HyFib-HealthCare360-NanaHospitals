@@ -36,6 +36,7 @@ import { createFileRoute, useBlocker, useNavigate } from '@tanstack/react-router
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { aiQueries } from '@/lib/ai';
 import { useServerDocuments } from '@/lib/documents';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { emrKeys, emrQueries, encounterTypeLabel, type EncounterDetail } from '@/modules/emr/api';
 import { LatestVitals } from '@/modules/emr/ChartSummary';
@@ -186,7 +187,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const patientId = encounter.patientId;
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const userPractitionerId = useSession((s) => s.user?.practitionerId ?? null);
   const canWrite = usePermission('clinical.emr.write');
   const canSign = usePermission('clinical.encounters.sign');
@@ -249,7 +250,7 @@ function EncounterWorkspace({ encounter }: { encounter: EncounterDetail }) {
       );
       const s = summary.data;
       await printEncounterSummary({
-        facilityName,
+        letterhead,
         patient: {
           fullName: s?.patient.fullName ?? '',
           uhid: s?.patient.uhid ?? '',

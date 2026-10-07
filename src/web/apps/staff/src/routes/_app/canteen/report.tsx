@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   canteenQueries,
@@ -15,7 +16,6 @@ import {
   type DailySalesSummary,
 } from '@/modules/canteen/api';
 import { printDailyReport } from '@/modules/canteen/print';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 

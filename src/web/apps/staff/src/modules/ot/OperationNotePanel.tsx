@@ -21,7 +21,7 @@ import {
   TextBulletListLtrRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatRelative, useHotkey, useSession } from '@hc360/core';
+import { formatRelative, useHotkey } from '@hc360/core';
 import {
   ConfirmDialog,
   ErrorState,
@@ -39,6 +39,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { otApi, otKeys, otQueries, SPECIMEN_DESTINATIONS, type OperationNoteDto, type SurgeryDetail } from './api';
@@ -168,7 +169,7 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const [confirmSign, setConfirmSign] = useState(false);
   const form = useForm<NoteValues>({ resolver: zodResolver(noteSchema), defaultValues: toValues(note, booking) });
   const draft = useFormDraft(form, `ot-operation-note-${booking.id}`);
@@ -234,7 +235,7 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
           <Button
             icon={<PrintRegular />}
             onClick={() =>
-              void printOperationNote(facilityName, booking, note).catch((error: unknown) =>
+              void printOperationNote(letterhead, booking, note).catch((error: unknown) =>
                 notify.error(error, 'Printing failed'),
               )
             }
@@ -404,7 +405,7 @@ function NoteForm({ booking, note }: { booking: SurgeryDetail; note: OperationNo
 function NoteView({ booking, note }: { booking: SurgeryDetail; note: OperationNoteDto }) {
   const styles = useStyles();
   const notify = useNotify();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   return (
     <Section
       title="Operation note"
@@ -414,7 +415,7 @@ function NoteView({ booking, note }: { booking: SurgeryDetail; note: OperationNo
           <Button
             icon={<PrintRegular />}
             onClick={() =>
-              void printOperationNote(facilityName, booking, note).catch((error: unknown) =>
+              void printOperationNote(letterhead, booking, note).catch((error: unknown) =>
                 notify.error(error, 'Printing failed'),
               )
             }

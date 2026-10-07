@@ -1,9 +1,10 @@
 import { Button, Caption1, Field, Input, makeStyles, Text, tokens } from '@fluentui/react-components';
 import { FoodRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateOnly, todayIso, useSession } from '@hc360/core';
+import { formatDateOnly, todayIso } from '@hc360/core';
 import { DataTable, EmptyState, ErrorState, FilterBar, KpiCard, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useLetterhead } from '@/lib/letterhead';
 import { dietaryQueries, type ProductionLine } from '@/modules/dietary/api';
 import { printProductionSheet } from '@/modules/dietary/print';
 import { MEAL_SLOT_LABEL, MEAL_SLOTS } from '@/modules/dietary/rules';
@@ -30,7 +31,7 @@ function KitchenPage() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const today = todayIso();
   const date = search.date ?? today;
   const production = useQuery(dietaryQueries.production(date));
@@ -50,9 +51,7 @@ function KitchenPage() {
             disabled={!p}
             onClick={() =>
               p &&
-              void printProductionSheet(p, facilityName).catch((error: unknown) =>
-                notify.error(error, 'Printing failed'),
-              )
+              void printProductionSheet(p, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'))
             }
           >
             Print cooking list

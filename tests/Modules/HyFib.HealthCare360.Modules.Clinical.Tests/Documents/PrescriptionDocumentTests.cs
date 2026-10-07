@@ -173,6 +173,35 @@ public sealed class PrescriptionDocumentTests
     }
 
     [Fact]
+    public async Task The_prescriptions_template_sets_the_paper_and_on_pre_printed_stationery_keeps_only_the_doctor()
+    {
+        var logo = Guid.NewGuid();
+        var model = Model();
+        model = model with { Letterhead = model.Letterhead! with { LogoFileId = logo } };
+        var templates = Substitute.For<IPrintTemplates>();
+        templates.GetAsync(PrintTemplateCatalog.Prescription, model.Letterhead!.FacilityId, Arg.Any<CancellationToken>()).Returns(new PrintTemplate
+        {
+            Letterhead = PrintLetterhead.Preprinted,
+            TopSpaceMm = 30,
+            ShowLogo = false,
+            ClosingNote = "Bring this prescription on your next visit.",
+            Paper = DocumentPageSize.A4,
+        });
+
+        var document = await PrescriptionDocument.BuildAsync(model, Assets(templates, (logo, "image/png", [1, 2, 3])), Ct);
+        var html = document.ToHtml();
+
+        document.PageSize.ShouldBe(DocumentPageSize.A4);
+        html.ShouldContain("size: A4");
+        html.ShouldContain("margin: 42mm 12mm 16mm;");
+        html.ShouldNotContain("class=\"facility\"");
+        html.ShouldNotContain("12 MG Road");
+        html.ShouldNotContain("<img class=\"logo\"");
+        html.ShouldContain("<div class=\"name\">Dr Meera Shah</div>", Case.Sensitive, "the doctor's block is not on the stationery");
+        html.ShouldContain("<div class=\"closing-note\">Bring this prescription on your next visit.</div>");
+    }
+
+    [Fact]
     public async Task An_unsigned_copy_carries_no_signature_image()
     {
         var signature = Guid.NewGuid();
@@ -247,7 +276,9 @@ public sealed class PrescriptionDocumentTests
             .ShouldBe([typeof(PrescriptionDocumentSource), typeof(DischargeSummaryDocumentSource)], ignoreOrder: true);
     }
 
-    internal static DocumentAssets Assets(params (Guid Id, string ContentType, byte[] Content)[] images)
+    internal static DocumentAssets Assets(params (Guid Id, string ContentType, byte[] Content)[] images) => Assets(null, images);
+
+    internal static DocumentAssets Assets(IPrintTemplates? templates, params (Guid Id, string ContentType, byte[] Content)[] images)
     {
         var files = Substitute.For<IFileStore>();
         foreach (var (id, contentType, content) in images)
@@ -256,7 +287,7 @@ public sealed class PrescriptionDocumentTests
                 .Returns(Result<(StoredFile File, byte[] Content)>.Ok((new StoredFile { ContentType = contentType }, content)));
         }
 
-        return new DocumentAssets(null!, files, new MemoryCache(new MemoryCacheOptions()));
+        return new DocumentAssets(null!, files, new MemoryCache(new MemoryCacheOptions()), templates);
     }
 
     private static PrescriptionPrintModel Model() => new(

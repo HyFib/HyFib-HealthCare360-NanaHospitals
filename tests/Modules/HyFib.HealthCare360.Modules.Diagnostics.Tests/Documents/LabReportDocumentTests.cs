@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Files;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.Caching.Memory;
 using NSubstitute;
 
@@ -100,9 +101,31 @@ public sealed class LabReportDocumentTests
         html.ShouldContain("Preliminary copy for the laboratory: not released");
     }
 
+    [Fact]
+    public async Task The_facility_s_reports_template_hides_the_logo_and_ends_the_report_with_its_note()
+    {
+        var facility = Guid.NewGuid();
+        var logo = Guid.NewGuid();
+        var files = Substitute.For<IFileStore>();
+        files.ReadAsync(logo, Arg.Any<CancellationToken>())
+            .Returns(Result<(StoredFile File, byte[] Content)>.Ok((new StoredFile { ContentType = "image/png" }, [1, 2, 3])));
+        var templates = Substitute.For<IPrintTemplates>();
+        templates.GetAsync(PrintTemplateCatalog.Report, facility, Arg.Any<CancellationToken>())
+            .Returns(PrintTemplate.Default with { ShowLogo = false, ClosingNote = "Read the results with the clinical findings." });
+        var report = Report() with { Letterhead = Report().Letterhead with { LogoFileId = logo, FacilityId = facility } };
+
+        var html = (await LabReportDocument.BuildAsync(report, releasedOnly: true, new ReportDocumentFrame(Assets(files, templates)), Ct)).ToHtml();
+
+        html.ShouldContain("<div class=\"facility\">Nana Hospitals</div>");
+        html.ShouldNotContain("<img class=\"logo\"");
+        html.ShouldContain("<div class=\"closing-note\">Read the results with the clinical findings.</div>");
+    }
+
     // The frame reads images only for the file ids it is given; this report has none.
-    private static ReportDocumentFrame Frame() =>
-        new(new DocumentAssets(null!, Substitute.For<IFileStore>(), new MemoryCache(new MemoryCacheOptions())));
+    private static ReportDocumentFrame Frame() => new(Assets(Substitute.For<IFileStore>(), null));
+
+    private static DocumentAssets Assets(IFileStore files, IPrintTemplates? templates) =>
+        new(null!, files, new MemoryCache(new MemoryCacheOptions()), templates);
 
     private static LabReportView Report()
     {

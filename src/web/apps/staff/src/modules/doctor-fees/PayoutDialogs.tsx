@@ -23,7 +23,8 @@ import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core
 import { ConfirmDialog, ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { useAttemptKey, usePrintFacility } from '@/modules/billing/hooks';
+import { useLetterhead } from '@/lib/letterhead';
+import { useAttemptKey } from '@/modules/billing/hooks';
 import { PAYMENT_MODE_LABEL, type PaymentMode } from '@/modules/billing/labels';
 import { parsePercent, parseRupees } from '@/modules/billing/money';
 import { sendToPrinter } from '@/modules/billing/print';
@@ -252,7 +253,7 @@ export function PayoutDialog({ payoutId, onClose }: { payoutId: string; onClose:
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facility = usePrintFacility();
+  const letterhead = useLetterhead();
   const [attemptKey] = useAttemptKey();
   const [step, setStep] = useState<PayoutStep>(null);
   const [mode, setMode] = useState<PaymentMode>('NetBanking');
@@ -289,7 +290,7 @@ export function PayoutDialog({ payoutId, onClose }: { payoutId: string; onClose:
   const p = payout.data;
   const print = () =>
     p &&
-    void sendToPrinter(buildPayoutAdviceHtml(p, facility), 'A4').catch((error: unknown) =>
+    void sendToPrinter(buildPayoutAdviceHtml(p, letterhead), 'A4').catch((error: unknown) =>
       notify.error(error, 'Printing failed'),
     );
   const needsReference = mode !== 'Cash' && !reference.trim();

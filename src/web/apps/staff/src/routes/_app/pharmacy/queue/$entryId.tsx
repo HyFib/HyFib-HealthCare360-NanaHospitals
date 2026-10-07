@@ -53,6 +53,7 @@ import { EmptyState, ErrorState, LoadingState, Page, Section, StatusBadge, useNo
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { sumNumbers } from '@/modules/inventory/decimal';
@@ -82,7 +83,6 @@ import {
   DEFAULT_MAX_DISCOUNT_PERCENT,
   useCounterPrefs,
   useItemMaster,
-  useLetterhead,
   usePharmacyBatches,
 } from '@/modules/pharmacy/counter';
 import {
