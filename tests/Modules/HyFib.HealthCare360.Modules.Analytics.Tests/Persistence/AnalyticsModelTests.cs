@@ -43,6 +43,18 @@ public sealed class AnalyticsModelTests
     }
 
     [Fact]
+    public void Two_extracts_of_a_facility_never_write_the_same_file()
+    {
+        var schedule = Model.Value.FindEntityType(typeof(ReportSchedule))!;
+
+        var index = schedule.GetIndexes().Single(i => i.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(ReportSchedule.FacilityId), nameof(ReportSchedule.ExtractName) }));
+        index.IsUnique.ShouldBeTrue();
+        index.GetFilter().ShouldBe("extract_name IS NOT NULL AND is_deleted = false");
+        schedule.FindProperty(nameof(ReportSchedule.ExtractName))!.GetMaxLength().ShouldBe(ReportSchedule.MaxExtractNameLength);
+        schedule.FindProperty(nameof(ReportSchedule.Destination))!.GetProviderClrType().ShouldBe(typeof(string));
+    }
+
+    [Fact]
     public void The_create_script_includes_the_analytics_schema()
     {
         using var db = ReportTestHarness.CreateContext(null);

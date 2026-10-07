@@ -21,7 +21,13 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { analyticsApi, analyticsQueries, type DeliveryDto, type ExportFormat, type ScheduleDto } from './api';
 import { describeRange, formatBytes, formatCount } from './format';
-import { DELIVERY_STATUS_LABELS, DELIVERY_TRIGGER_LABELS, FORMAT_EXTENSIONS, RECIPIENT_STATUS_LABELS } from './labels';
+import {
+  DELIVERY_STATUS_LABELS,
+  DELIVERY_TRIGGER_LABELS,
+  EXTRACT_TRIGGER_LABELS,
+  FORMAT_EXTENSIONS,
+  RECIPIENT_STATUS_LABELS,
+} from './labels';
 
 const useStyles = makeStyles({
   list: { display: 'flex', flexDirection: 'column', gap: '4px' },
@@ -42,12 +48,16 @@ const DOWNLOAD_LABELS: Record<ExportFormat, string> = {
   Pdf: 'Download PDF',
 };
 
-/** Each file a schedule produced, who it reached, and a way to download it again while it is kept. */
+/**
+ * Each file a schedule produced, who it reached, and a way to download it again while it is kept. For a BI extract: each
+ * refresh, and why one failed (the file itself is in the extract folder, not kept in HC360).
+ */
 export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto; onClose: () => void }) {
   const styles = useStyles();
   const notify = useNotify();
   const [page, setPage] = useState(1);
   const deliveries = useQuery(analyticsQueries.deliveries(schedule.id, page));
+  const extract = schedule.destination === 'ExtractFolder';
 
   const download = useMutation({
     mutationFn: async (delivery: DeliveryDto) => {
@@ -65,7 +75,7 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
         >
           <span className={styles.title}>
             <HistoryRegular aria-hidden />
-            Delivery history
+            {extract ? 'Refresh history' : 'Delivery history'}
           </span>
         </DrawerHeaderTitle>
         <Caption1 className={styles.muted}>
@@ -79,11 +89,15 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
           <ErrorState error={deliveries.error} onRetry={() => void deliveries.refetch()} />
         ) : !deliveries.data || deliveries.data.items.length === 0 ? (
           <EmptyState
-            title="Nothing sent yet"
+            title={extract ? 'Not refreshed yet' : 'Nothing sent yet'}
             description={
-              schedule.nextRunAt
-                ? `The first e-mail goes out ${formatDateTime(schedule.nextRunAt)}.`
-                : 'Turn the schedule on to start sending.'
+              extract
+                ? schedule.nextRunAt
+                  ? `The file is first written ${formatDateTime(schedule.nextRunAt)}.`
+                  : 'Turn the refreshes on to write the file.'
+                : schedule.nextRunAt
+                  ? `The first e-mail goes out ${formatDateTime(schedule.nextRunAt)}.`
+                  : 'Turn the schedule on to start sending.'
             }
           />
         ) : (
@@ -103,11 +117,11 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                                 : 'Delivered'
                               : delivery.status
                           }
-                          label={statusText(delivery)}
+                          label={extract && delivery.status === 'Ready' ? 'Written' : statusText(delivery)}
                         />
                       </span>
                       <Caption1 className={styles.muted}>
-                        {DELIVERY_TRIGGER_LABELS[delivery.trigger]}
+                        {(extract ? EXTRACT_TRIGGER_LABELS : DELIVERY_TRIGGER_LABELS)[delivery.trigger]}
                         {delivery.periodFrom && delivery.periodTo
                           ? ` · ${describeRange(delivery.periodFrom, delivery.periodTo)}`
                           : ''}
@@ -140,23 +154,31 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                           ))}
                         </div>
                       )}
-                      <div>
-                        <Button
-                          icon={
-                            download.isPending && download.variables?.id === delivery.id ? (
-                              <Spinner size="tiny" />
-                            ) : (
-                              <ArrowDownloadRegular />
-                            )
-                          }
-                          disabled={!delivery.fileAvailable || download.isPending}
-                          // Keeps focus while the file downloads: a disabled button drops it.
-                          disabledFocusable={download.isPending}
-                          onClick={() => download.mutate(delivery)}
-                        >
-                          {delivery.fileAvailable ? DOWNLOAD_LABELS[delivery.format] : 'File no longer kept'}
-                        </Button>
-                      </div>
+                      {extract ? (
+                        delivery.status === 'Ready' && (
+                          <Text>
+                            Replaced {delivery.fileName ?? schedule.extractFile ?? 'the file'} in the extract folder.
+                          </Text>
+                        )
+                      ) : (
+                        <div>
+                          <Button
+                            icon={
+                              download.isPending && download.variables?.id === delivery.id ? (
+                                <Spinner size="tiny" />
+                              ) : (
+                                <ArrowDownloadRegular />
+                              )
+                            }
+                            disabled={!delivery.fileAvailable || download.isPending}
+                            // Keeps focus while the file downloads: a disabled button drops it.
+                            disabledFocusable={download.isPending}
+                            onClick={() => download.mutate(delivery)}
+                          >
+                            {delivery.fileAvailable ? DOWNLOAD_LABELS[delivery.format] : 'File no longer kept'}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </AccordionPanel>
                 </AccordionItem>

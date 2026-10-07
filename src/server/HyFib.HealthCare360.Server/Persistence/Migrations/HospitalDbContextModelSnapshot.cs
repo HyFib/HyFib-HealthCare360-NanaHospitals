@@ -794,6 +794,17 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<string>("Destination")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("destination");
+
+                    b.Property<string>("ExtractName")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("extract_name");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -831,6 +842,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("last_status");
+
+                    b.Property<DateTimeOffset?>("LastSucceededAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_succeeded_at");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -897,6 +912,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("OwnerUserId")
                         .HasDatabaseName("ix_report_schedules_owner_user_id");
+
+                    b.HasIndex("FacilityId", "ExtractName")
+                        .IsUnique()
+                        .HasDatabaseName("ix_report_schedules_facility_id_extract_name")
+                        .HasFilter("extract_name IS NOT NULL AND is_deleted = false");
 
                     b.HasIndex("IsActive", "NextRunAt")
                         .HasDatabaseName("ix_report_schedules_is_active_next_run_at");

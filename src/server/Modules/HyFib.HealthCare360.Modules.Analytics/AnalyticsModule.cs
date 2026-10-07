@@ -9,8 +9,9 @@ namespace HyFib.HealthCare360.Modules.Analytics;
 
 /// <summary>
 /// MIS reports and managed BI (MIS-01..05, BI-01..05): a permission-filtered catalogue of hospital reports over every
-/// module's data, Excel/CSV/PDF exports, executive KPIs, saved dashboards and scheduled report e-mails. Reports run on
-/// an optional read-only replica (<c>ConnectionStrings:Analytics</c>) and never write to other modules' tables.
+/// module's data, Excel/CSV/PDF exports, executive KPIs, saved dashboards, scheduled report e-mails and BI extracts for
+/// Power BI and similar tools. Reports run on an optional read-only replica (<c>ConnectionStrings:Analytics</c>) and
+/// never write to other modules' tables.
 /// </summary>
 public sealed class AnalyticsModule : IModule
 {
@@ -33,8 +34,11 @@ public sealed class AnalyticsModule : IModule
         services.AddScoped<DashboardService>();
         services.AddScoped<ScheduleService>();
         services.AddScoped<ReportDeliveryService>();
+        services.AddSingleton<ExtractFolder>();
+        services.AddScoped<ExtractMonitor>();
 
-        // Sends due scheduled e-mails every minute; returns immediately on API-only nodes (PlatformOptions.RunsJobs).
+        // Sends due scheduled e-mails and refreshes due BI extracts every minute; returns immediately on API-only nodes
+        // (PlatformOptions.RunsJobs).
         services.AddHostedService<ScheduledReportJob>();
     }
 

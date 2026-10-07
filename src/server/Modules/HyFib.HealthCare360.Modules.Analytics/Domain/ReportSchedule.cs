@@ -12,6 +12,38 @@ public enum ExportFormat
     Pdf,
 }
 
+/// <summary>Where a schedule's file goes. Stored as text, so a new destination goes at the end.</summary>
+public enum ScheduleDestination
+{
+    /// <summary>Attached to an e-mail to the recipients (MIS-05, BI-04).</summary>
+    Email = 0,
+
+    /// <summary>
+    /// Written as a CSV file to the BI extract folder, which external BI tools such as Power BI read (BI-05). The file is
+    /// replaced at every run, so the tool always reads the latest data.
+    /// </summary>
+    ExtractFolder,
+}
+
+/// <summary>How fresh a BI extract's data is, as its list and the refresh log show it.</summary>
+public enum ExtractState
+{
+    /// <summary>Set up, and not produced yet: the first refresh is still to come.</summary>
+    Waiting = 0,
+
+    /// <summary>Refreshed on schedule.</summary>
+    Fresh,
+
+    /// <summary>Not refreshed for longer than its schedule allows (<see cref="ReportSchedule.IsLate"/>).</summary>
+    Late,
+
+    /// <summary>The last refresh failed: BI tools read the previous file.</summary>
+    Failing,
+
+    /// <summary>Not refreshed while paused.</summary>
+    Paused,
+}
+
 public enum ScheduleRunStatus
 {
     /// <summary>The file was generated and the e-mails were queued.</summary>
@@ -23,16 +55,29 @@ public enum ScheduleRunStatus
 }
 
 /// <summary>
-/// A report e-mailed on a schedule (MIS-05, BI-04) as an Excel, CSV or PDF attachment. It belongs to one facility and
-/// runs with the permissions of the person who last saved it, re-checked at every run, so revoking someone's access
-/// also stops their scheduled e-mails. Parameters are stored in canonical form with a relative period ("yesterday",
-/// "last month") so every e-mail covers new dates.
+/// A report run on a schedule: e-mailed as an Excel, CSV or PDF attachment (MIS-05, BI-04), or written to the BI extract
+/// folder as a CSV file for Power BI and similar tools (<see cref="ScheduleDestination.ExtractFolder"/>, BI-05). It
+/// belongs to one facility and runs with the permissions of the person who last saved it, re-checked at every run, so
+/// revoking someone's access also stops their scheduled reports. Parameters are stored in canonical form with a relative
+/// period ("yesterday", "this financial year") so every run covers new dates.
 /// </summary>
 public sealed class ReportSchedule : AuditableEntity, IFacilityScoped
 {
     public const int MaxRecipients = 20;
 
+    /// <summary>Longest extract file name (without ".csv").</summary>
+    public const int MaxExtractNameLength = 64;
+
     public Guid FacilityId { get; set; }
+
+    public ScheduleDestination Destination { get; set; }
+
+    /// <summary>
+    /// The file a BI extract writes, without ".csv": lower-case letters, digits and dashes, unique in the facility. Null
+    /// for e-mails.
+    /// </summary>
+    public string? ExtractName { get; set; }
+
     public string Name { get; set; } = string.Empty;
     public string ReportId { get; set; } = string.Empty;
 
@@ -59,6 +104,17 @@ public sealed class ReportSchedule : AuditableEntity, IFacilityScoped
     public ScheduleRunStatus? LastStatus { get; set; }
     public string? LastError { get; set; }
 
+    /// <summary>
+    /// When the file was last produced: how fresh the data is that a BI tool reads from an extract. Cleared when an
+    /// extract's file changes (another name, report or inputs), until a refresh writes the new one.
+    /// </summary>
+    public DateTimeOffset? LastSucceededAt { get; set; }
+
+    public bool IsExtract => Destination == ScheduleDestination.ExtractFolder;
+
+    /// <summary>Whether the last run went wrong (failed, or skipped because the owner can no longer sign in).</summary>
+    public bool IsFailing => LastStatus is ScheduleRunStatus.Failed or ScheduleRunStatus.Skipped;
+
     /// <summary>Recomputes <see cref="NextRunAt"/> (none while paused).</summary>
     public void Reschedule(DateTimeOffset now) =>
         NextRunAt = IsActive ? ScheduleCalendar.NextRun(Frequency, TimeOfDay, DayOfWeek, DayOfMonth, now) : null;
@@ -68,7 +124,26 @@ public sealed class ReportSchedule : AuditableEntity, IFacilityScoped
         LastRunAt = at;
         LastStatus = status;
         LastError = error is { Length: > 500 } ? error[..500] : error;
+        if (status == ScheduleRunStatus.Succeeded)
+        {
+            LastSucceededAt = at;
+        }
     }
+
+    /// <summary>
+    /// An active extract whose data a BI tool reads is older than one interval of its schedule and a margin (or that has
+    /// not been produced in that time since it was set up or changed): a refresh failed, or the server was off.
+    /// </summary>
+    public bool IsLate(DateTimeOffset now) =>
+        IsExtract && IsActive && (LastSucceededAt ?? UpdatedAt ?? CreatedAt) < now - ScheduleCalendar.Interval(Frequency) - ScheduleCalendar.LateMargin;
+
+    /// <summary>How fresh the extract's data is; failing comes before late, as it says why.</summary>
+    public ExtractState State(DateTimeOffset now) =>
+        !IsActive ? ExtractState.Paused
+        : IsFailing ? ExtractState.Failing
+        : IsLate(now) ? ExtractState.Late
+        : LastSucceededAt is null ? ExtractState.Waiting
+        : ExtractState.Fresh;
 
     public string Describe() => ScheduleCalendar.Describe(Frequency, TimeOfDay, DayOfWeek, DayOfMonth);
 }

@@ -290,7 +290,13 @@ export function isRelativePeriod(value: string | null | undefined): boolean {
 
 /** The complete period that just ended: what a daily, weekly or monthly e-mail covers by default. */
 export function defaultPeriodFor(frequency: ScheduleFrequency): string {
-  return frequency === 'Daily' ? 'yesterday' : frequency === 'Weekly' ? 'lastWeek' : 'lastMonth';
+  return frequency === 'Hourly'
+    ? 'today'
+    : frequency === 'Daily'
+      ? 'yesterday'
+      : frequency === 'Weekly'
+        ? 'lastWeek'
+        : 'lastMonth';
 }
 
 // ------------------------------------------------------------------------------------------------ schedules
@@ -319,6 +325,10 @@ export function describeSchedule(
   dayOfWeek: Weekday | null,
   dayOfMonth: number | null,
 ): string {
+  if (frequency === 'Hourly') {
+    const minute = Number(time.slice(3, 5));
+    return Number.isNaN(minute) || minute === 0 ? 'Every hour on the hour' : `Every hour at ${minute} minutes past`;
+  }
   const at = `at ${time} IST`;
   if (frequency === 'Daily') {
     return `Every day ${at}`;

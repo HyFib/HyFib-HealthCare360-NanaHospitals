@@ -3,7 +3,9 @@ using HyFib.HealthCare360.Modules.Analytics.Services;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 
-/// <summary>/api/v1/analytics/schedules — scheduled report e-mails and their deliveries (MIS-05, BI-04).</summary>
+/// <summary>
+/// /api/v1/analytics/schedules — scheduled report e-mails (MIS-05, BI-04) and BI extracts (BI-05), and their deliveries.
+/// </summary>
 internal static class ScheduleEndpoints
 {
     public static void Map(IEndpointRouteBuilder app)
@@ -18,7 +20,12 @@ internal static class ScheduleEndpoints
         group.MapPost("/schedules/{id:guid}/send-now", SendNow);
         group.MapGet("/schedules/{id:guid}/deliveries", Deliveries);
         group.MapGet("/deliveries/{id:guid}/file", DownloadFile);
+        group.MapGet("/extracts/folder", Folder);
     }
+
+    /// <summary>Where BI extracts are written, for the person who sets up the BI tool, and whether HC360 can write there.</summary>
+    private static async Task<IResult> Folder(ICurrentUser user, ScheduleService schedules, CancellationToken ct) =>
+        TypedResults.Ok(await schedules.FolderAsync(user.FacilityId, ct));
 
     private static async Task<IResult> List(ReportActors actors, ScheduleService schedules, CancellationToken ct) =>
         await actors.CurrentAsync(ct) is { } actor ? TypedResults.Ok(await schedules.ListAsync(actor, ct)) : SignInRequired();
@@ -37,7 +44,7 @@ internal static class ScheduleEndpoints
     private static async Task<IResult> Delete(Guid id, uint? version, ScheduleService schedules, CancellationToken ct) =>
         (await schedules.DeleteAsync(id, version, ct)).ToNoContent();
 
-    /// <summary>Generates the file now and queues the e-mails (the regular schedule is unchanged).</summary>
+    /// <summary>Generates the file now and queues the e-mails, or refreshes the extract (the regular schedule is unchanged).</summary>
     private static async Task<IResult> SendNow(Guid id, ReportActors actors, HospitalDbContext db, ReportDeliveryService deliveries, CancellationToken ct)
     {
         if (await actors.CurrentAsync(ct) is not { } actor)

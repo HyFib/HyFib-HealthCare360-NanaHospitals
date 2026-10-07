@@ -45,12 +45,12 @@ import {
   analyticsQueries,
   type DeliveryDto,
   type ReportInputs,
-  type SaveScheduleRequest,
   type ScheduleDto,
 } from '@/modules/analytics/api';
 import { DeliveriesDrawer } from '@/modules/analytics/DeliveriesDrawer';
 import { ANALYTICS_PERMISSIONS as A, RUN_STATUS_LABELS } from '@/modules/analytics/labels';
 import { sanitizeInputs } from '@/modules/analytics/params';
+import { scheduleToRequest } from '@/modules/analytics/schedule-form';
 import { ScheduleDrawer, type ScheduleDraft } from '@/modules/analytics/ScheduleDrawer';
 
 interface SchedulesSearch {
@@ -85,23 +85,10 @@ const useStyles = makeStyles({
 
 type Pending = { kind: 'send' | 'delete' | 'pause'; schedule: ScheduleDto };
 
-function toRequest(schedule: ScheduleDto, isActive = schedule.isActive): SaveScheduleRequest {
-  return {
-    name: schedule.name,
-    reportId: schedule.reportId,
-    parameters: schedule.parameters,
-    format: schedule.format,
-    frequency: schedule.frequency,
-    time: schedule.time,
-    dayOfWeek: schedule.dayOfWeek,
-    dayOfMonth: schedule.dayOfMonth,
-    recipients: schedule.recipients,
-    isActive,
-    version: schedule.version,
-  };
-}
-
-/** BI-04: reports e-mailed on a schedule (IST), with delivery history, "send now", pause and delete. */
+/**
+ * BI-04: reports e-mailed on a schedule (IST), with delivery history, "send now", pause and delete. BI extracts, which
+ * the same API schedules, have their own screen (/analytics/extracts).
+ */
 function SchedulesPage() {
   const styles = useStyles();
   // Closing a dialog opened from a row's menu returns focus to that row's menu button.
@@ -133,7 +120,7 @@ function SchedulesPage() {
       if (kind === 'delete') {
         return analyticsApi.deleteSchedule(schedule.id, schedule.version);
       }
-      return analyticsApi.updateSchedule(schedule.id, toRequest(schedule, !schedule.isActive));
+      return analyticsApi.updateSchedule(schedule.id, scheduleToRequest(schedule, !schedule.isActive));
     },
     onSuccess: (result, { kind, schedule }) => {
       setPending(null);
@@ -178,7 +165,7 @@ function SchedulesPage() {
     );
   }
 
-  const list = schedules.data;
+  const list = schedules.data?.filter((schedule) => schedule.destination === 'Email');
   const s = status.data;
   const togglePause = (schedule: ScheduleDto) =>
     schedule.isMine ? act.mutate({ kind: 'pause', schedule }) : setPending({ kind: 'pause', schedule });

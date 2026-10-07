@@ -78,7 +78,16 @@ public sealed record ReportResultDto(
     bool ContainsPatientIdentifiers,
     string? PdfNotice);
 
-/// <summary>GET /api/v1/analytics/status — where reports read from and how fresh the data is (BI-05).</summary>
+/// <summary>
+/// GET /api/v1/analytics/status — where reports read from and how fresh the data is (BI-05): the replica's lag, the
+/// scheduled e-mails, and the BI extracts' refreshes.
+/// </summary>
+/// <param name="ActiveSchedules">Scheduled e-mails that are on (BI extracts are counted apart).</param>
+/// <param name="LastDeliveryAt">The last scheduled e-mail's file.</param>
+/// <param name="FailedDeliveriesLast7Days">Scheduled e-mail files that failed in the last 7 days.</param>
+/// <param name="LateExtracts">Extracts not refreshed for longer than their schedule allows.</param>
+/// <param name="FailingExtracts">Extracts whose last refresh failed.</param>
+/// <param name="LastExtractRefreshAt">The latest refresh of any extract.</param>
 public sealed record AnalyticsStatusDto(
     string DataSource,
     bool UsesReplica,
@@ -86,7 +95,11 @@ public sealed record AnalyticsStatusDto(
     int ActiveSchedules,
     DateTimeOffset? LastDeliveryAt,
     int FailedDeliveriesLast7Days,
-    DateTimeOffset CheckedAt);
+    DateTimeOffset CheckedAt,
+    int ActiveExtracts,
+    int LateExtracts,
+    int FailingExtracts,
+    DateTimeOffset? LastExtractRefreshAt);
 
 public sealed class RunReportRequestValidator : AbstractValidator<RunReportRequest>
 {
