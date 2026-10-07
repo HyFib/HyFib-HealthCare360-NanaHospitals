@@ -45,6 +45,7 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
     private bool _retired;
     private int _renders;
     private int _disposed;
+    private DateTime _assignedAt;
 
     private HeadlessBrowser(Process process, ProcessJob? job, DevToolsPipe pipe, string profile, ILogger logger)
     {
@@ -80,9 +81,11 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
         }
 
         Process process;
+        long started;
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException($"{browserPath} did not start.");
+            started = Stopwatch.GetTimestamp();
         }
         catch
         {
@@ -92,19 +95,38 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
             throw;
         }
 
+        var assigned = "no job";
         try
         {
             job?.Assign(process);
+            assigned = job is null ? "no job" : "ok";
         }
         catch (Win32Exception ex)
         {
+            assigned = $"failed: {ex.NativeErrorCode} {ex.Message}";
             logger.LogWarning(ex, "The PDF browser could not be tied to the server process; it is closed on shutdown instead");
         }
 
+        var assignedAt = DateTime.Now;
+        EdgeDiag.Note(profile, $"main pid {process.Id}: Assign {Stopwatch.GetElapsedTime(started).TotalMilliseconds:F2} ms after Process.Start returned: {assigned}");
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) => EdgeDiag.Note(profile, "main process exited");
+
         // Edge writes diagnostics to stderr. The pipes must be drained or it blocks once their buffers fill.
-        process.OutputDataReceived += (_, _) => { };
+        process.OutputDataReceived += (_, line) =>
+        {
+            if (line.Data is null)
+            {
+                EdgeDiag.Note(profile, "stdout EOF");
+            }
+        };
         process.ErrorDataReceived += (_, line) =>
         {
+            if (line.Data is null)
+            {
+                EdgeDiag.Note(profile, "stderr EOF");
+            }
+
             if (!string.IsNullOrWhiteSpace(line.Data))
             {
                 logger.LogTrace("PDF browser: {Line}", line.Data);
@@ -114,11 +136,12 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
         process.BeginErrorReadLine();
         pipe.Start();
 
-        var browser = new HeadlessBrowser(process, job, pipe, profile, logger);
+        var browser = new HeadlessBrowser(process, job, pipe, profile, logger) { _assignedAt = assignedAt };
         try
         {
             var version = await pipe.SendAsync("Browser.getVersion", null, null, cancellationToken);
             browser.Product = version.GetProperty("product").GetString();
+            EdgeDiag.Snapshot(profile, $"started {browser.Product}", pid => job?.Contains(pid) ?? false, process.Id, assignedAt);
             return browser;
         }
         catch
@@ -200,43 +223,63 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
             return;
         }
 
+        var problem = false;
+        var mainPid = _process.Id;
+        EdgeDiag.Snapshot(_profile, $"closing after {Renders} PDFs", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
         try
         {
             using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             if (!_pipe.Closed.IsCompleted)
             {
                 // The browser may close the pipe before it answers; either way it is on its way out.
+                EdgeDiag.Note(_profile, "Browser.close sent");
                 await _pipe.SendAsync("Browser.close", null, null, wait.Token);
+                EdgeDiag.Note(_profile, "Browser.close answered");
             }
 
             await _process.WaitForExitAsync(wait.Token);
+            EdgeDiag.Note(_profile, "WaitForExitAsync returned");
         }
         catch (Exception ex) when (ex is DevToolsException or OperationCanceledException or InvalidOperationException)
         {
+            EdgeDiag.Note(_profile, $"close wait ended with {ex.GetType().Name}: {ex.Message}");
+            problem |= ex is OperationCanceledException;
             _logger.LogDebug(ex, "The PDF browser did not close on request");
         }
 
         _pipe.Dispose();
         if (!HasExited())
         {
+            problem = true;
+            EdgeDiag.Snapshot(_profile, "main still running after the close wait", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
             try
             {
                 _process.Kill(entireProcessTree: true);
+                EdgeDiag.Note(_profile, "Kill(entireProcessTree) done");
             }
             catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException)
             {
+                EdgeDiag.Note(_profile, $"Kill failed: {ex.Message}");
                 _logger.LogDebug(ex, "The PDF browser could not be stopped; the job object ends it");
             }
+        }
+        else
+        {
+            EdgeDiag.Snapshot(_profile, "main has exited", pid => _job?.Contains(pid) ?? false, mainPid, _assignedAt);
         }
 
         if (_job is not null)
         {
             // Edge's helper processes outlive the browser for a moment and keep the profile open until they end.
+            var jobWait = Stopwatch.GetTimestamp();
             if (!await _job.TerminateAndWaitAsync(TimeSpan.FromSeconds(10)))
             {
+                problem = true;
                 _logger.LogDebug("Some PDF browser processes were still running 10 seconds after it closed");
             }
 
+            EdgeDiag.Note(_profile, $"job wait took {Stopwatch.GetElapsedTime(jobWait).TotalMilliseconds:F0} ms");
+            EdgeDiag.Snapshot(_profile, "after the job wait", pid => _job.Contains(pid), mainPid, _assignedAt);
             _job.Dispose();
         }
 
@@ -247,11 +290,26 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
         {
             if (TryDeleteDirectory(_profile))
             {
+                EdgeDiag.Note(_profile, $"profile deleted on attempt {attempt + 1}");
                 break;
+            }
+
+            if (attempt == 0)
+            {
+                EdgeDiag.Lockers(_profile);
             }
 
             await Task.Delay(200 * (attempt + 1));
         }
+
+        if (Directory.Exists(_profile))
+        {
+            problem = true;
+            EdgeDiag.Snapshot(_profile, "profile still there", null, mainPid, _assignedAt);
+            EdgeDiag.Lockers(_profile);
+        }
+
+        EdgeDiag.Flush(_profile, problem);
     }
 
     /// <summary>

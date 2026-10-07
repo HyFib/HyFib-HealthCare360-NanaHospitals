@@ -80,6 +80,28 @@ public sealed class ProcessJob : IDisposable
     /// <summary>Ends every process still in the job.</summary>
     public void Dispose() => _handle.Dispose();
 
+#pragma warning disable
+    // TEMPORARY, diagnostics branch only.
+    public bool Contains(int processId)
+    {
+        var process = OpenProcess(0x1000, false, processId);
+        if (process == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        IsProcessInJob(process, _handle, out var result);
+        CloseHandle(process);
+        return result;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool IsProcessInJob(IntPtr process, SafeJobHandle job, out bool result);
+#pragma warning restore
+
     private uint ActiveProcesses()
     {
         var length = (uint)Marshal.SizeOf<JobObjectBasicAccounting>();
