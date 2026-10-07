@@ -320,7 +320,8 @@ BI extracts.
   not a number and starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'` (formula injection). The file is written to `.writing` in the folder and moved over the old one, so a
   reader never sees half a file; a file held open by a reader is retried for about a second.
 * **Row limit**: an extract's report reads up to 100,000 rows (`ReportRunner.ExtractRowCap`; screens and e-mails stop
-  at 5,000), and is never served from or kept in the one-minute report cache. A report that still reaches its limit is
+  at 5,000), and the names of what it groups by (items, doctors, wards) are read up to the same limit (at least 20,000).
+  It is never served from or kept in the one-minute report cache. A report that still reaches a limit is
   not written: the refresh fails ("The report reached its row limit, so the file would leave out data. Narrow the
   extract's inputs…") and the last complete file stays, so a BI tool never reads part of the data unknowingly.
 * **Run**: the same job, claim and owner check as e-mails (*Scheduled delivery*). A run writes the file, records a
