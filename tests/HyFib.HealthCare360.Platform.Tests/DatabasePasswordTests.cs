@@ -139,6 +139,34 @@ public sealed class DatabasePasswordTests : IDisposable
     }
 
     [Fact]
+    public async Task A_sign_in_that_fails_in_any_way_is_not_taken_as_working()
+    {
+        // PostgreSQL on Windows can drop the connection instead of refusing a wrong password; nothing listening here fails
+        // the same way, with an NpgsqlException that is not a refusal.
+        const string nowhere = "Host=127.0.0.1;Port=1;Database=hc360;Username=hc360_app;Password=first-password;Timeout=3";
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:Hospital"] = nowhere }).Build();
+        var database = new PostgresRolePassword(configuration, new DatabaseCredentials(nowhere));
+
+        (await database.SignsInWithAsync("first-password", TestContext.Current.CancellationToken)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task When_neither_password_can_be_seen_to_work_the_old_one_is_kept_and_the_error_says_so()
+    {
+        // The commit's answer was lost, and the database stays out of reach (on Windows a refused password can look the same).
+        var path = WriteSettings(new Dictionary<string, string> { ["Hospital"] = Hospital });
+        var before = File.ReadAllBytes(path);
+        var (service, credentials, audit) = Service(new FakeDatabase { FailCommit = true, OutOfReach = true }, Configuration(path));
+
+        var result = await service.ChangeAsync(TestContext.Current.CancellationToken);
+
+        result.Error!.Code.ShouldBe("database.password_unconfirmed");
+        File.ReadAllBytes(path).ShouldBe(before);
+        credentials.Password.ShouldBe("first-password");
+        await audit.DidNotReceive().WriteAsync(Arg.Any<AuditEntry>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task A_file_edited_to_sign_in_as_another_account_is_left_as_it_is()
     {
         var path = WriteSettings(new Dictionary<string, string> { ["Hospital"] = Hospital });
@@ -218,26 +246,40 @@ public sealed class DatabasePasswordTests : IDisposable
         new DbContextOptionsBuilder<HospitalDbContext>().UseNpgsql("Host=localhost;Database=hc360_model_check").UseSnakeCaseNamingConvention().Options,
         new ModuleCatalog([]));
 
-    /// <summary>Stands in for PostgreSQL: records the verifier, and checks that the file is written before the commit.</summary>
+    /// <summary>
+    /// Stands in for PostgreSQL: records the verifier, checks that the file is written before the commit, and lets in
+    /// the password in effect (the first one, or the committed verifier's) unless it is out of reach.
+    /// </summary>
     private sealed class FakeDatabase : IDatabaseRolePassword
     {
+        private string? _committed;
+
         public string? Verifier { get; private set; }
         public bool FileSeenBeforeCommit { get; private set; }
         public bool FailCommit { get; init; }
         public bool CommittedAnyway { get; init; }
+        public bool OutOfReach { get; init; }
 
         public async Task ChangeAsync(string verifier, Func<Task> beforeCommit, CancellationToken ct)
         {
             Verifier = verifier;
             await beforeCommit();
             FileSeenBeforeCommit = true;
+            if (!FailCommit || CommittedAnyway)
+            {
+                _committed = verifier;
+            }
+
             if (FailCommit)
             {
                 throw new NpgsqlException("The connection was lost during the commit.");
             }
         }
 
-        public Task<bool> SignsInWithAsync(string password, CancellationToken ct) => Task.FromResult(CommittedAnyway);
+        public Task<bool> SignsInWithAsync(string password, CancellationToken ct) =>
+            Task.FromResult(!OutOfReach && (_committed is null
+                ? password == "first-password"
+                : ScramSha256.Verifier(password, Convert.FromBase64String(_committed.Split('$', ':')[2])) == _committed));
     }
 
     private sealed class FakeProtector : ISettingProtector

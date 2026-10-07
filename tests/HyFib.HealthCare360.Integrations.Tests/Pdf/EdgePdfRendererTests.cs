@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Integrations.Pdf;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -134,11 +135,17 @@ public sealed partial class EdgePdfRendererTests : IDisposable
     private EdgePdfRenderer Renderer()
     {
         Assert.SkipWhen(BrowserLocator.Find(null) is null, "Neither Microsoft Edge nor Google Chrome is installed here.");
-        return new EdgePdfRenderer(Options(null), Directories(), TimeProvider.System, NullLogger<EdgePdfRenderer>.Instance);
+        return new EdgePdfRenderer(Options(null), Directories(), TimeProvider.System, new TestOutputLogger<EdgePdfRenderer>());
     }
 
+    // The 30 seconds a PDF may take by default include starting Edge, which a CI runner busy with other tests can make
+    // slower than that. These tests check what the PDF holds, not how fast it is made.
     private IOptions<PlatformOptions> Options(string? browserPath) =>
-        Microsoft.Extensions.Options.Options.Create(new PlatformOptions { DataDirectory = _dataDirectory, Pdf = new PdfOptions { BrowserPath = browserPath } });
+        Microsoft.Extensions.Options.Options.Create(new PlatformOptions
+        {
+            DataDirectory = _dataDirectory,
+            Pdf = new PdfOptions { BrowserPath = browserPath, TimeoutSeconds = 120 },
+        });
 
     private DataDirectories Directories()
     {
@@ -151,4 +158,30 @@ public sealed partial class EdgePdfRendererTests : IDisposable
 
     [GeneratedRegex(@"/Type\s*/Page(?![s\w])")]
     private static partial Regex PageObject();
+
+    /// <summary>The renderer's log in the test's output, which CI shows when the test fails.</summary>
+    private sealed class TestOutputLogger<T> : ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Debug;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (!IsEnabled(logLevel))
+            {
+                return;
+            }
+
+            try
+            {
+                TestContext.Current.TestOutputHelper?.WriteLine($"{logLevel}: {formatter(state, exception)}{(exception is null ? "" : $" ({exception.GetType().Name}: {exception.Message})")}");
+            }
+            catch (InvalidOperationException)
+            {
+                // The test has ended; a late message from the browser's clean-up has nowhere to go.
+            }
+        }
+    }
 }

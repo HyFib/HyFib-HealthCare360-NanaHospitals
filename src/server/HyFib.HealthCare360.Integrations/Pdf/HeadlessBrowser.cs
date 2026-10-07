@@ -2,7 +2,11 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Management;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.WindowsInterop;
 
@@ -13,7 +17,7 @@ namespace HyFib.HealthCare360.Integrations.Pdf;
 /// server, so it never outlives the server even after a crash. Renders lease it; once retired (it failed, sat idle or
 /// made enough PDFs) it closes when the last lease ends.
 /// </summary>
-internal sealed class HeadlessBrowser : IAsyncDisposable
+internal sealed partial class HeadlessBrowser : IAsyncDisposable
 {
     // Headless, nothing that phones home, no extensions, no crash uploads. The sandbox stays on.
     private static readonly string[] Switches =
@@ -242,17 +246,96 @@ internal sealed class HeadlessBrowser : IAsyncDisposable
 
         _process.Dispose();
 
-        // Edge releases its profile files a moment after it exits.
-        for (var attempt = 0; attempt < 5 && Directory.Exists(_profile); attempt++)
+        if (OperatingSystem.IsWindows())
+        {
+            await EndLeftoverProcessesAsync();
+        }
+
+        // Edge releases its profile files a moment after it exits, longer on a busy machine.
+        for (var attempt = 0; attempt < 8 && Directory.Exists(_profile); attempt++)
         {
             if (TryDeleteDirectory(_profile))
             {
                 break;
             }
 
-            await Task.Delay(200 * (attempt + 1));
+            await Task.Delay(250 * (attempt + 1));
+        }
+
+        if (Directory.Exists(_profile))
+        {
+            _logger.LogWarning("The PDF browser's folder {Folder} could not be deleted; the next start removes it", _profile);
         }
     }
+
+    /// <summary>
+    /// Ends the browser's processes that are still running outside its job. Edge can start one before the job takes the
+    /// browser in, and such a process keeps the profile open. Every Edge process names the profile folder on its command
+    /// line, so they are found by it.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private async Task EndLeftoverProcessesAsync()
+    {
+        foreach (var process in await Task.Run(FindProcessesUsingProfile))
+        {
+            using (process)
+            {
+                try
+                {
+                    _logger.LogWarning("Ending PDF browser process {ProcessId}, which outlived the browser", process.Id);
+                    process.Kill(entireProcessTree: true);
+                    using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await process.WaitForExitAsync(wait.Token);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or AggregateException or OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "PDF browser process {ProcessId} could not be ended", process.Id);
+                }
+            }
+        }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private List<Process> FindProcessesUsingProfile()
+    {
+        // The folder is named after the server's process id and random hex digits, so it is safe in the query as it is.
+        var folder = Path.GetFileName(_profile);
+        if (!ProfileFolderName().IsMatch(folder))
+        {
+            return [];
+        }
+
+        var found = new List<Process>();
+        try
+        {
+            using var searcher = new ManagementObjectSearcher($"SELECT ProcessId FROM Win32_Process WHERE CommandLine LIKE '%{folder}%'");
+            searcher.Options.Timeout = TimeSpan.FromSeconds(10);
+            foreach (var item in searcher.Get())
+            {
+                using var entry = (ManagementObject)item;
+                if (entry["ProcessId"] is uint id && id != Environment.ProcessId)
+                {
+                    try
+                    {
+                        found.Add(Process.GetProcessById((int)id));
+                    }
+                    catch (ArgumentException)
+                    {
+                        // It ended on its own.
+                    }
+                }
+            }
+        }
+        catch (Exception ex) when (ex is ManagementException or COMException or UnauthorizedAccessException)
+        {
+            _logger.LogDebug(ex, "Could not look for PDF browser processes that outlived the browser");
+        }
+
+        return found;
+    }
+
+    [GeneratedRegex("^[0-9]+-[0-9a-f]+$")]
+    private static partial Regex ProfileFolderName();
 
     /// <summary>
     /// Removes profile folders left behind by a server that stopped without closing its browser. A folder whose server
