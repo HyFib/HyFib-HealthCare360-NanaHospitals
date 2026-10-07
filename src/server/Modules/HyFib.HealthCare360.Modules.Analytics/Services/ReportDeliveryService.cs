@@ -19,10 +19,11 @@ namespace HyFib.HealthCare360.Modules.Analytics.Services;
 
 /// <summary>
 /// Generates one delivery of a schedule: runs the report as the schedule's owner (current permissions, the schedule's
-/// facility), writes the Excel, CSV or PDF file, keeps it encrypted, and queues one e-mail per recipient through the
-/// platform outbox (<see cref="ScheduledReportEmailHandler"/>), so e-mails survive internet outages and are retried with
-/// back-off. Everything — delivery, recipients, outbox messages, schedule status and the audit entry — commits in one
-/// transaction.
+/// facility) and, for an e-mail, writes the Excel, CSV or PDF file, keeps it encrypted, and queues one e-mail per
+/// recipient through the platform outbox (<see cref="ScheduledReportEmailHandler"/>), so e-mails survive internet
+/// outages and are retried with back-off. Everything — delivery, recipients, outbox messages, schedule status and the
+/// audit entry — commits in one transaction. A BI extract is written to the extract folder instead
+/// (<see cref="ExtractFolder"/>), replacing the previous file, and the refresh log is brought up to date.
 /// </summary>
 internal sealed class ReportDeliveryService(
     HospitalDbContext db,
@@ -34,6 +35,8 @@ internal sealed class ReportDeliveryService(
     ReportAuditor auditor,
     IFieldProtector protector,
     IOutbox outbox,
+    ExtractFolder extracts,
+    ExtractMonitor monitor,
     TimeProvider time,
     ILogger<ReportDeliveryService> logger)
 {
@@ -78,7 +81,13 @@ internal sealed class ReportDeliveryService(
 
         if (execution.Value.Report.ContainsPatientIdentifiers)
         {
-            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed, "Reports that list patients cannot be e-mailed.", ct);
+            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed,
+                schedule.IsExtract ? "Reports that list patients cannot be extracts." : "Reports that list patients cannot be e-mailed.", ct);
+        }
+
+        if (schedule.IsExtract)
+        {
+            return await WriteExtractAsync(schedule, delivery, execution.Value, actor, now, ct);
         }
 
         var filters = await presenter.DescribeAsync(execution.Value, ct);
@@ -143,13 +152,69 @@ internal sealed class ReportDeliveryService(
         d.Recipients.Count(r => r.Status == RecipientStatus.Pending),
         d.Recipients.OrderBy(r => r.Email, StringComparer.Ordinal).Select(r => new DeliveryRecipientDto(r.Email, r.Status, r.Attempts, r.LastError, r.SentAt)).ToList());
 
+    /// <summary>
+    /// Writes a BI extract: the report's rows as a plain CSV table (<see cref="ReportExporter.ExtractCsv"/>) in the
+    /// facility's folder, replacing the previous file. The file is not kept in HC360 as well: the extract folder holds it.
+    /// </summary>
+    private async Task<ReportDelivery> WriteExtractAsync(
+        ReportSchedule schedule, ReportDelivery delivery, ReportExecution execution, ReportActor actor, DateTimeOffset now, CancellationToken ct)
+    {
+        var facilityCode = await db.Set<Facility>().AsNoTracking().Where(f => f.Id == schedule.FacilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
+        if (facilityCode is null || schedule.ExtractName is null || !ExtractFolder.IsValidName(schedule.ExtractName))
+        {
+            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed, "The extract has no valid file name. Open it and save it again.", ct);
+        }
+
+        var filters = await presenter.DescribeAsync(execution, ct);
+        var document = presenter.Document(execution, filters, $"{ReportEndpoints.Person(actor)} (BI extract \"{schedule.Name}\")", null, null);
+        var content = ReportExporter.ExtractCsv(document, facilityCode);
+        var path = extracts.FilePath(facilityCode, schedule.ExtractName);
+        try
+        {
+            await extracts.WriteAsync(path, content, ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "BI extract {ScheduleId} could not be written to {Path}", schedule.Id, path);
+            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed,
+                $"The file could not be written to the extract folder ({ex.Message}). Ask IT to check the folder and its permissions.", ct);
+        }
+
+        delivery.FileName = ExtractFolder.FileName(schedule.ExtractName);
+        delivery.ContentType = ReportExporter.CsvContentType;
+        delivery.SizeBytes = content.LongLength;
+        delivery.RowCount = document.Rows.Count;
+        delivery.GeneratedAt = now;
+        delivery.Status = DeliveryStatus.Ready;
+        if (execution.Report.HasPeriod)
+        {
+            delivery.PeriodFrom = execution.Arguments.From;
+            delivery.PeriodTo = execution.Arguments.To;
+        }
+
+        schedule.RecordRun(now, ScheduleRunStatus.Succeeded, null);
+
+        // Saves the delivery and the schedule together with the audit entry.
+        await auditor.ExportedAsync(execution, ExportFormat.Csv, document.Rows.Count, actor, $"BI extract {Path.Combine(facilityCode, delivery.FileName)}", [], ct);
+        await monitor.WriteRefreshLogAsync(ct);
+        logger.LogInformation("BI extract {ScheduleId} written ({Rows} rows)", schedule.Id, document.Rows.Count);
+        return delivery;
+    }
+
     private async Task<ReportDelivery> FinishAsync(
         ReportSchedule schedule, ReportDelivery delivery, DateTimeOffset now, DeliveryStatus status, string error, CancellationToken ct)
     {
+        var wasFailing = schedule.IsFailing;
         delivery.Fail(error, status);
         schedule.RecordRun(now, status == DeliveryStatus.Skipped ? ScheduleRunStatus.Skipped : ScheduleRunStatus.Failed, error);
         await db.SaveChangesAsync(ct);
         logger.LogWarning("Scheduled report {ScheduleId} was not delivered: {Error}", schedule.Id, error);
+        if (schedule.IsExtract)
+        {
+            await monitor.FailedAsync(schedule, wasFailing, error, ct);
+            await monitor.WriteRefreshLogAsync(ct);
+        }
+
         return delivery;
     }
 }
@@ -256,10 +321,10 @@ internal sealed class ScheduledReportEmailHandler(
 }
 
 /// <summary>
-/// Sends due scheduled report e-mails (checked every minute) and purges delivered files after the retention period.
-/// Runs only where <see cref="PlatformOptions.RunsJobs"/>. A run is claimed by moving the schedule's next run time forward
-/// under its concurrency version, so with several worker nodes each e-mail is generated once; a server that was off
-/// sends one catch-up e-mail per schedule, not one per missed day.
+/// Sends due scheduled report e-mails and refreshes due BI extracts (checked every minute), and purges delivered files
+/// after the retention period. Runs only where <see cref="PlatformOptions.RunsJobs"/>. A run is claimed by moving the
+/// schedule's next run time forward under its concurrency version, so with several worker nodes each file is generated
+/// once; a server that was off sends one catch-up e-mail (or refresh) per schedule, not one per missed run.
 /// </summary>
 internal sealed class ScheduledReportJob(
     IServiceScopeFactory scopeFactory,
@@ -373,7 +438,9 @@ internal sealed class ScheduledReportJob(
         }
 
         var now = time.GetUtcNow();
-        schedule.RecordRun(now, ScheduleRunStatus.Failed, "The report could not be generated. It will run again at the next scheduled time.");
+        var wasFailing = schedule.IsFailing;
+        const string problem = "The report could not be generated. It will run again at the next scheduled time.";
+        schedule.RecordRun(now, ScheduleRunStatus.Failed, problem);
         db.Add(new ReportDelivery
         {
             FacilityId = schedule.FacilityId,
@@ -386,6 +453,12 @@ internal sealed class ScheduledReportJob(
             Error = error.GetType().Name + ": the report could not be generated.",
         });
         await db.SaveChangesAsync(ct);
+        if (schedule.IsExtract)
+        {
+            var monitor = scope.ServiceProvider.GetRequiredService<ExtractMonitor>();
+            await monitor.FailedAsync(schedule, wasFailing, problem, ct);
+            await monitor.WriteRefreshLogAsync(ct);
+        }
     }
 
     internal async Task<int> PurgeAsync(CancellationToken ct)

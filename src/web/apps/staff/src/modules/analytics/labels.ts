@@ -2,6 +2,7 @@ import type {
   DeliveryStatus,
   DeliveryTrigger,
   ExportFormat,
+  ExtractState,
   RecipientStatus,
   ReportCategory,
   ReportChartType,
@@ -97,9 +98,20 @@ export const WEEKDAYS: readonly Weekday[] = [
 /** Day-of-month value that means "the last day of the month". */
 export const LAST_DAY_OF_MONTH = 31;
 
+/** How often an e-mail can go. */
 export const FREQUENCIES: readonly ScheduleFrequency[] = ['Daily', 'Weekly', 'Monthly'];
 
+/** How often a BI extract can be refreshed. */
+export const EXTRACT_FREQUENCIES: readonly ScheduleFrequency[] = ['Hourly', 'Daily', 'Weekly', 'Monthly'];
+
+/** The period a BI extract covers until one is chosen, as the server sets it: enough history for a BI report's trends. */
+export const EXTRACT_DEFAULT_PERIOD = 'thisFinancialYear';
+
+/** The longest extract file name (without ".csv"), as the server allows. */
+export const MAX_EXTRACT_NAME_LENGTH = 64;
+
 export const FREQUENCY_LABELS: Record<ScheduleFrequency, string> = {
+  Hourly: 'Every hour',
   Daily: 'Every day',
   Weekly: 'Every week',
   Monthly: 'Every month',
@@ -130,6 +142,27 @@ export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
 export const DELIVERY_TRIGGER_LABELS: Record<DeliveryTrigger, string> = {
   Scheduled: 'On schedule',
   Manual: 'Sent now',
+};
+
+export const EXTRACT_TRIGGER_LABELS: Record<DeliveryTrigger, string> = {
+  Scheduled: 'On schedule',
+  Manual: 'Refreshed now',
+};
+
+export const EXTRACT_STATE_LABELS: Record<ExtractState, string> = {
+  Waiting: 'Waiting for the first refresh',
+  Fresh: 'Up to date',
+  Late: 'Late',
+  Failing: 'Not refreshing',
+  Paused: 'Paused',
+};
+
+export const EXTRACT_STATE_TONES: Record<ExtractState, 'success' | 'warning' | 'danger' | 'informative' | 'subtle'> = {
+  Waiting: 'informative',
+  Fresh: 'success',
+  Late: 'warning',
+  Failing: 'danger',
+  Paused: 'subtle',
 };
 
 export const RECIPIENT_STATUS_LABELS: Record<RecipientStatus, string> = {

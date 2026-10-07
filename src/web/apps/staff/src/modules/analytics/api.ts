@@ -4,8 +4,8 @@ import { api } from '@/lib/api';
 
 /**
  * Analytics API (docs/modules/analytics.md): the report catalogue, report runs and exports, executive KPIs, saved
- * dashboards and scheduled report e-mails. Types mirror the server records (camelCase; enums as strings; DateOnly as
- * "yyyy-MM-dd"; money as rupees).
+ * dashboards, scheduled report e-mails and BI extracts. Types mirror the server records (camelCase; enums as strings;
+ * DateOnly as "yyyy-MM-dd"; money as rupees).
  */
 const BASE = '/api/v1/analytics';
 
@@ -265,7 +265,12 @@ export interface SaveDashboardRequest {
 
 // ------------------------------------------------------------------------------------------------ schedules
 
-export type ScheduleFrequency = 'Daily' | 'Weekly' | 'Monthly';
+/** Hourly is for BI extracts only. */
+export type ScheduleFrequency = 'Hourly' | 'Daily' | 'Weekly' | 'Monthly';
+/** Where a schedule's file goes: e-mailed, or written to the BI extract folder for Power BI and similar tools. */
+export type ScheduleDestination = 'Email' | 'ExtractFolder';
+/** How fresh a BI extract's data is. */
+export type ExtractState = 'Waiting' | 'Fresh' | 'Late' | 'Failing' | 'Paused';
 export type Weekday = 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
 export type ScheduleRunStatus = 'Succeeded' | 'Failed' | 'Skipped';
 export type DeliveryStatus = 'Generating' | 'Ready' | 'Failed' | 'Skipped';
@@ -293,6 +298,15 @@ export interface ScheduleDto {
   lastStatus: ScheduleRunStatus | null;
   lastError: string | null;
   version: number;
+  destination: ScheduleDestination;
+  /** The extract's file name without ".csv"; null for e-mails. */
+  extractName: string | null;
+  /** The file the extract writes in the facility's folder. */
+  extractFile: string | null;
+  /** When the extract's file was last written: how fresh the data is that the BI tool reads. */
+  lastSucceededAt: string | null;
+  /** Null for e-mails. */
+  extractState: ExtractState | null;
 }
 
 export interface SaveScheduleRequest {
@@ -307,6 +321,19 @@ export interface SaveScheduleRequest {
   recipients: string[];
   isActive: boolean;
   version: number | null;
+  destination: ScheduleDestination;
+  extractName: string | null;
+}
+
+/** Where BI extracts are written: the folder IT shares with the BI tool. */
+export interface ExtractFolder {
+  root: string;
+  /** The signed-in user's facility's sub-folder, which holds its extracts. */
+  facilityFolder: string | null;
+  /** The file listing when each extract was last refreshed. */
+  refreshLog: string;
+  /** Null when HC360 can write the folder; otherwise what is wrong. */
+  problem: string | null;
 }
 
 export interface DeliveryRecipient {
@@ -341,10 +368,15 @@ export interface AnalyticsStatus {
   dataSource: string;
   usesReplica: boolean;
   replicaLagSeconds: number | null;
+  /** E-mail schedules only, like the two figures after it. */
   activeSchedules: number;
   lastDeliveryAt: string | null;
   failedDeliveriesLast7Days: number;
   checkedAt: string;
+  activeExtracts: number;
+  lateExtracts: number;
+  failingExtracts: number;
+  lastExtractRefreshAt: string | null;
 }
 
 export type LookupKind = 'facilities' | 'departments' | 'practitioners' | 'payers' | 'wards' | 'stores' | 'theatres';
@@ -434,6 +466,12 @@ export const analyticsQueries = {
       queryKey: analyticsKeys.schedules,
       queryFn: ({ signal }) => api.get<ScheduleDto[]>(`${BASE}/schedules`, { signal }),
     }),
+  extractFolder: () =>
+    queryOptions({
+      queryKey: [...analyticsKeys.schedules, 'extract-folder'],
+      queryFn: ({ signal }) => api.get<ExtractFolder>(`${BASE}/extracts/folder`, { signal }),
+      staleTime: 60_000,
+    }),
   deliveries: (scheduleId: string, page: number) =>
     queryOptions({
       queryKey: [...analyticsKeys.schedules, scheduleId, 'deliveries', page],
@@ -467,6 +505,7 @@ export const analyticsApi = {
   createSchedule: (body: SaveScheduleRequest) => api.post<ScheduleDto>(`${BASE}/schedules`, body),
   updateSchedule: (id: string, body: SaveScheduleRequest) => api.put<ScheduleDto>(`${BASE}/schedules/${id}`, body),
   deleteSchedule: (id: string, version: number) => api.delete<void>(`${BASE}/schedules/${id}`, { query: { version } }),
+  /** Generates the file now: e-mails it, or rewrites the extract's file. The regular schedule does not change. */
   sendNow: (id: string) => api.post<DeliveryDto>(`${BASE}/schedules/${id}/send-now`, undefined, { timeoutMs: 180_000 }),
   deliveryFile: (deliveryId: string) => api.blob(`${BASE}/deliveries/${deliveryId}/file`, { timeoutMs: 120_000 }),
 };

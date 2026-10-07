@@ -256,7 +256,8 @@ function OrderView({
             {canLabels && collectedCount > 0 && (
               <Button
                 icon={printing === 'all' ? <Spinner size="tiny" /> : <PrintRegular />}
-                disabled={printing !== null}
+                // While printing it stays focusable (aria-disabled) and ignores clicks: a disabled button drops focus.
+                disabledFocusable={printing !== null}
                 onClick={() => void printLabels()}
               >
                 Reprint labels

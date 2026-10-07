@@ -1,9 +1,10 @@
-# Analytics module (MIS reports, executive KPIs, dashboards, scheduled e-mails)
+# Analytics module (MIS reports, executive KPIs, dashboards, scheduled e-mails, BI extracts)
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Analytics` · schema `analytics` · reads every module's tables
 through the shared `HospitalDbContext` (read-only, `AsNoTracking`), owns only its own four tables.
 Covers SRS **MIS-01..05** (report catalogue, operational, financial, clinical and stock reports, Excel/CSV/PDF
-export) and **BI-01..05** (executive dashboard, saved dashboards, drill-down, scheduled delivery, read replica).
+export) and **BI-01..05** (executive dashboard, saved dashboards, drill-down, scheduled delivery, read replica, and
+scheduled data extracts for external BI tools such as Power BI, with data-refresh monitoring).
 
 Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insights*) and
 `src/web/apps/staff/src/routes/_app/analytics`.
@@ -16,7 +17,7 @@ Staff app: `src/web/apps/staff/src/modules/analytics` (manifest section *Insight
 | `analytics.finance.read` | Accountant, HospitalAdmin | Revenue, collections, dues, discounts, refunds, doctor fees, pharmacy margin, stock value; revenue and collections KPIs |
 | `analytics.clinical.read` | HospitalAdmin, QualityManager, MrdOfficer | Operational/clinical reports **and the only way to open reports that list patients** |
 | `analytics.dashboards.manage` | HospitalAdmin, MisAnalyst | Create, change, copy and delete dashboards |
-| `analytics.schedules.manage` | HospitalAdmin, MisAnalyst | Scheduled report e-mails and their delivery files |
+| `analytics.schedules.manage` | HospitalAdmin, MisAnalyst | Scheduled report e-mails and their delivery files, and BI extracts |
 
 Every read endpoint needs *any* of the three read permissions; each report then checks its own audience:
 
@@ -75,7 +76,7 @@ All under `/api/v1/analytics`, tag *Analytics*.
 | GET | `/reports/{id}/export?format=xlsx\|csv\|pdf&…inputs` | the same as a GET (browser downloads) |
 | GET | `/kpis?from&to&facilityId` | → `KpiSet {from, to, previousFrom, previousTo, facilityName, kpis[], generatedAt, dataSource}`; default period = this month to date; max 366 days |
 | GET | `/lookups/{kind}?search&facilityId` | `kind` = `facilities` (the caller's allowed facilities), `departments`, `practitioners`, `payers`, `wards`, `stores`, `theatres` → `LookupItem[] {id, code, name}` (≤ 200, active only) |
-| GET | `/status` | → `AnalyticsStatusDto {dataSource, usesReplica, replicaLagSeconds, activeSchedules, lastDeliveryAt, failedDeliveriesLast7Days, checkedAt}` |
+| GET | `/status` | → `AnalyticsStatusDto {dataSource, usesReplica, replicaLagSeconds, activeSchedules, lastDeliveryAt, failedDeliveriesLast7Days, checkedAt, activeExtracts, lateExtracts, failingExtracts, lastExtractRefreshAt}`; the three e-mail figures leave out extracts, which the last four cover (late and failing as in *BI extracts*) |
 
 `ReportResultDto`: `reportId, title, category, from, to` (null for snapshot reports), `facilityName`,
 `filters[{label,value}]` (inputs in words), `parameters` (canonical inputs as run — reuse them for export, drill-down
@@ -110,16 +111,17 @@ Widget rules (validated on save): the report exists and the saver may open it; n
 quarter), 2 (half), 4 (full row); inputs must bind (they are stored in canonical form); at most 24 widgets. The layout
 is stored as JSON (`dashboards.layout_json`, jsonb): `[{"id","reportId","title","view","width","parameters"}]`.
 
-### Scheduled e-mails (`/api/v1/analytics`, all need `analytics.schedules.manage`)
+### Scheduled e-mails and BI extracts (`/api/v1/analytics`, all need `analytics.schedules.manage`)
 
 | Method | Path | Body → Response |
 |---|---|---|
-| GET | `/schedules` | → `ScheduleDto[]` (the facility's schedules) |
-| GET | `/schedules/{id}` | → `ScheduleDto {id, name, reportId, reportTitle, parameters, format, frequency, time, dayOfWeek, dayOfMonth, when, recipients, isActive, ownerName, isMine, nextRunAt, lastRunAt, lastStatus, lastError, version}` |
-| POST | `/schedules` | `SaveScheduleRequest {name, reportId, parameters, format: Xlsx\|Csv\|Pdf, frequency: Daily\|Weekly\|Monthly, time "HH:mm" (IST), dayOfWeek (weekly), dayOfMonth 1–28 or 31 = last day (monthly), recipients (1–20), isActive}` → 201 |
+| GET | `/schedules` | → `ScheduleDto[]` (the facility's e-mails and extracts; `destination` tells them apart) |
+| GET | `/schedules/{id}` | → `ScheduleDto {id, name, reportId, reportTitle, parameters, format, frequency, time, dayOfWeek, dayOfMonth, when, recipients, isActive, ownerName, isMine, nextRunAt, lastRunAt, lastStatus, lastError, version, destination, extractName, extractFile, lastSucceededAt, extractState}`; the last four are for extracts (`extractState`: `Waiting`, `Fresh`, `Late`, `Failing`, `Paused`; null for e-mails) |
+| POST | `/schedules` | `SaveScheduleRequest {name, reportId, parameters, format: Xlsx\|Csv\|Pdf, frequency: Hourly\|Daily\|Weekly\|Monthly, time "HH:mm" (IST; only the minutes for hourly), dayOfWeek (weekly), dayOfMonth 1–28 or 31 = last day (monthly), recipients (1–20), isActive, destination: Email\|ExtractFolder (default Email), extractName}` → 201 |
 | PUT | `/schedules/{id}` | same with `version`; **the person who saves becomes the owner** (the report runs with the owner's permissions and facility access) |
-| DELETE | `/schedules/{id}?version=` | soft delete → 204 |
-| POST | `/schedules/{id}/send-now` | generates the file now and queues the e-mails (schedule unchanged) → `DeliveryDto`, or 422 `analytics.delivery_failed` (also when a PDF cannot be made) |
+| DELETE | `/schedules/{id}?version=` | soft delete → 204; an extract's file is removed from the folder |
+| POST | `/schedules/{id}/send-now` | generates the file now and queues the e-mails, or rewrites the extract's file (schedule unchanged) → `DeliveryDto`, or 422 `analytics.delivery_failed` (also when a PDF cannot be made, or an extract's file cannot be written) |
+| GET | `/extracts/folder` | → `ExtractFolderDto {root, facilityFolder, refreshLog, problem}`: where extracts are written, the signed-in user's facility's sub-folder, the refresh log, and why HC360 cannot write the folder (null when it can; checked by writing a file) |
 | GET | `/schedules/{id}/deliveries?page&pageSize` | → `PagedResult<DeliveryDto {id, scheduleId, reportTitle, trigger, createdAt, status, periodFrom, periodTo, format, fileName, sizeBytes, rowCount, fileAvailable, error, sent, pending, recipients[{email, status, attempts, lastError, sentAt}]}>` |
 | GET | `/deliveries/{id}/file` | the delivered file again while it is kept (audited); 422 `analytics.file_purged` after retention |
 
@@ -127,7 +129,13 @@ Schedule rules: the report must be one the saver may open and must not list pati
 schedule's own (`facilityId` inputs are dropped); periods must be relative (`custom` is rejected: "Choose a relative
 period…"); without a period the e-mail covers the complete period that just ended (daily → yesterday, weekly → last
 week, monthly → last month); recipients are lower-cased, de-duplicated and, when the setting
-`analytics.schedules.allowedEmailDomains` is set, must belong to one of those domains.
+`analytics.schedules.allowedEmailDomains` is set, must belong to one of those domains. E-mails go daily, weekly or
+monthly ("E-mails go daily, weekly or monthly."). An extract (`destination` `ExtractFolder`) also runs hourly, is
+always CSV ("BI extracts are CSV files."), has no recipients (any sent are dropped), covers this financial year when no
+period is chosen, and needs an `extractName`: lower-cased and trimmed, then lower-case letters, digits and dashes,
+starting with a letter or digit, at most 64 (field `extractName`), not a Windows device name such as `con`, `nul` or
+`com1` ("Windows keeps this name for a device…"), and unique among the facility's extracts ("Another BI extract of
+this facility already writes …", also a unique index).
 
 ## Report catalogue
 
@@ -292,11 +300,52 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
 * **Retention**: file contents are purged after `analytics.deliveries.retentionDays` (default 30) by the same job every
   6 hours; the delivery rows (who, when, what) remain.
 
+## BI extracts (BI-05)
+
+A BI extract is a schedule whose file goes to a folder instead of e-mail: the report's rows as a CSV file that Power BI
+(or Tableau, Qlik, Excel) reads, replaced at every run so the BI tool always reads the latest data. Screen: Analytics ›
+BI extracts.
+
+* **Folder** (`ExtractFolder`): `HealthCare360:Analytics:ExtractDirectory` in the server's configuration (on a server,
+  the machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory`; `%VARIABLES%` in it are
+  expanded, and a relative path is taken from the data folder), by default `bi-extracts` in the data folder
+  (`%ProgramData%\HyFib\HealthCare360\bi-extracts`).
+  Each facility has a sub-folder named by its code, so `NH\daily-revenue.csv`. Only the server's settings choose the
+  folder; the staff app chooses file names, which are checked, so nothing is written outside it. IT shares the folder,
+  read-only, with the BI tool (`docs/deployment/DEPLOYMENT.md`, *BI tools*).
+* **File** (`ReportExporter.ExtractCsv`): UTF-8 with a byte-order mark, CRLF lines, a header row (`Facility code`, then
+  the report's column labels) and one row per report row with the facility's code first, so the files of several
+  facilities combine. No title, inputs, totals or notes (a BI tool adds rows up itself). As in CSV exports, numbers
+  are plain (`55000.50`), dates `yyyy-MM-dd` (months `yyyy-MM`, times `yyyy-MM-dd HH:mm` in IST), and a cell that is
+  not a number and starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'` (formula injection). The file is written to `.writing` in the folder and moved over the old one, so a
+  reader never sees half a file; a file held open by a reader is retried for about a second.
+* **Run**: the same job, claim and owner check as e-mails (*Scheduled delivery*). A run writes the file, records a
+  delivery (status `Ready`, rows, size and period; the content is not kept in HC360, so `fileAvailable` is false),
+  sets the schedule's `lastSucceededAt`, and audits it as an export (`analytics.report.exported`, "BI extract
+  NH\daily-revenue.csv"). A file that cannot be written fails the run with the reason ("The file could not be written to
+  the extract folder (…). Ask IT to check the folder and its permissions."); the previous file stays.
+* **Refresh log** (`ExtractMonitor`): `refresh-log.csv` at the top of the folder, rewritten after every run, save and
+  delete: one line per extract of every facility with `Facility code, Extract, File, Report, Refresh, Last refreshed
+  (IST), State, Problem`, for a "data as of" card in the BI report. A log that cannot be written is logged and does not
+  fail the run.
+* **State** (`ReportSchedule.State`): `Paused` (not active), `Failing` (the last run failed or was skipped), `Late` (no
+  file for longer than one interval of the schedule plus 30 minutes, counted from the last file, or from when the
+  extract was set up or last saved: the server was off or its jobs are not running), `Waiting` (no file yet), else
+  `Fresh`. Changing an extract's file name, report or inputs clears `lastSucceededAt`, so it waits for the refresh that
+  writes the new file; a new name removes the old file, so a BI report says it is missing rather than reading data
+  that is no longer refreshed.
+* **Alerts**: when an extract starts failing (not again at each failed run), everyone with `analytics.schedules.manage`
+  at the facility gets the in-app notification "BI extract "…" was not refreshed" (warning, link `/analytics/extracts`)
+  with the reason.
+* **Several servers**: only nodes that run jobs refresh on schedule, but *Refresh now* writes from the node that
+  answers it, so every node must have the same shared folder (a UNC path) in its settings.
+
 ## Settings and configuration
 
 | Key | Default | Purpose |
 |---|---|---|
 | `ConnectionStrings:Analytics` (or `ConnectionStrings:Reporting`) | not set | Read replica for reports and KPIs (BI-05) |
+| `HealthCare360:Analytics:ExtractDirectory` (server configuration, e.g. `HC360_HealthCare360__Analytics__ExtractDirectory`) | `bi-extracts` in the data folder | Folder BI extracts are written to (*BI extracts*) |
 | `analytics.schedules.allowedEmailDomains` (setting, string[]) | not set = any | Only these e-mail domains may receive scheduled reports, e.g. `["nanahospitals.in"]` |
 | `analytics.deliveries.retentionDays` (setting, int) | 30 | Days a delivered file can be downloaded again |
 
@@ -305,7 +354,7 @@ rate, per-thousand rates, margin %, nearest-rank percentiles and within-target %
 | Table | Purpose |
 |---|---|
 | `dashboards` | name, description, owner (null = hospital template), shared flag, `layout_json` (jsonb) · index (owner_user_id, name), is_shared |
-| `report_schedules` | report, `parameters_json` (jsonb), format, frequency, time (IST), weekday / day of month, recipients, active, owner, next/last run, last status/error · facility scoped, soft delete, index (is_active, next_run_at), owner_user_id |
+| `report_schedules` | report, `parameters_json` (jsonb), format, frequency, time (IST), weekday / day of month, recipients, active, owner, next/last run, last status/error, `destination` (`Email` or `ExtractFolder`), `extract_name`, `last_succeeded_at` · facility scoped, soft delete, index (is_active, next_run_at), owner_user_id, unique (facility_id, extract_name) for extracts not deleted |
 | `report_deliveries` | one generated file: trigger, period, status, encrypted content (purged after retention), size, rows, error · facility scoped · index (schedule_id, created_at), created_at |
 | `report_delivery_recipients` | one row per recipient: status, attempts, last error, sent at · cascade from deliveries |
 
@@ -319,7 +368,7 @@ ageing).
 | Event | Category | When |
 |---|---|---|
 | `analytics.report.viewed` + `patient.accessed` per patient | PhiAccess | each page of a patient-level report opened |
-| `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows in the file); a PDF that could not be made is not audited |
+| `analytics.report.exported` (+ `patient.accessed` per patient for patient lists) | Data / PhiAccess | every export (report, format, inputs, rows in the file), and every BI extract written; a PDF that could not be made is not audited |
 | `analytics.delivery.downloaded` | Data | a delivered file downloaded again |
 | data audit | Data | dashboards and schedules (create/change/delete) via the platform interceptor |
 
@@ -333,6 +382,7 @@ ageing).
 | `/analytics/dashboards` | Templates, mine and shared; new, copy, delete |
 | `/analytics/dashboards/$dashboardId` | Tiles (chart, table or headline figures; small/medium/full width) with a period override for all tiles; edit mode to add, change, reorder, resize and remove tiles with a live preview; unsaved-change guard |
 | `/analytics/schedules` | Scheduled e-mails: status, list, create/change drawer (relative periods, IST time, recipients), send now, pause/resume, delivery history with re-download |
+| `/analytics/extracts` | BI extracts: active, late and failing extracts and the last refresh; the facility's folder and the refresh log (with copy buttons) and how to connect Power BI, or why HC360 cannot write the folder; list with file, schedule, data as of and state; the same drawer with a file name instead of recipients (CSV only, hourly allowed); refresh now, pause/resume, refresh history, delete |
 
 Home widget *Hospital at a glance* (this month's first four KPIs) for any analytics reader.
 
@@ -347,16 +397,18 @@ format validation, the 503 answer, and the patients audited for a cut PDF), cata
 role, dashboard layout, model (tables, indexes, jsonb,
 facility filters), and SQL translation of **every report** with defaults, filters and each choice (`ToQueryString`:
 facility and soft-delete filters present, IST interval used, no enum ordering).
-Web: `format.test.ts`, `params.test.ts`, `charts.test.ts` in the module folder.
+BI extracts: `ExtractFolderTests` (names, the folder setting, whole-file replacement, nothing outside the folder, an
+unwritable folder reported), the extract CSV, hourly schedules and extract states, the unique file name index; and the
+end-to-end `BiExtractTests` in `tests/HyFib.HealthCare360.IntegrationTests` (rules, file and refresh log written, rename
+and delete, a failing refresh alerting once). `AnalyticsModuleTests` checks that the server's catalogue has every
+report.
+Web: `format.test.ts`, `params.test.ts`, `charts.test.ts`, `schedule-form.test.ts` in the module folder.
 
 ## Maintainers
 
 * **Migration needed** for the `analytics` schema (four tables above); the module adds no columns to other schemas.
   Formats are stored as text (`format`, varchar 64), so `Pdf`, added after `Xlsx` and `Csv`, needed no migration; add
   any new format at the end of `ExportFormat` too.
-* **Staff app and PDFs**: the server takes `format=pdf` and `Pdf` schedules, but the staff app's export menu, schedule
-  drawer (`format` choices) and delivery list (file extension) still offer Excel and CSV only; the export menu can show
-  the result's `pdfNotice` next to the PDF choice.
 * **Contract gaps**: e-mail attachments are not supported by `INotificationService` (the module's outbox handler uses
   `IEmailSender` directly); `IFileStore` rejects XLSX/CSV, so delivered files are kept encrypted in the module's table.
   Adding attachment support to notifications would let this handler go.

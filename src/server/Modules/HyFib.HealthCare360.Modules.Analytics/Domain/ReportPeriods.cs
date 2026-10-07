@@ -110,9 +110,16 @@ public static class ReportPeriods
     public static string Describe(DateOnly from, DateOnly to) =>
         from == to ? AnalyticsClock.FormatDate(from) : $"{AnalyticsClock.FormatDate(from)} – {AnalyticsClock.FormatDate(to)}";
 
+    /// <summary>
+    /// The preset a BI extract uses by default: the financial year so far, so a BI tool always has the whole year (one row
+    /// a day in the trend reports).
+    /// </summary>
+    public const string ExtractDefault = ThisFinancialYear;
+
     /// <summary>The preset a scheduled e-mail uses by default: the complete period that just ended.</summary>
     public static string DefaultFor(ScheduleFrequency frequency) => frequency switch
     {
+        ScheduleFrequency.Hourly => Today,
         ScheduleFrequency.Daily => Yesterday,
         ScheduleFrequency.Weekly => LastWeek,
         _ => LastMonth,

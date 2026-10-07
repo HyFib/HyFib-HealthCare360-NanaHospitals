@@ -275,14 +275,25 @@ internal static class ReportEndpoints
 
         var now = time.GetUtcNow();
         var since = now.AddDays(-7);
+
+        // E-mail figures leave out the extracts' runs (deleted extracts' too), which the extract figures cover.
+        var extractIds = db.Set<ReportSchedule>().IgnoreQueryFilters([HospitalDbContext.SoftDeleteFilter])
+            .Where(s => s.Destination == ScheduleDestination.ExtractFolder)
+            .Select(s => s.Id);
+        var emailDeliveries = db.Set<ReportDelivery>().Where(d => !extractIds.Contains(d.ScheduleId));
+        var extracts = await db.Set<ReportSchedule>().AsNoTracking().Where(s => s.Destination == ScheduleDestination.ExtractFolder).ToListAsync(ct);
         return TypedResults.Ok(new AnalyticsStatusDto(
             reporting.SourceLabel,
             reporting.UsesReplica,
             lag is { } seconds ? Math.Round(seconds, 1) : null,
-            await db.Set<ReportSchedule>().CountAsync(s => s.IsActive, ct),
-            await db.Set<ReportDelivery>().MaxAsync(d => (DateTimeOffset?)d.CreatedAt, ct),
-            await db.Set<ReportDelivery>().CountAsync(d => d.CreatedAt >= since && d.Status == DeliveryStatus.Failed, ct),
-            now));
+            await db.Set<ReportSchedule>().CountAsync(s => s.IsActive && s.Destination == ScheduleDestination.Email, ct),
+            await emailDeliveries.MaxAsync(d => (DateTimeOffset?)d.CreatedAt, ct),
+            await emailDeliveries.CountAsync(d => d.CreatedAt >= since && d.Status == DeliveryStatus.Failed, ct),
+            now,
+            extracts.Count(e => e.IsActive),
+            extracts.Count(e => e.State(now) == ExtractState.Late),
+            extracts.Count(e => e.State(now) == ExtractState.Failing),
+            extracts.Max(e => e.LastSucceededAt)));
     }
 
     internal static ReportCatalogueItem ToItem(ReportDescriptor report) => new(

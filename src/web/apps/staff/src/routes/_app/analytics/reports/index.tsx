@@ -11,7 +11,13 @@ import {
   tokens,
   Tooltip,
 } from '@fluentui/react-components';
-import { BoardRegular, DocumentTableRegular, LockClosedRegular, MailClockRegular } from '@fluentui/react-icons';
+import {
+  BoardRegular,
+  DatabaseArrowRightRegular,
+  DocumentTableRegular,
+  LockClosedRegular,
+  MailClockRegular,
+} from '@fluentui/react-icons';
 import { useDebouncedValue } from '@hc360/core';
 import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -125,9 +131,17 @@ function ReportCataloguePage() {
               Dashboards
             </Button>
             {data.canManageSchedules && (
-              <Button icon={<MailClockRegular />} onClick={() => void navigate({ to: '/analytics/schedules' })}>
-                Scheduled e-mails
-              </Button>
+              <>
+                <Button icon={<MailClockRegular />} onClick={() => void navigate({ to: '/analytics/schedules' })}>
+                  Scheduled e-mails
+                </Button>
+                <Button
+                  icon={<DatabaseArrowRightRegular />}
+                  onClick={() => void navigate({ to: '/analytics/extracts' })}
+                >
+                  BI extracts
+                </Button>
+              </>
             )}
           </>
         }

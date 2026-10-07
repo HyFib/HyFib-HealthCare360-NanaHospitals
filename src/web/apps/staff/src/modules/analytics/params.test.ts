@@ -147,6 +147,8 @@ describe('schedules and dashboards', () => {
     expect(describeSchedule('Weekly', '08:30', 'Monday', null)).toBe('Every Monday at 08:30 IST');
     expect(describeSchedule('Monthly', '06:00', null, 1)).toBe('On the 1st of every month at 06:00 IST');
     expect(describeSchedule('Monthly', '06:00', null, 31)).toBe('On the last day of every month at 06:00 IST');
+    expect(describeSchedule('Hourly', '00:15', null, null)).toBe('Every hour at 15 minutes past');
+    expect(describeSchedule('Hourly', '06:00', null, null)).toBe('Every hour on the hour');
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23].map(ordinal)).toEqual([
       '1st',
       '2nd',

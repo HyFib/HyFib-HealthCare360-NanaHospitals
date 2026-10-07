@@ -21,14 +21,11 @@ internal sealed class ReportCatalog
 {
     private readonly Dictionary<string, ReportDefinition> _byId;
 
+    // The only constructor: with a second one taking the reports, the server's container chose it and, having no
+    // reports registered, made an empty catalogue.
     public ReportCatalog()
-        : this(CreateAll())
     {
-    }
-
-    public ReportCatalog(IEnumerable<ReportDefinition> reports)
-    {
-        All = reports.ToList();
+        All = CreateAll().ToList();
         _byId = All.ToDictionary(r => r.Descriptor.Id, StringComparer.OrdinalIgnoreCase);
     }
 

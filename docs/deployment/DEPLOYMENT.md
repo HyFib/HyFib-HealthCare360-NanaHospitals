@@ -224,7 +224,7 @@ listens on port 7360 there, because the network search does not always find the 
 - Barcode scanners work as keyboards (no driver).
 - PACS, the modality worklist, biometric attendance devices, Tally and payment terminals are configured in
   **Administration › Integrations**. See `docs/modules/integrations.md`.
-- Lab analysers and radiology: see below.
+- Lab analysers, radiology and BI tools such as Power BI: see below.
 
 ### Lab analysers
 
@@ -335,6 +335,44 @@ JSON for a radiographer or radiologist. For a test PACS, Orthanc with its DICOMw
 `deploy/docker/compose.dev.yml --profile pacs` starts one at `http://localhost:58042/dicom-web`. Upload a DICOM file
 whose Accession Number and Patient ID are a study's accession number and the patient's UHID, then link the study.
 
+### BI tools: Power BI and the extract folder
+
+HC360 writes BI extracts (Analytics › BI extracts) as CSV files to one folder, and the BI tool reads them from there.
+Each facility's files are in a sub-folder named by its code (`NH\daily-revenue.csv`), and `refresh-log.csv` at the top
+lists every extract with when it was last refreshed.
+
+1. Make a folder for the extracts outside HC360's data folder, for example `D:\HC360-BI`. Give the HC360 service
+   *Modify* and the BI tool's account *Read*, and nobody else access:
+
+   ```powershell
+   New-Item -ItemType Directory D:\HC360-BI
+   icacls D:\HC360-BI /inheritance:r /grant 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' `
+       'NT SERVICE\HC360Server:(OI)(CI)M' 'HOSPITAL\svc-pbi-gateway:(OI)(CI)RX'
+   ```
+
+   Use the account the Power BI on-premises data gateway runs as (or the account of whoever opens the files).
+2. Tell HC360 the folder with a machine environment variable, which an upgrade keeps, and restart the service:
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable('HC360_HealthCare360__Analytics__ExtractDirectory', 'D:\HC360-BI', 'Machine')
+   Restart-Service HC360Server
+   ```
+
+   Without it, HC360 writes to `%ProgramData%\HyFib\HealthCare360\bi-extracts`, which only Administrators and HC360
+   can read.
+3. If the gateway runs on another computer, share the folder read-only:
+   `New-SmbShare -Name HC360-BI -Path D:\HC360-BI -ReadAccess 'HOSPITAL\svc-pbi-gateway'`.
+4. Open Analytics › BI extracts. The *Extract folder* panel shows the facility's folder and the refresh log, or why
+   HC360 cannot write there.
+5. In Power BI Desktop, choose Get data › Folder and enter the folder (or the share), or Get data › Text/CSV for one
+   file. After publishing, add the folder to the gateway as a data source and schedule the refresh after the extracts'
+   refresh time.
+
+Each refresh replaces the file whole, so the BI tool never reads half a file. If a refresh fails, the last file stays
+and the people who manage schedules are told in HC360. With more than one HC360 server (`HealthCare360:Role`), set the
+same shared folder, as a UNC path such as `\\NAS\HC360-BI`, on every server, and give each server's computer account
+(`HOSPITAL\HC360-SRV$`) *Modify* on it.
+
 ## 7. Upgrades
 
 1. Tell users: HC360 is unavailable for a few minutes.
@@ -415,6 +453,7 @@ distribution tool).
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
+| "HC360 cannot write the extract folder" (Analytics › BI extracts), or an extract is "Not refreshing" | The message gives the Windows error. Does the folder set in `HC360_HealthCare360__Analytics__ExtractDirectory` exist, and does `NT SERVICE\HC360Server` (or the server's computer account, for a share) have *Modify* on it? Is the disk full? A file the BI tool keeps open can also stop a refresh: close Power BI Desktop and press *Refresh now* |
 | Images are not linked with PACS | Press "Link images from PACS" on the study: the message says why. "Under another patient ID", "without a patient ID" or "several studies" must be corrected in PACS; "not reached PACS yet" usually means the modality has not sent the images, or sent them without the worklist's accession number |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.

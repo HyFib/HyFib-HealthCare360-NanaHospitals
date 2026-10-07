@@ -103,6 +103,69 @@ public sealed class PeriodsAndSchedulesTests
     }
 
     [Fact]
+    public void Hourly_extracts_run_at_their_minute_past_every_ist_hour()
+    {
+        var quarterPast = new TimeOnly(7, 15);
+
+        // 12:00 IST → 12:15 IST; exactly at 12:15 → 13:15; 23:50 IST → 00:15 IST the next day.
+        ScheduleCalendar.NextRun(ScheduleFrequency.Hourly, quarterPast, null, null, new DateTimeOffset(2026, 9, 15, 6, 30, 0, TimeSpan.Zero))
+            .ShouldBe(new DateTimeOffset(2026, 9, 15, 6, 45, 0, TimeSpan.Zero));
+        ScheduleCalendar.NextRun(ScheduleFrequency.Hourly, quarterPast, null, null, new DateTimeOffset(2026, 9, 15, 6, 45, 0, TimeSpan.Zero))
+            .ShouldBe(new DateTimeOffset(2026, 9, 15, 7, 45, 0, TimeSpan.Zero));
+        var next = ScheduleCalendar.NextRun(ScheduleFrequency.Hourly, quarterPast, null, null, new DateTimeOffset(2026, 9, 15, 18, 20, 0, TimeSpan.Zero));
+        next.ShouldBe(new DateTimeOffset(2026, 9, 15, 18, 45, 0, TimeSpan.Zero));
+        AnalyticsClock.LocalDate(next).ShouldBe(D("2026-09-16"));
+
+        ScheduleCalendar.Describe(ScheduleFrequency.Hourly, quarterPast, null, null).ShouldBe("Every hour at 15 minutes past");
+        ScheduleCalendar.Describe(ScheduleFrequency.Hourly, new TimeOnly(9, 0), null, null).ShouldBe("Every hour on the hour");
+        ScheduleCalendar.Interval(ScheduleFrequency.Hourly).ShouldBe(TimeSpan.FromHours(1));
+        ReportPeriods.DefaultFor(ScheduleFrequency.Hourly).ShouldBe(ReportPeriods.Today);
+        ReportPeriods.ExtractDefault.ShouldBe(ReportPeriods.ThisFinancialYear);
+    }
+
+    [Fact]
+    public void An_extract_is_late_once_it_misses_a_refresh_and_failing_says_why()
+    {
+        var now = new DateTimeOffset(2026, 9, 15, 6, 30, 0, TimeSpan.Zero);
+        var extract = new ReportSchedule
+        {
+            Destination = ScheduleDestination.ExtractFolder,
+            ExtractName = "daily-revenue",
+            Frequency = ScheduleFrequency.Daily,
+            IsActive = true,
+            CreatedAt = now.AddDays(-3),
+        };
+
+        extract.State(now).ShouldBe(ExtractState.Late, "not produced in the three days since it was set up");
+
+        extract.RecordRun(now.AddHours(-23), ScheduleRunStatus.Succeeded, null);
+        extract.LastSucceededAt.ShouldBe(now.AddHours(-23));
+        extract.State(now).ShouldBe(ExtractState.Fresh);
+        extract.State(now.AddHours(1).AddMinutes(29)).ShouldBe(ExtractState.Fresh, "a day and 29 minutes after the refresh");
+        extract.State(now.AddHours(1).AddMinutes(31)).ShouldBe(ExtractState.Late, "a day and 31 minutes after the refresh");
+
+        extract.RecordRun(now, ScheduleRunStatus.Failed, "The disk is full.");
+        extract.State(now).ShouldBe(ExtractState.Failing);
+        extract.LastSucceededAt.ShouldBe(now.AddHours(-23), "a failed run leaves the data a BI tool reads as it was");
+
+        extract.IsActive = false;
+        extract.State(now).ShouldBe(ExtractState.Paused);
+
+        new ReportSchedule { Destination = ScheduleDestination.ExtractFolder, Frequency = ScheduleFrequency.Hourly, IsActive = true, CreatedAt = now.AddMinutes(-10) }
+            .State(now).ShouldBe(ExtractState.Waiting);
+        var changed = new ReportSchedule
+        {
+            Destination = ScheduleDestination.ExtractFolder,
+            Frequency = ScheduleFrequency.Daily,
+            IsActive = true,
+            CreatedAt = now.AddDays(-30),
+            UpdatedAt = now.AddHours(-2),
+        };
+        changed.State(now).ShouldBe(ExtractState.Waiting, "changed two hours ago, and waiting for the refresh that writes the new file");
+        new ReportSchedule { Frequency = ScheduleFrequency.Daily, IsActive = true, CreatedAt = now.AddDays(-9) }.IsLate(now).ShouldBeFalse("an e-mail is never late");
+    }
+
+    [Fact]
     public void A_paused_schedule_has_no_next_run()
     {
         var schedule = new ReportSchedule { Frequency = ScheduleFrequency.Daily, TimeOfDay = new TimeOnly(7, 0), IsActive = false };
