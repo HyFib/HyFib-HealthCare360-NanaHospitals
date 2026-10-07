@@ -12,6 +12,7 @@ import {
   Select,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
@@ -84,6 +85,8 @@ export function GatewayExceptions({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const refreshBilling = useRefreshBilling();
+  // Closing the dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const [resolving, setResolving] = useState<GatewayDiscrepancyDto | null>(null);
   const status: DiscrepancyStatus = filters.status ?? 'Open';
   const list = useQuery(gatewayQueries.exceptions({ ...filters, status }));
@@ -229,6 +232,7 @@ export function GatewayExceptions({
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${d.key}`}
                 disabled={busy}
+                {...restoreFocusTarget}
               />
             </MenuTrigger>
             <MenuPopover>
