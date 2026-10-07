@@ -192,6 +192,9 @@ export function PaymentLinkDialog({
                   form="payment-link"
                   appearance="primary"
                   disabled={!parsed.ok || create.isPending}
+                  // Keeps focus while the link is made (a disabled button drops it); Enter can still submit, which is
+                  // ignored.
+                  disabledFocusable={create.isPending}
                   icon={create.isPending ? <Spinner size="tiny" /> : <LinkRegular />}
                 >
                   Create link
@@ -208,10 +211,13 @@ export function PaymentLinkDialog({
                   icon={check.isPending ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />}
                   onClick={() => check.mutate()}
                   disabled={check.isPending || order.status !== 'Created'}
+                  // Keeps focus while checking, and once the link is paid or expired: a disabled button drops it.
+                  disabledFocusable={check.isPending || order.status !== 'Created'}
                 >
                   Check payment
                 </Button>
-                <Button appearance="primary" onClick={onClose}>
+                {/* Takes focus from Create link, which the new link replaces. */}
+                <Button appearance="primary" onClick={onClose} autoFocus>
                   Done
                 </Button>
               </>

@@ -1294,7 +1294,13 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
             <Button onClick={onClose} disabled={save.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || save.isPending}
+              // Keeps focus while saving: a disabled button drops it.
+              disabledFocusable={save.isPending}
+              onClick={() => save.mutate()}
+            >
               Authorise
             </Button>
           </DialogActions>
@@ -1354,7 +1360,13 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
             <Button onClick={onClose} disabled={request.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={request.isPending} onClick={() => request.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={request.isPending}
+              // Keeps focus while sending: a disabled button drops it.
+              disabledFocusable={request.isPending}
+              onClick={() => request.mutate()}
+            >
               Raise request
             </Button>
           </DialogActions>

@@ -218,6 +218,8 @@ export function DiscountLimitDialog({ limit, onClose }: { limit: DiscountLimitDt
                 type="submit"
                 appearance="primary"
                 disabled={!valid || save.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={save.isPending}
                 icon={save.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Save limit

@@ -19,6 +19,7 @@ import { isApiError, useDebouncedValue } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { crmApi, crmKeys, crmQueries } from './api';
 
 /** Most spellings one doctor keeps (the server's limit). */
@@ -96,8 +97,11 @@ function Body({ text, onClose }: { text: string; onClose: () => void }) {
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        if (!busy) {
+          void save();
+        }
       }}
+      onKeyDown={ignoreEscapeWhile(busy)}
       noValidate
     >
       <DialogBody>
@@ -137,6 +141,8 @@ function Body({ text, onClose }: { text: string; onClose: () => void }) {
             type="submit"
             appearance="primary"
             disabled={busy || !doctorId}
+            // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
           >
             Add spelling

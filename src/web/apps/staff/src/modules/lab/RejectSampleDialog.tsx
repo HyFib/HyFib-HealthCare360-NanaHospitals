@@ -172,6 +172,8 @@ export function RejectSampleDialog({
                   type="submit"
                   appearance="primary"
                   disabled={!reason || needsRemarks || reject.isPending}
+                  // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                  disabledFocusable={reject.isPending}
                   icon={reject.isPending ? <Spinner size="tiny" /> : undefined}
                   style={{ backgroundColor: !reason || needsRemarks ? undefined : tokens.colorPaletteRedBackground3 }}
                 >

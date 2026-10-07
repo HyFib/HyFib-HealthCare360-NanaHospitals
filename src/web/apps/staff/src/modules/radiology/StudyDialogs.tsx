@@ -136,6 +136,8 @@ export function ScheduleDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!instant || Boolean(stationProblem) || schedule.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={schedule.isPending}
                 icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Schedule
@@ -236,6 +238,8 @@ export function AcquireDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || acquire.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={acquire.isPending}
                 icon={acquire.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Complete scan
@@ -302,6 +306,8 @@ export function RepeatDialog({ study, onClose, onDone }: { study: StudyRef; onCl
                 type="submit"
                 appearance="primary"
                 disabled={!reason || needsNote || record.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={record.isPending}
                 icon={record.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Record repeat

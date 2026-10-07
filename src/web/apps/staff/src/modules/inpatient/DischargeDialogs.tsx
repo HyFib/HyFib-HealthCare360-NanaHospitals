@@ -82,6 +82,8 @@ export function ClearanceStatus({ admissionId }: { admissionId: string }) {
           icon={<ArrowClockwiseRegular />}
           onClick={() => void clearance.refetch()}
           disabled={clearance.isFetching}
+          // Keeps focus while checking: a disabled button drops it.
+          disabledFocusable={clearance.isFetching}
         >
           Check again
         </Button>
@@ -278,7 +280,7 @@ export function CompleteDischargeDialog({
   return (
     <Dialog open={open} onOpenChange={(_, d) => !d.open && !complete.isPending && close()}>
       <DialogSurface style={{ maxWidth: 640 }}>
-        <form onSubmit={form.handleSubmit((values) => complete.mutate(values))} noValidate>
+        <form onSubmit={form.handleSubmit((values) => !complete.isPending && complete.mutate(values))} noValidate>
           <DialogBody>
             <DialogTitle>Complete discharge of {admission.patientName}</DialogTitle>
             <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -395,6 +397,8 @@ export function CompleteDischargeDialog({
                 appearance="primary"
                 icon={complete.isPending ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
                 disabled={complete.isPending}
+                // Keeps focus while recording (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={complete.isPending}
                 style={type === 'Expired' ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >
                 {type === 'Expired'

@@ -29,6 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { usePractitioners } from '@/lib/lookups';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { isoToIstLocal, istLocalToIso } from '@/modules/scheduling/dates';
@@ -385,7 +386,11 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
   });
 
   return (
-    <form onSubmit={form.handleSubmit((v) => save.mutate(v))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((v) => !save.isPending && save.mutate(v))}
+      onKeyDown={ignoreEscapeWhile(save.isPending)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>
           Monitoring for {enrollment.patientName}
@@ -436,6 +441,8 @@ function EditContent({ enrollment, onClose }: { enrollment: RpmEnrollmentDetail;
             type="submit"
             appearance="primary"
             disabled={save.isPending}
+            // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" /> : undefined}
           >
             Save

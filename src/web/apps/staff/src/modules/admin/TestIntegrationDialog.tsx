@@ -93,7 +93,7 @@ export function TestIntegrationDialog({
     onError: (error) => void applyServerErrors(error, form.setError),
   });
 
-  const submit = form.handleSubmit((values) => test.mutate(values));
+  const submit = form.handleSubmit((values) => !test.isPending && test.mutate(values));
   const result = test.data;
   const requestFailed = test.error && !(isApiError(test.error) && test.error.isValidation);
 
@@ -175,7 +175,8 @@ export function TestIntegrationDialog({
               {result ? (
                 <>
                   <Button onClick={() => test.reset()}>Test again</Button>
-                  <Button appearance="primary" onClick={onClose}>
+                  {/* Takes focus from the button that ran the test, which the result replaces. */}
+                  <Button appearance="primary" onClick={onClose} autoFocus>
                     Close
                   </Button>
                 </>
@@ -188,6 +189,9 @@ export function TestIntegrationDialog({
                     type="submit"
                     appearance="primary"
                     disabled={test.isPending}
+                    // Keeps focus while the test runs (a disabled button drops it); Enter can still submit, which
+                    // `submit` ignores.
+                    disabledFocusable={test.isPending}
                     icon={test.isPending ? <Spinner size="tiny" /> : undefined}
                   >
                     {input ? 'Send test' : 'Run test'}

@@ -342,6 +342,8 @@ export function DietOrderDialog({
                 type="submit"
                 appearance="primary"
                 disabled={!valid || create.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={create.isPending}
                 icon={create.isPending ? <Spinner size="tiny" /> : <FoodRegular />}
               >
                 {current ? 'Change diet' : 'Order diet'}

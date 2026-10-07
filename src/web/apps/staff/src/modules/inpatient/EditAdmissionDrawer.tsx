@@ -129,8 +129,17 @@ export function EditAdmissionDrawer({
   });
 
   return (
-    <OverlayDrawer open={open} position="end" size="medium" onOpenChange={(_, d) => !d.open && onClose()}>
-      <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate style={{ display: 'contents' }}>
+    <OverlayDrawer
+      open={open}
+      position="end"
+      size="medium"
+      onOpenChange={(_, d) => !d.open && !save.isPending && onClose()}
+    >
+      <form
+        onSubmit={form.handleSubmit((values) => !save.isPending && save.mutate(values))}
+        noValidate
+        style={{ display: 'contents' }}
+      >
         <DrawerHeader>
           <DrawerHeaderTitle
             action={<Button appearance="subtle" icon={<DismissRegular />} aria-label="Close" onClick={onClose} />}
@@ -209,6 +218,8 @@ export function EditAdmissionDrawer({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
+            // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" /> : undefined}
           >
             Save

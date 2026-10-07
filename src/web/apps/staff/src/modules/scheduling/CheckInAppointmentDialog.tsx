@@ -31,6 +31,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { enumOptions } from '@/lib/lookups';
 import { printTokenSlip } from '@/lib/print';
 import { patientKeys } from '@/modules/patients/api';
@@ -209,7 +210,11 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
   }
 
   return (
-    <form onSubmit={form.handleSubmit((values) => checkIn.mutate(values))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !checkIn.isPending && checkIn.mutate(values))}
+      onKeyDown={ignoreEscapeWhile(checkIn.isPending)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>
           Check in {appointment.patientName}
@@ -262,6 +267,8 @@ function CheckInContent({ appointment, onClose }: { appointment: AppointmentRef;
             appearance="primary"
             autoFocus
             disabled={checkIn.isPending}
+            // Keeps focus while checking in (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={checkIn.isPending}
             icon={checkIn.isPending ? <Spinner size="tiny" /> : undefined}
           >
             Check in

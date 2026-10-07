@@ -23,6 +23,7 @@ import { formatDateTime, formatTime, useSession } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { toOptions, useDepartments, usePractitioners } from '@/lib/lookups';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { istLocalToIso, isoToIstLocal } from '@/modules/scheduling/dates';
@@ -304,10 +305,11 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        if (reason.trim()) {
+        if (reason.trim() && !cancel.isPending) {
           cancel.mutate();
         }
       }}
+      onKeyDown={ignoreEscapeWhile(cancel.isPending)}
     >
       <DialogBody>
         <DialogTitle>
@@ -340,6 +342,8 @@ function CancelSessionContent({ session, onClose }: { session: SessionRef; onClo
             appearance="primary"
             className={styles.destructive}
             disabled={!reason.trim() || cancel.isPending}
+            // Keeps focus while cancelling (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={cancel.isPending}
           >
             Cancel consultation
           </Button>

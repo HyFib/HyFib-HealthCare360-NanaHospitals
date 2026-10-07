@@ -428,7 +428,7 @@ export function ScreeningDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={(_, d) => !d.open && !screen.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 1000, width: '95vw' }}>
         {result ? (
           <DialogBody>
@@ -463,7 +463,10 @@ export function ScreeningDialog({
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={onClose}>Close</Button>
+              {/* Takes focus from Save screening, which the result replaces. */}
+              <Button onClick={onClose} autoFocus>
+                Close
+              </Button>
               {result.outcome === 'Eligible' && onCollect && (
                 <Button appearance="primary" icon={<DropRegular />} onClick={() => onCollect(result)}>
                   Collect donation now
@@ -472,7 +475,7 @@ export function ScreeningDialog({
             </DialogActions>
           </DialogBody>
         ) : (
-          <form onSubmit={form.handleSubmit((v) => screen.mutate(v))} noValidate>
+          <form onSubmit={form.handleSubmit((v) => !screen.isPending && screen.mutate(v))} noValidate>
             <DialogBody>
               <DialogTitle>
                 Screen donor · {donor.fullName}
@@ -599,6 +602,8 @@ export function ScreeningDialog({
                   type="submit"
                   appearance="primary"
                   disabled={!complete || screen.isPending}
+                  // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                  disabledFocusable={screen.isPending}
                   icon={screen.isPending ? <Spinner size="tiny" /> : undefined}
                 >
                   Save screening
@@ -709,9 +714,9 @@ export function CollectDialog({
   });
 
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={(_, d) => !d.open && !collect.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 720 }}>
-        <form onSubmit={form.handleSubmit((v) => collect.mutate(v))} noValidate>
+        <form onSubmit={form.handleSubmit((v) => !stale && !collect.isPending && collect.mutate(v))} noValidate>
           <DialogBody>
             <DialogTitle>
               Collect donation · {donor.fullName}
@@ -805,6 +810,9 @@ export function CollectDialog({
                 type="submit"
                 appearance="primary"
                 disabled={stale || collect.isPending}
+                // Keeps focus while recording, and when the screening goes out of date: a disabled button drops it.
+                // Enter can still submit, which is ignored.
+                disabledFocusable={stale || collect.isPending}
                 icon={collect.isPending ? <Spinner size="tiny" /> : <DropRegular />}
               >
                 Record donation
@@ -859,9 +867,9 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
     },
   });
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={(_, d) => !d.open && !defer.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 520 }}>
-        <form onSubmit={form.handleSubmit((v) => defer.mutate(v))} noValidate>
+        <form onSubmit={form.handleSubmit((v) => !defer.isPending && defer.mutate(v))} noValidate>
           <DialogBody>
             <DialogTitle>Defer {donor.fullName}</DialogTitle>
             <DialogContent className={styles.body}>
@@ -880,6 +888,8 @@ export function DeferDialog({ donor, onClose }: { donor: DonorDetail; onClose: (
                 type="submit"
                 appearance="primary"
                 disabled={defer.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={defer.isPending}
                 icon={defer.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Defer donor

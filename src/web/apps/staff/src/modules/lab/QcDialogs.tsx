@@ -433,6 +433,8 @@ export function QcRunDialog({ lot, onClose }: { lot: RunLot; onClose: () => void
                   type="submit"
                   appearance="primary"
                   disabled={!valid || Boolean(timeProblem) || record.isPending}
+                  // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                  disabledFocusable={record.isPending}
                   icon={record.isPending ? <Spinner size="tiny" /> : undefined}
                 >
                   Record run
@@ -530,6 +532,8 @@ export function QcReviewDialog({ run, testName, onClose }: { run: QcRunDto; test
                 type="submit"
                 appearance="primary"
                 disabled={!valid || review.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={review.isPending}
                 icon={review.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Save review

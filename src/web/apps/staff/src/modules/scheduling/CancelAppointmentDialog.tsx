@@ -17,6 +17,7 @@ import { applyServerErrors, SelectField, SwitchField, TextAreaField, useNotify }
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { CANCELLATION_REASONS, schedulingApi, schedulingKeys, type AppointmentRef } from './api';
 import { cancellationReasonLabel } from './labels';
 
@@ -91,7 +92,11 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
   });
 
   return (
-    <form onSubmit={form.handleSubmit((values) => cancel.mutate(values))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !cancel.isPending && cancel.mutate(values))}
+      onKeyDown={ignoreEscapeWhile(cancel.isPending)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>
           Cancel this appointment?
@@ -128,6 +133,8 @@ function CancelContent({ appointment, onClose }: { appointment: AppointmentRef; 
             appearance="primary"
             className={styles.destructive}
             disabled={cancel.isPending}
+            // Keeps focus while cancelling (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={cancel.isPending}
             icon={cancel.isPending ? <Spinner size="tiny" /> : undefined}
           >
             Cancel appointment

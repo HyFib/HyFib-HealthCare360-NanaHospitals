@@ -25,6 +25,7 @@ import { formatDateTime, formatTime, isApiError, todayIso, useSession } from '@h
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { useFeatureOn } from '@/lib/features';
 import { toOptions, usePractitioners } from '@/lib/lookups';
 import {
@@ -171,6 +172,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
           reschedule.mutate(slot);
         }
       }}
+      onKeyDown={ignoreEscapeWhile(reschedule.isPending)}
     >
       <DialogBody>
         <DialogTitle>
@@ -265,6 +267,8 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
             type="submit"
             appearance="primary"
             disabled={!slot || reschedule.isPending}
+            // Keeps focus while moving the appointment, and when a clash clears the slot: a disabled button drops it.
+            disabledFocusable={!slot || reschedule.isPending}
             icon={reschedule.isPending ? <Spinner size="tiny" /> : undefined}
           >
             {slot ? `Move to ${formatDayMedium(slot.date)}, ${formatTime(slot.startsAt)}` : 'Choose a new slot'}

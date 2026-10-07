@@ -33,6 +33,7 @@ import { DataTable, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { printServerDocument, useServerDocuments } from '@/lib/documents';
 import { usePermission } from '@/lib/permissions';
 import { emrKeys } from './api';
@@ -137,7 +138,7 @@ function RefillBody({
   });
 
   return (
-    <DialogBody>
+    <DialogBody onKeyDown={ignoreEscapeWhile(refill.isPending)}>
       <DialogTitle>Issue a refill</DialogTitle>
       <DialogContent className={styles.form}>
         {!rx ? (
@@ -197,6 +198,8 @@ function RefillBody({
           appearance="primary"
           icon={refill.isPending ? <Spinner size="tiny" /> : <ArrowSyncRegular />}
           disabled={!rx || rx.refillsRemaining <= 0 || blockers.length > 0 || refill.isPending}
+          // Keeps focus while issuing, and when the safety check asks for a decision: a disabled button drops it.
+          disabledFocusable={refill.isPending || blockers.length > 0}
           onClick={() => {
             setError(null);
             refill.mutate();

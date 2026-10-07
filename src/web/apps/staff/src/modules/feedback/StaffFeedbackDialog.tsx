@@ -20,6 +20,7 @@ import { isApiError, normalizePhone } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 import { patientQueries, type VisitListItem } from '@/modules/patients/api';
 import { feedbackApi, feedbackKeys, feedbackQueries, type FeedbackFormDto } from './api';
@@ -150,8 +151,11 @@ function Body({
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        if (!busy) {
+          void save();
+        }
       }}
+      onKeyDown={ignoreEscapeWhile(busy)}
       noValidate
     >
       <DialogBody>
@@ -276,6 +280,8 @@ function Body({
             type="submit"
             appearance="primary"
             disabled={busy || !form}
+            // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
           >
             Save feedback
