@@ -16,6 +16,13 @@ namespace HyFib.HealthCare360.Desktop;
 /// the default browser), the server certificate must chain to the hospital CA, password autosave/autofill are off
 /// (shared workstations), and DevTools are disabled unless IT enables them.
 /// </summary>
+/// <remarks>
+/// WebView2 shows the app a server certificate only when Windows rejects it, which the hospital CA's certificates
+/// always are. A certificate Windows trusts (from a company's TLS-inspection proxy, say) would reach the view without
+/// the pin check, so the pinned <see cref="ServerClient"/> checks the path before the staff app loads and every 10
+/// seconds after (<see cref="NetworkStatusService"/>). When it is offered a certificate that is not from the hospital
+/// CA, the window unloads the staff app and stays locked until a check passes again (<see cref="Lock"/>).
+/// </remarks>
 public partial class MainWindow : Window
 {
     private static readonly HashSet<CoreWebView2WebErrorStatus> ConnectivityErrors =
@@ -37,8 +44,15 @@ public partial class MainWindow : Window
     private readonly NetworkStatusService _network;
     private readonly DispatcherTimer _retry = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly List<StaffWindow> _windows = [];
+    private CoreWebView2Environment? _environment;
     private TrayNotifier? _tray;
     private bool _pageLoaded;
+
+    // Set on the connection's thread when a pinned check is offered a certificate that is not from the hospital CA;
+    // cleared when a retry reaches the server and is offered the hospital's certificate. While set, the staff app is
+    // not loaded.
+    private RejectedCertificate? _rejected;
 
     internal MainWindow(DesktopSettings settings, string[] args)
     {
@@ -50,6 +64,7 @@ public partial class MainWindow : Window
         _client = new ServerClient(_server, _trust);
         _network = new NetworkStatusService(_client);
         _retry.Tick += async (_, _) => await RetryAsync();
+        _trust.CertificateRejected += OnCertificateRejected;
 
         if (settings.Kiosk)
         {
@@ -69,11 +84,11 @@ public partial class MainWindow : Window
     {
         try
         {
-            var environment = await CoreWebView2Environment.CreateAsync(
+            _environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: Path.Combine(DesktopSettings.AppDataDirectory, "WebView2"),
                 options: new CoreWebView2EnvironmentOptions { Language = "en-IN" });
-            await Web.EnsureCoreWebView2Async(environment);
+            await Web.EnsureCoreWebView2Async(_environment);
         }
         catch (WebView2RuntimeNotFoundException ex)
         {
@@ -84,6 +99,28 @@ public partial class MainWindow : Window
         }
 
         var core = Web.CoreWebView2;
+        ApplyViewRules(core);
+        core.NavigationCompleted += OnNavigationCompleted;
+        core.ProcessFailed += OnProcessFailed;
+        core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
+
+        _tray = new TrayNotifier(() => Activate([]));
+        CreateBridge(core, new WindowInteropHelper(this).Handle).Attach();
+        _network.Start();
+        _ = HeartbeatLoopAsync(_lifetime.Token);
+
+        // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
+        await _client.PingAsync(_lifetime.Token);
+        Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
+    }
+
+    /// <summary>
+    /// The rules every view of the staff app follows, in this window and in the second windows it opens: only the
+    /// server's pages, its certificate checked against the hospital CA, no saved passwords, and the permission and
+    /// download policies below.
+    /// </summary>
+    internal void ApplyViewRules(CoreWebView2 core)
+    {
         var kiosk = _settings.Kiosk;
         core.Settings.AreDevToolsEnabled = _settings.AllowDevTools;
         core.Settings.IsPasswordAutosaveEnabled = false;
@@ -97,25 +134,73 @@ public partial class MainWindow : Window
         core.ServerCertificateErrorDetected += OnServerCertificateError;
         core.NavigationStarting += OnNavigationStarting;
         core.NewWindowRequested += OnNewWindowRequested;
-        core.NavigationCompleted += OnNavigationCompleted;
-        core.ProcessFailed += OnProcessFailed;
         core.PermissionRequested += OnPermissionRequested;
         core.DownloadStarting += OnDownloadStarting;
-        core.DocumentTitleChanged += (_, _) => Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? "HealthCare360" : core.DocumentTitle;
-
-        _tray = new TrayNotifier(() => Activate([]));
-        var printing = new PrintService(core.Environment, new WindowInteropHelper(this).Handle);
-        new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), _tray).Attach();
-        _network.Start();
-        _ = HeartbeatLoopAsync(_lifetime.Token);
-
-        Navigate(DeepLinks.Resolve(_args) ?? _settings.StartPath);
     }
+
+    /// <summary>
+    /// The native bridge for a view of the staff app; it prints over the window <paramref name="owner"/>.
+    /// </summary>
+    internal BridgeHost CreateBridge(CoreWebView2 core, IntPtr owner)
+    {
+        var tray = _tray ?? throw new InvalidOperationException("The tray icon is created before any view.");
+        var printing = new PrintService(core.Environment, owner);
+        return new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), tray);
+    }
+
+    private bool Locked => Volatile.Read(ref _rejected) is not null;
 
     private void Navigate(string path)
     {
+        if (Locked)
+        {
+            return;
+        }
+
         var target = DeepLinks.IsSafePath(path) ? new Uri(_server, path) : _server;
         Web.CoreWebView2?.Navigate(target.AbsoluteUri);
+    }
+
+    private void OnCertificateRejected(RejectedCertificate rejected)
+    {
+        if (Interlocked.Exchange(ref _rejected, rejected) is null)
+        {
+            Log.Warning(
+                "Locked: {Host} presented a certificate that is not from the hospital CA "
+                + "(subject {Subject}, issuer {Issuer}, SHA-256 {Fingerprint})",
+                rejected.Host, rejected.Subject, rejected.Issuer, rejected.Fingerprint);
+        }
+
+        Dispatcher.InvokeAsync(() => Lock(rejected));
+    }
+
+    /// <summary>
+    /// Unloads the staff app, so it sends nothing more through a connection that may be intercepted, and explains why.
+    /// "Try again now" loads it again once the server presents the hospital's certificate; "Change server…" sets up a
+    /// server whose certificate authority really changed.
+    /// </summary>
+    private void Lock(RejectedCertificate rejected)
+    {
+        if (!Locked)
+        {
+            return;
+        }
+
+        _retry.Stop();
+        _pageLoaded = false;
+        CloseWindows();
+        if (Web.CoreWebView2 is { } core && !string.Equals(core.Source, "about:blank", StringComparison.Ordinal))
+        {
+            core.Navigate("about:blank");
+        }
+
+        var fingerprint = ServerTrust.Format(rejected.Fingerprint[..Math.Min(16, rejected.Fingerprint.Length)]);
+        ShowOffline(
+            "HC360 stopped: the server could not be verified",
+            "The server answered with a certificate this computer does not accept. Something on the network may be "
+            + "intercepting the connection, or the server's certificate was replaced or has expired. Do not sign in on "
+            + "this computer until IT has checked it.",
+            $"{rejected.Host} · certificate from {rejected.Issuer} · fingerprint {fingerprint}…");
     }
 
     /// <summary>Second launch or <c>hc360://</c> link: bring the window forward and open the requested screen.</summary>
@@ -134,8 +219,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool IsServerOrigin(Uri uri) =>
-        Uri.Compare(uri, _server, UriComponents.SchemeAndServer, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0;
+    private bool IsServerOrigin(Uri uri) => NewWindowPolicy.IsSameOrigin(uri, _server);
 
     private void OnServerCertificateError(object? sender, CoreWebView2ServerCertificateErrorDetectedEventArgs e)
     {
@@ -169,6 +253,10 @@ public partial class MainWindow : Window
             if (!trusted)
             {
                 Log.Warning("Rejected certificate for {Uri} ({Status}); subject {Subject}", e.RequestUri, e.ErrorStatus, certificate.Subject);
+                if (IsServerOrigin(uri))
+                {
+                    OnCertificateRejected(RejectedCertificate.From(certificate, uri.Host));
+                }
             }
         }
         finally
@@ -185,8 +273,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (IsServerOrigin(target) || target.Scheme is "about" or "data")
+        if (target.Scheme is "about" or "data")
         {
+            return;
+        }
+
+        if (IsServerOrigin(target))
+        {
+            e.Cancel = Locked;
             return;
         }
 
@@ -197,16 +291,41 @@ public partial class MainWindow : Window
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)
     {
         e.Handled = true;
-        if (Uri.TryCreate(e.Uri, UriKind.Absolute, out var target))
+        switch (NewWindowPolicy.Decide(e.Uri, _server, _settings.Kiosk, Locked))
         {
-            if (IsServerOrigin(target))
-            {
-                Web.CoreWebView2.Navigate(target.AbsoluteUri);
-            }
-            else
-            {
-                TryOpenExternally(target);
-            }
+            case NewWindowAction.OpenExternally:
+                TryOpenExternally(new Uri(e.Uri));
+                break;
+            case NewWindowAction.OpenHere:
+                (sender as CoreWebView2 ?? Web.CoreWebView2)?.Navigate(e.Uri);
+                break;
+            case NewWindowAction.OpenWindow:
+                OpenWindow(new Uri(e.Uri));
+                break;
+        }
+    }
+
+    /// <summary>
+    /// A second HC360 window for <paramref name="target"/>, so the screen that opened it stays as it is.
+    /// </summary>
+    private void OpenWindow(Uri target)
+    {
+        if (_environment is null)
+        {
+            return;
+        }
+
+        var window = new StaffWindow(this, _environment, target);
+        _windows.Add(window);
+        window.Closed += (_, _) => _windows.Remove(window);
+        window.Show();
+    }
+
+    private void CloseWindows()
+    {
+        foreach (var window in _windows.ToList())
+        {
+            window.Close();
         }
     }
 
@@ -255,6 +374,11 @@ public partial class MainWindow : Window
 
     private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
+        if (Locked)
+        {
+            return;
+        }
+
         if (e.IsSuccess)
         {
             _pageLoaded = true;
@@ -299,7 +423,22 @@ public partial class MainWindow : Window
 
     private async Task RetryAsync()
     {
-        if (await _client.PingAsync(_lifetime.Token) is null)
+        var rejected = Volatile.Read(ref _rejected);
+        var latency = await _client.PingAsync(_lifetime.Token);
+        if (latency is not null && rejected is not null)
+        {
+            // The pinned check reached the server and was offered the hospital's certificate, so the lock lifts, unless
+            // another check was refused in the meantime. A check that cannot reach the server leaves the lock as it is.
+            Interlocked.CompareExchange(ref _rejected, null, rejected);
+        }
+
+        if (Volatile.Read(ref _rejected) is { } still)
+        {
+            Lock(still);
+            return;
+        }
+
+        if (latency is null)
         {
             OfflineDetails.Text = $"{_server.Host} · last try {DateTime.Now:HH:mm:ss}";
             return;
@@ -369,6 +508,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        CloseWindows();
+        _trust.CertificateRejected -= OnCertificateRejected;
         _lifetime.Cancel();
         _retry.Stop();
         _network.Dispose();

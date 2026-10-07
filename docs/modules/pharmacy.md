@@ -197,8 +197,6 @@ stock-batch tables.
 
 ## Open items for maintainers
 
-* **Migrations** for the `pharmacy` schema (filtered unique index on `queue_entries`, unique register ledger id).
-* **Billing** must accept negative-quantity credit lines from `pharmacy.ip.return` (ward returns of billed lines).
 * **ServiceCategory**: the IP pharmacy service items are seeded as `ServiceCategory.Consumable`. A
   `ServiceCategory.Pharmacy` value in Billing would give cleaner bill grouping.
 * **Refill count at signing**: `PrescriptionSigned`/`PrescriptionLine` carry no refill authorisation today, so refills

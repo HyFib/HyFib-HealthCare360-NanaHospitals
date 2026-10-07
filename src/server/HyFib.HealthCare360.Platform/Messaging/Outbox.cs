@@ -23,8 +23,9 @@ public enum OutboxStatus
 
 /// <summary>
 /// A message to deliver outside the transaction that created it (SMS, WhatsApp, e-mail, Tally, webhooks).
-/// Written atomically with the business change; delivered at least once by <see cref="OutboxDispatcher"/>
-/// with exponential backoff — so messages survive internet outages on the hospital WiFi link.
+/// Written atomically with the business change; delivered at least once by <see cref="OutboxDispatcher"/>, which
+/// retries it until it is delivered or expires (<see cref="OutboxRetryPolicy"/>), so messages survive internet
+/// outages on the hospital WiFi link however long they last.
 /// </summary>
 [NotAudited]
 public sealed class OutboxMessage
@@ -61,9 +62,40 @@ internal sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outb
     }
 }
 
+/// <summary>
+/// How a failed outbox message is retried (SRS DED-11: queued messages are retried until delivered or expired). The
+/// wait doubles after each failure, from 10 seconds up to an hour, so a message keeps trying through an internet or
+/// Tally outage of any length. It expires when its sender said (a sign-in code when the code expires, a reminder at
+/// the appointment), or <see cref="DefaultLifetime"/> after it was due.
+/// </summary>
+public static class OutboxRetryPolicy
+{
+    /// <summary>How long a message whose sender set no expiry keeps being tried.</summary>
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromDays(7);
+
+    /// <summary>The longest wait between two tries.</summary>
+    public static readonly TimeSpan LongestWait = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// The wait after a message's <paramref name="failures"/>th failure: 10 s, 20 s, 40 s … then an hour.
+    /// </summary>
+    public static TimeSpan WaitAfter(int failures) =>
+        TimeSpan.FromSeconds(Math.Min(10 * Math.Pow(2, Math.Max(failures, 1) - 1), LongestWait.TotalSeconds));
+
+    /// <summary>
+    /// When the message stops being tried. Messages queued without an expiry by older versions get the default.
+    /// </summary>
+    public static DateTimeOffset ExpiryOf(OutboxMessage message) =>
+        message.ExpiresAt ?? message.CreatedAt + DefaultLifetime;
+}
+
 public interface IOutbox
 {
-    /// <summary>Queues a message in the current unit of work (sent after the caller's SaveChangesAsync commits).</summary>
+    /// <summary>
+    /// Queues a message in the current unit of work (sent after the caller's SaveChangesAsync commits). It is retried
+    /// until it is delivered or <paramref name="expiresIn"/> has passed; without one it is tried for
+    /// <see cref="OutboxRetryPolicy.DefaultLifetime"/> from when it is due.
+    /// </summary>
     void Enqueue<T>(string type, T payload, Guid? facilityId = null, TimeSpan? delay = null, TimeSpan? expiresIn = null);
 }
 
@@ -74,13 +106,14 @@ public sealed class Outbox(HospitalDbContext db, ICurrentUser currentUser, TimeP
     public void Enqueue<T>(string type, T payload, Guid? facilityId = null, TimeSpan? delay = null, TimeSpan? expiresIn = null)
     {
         var now = time.GetUtcNow();
+        var due = now + (delay ?? TimeSpan.Zero);
         db.Set<OutboxMessage>().Add(new OutboxMessage
         {
             Type = type,
             Payload = JsonSerializer.Serialize(payload, JsonOptions),
             CreatedAt = now,
-            NextAttemptAt = now + (delay ?? TimeSpan.Zero),
-            ExpiresAt = expiresIn is { } ttl ? now + ttl : null,
+            NextAttemptAt = due,
+            ExpiresAt = expiresIn is { } ttl ? now + ttl : due + OutboxRetryPolicy.DefaultLifetime,
             FacilityId = facilityId ?? currentUser.FacilityId,
             CorrelationId = currentUser.CorrelationId,
         });
@@ -103,7 +136,6 @@ public sealed class OutboxDispatcher(
     ILogger<OutboxDispatcher> logger) : BackgroundService
 {
     private const int BatchSize = 25;
-    private const int MaxAttempts = 12;
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan HandlerTimeout = TimeSpan.FromSeconds(30);
 
@@ -153,10 +185,8 @@ public sealed class OutboxDispatcher(
 
         foreach (var message in batch)
         {
-            if (message.ExpiresAt is { } expires && expires <= now)
+            if (ExpireIfDue(message, now))
             {
-                message.Status = OutboxStatus.Expired;
-                message.ProcessedAt = now;
                 continue;
             }
 
@@ -188,20 +218,43 @@ public sealed class OutboxDispatcher(
         return batch.Count;
     }
 
-    private static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent)
+    /// <summary>
+    /// Ends a message whose time is up: Expired when it was never tried (it was no longer worth sending by the time it
+    /// could go, after the server was off, say), Failed when it kept failing until then.
+    /// </summary>
+    internal static bool ExpireIfDue(OutboxMessage message, DateTimeOffset now)
+    {
+        if (OutboxRetryPolicy.ExpiryOf(message) > now)
+        {
+            return false;
+        }
+
+        message.Status = message.Attempts == 0 ? OutboxStatus.Expired : OutboxStatus.Failed;
+        message.ProcessedAt = now;
+        return true;
+    }
+
+    private static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent) =>
+        // Jitter, so that a recovered WiFi or internet link is not stampeded.
+        Fail(message, now, error, permanent, TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, 3000)));
+
+    /// <summary>
+    /// Records a failed try and when to try again. A permanent failure, or one whose next try would come after the
+    /// message expires, ends it as Failed.
+    /// </summary>
+    internal static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent, TimeSpan jitter)
     {
         message.Attempts++;
         error = SensitiveText.Redact(error);
         message.LastError = error.Length > 2000 ? error[..2000] : error;
-        if (permanent || message.Attempts >= MaxAttempts)
+        var next = now + OutboxRetryPolicy.WaitAfter(message.Attempts) + jitter;
+        if (permanent || next >= OutboxRetryPolicy.ExpiryOf(message))
         {
             message.Status = OutboxStatus.Failed;
             message.ProcessedAt = now;
             return;
         }
 
-        // 10s, 20s, 40s … capped at 1h, plus jitter so a recovered WiFi/internet link is not stampeded.
-        var backoff = TimeSpan.FromSeconds(Math.Min(10 * Math.Pow(2, message.Attempts - 1), 3600));
-        message.NextAttemptAt = now + backoff + TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, 3000));
+        message.NextAttemptAt = next;
     }
 }

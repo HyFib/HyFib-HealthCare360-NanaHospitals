@@ -98,8 +98,8 @@ internal sealed class InsuranceClaimConfiguration : IEntityTypeConfiguration<Ins
     {
         b.ToTable("insurance_claims", BillingSchema.Name);
         b.Property(x => x.ClaimNumber).HasMaxLength(24);
-        b.Property(x => x.DiagnosisCodes).HasMaxLength(1000);
-        b.Property(x => x.ProcedureCodes).HasMaxLength(1000);
+        b.Property(x => x.DiagnosisCodes).HasMaxLength(InsuranceClaim.CodesMaxLength);
+        b.Property(x => x.ProcedureCodes).HasMaxLength(InsuranceClaim.CodesMaxLength);
         b.Property(x => x.PayerClaimReference).HasMaxLength(64);
         b.Property(x => x.QueryText).HasMaxLength(2000);
         b.Property(x => x.QueryResponse).HasMaxLength(2000);

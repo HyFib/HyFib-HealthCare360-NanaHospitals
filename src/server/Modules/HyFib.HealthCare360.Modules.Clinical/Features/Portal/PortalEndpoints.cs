@@ -216,7 +216,7 @@ internal static class PortalEndpoints
     }
 
     private static async Task<IResult> RequestRecords(PortalRecordRequest request, PortalPatientScope scope, HospitalDbContext db, MedicalRecordService charts,
-        CancellationToken ct)
+        ICurrentUser currentUser, CancellationToken ct)
     {
         var allowed = await scope.EnsureAccessAsync(request.PatientId, ct);
         if (allowed.IsFailure)
@@ -226,8 +226,14 @@ internal static class PortalEndpoints
 
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == request.PatientId)
             .Select(p => new { p.FullName, p.RegisteredFacilityId }).FirstAsync(ct);
+
+        // A family member who sees the patient through a family link asks in the account's name, so the medical records
+        // department knows the request is not from the patient's own number.
+        var fromOwnNumber = (await scope.OwnNumberPatientIdsAsync(ct)).Contains(request.PatientId);
         var created = await charts.CreateRequestAsync(
-            new CreateRecordRequestRequest(request.PatientId, null, patient.FullName, "Patient portal", request.Purpose, request.Details),
+            new CreateRecordRequestRequest(request.PatientId, null,
+                fromOwnNumber ? patient.FullName : currentUser.DisplayName ?? patient.FullName,
+                fromOwnNumber ? "Patient portal" : "Patient portal, family member", request.Purpose, request.Details),
             isPatientRequest: true, facilityId: patient.RegisteredFacilityId, ct);
         return created.IsFailure
             ? created.Error!.ToProblem()

@@ -82,7 +82,7 @@ request keeps the data summary exactly as it was given. The portal allows at mos
 | `messages` | Withdraws marketing and optional update consent |
 | `feedback` | Removes the patient, visit, contact details and comments from their feedback, complaints and enquiries. The ratings and complaints stay in the quality records. Their feedback invitations are deleted, so a link sent earlier cannot add a new response tied to them |
 | `nominee` | Removes the nominee |
-| `portal` | Closes the portal account and ends its sessions; not offered when other patients sign in with the same number |
+| `portal` | Closes the portal account, ends its sessions and ends its family links both ways (the relatives it saw, and the accounts that saw the patient); not offered when other patients sign in with the same number |
 
 What is kept (`holds`):
 
@@ -132,7 +132,7 @@ The summary is built from `PersonalDataCatalogue`:
 | GET | `/summary?patientId=` | → `DataSummary` |
 | GET | `/requests?patientId=` (optional) | → `PortalDataRequestItem[] {id, requestNumber, patientId, type, status, receivedAt, dueAt, closedAt}` (newest first, at most 100) |
 | GET | `/requests/{id}` | → `PortalDataRequestDetail {id, requestNumber, patientId, type, status, requestedBy, requesterName, identityConfirmed, details, corrections[{field, currentValue, requestedValue, decision, note}], receivedAt, dueAt, closedAt, response, erasedItems[], retainedUntil, retainedPermanently, timeline[{at, kind, text}], canWithdraw, contact}`. Only the public history is shown: received, identity confirmed, started, erased, answered, withdrawn. `identityConfirmed` false on a request made for someone else means staff still have to confirm the requester may act for them |
-| POST | `/requests` | `PortalDataRequestCreate {patientId, type: Correction\|Erasure\|Grievance, requestedBy: Self\|ParentOrGuardian\|FamilyMember, requesterName?, details?, corrections?}` → 201 `{id, requestNumber, dueAt}` |
+| POST | `/requests` | `PortalDataRequestCreate {patientId, type: Correction\|Erasure\|Grievance, requestedBy: Self\|ParentOrGuardian\|FamilyMember, requesterName?, details?, corrections?}` → 201 `{id, requestNumber, dueAt}`. A `Self` request is marked `PortalSignIn` only for a patient on the account's own number; for a family member seen through a family link (the code went to another number), staff confirm the identity |
 | POST | `/requests/{id}/withdraw` | → 204 |
 | GET · PUT · DELETE | `/nominee` | GET/DELETE `?patientId=`; PUT `PortalNomineeRequest {patientId, name, relationship, phone?, email?}`; GET → `{nominee}` |
 | GET | `/notices?patientId=` (optional) · `/notices/{id}` | → `PortalBreachNotice {id, patientIds[], reference, title, notifiedAt, awareAt, occurredFrom, occurredTo, description, location, dataCategories[], consequences, mitigation, principalSteps, contact}`; `patientIds` are the people it concerns among those the user may act for |

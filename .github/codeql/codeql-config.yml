@@ -1,0 +1,19 @@
+# CodeQL code scanning (.github/workflows/codeql.yml). The security-extended suite adds the lower-precision security
+# queries to the default ones. Test code and generated files are left out: they never run in a hospital, and alerts in
+# them would only be noise. paths-ignore applies only to the TypeScript and workflow analysis: the C# job analyses all
+# the code it builds, so it keeps the tests out by building only the shipped projects (see the workflow), and the
+# database migrations, compiled into the server, are analysed with it.
+name: HC360 code scanning
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - tests
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/test/**"
+  - src/web/apps/staff/src/routeTree.gen.ts
+  - src/web/apps/portal/src/routeTree.gen.ts
+  - "**/node_modules/**"
+  - "**/dist/**"

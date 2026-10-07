@@ -22,7 +22,7 @@ import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { fromZonedInput, toZonedInput } from '@/modules/lab/common/datetime';
 import { errorMessage, hasErrorCode } from '@/modules/lab/common/errors';
-import { ACCEPTED_FILE_TYPES, fileProblem, uploadFile } from '@/modules/lab/common/files';
+import { DEVICE_FILE_TYPES, deviceFileProblem, uploadFile } from '@/modules/lab/common/files';
 import { cardiologyApi, type CardiologyStudyStatus, type CardiologyStudyType } from './api';
 import { studyTypeLongLabel } from './labels';
 
@@ -200,8 +200,8 @@ export function StartCardiologyDialog({
 }
 
 /**
- * Uploads the device output (PDF tracing, echo images) to the encrypted file store against the patient, then attaches
- * it to the study.
+ * Uploads the device output (PDF tracing, echo images, DICOM or SCP-ECG files) to the encrypted file store against the
+ * patient, then attaches it to the study.
  */
 export function AttachFilesDialog({
   study,
@@ -215,7 +215,7 @@ export function AttachFilesDialog({
   const styles = useStyles();
   const canUpload = usePermission('files.write');
   const [files, setFiles] = useState<File[]>([]);
-  const problems = files.map(fileProblem).filter((problem): problem is string => problem !== null);
+  const problems = files.map(deviceFileProblem).filter((problem): problem is string => problem !== null);
   const attach = useMutation({
     mutationFn: async () => {
       const stored = [];
@@ -244,12 +244,12 @@ export function AttachFilesDialog({
       {canUpload ? (
         <>
           <Field
-            label="Files from the machine (PDF or images, up to 25 MB each)"
+            label="Files from the machine (PDF, images, DICOM or SCP-ECG, up to 25 MB each)"
             hint="Select several files at once if the machine exported more than one"
           >
             <input
               type="file"
-              accept={ACCEPTED_FILE_TYPES}
+              accept={DEVICE_FILE_TYPES}
               multiple
               onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
               aria-label="Device output files"

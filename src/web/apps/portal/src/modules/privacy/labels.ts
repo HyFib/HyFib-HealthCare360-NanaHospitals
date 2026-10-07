@@ -308,6 +308,7 @@ export const ITEM_LABEL: Readonly<Record<string, MessageKey>> = {
   'patients.patient_consents': 'myPrivacy.item.patients.patient_consents',
   'patients.patient_documents': 'myPrivacy.item.patients.patient_documents',
   'identity.users': 'myPrivacy.item.identity.users',
+  'patients.portal_family_links': 'myPrivacy.item.patients.portal_family_links',
   'quality.incidents': 'myPrivacy.item.quality.incidents',
   'ai.usage_records': 'myPrivacy.item.ai.usage_records',
   'audit.audit_events': 'myPrivacy.item.audit.audit_events',

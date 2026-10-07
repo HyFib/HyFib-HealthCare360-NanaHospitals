@@ -25,6 +25,8 @@ internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use 
 - 1 TB NVMe SSD, plus a second disk or NAS share for backup copies.
 - WiFi 6 adapter; an Ethernet cable to the access point is better still.
 - A UPS with a USB connection, so HC360 can see power cuts (Administration › System health).
+- Windows with BitLocker (Pro, Enterprise or Server), turned on with the TPM for every fixed disk before HC360 holds
+  patient data. The keys that open HC360's stored data are on the same machine (SRS SEC-05).
 
 **Network checklist**:
 - The server gets a **DHCP reservation** (fixed IP) and keeps a fixed computer name, e.g. `HC360-SRV`.
@@ -54,11 +56,21 @@ Open **PowerShell as Administrator** in the extracted `deploy` folder:
 .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
 ```
 
-This does four things:
+This does five things:
 - Installs PostgreSQL through winget.
 - Restricts it to localhost, with scram-sha-256 authentication only.
 - Sizes its memory settings from the machine's RAM.
+- Logs statements slower than two seconds, without their parameter values, which can be patient details.
 - Sets the time zone to IST.
+
+A server installed with an earlier version of this script logged the parameter values of slow statements. Turn that
+off once, as the postgres user, then delete the old PostgreSQL log files in its `data\log` folder:
+
+```sql
+ALTER SYSTEM SET log_parameter_max_length = 0;
+ALTER SYSTEM SET log_parameter_max_length_on_error = 0;
+SELECT pg_reload_conf();
+```
 
 Keep the postgres password in the hospital's password safe.
 
@@ -71,7 +83,13 @@ Keep the postgres password in the hospital's password safe.
 
 The installer:
 - Creates a least-privilege database account with a random password.
-- Writes the configuration, readable only by Administrators and the service.
+- Writes the configuration, readable only by Administrators and the service. The database password in it is protected
+  with Windows DPAPI for this machine, so a copy of the file is no use on another computer (see "Changing a protected
+  setting" below).
+- Checks that BitLocker protects every fixed disk, and warns if one is not. It registers the scheduled task
+  *HC360 disk encryption check* (in Task Scheduler › HyFib), which checks again as SYSTEM every day at 06:15 and at
+  start-up. Administration › System health shows what it found, and warns about a disk that is not protected or a
+  check that has stopped running.
 - Registers the `HC360Server` Windows service, which restarts itself if it stops.
 - Opens the firewall for Private networks only.
 - Keeps the machine and its WiFi adapter from sleeping.
@@ -81,12 +99,46 @@ At the end it prints two things. Write them down:
 - the **hospital CA fingerprint**, which staff compare when setting up HC360 Desktop;
 - the **first administrator password** (user `admin`).
 
+### Changing a protected setting
+
+Secrets in `%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json` are stored as `dpapi:` followed by
+protected text: every connection string, and every setting whose name ends in `Password`, `Secret` or `ApiKey` (for
+example `HealthCare360:Network:CertificatePassword`). To change one, from an elevated prompt on the server:
+
+1. Replace the `dpapi:…` value with the new plain value, for example the whole connection string.
+2. Run `& "$env:ProgramFiles\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe" settings protect`. It
+   protects every secret written in plain text, and says which.
+3. Restart the `HC360Server` service.
+
+A protected value opens only on the machine that protected it. When the server moves to new hardware, write the
+values in plain text on the new machine and protect them there (Install-HC360Server.ps1 does this for the database).
+Administration › System health warns while a secret in the file is in plain text.
+
+### Changing the database password
+
+The password of HC360's database account is changed from Administration › System health, while HC360 runs (SRS
+SEC-07). It needs the permission *Change the server's database password* (`admin.system.manage`), which only
+SuperAdmin has until it is given to another role in Administration › Roles and permissions. Then:
+
+1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
+2. Select **Change password** and confirm.
+
+HC360 makes a new random password that nobody sees, sets it on the database and writes it protected in the settings
+file together, and uses it for every new connection. Screens keep working, and no restart is needed. When either step
+fails, both keep the old password. A reporting replica in the settings file that signs in as the same account gets the
+new password too. Each change is recorded in the audit log. Change the password when someone who knew the old one
+leaves, and at least once a year.
+
+It works on the Windows Server Node when the connection string is in the settings file. When the connection is set
+somewhere else, such as in environment variables, System health says so, and the password is changed there.
+
 ## 4. First sign-in and security set-up
 
 On the server open `https://localhost:7360/`. The browser warns once, because the hospital CA is private. Then:
 
 1. Sign in as `admin` and choose a new password. Set up two-step verification; administrators must use it.
-2. Delete `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt`.
+2. Check that `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt` is gone: HC360 deletes it once `admin`
+   has a new password. If it is still there, delete it.
 3. **Administration › Backups › Recovery key**: write the key down or print it, and store it in the hospital safe.
    Without it, backups cannot be restored on new hardware.
 4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs.
@@ -128,6 +180,8 @@ On first start HC360 Desktop:
 - names the computer (e.g. "OPD Reception 2").
 
 Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and shows the fingerprint for staff to compare.
+On an all-in-one machine (server and Desktop on one computer), setup also lists "This computer" when the server
+listens on port 7360 there, because the network search does not always find the computer it runs on.
 
 **Tablets and browsers**:
 1. Download `https://HC360-SRV:7360/api/v1/system/ca-certificate`.
@@ -284,6 +338,8 @@ whose Accession Number and Patient ID are a study's accession number and the pat
 3. Run `.\Install-HC360Server.ps1` again, **without** `-CreateDatabase`.
 
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
+It also protects any secret still written in plain text in the configuration (an installation from before this was
+done), and checks BitLocker again.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.
@@ -335,7 +391,12 @@ distribution tool).
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal; Administration › System health shows the server's |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
+| "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
+| "The database could not be reached to confirm the change" after Change password | HC360 kept the old password. If it cannot sign in to the database once the database is back, set a new password for its account as `postgres` (`\password hc360_app` in psql), write the connection string with it in plain text in `hc360.settings.json`, run `settings protect` and restart the `HC360Server` service |
+| Service will not start: "The setting … cannot be opened on this machine" | The configuration was copied from another server, or the value was damaged. Write that setting's plain value in `hc360.settings.json` and run `settings protect` (see "Changing a protected setting") |
+| "BitLocker is off on D:" or "BitLocker is not installed" (System health) | Turn on BitLocker, with the TPM, for that disk (Control Panel › BitLocker Drive Encryption). The warning clears after the next daily check, or run the *HC360 disk encryption check* task in Task Scheduler › HyFib |
+| "BitLocker was last checked on …" or "has not been checked" (System health) | Is the *HC360 disk encryption check* task in Task Scheduler › HyFib, enabled, and does its last run show success? Run `Install-HC360Server.ps1` again to recreate it |
 | A serial analyser shows "Waiting for agent" | Is the lab PC on and the `HC360LabAgent` service running? Administration › Devices shows when the agent last called in. Event Viewer › Application on the lab PC (source *HyFib HC360 Lab Agent*) says why it cannot connect |
 | A serial analyser shows "COM port problem" | The message gives the Windows error. "Access to the port is denied": another program has the port open. Otherwise check the COM number in Device Manager on the lab PC |
 | An analyser sends results but none arrive | Integration log (Administration › Integrations) for refused messages. Network analysers: is the analyser's IP the one in its connection, and the port open in the firewall? Serial: compare baud rate, parity and stop bits with the analyser's settings |

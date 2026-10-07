@@ -119,9 +119,40 @@ internal sealed class SterilePackConfiguration : IEntityTypeConfiguration<Steril
         b.Property(x => x.PackNumber).HasMaxLength(32);
         b.Property(x => x.Version).HasColumnName("xmin").HasColumnType("xid").ValueGeneratedOnAddOrUpdate().IsConcurrencyToken();
         b.HasOne<InstrumentSet>().WithMany().HasForeignKey(x => x.InstrumentSetId).OnDelete(DeleteBehavior.Restrict);
+        b.HasOne<WashCycle>().WithMany().HasForeignKey(x => x.WashCycleId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.PackNumber).IsUnique();
         b.HasIndex(x => new { x.InstrumentSetId, x.Status });
         b.HasIndex(x => new { x.Status, x.SterileUntil });
+    }
+}
+
+internal sealed class WashCycleConfiguration : IEntityTypeConfiguration<WashCycle>
+{
+    public void Configure(EntityTypeBuilder<WashCycle> b)
+    {
+        b.ToTable("wash_cycles", SupportServicesSchema.Name);
+        b.Property(x => x.CycleNumber).HasMaxLength(24);
+        b.Property(x => x.WasherName).HasMaxLength(100);
+        b.Property(x => x.Program).HasMaxLength(100);
+        b.Property(x => x.DisinfectionTemperatureC).HasPrecision(5, 1);
+        b.Property(x => x.HoldMinutes).HasPrecision(5, 1);
+        b.Property(x => x.FailureReason).HasMaxLength(300);
+        b.Property(x => x.OperatorName).HasMaxLength(200);
+        b.Property(x => x.Notes).HasMaxLength(500);
+        b.HasMany(x => x.Trays).WithOne().HasForeignKey(x => x.WashCycleId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => x.CycleNumber).IsUnique();
+        b.HasIndex(x => new { x.Status, x.StartedAt });
+    }
+}
+
+internal sealed class WashCycleTrayConfiguration : IEntityTypeConfiguration<WashCycleTray>
+{
+    public void Configure(EntityTypeBuilder<WashCycleTray> b)
+    {
+        b.ToTable("wash_cycle_trays", SupportServicesSchema.Name);
+        b.HasKey(x => x.Id);
+        b.HasOne<InstrumentSet>().WithMany().HasForeignKey(x => x.InstrumentSetId).OnDelete(DeleteBehavior.Restrict);
+        b.HasIndex(x => new { x.InstrumentSetId, x.WashCycleId });
     }
 }
 

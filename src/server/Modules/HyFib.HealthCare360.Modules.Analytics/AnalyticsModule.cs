@@ -20,7 +20,7 @@ public sealed class AnalyticsModule : IModule
 
     public void AddServices(IServiceCollection services, IConfiguration configuration)
     {
-        services.AddSingleton(new ReportingDatabase(configuration));
+        services.AddSingleton(sp => new ReportingDatabase(configuration, sp.GetRequiredService<DatabaseCredentials>()));
         services.AddSingleton<ReportCatalog>();
         services.AddScoped<ReportingDbContextFactory>();
         services.AddScoped<FacilityAccess>();

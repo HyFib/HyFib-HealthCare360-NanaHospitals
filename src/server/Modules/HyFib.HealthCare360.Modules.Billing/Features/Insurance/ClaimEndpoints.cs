@@ -66,7 +66,8 @@ internal static class ClaimEndpoints
         }));
     }
 
-    private static async Task<IResult> Get(Guid id, HospitalDbContext db, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Get(
+        Guid id, HospitalDbContext db, ClaimService claims, PatientAccessGuard guard, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var c = await db.Set<InsuranceClaim>().AsNoTracking().Include(x => x.Settlements).Include(x => x.Deductions).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (c is null)
@@ -81,16 +82,18 @@ internal static class ClaimEndpoints
         }
 
         var patient = (await PatientQueries.SummariesAsync(db, [c.PatientId], BillingTime.Today(time), ct)).GetValueOrDefault(c.PatientId);
-        var billNumber = await db.Set<Bill>().Where(b => b.Id == c.BillId).Select(b => b.BillNumber).FirstOrDefaultAsync(ct);
+        var bill = await db.Set<Bill>().Where(b => b.Id == c.BillId).Select(b => new { b.BillNumber, b.AdmissionId, b.VisitId }).FirstOrDefaultAsync(ct);
         var payerName = await db.Set<Payer>().Where(p => p.Id == c.PayerId).Select(p => p.Name).FirstOrDefaultAsync(ct);
+        var verified = await claims.VerifiedCodingAsync(c.PatientId, bill?.AdmissionId, bill?.VisitId, ct);
         await audit.PatientRecordAccessedAsync(c.PatientId, $"Viewed insurance claim {c.ClaimNumber}", ct);
 
         return TypedResults.Ok(new ClaimDetail(
-            c.Id, c.ClaimNumber, c.BillId, billNumber, c.PatientId, patient?.Uhid, patient?.FullName, c.PayerId, payerName, c.TpaId, c.PolicyId,
+            c.Id, c.ClaimNumber, c.BillId, bill?.BillNumber, c.PatientId, patient?.Uhid, patient?.FullName, c.PayerId, payerName, c.TpaId, c.PolicyId,
             c.PreAuthorizationId, c.ClaimedAmount, c.DiagnosisCodes, c.ProcedureCodes, c.DocumentFileIds, c.Status, c.SubmittedAt, c.PayerClaimReference,
             c.QueryText, c.QueryResponse, c.ApprovedAmount, c.SettledAmount, c.DeductionAmount, c.Outstanding, c.UtrNumber, c.RejectionReason,
             c.Settlements.OrderBy(s => s.RecordedAt).Select(s => new ClaimSettlementDto(s.Id, s.Amount, s.DeductionAmount, s.UtrNumber, s.Reference, s.SettledOn, s.ReceiptId)).ToList(),
             c.Deductions.Select(d => new ClaimDeductionDto(d.Id, d.SettlementId, d.Reason, d.Amount)).ToList(),
+            verified,
             c.Version));
     }
 

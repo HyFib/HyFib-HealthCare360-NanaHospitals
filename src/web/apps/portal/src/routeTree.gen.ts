@@ -30,6 +30,7 @@ import { Route as AuthMyPrivacyNomineeRouteImport } from './routes/_auth/my-priv
 import { Route as AuthPrescriptionsIndexRouteImport } from './routes/_auth/prescriptions/index'
 import { Route as AuthPrescriptionsPrescriptionIdRouteImport } from './routes/_auth/prescriptions/$prescriptionId'
 import { Route as AuthProfileIndexRouteImport } from './routes/_auth/profile/index'
+import { Route as AuthProfileFamilyRouteImport } from './routes/_auth/profile/family'
 import { Route as AuthProfilePreferencesRouteImport } from './routes/_auth/profile/preferences'
 import { Route as AuthRecordsIndexRouteImport } from './routes/_auth/records/index'
 import { Route as AuthRecordsRequestRouteImport } from './routes/_auth/records/request'
@@ -153,6 +154,11 @@ const AuthProfileIndexRoute = AuthProfileIndexRouteImport.update({
   path: '/profile/',
   getParentRoute: () => AuthRoute,
 } as any)
+const AuthProfileFamilyRoute = AuthProfileFamilyRouteImport.update({
+  id: '/profile/family',
+  path: '/profile/family',
+  getParentRoute: () => AuthRoute,
+} as any)
 const AuthProfilePreferencesRoute = AuthProfilePreferencesRouteImport.update({
   id: '/profile/preferences',
   path: '/profile/preferences',
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
+  '/profile/family': typeof AuthProfileFamilyRoute
   '/profile/preferences': typeof AuthProfilePreferencesRoute
   '/records/request': typeof AuthRecordsRequestRoute
   '/video/$sessionId': typeof AuthVideoSessionIdRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
+  '/profile/family': typeof AuthProfileFamilyRoute
   '/profile/preferences': typeof AuthProfilePreferencesRoute
   '/records/request': typeof AuthRecordsRequestRoute
   '/video/$sessionId': typeof AuthVideoSessionIdRoute
@@ -337,6 +345,7 @@ export interface FileRoutesById {
   '/_auth/my-privacy/data': typeof AuthMyPrivacyDataRoute
   '/_auth/my-privacy/nominee': typeof AuthMyPrivacyNomineeRoute
   '/_auth/prescriptions/$prescriptionId': typeof AuthPrescriptionsPrescriptionIdRoute
+  '/_auth/profile/family': typeof AuthProfileFamilyRoute
   '/_auth/profile/preferences': typeof AuthProfilePreferencesRoute
   '/_auth/records/request': typeof AuthRecordsRequestRoute
   '/_auth/video/$sessionId': typeof AuthVideoSessionIdRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
+    | '/profile/family'
     | '/profile/preferences'
     | '/records/request'
     | '/video/$sessionId'
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/my-privacy/data'
     | '/my-privacy/nominee'
     | '/prescriptions/$prescriptionId'
+    | '/profile/family'
     | '/profile/preferences'
     | '/records/request'
     | '/video/$sessionId'
@@ -455,6 +466,7 @@ export interface FileRouteTypes {
     | '/_auth/my-privacy/data'
     | '/_auth/my-privacy/nominee'
     | '/_auth/prescriptions/$prescriptionId'
+    | '/_auth/profile/family'
     | '/_auth/profile/preferences'
     | '/_auth/records/request'
     | '/_auth/video/$sessionId'
@@ -640,6 +652,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthProfileIndexRouteImport
       parentRoute: typeof AuthRoute
     }
+    '/_auth/profile/family': {
+      id: '/_auth/profile/family'
+      path: '/profile/family'
+      fullPath: '/profile/family'
+      preLoaderRoute: typeof AuthProfileFamilyRouteImport
+      parentRoute: typeof AuthRoute
+    }
     '/_auth/profile/preferences': {
       id: '/_auth/profile/preferences'
       path: '/profile/preferences'
@@ -770,6 +789,7 @@ interface AuthRouteChildren {
   AuthMyPrivacyDataRoute: typeof AuthMyPrivacyDataRoute
   AuthMyPrivacyNomineeRoute: typeof AuthMyPrivacyNomineeRoute
   AuthPrescriptionsPrescriptionIdRoute: typeof AuthPrescriptionsPrescriptionIdRoute
+  AuthProfileFamilyRoute: typeof AuthProfileFamilyRoute
   AuthProfilePreferencesRoute: typeof AuthProfilePreferencesRoute
   AuthRecordsRequestRoute: typeof AuthRecordsRequestRoute
   AuthVideoSessionIdRoute: typeof AuthVideoSessionIdRoute
@@ -798,6 +818,7 @@ const AuthRouteChildren: AuthRouteChildren = {
   AuthMyPrivacyDataRoute: AuthMyPrivacyDataRoute,
   AuthMyPrivacyNomineeRoute: AuthMyPrivacyNomineeRoute,
   AuthPrescriptionsPrescriptionIdRoute: AuthPrescriptionsPrescriptionIdRoute,
+  AuthProfileFamilyRoute: AuthProfileFamilyRoute,
   AuthProfilePreferencesRoute: AuthProfilePreferencesRoute,
   AuthRecordsRequestRoute: AuthRecordsRequestRoute,
   AuthVideoSessionIdRoute: AuthVideoSessionIdRoute,

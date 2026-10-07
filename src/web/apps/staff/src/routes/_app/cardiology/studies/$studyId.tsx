@@ -207,7 +207,7 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
         title="Device output"
         description={
           study.files.length
-            ? 'Tracings and images from the machine'
+            ? 'Tracings, images and ECG or DICOM files from the machine'
             : 'Nothing attached yet. The report is written from the attached tracing.'
         }
         actions={
@@ -226,7 +226,13 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
                 key={file.id}
                 icon={<DocumentRegular />}
                 disabled={!canReadFiles || viewer.opening}
-                onClick={() => void viewer.open(file.id, file.fileName ?? `${study.studyName} ${index + 1}`)}
+                onClick={() =>
+                  void viewer.open(
+                    file.id,
+                    file.fileName ?? `${study.studyName} ${index + 1}`,
+                    file.fileName ?? undefined,
+                  )
+                }
               >
                 {file.fileName ?? `File ${index + 1}`}
                 {file.sizeBytes ? ` (${Math.ceil(file.sizeBytes / 1024)} KB)` : ''}

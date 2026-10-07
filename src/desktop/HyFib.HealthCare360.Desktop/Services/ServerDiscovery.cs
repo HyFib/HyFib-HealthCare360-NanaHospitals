@@ -6,7 +6,10 @@ using Serilog;
 
 namespace HyFib.HealthCare360.Desktop.Services;
 
-/// <summary>An HC360 Server Node found on the WiFi through mDNS/DNS-SD.</summary>
+/// <summary>
+/// An HC360 Server Node found on the WiFi through mDNS/DNS-SD, or listening on this computer
+/// (<see cref="OnThisComputer"/>).
+/// </summary>
 internal sealed record DiscoveredServer(
     string InstanceName,
     string HostName,
@@ -14,7 +17,8 @@ internal sealed record DiscoveredServer(
     IReadOnlyList<IPAddress> Addresses,
     string? Version,
     string? FacilityCode,
-    string? CaFingerprint)
+    string? CaFingerprint,
+    bool OnThisComputer = false)
 {
     /// <summary>Addresses to try, most stable first: the machine name survives DHCP changes, IPs are a fallback.</summary>
     public IEnumerable<Uri> CandidateUris()
@@ -27,7 +31,9 @@ internal sealed record DiscoveredServer(
         }
     }
 
-    public string Display => $"{FacilityCode ?? "HC360"} · {HostName}{(Addresses.Count > 0 ? $" ({Addresses[0]})" : string.Empty)}";
+    public string Display => OnThisComputer
+        ? $"This computer · {HostName} (all-in-one)"
+        : $"{FacilityCode ?? "HC360"} · {HostName}{(Addresses.Count > 0 ? $" ({Addresses[0]})" : string.Empty)}";
 }
 
 /// <summary>
@@ -36,7 +42,34 @@ internal sealed record DiscoveredServer(
 /// </summary>
 internal static class ServerDiscovery
 {
+    /// <summary>The HC360 server's HTTPS port unless IT changed it.</summary>
+    public const int DefaultPort = 7360;
+
     private const string ServiceType = "_hc360._tcp";
+
+    /// <summary>
+    /// The server on this computer, for an all-in-one installation (SRS DED-03), when something listens on
+    /// <paramref name="port"/> here. mDNS often misses it: multicast does not always loop back to the computer that
+    /// sends it. The machine name is used, as for a server found on the network; its certificate names it.
+    /// </summary>
+    public static async Task<DiscoveredServer?> ThisComputerAsync(int port, CancellationToken cancellationToken)
+    {
+        using var client = new TcpClient(AddressFamily.InterNetwork);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(1));
+        try
+        {
+            await client.ConnectAsync(IPAddress.Loopback, port, timeout.Token);
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+        {
+            return null;
+        }
+
+        return new DiscoveredServer(
+            "This computer", Environment.MachineName, port, [IPAddress.Loopback], null, null, null,
+            OnThisComputer: true);
+    }
 
     public static async Task<IReadOnlyList<DiscoveredServer>> BrowseAsync(TimeSpan duration, CancellationToken cancellationToken)
     {

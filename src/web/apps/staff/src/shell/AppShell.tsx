@@ -25,7 +25,7 @@ import { matchLink, NAV_SECTIONS, visibleModules } from '@/lib/modules';
 import { AssistantButton } from './assistant/AssistantButton';
 import { BrandMark } from './BrandMark';
 import { CommandPalette } from './CommandPalette';
-import { ConnectionIndicator, OfflineBanner } from './ConnectionIndicator';
+import { ConnectionIndicator, DegradedBanner, OfflineBanner } from './ConnectionIndicator';
 import { NotificationsButton } from './NotificationsButton';
 import { UserMenu } from './UserMenu';
 
@@ -215,6 +215,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         <div id="main" className={styles.main} tabIndex={-1}>
           <OfflineBanner />
+          <DegradedBanner />
           {children}
         </div>
       </div>

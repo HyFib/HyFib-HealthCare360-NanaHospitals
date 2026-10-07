@@ -2,7 +2,8 @@ using HyFib.HealthCare360.Modules.SupportServices.Domain.Cssd;
 
 namespace HyFib.HealthCare360.Modules.SupportServices.Features.Cssd;
 
-public sealed record LoadPackInput(Guid InstrumentSetId, int Quantity);
+/// <summary>Packs of one set in a load; <paramref name="WashCycleId"/> names the passed wash cycle their trays came from.</summary>
+public sealed record LoadPackInput(Guid InstrumentSetId, int Quantity, Guid? WashCycleId = null);
 
 public sealed record CreateLoadRequest(
     string SterilizerName,
@@ -44,7 +45,9 @@ public sealed record SterilePackDto(
     PackStatus Status,
     DateOnly? SterileUntil,
     bool IsExpired,
-    Guid? IssuedToDepartmentId);
+    Guid? IssuedToDepartmentId,
+    Guid? WashCycleId,
+    string? WashCycleNumber);
 
 public sealed record RecallItem(
     Guid IssueId,

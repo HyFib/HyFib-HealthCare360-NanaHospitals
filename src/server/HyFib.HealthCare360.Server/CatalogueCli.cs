@@ -101,7 +101,7 @@ internal static class CatalogueCli
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
         var options = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();
-        builder.Configuration.AddJsonFile(Path.Combine(new DataDirectories(options).Root, "config", "hc360.settings.json"), optional: true, reloadOnChange: false);
+        builder.Configuration.AddProtectedJsonFile(ProtectedSettings.PathIn(new DataDirectories(options)));
         builder.Configuration.AddEnvironmentVariables("HC360_");
         options = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? options;
 

@@ -27,6 +27,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     that contradicts IT's fingerprint, or the one the server announced on the network, is refused outright.
   - The lab agent runs unattended, so its fingerprint is always given by IT at installation; enrolment stops if the
     server's CA does not match it. Every call the agent makes, its analyser relays included, is pinned the same way.
+  - WebView2, which shows the staff app in HC360 Desktop, hands the Desktop a server certificate only when Windows
+    rejects it. A certificate Windows trusts would pass unchecked: one from a company's TLS-inspection proxy, say.
+    So the Desktop checks the connection with its own pinned client before it loads the staff app, and every 10
+    seconds after. When it is offered a certificate that is not from the hospital CA, it unloads the staff app and
+    shows "HC360 stopped: the server could not be verified" until a check passes. Between two checks (10 seconds at
+    most) the staff app could still use such a connection.
 - Browsers keep to HTTPS for a year after their first visit (HSTS).
 - The firewall opens only port 7360 (HTTPS) and mDNS, and only on Private/Domain networks. PostgreSQL listens on
   localhost only. Network lab analysers need their own ports, which the installer opens only when asked
@@ -103,6 +109,15 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
+- **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
+  and family members on other numbers only through a family link in force (PP-01):
+  - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in
+    the portal with a 6-digit code sent to the relative's own registered number.
+  - Codes are stored hashed and work for 10 minutes and 5 tries. Each account may ask for 5 an hour and each number may
+    receive 3 in 15 minutes. Asking gives the same answer whether or not the UHID and the number match.
+  - The patient, the account holder or staff can end a link, and it stops on the next request. Making and ending links
+    are audited, and a patient merge or the erasure that closes a portal account carries them along or ends them.
+  - Signing in counts as proof of identity (for a privacy request, say) only for patients on the account's own number.
 - Every access to a patient record is audited.
 - **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
   people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
@@ -124,6 +139,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     their last digits, e-mail and ABHA addresses only their domain, and tokens and passwords are removed.
   - Provider error text is masked the same way before it is stored, and integration logs strip PHI and secrets from
     payloads.
+  - PostgreSQL logs statements slower than two seconds for tuning, but never their parameter values
+    (`log_parameter_max_length = 0`, set by `Install-PostgreSQL.ps1`): those can be patient details.
 - Patient links carry their secret in the address (feedback and unsubscribe tokens, verification codes). Request
   logs, error logs, traces and idempotency records hold the route template for those endpoints and for portal
   pages, for example `/api/v1/public/unsubscribe/{token}`, never the token itself (`LoggedPath`,
@@ -225,8 +242,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Rate limits on sign-in, OTP and public endpoints (per address), and on everything else per signed-in user.
 - Input validation on every request, with parameterised SQL through EF Core only. An endpoint that asks for validation
   never runs without it.
-- Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM), and their stored name takes the matching
-  extension, so a download can never produce a program or a web page.
+- Uploaded files are accepted by their content (PDF, PNG, JPEG, WebP, DICOM, SCP-ECG), and their stored name takes the
+  matching extension, so a download can never produce a program or a web page.
 - **Server documents** (reports, prescriptions, discharge summaries, bills, MIS reports):
   - Templates build their HTML only through an encoder that escapes every value unless it is already safe HTML, so
     data in a document (a patient's name, a doctor's note) can never become markup. Images can only be embedded as
@@ -274,6 +291,22 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   earlier step fails, the previous database is put back and the machine keeps its own key.
 - Before start-up changes the database schema, it takes a backup and checks it. When that fails, the database is not
   changed.
+- **Secrets in the settings file** (`config\hc360.settings.json`) are protected with Windows DPAPI for the machine:
+  every connection string, which carries the database password, and every setting whose name ends in Password, Secret
+  or ApiKey, such as an administrator-supplied certificate's password (SRS SEC-07). The server opens them as it loads
+  the file, so a copy of the file is no use on another computer, and the file itself can be read only by SYSTEM,
+  Administrators and the service. The installer protects them on every install and upgrade, and System health warns
+  while one is in plain text. Integration keys are stored encrypted in the database, as before.
+- **The database password is changed from System health** (SRS SEC-07), by holders of `admin.system.manage`, which
+  only SuperAdmin has by default. HC360 makes a new random password that nobody sees and sends PostgreSQL only its SCRAM-SHA-256
+  verifier, so the password never appears in a statement or the database's logs. The settings file is written before
+  the change is committed and put back if the commit fails, so the two agree. When a failed commit cannot be checked
+  because the database is out of reach, the old password is kept and the server log says how to recover. New
+  connections use the new password at once, and each change is audited.
+- **BitLocker** must protect every fixed disk of the Server Node (SRS SEC-05). Reading BitLocker's state needs
+  administrator rights, which the service does not have, so a scheduled task checks it as SYSTEM every day and at
+  start-up, and the installer checks it too. System health shows the result, and warns when a disk is not encrypted,
+  when protection is suspended or unfinished, and when the check has not run for three days.
 
 ### Dependencies, secrets and code scanning
 CI runs these checks on every pull request and on main. A pull request cannot merge while one fails.
@@ -307,6 +340,26 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     React's escaping does not apply. A reviewed use carries an `eslint-disable` comment saying why its markup is safe.
     The only one is the portal's in-page print, whose templates escape every value.
 
+- **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
+  the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
+  on main, and every Monday so that new queries reach code nobody is changing.
+  - Alerts appear under Security › Code scanning. The `CodeQL` check fails a pull request that adds an alert of high
+    or critical severity.
+  - It needs GitHub Code Security on the repository, with CodeQL's default setup off (this workflow is the advanced
+    setup).
+  - Test code and generated route files are left out. For TypeScript and the workflows the filter is
+    `.github/codeql/codeql-config.yml`; for C#, which CodeQL analyses as it is compiled, the workflow builds only the
+    shipped projects, so the tests are left out but the database migrations, part of the server, are analysed.
+  - An alert is fixed in the code. One reviewed as a false positive or an accepted risk is dismissed on GitHub with
+    the reason, never hidden by turning a query off. The first run's alerts and how each was handled are in the table
+    below.
+
+| CodeQL alert | Where | How it was handled |
+|---|---|---|
+| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | Accepted risk: the first administrator's one-time password goes to `initial-admin-password.txt` so the installer can show it. The data directory is open only to administrators and the service, and HC360 now deletes the file as soon as `admin` sets a new password (and at start-up if that already happened). Dismiss as "won't fix" |
+| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. Dismiss as "false positive" |
+| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). Dismiss as "false positive" |
+
 | Rule | Where | Why it is accepted |
 |---|---|---|
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
@@ -320,7 +373,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 1. Use WPA2/WPA3-Enterprise for the clinical SSID. Keep guests on a separate network that cannot reach the server.
 2. Keep the Server Node patched (Windows Update during a maintenance window), physically secured, and on a UPS. Turn on
    BitLocker, with the TPM, for every disk that holds HC360 data, backups or the database: the keys that decrypt the
-   stored data live on the same disk (SRS SEC-05).
+   stored data live on the same disk (SRS SEC-05). Administration › System health warns until every fixed disk is
+   protected.
 3. Give each person their own account and the smallest set of roles. Review users and roles every quarter, and
    deactivate leavers the same day.
 4. Turn on two-step verification for everyone who handles finance or administration, not only administrators.

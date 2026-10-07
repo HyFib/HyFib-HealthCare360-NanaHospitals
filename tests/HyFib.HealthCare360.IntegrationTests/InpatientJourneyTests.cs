@@ -8,6 +8,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
+using HyFib.HealthCare360.Modules.Clinical.Features.MedicalRecords;
 using HyFib.HealthCare360.Modules.Clinical.Features.Orders;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
@@ -20,6 +21,8 @@ using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
+using CodingEntryKind = HyFib.HealthCare360.Modules.Clinical.Domain.CodingEntryKind;
+using CodingStatus = HyFib.HealthCare360.Modules.Clinical.Domain.CodingStatus;
 using DischargeSummaryStatus = HyFib.HealthCare360.Modules.Clinical.Domain.DischargeSummaryStatus;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -28,7 +31,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// The in-patient journey that SRS §9 names as a release condition: admit → bed → charges → discharge bill → insurance
 /// claim. An insured patient with cellulitis of the leg stays two nights. Every step goes through the real HTTP API and is
 /// done by the member of staff who does it in the hospital: the front office, the billing counter, the insurance (TPA)
-/// desk, the doctor and the ward nurse.
+/// desk, the doctor, the ward nurse and medical records.
 /// </summary>
 public sealed class InpatientJourneyTests(HospitalServer server)
 {
@@ -37,6 +40,9 @@ public sealed class InpatientJourneyTests(HospitalServer server)
     private const decimal PreAuthApproved = 20_000m;
     private const string Diagnosis = "L03.1 Cellulitis of other parts of limb (left leg)";
 
+    /// <summary>The diagnosis as medical records codes it, with the title of the ICD-10 catalogue.</summary>
+    private const string CodedDiagnosis = "L03.1 Cellulitis of other parts of limb";
+
     [Fact]
     public async Task An_insured_patient_is_admitted_charged_for_the_stay_discharged_and_the_insurer_settles_the_claim()
     {
@@ -44,6 +50,8 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var coder = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var secondCoder = await server.SignInAsync(HospitalServer.Users.MrdVerifier);
 
         // The demonstration seed has no insurance-desk account. The hospital administrator holds the TPA desk's
         // permissions (pre-authorisations and claims) and plays that part.
@@ -264,7 +272,8 @@ public sealed class InpatientJourneyTests(HospitalServer server)
 
         // ------------------------------------------------------------------ insurance claim
 
-        // TPA desk: claims the insurer's share of the final bill; the coding comes from the pre-authorisation.
+        // TPA desk: claims the insurer's share of the final bill. Medical records has not coded the stay yet, so the coding
+        // comes from the pre-authorisation.
         var claimRequest = new CreateClaimRequest(bill.Id, null, null, null, null, null);
         var claimId = (await tpaDesk.PostAsync<JsonElement>("/api/v1/insurance/claims", claimRequest)).GetProperty("id").GetGuid();
         var claim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
@@ -276,8 +285,27 @@ public sealed class InpatientJourneyTests(HospitalServer server)
         claim.PolicyId.ShouldBe(policy.Id);
         claim.PreAuthorizationId.ShouldBe(preAuth.Id);
         claim.DiagnosisCodes.ShouldBe(Diagnosis);
+        claim.VerifiedCoding.ShouldBeNull("medical records has not coded the stay");
         claim.ClaimedAmount.ShouldBe(insurerShare, "the claim is for the insurer's share, never the patient's co-pay");
         claim.Status.ShouldBe(ClaimStatus.Submitted);
+
+        // Medical records: a coder codes the stay from the discharge summary. The claim offers the coding only once a
+        // second coder has verified it.
+        var coding = await CodeStayAsync(coder, admission.Id);
+        (await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}")).VerifiedCoding
+            .ShouldBeNull("a second coder has not verified the coding yet");
+        coding = await secondCoder.PostAsync<CodingDto>(
+            $"/api/v1/mrd/codings/{coding.Id}/verify", new VerifyCodingRequest(coding.Version));
+        coding.Status.ShouldBe(CodingStatus.Verified);
+
+        // TPA desk: replaces the pre-authorisation's provisional codes on the claim with the verified coding.
+        claim = await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}");
+        var verified = claim.VerifiedCoding.ShouldNotBeNull();
+        verified.DiagnosisCodes.ShouldBe(CodedDiagnosis);
+        verified.ProcedureCodes.ShouldBeNull("the coder coded no procedure");
+        await tpaDesk.PutAsync($"/api/v1/insurance/claims/{claimId}/coding",
+            new UpdateClaimCodingRequest(verified.DiagnosisCodes, verified.ProcedureCodes, null, null, claim.Version));
+        (await tpaDesk.GetAsync<ClaimDetail>($"/api/v1/insurance/claims/{claimId}")).DiagnosisCodes.ShouldBe(CodedDiagnosis);
 
         // TPA desk: records the insurer's approval, then its settlement by bank transfer.
         await tpaDesk.PostAsync($"/api/v1/insurance/claims/{claimId}/approve", new ApproveClaimRequest(insurerShare));
@@ -354,6 +382,23 @@ public sealed class InpatientJourneyTests(HospitalServer server)
             Notes: "Late entry of the admission"));
         admission.BedId.ShouldBe(bedId);
         return admission;
+    }
+
+    /// <summary>
+    /// Medical records: finds the coding record the discharge opened on the coding worklist, and codes the diagnosis the
+    /// discharge summary suggests as the primary diagnosis.
+    /// </summary>
+    private static async Task<CodingDto> CodeStayAsync(ApiClient coder, Guid admissionId)
+    {
+        var worklist = await coder.GetAsync<PagedResult<CodingDto>>("/api/v1/mrd/codings?status=Pending&pageSize=200");
+        var coding = worklist.Items.Single(c => c.AdmissionId == admissionId);
+        var suggestions = await coder.GetAsync<List<CodingSuggestion>>($"/api/v1/mrd/codings/{coding.Id}/suggestions");
+        suggestions.ShouldContain(s => s.Code == "L03.1" && s.Source == "Discharge summary");
+
+        coding = await coder.PutAsync<CodingDto>($"/api/v1/mrd/codings/{coding.Id}",
+            new SaveCodingRequest([new CodingLineRequest(CodingEntryKind.Diagnosis, "L03.1", true)], null, coding.Version));
+        coding.Status.ShouldBe(CodingStatus.Coded);
+        return coding;
     }
 
     /// <summary>TPA desk: raises the cashless request, submits it, and records the insurer's approval.</summary>

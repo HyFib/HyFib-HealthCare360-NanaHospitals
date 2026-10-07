@@ -45,6 +45,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<WorklistQueries>();
         services.AddScoped<DischargeSummaryService>();
         services.AddScoped<CodingService>();
+        services.AddScoped<IVerifiedCodingSource, VerifiedCodingSource>();
         services.AddScoped<MedicalRecordService>();
         services.AddScoped<HealthCheckupService>();
 

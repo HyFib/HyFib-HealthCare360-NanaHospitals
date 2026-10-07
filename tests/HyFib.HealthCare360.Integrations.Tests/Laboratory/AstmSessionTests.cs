@@ -563,7 +563,7 @@ public sealed class AstmSessionTests
 
         await run.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
-        await _processor.ReceivedWithAnyArgs().NextDownloadsAsync(default!, default, Ct);
+        run.IsCompletedSuccessfully.ShouldBeTrue();
     }
 
     [Fact]

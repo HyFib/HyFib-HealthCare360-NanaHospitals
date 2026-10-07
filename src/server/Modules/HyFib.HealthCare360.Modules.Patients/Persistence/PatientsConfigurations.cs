@@ -126,6 +126,38 @@ internal sealed class VisitorPassConfiguration : IEntityTypeConfiguration<Visito
     }
 }
 
+internal sealed class PortalFamilyLinkConfiguration : IEntityTypeConfiguration<PortalFamilyLink>
+{
+    public void Configure(EntityTypeBuilder<PortalFamilyLink> b)
+    {
+        b.ToTable("portal_family_links", PatientsSchema.Name);
+        b.Property(x => x.AccountPhone).HasMaxLength(20);
+        b.Property(x => x.ConsentGivenBy).HasMaxLength(200);
+        b.Property(x => x.CodeSentTo).HasMaxLength(20);
+        b.Property(x => x.RevokedReason).HasMaxLength(300);
+        b.Ignore(x => x.IsActive);
+        b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
+
+        // One link in force per account and patient; ended links stay as history.
+        b.HasIndex(x => new { x.AccountPhone, x.PatientId }).IsUnique().HasFilter("revoked_at IS NULL");
+        b.HasIndex(x => x.PatientId);
+    }
+}
+
+internal sealed class PortalFamilyCodeConfiguration : IEntityTypeConfiguration<PortalFamilyCode>
+{
+    public void Configure(EntityTypeBuilder<PortalFamilyCode> b)
+    {
+        b.ToTable("portal_family_codes", PatientsSchema.Name);
+        b.HasKey(x => x.Id);
+        b.Property(x => x.AccountPhone).HasMaxLength(20);
+        b.Property(x => x.TargetPhone).HasMaxLength(20);
+        b.Property(x => x.CodeHash).HasMaxLength(64);
+        b.HasIndex(x => new { x.AccountPhone, x.CreatedAt });
+        b.HasIndex(x => new { x.TargetPhone, x.CreatedAt });
+    }
+}
+
 internal sealed class PatientConsentConfiguration : IEntityTypeConfiguration<PatientConsent>
 {
     public void Configure(EntityTypeBuilder<PatientConsent> b)

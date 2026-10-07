@@ -12,9 +12,9 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (101 un
 
 | Permission | Purpose | Default roles |
 |---|---|---|
-| `cssd.read` | View sets, loads, packs, issues, reports | CssdTechnician, Nurse, OtCoordinator, QualityManager, HospitalAdmin |
+| `cssd.read` | View sets, wash cycles, loads, packs, issues, reports | CssdTechnician, Nurse, OtCoordinator, QualityManager, HospitalAdmin |
 | `cssd.requests` | Request sterile sets; record packs used on patients | Nurse, OtCoordinator, CssdTechnician, HospitalAdmin |
-| `cssd.process` | Soiled receipts, loads, issues | CssdTechnician, HospitalAdmin |
+| `cssd.process` | Soiled receipts, wash cycles, loads, issues | CssdTechnician, HospitalAdmin |
 | `cssd.release` | Release loads, record biological indicators (triggers recalls) | CssdTechnician, HospitalAdmin |
 | `cssd.recalls` | Receive recall/discrepancy alerts; acknowledge recalled packs | CssdTechnician, OtCoordinator, Nurse, QualityManager, HospitalAdmin |
 | `cssd.masters.manage` | Instrument sets and count sheets | CssdTechnician, HospitalAdmin |
@@ -47,13 +47,32 @@ Tests: `tests/Modules/HyFib.HealthCare360.Modules.SupportServices.Tests` (101 un
 | POST | `/issues/{id}/acknowledge-recall` | `cssd.recalls` | `AcknowledgeRecallRequest` (action) → 204 |
 | GET | `/reports/summary?from&to` | `cssd.read` | → `CssdSummary` (loads, released, failed, failure rate, BI pending, by method, packs issued, open requests, discrepancy receipts, open recalls, stock by set, expiring ≤ 2 days) |
 
+### Wash cycles — `/api/v1/cssd/wash-cycles`
+| Method | Path | Permission | Request → response |
+|---|---|---|---|
+| GET | `/?status&setId&from&to&search` (paged) | `cssd.read` or `cssd.process` | → `PagedResult<WashCycleListItem>` (`setId`: cycles that washed that set, as the load dialog offers them) |
+| GET | `/{id}` | same | → `WashCycleDto` (printout, A0, inspection, trays, and the packs made from them with their load) |
+| POST | `/` | `cssd.process` | `StartWashCycleRequest` (washerName, program, operatorName, notes, trays[setId, quantity] ≤ 200) → 201 `WashCycleDto` (`{FAC}CW{YY}{SEQ:6}`) |
+| POST | `/{id}/complete` | `cssd.process` | `CompleteWashCycleRequest` (temperatureC, holdMinutes, inspectedClean) → `WashCycleDto` |
+| POST | `/{id}/abort` | `cssd.process` | `AbortWashCycleRequest` (reason) → `WashCycleDto` |
+
+**Wash cycles (CSSD-04).** Trays received soiled go through a washer-disinfector before they are packed. A cycle is
+Running until its result is recorded from the washer's printout: the temperature held during thermal disinfection and
+for how long, and whether the trays were clean on inspection. It passes when the disinfection reaches A0 3000
+(ISO 15883-1: each second counts 10^((T − 80) / 10), so 90 °C held for 5 minutes gives 3000) and the trays are clean;
+otherwise, or when the operator aborts it, it fails and the trays are washed again in a new cycle. A sterilizer load
+may name, for each set, the passed cycle its trays were washed in. The load is refused when that cycle has not passed
+(`cssd.wash_not_passed`) or did not wash the set (`cssd.wash_set_mismatch`). Each pack keeps the link, so a pack
+traces back through its load to its wash, and a wash cycle lists the packs made from its trays. Naming the wash cycle
+is optional.
+
 ### Sterilizer loads — `/api/v1/cssd/loads`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?status&method&biologicalPending&from&to&search` (paged) | `cssd.read` or `cssd.process` | → `PagedResult<LoadListItem>` |
 | GET | `/{id}` | same | → `LoadDto` (parameters, indicators, packs with expiry) |
 | GET | `/{id}/recall` | `cssd.read` or `cssd.recalls` | → `RecallReport` (every issue of the load with department, status, patient, acknowledgement) |
-| POST | `/` | `cssd.process` | `CreateLoadRequest` (sterilizerName, method, program, containsImplants, operatorName, packs[setId, quantity] ≤ 200; sets must match the method) → 201 `LoadDto`; packs numbered `{cycle}-001…` |
+| POST | `/` | `cssd.process` | `CreateLoadRequest` (sterilizerName, method, program, containsImplants, operatorName, packs[setId, quantity, washCycleId?] ≤ 200; sets must match the method; a named wash cycle must have passed and washed the set) → 201 `LoadDto`; packs numbered `{cycle}-001…` and linked to their wash cycle |
 | POST | `/{id}/start` | `cssd.process` | → `LoadDto` |
 | POST | `/{id}/complete` | `cssd.process` | `CompleteLoadRequest` (temperatureC, pressureKpa, exposureMinutes, chemicalIndicator) → `LoadDto`; out-of-range parameters or a failed CI fail the load at once |
 | POST | `/{id}/release` | `cssd.release` | → `LoadDto` (packs dated release date + shelf life; implant loads wait for BI pass) |
@@ -145,12 +164,13 @@ No integration events are raised.
 
 ## Settings, numbers, notifications, jobs, seed
 * Settings: `supportservices.diet.chargesEnabled` (bool, default false), `supportservices.canteen.staffCreditLimit` (decimal, default 3000; 0 = no limit).
-* Number series (yearly): `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`.
+* Number series (yearly): `cssd-wash` → `{FAC}CW{YY}{SEQ:6}`, `cssd-cycle` → `{FAC}CS{YY}{SEQ:6}`, `cssd-request` → `{FAC}CQ{YY}{SEQ:6}`, `canteen-bill` → `{FAC}CN{YY}{SEQ:7}`.
 * Notifications: in-app only — CSSD recall (critical) and count discrepancy (warning) to `cssd.recalls`; urgent request (warning) to `cssd.process`.
 * Job: `DailyMealPlanJob` — at start-up and hourly when `PlatformOptions.RunsJobs`: generates/refreshes today's and tomorrow's plans for every facility and posts today's diet charges when enabled.
 * Seed `SupportServicesSeeder` (Order 170, every installation, idempotent by code): service items `DIET-STD` (Rs. 300/day), `DIET-THER` (Rs. 450/day), `DIET-ENT` (Rs. 400/day); 13 diet types (NORMAL, SOFT, SEMI-SOLID, LIQUID, CLEAR-LIQUID, DIABETIC, RENAL, CARDIAC, HIGH-PROTEIN, LOW-FAT, BLAND, RT-FEED, NPO); 8 instrument sets for the default facility (MAJOR-TRAY, MINOR-TRAY, LSCS-SET, DELIVERY-SET, DRESSING-SET, SUTURE-SET, CATH-SET, LAPARO-SET); a 28-item canteen menu (idli, dosa, meals, thali, biryani, tea, coffee, snacks, juices, sweets, packaged water and biscuits with tracked stock; HSN 220190 for water, 190531 for biscuits and 080119 for tender coconut, SAC 996333 for everything made in the canteen).
 
 ## Tables (schema `supportservices`)
 `instrument_sets`, `instrument_set_items`, `cssd_requests`, `cssd_request_lines`, `soiled_receipts`,
-`soiled_receipt_lines`, `sterilization_loads`, `sterile_packs`, `set_issues`, `diet_types`, `diet_orders`,
+`soiled_receipt_lines`, `wash_cycles`, `wash_cycle_trays`, `sterilization_loads`, `sterile_packs` (with
+`wash_cycle_id`), `set_issues`, `diet_types`, `diet_orders`,
 `planned_meals`, `menu_items`, `canteen_stock_movements`, `canteen_sales`, `canteen_sale_lines`, `staff_credit_entries`.

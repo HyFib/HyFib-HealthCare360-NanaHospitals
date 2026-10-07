@@ -173,12 +173,14 @@ internal static class CssdEndpoints
                 from p in packs
                 join l in db.Set<SterilizationLoad>() on p.LoadId equals l.Id
                 join s in db.Set<InstrumentSet>() on p.InstrumentSetId equals s.Id
+                join w in db.Set<WashCycle>() on p.WashCycleId equals (Guid?)w.Id into washes
+                from w in washes.DefaultIfEmpty()
                 orderby p.SterileUntil, p.PackNumber
-                select new { Pack = p, l.CycleNumber, s.Name })
+                select new { Pack = p, l.CycleNumber, s.Name, WashNumber = w != null ? w.CycleNumber : null })
             .Take(500)
             .ToListAsync(ct);
         return TypedResults.Ok(rows.Select(r => new SterilePackDto(r.Pack.Id, r.Pack.PackNumber, r.Pack.LoadId, r.CycleNumber, r.Pack.InstrumentSetId, r.Name,
-            r.Pack.Status, r.Pack.SterileUntil, r.Pack.IsExpired(today), r.Pack.IssuedToDepartmentId)).ToList());
+            r.Pack.Status, r.Pack.SterileUntil, r.Pack.IsExpired(today), r.Pack.IssuedToDepartmentId, r.Pack.WashCycleId, r.WashNumber)).ToList());
     }
 
     private static async Task<IResult> ListIssues(Guid? departmentId, Guid? loadId, bool? openRecalls, [AsParameters] PageQuery query, HospitalDbContext db, CancellationToken ct)

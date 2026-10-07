@@ -59,7 +59,18 @@ public partial class SetupWindow : Window
     {
         DiscoverStatus.Text = "Searching the network…";
         ServerList.ItemsSource = null;
-        var servers = await ServerDiscovery.BrowseAsync(TimeSpan.FromSeconds(3), CancellationToken.None);
+        var servers = (await ServerDiscovery.BrowseAsync(TimeSpan.FromSeconds(3), CancellationToken.None)).ToList();
+        var thisComputerFound = servers.Any(
+            s => string.Equals(s.HostName, Environment.MachineName, StringComparison.OrdinalIgnoreCase));
+        if (!thisComputerFound)
+        {
+            var local = await ServerDiscovery.ThisComputerAsync(ServerDiscovery.DefaultPort, CancellationToken.None);
+            if (local is not null)
+            {
+                servers.Add(local);
+            }
+        }
+
         ServerList.ItemsSource = servers;
         DiscoverStatus.Text = servers.Count switch
         {

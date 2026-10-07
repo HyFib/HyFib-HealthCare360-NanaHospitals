@@ -37,14 +37,22 @@ export const useConnection = create<ConnectionState>((set) => ({
 
 export type ConnectionHealth = 'good' | 'degraded' | 'offline';
 
+/** Below this WiFi signal quality (per cent) the connection counts as weak. */
+export const WEAK_WIFI_SIGNAL = 40;
+
+/** The WiFi signal quality (per cent) when HC360 Desktop reports it and it is weak, otherwise null. */
+export function weakWifiSignal(state: Pick<ConnectionState, 'wifi'>): number | null {
+  const signal = state.wifi?.detailsAvailable ? state.wifi.signalQuality : null;
+  return signal !== null && signal !== undefined && signal < WEAK_WIFI_SIGNAL ? signal : null;
+}
+
 export function connectionHealth(
   state: Pick<ConnectionState, 'browserOnline' | 'serverReachable' | 'realtime' | 'wifi'>,
 ): ConnectionHealth {
   if (!state.browserOnline || !state.serverReachable) {
     return 'offline';
   }
-  const weakWifi = state.wifi?.detailsAvailable && (state.wifi.signalQuality ?? 100) < 40;
-  return state.realtime !== 'connected' || weakWifi ? 'degraded' : 'good';
+  return state.realtime !== 'connected' || weakWifiSignal(state) !== null ? 'degraded' : 'good';
 }
 
 let started = false;
