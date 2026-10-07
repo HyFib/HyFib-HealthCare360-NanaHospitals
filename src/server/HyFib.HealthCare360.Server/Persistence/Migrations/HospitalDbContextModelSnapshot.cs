@@ -19441,6 +19441,177 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("patient_documents", "patients");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalFamilyCode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("account_phone");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("CodeHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("code_hash");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consumed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid?>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Relation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("relation");
+
+                    b.Property<string>("TargetPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("target_phone");
+
+                    b.HasKey("Id")
+                        .HasName("pk_portal_family_codes");
+
+                    b.HasIndex("AccountPhone", "CreatedAt")
+                        .HasDatabaseName("ix_portal_family_codes_account_phone_created_at");
+
+                    b.HasIndex("TargetPhone", "CreatedAt")
+                        .HasDatabaseName("ix_portal_family_codes_target_phone_created_at");
+
+                    b.ToTable("portal_family_codes", "patients");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalFamilyLink", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("account_phone");
+
+                    b.Property<string>("CodeSentTo")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("code_sent_to");
+
+                    b.Property<string>("ConsentGivenBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_given_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset>("LinkedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("linked_at");
+
+                    b.Property<Guid?>("LinkedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("linked_by_user_id");
+
+                    b.Property<Guid>("PatientId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("patient_id");
+
+                    b.Property<string>("Relation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("relation");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid?>("RevokedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("revoked_by_user_id");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("revoked_reason");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_portal_family_links");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_portal_family_links_is_deleted");
+
+                    b.HasIndex("PatientId")
+                        .HasDatabaseName("ix_portal_family_links_patient_id");
+
+                    b.HasIndex("AccountPhone", "PatientId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_portal_family_links_account_phone_patient_id")
+                        .HasFilter("revoked_at IS NULL");
+
+                    b.ToTable("portal_family_links", "patients");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.QueueToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -36978,6 +37149,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_patient_documents_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalFamilyLink", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Patients.Domain.Patient", null)
+                        .WithMany()
+                        .HasForeignKey("PatientId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_portal_family_links_patients_patient_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.QueueToken", b =>

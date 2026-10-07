@@ -66,6 +66,7 @@ public sealed class PatientsModule : IModule
         services.AddScoped<PatientAccessGuard>();
         services.AddScoped<VisitService>();
         services.AddScoped<PortalPatientScope>();
+        services.AddScoped<PortalFamilyService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
     }
 
@@ -75,5 +76,6 @@ public sealed class PatientsModule : IModule
         VisitEndpoints.Map(endpoints);
         QueueEndpoints.Map(endpoints);
         FrontOfficeEndpoints.Map(endpoints);
+        PortalFamilyEndpoints.Map(endpoints);
     }
 }

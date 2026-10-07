@@ -111,7 +111,7 @@ docs/                                     SRS, architecture, security, deploymen
 | 0 | SharedKernel | — | — |
 | 1 | Platform | Identity, users/roles/permissions, devices, facilities, departments, specialities, practitioners, service catalogue, numbering, audit, settings, files, notifications, realtime, printable documents and PDFs | SharedKernel |
 | 2 | Integrations (adapters) | SMS, WhatsApp, e-mail, payment gateway, POS, Tally, PACS (DICOMweb), the DICOM modality worklist server, lab analysers, labels, ICD, the PDF renderer (headless Edge) | Platform only. Modules never reference it; they use the Platform abstractions it implements |
-| 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents | Platform |
+| 2 | **Patients** | Front Office (FO), patient master/MPI, visits, queue tokens, enquiries, visitors, consents, documents, patient portal scope and family links | Platform |
 | 2 | **SupplyChain** | Inventory (INV), purchase, stores, indents, vendors, Asset Management (AST) | Platform |
 | 2 | **HR** | HRMS (HR), biometric attendance | Platform |
 | 3 | **Scheduling** | PMS schedules/appointments, Online Doctor Appointment (OA) | Patients |

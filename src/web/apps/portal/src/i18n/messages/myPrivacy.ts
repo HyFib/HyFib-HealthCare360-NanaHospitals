@@ -160,7 +160,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.documents.purpose': 'To keep your documents with your record, and to identify you safely.',
     'myPrivacy.category.account.title': 'Patient portal account',
     'myPrivacy.category.account.description':
-      'Your portal account: the mobile number you sign in with, and when you signed in.',
+      'Your portal account: the mobile number you sign in with, when you signed in, and the family members on other numbers who see your records in the portal.',
     'myPrivacy.category.account.purpose': 'To let you use the patient portal securely.',
     'myPrivacy.category.account.basis': 'Your use of the portal.',
     'myPrivacy.category.safety.title': 'Patient safety reports',
@@ -242,6 +242,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.item.patients.patient_consents': 'Consent records',
     'myPrivacy.item.patients.patient_documents': 'Documents',
     'myPrivacy.item.identity.users': 'Portal account',
+    'myPrivacy.item.patients.portal_family_links': 'Family members who see your records in the portal',
     'myPrivacy.item.quality.incidents': 'Safety reports that mention you',
     'myPrivacy.item.ai.usage_records': 'Uses of the AI assistant on your record',
     'myPrivacy.item.audit.audit_events': 'Times your record was opened or changed',
@@ -643,7 +644,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.documents.purpose': 'आपके दस्तावेज़ आपके रिकॉर्ड के साथ रखने और आपकी सही पहचान करने के लिए।',
     'myPrivacy.category.account.title': 'मरीज़ पोर्टल खाता',
     'myPrivacy.category.account.description':
-      'आपका पोर्टल खाता: जिस मोबाइल नंबर से आप साइन इन करते हैं, और आपने कब साइन इन किया।',
+      'आपका पोर्टल खाता: जिस मोबाइल नंबर से आप साइन इन करते हैं, आपने कब साइन इन किया, और दूसरे नंबरों वाले परिवार के वे सदस्य जो पोर्टल में आपके रिकॉर्ड देखते हैं।',
     'myPrivacy.category.account.purpose': 'आपको मरीज़ पोर्टल सुरक्षित रूप से इस्तेमाल करने देने के लिए।',
     'myPrivacy.category.account.basis': 'पोर्टल का आपका इस्तेमाल।',
     'myPrivacy.category.safety.title': 'मरीज़ सुरक्षा रिपोर्ट',
@@ -727,6 +728,7 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.item.patients.patient_consents': 'सहमति के रिकॉर्ड',
     'myPrivacy.item.patients.patient_documents': 'दस्तावेज़',
     'myPrivacy.item.identity.users': 'पोर्टल खाता',
+    'myPrivacy.item.patients.portal_family_links': 'परिवार के सदस्य जो पोर्टल में आपके रिकॉर्ड देखते हैं',
     'myPrivacy.item.quality.incidents': 'सुरक्षा रिपोर्ट जिनमें आपका ज़िक्र है',
     'myPrivacy.item.ai.usage_records': 'आपके रिकॉर्ड पर AI सहायक का इस्तेमाल',
     'myPrivacy.item.audit.audit_events': 'आपका रिकॉर्ड कब-कब खोला या बदला गया',

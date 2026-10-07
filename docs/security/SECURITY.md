@@ -109,6 +109,15 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     ward round show "Restricted patient". The worklist also leaves out the complaint, booking reason, note title,
     result name and deficiency, and the round leaves out the diagnosis and vital-sign details. The token, bed, UHID
     and safety flags stay, so the patient is still seen to.
+- **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
+  and family members on other numbers only through a family link in force (PP-01):
+  - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in
+    the portal with a 6-digit code sent to the relative's own registered number.
+  - Codes are stored hashed and work for 10 minutes and 5 tries. Each account may ask for 5 an hour and each number may
+    receive 3 in 15 minutes. Asking gives the same answer whether or not the UHID and the number match.
+  - The patient, the account holder or staff can end a link, and it stops on the next request. Making and ending links
+    are audited, and a patient merge or the erasure that closes a portal account carries them along or ends them.
+  - Signing in counts as proof of identity (for a privacy request, say) only for patients on the account's own number.
 - Every access to a patient record is audited.
 - **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
   people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A

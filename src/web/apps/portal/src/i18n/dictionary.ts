@@ -4,6 +4,7 @@ import { authMessages } from './messages/auth';
 import { billMessages } from './messages/bills';
 import { common } from './messages/common';
 import { doctorMessages } from './messages/doctors';
+import { familyMessages } from './messages/family';
 import { featureMessages } from './messages/features';
 import { feedbackMessages } from './messages/feedback';
 import { homeMessages } from './messages/home';
@@ -32,6 +33,7 @@ export const MESSAGE_SETS = {
   records: recordMessages,
   feedback: feedbackMessages,
   profile: profileMessages,
+  family: familyMessages,
   myPrivacy: myPrivacyMessages,
   verify: verifyMessages,
   home: homeMessages,

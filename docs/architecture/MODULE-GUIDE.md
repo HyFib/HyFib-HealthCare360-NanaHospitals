@@ -88,7 +88,10 @@ generate them after all modules compile.
 * PHI: when returning clinical/patient data call `await audit.PatientRecordAccessedAsync(patientId, "what", ct)` once
   per request, and guard restricted records with `PatientAccessGuard.EnsureCanOpenAsync(patientId, ct)`.
 * Patient-portal endpoints live under `/api/v1/portal/<area>`, require `PatientsPermissions.Portal` and must scope
-  data with `PortalPatientScope` (`EnsureAccessAsync` / `AccessiblePatientIdsAsync`).
+  data with `PortalPatientScope` (`EnsureAccessAsync` / `AccessiblePatientIdsAsync`). The scope covers the patients on
+  the account's own number and the family members its family links give it (PP-01). A step that relies on the
+  patient having signed in with their own number, such as taking the sign-in as proof of identity, checks
+  `OwnNumberPatientIdsAsync` instead.
 * Dates arriving as query parameters are local (IST) calendar dates; convert with the helpers in
   `PatientQueries` (`time.Today()`, `IndiaTime`).
 

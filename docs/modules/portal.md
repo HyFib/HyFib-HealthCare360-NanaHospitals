@@ -36,10 +36,20 @@ Commands (run from `src/web`): `pnpm --filter @hc360/portal dev` (port 5361, pro
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
   portal and the staff console share one origin but keep separate refresh cookies, so signing in to one never signs
   the other out.
-* **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number. The patient
-  chooses whose records to see, and the switcher is always in the header. Every query key starts
-  `['portal', patientId, …]`, and family-wide lists are filtered to the person being viewed. A record that belongs to
-  another family member shows "This belongs to …" with a switch button.
+* **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number, then the family
+  members on other numbers that the account sees through a family link (below). The patient chooses whose records to
+  see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide
+  lists are filtered to the person being viewed. A record that belongs to another family member shows "This belongs
+  to …" with a switch button.
+* **Family on other numbers (PP-01).** A family member with their own mobile number joins the account in one of two
+  ways. In the portal (`/profile/family`), the account holder enters the relative's UHID, mobile number and relation;
+  the server sends a 6-digit code to that number when the UHID and the number belong to the same active patient, and
+  the relative agrees by passing the code on. At the front desk, staff check both people's identity documents, record
+  who agreed (the patient or their guardian), and share the records with the family member's number (the staff
+  console's "Portal access" tab on the patient's profile). Either side can end a link: the account holder removes the
+  relative, and anyone signed in with the patient's own number sees "Who else sees your records" and stops sharing.
+  Staff end links at the front desk too. A link in force gives the account the same access as a patient on its own
+  number, and ending it takes effect on the next request.
 * **Clearing.** Signing out, idle sign-out (after 20 minutes, never during a video call) and switching family members
   clear the query cache.
 
@@ -61,6 +71,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | `/records`, `/records/discharge/{id}`, `/records/request` | yes | Health summary, discharge summaries (Download PDF or print), request a copy of records |
 | `/my-feedback`, `/my-feedback/{formId}` | yes | Feedback forms and the patient's feedback with complaint status |
 | `/profile`, `/profile/preferences` | yes | Details, family, language, SMS and WhatsApp choices, sign out |
+| `/profile/family` | yes | Family on other numbers: the relatives the account sees (Remove), add a relative with a code sent to their number, and the accounts that see the records of someone on this number (Stop sharing) |
 | `/feedback/{token}` | no | Personal feedback link (SMS after a visit or stay) |
 | `/feedback/form/{token}` | no | QR poster form. Add `?kiosk=true` on a kiosk tablet, which then resets itself after each response |
 | `/unsubscribe/{token}` | no | Opt-out link in campaign messages. Opening it changes nothing; the patient confirms with one tap |
@@ -90,6 +101,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 |---|---|
 | System | `GET /api/v1/system/info` (hospital name, and whether the portal and video consultations are switched on), `GET /health/live` (connection check) |
 | Profiles | `GET /api/v1/portal/profiles` |
+| Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
 | Appointments | `GET /api/v1/portal/appointments?scope=upcoming\|past`, `GET …/{id}`, `POST /api/v1/portal/appointments`, `POST …/{id}/cancel`, `POST …/{id}/reschedule`, `POST …/{id}/payment`, `POST …/{id}/payment/confirm` |
 | Waiting list | `GET /api/v1/portal/waitlist`, `POST /api/v1/portal/waitlist`, `POST /api/v1/portal/waitlist/{id}/cancel` |
@@ -186,6 +198,11 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
 * **Payment pages.** Only `https` payment pages are opened.
 * **After sign-out.** The query cache is cleared on sign-out and on a family switch. After 20 minutes without activity
   the patient is signed out.
+* **Family codes.** The code goes only to the relative's own registered number, and the first answer is the same
+  whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
+  field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes
+  hashed, allows 5 tries per code and 10 minutes, and limits codes per account (5 an hour) and per number (3 in 15
+  minutes).
 * **Privacy notice.** `/privacy` covers the Digital Personal Data Protection Act 2023: what is used and why, who sees
   it, how long it is kept, and the rights to access, correct, withdraw consent and complain.
 
@@ -203,6 +220,10 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
   now" without retries, other failures, never saving a web page as a PDF); Download PDF end to end in jsdom on the lab,
   scan and heart test reports, the prescription, the discharge summary and the bill (the busy button, the 503 message,
   the usual error message, Hindi, printing the page's copy); and the downloaded HTML copy (its font rule and language).
+* **Family on other numbers:** the add form's checks and the request it sends, how long the code works on a phone with
+  a wrong clock, the server's refusals in the patient's language, the add sheet in jsdom (the details step, the code
+  step, a wrong code, a used-up code back to the details, throttling), and the page end to end in jsdom (the link from
+  the profile, both lists, removing a relative).
 * **The privacy centre:** request-form checks and the body it sends, server errors mapped to fields, retention in the
   patient's language from the server's periods, and the pages end to end in jsdom (hub, data summary, a new request,
   a request's detail and withdrawal, the nominee, a breach notice).

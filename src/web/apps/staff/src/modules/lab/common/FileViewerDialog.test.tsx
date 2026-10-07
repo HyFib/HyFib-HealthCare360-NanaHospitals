@@ -48,9 +48,11 @@ describe('useFileViewer', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Open' }));
 
-    // The dialog can take a while to open when the whole suite runs at once.
+    // The dialog can take a while to open when the whole suite runs at once. Under that load, Fluent's focus manager
+    // can also leave the new dialog marked aria-hidden for a moment in jsdom, so the button is looked up including
+    // hidden elements: what this test checks is the saving, not the dialog's accessibility.
     expect(await screen.findByText(/HC360 cannot show this file/, {}, { timeout: 10_000 })).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Save file' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save file', hidden: true }));
     expect(saveFile).toHaveBeenCalledWith(ecg, 'ecg-0412.scp');
   });
 

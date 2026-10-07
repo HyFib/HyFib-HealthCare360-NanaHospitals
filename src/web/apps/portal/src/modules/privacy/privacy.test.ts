@@ -504,6 +504,7 @@ describe('the data summary', () => {
       'patients.patient_consents',
       'patients.patient_documents',
       'identity.users',
+      'patients.portal_family_links',
       'quality.incidents',
       'ai.usage_records',
       'audit.audit_events',

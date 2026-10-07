@@ -327,6 +327,45 @@ export interface CaptureConsentRequest {
   notes: string | null;
 }
 
+/** What the patient is to the family member who sees their records in the portal (PP-01). */
+export const FAMILY_RELATIONS = ['Parent', 'Child', 'Spouse', 'Sibling', 'Grandparent', 'Grandchild', 'Other'] as const;
+export type FamilyRelation = (typeof FAMILY_RELATIONS)[number];
+
+/** Made by staff at the front desk, or in the portal with a code sent to the patient's own number. */
+export type FamilyLinkSource = 'FrontDesk' | 'PortalCode';
+
+/** A family member's portal account that sees the patient's records. An ended link stays as history. */
+export interface PortalFamilyLinkDto {
+  id: string;
+  /** The number (E.164) the family member signs in to the portal with. */
+  accountPhone: string;
+  relation: FamilyRelation;
+  source: FamilyLinkSource;
+  linkedAt: string;
+  linkedByName: string | null;
+  /** Front desk: who agreed, the patient or their guardian. */
+  consentGivenBy: string | null;
+  /** Portal: the patient's number the code went to. */
+  codeSentTo: string | null;
+  revokedAt: string | null;
+  revokedByName: string | null;
+  revokedReason: string | null;
+  isActive: boolean;
+}
+
+/** Who sees the patient's records in the portal: anyone signed in with the patient's own number, and the links. */
+export interface PatientPortalAccessDto {
+  ownPhone: string | null;
+  links: PortalFamilyLinkDto[];
+}
+
+export interface LinkFamilyMemberRequest {
+  accountPhone: string;
+  relation: FamilyRelation;
+  consentGivenBy: string;
+  identityChecked: boolean;
+}
+
 export interface PatientDocumentDto {
   id: string;
   fileId: string;
@@ -357,6 +396,7 @@ export const patientKeys = {
   detail: (id: string) => ['patients', 'detail', id] as const,
   visits: (id: string, page: number) => ['patients', 'visits', id, page] as const,
   consents: (id: string) => ['patients', 'consents', id] as const,
+  portalFamily: (id: string) => ['patients', 'portal-family', id] as const,
   documents: (id: string) => ['patients', 'documents', id] as const,
   photo: (fileId: string) => ['patients', 'photo', fileId] as const,
 };
@@ -385,6 +425,11 @@ export const patientQueries = {
     queryOptions({
       queryKey: patientKeys.consents(id),
       queryFn: ({ signal }) => api.get<ConsentDto[]>(`/api/v1/patients/${id}/consents`, { signal }),
+    }),
+  portalFamily: (id: string) =>
+    queryOptions({
+      queryKey: patientKeys.portalFamily(id),
+      queryFn: ({ signal }) => api.get<PatientPortalAccessDto>(`/api/v1/patients/${id}/portal-family`, { signal }),
     }),
   documents: (id: string) =>
     queryOptions({
@@ -419,4 +464,16 @@ export const consentApi = {
   /** 422 `consent.revoked` when it is already withdrawn, `consent.not_granted` for a refusal. */
   revoke: (consentId: string, reason: string) =>
     api.post<void>(`/api/v1/patients/consents/${consentId}/revoke`, { reason }),
+};
+
+/**
+ * Sharing the patient's records with a family member's portal account needs `patients.consents`. Linking answers 422
+ * `portal.family_same_number` for the patient's own number and 409 `portal.family_already_linked`; ending answers 422
+ * `portal.family_link_ended` when it has already ended.
+ */
+export const portalFamilyApi = {
+  link: (patientId: string, request: LinkFamilyMemberRequest) =>
+    api.post<{ id: string }>(`/api/v1/patients/${patientId}/portal-family`, request),
+  revoke: (linkId: string, reason: string) =>
+    api.post<void>(`/api/v1/patients/portal-family/${linkId}/revoke`, { reason }),
 };

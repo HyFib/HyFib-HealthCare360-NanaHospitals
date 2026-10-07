@@ -3,6 +3,7 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Engagement.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -29,6 +30,7 @@ public sealed class ErasureService(
     HospitalDbContext db,
     CommunicationConsentService consents,
     PatientFeedbackEraser feedback,
+    PortalFamilyService family,
     RetentionService retention,
     ISessionValidator sessions,
     IAuditLogger audit,
@@ -149,7 +151,7 @@ public sealed class ErasureService(
             new(NomineeItem, "Remove the nominee", "The nominee will no longer be able to act for the patient.",
                 hasNominee, hasNominee ? null : "No nominee is recorded."),
             new(PortalAccount, "Close the portal account",
-                "The patient portal account for the patient's mobile number is closed and signed out everywhere.",
+                "The patient portal account for the patient's mobile number is closed and signed out everywhere. Family members on other numbers stop seeing the patient's records, and the account stops seeing theirs.",
                 account is not null && sharing == 0,
                 account is null ? "There is no open portal account for the patient's mobile number."
                 : sharing > 0 ? string.Create(CultureInfo.InvariantCulture,
@@ -181,6 +183,7 @@ public sealed class ErasureService(
         }
 
         account.IsActive = false;
+        await family.EndForClosedAccountAsync(patientId, account.Phone!, ct);
         var open = await db.Set<UserSession>().Where(s => s.UserId == account.Id && s.RevokedAt == null).ToListAsync(ct);
         foreach (var session in open)
         {
