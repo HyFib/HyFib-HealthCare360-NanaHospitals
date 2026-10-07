@@ -7,12 +7,19 @@ using HyFib.HealthCare360.Platform.Settings;
 namespace HyFib.HealthCare360.Modules.Analytics.Services;
 
 /// <summary>
-/// Scheduled report e-mails (MIS-05, BI-04): create, change, pause, delete and list, with the rules that keep them safe —
-/// only reports the author may open, never reports that list patients, a relative period so each e-mail covers new
-/// dates, and (when configured) recipients limited to the hospital's e-mail domains. Saving a schedule makes the saver
-/// its owner: the report always runs with the owner's current permissions.
+/// Scheduled report e-mails (MIS-05, BI-04) and BI extracts (BI-05): create, change, pause, delete and list, with the
+/// rules that keep them safe — only reports the author may open, never reports that list patients, a relative period so
+/// each run covers new dates, (when configured) recipients limited to the hospital's e-mail domains, and extract file
+/// names that are plain and unique in the facility. Saving a schedule makes the saver its owner: the report always runs
+/// with the owner's current permissions.
 /// </summary>
-internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalog, ISettingsService settings, TimeProvider time)
+internal sealed class ScheduleService(
+    HospitalDbContext db,
+    ReportCatalog catalog,
+    ISettingsService settings,
+    ExtractFolder extracts,
+    ExtractMonitor monitor,
+    TimeProvider time)
 {
     public async Task<IReadOnlyList<ScheduleDto>> ListAsync(ReportActor actor, CancellationToken ct)
     {
@@ -32,7 +39,7 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             return Error.Rule("facility.required", "Select a facility first.");
         }
 
-        var validated = await ValidateAsync(actor, request, facilityId, ct);
+        var validated = await ValidateAsync(actor, request, facilityId, null, ct);
         if (validated.IsFailure)
         {
             return validated.Error!;
@@ -43,6 +50,11 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
         schedule.Reschedule(time.GetUtcNow());
         db.Add(schedule);
         await db.SaveChangesAsync(ct);
+        if (schedule.IsExtract)
+        {
+            await monitor.WriteRefreshLogAsync(ct);
+        }
+
         return ToDto(schedule, actor);
     }
 
@@ -54,7 +66,7 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             return Error.NotFound("Schedule", id);
         }
 
-        var validated = await ValidateAsync(actor, request, schedule.FacilityId, ct);
+        var validated = await ValidateAsync(actor, request, schedule.FacilityId, schedule.Id, ct);
         if (validated.IsFailure)
         {
             return validated.Error!;
@@ -65,6 +77,7 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             db.SetExpectedVersion(schedule, version);
         }
 
+        var previousFile = schedule.IsExtract ? schedule.ExtractName : null;
         Apply(schedule, request, validated.Value, actor);
         schedule.Reschedule(time.GetUtcNow());
         try
@@ -74,6 +87,16 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
         catch (DbUpdateConcurrencyException)
         {
             return Error.ConcurrencyConflict;
+        }
+
+        if (previousFile is not null || schedule.IsExtract)
+        {
+            if (previousFile is not null && previousFile != schedule.ExtractName)
+            {
+                await RemoveFileAsync(schedule.FacilityId, previousFile, ct);
+            }
+
+            await monitor.WriteRefreshLogAsync(ct);
         }
 
         return ToDto(schedule, actor);
@@ -104,7 +127,32 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             return Error.ConcurrencyConflict;
         }
 
+        if (schedule is { IsExtract: true, ExtractName: { } file })
+        {
+            await RemoveFileAsync(schedule.FacilityId, file, ct);
+            await monitor.WriteRefreshLogAsync(ct);
+        }
+
         return Result.Success();
+    }
+
+    /// <summary>The folder where the signed-in user's facility's extracts are written, and whether HC360 can write it.</summary>
+    public async Task<ExtractFolderDto> FolderAsync(Guid? facilityId, CancellationToken ct)
+    {
+        var code = facilityId is { } id ? await db.Set<Facility>().AsNoTracking().Where(f => f.Id == id).Select(f => f.Code).FirstOrDefaultAsync(ct) : null;
+        return new ExtractFolderDto(
+            extracts.Root,
+            code is null ? null : extracts.FacilityFolder(code),
+            Path.Combine(extracts.Root, ExtractFolder.RefreshLogFile),
+            extracts.Check());
+    }
+
+    private async Task RemoveFileAsync(Guid facilityId, string extractName, CancellationToken ct)
+    {
+        if (await db.Set<Facility>().AsNoTracking().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct) is { } code)
+        {
+            extracts.Remove(code, extractName);
+        }
     }
 
     public ScheduleDto ToDto(ReportSchedule s, ReportActor actor) => new(
@@ -127,14 +175,29 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
         s.LastRunAt,
         s.LastStatus,
         s.LastError,
-        s.Version);
+        s.Version,
+        s.Destination,
+        s.ExtractName,
+        s.IsExtract && s.ExtractName is { } name && ExtractFolder.IsValidName(name) ? ExtractFolder.FileName(name) : null,
+        s.LastSucceededAt,
+        s.IsExtract ? s.State(time.GetUtcNow()) : null);
 
     private static void Apply(ReportSchedule schedule, SaveScheduleRequest request, ValidatedSchedule validated, ReportActor actor)
     {
+        // The file in the folder is no longer what an extract describes once its name, report or inputs change: the
+        // extract waits for the refresh that writes the new one.
+        if (request.IsExtract && (!schedule.IsExtract || schedule.ExtractName != validated.ExtractName || schedule.ReportId != validated.ReportId
+                                  || !SameInputs(schedule.ParametersJson, validated.Parameters)))
+        {
+            schedule.LastSucceededAt = null;
+        }
+
         schedule.Name = request.Name.Trim();
         schedule.ReportId = validated.ReportId;
         schedule.ParametersJson = ScheduleParameters.Write(validated.Parameters);
-        schedule.Format = request.Format;
+        schedule.Destination = request.Destination;
+        schedule.ExtractName = validated.ExtractName;
+        schedule.Format = request.IsExtract ? ExportFormat.Csv : request.Format;
         schedule.Frequency = request.Frequency;
         schedule.TimeOfDay = validated.Time;
         schedule.DayOfWeek = request.Frequency == ScheduleFrequency.Weekly ? request.DayOfWeek ?? Weekday.Monday : null;
@@ -145,7 +208,13 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
         schedule.OwnerName = actor.DisplayName;
     }
 
-    private async Task<Result<ValidatedSchedule>> ValidateAsync(ReportActor actor, SaveScheduleRequest request, Guid facilityId, CancellationToken ct)
+    private static bool SameInputs(string storedJson, IReadOnlyDictionary<string, string> inputs)
+    {
+        var stored = ScheduleParameters.Read(storedJson);
+        return stored.Count == inputs.Count && inputs.All(kv => stored.TryGetValue(kv.Key, out var value) && value == kv.Value);
+    }
+
+    private async Task<Result<ValidatedSchedule>> ValidateAsync(ReportActor actor, SaveScheduleRequest request, Guid facilityId, Guid? scheduleId, CancellationToken ct)
     {
         var report = catalog.Find(request.ReportId)?.Descriptor;
         if (report is null || !ReportCatalog.CanRead(report, actor))
@@ -155,7 +224,26 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
 
         if (!report.CanSchedule)
         {
-            return Error.Field("reportId", "Reports that list patients cannot be e-mailed. Open them in HC360 instead.");
+            return Error.Field("reportId", request.IsExtract
+                ? "Reports that list patients cannot be BI extracts. Open them in HC360 instead."
+                : "Reports that list patients cannot be e-mailed. Open them in HC360 instead.");
+        }
+
+        string? extractName = null;
+        if (request.IsExtract)
+        {
+            extractName = request.ExtractName?.Trim().ToLowerInvariant();
+            if (!ExtractFolder.IsValidName(extractName))
+            {
+                return Error.Field("extractName", ExtractFolder.IsDeviceName(extractName)
+                    ? ExtractFolder.DeviceNameMessage
+                    : "Name the file with lower-case letters, digits and dashes, for example daily-revenue.");
+            }
+
+            if (await db.Set<ReportSchedule>().AnyAsync(s => s.FacilityId == facilityId && s.ExtractName == extractName && s.Id != scheduleId, ct))
+            {
+                return Error.Field("extractName", $"Another BI extract of this facility already writes {ExtractFolder.FileName(extractName!)}.");
+            }
         }
 
         // Schedules always run for the facility they belong to.
@@ -167,11 +255,13 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             inputs.TryGetValue(ReportKeys.Period, out var period);
             if (period is null && !inputs.ContainsKey(ReportKeys.From))
             {
-                inputs[ReportKeys.Period] = ReportPeriods.DefaultFor(request.Frequency);
+                inputs[ReportKeys.Period] = request.IsExtract ? ReportPeriods.ExtractDefault : ReportPeriods.DefaultFor(request.Frequency);
             }
             else if (period is null or ReportPeriods.Custom)
             {
-                return Error.Field(ReportKeys.Period, "Choose a relative period (for example Yesterday or Last month) so each e-mail covers new dates.");
+                return Error.Field(ReportKeys.Period, request.IsExtract
+                    ? "Choose a relative period (for example This financial year) so each refresh covers new dates."
+                    : "Choose a relative period (for example Yesterday or Last month) so each e-mail covers new dates.");
             }
         }
 
@@ -181,12 +271,15 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
             return arguments.Error!;
         }
 
-        var recipients = (request.Recipients ?? [])
-            .Select(r => r.Trim().ToLowerInvariant())
-            .Where(r => r.Length > 0)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        var allowed = await settings.GetAsync<string[]>(AnalyticsSettings.AllowedEmailDomains, facilityId, ct) ?? [];
+        // An extract goes to the extract folder only, never to e-mail addresses.
+        var recipients = request.IsExtract
+            ? []
+            : (request.Recipients ?? [])
+                .Select(r => r.Trim().ToLowerInvariant())
+                .Where(r => r.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+        var allowed = recipients.Count == 0 ? [] : await settings.GetAsync<string[]>(AnalyticsSettings.AllowedEmailDomains, facilityId, ct) ?? [];
         var domains = allowed.Select(d => d.Trim().TrimStart('@').ToLowerInvariant()).Where(d => d.Length > 0).ToList();
         if (domains.Count > 0 && recipients.FirstOrDefault(r => !domains.Any(d => r.EndsWith("@" + d, StringComparison.Ordinal))) is { } outside)
         {
@@ -197,8 +290,8 @@ internal sealed class ScheduleService(HospitalDbContext db, ReportCatalog catalo
         var canonical = arguments.Value.ToCanonical()
             .Where(kv => kv.Key != ReportKeys.Facility)
             .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-        return new ValidatedSchedule(report.Id, canonical, recipients, sendAt);
+        return new ValidatedSchedule(report.Id, canonical, recipients, sendAt, extractName);
     }
 
-    private sealed record ValidatedSchedule(string ReportId, IReadOnlyDictionary<string, string> Parameters, List<string> Recipients, TimeOnly Time);
+    private sealed record ValidatedSchedule(string ReportId, IReadOnlyDictionary<string, string> Parameters, List<string> Recipients, TimeOnly Time, string? ExtractName);
 }

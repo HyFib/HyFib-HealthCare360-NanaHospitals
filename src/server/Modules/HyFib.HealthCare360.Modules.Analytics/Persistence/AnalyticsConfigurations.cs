@@ -32,10 +32,16 @@ internal sealed class ReportScheduleConfiguration : IEntityTypeConfiguration<Rep
         b.Property(x => x.ParametersJson).HasColumnType("jsonb");
         b.Property(x => x.OwnerName).HasMaxLength(200);
         b.Property(x => x.LastError).HasMaxLength(500);
+        b.Property(x => x.ExtractName).HasMaxLength(ReportSchedule.MaxExtractNameLength);
+        b.Ignore(x => x.IsExtract);
+        b.Ignore(x => x.IsFailing);
 
         // The job looks for due schedules every minute.
         b.HasIndex(x => new { x.IsActive, x.NextRunAt });
         b.HasIndex(x => x.OwnerUserId);
+
+        // Two extracts of a facility never write the same file.
+        b.HasIndex(x => new { x.FacilityId, x.ExtractName }).IsUnique().HasFilter("extract_name IS NOT NULL AND is_deleted = false");
     }
 }
 

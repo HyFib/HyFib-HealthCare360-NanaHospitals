@@ -1,8 +1,13 @@
 using HyFib.HealthCare360.Modules.Analytics.Domain;
+using HyFib.HealthCare360.Modules.Analytics.Services;
 
 namespace HyFib.HealthCare360.Modules.Analytics.Features.Schedules;
 
-/// <summary>A scheduled report e-mail as shown in the schedules screen.</summary>
+/// <summary>A scheduled report e-mail or BI extract as shown in its screen.</summary>
+/// <param name="ExtractName">The extract's file name without ".csv"; null for e-mails.</param>
+/// <param name="ExtractFile">The file the extract writes in the facility's folder (<see cref="ExtractFolderDto.FacilityFolder"/>).</param>
+/// <param name="LastSucceededAt">When the file was last produced: how fresh an extract's data is.</param>
+/// <param name="ExtractState">How fresh the extract's data is; null for e-mails.</param>
 public sealed record ScheduleDto(
     Guid Id,
     string Name,
@@ -23,12 +28,19 @@ public sealed record ScheduleDto(
     DateTimeOffset? LastRunAt,
     ScheduleRunStatus? LastStatus,
     string? LastError,
-    uint Version);
+    uint Version,
+    ScheduleDestination Destination,
+    string? ExtractName,
+    string? ExtractFile,
+    DateTimeOffset? LastSucceededAt,
+    ExtractState? ExtractState);
 
 /// <summary>
-/// Create or change a schedule. <c>Format</c> is the attachment: Xlsx, Csv or Pdf. <c>Time</c> is the IST time as
-/// "HH:mm". Weekly schedules need <c>DayOfWeek</c>; monthly schedules need <c>DayOfMonth</c> (1–28, or 31 for the last
-/// day). Report inputs must use a relative period.
+/// Create or change a schedule. <c>Format</c> is the attachment: Xlsx, Csv or Pdf (a BI extract is always Csv).
+/// <c>Time</c> is the IST time as "HH:mm" (for hourly extracts, only its minutes count). Weekly schedules need
+/// <c>DayOfWeek</c>; monthly schedules need <c>DayOfMonth</c> (1–28, or 31 for the last day). Report inputs must use a
+/// relative period. An e-mail needs <c>Recipients</c>; a BI extract (<c>Destination</c> ExtractFolder) needs
+/// <c>ExtractName</c> instead.
 /// </summary>
 public sealed record SaveScheduleRequest(
     string Name,
@@ -41,7 +53,18 @@ public sealed record SaveScheduleRequest(
     int? DayOfMonth,
     IReadOnlyList<string>? Recipients,
     bool IsActive = true,
-    uint? Version = null);
+    uint? Version = null,
+    ScheduleDestination Destination = ScheduleDestination.Email,
+    string? ExtractName = null)
+{
+    public bool IsExtract => Destination == ScheduleDestination.ExtractFolder;
+}
+
+/// <summary>Where BI extracts are written: the folder IT shares with the BI tool.</summary>
+/// <param name="FacilityFolder">The signed-in user's facility's sub-folder, which holds its extracts.</param>
+/// <param name="RefreshLog">The file listing when each extract was last refreshed.</param>
+/// <param name="Problem">Null when HC360 can write the folder; otherwise what is wrong.</param>
+public sealed record ExtractFolderDto(string Root, string? FacilityFolder, string RefreshLog, string? Problem);
 
 public sealed record DeliveryRecipientDto(string Email, RecipientStatus Status, int Attempts, string? LastError, DateTimeOffset? SentAt);
 
@@ -79,9 +102,25 @@ public sealed class SaveScheduleRequestValidator : AbstractValidator<SaveSchedul
             .Must(d => d is >= 1 and <= 28 or ScheduleCalendar.LastDayOfMonth)
             .When(x => x.Frequency == ScheduleFrequency.Monthly)
             .WithMessage("Choose a day from 1 to 28, or the last day of the month.");
-        RuleFor(x => x.Recipients).NotEmpty().WithMessage("Add at least one e-mail address.")
-            .Must(r => r is null || r.Count <= ReportSchedule.MaxRecipients).WithMessage($"Add at most {ReportSchedule.MaxRecipients} e-mail addresses.");
-        RuleForEach(x => x.Recipients).NotEmpty().MaximumLength(254).EmailAddress().WithMessage("Enter a valid e-mail address.");
+        RuleFor(x => x.Destination).IsInEnum();
         RuleFor(x => x.Parameters).Must(p => p is null || p.Count <= 30).WithMessage("Too many report inputs.");
+
+        When(x => !x.IsExtract, () =>
+        {
+            RuleFor(x => x.Frequency).NotEqual(ScheduleFrequency.Hourly).WithMessage("E-mails go daily, weekly or monthly.");
+            RuleFor(x => x.Recipients).NotEmpty().WithMessage("Add at least one e-mail address.")
+                .Must(r => r is null || r.Count <= ReportSchedule.MaxRecipients).WithMessage($"Add at most {ReportSchedule.MaxRecipients} e-mail addresses.");
+            RuleForEach(x => x.Recipients).NotEmpty().MaximumLength(254).EmailAddress().WithMessage("Enter a valid e-mail address.");
+        });
+
+        When(x => x.IsExtract, () =>
+        {
+            RuleFor(x => x.Format).Equal(ExportFormat.Csv).WithMessage("BI extracts are CSV files.");
+            RuleFor(x => x.ExtractName)
+                .Must(name => ExtractFolder.HasValidForm(name?.Trim().ToLowerInvariant()))
+                .WithMessage($"Name the file with lower-case letters, digits and dashes (at most {ReportSchedule.MaxExtractNameLength}), for example daily-revenue.")
+                .Must(name => !ExtractFolder.IsDeviceName(name?.Trim().ToLowerInvariant()))
+                .WithMessage(ExtractFolder.DeviceNameMessage);
+        });
     }
 }

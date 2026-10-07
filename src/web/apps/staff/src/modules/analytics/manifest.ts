@@ -46,6 +46,12 @@ const manifest: ModuleManifest = {
       permission: A.schedulesManage,
       keywords: ['email', 'daily report', 'weekly report', 'subscription'],
     },
+    {
+      label: 'BI extracts',
+      to: '/analytics/extracts',
+      permission: A.schedulesManage,
+      keywords: ['power bi', 'bi', 'csv', 'extract', 'data feed', 'refresh', 'tableau', 'qlik'],
+    },
   ],
   quickActions: [
     {

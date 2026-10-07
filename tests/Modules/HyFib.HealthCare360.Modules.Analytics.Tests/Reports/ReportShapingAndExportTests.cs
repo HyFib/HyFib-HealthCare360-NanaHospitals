@@ -85,6 +85,22 @@ public sealed class ReportShapingAndExportTests
         text.ShouldContain(ReportExporter.Confidential);
     }
 
+    [Fact]
+    public void A_bi_extract_is_a_plain_table_with_the_facility_and_no_title_totals_or_notes()
+    {
+        var content = ReportExporter.ExtractCsv(Document(), "NH");
+
+        content.Take(3).ShouldBe(Encoding.UTF8.GetPreamble());
+        Encoding.UTF8.GetString(content[3..]).Split("\r\n", StringSplitOptions.RemoveEmptyEntries).ShouldBe(
+        [
+            "Facility code,Department,Visits,Revenue,Share %",
+            "NH,Cardiology,120,55000.50,30.1",
+            "NH,'=cmd|' /C calc'!A0,80,12000.00,",
+            "NH,Orthopaedics,200,90000.00,49.3",
+            "NH,,5,100.00,0.5",
+        ]);
+    }
+
     [Theory]
     [InlineData("plain", "plain")]
     [InlineData("a,b", "\"a,b\"")]

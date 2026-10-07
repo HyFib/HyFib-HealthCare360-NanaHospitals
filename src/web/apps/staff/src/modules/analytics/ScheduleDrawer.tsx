@@ -15,35 +15,47 @@ import {
   Spinner,
   Tag,
   TagGroup,
+  Text,
   tokens,
 } from '@fluentui/react-components';
-import { DismissRegular, MailClockRegular } from '@fluentui/react-icons';
+import { DatabaseArrowRightRegular, DismissRegular, MailClockRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, useSession } from '@hc360/core';
 import { ChoiceField, SelectField, SwitchField, TextField, toFormPath, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
-import { z } from 'zod';
 import {
   analyticsApi,
   analyticsKeys,
   type ReportCatalogue,
   type ReportInputs,
-  type SaveScheduleRequest,
+  type ScheduleDestination,
   type ScheduleDto,
 } from './api';
 import {
   CATEGORY_ORDER,
   CUSTOM_PERIOD,
+  EXTRACT_FREQUENCIES,
   FORMAT_LABELS,
   FREQUENCIES,
   FREQUENCY_LABELS,
   LAST_DAY_OF_MONTH,
+  MAX_EXTRACT_NAME_LENGTH,
   WEEKDAYS,
 } from './labels';
-import { defaultPeriodFor, describeSchedule, parseEmails, periodLabel, scheduleInputs, withDefaults } from './params';
+import { describeSchedule, parseEmails, periodLabel, scheduleInputs, withDefaults } from './params';
 import { ReportParameterForm } from './ReportInputs';
+import {
+  defaultSchedulePeriod,
+  MAX_RECIPIENTS,
+  normalizeExtractName,
+  SCHEDULE_TIME,
+  scheduleFormDefaults,
+  scheduleFormSchema,
+  toSaveRequest,
+  type ScheduleForm,
+} from './schedule-form';
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '14px' },
@@ -53,34 +65,6 @@ const useStyles = makeStyles({
   title: { display: 'flex', alignItems: 'center', gap: '8px' },
 });
 
-const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const MAX_RECIPIENTS = 20;
-
-const scheduleSchema = z
-  .object({
-    name: z.string().trim().min(1, 'Give the schedule a name.').max(100, 'Use at most 100 characters.'),
-    reportId: z.string().min(1, 'Choose a report.'),
-    format: z.enum(['Xlsx', 'Csv', 'Pdf']),
-    frequency: z.enum(['Daily', 'Weekly', 'Monthly']),
-    time: z.string().regex(TIME, 'Enter the time as HH:mm (24-hour clock, IST).'),
-    dayOfWeek: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']).nullable(),
-    dayOfMonth: z.string().nullable(),
-    recipients: z
-      .array(z.string())
-      .min(1, 'Add at least one e-mail address.')
-      .max(MAX_RECIPIENTS, `Send to at most ${MAX_RECIPIENTS} people.`),
-    isActive: z.boolean(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.frequency === 'Weekly' && !value.dayOfWeek) {
-      ctx.addIssue({ code: 'custom', path: ['dayOfWeek'], message: 'Choose the day of the week.' });
-    }
-    if (value.frequency === 'Monthly' && !value.dayOfMonth) {
-      ctx.addIssue({ code: 'custom', path: ['dayOfMonth'], message: 'Choose the day of the month.' });
-    }
-  });
-
-type ScheduleForm = z.infer<typeof scheduleSchema>;
 const FORM_FIELDS = new Set([
   'name',
   'reportId',
@@ -90,6 +74,7 @@ const FORM_FIELDS = new Set([
   'dayOfWeek',
   'dayOfMonth',
   'recipients',
+  'extractName',
   'isActive',
 ]);
 
@@ -98,24 +83,42 @@ const DAY_OF_MONTH_OPTIONS = [
   { value: String(LAST_DAY_OF_MONTH), label: 'Last day of the month' },
 ];
 
+/** Minutes past the hour an hourly extract can run at; a minute saved another way is offered too. */
+function minuteOptions(time: string): { value: string; label: string }[] {
+  const minutes = Array.from({ length: 12 }, (_, i) => i * 5);
+  const current = Number(time.slice(3, 5));
+  if (!Number.isNaN(current) && !minutes.includes(current)) {
+    minutes.push(current);
+    minutes.sort((a, b) => a - b);
+  }
+  return minutes.map((m) => ({
+    value: `00:${String(m).padStart(2, '0')}`,
+    label: m === 0 ? 'On the hour' : `${m} minutes past`,
+  }));
+}
+
 export interface ScheduleDraft {
   reportId: string;
   inputs: ReportInputs;
 }
 
 /**
- * Create or change a scheduled report e-mail: which report (patient lists cannot be e-mailed), its inputs with a relative
- * period, when (IST), the file format and who receives it.
+ * Create or change a scheduled report e-mail or a BI extract: which report (patient lists can be neither), its inputs
+ * with a relative period, and when (IST); for an e-mail, the file format and who receives it; for an extract, the CSV
+ * file it writes to the extract folder.
  */
 export function ScheduleDrawer({
   catalogue,
   schedule,
   draft,
+  destination = 'Email',
   onClose,
 }: {
   catalogue: ReportCatalogue;
   schedule: ScheduleDto | null;
   draft?: ScheduleDraft | null;
+  /** For a new schedule: an e-mail or a BI extract. A saved one keeps its own. */
+  destination?: ScheduleDestination;
   onClose: () => void;
 }) {
   const styles = useStyles();
@@ -124,26 +127,19 @@ export function ScheduleDrawer({
   const facilityName = useSession((s) => s.user?.facilityName);
   const schedulable = catalogue.reports.filter((r) => r.canSchedule);
   const initialReport = schedulable.find((r) => r.id === (schedule?.reportId ?? draft?.reportId));
+  const kind = schedule?.destination ?? destination;
+  const extract = kind === 'ExtractFolder';
 
   const form = useForm<ScheduleForm>({
-    resolver: zodResolver(scheduleSchema),
-    defaultValues: {
-      name: schedule?.name ?? initialReport?.title ?? '',
-      reportId: initialReport?.id ?? '',
-      format: schedule?.format ?? 'Xlsx',
-      frequency: schedule?.frequency ?? 'Daily',
-      time: schedule?.time ?? '07:00',
-      dayOfWeek: schedule?.dayOfWeek ?? null,
-      dayOfMonth: schedule?.dayOfMonth ? String(schedule.dayOfMonth) : null,
-      recipients: schedule?.recipients ?? [],
-      isActive: schedule?.isActive ?? true,
-    },
+    resolver: zodResolver(scheduleFormSchema),
+    defaultValues: scheduleFormDefaults(schedule, kind, initialReport),
   });
   const [parameters, setParameters] = useState<ReportInputs>(() => {
     const start = scheduleInputs(schedule?.parameters ?? draft?.inputs ?? {});
-    // Like the server: without a chosen period, an e-mail covers the complete period that just ended.
+    // Like the server: without a chosen period, an e-mail covers the complete period that just ended, and an extract
+    // the financial year.
     return initialReport?.parameters.some((p) => p.kind === 'Period') && !start.period
-      ? { ...start, period: defaultPeriodFor(schedule?.frequency ?? 'Daily') }
+      ? { ...start, period: defaultSchedulePeriod(kind, schedule?.frequency ?? 'Daily') }
       : start;
   });
   const [periodTouched, setPeriodTouched] = useState(
@@ -151,9 +147,9 @@ export function ScheduleDrawer({
   );
   const [parameterErrors, setParameterErrors] = useState<Record<string, string>>({});
 
-  const [reportId, frequency, time, dayOfWeek, dayOfMonth, format, recipients, name] = useWatch({
+  const [reportId, frequency, time, dayOfWeek, dayOfMonth, format, recipients, name, extractName] = useWatch({
     control: form.control,
-    name: ['reportId', 'frequency', 'time', 'dayOfWeek', 'dayOfMonth', 'format', 'recipients', 'name'],
+    name: ['reportId', 'frequency', 'time', 'dayOfWeek', 'dayOfMonth', 'format', 'recipients', 'name', 'extractName'],
   });
   const report = schedulable.find((r) => r.id === reportId);
   const values = report ? scheduleInputs(withDefaults(report.parameters, parameters)) : {};
@@ -161,30 +157,25 @@ export function ScheduleDrawer({
 
   const save = useMutation({
     mutationFn: (value: ScheduleForm) => {
-      const body: SaveScheduleRequest = {
-        name: value.name.trim(),
-        reportId: value.reportId,
-        parameters: values,
-        format: value.format,
-        frequency: value.frequency,
-        time: value.time,
-        dayOfWeek: value.frequency === 'Weekly' ? value.dayOfWeek : null,
-        dayOfMonth: value.frequency === 'Monthly' && value.dayOfMonth ? Number(value.dayOfMonth) : null,
-        recipients: value.recipients,
-        isActive: value.isActive,
-        version: schedule?.version ?? null,
-      };
+      const body = toSaveRequest(value, values, schedule?.version ?? null);
       return schedule ? analyticsApi.updateSchedule(schedule.id, body) : analyticsApi.createSchedule(body);
     },
     onSuccess: (saved) => {
       void queryClient.invalidateQueries({ queryKey: analyticsKeys.schedules });
       void queryClient.invalidateQueries({ queryKey: ['analytics', 'status'] });
-      notify.success(schedule ? 'Schedule saved' : 'Schedule created', saved.nextRunAt ? `${saved.when}.` : undefined);
+      const done = extract
+        ? schedule
+          ? 'BI extract saved'
+          : 'BI extract created'
+        : schedule
+          ? 'Schedule saved'
+          : 'Schedule created';
+      notify.success(done, saved.nextRunAt ? `${saved.when}.` : undefined);
       onClose();
     },
     onError: (error) => {
       if (!isApiError(error) || !error.isValidation) {
-        notify.error(error, 'Could not save the schedule');
+        notify.error(error, extract ? 'Could not save the BI extract' : 'Could not save the schedule');
         return;
       }
       const inputs: Record<string, string> = {};
@@ -207,8 +198,12 @@ export function ScheduleDrawer({
     if (next && (!name.trim() || name === previous?.title)) {
       form.setValue('name', next.title, { shouldDirty: true });
     }
+    // A new extract's file is named after its report until the name is changed.
+    if (extract && next && (!extractName.trim() || extractName === previous?.id)) {
+      form.setValue('extractName', next.id, { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
+    }
     const period: ReportInputs = next?.parameters.some((p) => p.kind === 'Period')
-      ? { period: periodTouched && parameters.period ? parameters.period : defaultPeriodFor(frequency) }
+      ? { period: periodTouched && parameters.period ? parameters.period : defaultSchedulePeriod(kind, frequency) }
       : {};
     setParameters(period);
     setParameterErrors({});
@@ -222,25 +217,38 @@ export function ScheduleDrawer({
     if (next === 'Monthly' && !dayOfMonth) {
       form.setValue('dayOfMonth', '1');
     }
-    // Until the user picks a period, cover the complete period that just ended (yesterday, last week, last month).
-    if (hasPeriod && !periodTouched) {
-      setParameters((current) => ({ ...current, period: defaultPeriodFor(next) }));
+    // An hourly extract keeps only the minutes of the time; another frequency starts again at 06:00.
+    if (next === 'Hourly' && SCHEDULE_TIME.test(time)) {
+      form.setValue('time', `00:${time.slice(3, 5)}`);
+    } else if (frequency === 'Hourly' && next !== 'Hourly') {
+      form.setValue('time', '06:00');
+    }
+    // Until the user picks a period, an e-mail covers the complete period that just ended (yesterday, last week, last
+    // month); an extract keeps its period whatever the frequency.
+    if (hasPeriod && !periodTouched && !extract) {
+      setParameters((current) => ({ ...current, period: defaultSchedulePeriod(kind, next) }));
     }
   };
 
-  const summary = report
-    ? [
-        describeSchedule(
-          frequency,
-          TIME.test(time) ? time : '--:--',
-          dayOfWeek,
-          dayOfMonth ? Number(dayOfMonth) : null,
-        ),
-        hasPeriod ? `covers ${periodLabel(values.period, catalogue.periods).toLowerCase()}` : 'current position',
-        FORMAT_LABELS[format],
-        recipients.length === 1 ? '1 recipient' : `${recipients.length} recipients`,
-      ].join(' · ')
-    : null;
+  const when = describeSchedule(
+    frequency,
+    SCHEDULE_TIME.test(time) ? time : '--:--',
+    dayOfWeek,
+    dayOfMonth ? Number(dayOfMonth) : null,
+  );
+  const covers = hasPeriod
+    ? `covers ${periodLabel(values.period, catalogue.periods).toLowerCase()}`
+    : 'current position';
+  const summary = !report
+    ? null
+    : extract
+      ? [when, covers, `writes ${extractName.trim() || 'the file'}.csv`].join(' · ')
+      : [
+          when,
+          covers,
+          FORMAT_LABELS[format],
+          recipients.length === 1 ? '1 recipient' : `${recipients.length} recipients`,
+        ].join(' · ');
 
   return (
     <OverlayDrawer
@@ -254,8 +262,14 @@ export function ScheduleDrawer({
           action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
         >
           <span className={styles.title}>
-            <MailClockRegular aria-hidden />
-            {schedule ? 'Change scheduled e-mail' : 'New scheduled e-mail'}
+            {extract ? <DatabaseArrowRightRegular aria-hidden /> : <MailClockRegular aria-hidden />}
+            {extract
+              ? schedule
+                ? 'Change BI extract'
+                : 'New BI extract'
+              : schedule
+                ? 'Change scheduled e-mail'
+                : 'New scheduled e-mail'}
           </span>
         </DrawerHeaderTitle>
       </DrawerHeader>
@@ -273,7 +287,7 @@ export function ScheduleDrawer({
             required
             autoFocus
             maxLength={100}
-            placeholder="For example: Daily census for the MD"
+            placeholder={extract ? 'For example: Revenue for Power BI' : 'For example: Daily census for the MD'}
           />
 
           <Controller
@@ -308,7 +322,11 @@ export function ScheduleDrawer({
           {report && report.parameters.some((p) => p.kind !== 'Facility') && (
             <Field
               label="Report inputs"
-              hint={`E-mails always cover ${facilityName ?? 'this facility'}, with a period relative to the day they are sent.`}
+              hint={
+                extract
+                  ? `Extracts always cover ${facilityName ?? 'this facility'}, with a period relative to the day they are refreshed.`
+                  : `E-mails always cover ${facilityName ?? 'this facility'}, with a period relative to the day they are sent.`
+              }
             >
               <ReportParameterForm
                 parameters={report.parameters}
@@ -338,7 +356,7 @@ export function ScheduleDrawer({
                     value={field.value}
                     onChange={(_, data) => changeFrequency(data.value as ScheduleForm['frequency'])}
                   >
-                    {FREQUENCIES.map((f) => (
+                    {(extract ? EXTRACT_FREQUENCIES : FREQUENCIES).map((f) => (
                       <option key={f} value={f}>
                         {FREQUENCY_LABELS[f]}
                       </option>
@@ -365,52 +383,87 @@ export function ScheduleDrawer({
                 options={DAY_OF_MONTH_OPTIONS}
               />
             )}
+            {frequency === 'Hourly' ? (
+              <SelectField control={form.control} name="time" label="At" required options={minuteOptions(time)} />
+            ) : (
+              <Controller
+                control={form.control}
+                name="time"
+                render={({ field, fieldState }) => (
+                  <Field
+                    label="At (IST)"
+                    required
+                    validationMessage={fieldState.error?.message}
+                    validationState={fieldState.error ? 'error' : 'none'}
+                  >
+                    <Input
+                      type="time"
+                      step={60}
+                      value={field.value}
+                      onChange={(_, data) => field.onChange(data.value)}
+                      onBlur={field.onBlur}
+                    />
+                  </Field>
+                )}
+              />
+            )}
+          </div>
+
+          {extract ? (
             <Controller
               control={form.control}
-              name="time"
+              name="extractName"
               render={({ field, fieldState }) => (
                 <Field
-                  label="At (IST)"
+                  label="File name"
                   required
+                  hint="Lower-case letters, digits and dashes. Each refresh replaces this file in the facility's extract folder."
                   validationMessage={fieldState.error?.message}
                   validationState={fieldState.error ? 'error' : 'none'}
                 >
                   <Input
-                    type="time"
-                    step={60}
                     value={field.value}
-                    onChange={(_, data) => field.onChange(data.value)}
+                    maxLength={MAX_EXTRACT_NAME_LENGTH}
+                    placeholder="daily-revenue"
+                    contentAfter={<Text className={styles.muted}>.csv</Text>}
+                    onChange={(_, data) => field.onChange(normalizeExtractName(data.value))}
                     onBlur={field.onBlur}
                   />
                 </Field>
               )}
             />
-          </div>
+          ) : (
+            <>
+              <ChoiceField
+                control={form.control}
+                name="format"
+                label="File"
+                options={[
+                  { value: 'Xlsx', label: 'Excel workbook' },
+                  { value: 'Csv', label: 'CSV file' },
+                  { value: 'Pdf', label: 'PDF (print-ready)' },
+                ]}
+              />
 
-          <ChoiceField
-            control={form.control}
-            name="format"
-            label="File"
-            options={[
-              { value: 'Xlsx', label: 'Excel workbook' },
-              { value: 'Csv', label: 'CSV file' },
-              { value: 'Pdf', label: 'PDF (print-ready)' },
-            ]}
-          />
-
-          <Controller
-            control={form.control}
-            name="recipients"
-            render={({ field, fieldState }) => (
-              <RecipientsField value={field.value} onChange={field.onChange} error={fieldState.error?.message} />
-            )}
-          />
+              <Controller
+                control={form.control}
+                name="recipients"
+                render={({ field, fieldState }) => (
+                  <RecipientsField value={field.value} onChange={field.onChange} error={fieldState.error?.message} />
+                )}
+              />
+            </>
+          )}
 
           <SwitchField
             control={form.control}
             name="isActive"
-            label="Send e-mails on this schedule"
-            hint="Turn off to pause the e-mails without deleting the schedule."
+            label={extract ? 'Refresh the file on this schedule' : 'Send e-mails on this schedule'}
+            hint={
+              extract
+                ? 'Turn off to pause the refreshes. The last file stays in the folder.'
+                : 'Turn off to pause the e-mails without deleting the schedule.'
+            }
           />
 
           {summary && (
@@ -427,8 +480,9 @@ export function ScheduleDrawer({
             </MessageBar>
           )}
           <Caption1 className={styles.muted}>
-            The file is attached to the e-mail (up to 10 MB) and can be downloaded again from the delivery history.
-            Reports that list patients cannot be e-mailed.
+            {extract
+              ? 'Each refresh replaces the file, so the BI tool always reads the latest data: one row per row of the report, with the facility code in the first column. Reports that list patients cannot be extracts.'
+              : 'The file is attached to the e-mail (up to 10 MB) and can be downloaded again from the delivery history. Reports that list patients cannot be e-mailed.'}
           </Caption1>
         </form>
       </DrawerBody>
@@ -442,7 +496,7 @@ export function ScheduleDrawer({
           disabledFocusable={save.isPending}
           icon={save.isPending ? <Spinner size="tiny" /> : undefined}
         >
-          {schedule ? 'Save schedule' : 'Create schedule'}
+          {extract ? (schedule ? 'Save extract' : 'Create extract') : schedule ? 'Save schedule' : 'Create schedule'}
         </Button>
         <Button onClick={onClose}>Cancel</Button>
       </DrawerFooter>

@@ -296,7 +296,29 @@ public static class ReportExporter
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(csv.ToString())];
     }
 
-    private static void Line(StringBuilder csv, params string?[] fields)
+    /// <summary>The first column of a BI extract: the facility the rows belong to.</summary>
+    public const string FacilityColumn = "Facility code";
+
+    /// <summary>
+    /// A BI extract (BI-05): the rows under one header row and nothing else, as BI tools such as Power BI read a table —
+    /// no title, inputs, totals (a BI tool adds its own, and would count a total row twice) or notes. The first column is
+    /// the facility's code, so the files of several facilities can be combined. Values are written as in the CSV export:
+    /// ISO dates, invariant numbers, text neutralised against formula injection, UTF-8 with a byte-order mark.
+    /// </summary>
+    public static byte[] ExtractCsv(ReportDocument document, string facilityCode)
+    {
+        var csv = new StringBuilder();
+        Line(csv, [FacilityColumn, .. document.Columns.Select(c => c.Label)]);
+        foreach (var values in document.Rows)
+        {
+            Line(csv, [facilityCode, .. document.Columns.Select((c, i) => Format(values[i], c.Type))]);
+        }
+
+        return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(csv.ToString())];
+    }
+
+    /// <summary>Writes one CSV line: RFC 4180 quoting, text neutralised against formula injection.</summary>
+    internal static void Line(StringBuilder csv, params string?[] fields)
     {
         csv.AppendJoin(',', fields.Select(Escape));
         csv.Append("\r\n");
