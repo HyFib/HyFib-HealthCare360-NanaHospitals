@@ -375,8 +375,9 @@ export function formatBytes(bytes: number | null | undefined): string {
 
 /**
  * Gives the server's database account a new random password, needing `admin.system.manage`. 422 when it cannot be
- * changed here (`database.password_none`, `database.password_not_windows`, `database.password_elsewhere`) or the change
- * failed and the old password stays (`database.password_not_changed`).
+ * changed here (`database.password_none`, `database.password_not_windows`, `database.password_elsewhere`), when the
+ * change failed and the old password stays (`database.password_not_changed`), and when the database could not be reached
+ * to confirm a failed commit, so the old password was kept (`database.password_unconfirmed`).
  */
 export function changeDatabasePassword() {
   return api.post<DatabasePasswordChanged>('/api/v1/admin/system/database-password/change');
