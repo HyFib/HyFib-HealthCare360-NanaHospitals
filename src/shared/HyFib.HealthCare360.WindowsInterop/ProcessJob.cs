@@ -60,8 +60,8 @@ public sealed class ProcessJob : IDisposable
     /// <summary>
     /// Starts a program inside the job, without a window. Windows puts it in the job before its first instruction, so
     /// every process it starts is in the job too. (A process put in a job once it is running can start others before
-    /// that, and those stay outside.) The program inherits only <paramref name="inheritedHandles"/>, and
-    /// <paramref name="output"/>, when given, as its standard output and standard error.
+    /// that, and those stay outside.) The program inherits only <paramref name="inheritedHandles"/>. Its standard output
+    /// and standard error go to <paramref name="output"/>, or nowhere when that is null, and its standard input is empty.
     /// </summary>
     /// <exception cref="Win32Exception">Windows could not start the program.</exception>
     /// <exception cref="InvalidOperationException">The program exited as soon as it started.</exception>
@@ -79,19 +79,24 @@ public sealed class ProcessJob : IDisposable
         }
 
         commandLine.Append('\0');
-        var inherited = (inheritedHandles ?? []).Append(output).OfType<SafeHandle>().Distinct().ToList();
+
+        // With STARTF_USESTDHANDLES, each standard stream needs a valid handle that the program inherits. A stream the
+        // caller does not give is the NUL device: reads find it empty and writes go nowhere.
+        using var nothing = File.OpenHandle(@"\\.\NUL", FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Inheritable);
+        var standardOutput = output ?? nothing;
+        var inherited = (inheritedHandles ?? []).Append(standardOutput).Append(nothing).Distinct().ToList();
 
         // CreateProcess reads the handle and job lists through these pointers, so they stay put until it returns.
         var referenced = new List<SafeHandle>();
         var handleList = IntPtr.Zero;
         var jobList = IntPtr.Zero;
         var attributes = IntPtr.Zero;
-        var attributeCount = inherited.Count > 0 ? 2 : 1;
+        const int attributeCount = 2;
         nint attributeSize = 0;
         InitializeProcThreadAttributeList(IntPtr.Zero, attributeCount, 0, ref attributeSize);
         try
         {
-            handleList = Marshal.AllocHGlobal(IntPtr.Size * Math.Max(1, inherited.Count));
+            handleList = Marshal.AllocHGlobal(IntPtr.Size * inherited.Count);
             jobList = Marshal.AllocHGlobal(IntPtr.Size);
             attributes = Marshal.AllocHGlobal(attributeSize);
             foreach (var handle in inherited.Append(_handle))
@@ -117,19 +122,19 @@ public sealed class ProcessJob : IDisposable
 
             try
             {
-                if ((inherited.Count > 0 && !UpdateProcThreadAttribute(attributes, 0, ProcThreadAttributeHandleList, handleList, IntPtr.Size * inherited.Count, IntPtr.Zero, IntPtr.Zero))
+                if (!UpdateProcThreadAttribute(attributes, 0, ProcThreadAttributeHandleList, handleList, IntPtr.Size * inherited.Count, IntPtr.Zero, IntPtr.Zero)
                     || !UpdateProcThreadAttribute(attributes, 0, ProcThreadAttributeJobList, jobList, IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
                 {
                     throw new Win32Exception(Marshal.GetLastPInvokeError());
                 }
 
-                var outputHandle = output?.DangerousGetHandle() ?? IntPtr.Zero;
                 var startup = new StartupInfoEx { AttributeList = attributes };
                 startup.StartupInfo.Size = Marshal.SizeOf<StartupInfoEx>();
                 startup.StartupInfo.Flags = StartfUseStdHandles;
-                startup.StartupInfo.StdOutput = outputHandle;
-                startup.StartupInfo.StdError = outputHandle;
-                if (!CreateProcessW(fileName, commandLine.ToString().ToCharArray(), IntPtr.Zero, IntPtr.Zero, inherited.Count > 0,
+                startup.StartupInfo.StdInput = nothing.DangerousGetHandle();
+                startup.StartupInfo.StdOutput = standardOutput.DangerousGetHandle();
+                startup.StartupInfo.StdError = standardOutput.DangerousGetHandle();
+                if (!CreateProcessW(fileName, commandLine.ToString().ToCharArray(), IntPtr.Zero, IntPtr.Zero, true,
                     CreateNoWindow | ExtendedStartupInfoPresent, IntPtr.Zero, null, ref startup, out var created))
                 {
                     throw new Win32Exception(Marshal.GetLastPInvokeError());
