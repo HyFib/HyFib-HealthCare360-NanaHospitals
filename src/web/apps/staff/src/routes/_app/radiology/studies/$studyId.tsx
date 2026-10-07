@@ -12,6 +12,7 @@ import {
   MessageBarTitle,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { MoreHorizontalRegular, OpenRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
@@ -83,6 +84,8 @@ function ImagingStudyPage() {
 
 function StudyView({ study }: { study: ImagingStudyDetail }) {
   const styles = useStyles();
+  // Closing a dialog opened from the study's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const canWork = usePermission(RADIOLOGY_PERMISSIONS.worklist);
   const canSeeImages = usePermission(RADIOLOGY_PERMISSIONS.images);
@@ -115,7 +118,14 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
         actions={
           <>
             {next && (
-              <Button appearance="primary" disabled={actions.busy} onClick={() => actions.run(next, ref)}>
+              <Button
+                appearance="primary"
+                disabled={actions.busy}
+                // Stays focusable while the step runs, so focus is not dropped to the page.
+                disabledFocusable={actions.busy}
+                onClick={() => actions.run(next, ref)}
+                {...restoreFocusTarget}
+              >
                 {studyActionLabel[next]}
               </Button>
             )}
@@ -127,7 +137,7 @@ function StudyView({ study }: { study: ImagingStudyDetail }) {
             {others.length > 0 && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<MoreHorizontalRegular />} aria-label="More study actions" />
+                  <Button icon={<MoreHorizontalRegular />} aria-label="More study actions" {...restoreFocusTarget} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

@@ -18,6 +18,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { hrApi, hrKeys, type EmployeeDetail } from './api';
 import { SEPARATION_REASONS } from './labels';
 
@@ -80,7 +81,11 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onValid)} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !busy && onValid(values))}
+      onKeyDown={ignoreEscapeWhile(busy)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>Separate {employee.fullName}?</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -117,6 +122,8 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
             type="submit"
             appearance="primary"
             disabled={busy}
+            // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
             style={busy ? undefined : { backgroundColor: tokens.colorPaletteRedBackground3 }}
           >

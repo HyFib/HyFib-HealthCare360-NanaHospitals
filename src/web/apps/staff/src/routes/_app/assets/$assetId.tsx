@@ -16,6 +16,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -102,6 +103,8 @@ type ActionDialog = 'edit' | 'breakdown' | 'condemn' | 'dispose' | 'idle' | 'inu
 /** One asset: details, AMC/CMC contracts, depreciation, preventive maintenance, calibration and breakdowns. */
 function AssetPage() {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const { assetId } = Route.useParams();
   const { tab = 'overview' } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -181,7 +184,7 @@ function AssetPage() {
             )}
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

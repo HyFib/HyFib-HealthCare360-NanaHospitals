@@ -13,6 +13,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   DocumentArrowDownRegular,
@@ -61,6 +62,8 @@ const useStyles = makeStyles({
  */
 function OutsourcingPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canSend = usePermission(LAB_PERMISSIONS.receive);
@@ -199,6 +202,7 @@ function OutsourcingPage() {
                   appearance="subtle"
                   icon={<MoreHorizontalRegular />}
                   aria-label={`Actions for ${item.testName}`}
+                  {...restoreFocusTarget}
                 />
               </MenuTrigger>
               <MenuPopover>

@@ -119,6 +119,10 @@ function ReasonBody({
             type="submit"
             appearance="primary"
             disabled={blocked}
+            // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
+            // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It still
+            // submits the form, which `submit` ignores while busy.
+            disabledFocusable={busy}
             icon={busy ? <Spinner size="tiny" /> : undefined}
             style={destructive && !blocked ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
           >

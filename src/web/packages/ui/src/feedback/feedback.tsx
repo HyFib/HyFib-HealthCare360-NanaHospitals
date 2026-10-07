@@ -181,7 +181,7 @@ export function ConfirmDialog({
   onCancel: () => void;
 }) {
   return (
-    <Dialog open={open} onOpenChange={(_, data) => !data.open && onCancel()} modalType="alert">
+    <Dialog open={open} onOpenChange={(_, data) => !data.open && !busy && onCancel()} modalType="alert">
       <DialogSurface>
         <DialogBody>
           <DialogTitle>{title}</DialogTitle>
@@ -194,6 +194,9 @@ export function ConfirmDialog({
               appearance="primary"
               onClick={onConfirm}
               disabled={busy}
+              // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out of
+              // the open dialog, and Fluent then returns it to the button that opened the dialog, behind it.
+              disabledFocusable={busy}
               icon={busy ? <Spinner size="tiny" /> : undefined}
               style={destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
             >

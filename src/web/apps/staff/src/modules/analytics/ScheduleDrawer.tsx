@@ -243,7 +243,12 @@ export function ScheduleDrawer({
     : null;
 
   return (
-    <OverlayDrawer open position="end" size="medium" onOpenChange={(_, data) => !data.open && onClose()}>
+    <OverlayDrawer
+      open
+      position="end"
+      size="medium"
+      onOpenChange={(_, data) => !data.open && !save.isPending && onClose()}
+    >
       <DrawerHeader>
         <DrawerHeaderTitle
           action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
@@ -258,7 +263,7 @@ export function ScheduleDrawer({
         <form
           id="schedule-form"
           className={styles.form}
-          onSubmit={form.handleSubmit((value) => save.mutate(value))}
+          onSubmit={form.handleSubmit((value) => !save.isPending && save.mutate(value))}
           noValidate
         >
           <TextField
@@ -433,6 +438,8 @@ export function ScheduleDrawer({
           type="submit"
           form="schedule-form"
           disabled={save.isPending}
+          // Keeps focus while saving (a disabled button drops it); Enter can still submit, which the form ignores.
+          disabledFocusable={save.isPending}
           icon={save.isPending ? <Spinner size="tiny" /> : undefined}
         >
           {schedule ? 'Save schedule' : 'Create schedule'}

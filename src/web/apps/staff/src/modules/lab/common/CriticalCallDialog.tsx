@@ -128,7 +128,11 @@ export function CriticalCallDialog({
     },
   });
 
-  const submit = form.handleSubmit((values) =>
+  const submit = form.handleSubmit((values) => {
+    // The confirm button stays focusable while busy, so Enter can still submit: one call record at a time.
+    if (busy) {
+      return;
+    }
     onSubmit({
       informedPersonName: values.informedPersonName,
       informedPersonRole: values.informedPersonRole || null,
@@ -137,8 +141,8 @@ export function CriticalCallDialog({
       informedAt: fromZonedInput(values.informedAt) ?? new Date().toISOString(),
       readBackConfirmed: values.readBackConfirmed,
       notes: values.notes || null,
-    }),
-  );
+    });
+  });
 
   return (
     <Dialog open={open} onOpenChange={(_, data) => !data.open && !busy && onCancel()} modalType="alert">
@@ -305,6 +309,8 @@ export function CriticalCallDialog({
                 type="submit"
                 appearance="primary"
                 disabled={busy}
+                // Keeps focus while busy: a disabled button drops it.
+                disabledFocusable={busy}
                 icon={busy ? <Spinner size="tiny" /> : <CallRegular />}
               >
                 {submitLabel}

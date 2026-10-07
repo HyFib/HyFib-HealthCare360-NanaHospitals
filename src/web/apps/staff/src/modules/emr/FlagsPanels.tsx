@@ -37,6 +37,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { usePermission } from '@/lib/permissions';
 import { canRecordNoKnownAllergies, noKnownAllergiesRefusal, recordedByText } from './allergyStatus';
 import {
@@ -164,7 +165,11 @@ function RecordAllergyForm({
   });
 
   return (
-    <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !save.isPending && save.mutate(values))}
+      onKeyDown={ignoreEscapeWhile(save.isPending)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>Record allergy</DialogTitle>
         <DialogContent className={styles.form}>
@@ -219,6 +224,8 @@ function RecordAllergyForm({
             type="submit"
             appearance="primary"
             disabled={save.isPending}
+            // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" /> : undefined}
           >
             Record allergy
@@ -595,7 +602,11 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
   });
 
   return (
-    <form onSubmit={form.handleSubmit((values) => save.mutate(values))} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !save.isPending && save.mutate(values))}
+      onKeyDown={ignoreEscapeWhile(save.isPending)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>Add patient alert</DialogTitle>
         <DialogContent className={styles.form}>
@@ -641,6 +652,8 @@ function RaiseAlertForm({ patientId, onClose }: { patientId: string; onClose: ()
             appearance="primary"
             icon={save.isPending ? <Spinner size="tiny" /> : <AlertUrgentRegular />}
             disabled={save.isPending}
+            // Keeps focus while saving (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={save.isPending}
           >
             Add alert
           </Button>

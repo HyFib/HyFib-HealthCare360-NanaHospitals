@@ -17,6 +17,7 @@ import {
   MessageBarBody,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -78,6 +79,8 @@ const useStyles = makeStyles({
 
 function DevicesPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const devices = useQuery(hrQueries.devices());
@@ -169,6 +172,7 @@ function DevicesPage() {
                   appearance="subtle"
                   icon={<MoreHorizontalRegular />}
                   aria-label={`Actions for ${d.name}`}
+                  {...restoreFocusTarget}
                 />
               </MenuTrigger>
               <MenuPopover>

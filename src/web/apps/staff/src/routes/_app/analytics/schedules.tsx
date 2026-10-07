@@ -10,6 +10,7 @@ import {
   Text,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -103,6 +104,8 @@ function toRequest(schedule: ScheduleDto, isActive = schedule.isActive): SaveSch
 /** BI-04: reports e-mailed on a schedule (IST), with delivery history, "send now", pause and delete. */
 function SchedulesPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -339,6 +342,7 @@ function SchedulesPage() {
                   appearance="subtle"
                   icon={<MoreHorizontalRegular />}
                   aria-label={`Actions for ${row.name}`}
+                  {...restoreFocusTarget}
                 />
               </MenuTrigger>
               <MenuPopover>

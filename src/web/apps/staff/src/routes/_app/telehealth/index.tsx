@@ -17,6 +17,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -84,6 +85,8 @@ function TelehealthRoute() {
 /** Today's and upcoming video consultations (TEL-01): who is waiting, links, and the way into each call. */
 function TelehealthPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const queryClient = useQueryClient();
@@ -298,6 +301,7 @@ function TelehealthPage() {
                     appearance="subtle"
                     icon={<MoreHorizontalRegular />}
                     aria-label={`More actions for ${s.patientName}`}
+                    {...restoreFocusTarget}
                   />
                 </MenuTrigger>
                 <MenuPopover>

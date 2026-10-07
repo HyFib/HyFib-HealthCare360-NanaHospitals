@@ -26,6 +26,7 @@ import {
   Textarea,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowRepeatAllRegular,
@@ -249,6 +250,8 @@ function EntryScreen({
   refreshing: boolean;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -584,7 +587,7 @@ function EntryScreen({
         actions={
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+              <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -1294,7 +1297,13 @@ function AuthorizeRefillsDialog({ entry, onClose }: { entry: QueueEntryDetail; o
             <Button onClick={onClose} disabled={save.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={!valid || save.isPending}
+              // Keeps focus while saving: a disabled button drops it.
+              disabledFocusable={save.isPending}
+              onClick={() => save.mutate()}
+            >
               Authorise
             </Button>
           </DialogActions>
@@ -1354,7 +1363,13 @@ function RequestRefillDialog({ entry, onClose }: { entry: QueueEntryDetail; onCl
             <Button onClick={onClose} disabled={request.isPending}>
               Cancel
             </Button>
-            <Button appearance="primary" disabled={request.isPending} onClick={() => request.mutate()}>
+            <Button
+              appearance="primary"
+              disabled={request.isPending}
+              // Keeps focus while sending: a disabled button drops it.
+              disabledFocusable={request.isPending}
+              onClick={() => request.mutate()}
+            >
               Raise request
             </Button>
           </DialogActions>

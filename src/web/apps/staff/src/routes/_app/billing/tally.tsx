@@ -16,6 +16,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowDownloadRegular,
@@ -201,6 +202,8 @@ function ExportsView({
   onOpenDay: (day: string | undefined) => void;
 }) {
   const notify = useNotify();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const queryClient = useQueryClient();
   const [from, setFrom] = useState(todayIso(-30));
   const [to, setTo] = useState(todayIso());
@@ -331,6 +334,7 @@ function ExportsView({
                 appearance="subtle"
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${formatDateOnly(e.date)}`}
+                {...restoreFocusTarget}
               />
             </MenuTrigger>
             <MenuPopover>

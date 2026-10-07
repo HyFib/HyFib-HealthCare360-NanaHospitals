@@ -15,6 +15,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   BuildingBankRegular,
@@ -81,6 +82,8 @@ const useStyles = makeStyles({
 
 function EmployeeProfilePage() {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const { employeeId } = Route.useParams();
   const { tab = 'details' } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -161,7 +164,7 @@ function EmployeeProfilePage() {
               </Button>
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

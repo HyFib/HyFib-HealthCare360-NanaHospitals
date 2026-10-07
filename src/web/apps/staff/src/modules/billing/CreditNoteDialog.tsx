@@ -131,6 +131,8 @@ export function CreditNoteDialog({ bill, open, onClose }: { bill: BillDetail; op
                 type="submit"
                 appearance="primary"
                 disabled={!valid || issue.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={issue.isPending}
                 icon={issue.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 Issue {CREDIT_NOTE_KIND_LABEL[kind].toLowerCase()}

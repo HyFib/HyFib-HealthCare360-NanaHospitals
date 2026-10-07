@@ -150,6 +150,8 @@ export function DeliveriesDrawer({ schedule, onClose }: { schedule: ScheduleDto;
                             )
                           }
                           disabled={!delivery.fileAvailable || download.isPending}
+                          // Keeps focus while the file downloads: a disabled button drops it.
+                          disabledFocusable={download.isPending}
                           onClick={() => download.mutate(delivery)}
                         >
                           {delivery.fileAvailable ? DOWNLOAD_LABELS[delivery.format] : 'File no longer kept'}

@@ -117,6 +117,10 @@ export function ReasonDialog(props: ReasonDialogProps) {
                 type="submit"
                 appearance="primary"
                 disabled={!valid || props.busy}
+                // While the request runs the button stays focusable (aria-disabled): a disabled button drops focus out
+                // of the open dialog, and Fluent then returns it to the button that opened the dialog, behind it. It
+                // still submits the form, which `submit` ignores while busy.
+                disabledFocusable={props.busy}
                 icon={props.busy ? <Spinner size="tiny" /> : undefined}
                 style={props.destructive ? { backgroundColor: tokens.colorPaletteRedBackground3 } : undefined}
               >

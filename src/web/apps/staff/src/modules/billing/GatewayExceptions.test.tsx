@@ -232,6 +232,22 @@ describe('GatewayExceptions', () => {
     expect(confirm).toHaveFocus();
   });
 
+  it('keeps focus on the row menu button while the receipt is recorded', async () => {
+    vi.mocked(gatewayApi.recordReceipt).mockReturnValue(new Promise<never>(() => {}));
+    renderList();
+    const actions = await screen.findByRole('button', { name: 'Actions for pay_A1B2C3D4E5' });
+
+    actions.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: 'Record the receipt' })).toHaveFocus());
+    await userEvent.keyboard('{Enter}');
+
+    // A disabled button loses focus in the browser; the menu button stays focusable while the row's action runs.
+    await waitFor(() => expect(actions).toHaveAttribute('aria-disabled', 'true'));
+    expect(actions).not.toBeDisabled();
+    expect(actions).toHaveFocus();
+  });
+
   it('tells the accountant when there is nothing to look at', async () => {
     listExceptions.mockResolvedValue(page([]));
     renderList();

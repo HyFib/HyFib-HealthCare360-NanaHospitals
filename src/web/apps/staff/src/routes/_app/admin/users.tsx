@@ -29,6 +29,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -106,6 +107,8 @@ const ACTION_TEXT: Record<Exclude<RowAction, 'reset-password'>, { title: string;
 
 function UsersPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canManage = usePermission('admin.users.manage');
@@ -263,6 +266,7 @@ function UsersPage() {
                         appearance="subtle"
                         icon={<MoreHorizontalRegular />}
                         aria-label={`Actions for ${u.displayName}`}
+                        {...restoreFocusTarget}
                       />
                     </MenuTrigger>
                     <MenuPopover>

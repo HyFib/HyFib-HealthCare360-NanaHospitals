@@ -12,6 +12,7 @@ import {
   MessageBarTitle,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { AttachRegular, DocumentRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError } from '@hc360/core';
@@ -83,6 +84,8 @@ function CardiologyStudyPage() {
 
 function StudyView({ study }: { study: CardiologyStudyDetail }) {
   const styles = useStyles();
+  // Closing a dialog opened from the study's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const canManage = usePermission(CARDIOLOGY_PERMISSIONS.manage);
   const canReadFiles = usePermission('files.read');
@@ -115,6 +118,7 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
                 appearance="primary"
                 icon={next === 'attach' ? <AttachRegular /> : undefined}
                 onClick={() => actions.run(next, ref)}
+                {...restoreFocusTarget}
               >
                 {cardiologyActionLabel[next]}
               </Button>
@@ -122,7 +126,7 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
             {others.length > 0 && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<MoreHorizontalRegular />} aria-label="More study actions" />
+                  <Button icon={<MoreHorizontalRegular />} aria-label="More study actions" {...restoreFocusTarget} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

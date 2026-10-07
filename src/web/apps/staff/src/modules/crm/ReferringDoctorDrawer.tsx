@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { isApiError, normalizePhone } from '@hc360/core';
 import { applyServerErrors, ErrorState, FormGrid, SwitchField, TextAreaField, TextField, useNotify } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { EditorDrawer } from '@/modules/hr/shared/EditorDrawer';
@@ -72,6 +72,8 @@ function DoctorForm({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [alias, setAlias] = useState('');
+  // Adding or removing a spelling takes focus back to the box, for the next one: both buttons go away or turn off.
+  const aliasInput = useRef<HTMLInputElement>(null);
   const form = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -160,13 +162,17 @@ function DoctorForm({
                       appearance="transparent"
                       icon={<DismissRegular />}
                       aria-label={`Remove ${name}`}
-                      onClick={() => field.onChange(field.value.filter((n) => n !== name))}
+                      onClick={() => {
+                        aliasInput.current?.focus();
+                        field.onChange(field.value.filter((n) => n !== name));
+                      }}
                     />
                   </Badge>
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <Input
+                  ref={aliasInput}
                   value={alias}
                   onChange={(_, d) => setAlias(d.value)}
                   maxLength={200}
@@ -179,7 +185,14 @@ function DoctorForm({
                   }}
                   style={{ flex: 1 }}
                 />
-                <Button icon={<AddRegular />} onClick={add} disabled={!alias.trim() || field.value.length >= 10}>
+                <Button
+                  icon={<AddRegular />}
+                  onClick={() => {
+                    aliasInput.current?.focus();
+                    add();
+                  }}
+                  disabled={!alias.trim() || field.value.length >= 10}
+                >
                   Add
                 </Button>
               </div>

@@ -12,6 +12,7 @@ import {
   MessageBarTitle,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ClipboardHeartRegular,
@@ -79,6 +80,8 @@ function usableScreening(donor: DonorDetail, now: number): DonorScreeningDto | n
 
 function DonorView({ donor }: { donor: DonorDetail }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const now = useNow(60_000);
   const today = todayIso();
@@ -130,7 +133,7 @@ function DonorView({ donor }: { donor: DonorDetail }) {
             </Button>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

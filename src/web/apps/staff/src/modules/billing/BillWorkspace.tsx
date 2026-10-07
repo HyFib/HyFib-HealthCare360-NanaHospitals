@@ -16,6 +16,7 @@ import {
   Text,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
@@ -97,6 +98,8 @@ export function BillWorkspace({
   allowServiceEntry?: boolean;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -400,7 +403,7 @@ export function BillWorkspace({
             </Tooltip>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More bill actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More bill actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

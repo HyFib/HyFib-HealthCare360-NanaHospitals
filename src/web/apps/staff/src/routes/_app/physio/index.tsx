@@ -11,6 +11,7 @@ import {
   Select,
   Text,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
@@ -64,6 +65,8 @@ const useStyles = makeStyles({
 
 function PhysioWorklistPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -206,6 +209,7 @@ function PhysioWorklistPage() {
                         appearance="primary"
                         icon={<CheckmarkRegular />}
                         onClick={() => setAttending(i)}
+                        {...restoreFocusTarget}
                       >
                         Record
                       </Button>
@@ -216,6 +220,7 @@ function PhysioWorklistPage() {
                             appearance="subtle"
                             icon={<MoreHorizontalRegular />}
                             aria-label={`More actions for ${i.patientName}`}
+                            {...restoreFocusTarget}
                           />
                         </MenuTrigger>
                         <MenuPopover>

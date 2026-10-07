@@ -255,6 +255,8 @@ export function RuleDrawer({ rule, onClose }: { rule: ShareRuleDto | null; onClo
             type="submit"
             appearance="primary"
             disabled={!valid || save.isPending}
+            // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={save.isPending}
             icon={save.isPending ? <Spinner size="tiny" /> : undefined}
           >
             {rule ? 'Save rule' : 'Add rule'}

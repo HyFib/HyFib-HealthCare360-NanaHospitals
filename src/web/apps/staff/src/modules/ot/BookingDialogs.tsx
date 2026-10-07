@@ -89,9 +89,9 @@ export function ScheduleDialog({
       : null;
 
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={(_, d) => !d.open && !schedule.isPending && onClose()}>
       <DialogSurface style={{ maxWidth: 760 }}>
-        <form onSubmit={form.handleSubmit((values) => schedule.mutate(values))} noValidate>
+        <form onSubmit={form.handleSubmit((values) => !schedule.isPending && schedule.mutate(values))} noValidate>
           <DialogBody>
             <DialogTitle>
               {moving ? 'Move to another slot' : 'Schedule surgery'}
@@ -127,6 +127,8 @@ export function ScheduleDialog({
                 type="submit"
                 appearance="primary"
                 disabled={schedule.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={schedule.isPending}
                 icon={schedule.isPending ? <Spinner size="tiny" /> : undefined}
               >
                 {moving ? 'Move surgery' : 'Schedule'}

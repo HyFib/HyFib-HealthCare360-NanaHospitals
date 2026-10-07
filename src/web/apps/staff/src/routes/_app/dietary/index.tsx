@@ -18,6 +18,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -69,6 +70,8 @@ type Editing = { admission: DietAdmission; current: DietOrderDto | null } | null
 
 /** Diet orders (DIET-01): the dietitian's round list, active by default, with orders needing review flagged. */
 function DietOrdersPage() {
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -245,6 +248,7 @@ function DietOrdersPage() {
                           appearance="subtle"
                           icon={<MoreHorizontalRegular />}
                           aria-label={`Actions for ${o.patientName ?? 'patient'}`}
+                          {...restoreFocusTarget}
                         />
                       </MenuTrigger>
                       <MenuPopover>

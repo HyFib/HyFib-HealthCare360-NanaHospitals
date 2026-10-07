@@ -14,6 +14,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular,
@@ -83,6 +84,8 @@ const useStyles = makeStyles({
  */
 function ImagingWorklistPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -291,7 +294,10 @@ function ImagingWorklistPage() {
                     size="small"
                     appearance="primary"
                     disabled={actions.busy}
+                    // Stays focusable while the step runs, so focus is not dropped to the page.
+                    disabledFocusable={actions.busy}
                     onClick={() => actions.run(next, ref)}
+                    {...restoreFocusTarget}
                   >
                     {studyActionLabel[next]}
                   </Button>
@@ -303,6 +309,7 @@ function ImagingWorklistPage() {
                       appearance="subtle"
                       icon={<MoreHorizontalRegular />}
                       aria-label={`More for ${study.studyName}, ${study.patientName}`}
+                      {...restoreFocusTarget}
                     />
                   </MenuTrigger>
                   <MenuPopover>

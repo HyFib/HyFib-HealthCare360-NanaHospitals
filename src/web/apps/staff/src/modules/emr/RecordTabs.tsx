@@ -17,6 +17,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, DocumentTextRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -268,6 +269,8 @@ function RecordImmunizationForm({ patientId, onClose }: { patientId: string; onC
 
 export function ImmunizationsTab({ patientId }: { patientId: string }) {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canRecord = usePermission('clinical.immunizations.record');
@@ -349,6 +352,7 @@ export function ImmunizationsTab({ patientId }: { patientId: string }) {
                         appearance="subtle"
                         icon={<MoreHorizontalRegular />}
                         aria-label={`Actions for ${i.vaccineName}`}
+                        {...restoreFocusTarget}
                       />
                     </MenuTrigger>
                     <MenuPopover>

@@ -123,6 +123,8 @@ export function ReceiveReportDialog({ target, onClose }: { target: ReceiveReport
                 type="submit"
                 appearance="primary"
                 disabled={Boolean(problem) || receive.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={receive.isPending}
                 icon={receive.isPending ? <Spinner size="tiny" /> : <DocumentArrowDownRegular />}
               >
                 Record receipt

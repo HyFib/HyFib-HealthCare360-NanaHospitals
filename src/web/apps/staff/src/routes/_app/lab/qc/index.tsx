@@ -16,6 +16,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -92,6 +93,8 @@ const useStyles = makeStyles({
  */
 function QcPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -243,6 +246,7 @@ function QcPage() {
                           appearance="subtle"
                           icon={<MoreHorizontalRegular />}
                           aria-label={`Actions for ${row.testName} level ${row.level}`}
+                          {...restoreFocusTarget}
                         />
                       </MenuTrigger>
                       <MenuPopover>

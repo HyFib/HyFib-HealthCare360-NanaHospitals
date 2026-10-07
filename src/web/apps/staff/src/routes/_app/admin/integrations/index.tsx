@@ -9,6 +9,7 @@ import {
   MenuTrigger,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
@@ -63,6 +64,8 @@ function shorten(text: string, length = 140): string {
 /** Integrations status (SRS §5 INT-*): is each one set up, switched on and working, with a test for each. */
 function IntegrationsPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const allowed = usePermission('admin.integrations.manage');
   const canConfigure = usePermission('admin.settings.manage');
@@ -187,6 +190,7 @@ function IntegrationsPage() {
                   appearance="subtle"
                   icon={<MoreHorizontalRegular />}
                   aria-label={`Actions for ${row.displayName}`}
+                  {...restoreFocusTarget}
                 />
               </MenuTrigger>
               <MenuPopover>

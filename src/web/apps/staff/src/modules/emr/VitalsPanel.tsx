@@ -24,6 +24,7 @@ import {
   Text,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { AddRegular, DeleteRegular, MoreHorizontalRegular, SaveRegular } from '@fluentui/react-icons';
 import { formatDateTime, isApiError, useDebouncedValue } from '@hc360/core';
@@ -394,6 +395,8 @@ function FlaggedValue({ value, flag }: { value: string; flag: VitalFlag | undefi
 /** Chart tab: trend chart, all recordings with their flags, and marking a wrong entry "entered in error". */
 export function VitalsTab({ patientId }: { patientId: string }) {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canRecord = usePermission('clinical.vitals.record');
@@ -545,6 +548,7 @@ export function VitalsTab({ patientId }: { patientId: string }) {
                       appearance="subtle"
                       icon={<MoreHorizontalRegular />}
                       aria-label={`Actions for vitals at ${formatDateTime(v.recordedAt)}`}
+                      {...restoreFocusTarget}
                     />
                   </MenuTrigger>
                   <MenuPopover>

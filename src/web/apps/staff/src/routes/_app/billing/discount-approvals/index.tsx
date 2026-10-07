@@ -11,6 +11,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -248,6 +249,8 @@ function RequestsView({
 
 function LimitsView() {
   const notify = useNotify();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const queryClient = useQueryClient();
   const limits = useQuery(billingQueries.discountLimits());
   const [editing, setEditing] = useState<DiscountLimitDto | 'new' | null>(null);
@@ -299,6 +302,7 @@ function LimitsView() {
                 appearance="subtle"
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${l.userName ?? 'user'}`}
+                {...restoreFocusTarget}
               />
             </MenuTrigger>
             <MenuPopover>

@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { hrApi, hrKeys, type CredentialDto } from './api';
 import { CREDENTIAL_TYPES, credentialTypeLabel } from './labels';
 import { DOCUMENT_ACCEPT, MAX_UPLOAD_BYTES, uploadFile } from './shared/files';
@@ -132,7 +133,11 @@ function Body({
   };
 
   return (
-    <form onSubmit={form.handleSubmit(onValid)} noValidate>
+    <form
+      onSubmit={form.handleSubmit((values) => !busy && onValid(values))}
+      onKeyDown={ignoreEscapeWhile(busy)}
+      noValidate
+    >
       <DialogBody>
         <DialogTitle>
           {credential ? 'Edit credential' : 'Add credential'}
@@ -190,7 +195,14 @@ function Body({
           <Button onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" appearance="primary" disabled={busy} icon={busy ? <Spinner size="tiny" /> : undefined}>
+          <Button
+            type="submit"
+            appearance="primary"
+            disabled={busy}
+            // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+            disabledFocusable={busy}
+            icon={busy ? <Spinner size="tiny" /> : undefined}
+          >
             Save
           </Button>
         </DialogActions>

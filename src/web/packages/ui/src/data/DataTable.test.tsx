@@ -99,3 +99,52 @@ describe('DataTable row actions', () => {
     expect(actionsHeader()?.style.width).toBe('');
   });
 });
+
+describe('DataTable rows that open', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  const pressEnter = (element: Element) => {
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    act(() => {
+      element.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  it('opens a row on Enter only when the row itself has focus, not a button in it', () => {
+    const onRowClick = vi.fn();
+    act(() =>
+      root.render(
+        <DataTable
+          ariaLabel="Patients"
+          columns={columns}
+          rows={[{ id: '1', name: 'Asha Devi', buttons: [] }]}
+          getRowId={(row) => row.id}
+          onRowClick={onRowClick}
+          rowActions={() => <button type="button">More actions</button>}
+        />,
+      ),
+    );
+    const row = container.querySelector('tbody tr')!;
+
+    // The button's own Enter (which opens its menu) still happens.
+    expect(pressEnter(row.querySelector('button')!).defaultPrevented).toBe(false);
+    expect(onRowClick).not.toHaveBeenCalled();
+
+    pressEnter(row);
+    expect(onRowClick).toHaveBeenCalledWith({ id: '1', name: 'Asha Devi', buttons: [] });
+  });
+});

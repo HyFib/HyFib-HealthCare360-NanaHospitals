@@ -16,6 +16,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowDownloadRegular,
@@ -274,6 +275,8 @@ export function TallyDayDrawer({
   const check = useQuery(tallyQueries.dayCheck(date));
   const vouchers = useQuery(tallyQueries.dayVouchers(date));
   const [importing, setImporting] = useState(false);
+  // The confirmations these buttons open return focus to them, inside the drawer, not to the page behind it.
+  const restoreFocusTarget = useRestoreFocusTarget();
 
   const refresh = () => void queryClient.invalidateQueries({ queryKey: tallyKeys.all });
   const run = useMutation({
@@ -298,7 +301,12 @@ export function TallyDayDrawer({
   const question = importQuestion(formatDateOnly(date), vouchers.data?.vouchers ?? []);
 
   return (
-    <OverlayDrawer open position="end" size="large" onOpenChange={(_, data) => !data.open && onClose()}>
+    <OverlayDrawer
+      open
+      position="end"
+      size="large"
+      onOpenChange={(_, data) => !data.open && !run.isPending && onClose()}
+    >
       <DrawerHeader>
         <DrawerHeaderTitle
           action={<Button appearance="subtle" aria-label="Close" icon={<DismissRegular />} onClick={onClose} />}
@@ -328,24 +336,27 @@ export function TallyDayDrawer({
             </div>
             {day?.message && <Text>{day.message}</Text>}
             <div className={styles.row}>
-              <Button icon={<ArrowSyncRegular />} onClick={onPost}>
+              <Button icon={<ArrowSyncRegular />} onClick={onPost} {...restoreFocusTarget}>
                 Post to Tally
               </Button>
               <Button
                 icon={downloading ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
                 disabled={downloading}
+                // Busy buttons here stay focusable: a disabled button drops focus out of the drawer.
+                disabledFocusable={downloading}
                 onClick={onDownload}
               >
                 Download file
               </Button>
               {canMarkImported(day) && (
-                <Button icon={<DocumentCheckmarkRegular />} onClick={() => setImporting(true)}>
+                <Button icon={<DocumentCheckmarkRegular />} onClick={() => setImporting(true)} {...restoreFocusTarget}>
                   Mark imported
                 </Button>
               )}
               <Button
                 icon={run.isPending && run.variables === false ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />}
                 disabled={run.isPending}
+                disabledFocusable={run.isPending}
                 onClick={() => run.mutate(false)}
               >
                 Check records
@@ -353,6 +364,7 @@ export function TallyDayDrawer({
               <Button
                 icon={run.isPending && run.variables === true ? <Spinner size="tiny" /> : <ScanTextRegular />}
                 disabled={run.isPending || !check.data?.canCheckTally}
+                disabledFocusable={run.isPending}
                 title={check.data?.canCheckTally ? undefined : 'Post the day to Tally first; Tally must be set up.'}
                 onClick={() => run.mutate(true)}
               >

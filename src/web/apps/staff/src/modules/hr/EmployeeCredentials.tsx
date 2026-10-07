@@ -1,4 +1,12 @@
-import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger } from '@fluentui/react-components';
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  useRestoreFocusTarget,
+} from '@fluentui/react-components';
 import {
   AddRegular,
   ArrowDownloadRegular,
@@ -28,6 +36,8 @@ export function EmployeeCredentials({
   readOnly?: boolean;
 }) {
   const notify = useNotify();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const queryClient = useQueryClient();
   const canManage = usePermission(HR_PERMISSIONS.credentialsManage) && !readOnly;
   const credentials = useQuery(hrQueries.employeeCredentials(employeeId));
@@ -91,6 +101,7 @@ export function EmployeeCredentials({
                 appearance="subtle"
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${c.name}`}
+                {...restoreFocusTarget}
               />
             </MenuTrigger>
             <MenuPopover>

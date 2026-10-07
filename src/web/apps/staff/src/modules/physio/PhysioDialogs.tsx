@@ -104,9 +104,9 @@ function FormDialog<T extends FieldValues>({
 }) {
   const styles = useStyles();
   return (
-    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+    <Dialog open onOpenChange={(_, d) => !d.open && !busy && onClose()}>
       <DialogSurface style={{ maxWidth }}>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <form onSubmit={form.handleSubmit((values) => !busy && onSubmit(values))} noValidate>
           <DialogBody>
             <DialogTitle>
               {title}
@@ -128,6 +128,8 @@ function FormDialog<T extends FieldValues>({
                 type="submit"
                 appearance="primary"
                 disabled={busy}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={busy}
                 icon={busy ? <Spinner size="tiny" /> : undefined}
               >
                 {submitLabel}

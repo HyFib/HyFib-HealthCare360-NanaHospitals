@@ -115,6 +115,8 @@ export function SendOutDialog({ target, onClose }: { target: SendOutTarget; onCl
                 type="submit"
                 appearance="primary"
                 disabled={!labId || send.isPending}
+                // Keeps focus while busy (a disabled button drops it); Enter can still submit, which is ignored.
+                disabledFocusable={send.isPending}
                 icon={send.isPending ? <Spinner size="tiny" /> : <VehicleTruckProfileRegular />}
               >
                 Mark as sent

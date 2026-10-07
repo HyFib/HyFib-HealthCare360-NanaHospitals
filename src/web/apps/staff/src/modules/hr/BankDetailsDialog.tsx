@@ -19,6 +19,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { ignoreEscapeWhile } from '@/lib/dialogFocus';
 import { hrApi, hrKeys, type EmployeeDetail } from './api';
 import { isValidAccount, isValidIfsc, normalizeIdentifier } from './employeeModel';
 
@@ -94,8 +95,16 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
     }
   };
 
+  // A shared account is changed only once someone ticks that it is meant to be shared.
+  const blocked = busy || (shared !== null && !confirmShared);
+
   return (
-    <form onSubmit={form.handleSubmit(onValid)} noValidate autoComplete="off">
+    <form
+      onSubmit={form.handleSubmit((values) => !blocked && onValid(values))}
+      onKeyDown={ignoreEscapeWhile(busy)}
+      noValidate
+      autoComplete="off"
+    >
       <DialogBody>
         <DialogTitle>Change salary bank account</DialogTitle>
         <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -159,7 +168,10 @@ function Body({ onClose, employee }: { onClose: () => void; employee: EmployeeDe
           <Button
             type="submit"
             appearance="primary"
-            disabled={busy || (shared !== null && !confirmShared)}
+            disabled={blocked}
+            // Keeps focus while saving and when a shared account needs confirming: a disabled button drops it. Enter
+            // can still submit, which is ignored while blocked.
+            disabledFocusable={blocked}
             icon={busy ? <Spinner size="tiny" /> : undefined}
           >
             Change account

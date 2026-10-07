@@ -232,6 +232,8 @@ export function GatewayExceptions({
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${d.key}`}
                 disabled={busy}
+                // Stays focusable while the row's action runs, so focus is not dropped to the page.
+                disabledFocusable={busy}
                 {...restoreFocusTarget}
               />
             </MenuTrigger>

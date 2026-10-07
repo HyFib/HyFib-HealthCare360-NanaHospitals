@@ -22,6 +22,7 @@ import {
   Text,
   Textarea,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -95,6 +96,8 @@ const useStyles = makeStyles({
 /** BI-02: saved dashboards — hospital templates, the user's own and those colleagues shared. */
 function DashboardsPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a dashboard's menu returns focus to that menu's button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -227,6 +230,7 @@ function DashboardsPage() {
                               appearance="subtle"
                               icon={<MoreHorizontalRegular />}
                               aria-label={`Actions for ${board.name}`}
+                              {...restoreFocusTarget}
                             />
                           </MenuTrigger>
                           <MenuPopover>
