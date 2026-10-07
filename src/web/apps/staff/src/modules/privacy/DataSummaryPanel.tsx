@@ -79,7 +79,8 @@ export function DataSummaryPanel({ request }: { request: DataRequestDetail }) {
         summary.data && (
           <Button
             icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-            disabled={printing}
+            // While printing it stays focusable (aria-disabled) and ignores clicks: a disabled button drops focus.
+            disabledFocusable={printing}
             onClick={() => summary.data && void print(summary.data)}
           >
             Print summary

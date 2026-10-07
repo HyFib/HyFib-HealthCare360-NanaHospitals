@@ -296,7 +296,8 @@ function BreachView({
             )}
             <Button
               icon={printing ? <Spinner size="tiny" /> : <PrintRegular />}
-              disabled={printing}
+              // While printing it stays focusable (aria-disabled) and ignores clicks: a disabled button drops focus.
+              disabledFocusable={printing}
               onClick={() => void print()}
             >
               Print report for the Board

@@ -22,11 +22,14 @@ export function DocumentButtons({
   disabled?: boolean;
 }) {
   const { print, downloadPdf } = useServerDocuments();
+  // While its request runs, each button stays focusable (aria-disabled) and ignores clicks: a disabled button drops
+  // keyboard focus to the page, or out of an open dialog.
   const printButton = (
     <Button
       appearance={printAppearance}
       icon={print.isPending ? <Spinner size="tiny" /> : <PrintRegular />}
-      disabled={disabled || print.isPending}
+      disabled={disabled}
+      disabledFocusable={print.isPending}
       onClick={() => print.mutate(path)}
     >
       {printLabel}
@@ -44,7 +47,8 @@ export function DocumentButtons({
       )}
       <Button
         icon={downloadPdf.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
-        disabled={disabled || downloadPdf.isPending}
+        disabled={disabled}
+        disabledFocusable={downloadPdf.isPending}
         onClick={() => downloadPdf.mutate(path)}
       >
         Download PDF

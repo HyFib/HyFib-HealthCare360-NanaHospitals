@@ -152,10 +152,16 @@ export function FormQrPanel({
         </div>
       </Field>
       <div className={styles.actions}>
-        <Button appearance="primary" icon={<PrintRegular />} onClick={() => void print(false)} disabled={printing}>
+        {/* While printing they stay focusable (aria-disabled) and ignore clicks: a disabled button drops focus. */}
+        <Button
+          appearance="primary"
+          icon={<PrintRegular />}
+          onClick={() => void print(false)}
+          disabledFocusable={printing}
+        >
           Print poster
         </Button>
-        <Button icon={<TabletRegular />} onClick={() => void print(true)} disabled={printing}>
+        <Button icon={<TabletRegular />} onClick={() => void print(true)} disabledFocusable={printing}>
           Print kiosk card
         </Button>
         {canManage && (
