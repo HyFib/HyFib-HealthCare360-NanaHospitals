@@ -94,7 +94,8 @@ export function useIdle(timeoutMs: number, onIdle: () => void, enabled = true): 
  * in a dialog must not dispense the prescription behind it. The key is still kept from the browser (Alt+Left would
  * otherwise navigate away from the page, dialog and all). A shortcut that belongs to a dialog passes the dialog's
  * surface as `within` and then works only for keys pressed inside it, so not in another dialog opened over it. One
- * that must work whatever is open, such as locking the screen, sets `overDialogs`.
+ * that must work whatever dialog is open, such as locking the screen, sets `overDialogs`. While the screen is locked
+ * no shortcut works, not even those: a passer-by must not be able to unmute a call.
  */
 export function useHotkey(
   combo: string,
@@ -104,7 +105,7 @@ export function useHotkey(
     enabled?: boolean;
     /** The surface of the dialog or drawer the shortcut belongs to. */
     within?: RefObject<Element | null>;
-    /** Works even while a dialog is open over the page. */
+    /** Works even while a dialog is open over the page (but not while the screen is locked). */
     overDialogs?: boolean;
   } = {},
 ): void {
@@ -133,9 +134,11 @@ export function useHotkey(
         event.shiftKey === wantShift
       ) {
         event.preventDefault();
-        const applies = options.within
-          ? target instanceof Node && options.within.current?.contains(target) === true
-          : options.overDialogs || !modalOpen();
+        const applies =
+          !useSession.getState().locked &&
+          (options.within
+            ? target instanceof Node && options.within.current?.contains(target) === true
+            : options.overDialogs || !modalOpen());
         if (applies) {
           onHotkey(event);
         }
