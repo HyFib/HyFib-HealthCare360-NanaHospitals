@@ -102,14 +102,14 @@ const failedRefund = exception({
 });
 
 function renderList(onFilters = vi.fn()) {
-  render(
+  const { container } = render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <FluentProvider theme={webLightTheme}>
         <GatewayExceptions filters={{}} onFilters={onFilters} />
       </FluentProvider>
     </QueryClientProvider>,
   );
-  return { onFilters };
+  return { onFilters, container };
 }
 
 async function openActions(key: string) {
@@ -183,6 +183,19 @@ describe('GatewayExceptions', () => {
 
     await waitFor(() => expect(gatewayApi.resolve).toHaveBeenCalledWith('e1', 'Refunded by NEFT, UTR 1234', 7));
     expect(notify.success).toHaveBeenCalledWith('Exception resolved', 'Your note is kept with it.');
+  });
+
+  it('opens the note from the row menu with focus in it, and hides the list behind it, not the dialog', async () => {
+    const { container } = renderList();
+
+    await openActions('pay_A1B2C3D4E5');
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark resolved…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('textbox')).toHaveFocus();
+
+    // Fluent hides what is behind a modal dialog a moment after it opens; the dialog itself stays readable.
+    await waitFor(() => expect(container).toHaveAttribute('aria-hidden', 'true'));
+    expect(screen.getByRole('alertdialog')).toBe(dialog);
   });
 
   it('tells the accountant when there is nothing to look at', async () => {
