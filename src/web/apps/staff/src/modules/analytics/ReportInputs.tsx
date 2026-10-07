@@ -118,7 +118,7 @@ export function ReportParameterForm(props: ReportParameterFormProps) {
           case 'Number':
             return (
               <NumberInput
-                key={`${parameter.key}:${values[parameter.key] ?? ''}`}
+                key={parameter.key}
                 parameter={parameter}
                 value={values[parameter.key] ?? ''}
                 onCommit={(value) => onChange(setInput(values, parameter.key, value))}
@@ -207,7 +207,6 @@ function PeriodFields({
       </Field>
       {current === CUSTOM_PERIOD && !relativeOnly && (
         <DateRangeFields
-          key={`${values.from ?? ''}|${values.to ?? ''}`}
           from={values.from ?? ''}
           to={values.to ?? ''}
           maxDays={maxDays}
@@ -222,8 +221,8 @@ function PeriodFields({
 
 /** From/to dates, applied once both are valid (a half-typed range never runs the report). */
 function DateRangeFields({
-  from: initialFrom,
-  to: initialTo,
+  from: committedFrom,
+  to: committedTo,
   maxDays,
   errors,
   disabled,
@@ -237,8 +236,17 @@ function DateRangeFields({
   onCommit: (from: string, to: string) => void;
 }) {
   const styles = useStyles();
-  const [from, setFrom] = useState(initialFrom);
-  const [to, setTo] = useState(initialTo);
+  const [from, setFrom] = useState(committedFrom);
+  const [to, setTo] = useState(committedTo);
+  // Dates committed from outside (Back, a link from another report) replace the draft; the fields' own commits come
+  // back as the dates already shown. The fields are not remounted for that: every valid change is committed at once,
+  // and a remount would take keyboard focus from the date being changed.
+  const [synced, setSynced] = useState({ from: committedFrom, to: committedTo });
+  if (synced.from !== committedFrom || synced.to !== committedTo) {
+    setSynced({ from: committedFrom, to: committedTo });
+    setFrom(committedFrom);
+    setTo(committedTo);
+  }
   const today = todayIso();
 
   const problem = (nextFrom: string, nextTo: string): { field: 'from' | 'to'; message: string } | null => {
@@ -267,7 +275,7 @@ function DateRangeFields({
   const update = (nextFrom: string, nextTo: string) => {
     setFrom(nextFrom);
     setTo(nextTo);
-    if (!problem(nextFrom, nextTo) && (nextFrom !== initialFrom || nextTo !== initialTo)) {
+    if (!problem(nextFrom, nextTo) && (nextFrom !== committedFrom || nextTo !== committedTo)) {
       onCommit(nextFrom, nextTo);
     }
   };
@@ -326,6 +334,13 @@ function NumberInput({
 }) {
   const styles = useStyles();
   const [text, setText] = useState(value);
+  // A value committed from outside ("Reset inputs", another report's default, Back) replaces the typed text. The input
+  // is not remounted for that: it would lose keyboard focus each time Enter commits it.
+  const [synced, setSynced] = useState(value);
+  if (value !== synced) {
+    setSynced(value);
+    setText(value);
+  }
   const number = Number(text);
   const outOfRange =
     text !== '' &&
@@ -361,6 +376,8 @@ function NumberInput({
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
+            // Enter applies the number only; it does not also submit a form around the inputs (the schedule drawer's).
+            event.preventDefault();
             commit();
           }
         }}
