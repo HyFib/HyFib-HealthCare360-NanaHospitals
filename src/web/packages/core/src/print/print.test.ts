@@ -168,6 +168,21 @@ describe('printing in a browser', () => {
 
     expect(document.activeElement).toBe(done);
   });
+
+  it('leaves focus on the page itself when it was moved there after the print dialog closed', async () => {
+    const print = button('Print token slip');
+    print.focus();
+
+    const printing = printHtml('<p>slip</p>');
+    await vi.advanceTimersByTimeAsync(200);
+    // A click on an empty part of the page takes focus from the frame to the page itself, as focusing <html> does here.
+    document.documentElement.focus();
+    expect(document.activeElement).toBe(document.body);
+    await vi.runAllTimersAsync();
+    await printing;
+
+    expect(document.activeElement).toBe(document.body);
+  });
 });
 
 describe('page sizes', () => {

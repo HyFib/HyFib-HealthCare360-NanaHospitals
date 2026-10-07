@@ -26,9 +26,13 @@ export async function printHtml(html: string, options: PrintOptions = {}): Promi
         frame.contentWindow?.focus();
         frame.contentWindow?.print();
         setTimeout(() => {
-          // Removing the focused frame leaves focus on the page itself.
+          // Removing the frame while it has focus leaves focus on the page itself. Focus that moved meanwhile, even to
+          // the page itself (a click on an empty part of it), stays where it is.
+          const frameHadFocus = document.activeElement === frame;
           frame.remove();
-          returnFocus(focused);
+          if (frameHadFocus) {
+            returnFocus(focused);
+          }
           resolve();
         }, 500);
       }, 150);
@@ -54,13 +58,11 @@ function rememberFocus(frame: HTMLIFrameElement): Element | null {
 }
 
 /**
- * Gives focus back to the element that had it before printing, if focus was left on the page and the element is still
- * there (`focus()` does nothing for an element that can no longer take it, such as a disabled button). Focus that moved
- * somewhere else meanwhile stays there.
+ * Gives focus back to the element that had it before printing, if that element is still there (`focus()` does nothing
+ * for an element that can no longer take it, such as a disabled button).
  */
 function returnFocus(previous: Element | null): void {
-  const focused = document.activeElement;
-  if ((focused === null || focused === document.body) && previous instanceof HTMLElement && previous.isConnected) {
+  if (previous instanceof HTMLElement && previous.isConnected) {
     previous.focus();
   }
 }
