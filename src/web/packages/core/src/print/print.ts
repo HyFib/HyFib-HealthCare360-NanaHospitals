@@ -7,7 +7,8 @@ export type PrintOptions = Omit<PrintHtmlRequest, 'html'>;
  * Prints a self-contained HTML document. Inside HC360 Desktop it goes straight to the printer this computer uses for
  * that kind of page (labels, wristbands, 80 mm slips, A4/A5 documents); a kind with no printer set shows the print
  * dialog, so nothing lands on whichever printer happens to be the Windows default. `silent: false` always asks.
- * In a browser it opens the print dialog through a hidden iframe.
+ * In a browser it opens the print dialog through a hidden iframe, then gives focus back to the element that had it
+ * (the Print button, or a button in an open dialog), so keyboard users carry on from where they were.
  */
 export async function printHtml(html: string, options: PrintOptions = {}): Promise<void> {
   if (bridge.isDesktop) {
@@ -21,10 +22,13 @@ export async function printHtml(html: string, options: PrintOptions = {}): Promi
     Object.assign(frame.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
     frame.onload = () => {
       setTimeout(() => {
+        const focused = rememberFocus(frame);
         frame.contentWindow?.focus();
         frame.contentWindow?.print();
         setTimeout(() => {
+          // Removing the focused frame leaves focus on the page itself.
           frame.remove();
+          returnFocus(focused);
           resolve();
         }, 500);
       }, 150);
@@ -32,6 +36,33 @@ export async function printHtml(html: string, options: PrintOptions = {}): Promi
     frame.srcdoc = html;
     document.body.appendChild(frame);
   });
+}
+
+/** The element each print frame took focus from. */
+const focusTakenFrom = new WeakMap<Element, Element | null>();
+
+/**
+ * Remembers the element that has focus as the frame takes it, to give focus back to once the frame is gone. When two
+ * prints overlap (a double click on Print), the second frame takes focus from the first: focus goes back to what the
+ * first one took it from.
+ */
+function rememberFocus(frame: HTMLIFrameElement): Element | null {
+  const focused = document.activeElement;
+  const previous = focused !== null && focusTakenFrom.has(focused) ? (focusTakenFrom.get(focused) ?? null) : focused;
+  focusTakenFrom.set(frame, previous);
+  return previous;
+}
+
+/**
+ * Gives focus back to the element that had it before printing, if focus was left on the page and the element is still
+ * there (`focus()` does nothing for an element that can no longer take it, such as a disabled button). Focus that moved
+ * somewhere else meanwhile stays there.
+ */
+function returnFocus(previous: Element | null): void {
+  const focused = document.activeElement;
+  if ((focused === null || focused === document.body) && previous instanceof HTMLElement && previous.isConnected) {
+    previous.focus();
+  }
 }
 
 /**

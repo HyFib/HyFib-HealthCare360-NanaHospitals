@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Bridge from '../bridge/bridge';
 import type { PrinterSetupInfo } from '../bridge/bridge';
 
@@ -94,6 +94,79 @@ describe('printing on HC360 Desktop', () => {
       pageSize: 'Label50x25',
       silent: true,
     });
+  });
+});
+
+describe('printing in a browser', () => {
+  /** What had focus each time a page was printed. */
+  let focusedWhilePrinting: (Element | null)[];
+
+  beforeEach(() => {
+    desktop.isDesktop = false;
+    focusedWhilePrinting = [];
+    vi.useFakeTimers();
+    // As in a browser: focusing the frame's window focuses the frame in the page.
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockImplementation(function (
+      this: HTMLIFrameElement,
+    ) {
+      return {
+        focus: () => this.focus(),
+        print: () => focusedWhilePrinting.push(document.activeElement),
+      } as unknown as Window;
+    });
+  });
+
+  afterEach(() => {
+    desktop.isDesktop = true;
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    document.body.replaceChildren();
+  });
+
+  function button(label: string): HTMLButtonElement {
+    const element = document.createElement('button');
+    element.textContent = label;
+    return document.body.appendChild(element);
+  }
+
+  it('gives focus back to the Print button once the print frame is gone', async () => {
+    const print = button('Print token slip');
+    print.focus();
+
+    const printing = printHtml('<p>slip</p>', { pageSize: 'Receipt80' });
+    await vi.runAllTimersAsync();
+    await printing;
+
+    expect(focusedWhilePrinting).toEqual([expect.any(HTMLIFrameElement)]);
+    expect(document.querySelector('iframe')).toBeNull();
+    expect(document.activeElement).toBe(print);
+  });
+
+  it('gives focus back to the Print button after two prints that overlap (a double click)', async () => {
+    const print = button('Print token slip');
+    print.focus();
+
+    const printing = [printHtml('<p>slip</p>'), printHtml('<p>slip</p>')];
+    await vi.runAllTimersAsync();
+    await Promise.all(printing);
+
+    expect(focusedWhilePrinting).toHaveLength(2);
+    expect(document.activeElement).toBe(print);
+  });
+
+  it('leaves focus where it was moved after the print dialog closed', async () => {
+    const print = button('Print token slip');
+    const done = button('Done');
+    print.focus();
+
+    const printing = printHtml('<p>slip</p>');
+    await vi.advanceTimersByTimeAsync(200);
+    expect(focusedWhilePrinting).toHaveLength(1);
+    done.focus();
+    await vi.runAllTimersAsync();
+    await printing;
+
+    expect(document.activeElement).toBe(done);
   });
 });
 
