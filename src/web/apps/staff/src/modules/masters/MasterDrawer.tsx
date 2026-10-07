@@ -39,6 +39,7 @@ export function MasterDrawer({
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  const surface = useRef<HTMLDivElement>(null);
   const form = useRef<HTMLFormElement>(null);
   useHotkey(
     'mod+s',
@@ -46,12 +47,18 @@ export function MasterDrawer({
       event.preventDefault();
       form.current?.requestSubmit();
     },
-    { allowInInputs: true, enabled: !busy },
+    { allowInInputs: true, enabled: !busy, within: surface },
   );
 
   return (
     <>
-      <OverlayDrawer open position="end" size={size} onOpenChange={(_, data) => !data.open && guard.requestClose()}>
+      <OverlayDrawer
+        ref={surface}
+        open
+        position="end"
+        size={size}
+        onOpenChange={(_, data) => !data.open && guard.requestClose()}
+      >
         <form ref={form} onSubmit={onSubmit} noValidate style={{ display: 'contents' }}>
           <DrawerHeader>
             <DrawerHeaderTitle

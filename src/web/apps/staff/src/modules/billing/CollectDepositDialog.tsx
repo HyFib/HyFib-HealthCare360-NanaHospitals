@@ -28,7 +28,7 @@ import {
 import { formatDateTime, formatInr, todayIso, useHotkey } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { billingApi, billingQueries, type ReceiptDto } from './api';
 import { useAttemptKey, useBillingPrint, useRefreshBilling } from './hooks';
@@ -155,12 +155,13 @@ export function CollectDepositDialog({
       collect.mutate();
     }
   };
-  useHotkey('mod+enter', submit, { enabled: open && !done && side === null, allowInInputs: true });
+  const surface = useRef<HTMLDivElement>(null);
+  useHotkey('mod+enter', submit, { enabled: open && !done && side === null, allowInInputs: true, within: surface });
 
   return (
     <>
       <Dialog open={open && side === null} onOpenChange={(_, data) => !data.open && !collect.isPending && onClose()}>
-        <DialogSurface style={{ maxWidth: 820, width: '100%' }}>
+        <DialogSurface ref={surface} style={{ maxWidth: 820, width: '100%' }}>
           <DialogBody>
             <DialogTitle>{done ? 'Advance received' : 'Collect IP advance'}</DialogTitle>
             <DialogContent className={styles.body}>

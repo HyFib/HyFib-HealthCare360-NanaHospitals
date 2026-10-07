@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useState, type RefObject } from 'react';
 import { draftStorageKey, useSession } from '../auth/session';
 
 /** Debounces a fast-changing value (search boxes). */
@@ -89,11 +89,24 @@ export function useIdle(timeoutMs: number, onIdle: () => void, enabled = true): 
 /**
  * Keyboard shortcut, e.g. `useHotkey('mod+k', open)`. "mod" is Ctrl on Windows. Ignored while typing in inputs
  * unless `allowInInputs` is set.
+ *
+ * A shortcut belongs to the page, so it does nothing while a modal dialog or drawer is open over the page: F9 pressed
+ * in a dialog must not dispense the prescription behind it. The key is still kept from the browser (Alt+Left would
+ * otherwise navigate away from the page, dialog and all). A shortcut that belongs to a dialog passes the dialog's
+ * surface as `within` and then works only for keys pressed inside it, so not in another dialog opened over it. One
+ * that must work whatever is open, such as locking the screen, sets `overDialogs`.
  */
 export function useHotkey(
   combo: string,
   handler: (event: KeyboardEvent) => void,
-  options: { allowInInputs?: boolean; enabled?: boolean } = {},
+  options: {
+    allowInInputs?: boolean;
+    enabled?: boolean;
+    /** The surface of the dialog or drawer the shortcut belongs to. */
+    within?: RefObject<Element | null>;
+    /** Works even while a dialog is open over the page. */
+    overDialogs?: boolean;
+  } = {},
 ): void {
   const onHotkey = useEffectEvent(handler);
 
@@ -120,10 +133,24 @@ export function useHotkey(
         event.shiftKey === wantShift
       ) {
         event.preventDefault();
-        onHotkey(event);
+        const applies = options.within
+          ? target instanceof Node && options.within.current?.contains(target) === true
+          : options.overDialogs || !modalOpen();
+        if (applies) {
+          onHotkey(event);
+        }
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [combo, options.allowInInputs, options.enabled]);
+  }, [combo, options.allowInInputs, options.enabled, options.within, options.overDialogs]);
+}
+
+/**
+ * Whether a modal dialog or drawer is open over the page. Fluent marks their surfaces `aria-modal="true"` and unmounts
+ * them when they close; the lock screen is marked too. A surface's `aria-hidden` does not mean it is closed: Tabster
+ * sets it on an open dialog while another one is active over it, or when focus has left it.
+ */
+function modalOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
 }
