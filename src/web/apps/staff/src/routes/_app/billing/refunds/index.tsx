@@ -19,6 +19,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowUndoRegular,
@@ -247,6 +248,8 @@ function RefundRowActions({
   onAction: (kind: 'approve' | 'reject' | 'pay') => void;
   onPrint: () => void;
 }) {
+  // Closing a dialog opened from this menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const items: ReactElement[] = [];
   if (refund.status === 'Requested' && canApprove) {
     items.push(
@@ -283,6 +286,7 @@ function RefundRowActions({
           appearance="subtle"
           icon={<MoreHorizontalRegular />}
           aria-label={`Actions for refund ${refund.refundNumber}`}
+          {...restoreFocusTarget}
         />
       </MenuTrigger>
       <MenuPopover>

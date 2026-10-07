@@ -12,6 +12,7 @@ import {
   MessageBarBody,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowMoveRegular,
@@ -121,6 +122,8 @@ function LeadPage() {
 
 function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string; onClick: () => void }[] }) {
   const styles = useStyles();
+  // Closing the dialog opened from the stage menu returns focus to its button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const departments = useDepartments('Clinical');
@@ -176,7 +179,13 @@ function LeadView({ lead, crumbs }: { lead: LeadDetail; crumbs: { label: string;
             {leadMoves(lead.status).length > 0 && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<ArrowMoveRegular />} disabled={busy}>
+                  <Button
+                    icon={<ArrowMoveRegular />}
+                    disabled={busy}
+                    // Stays focusable while the lead moves, so focus is not dropped to the page.
+                    disabledFocusable={busy}
+                    {...restoreFocusTarget}
+                  >
                     Change stage
                   </Button>
                 </MenuTrigger>

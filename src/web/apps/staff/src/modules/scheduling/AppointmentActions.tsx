@@ -7,6 +7,7 @@ import {
   MenuList,
   MenuPopover,
   MenuTrigger,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
@@ -29,6 +30,8 @@ const useStyles = makeStyles({
 /** The row's likely next step as a button (check in today, confirm future bookings) plus the full menu. */
 export function AppointmentRowActions({ appointment, desk }: { appointment: AppointmentRef; desk: AppointmentDesk }) {
   const styles = useStyles();
+  // Closing a dialog opened from this row's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const actions = appointmentActions(appointment, desk.context);
   const primary = primaryAction(appointment, desk.context);
   const item = (action: AppointmentAction, icon: ReactElement, label: string) => (
@@ -50,6 +53,7 @@ export function AppointmentRowActions({ appointment, desk }: { appointment: Appo
           appearance="primary"
           icon={<PersonArrowRightRegular />}
           onClick={() => desk.run('checkIn', appointment)}
+          {...restoreFocusTarget}
         >
           Check in
         </Button>
@@ -66,6 +70,7 @@ export function AppointmentRowActions({ appointment, desk }: { appointment: Appo
             appearance="subtle"
             icon={<MoreHorizontalRegular />}
             aria-label={`More actions for ${appointment.patientName}`}
+            {...restoreFocusTarget}
           />
         </MenuTrigger>
         <MenuPopover>

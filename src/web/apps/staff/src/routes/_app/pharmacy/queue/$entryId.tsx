@@ -26,6 +26,7 @@ import {
   Textarea,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowRepeatAllRegular,
@@ -249,6 +250,8 @@ function EntryScreen({
   refreshing: boolean;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -584,7 +587,7 @@ function EntryScreen({
         actions={
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+              <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>

@@ -12,6 +12,7 @@ import {
   Tab,
   TabList,
   Text,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   CalendarArrowRightRegular,
@@ -163,6 +164,8 @@ function BookingView({
   closeDialog: () => void;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -241,7 +244,7 @@ function BookingView({
             {canManage && (b.status === 'Scheduled' || postponeGate(b).allowed || cancelGate(b).allowed) && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

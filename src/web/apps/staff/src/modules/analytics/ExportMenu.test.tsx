@@ -118,4 +118,38 @@ describe('ExportMenu', () => {
     );
     expect(saveFile).not.toHaveBeenCalled();
   });
+
+  it('keeps focus on Export while the file is prepared', async () => {
+    vi.mocked(analyticsApi.exportReport).mockReturnValue(new Promise<never>(() => {}));
+    renderMenu();
+    const exportButton = screen.getByRole('button', { name: 'Export' });
+
+    exportButton.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: /Excel workbook/ })).toHaveFocus());
+    await userEvent.keyboard('{Enter}');
+
+    // A disabled button loses focus in the browser; Export stays focusable while it works.
+    const preparing = await screen.findByRole('button', { name: 'Preparing file…' });
+    expect(preparing).toHaveAttribute('aria-disabled', 'true');
+    expect(preparing).not.toBeDisabled();
+    expect(preparing).toHaveFocus();
+  });
+
+  it('returns focus to Export when the patient-list confirmation is closed from the keyboard', async () => {
+    renderMenu({ containsPatientIdentifiers: true });
+    const exportButton = screen.getByRole('button', { name: 'Export' });
+
+    exportButton.focus();
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(screen.getByRole('menuitem', { name: /Excel workbook/ })).toHaveFocus());
+    await userEvent.keyboard('{Enter}');
+    const dialog = await screen.findByRole('alertdialog', { name: 'Download a list of patients?' });
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    await waitFor(() => expect(exportButton).toHaveFocus());
+    expect(analyticsApi.exportReport).not.toHaveBeenCalled();
+  });
 });

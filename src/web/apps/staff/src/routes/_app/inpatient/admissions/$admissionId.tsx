@@ -17,6 +17,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowExitRegular,
@@ -107,6 +108,8 @@ type OpenDialog = 'transfer' | 'initiate' | 'complete' | 'revoke' | 'cancel' | '
 
 /** One in-patient stay: details, bed history, consultant visits, charges and the ADT actions (WB-03/04). */
 function AdmissionPage() {
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const { admissionId } = Route.useParams();
   const { tab = 'overview' } = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -219,7 +222,7 @@ function AdmissionPage() {
             )}
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

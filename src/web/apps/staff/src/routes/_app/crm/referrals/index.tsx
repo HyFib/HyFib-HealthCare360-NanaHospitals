@@ -13,6 +13,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -64,6 +65,8 @@ export const Route = createFileRoute('/_app/crm/referrals/')({
 });
 
 function ReferralsPage() {
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const [term, setTerm] = useState(search.search ?? '');
@@ -154,7 +157,12 @@ function ReferralsPage() {
             rowActions={(r) => (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button appearance="subtle" icon={<MoreHorizontalRegular />} aria-label={`Actions for ${r.text}`} />
+                  <Button
+                    appearance="subtle"
+                    icon={<MoreHorizontalRegular />}
+                    aria-label={`Actions for ${r.text}`}
+                    {...restoreFocusTarget}
+                  />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

@@ -14,6 +14,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { DocumentEditRegular, MoreHorizontalRegular } from '@fluentui/react-icons';
 import { formatDate, formatTime, todayIso, useDebouncedValue } from '@hc360/core';
@@ -77,6 +78,8 @@ const useStyles = makeStyles({
  */
 function CardiologyStudiesPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's buttons returns focus to the button that opened it.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const canManage = usePermission(CARDIOLOGY_PERMISSIONS.manage);
@@ -253,7 +256,12 @@ function CardiologyStudiesPage() {
             return (
               <span className={styles.actions}>
                 {next && (
-                  <Button size="small" appearance="primary" onClick={() => actions.run(next, ref)}>
+                  <Button
+                    size="small"
+                    appearance="primary"
+                    onClick={() => actions.run(next, ref)}
+                    {...restoreFocusTarget}
+                  >
                     {cardiologyActionLabel[next]}
                   </Button>
                 )}
@@ -264,6 +272,7 @@ function CardiologyStudiesPage() {
                       appearance="subtle"
                       icon={<MoreHorizontalRegular />}
                       aria-label={`More for ${study.studyName}, ${study.patientName}`}
+                      {...restoreFocusTarget}
                     />
                   </MenuTrigger>
                   <MenuPopover>

@@ -11,6 +11,7 @@ import {
   MessageBarBody,
   Tab,
   TabList,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AlertUrgentRegular,
@@ -82,6 +83,8 @@ type OpenDialog = 'encounter' | 'vitals' | 'allergy' | 'alert' | null;
 /** The patient's clinical chart (EHR-01..03): persistent banner, summary, timeline and every part of the record. */
 function PatientChartPage() {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const { patientId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
@@ -138,7 +141,7 @@ function PatientChartPage() {
             )}
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

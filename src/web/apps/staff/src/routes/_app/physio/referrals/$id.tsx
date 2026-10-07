@@ -18,6 +18,7 @@ import {
   ProgressBar,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowClockwiseRegular,
@@ -115,6 +116,8 @@ function PhysioReferralPage() {
 
 function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -221,7 +224,7 @@ function ReferralView({ referral: r }: { referral: PhysioReferralDetail }) {
             {open && (canTreat || canRefer) && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
-                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                  <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
                 </MenuTrigger>
                 <MenuPopover>
                   <MenuList>

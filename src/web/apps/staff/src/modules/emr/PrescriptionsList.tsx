@@ -18,6 +18,7 @@ import {
   Spinner,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowDownloadRegular,
@@ -223,6 +224,8 @@ export function PrescriptionsList({
   excludeDrafts?: boolean;
 }) {
   const notify = useNotify();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const documents = useServerDocuments();
@@ -296,6 +299,7 @@ export function PrescriptionsList({
                 appearance="subtle"
                 icon={<MoreHorizontalRegular />}
                 aria-label={`Actions for ${p.prescriptionNumber}`}
+                {...restoreFocusTarget}
               />
             </MenuTrigger>
             <MenuPopover>

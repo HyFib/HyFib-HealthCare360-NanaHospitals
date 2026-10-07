@@ -1,4 +1,13 @@
-import { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Spinner } from '@fluentui/react-components';
+import {
+  Button,
+  Menu,
+  MenuItem,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
+  Spinner,
+  useRestoreFocusTarget,
+} from '@fluentui/react-components';
 import {
   ArrowDownloadRegular,
   DocumentPdfRegular,
@@ -34,6 +43,8 @@ export function ExportMenu({
   appearance?: 'primary' | 'secondary';
 }) {
   const notify = useNotify();
+  // Closing the patient-list confirmation returns focus to the Export button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const [pending, setPending] = useState<ExportFormat | null>(null);
 
   const download = useMutation({
@@ -83,6 +94,9 @@ export function ExportMenu({
             appearance={appearance}
             icon={download.isPending ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
             disabled={disabled || download.isPending}
+            // Stays focusable while the file is prepared, so focus is not dropped to the page.
+            disabledFocusable={download.isPending}
+            {...restoreFocusTarget}
           >
             {download.isPending ? 'Preparing file…' : 'Export'}
           </Button>

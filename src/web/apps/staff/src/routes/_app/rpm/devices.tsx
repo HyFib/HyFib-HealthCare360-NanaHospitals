@@ -14,6 +14,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -58,6 +59,8 @@ type Pending = { device: RpmDeviceDto; action: 'rotate' | 'deactivate' };
 /** Monitoring devices (RPM-02): register with a one-time key, give to patients, rotate keys and retire devices. */
 function DevicesPage() {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -249,6 +252,7 @@ function DevicesPage() {
                             appearance="subtle"
                             icon={<MoreHorizontalRegular />}
                             aria-label={`More actions for ${d.serialNumber}`}
+                            {...restoreFocusTarget}
                           />
                         </MenuTrigger>
                         <MenuPopover>

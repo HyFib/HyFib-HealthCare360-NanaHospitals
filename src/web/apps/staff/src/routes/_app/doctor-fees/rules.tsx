@@ -9,6 +9,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -47,6 +48,8 @@ function ruleScope(rule: ShareRuleDto): string {
 
 /** Doctor revenue-share rules (DFA-01). The most specific rule in force on the service date decides the share. */
 function RulesPage() {
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -172,6 +175,7 @@ function RulesPage() {
                         appearance="subtle"
                         icon={<MoreHorizontalRegular />}
                         aria-label="Rule actions"
+                        {...restoreFocusTarget}
                       />
                     </MenuTrigger>
                     <MenuPopover>

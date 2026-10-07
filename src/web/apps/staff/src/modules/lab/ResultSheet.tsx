@@ -21,6 +21,7 @@ import {
   Text,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowUndoRegular,
@@ -287,6 +288,8 @@ export function ResultSheetPanel({
 
 function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBarcode?: (barcode: string) => void }) {
   const styles = useStyles();
+  // Closing a dialog opened from a menu returns focus to that menu's button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -779,7 +782,11 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
         actions={
           <Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button icon={<MoreHorizontalRegular />} aria-label="More actions for this sample" />
+              <Button
+                icon={<MoreHorizontalRegular />}
+                aria-label="More actions for this sample"
+                {...restoreFocusTarget}
+              />
             </MenuTrigger>
             <MenuPopover>
               <MenuList>
@@ -1001,6 +1008,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                 appearance="subtle"
                                 icon={<MoreHorizontalRegular />}
                                 aria-label={`More for ${line.testName}`}
+                                {...restoreFocusTarget}
                               />
                             </MenuTrigger>
                             <MenuPopover>

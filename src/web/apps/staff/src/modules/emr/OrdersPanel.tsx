@@ -23,6 +23,7 @@ import {
   Textarea,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -481,6 +482,8 @@ export function OrdersList({
   status?: ClinicalOrderStatus;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from a line's menu returns focus to that line's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canPlace = usePermission('clinical.orders.place');
@@ -582,6 +585,7 @@ export function OrdersList({
                           appearance="subtle"
                           icon={<MoreHorizontalRegular />}
                           aria-label={`Actions for ${item.serviceName}`}
+                          {...restoreFocusTarget}
                         />
                       </MenuTrigger>
                       <MenuPopover>

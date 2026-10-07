@@ -21,6 +21,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import { AddRegular, ArrowSyncRegular, MoreHorizontalRegular, StopRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -58,6 +59,8 @@ import { formatTimeOfDay, fromIstInput, toIstInput } from '../time';
 /** The medication chart (what the doctor ordered). E-prescriptions arrive on their own; ward orders are transcribed here. */
 export function MedicationOrders({ admissionId }: { admissionId: string }) {
   const notify = useNotify();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const queryClient = useQueryClient();
   const canEdit = usePermission('nursing.mar');
   const [activeOnly, setActiveOnly] = useState(true);
@@ -193,6 +196,7 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                         appearance="subtle"
                         icon={<MoreHorizontalRegular />}
                         aria-label={`Actions for ${o.drugName}`}
+                        {...restoreFocusTarget}
                       />
                     </MenuTrigger>
                     <MenuPopover>

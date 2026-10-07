@@ -24,6 +24,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -169,6 +170,8 @@ function EnrollmentPage() {
 /** One monitored patient (RPM-01..05): alerts, trends against their limits, adherence, readings and devices. */
 function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -231,7 +234,7 @@ function EnrollmentView({ enrollment: e }: { enrollment: RpmEnrollmentDetail }) 
             )}
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

@@ -15,6 +15,7 @@ import {
   Subtitle2,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowLeftRegular,
@@ -195,6 +196,8 @@ export function WidgetCard({
 }
 
 function EditMenu({ widget, editing }: { widget: WidgetConfig; editing: WidgetEditActions }) {
+  // Closing the tile editor opened from this menu returns focus to the menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   return (
     <Menu
       checkedValues={{ width: [String(widget.width)] }}
@@ -206,6 +209,7 @@ function EditMenu({ widget, editing }: { widget: WidgetConfig; editing: WidgetEd
           size="small"
           icon={<MoreHorizontalRegular />}
           aria-label={`Change ${widget.title}`}
+          {...restoreFocusTarget}
         />
       </MenuTrigger>
       <MenuPopover>

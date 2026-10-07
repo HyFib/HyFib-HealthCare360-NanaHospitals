@@ -16,6 +16,7 @@ import {
   Text,
   tokens,
   Tooltip,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowSyncRegular,
@@ -152,6 +153,8 @@ function OrderView({
   onCollectShown: () => void;
 }) {
   const styles = useStyles();
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -460,6 +463,7 @@ function OrderView({
                     appearance="subtle"
                     icon={<MoreHorizontalRegular />}
                     aria-label={`Actions for ${item.testName}`}
+                    {...restoreFocusTarget}
                   />
                 </MenuTrigger>
                 <MenuPopover>
@@ -593,6 +597,7 @@ function OrderView({
                     appearance="subtle"
                     icon={<MoreHorizontalRegular />}
                     aria-label={`Actions for tube ${sample.barcode}`}
+                    {...restoreFocusTarget}
                   />
                 </MenuTrigger>
                 <MenuPopover>

@@ -24,6 +24,7 @@ import {
   Text,
   Textarea,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   CallRegular,
@@ -116,6 +117,8 @@ export function FollowUpDrawer({ followUpId, onClose }: { followUpId: string | n
 
 function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => void }) {
   const styles = useStyles();
+  // Closing a dialog opened from the menu returns focus to the menu button, inside the drawer.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const notify = useNotify();
   const queryClient = useQueryClient();
   const canFeedback = usePermission(['feedback.manage', 'crm.followups.manage']);
@@ -293,7 +296,7 @@ function FollowUpBody({ task, onClose }: { task: FollowUpDetail; onClose: () => 
             </Button>
             <Menu>
               <MenuTrigger disableButtonEnhancement>
-                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" />
+                <Button icon={<MoreHorizontalRegular />} aria-label="More actions" {...restoreFocusTarget} />
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>

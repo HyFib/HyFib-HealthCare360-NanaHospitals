@@ -21,6 +21,7 @@ import {
   TabList,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   ArrowMoveRegular,
@@ -278,6 +279,8 @@ function Board({
   onMove: (lead: LeadListItem, to: LeadStatus) => void;
 }) {
   const styles = useStyles();
+  // Closing the dialog opened from a card's menu returns focus to that card's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const navigate = useNavigate();
   const departments = useDepartments('Clinical');
   const [dragging, setDragging] = useState<LeadListItem | null>(null);
@@ -380,6 +383,7 @@ function Board({
                             aria-label={`Move ${lead.name}`}
                             disabled={busy}
                             onClick={(event) => event.stopPropagation()}
+                            {...restoreFocusTarget}
                           />
                         </MenuTrigger>
                         <MenuPopover onClick={(event) => event.stopPropagation()}>

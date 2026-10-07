@@ -13,6 +13,7 @@ import {
   Switch,
   Text,
   tokens,
+  useRestoreFocusTarget,
 } from '@fluentui/react-components';
 import {
   AddRegular,
@@ -53,6 +54,8 @@ export const Route = createFileRoute('/_app/insurance/policies')({
 
 /** Patient insurance policies (INS-03): record, verify with the insurer, and reveal the number only when needed (audited). */
 function PoliciesPage() {
+  // Closing a dialog opened from a row's menu returns focus to that row's menu button.
+  const restoreFocusTarget = useRestoreFocusTarget();
   const search = Route.useSearch();
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
@@ -252,6 +255,7 @@ function PoliciesPage() {
                             appearance="subtle"
                             icon={<MoreHorizontalRegular />}
                             aria-label={`Actions for policy ${p.policyNumberMasked}`}
+                            {...restoreFocusTarget}
                           />
                         </MenuTrigger>
                         <MenuPopover>
