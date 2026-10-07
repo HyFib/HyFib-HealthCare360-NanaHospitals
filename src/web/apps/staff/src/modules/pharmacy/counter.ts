@@ -1,11 +1,10 @@
 import { useRealtimeEvent, useSession } from '@hc360/core';
-import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
-import { facilityQuery, inventoryQueries, type BatchStock, type ItemDetail } from '@/modules/inventory/api';
+import { inventoryQueries, type BatchStock, type ItemDetail } from '@/modules/inventory/api';
 import { CATALOG_READERS } from '@/modules/inventory/permissions';
 import { pharmacyKeys, pharmacyQueries } from './api';
-import { addressLine, type Letterhead } from './print';
 
 /** Counter preferences kept on this workstation. */
 export interface CounterPrefs {
@@ -38,22 +37,6 @@ export function useCounterPrefs(): [CounterPrefs, (patch: Partial<CounterPrefs>)
     }
   };
   return [prefs, update];
-}
-
-/** Hospital name, address, phone and GSTIN for prints (GSTIN and address need the masters permission). */
-export function useLetterhead(): Letterhead {
-  const user = useSession((s) => s.user);
-  const canReadMasters = usePermission('masters.read');
-  const facility = useQuery({
-    ...facilityQuery(user?.facilityId),
-    enabled: Boolean(user?.facilityId) && canReadMasters,
-  });
-  return {
-    name: facility.data?.legalName || facility.data?.name || user?.facilityName || 'Nana Hospitals',
-    address: addressLine(facility.data?.address),
-    phone: facility.data?.phone ?? null,
-    gstin: facility.data?.gstin ?? null,
-  };
 }
 
 /**

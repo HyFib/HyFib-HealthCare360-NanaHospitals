@@ -47,6 +47,7 @@ import {
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   inventoryApi,
@@ -67,7 +68,6 @@ import { StorePicker } from '@/modules/inventory/StorePicker';
 import { Detail, DetailGrid, DocStatus, ExpiryText, ItemFlags } from '@/modules/inventory/StockBits';
 import { useWorkingStore } from '@/modules/inventory/stores';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 interface TransferSearch {
   status?: TransferStatus;

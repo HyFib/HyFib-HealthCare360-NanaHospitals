@@ -137,7 +137,7 @@ messages are made from the same HTML, so every copy is the same.
 
 | | Prescription | Discharge summary |
 |---|---|---|
-| Page | A5 | A4 |
+| Page | A5, or A4 when the **Prescriptions** print template says so | A4 |
 | Content | Letterhead with the facility logo and the prescriber's block on the right (name, qualification, specialty, council registration); patient strip (patient, UHID, age / sex, date signed); known allergies (in red, or "none recorded"); diagnosis; ℞ and one row per medicine: name, strength, Schedule H1/X tag, generic and form, dose with English directions and the route unless oral, the Hindi line under it (`lang="hi"`), instructions, duration ("Once" for STAT, whole weeks from 14 days), quantity; advice; follow-up; refills allowed; the QR code with the prescription number; "Digitally signed on …" and the prescriber's signature image above the name | Letterhead with the facility logo and the consultant's block; "Signed …" (and "amended … (reason)"); patient strip with the admission and discharge dates; diagnosis with ICD-10 codes, presenting complaints, course in hospital, procedures, investigations, condition at discharge, medicines on discharge, advice, follow-up; the emergency line; the consultant's signature image above the name |
 | Footer on every page | "Asha Rao · UHID NH-000123 · Prescription NHRX260000123", and "Page X of Y" | "Asha Rao · UHID NH-000123 · Discharge summary · Discharged 25 Sep 2026", and "Page X of Y" |
 | File name | `prescription-{number}.pdf` | `discharge-summary-{UHID}-{yyyy-MM-dd}.pdf`: the discharge date in IST, else the signing or admission date |
@@ -145,8 +145,12 @@ messages are made from the same HTML, so every copy is the same.
 
 * The QR code opens `verificationUrl` (see *QR verification links*). Without `portal.baseUrl` the verification code is
   printed without a QR code, as on the lab reports.
-* The logo and signatures come from the file store (`DocumentAssets`: PNG, JPEG, WebP or SVG up to 1 MB); a missing
+* The logo and signatures come from the file store (`DocumentAssets`: PNG, JPEG, WebP or SVG up to 300 KB); a missing
   image is left out. The signature image is printed only once the document is signed.
+* Both follow their print template (Hospital setup › Print templates: **Prescriptions**, **Clinical notes**). On
+  pre-printed stationery only the doctor's block is printed at the top and the page leaves the blank space set for the
+  stationery; the logo can be left off; a closing note ends the document. The consultation summary and the operation
+  note, which the staff app prints, follow **Clinical notes** too. See `docs/modules/print-templates.md`.
 * Every value is HTML-encoded, and the doctor's text keeps its line breaks.
 
 #### No known allergies

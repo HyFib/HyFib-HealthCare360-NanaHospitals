@@ -134,5 +134,8 @@ public sealed class FeatureFlagsTests
 
         public Task SetAsync<T>(string key, T value, Guid? facilityId = null, bool secret = false, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(_rows.Remove((key, facilityId)));
     }
 }

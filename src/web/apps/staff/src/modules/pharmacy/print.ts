@@ -3,23 +3,18 @@ import {
   formatDateOnly,
   formatDateTime,
   formatInr,
+  letterheadHtml,
   printDocument,
   printHtml,
+  templateFor,
   type DispensingLabel,
+  type Letterhead,
 } from '@hc360/core';
 import { printLabelJob } from '@/lib/labelPrinting';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import type { IpIssueDetail, PharmacySaleDetail } from './api';
 import { paymentModeLabel } from './api';
-
-/** Letterhead details for pharmacy prints (the facility master; GSTIN when visible to the user). */
-export interface Letterhead {
-  name: string;
-  address?: string | null;
-  phone?: string | null;
-  gstin?: string | null;
-}
 
 export interface GstRateSummary {
   rate: number;
@@ -45,16 +40,8 @@ export function gstSummaryByRate(
   });
 }
 
-function letterheadHtml(letterhead: Letterhead): string {
-  return `
-    <div class="center hospital">${escapeHtml(letterhead.name)}</div>
-    ${letterhead.address ? `<div class="center small">${escapeHtml(letterhead.address)}</div>` : ''}
-    ${letterhead.phone || letterhead.gstin ? `<div class="center small">${letterhead.gstin ? `GSTIN ${escapeHtml(letterhead.gstin)}` : ''}${letterhead.phone && letterhead.gstin ? ' · ' : ''}${letterhead.phone ? `Ph ${escapeHtml(letterhead.phone)}` : ''}</div>` : ''}`;
-}
-
 const RECEIPT_STYLES = `
   .receipt { width: 72mm; }
-  .hospital { font-weight: 700; font-size: 12px; }
   .title { font-weight: 700; margin: 4px 0 2px; letter-spacing: 0.5px; }
   .small { font-size: 9px; }
   .muted { color: #444; }
@@ -68,12 +55,13 @@ const RECEIPT_STYLES = `
   .gst th:first-child, .gst td:first-child { text-align: left; }
   .cancelled { border: 2px solid #b00; color: #b00; font-weight: 800; text-align: center; margin: 4px 0; }`;
 
-/** 80 mm GST invoice / cash memo for a pharmacy sale (OP dispensing or counter sale). */
+/** 80 mm GST invoice / cash memo for a pharmacy sale (OP dispensing or counter sale), with the sales-invoice template. */
 export function buildReceiptHtml(
   sale: PharmacySaleDetail,
   letterhead: Letterhead,
   options: { copyLabel?: string } = {},
 ): string {
+  const template = templateFor(letterhead, 'sales-invoice');
   const customer = sale.customerName
     ? `${escapeHtml(sale.customerName)}${sale.patientUhid ? ` (${escapeHtml(sale.patientUhid)})` : ''}`
     : 'Walk-in customer';
@@ -96,7 +84,7 @@ export function buildReceiptHtml(
     .join('');
   const body = `
     <div class="receipt">
-      ${letterheadHtml(letterhead)}
+      ${letterheadHtml(letterhead, template, { compact: true, taxIds: true })}
       <div class="center title">PHARMACY TAX INVOICE</div>
       ${options.copyLabel ? `<div class="center small">${escapeHtml(options.copyLabel)}</div>` : ''}
       ${sale.status === 'Cancelled' ? `<div class="cancelled">CANCELLED${sale.cancelReason ? `: ${escapeHtml(sale.cancelReason)}` : ''}</div>` : ''}
@@ -138,7 +126,12 @@ export function buildReceiptHtml(
       <div class="small center">${sale.soldBy ? `Pharmacist: ${escapeHtml(sale.soldBy)} · ` : ''}${escapeHtml(sale.storeName)}</div>
       <div class="small center">Keep medicines out of reach of children. Get well soon.</div>
     </div>`;
-  return printDocument(body, { title: `Invoice ${sale.invoiceNumber}`, pageSize: 'Receipt80', styles: RECEIPT_STYLES });
+  return printDocument(body, {
+    title: `Invoice ${sale.invoiceNumber}`,
+    pageSize: 'Receipt80',
+    styles: RECEIPT_STYLES,
+    template,
+  });
 }
 
 /** Dispensing label for one medicine (50 × 25 mm). */
@@ -207,8 +200,9 @@ export function buildIpIssueSlipHtml(
         <td class="right">${escapeHtml(formatQty(l.quantity))}</td><td class="right">${escapeHtml(formatInr(l.unitMrp))}</td><td class="right">${escapeHtml(formatInr(l.amount))}</td></tr>`,
     )
     .join('');
+  const template = templateFor(letterhead, 'other');
   const body = `
-    ${letterheadHtml(letterhead)}
+    ${letterheadHtml(letterhead, template)}
     <h2 class="center" style="margin-top:6px">Ward issue slip</h2>
     <table class="meta">
       <tr><td>Issue</td><td><b>${escapeHtml(issue.number)}</b></td><td>Date</td><td>${escapeHtml(formatDateTime(issue.issuedAt))}</td></tr>
@@ -221,8 +215,8 @@ export function buildIpIssueSlipHtml(
     <div style="display:flex;justify-content:space-between;margin-top:28px">
       <div>Issued by: ${escapeHtml(issue.issuedBy ?? '')}</div><div>Received by (ward nurse): ____________________</div>
     </div>`;
-  const styles = `.hospital{font-weight:700;font-size:14px}.small{font-size:10px}.meta td{padding:2px 6px 2px 0}.lines th{border-bottom:1px solid #999}.lines td{border-bottom:1px solid #eee}`;
-  return printDocument(body, { title: `Ward issue ${issue.number}`, pageSize: 'A5', styles });
+  const styles = `.small{font-size:10px}.meta td{padding:2px 6px 2px 0}.lines th{border-bottom:1px solid #999}.lines td{border-bottom:1px solid #eee}`;
+  return printDocument(body, { title: `Ward issue ${issue.number}`, pageSize: 'A5', styles, template });
 }
 
 /** Counter receipt: straight to this computer's receipt printer on HC360 Desktop, print dialog in a browser. */
@@ -266,26 +260,4 @@ export async function printIpIssueSlip(
   ward?: { wardName?: string | null; bedLabel?: string | null },
 ): Promise<void> {
   await printHtml(buildIpIssueSlipHtml(issue, letterhead, ward), { pageSize: 'A5' });
-}
-
-/** One-line address from the facility master. */
-export function addressLine(
-  address:
-    | {
-        line1?: string | null;
-        line2?: string | null;
-        city?: string | null;
-        state?: string | null;
-        pinCode?: string | null;
-      }
-    | null
-    | undefined,
-): string | null {
-  if (!address) {
-    return null;
-  }
-  const text = [address.line1, address.line2, address.city, address.state, address.pinCode]
-    .filter((part) => part && part.trim())
-    .join(', ');
-  return text || null;
 }

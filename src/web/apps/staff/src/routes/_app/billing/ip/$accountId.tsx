@@ -5,10 +5,11 @@ import { EmptyState, ErrorState, LoadingState, Page, PageHeader, Section, useNot
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { BillingPatientBanner } from '@/modules/billing/BillingPatientBanner';
 import { CollectDepositDialog } from '@/modules/billing/CollectDepositDialog';
-import { useBillingLive, usePrintFacility } from '@/modules/billing/hooks';
+import { useBillingLive } from '@/modules/billing/hooks';
 import { ipQueries } from '@/modules/billing/ipApi';
 import { IpBillsPanel, IpDischargePanel, IpPackagePanel, IpPayerPanel } from '@/modules/billing/IpPanels';
 import { IpRunningBill } from '@/modules/billing/IpRunningBill';
@@ -34,7 +35,7 @@ function IpAccountPage() {
   const navigate = useNavigate({ from: Route.fullPath });
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facility = usePrintFacility();
+  const letterhead = useLetterhead();
   const canRead = usePermission(['billing.ip.manage', 'billing.charges.read']);
   const canDeposit = usePermission('billing.deposits');
   const canLink = usePermission(['billing.payments.collect', 'billing.deposits']);
@@ -79,7 +80,7 @@ function IpAccountPage() {
     try {
       const bill = await queryClient.fetchQuery(ipQueries.runningBill(a.id));
       await sendToPrinter(
-        buildRunningBillHtml(bill, facility, { name: a.patientName ?? '', uhid: a.uhid }, new Date().toISOString()),
+        buildRunningBillHtml(bill, letterhead, { name: a.patientName ?? '', uhid: a.uhid }, new Date().toISOString()),
         'A4',
       );
     } catch (error) {

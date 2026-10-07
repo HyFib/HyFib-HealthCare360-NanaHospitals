@@ -20,6 +20,7 @@ import { ConfirmDialog, ErrorState, LoadingState, Page, PageHeader, Section, use
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   inventoryApi,
@@ -35,7 +36,6 @@ import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { printCountSheet } from '@/modules/inventory/print';
 import { Detail, DetailGrid, DocStatus, ExpiryText } from '@/modules/inventory/StockBits';
 import { countVariance, summarizeCount, varianceValue } from '@/modules/inventory/stockMath';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 export const Route = createFileRoute('/_app/inventory/counts/$countId')({
   component: CountSheetPage,

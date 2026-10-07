@@ -1,13 +1,22 @@
+import { DEFAULT_PRINT_TEMPLATE, type Letterhead, type PrintTemplate } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
 import type { BillDetail, BillLineDto, ReceiptDto } from './api';
 import { billTitle, buildCounterBillHtml, buildReceiptHtml } from './print';
 
-const facility = {
+const facility: Letterhead = {
   name: 'Nana Hospitals',
   legalName: 'Nana Hospitals Pvt Ltd',
-  address: { line1: '12 MG Road', city: 'Pune', state: 'Maharashtra', pinCode: '411001' },
+  address: '12 MG Road, Pune, Maharashtra, 411001',
   gstin: '27AAACN1234F1Z5',
+  pan: 'AAACN1234F',
   phone: '+912012345678',
+};
+
+const stationery: PrintTemplate = {
+  ...DEFAULT_PRINT_TEMPLATE,
+  letterhead: 'Preprinted',
+  topSpaceMm: 40,
+  closingNote: 'Subject to Pune jurisdiction.',
 };
 
 function billLine(overrides: Partial<BillLineDto> = {}): BillLineDto {
@@ -221,6 +230,29 @@ describe('receipt prints', () => {
     expect(html).toContain('Rupees One Thousand Two Hundred Fifty and Fifty Paise Only');
     expect(html).toContain('NHOB260000001');
     expect(html).toContain('size: 80mm auto');
+  });
+
+  it('on pre-printed stationery keeps the tax ids and the title, and leaves room for the letterhead', () => {
+    const html = buildReceiptHtml(receipt, { ...facility, templates: { receipt: stationery } }, 'A4');
+
+    expect(html).toContain('@page { size: A4; margin: 52mm 12mm 12mm; }');
+    expect(html).toContain('GSTIN 27AAACN1234F1Z5 · PAN AAACN1234F');
+    expect(html).toContain('<div class="h-title">Payment receipt</div>');
+    expect(html).not.toContain('Nana Hospitals Pvt Ltd');
+    expect(html).not.toContain('12 MG Road');
+    expect(html).toContain('<div class="closing-note">Subject to Pune jurisdiction.</div>');
+  });
+
+  it('prints the letterhead on the 80 mm roll, which is never pre-printed, and the bills template only for bills', () => {
+    const html = buildCounterBillHtml(bill(), { ...facility, templates: { bill: stationery } });
+
+    expect(html).toContain('<header class="lh compact">');
+    expect(html).toContain('Nana Hospitals Pvt Ltd');
+    expect(html).toContain('margin: 2mm;');
+    expect(html).toContain('<div class="closing-note">Subject to Pune jurisdiction.</div>');
+    expect(buildReceiptHtml(receipt, { ...facility, templates: { bill: stationery } }, 'A4')).not.toContain(
+      'closing-note">',
+    );
   });
 
   it('titles IP advances as advance receipts', () => {

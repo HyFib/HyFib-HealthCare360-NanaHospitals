@@ -104,7 +104,8 @@ internal sealed class LabReportBuilder(HospitalDbContext db, DiagnosticsLookups 
         facility is null
             ? new ReportLetterhead("Hospital", null, null, null, null, null, null)
             : new ReportLetterhead(
-                facility.Name, NullIfEmpty(facility.Address.ToString()), facility.Phone, facility.Email, facility.NabhNumber, facility.LetterheadNote, facility.LogoFileId);
+                facility.Name, NullIfEmpty(facility.Address.ToString()), facility.Phone, facility.Email, facility.NabhNumber, facility.LetterheadNote, facility.LogoFileId,
+                facility.Id);
 
     private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

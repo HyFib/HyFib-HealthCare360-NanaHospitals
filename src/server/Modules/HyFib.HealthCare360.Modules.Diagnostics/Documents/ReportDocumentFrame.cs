@@ -27,7 +27,8 @@ internal sealed record ReportFrame(
 /// <summary>
 /// The A4 frame shared by lab, radiology and cardiology reports (UX-09, LIS-07): letterhead with the facility logo,
 /// patient block, the report body, notes, signatories with their signatures, the QR code that proves the report is
-/// genuine, and the end-of-report line. The same document is printed at the counter, downloaded and sent to the patient.
+/// genuine, and the end-of-report line, as the facility's reports template says (HMS-04). The same document is printed at
+/// the counter, downloaded and sent to the patient.
 /// </summary>
 internal sealed class ReportDocumentFrame(DocumentAssets assets)
 {
@@ -68,6 +69,7 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
             FileName = frame.FileName,
             Footer = frame.Footer,
             Styles = DocumentParts.Styles + Styles + frame.Styles,
+            Template = letterhead.Template,
             Body = Html.Of($"""
                 <div class="report">
                   {DocumentParts.Letterhead(letterhead)}
@@ -89,7 +91,14 @@ internal sealed class ReportDocumentFrame(DocumentAssets assets)
     /// <summary>"Asha Rao · UHID NH-000123 · Lab report NHLAB2600012".</summary>
     public static string Footer(ReportPatient patient, string document) => $"{patient.Name} · UHID {patient.Uhid} · {document}";
 
-    private async Task<DocumentLetterhead> LetterheadAsync(ReportLetterhead letterhead, CancellationToken cancellationToken) =>
-        new(letterhead.FacilityName, null, letterhead.Address, letterhead.Phone, letterhead.Email, null, null, letterhead.NabhNumber, null, null,
-            letterhead.LetterheadNote, await assets.ImageAsync(letterhead.LogoFileId, cancellationToken));
+    private async Task<DocumentLetterhead> LetterheadAsync(ReportLetterhead letterhead, CancellationToken cancellationToken)
+    {
+        var template = await assets.TemplateAsync(PrintTemplateCatalog.Report, letterhead.FacilityId, cancellationToken);
+        var logo = template.ShowLogo ? await assets.ImageAsync(letterhead.LogoFileId, cancellationToken) : null;
+        return new DocumentLetterhead(letterhead.FacilityName, null, letterhead.Address, letterhead.Phone, letterhead.Email, null, null,
+            letterhead.NabhNumber, null, null, letterhead.LetterheadNote, logo)
+        {
+            Template = template,
+        };
+    }
 }

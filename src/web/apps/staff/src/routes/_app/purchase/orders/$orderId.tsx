@@ -22,12 +22,12 @@ import { ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, S
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { formatPercent, formatQty } from '@/modules/inventory/format';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, DocStatus } from '@/modules/inventory/StockBits';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 import {
   orderStatusLabel,
   purchaseApi,

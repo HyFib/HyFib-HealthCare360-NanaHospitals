@@ -1,4 +1,12 @@
-import { escapeHtml, formatDateOnly, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+} from '@hc360/core';
 import type { ProductionSummary, WardMealPlan } from './api';
 import { MEAL_SLOT_LABEL, MEAL_SLOTS, PREFERENCE_SHORT } from './rules';
 import { formatTimeOfDay } from '@/modules/inpatient/time';
@@ -9,11 +17,21 @@ const TABLE_STYLES = `
   th { border-bottom: 1px solid #888; font-size: 9pt; }
   td { border-bottom: 1px solid #ddd; font-size: 9.5pt; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .allergy { color: #b10e1c; font-weight: 700; }
-  .hospital { font-weight: 700; color: #045E80; }`;
+  .allergy { color: #b10e1c; font-weight: 700; }`;
+
+/** A kitchen or ward list under the letterhead, with the "Other documents" print template. */
+function page(body: string, title: string, letterhead: Letterhead): string {
+  const template = templateFor(letterhead, 'other');
+  return printDocument(`${letterheadHtml(letterhead, template)}${body}`, {
+    title,
+    pageSize: 'A4',
+    styles: TABLE_STYLES,
+    template,
+  });
+}
 
 /** A4 cooking list for the kitchen: per round and diet, how many veg, non-veg, egg and Jain meals, with special notes. */
-export async function printProductionSheet(summary: ProductionSummary, facilityName: string): Promise<void> {
+export async function printProductionSheet(summary: ProductionSummary, letterhead: Letterhead): Promise<void> {
   const sections = MEAL_SLOTS.map((slot) => {
     const lines = summary.lines.filter((l) => l.slot === slot);
     if (lines.length === 0) {
@@ -33,15 +51,12 @@ export async function printProductionSheet(summary: ProductionSummary, facilityN
     return `<h2>${escapeHtml(MEAL_SLOT_LABEL[slot])} · ${escapeHtml(formatTimeOfDay(lines[0]?.serviceTime))} · ${total} meals</h2>
       <table><thead><tr><th>Diet</th><th class="num">Veg</th><th class="num">Non-veg</th><th class="num">Egg</th><th class="num">Jain</th><th class="num">Total</th><th>Special notes</th></tr></thead><tbody>${rows}</tbody></table>`;
   }).join('');
-  const body = `<div class="hospital">${escapeHtml(facilityName)} · Kitchen</div>
-    <h1>Production list for ${escapeHtml(formatDateOnly(summary.date))} (${summary.totalMeals} meals)</h1>${sections || '<p>No meals planned.</p>'}`;
-  await printHtml(printDocument(body, { title: `Kitchen ${summary.date}`, pageSize: 'A4', styles: TABLE_STYLES }), {
-    pageSize: 'A4',
-  });
+  const body = `<h1>Kitchen production list for ${escapeHtml(formatDateOnly(summary.date))} (${summary.totalMeals} meals)</h1>${sections || '<p>No meals planned.</p>'}`;
+  await printHtml(page(body, `Kitchen ${summary.date}`, letterhead), { pageSize: 'A4' });
 }
 
 /** A4 delivery list for one ward and round: bed, patient, diet, restrictions and allergies, with a tick column. */
-export async function printWardMealList(plan: WardMealPlan, date: string, facilityName: string): Promise<void> {
+export async function printWardMealList(plan: WardMealPlan, date: string, letterhead: Letterhead): Promise<void> {
   const rows = plan.items
     .filter((m) => m.status !== 'Cancelled')
     .map(
@@ -56,11 +71,7 @@ export async function printWardMealList(plan: WardMealPlan, date: string, facili
       </tr>`,
     )
     .join('');
-  const body = `<div class="hospital">${escapeHtml(facilityName)} · Dietary</div>
-    <h1>${escapeHtml(plan.wardName ?? 'Ward')} · meals for ${escapeHtml(formatDateOnly(date))}</h1>
+  const body = `<h1>Dietary · ${escapeHtml(plan.wardName ?? 'Ward')} · meals for ${escapeHtml(formatDateOnly(date))}</h1>
     <table><thead><tr><th>Round</th><th>Bed</th><th>Patient</th><th>Diet</th><th>Restrictions</th><th>Allergies</th><th>Served</th></tr></thead><tbody>${rows}</tbody></table>`;
-  await printHtml(
-    printDocument(body, { title: `Meals ${plan.wardName ?? ''} ${date}`, pageSize: 'A4', styles: TABLE_STYLES }),
-    { pageSize: 'A4' },
-  );
+  await printHtml(page(body, `Meals ${plan.wardName ?? ''} ${date}`, letterhead), { pageSize: 'A4' });
 }

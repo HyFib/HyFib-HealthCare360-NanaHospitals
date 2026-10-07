@@ -130,6 +130,10 @@ public sealed class EndpointAuthorizationTests
         // enforces it for the caller's facility).
         "GET /api/v1/settings/public",
 
+        // The letterhead and print templates of the caller's facility, for the staff app's own prints (staff only;
+        // patients are refused). It holds nothing that is not printed on the documents the hospital hands out.
+        "GET /api/v1/print/letterhead",
+
         // Live updates: every topic subscription is authorized separately (RealtimeTopicAuthorizer).
         "ANY /hubs/events",
         "ANY /hubs/events/negotiate",

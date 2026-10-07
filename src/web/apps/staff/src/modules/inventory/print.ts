@@ -1,35 +1,41 @@
-import { escapeHtml, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateTime,
+  formatInr,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+  type PageSize,
+} from '@hc360/core';
 import type { CountDetail, IndentDetail, IndentIssueDto, TransferDetail } from './api';
 import { formatExpiry, formatQty } from './format';
 
-/** Hospital heading for store documents. */
-export interface StoreLetterhead {
-  name: string;
-  address?: string | null;
-  gstin?: string | null;
-}
+/** Store documents (issue slips, transfer notes, count sheets), with the "Other documents" print template. */
 
 const STYLES = `
-  .hospital { font-weight: 700; font-size: 15px; }
   .small { font-size: 10px; color: #444; }
   .meta td { padding: 2px 10px 2px 0; }
   .lines th { border-bottom: 1px solid #888; font-size: 11px; }
   .lines td { border-bottom: 1px solid #e5e5e5; }
   .sign { display: flex; justify-content: space-between; margin-top: 36px; }`;
 
-function heading(letterhead: StoreLetterhead, title: string): string {
-  return `
-    <div class="center hospital">${escapeHtml(letterhead.name)}</div>
-    ${letterhead.address ? `<div class="center small">${escapeHtml(letterhead.address)}</div>` : ''}
-    ${letterhead.gstin ? `<div class="center small">GSTIN ${escapeHtml(letterhead.gstin)}</div>` : ''}
+/** The letterhead with GSTIN and PAN (goods moved between branches), and the title. */
+function heading(letterhead: Letterhead, title: string): string {
+  return `${letterheadHtml(letterhead, templateFor(letterhead, 'other'), { taxIds: true })}
     <h2 class="center" style="margin-top:8px">${escapeHtml(title)}</h2>`;
+}
+
+function page(body: string, title: string, pageSize: PageSize, letterhead: Letterhead, styles = STYLES): string {
+  return printDocument(body, { title, pageSize, styles, template: templateFor(letterhead, 'other') });
 }
 
 /** Issue slip that travels with goods issued against an indent. */
 export function buildIndentIssueHtml(
   issue: IndentIssueDto,
   indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>,
-  letterhead: StoreLetterhead,
+  letterhead: Letterhead,
 ): string {
   const rows = issue.lines
     .map(
@@ -53,11 +59,11 @@ export function buildIndentIssueHtml(
     <table><tr><td>Total value at cost</td><td class="right"><b>${escapeHtml(formatInr(issue.totalValue))}</b></td></tr></table>
     ${issue.remarks ? `<p>${escapeHtml(issue.remarks)}</p>` : ''}
     <div class="sign"><div>Issued by: ${escapeHtml(issue.issuedBy ?? '')}</div><div>Received by: ____________________</div></div>`;
-  return printDocument(body, { title: `Issue ${issue.number}`, pageSize: 'A5', styles: STYLES });
+  return page(body, `Issue ${issue.number}`, 'A5', letterhead);
 }
 
 /** Stock transfer note (goods in transit between stores). */
-export function buildTransferNoteHtml(transfer: TransferDetail, letterhead: StoreLetterhead): string {
+export function buildTransferNoteHtml(transfer: TransferDetail, letterhead: Letterhead): string {
   const rows = transfer.lines
     .map(
       (
@@ -79,18 +85,18 @@ export function buildTransferNoteHtml(transfer: TransferDetail, letterhead: Stor
     <table><tr><td>Value at cost</td><td class="right"><b>${escapeHtml(formatInr(transfer.totalValue))}</b></td></tr></table>
     ${transfer.remarks ? `<p>${escapeHtml(transfer.remarks)}</p>` : ''}
     <div class="sign"><div>Sent by: ____________________</div><div>Received by: ____________________</div></div>`;
-  return printDocument(body, { title: `Transfer ${transfer.number}`, pageSize: 'A5', styles: STYLES });
+  return page(body, `Transfer ${transfer.number}`, 'A5', letterhead);
 }
 
 export async function printIndentIssue(
   issue: IndentIssueDto,
   indent: Pick<IndentDetail, 'number' | 'fromStoreName' | 'toStoreName' | 'departmentName'>,
-  letterhead: StoreLetterhead,
+  letterhead: Letterhead,
 ): Promise<void> {
   await printHtml(buildIndentIssueHtml(issue, indent, letterhead), { pageSize: 'A5' });
 }
 
-export async function printTransferNote(transfer: TransferDetail, letterhead: StoreLetterhead): Promise<void> {
+export async function printTransferNote(transfer: TransferDetail, letterhead: Letterhead): Promise<void> {
   await printHtml(buildTransferNoteHtml(transfer, letterhead), { pageSize: 'A5' });
 }
 
@@ -98,7 +104,7 @@ export async function printTransferNote(transfer: TransferDetail, letterhead: St
  * Blind count sheet for the counters: item, batch and expiry with blank columns to write what is on the shelf.
  * Book quantities are left off so the count is not copied from the system.
  */
-export function buildCountSheetHtml(count: CountDetail, letterhead: StoreLetterhead): string {
+export function buildCountSheetHtml(count: CountDetail, letterhead: Letterhead): string {
   const rows = [...count.lines]
     .sort((a, b) => a.itemName.localeCompare(b.itemName) || a.batchNumber.localeCompare(b.batchNumber))
     .map(
@@ -119,9 +125,9 @@ export function buildCountSheetHtml(count: CountDetail, letterhead: StoreLetterh
     <table class="lines"><tr><th>#</th><th>Item</th><th>Batch</th><th>Expiry</th><th>Counted</th><th>Remarks</th></tr>${rows}</table>
     <div class="sign"><div>Counted by: ____________________</div><div>Checked by: ____________________</div></div>`;
   const styles = `${STYLES} .blank { width: 22%; border-bottom: 1px solid #999 !important; }`;
-  return printDocument(body, { title: `Count ${count.number}`, pageSize: 'A4', styles });
+  return page(body, `Count ${count.number}`, 'A4', letterhead, styles);
 }
 
-export async function printCountSheet(count: CountDetail, letterhead: StoreLetterhead): Promise<void> {
+export async function printCountSheet(count: CountDetail, letterhead: Letterhead): Promise<void> {
   await printHtml(buildCountSheetHtml(count, letterhead), { pageSize: 'A4' });
 }

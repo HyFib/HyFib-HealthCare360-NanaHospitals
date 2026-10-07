@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PharmacySaleDetail } from './api';
-import {
-  addressLine,
-  buildLabelsHtml,
-  buildReceiptHtml,
-  directionsText,
-  dispensingLabelData,
-  gstSummaryByRate,
-} from './print';
+import { buildLabelsHtml, buildReceiptHtml, directionsText, dispensingLabelData, gstSummaryByRate } from './print';
 
 const sale: PharmacySaleDetail = {
   id: 's1',
@@ -111,6 +104,26 @@ describe('pharmacy prints', () => {
     expect(html).toContain('Mox 500');
   });
 
+  it('prints the invoice as the pharmacy and canteen bills template says', () => {
+    const html = buildReceiptHtml(sale, {
+      name: 'Nana Hospitals',
+      logo: 'data:image/png;base64,iVBORw0KGgo=',
+      templates: {
+        'sales-invoice': {
+          letterhead: 'Printed',
+          topSpaceMm: 0,
+          bottomSpaceMm: 0,
+          showLogo: true,
+          closingNote: 'Medicines once sold are taken back only with the bill.',
+          paper: null,
+        },
+      },
+    });
+
+    expect(html).toContain('<img class="lh-logo" src="data:image/png;base64,iVBORw0KGgo=" alt="">');
+    expect(html).toContain('<div class="closing-note">Medicines once sold are taken back only with the bill.</div>');
+  });
+
   it('marks cancelled invoices', () => {
     expect(
       buildReceiptHtml({ ...sale, status: 'Cancelled', cancelReason: 'Wrong patient' }, { name: 'Nana Hospitals' }),
@@ -170,14 +183,10 @@ describe('pharmacy prints', () => {
     ).toMatchObject({ directions: null, batch: null, expiry: null, hospital: null, quantity: '2' });
   });
 
-  it('writes directions and addresses in plain words', () => {
+  it('writes directions in plain words', () => {
     expect(
       directionsText({ dose: '1 tab', frequency: 'Twice a day', durationDays: 5, instructions: ' after food ' }),
     ).toBe('1 tab · Twice a day · 5 days · after food');
     expect(directionsText({ dose: '5 ml', durationDays: 1 })).toBe('5 ml · 1 day');
-    expect(addressLine({ line1: 'MG Road', city: 'Pune', state: ' ', pinCode: '411001' })).toBe(
-      'MG Road, Pune, 411001',
-    );
-    expect(addressLine(null)).toBeNull();
   });
 });

@@ -36,11 +36,17 @@ public static class DocumentParts
 
     /// <summary>
     /// The letterhead: logo, name, address, "Phone · e-mail", accreditation and the facility's own letterhead line.
-    /// <paramref name="aside"/> goes on the right (a doctor's block, say).
+    /// <paramref name="aside"/> goes on the right (a doctor's block, say). On pre-printed stationery only the aside is
+    /// printed: the paper has the rest.
     /// </summary>
     public static Html Letterhead(DocumentLetterhead letterhead, Html aside = default)
     {
         ArgumentNullException.ThrowIfNull(letterhead);
+        if (!letterhead.Template.PrintsLetterhead)
+        {
+            return aside.IsEmpty ? Html.Empty : Html.Of($"<header class=\"lh preprinted\"><div class=\"aside\">{aside}</div></header>");
+        }
+
         var contact = string.Join(" · ", new[] { letterhead.Phone is { } phone ? $"Phone {phone}" : null, letterhead.Email }.Where(c => c is not null));
         return Html.Of($"""
             <header class="lh">

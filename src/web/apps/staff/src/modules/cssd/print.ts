@@ -1,4 +1,14 @@
-import { escapeHtml, formatDateOnly, formatDateTime, printDocument, printHtml, type CssdPackLabel } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type CssdPackLabel,
+  type Letterhead,
+} from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
 import { printLabelJob } from '@/lib/labelPrinting';
 import type { LoadDto, SetIssueDto } from './api';
@@ -53,8 +63,8 @@ async function packLabelsPage(load: LoadDto, packIds?: readonly string[]): Promi
   return printDocument(labels.join(''), { title: `Pack labels ${load.cycleNumber}`, pageSize: 'Label50x25', styles });
 }
 
-/** A5 issue slip that travels with the packs to the department (signed on receipt). */
-export async function printIssueSlip(issues: readonly SetIssueDto[], facilityName: string): Promise<void> {
+/** A5 issue slip that travels with the packs to the department (signed on receipt), under the letterhead. */
+export async function printIssueSlip(issues: readonly SetIssueDto[], letterhead: Letterhead): Promise<void> {
   const first = issues[0];
   if (!first) {
     return;
@@ -67,21 +77,23 @@ export async function printIssueSlip(issues: readonly SetIssueDto[], facilityNam
         )}</td></tr>`,
     )
     .join('');
+  const template = templateFor(letterhead, 'other');
   const body = `
-    <div class="hospital">${escapeHtml(facilityName)} · CSSD</div>
-    <h1>Sterile pack issue</h1>
+    ${letterheadHtml(letterhead, template)}
+    <h1>CSSD sterile pack issue</h1>
     <div>To: <strong>${escapeHtml(first.departmentName ?? '')}</strong>${first.issuedToName ? ` · received by ${escapeHtml(first.issuedToName)}` : ''}</div>
     <div class="muted">${escapeHtml(formatDateTime(first.issuedAt))}</div>
     <div class="rule"></div>
     <table><thead><tr><th>Set</th><th>Pack</th><th>Cycle</th><th>Use by</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="signs"><span>Issued by (CSSD)</span><span>Received by</span></div>`;
   const styles = `
-    .hospital { font-weight: 700; color: #045E80; }
     h1 { font-size: 13pt; }
     th { border-bottom: 1px solid #999; }
     td { border-bottom: 1px solid #ddd; }
     .mono { font-family: Consolas, monospace; }
     .signs { display: flex; justify-content: space-between; margin-top: 30px; font-size: 9pt; }
     .signs span { border-top: 1px solid #555; padding-top: 3px; min-width: 40%; text-align: center; }`;
-  await printHtml(printDocument(body, { title: 'Sterile pack issue', pageSize: 'A5', styles }), { pageSize: 'A5' });
+  await printHtml(printDocument(body, { title: 'Sterile pack issue', pageSize: 'A5', styles, template }), {
+    pageSize: 'A5',
+  });
 }

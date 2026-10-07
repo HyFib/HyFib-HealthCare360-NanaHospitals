@@ -234,6 +234,8 @@ logo, the report's title, a red banner on a copy that is not final, the patient 
 signatories with their qualification, registration number and signature image, the QR code that proves the report is
 genuine (the code alone while `portal.baseUrl` is not set) and the end line. Every page has a footer with the patient,
 UHID and report number, and "Page X of Y". Values are encoded, so text typed into a report can never become markup.
+The frame follows the **Reports** print template (Hospital setup › Print templates): pre-printed stationery, the logo,
+and a closing note at the end (see `docs/modules/print-templates.md`).
 
 | Document | Made from | File name | What it prints |
 |---|---|---|---|

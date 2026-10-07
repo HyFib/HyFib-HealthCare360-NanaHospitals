@@ -277,6 +277,11 @@ printed by the staff app.
 * On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the
   bill's notes, signature lines for the patient and the authorised signatory, and the facility's letterhead note.
 * Every page's foot names the patient, UHID and bill number, with "Page X of Y".
+* The **Bills** print template (Hospital setup › Print templates) decides the rest: on pre-printed stationery the
+  header keeps only the GSTIN and PAN line with the title, number and date, and the page leaves the blank space set for
+  the stationery; the logo can be left off; a closing note ends the bill. The 80 mm counter bill and the IP running bill
+  follow the same template (an 80 mm roll always prints the letterhead); receipts and refund vouchers follow
+  **Receipts and refund vouchers**. See `docs/modules/print-templates.md`.
 
 ## Contracts for other modules
 

@@ -37,6 +37,7 @@ import { formatDateTime, formatInr, isApiError, todayIso } from '@hc360/core';
 import { DataTable, ErrorState, LoadingState, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatPercent, formatQty, istDateOf, parseNumber } from '@/modules/inventory/format';
@@ -52,7 +53,6 @@ import {
   type PharmacySaleItemDto,
   type SaleReturnDto,
 } from './api';
-import { useLetterhead } from './counter';
 import { PHARMACY_PERMISSIONS as P } from './permissions';
 import { refundFor } from './pricing';
 import { printReceipt } from './print';

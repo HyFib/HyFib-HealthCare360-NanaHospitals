@@ -34,10 +34,11 @@ import {
   ShieldErrorRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
-import { formatDateTime, formatTime, isApiError, useSession, type BloodGroup } from '@hc360/core';
+import { formatDateTime, formatTime, isApiError, type BloodGroup } from '@hc360/core';
 import { ConfirmDialog, DataTable, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type KeyboardEvent } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { formatDuration } from '@/modules/ot/shared/datetime';
 import { ActionError, ChargeBadge, WhoWhen } from '@/modules/ot/shared/feedback';
 import {
@@ -529,7 +530,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const [term, setTerm] = useState('');
   const [number, setNumber] = useState('');
   const [collector, setCollector] = useState('');
@@ -589,7 +590,7 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
       void queryClient.invalidateQueries({ queryKey: bloodKeys.all });
       const refreshed = queryClient.getQueryData<BloodRequestDetail>(bloodKeys.request(request.id)) ?? request;
       void printIssueSlip(
-        facilityName,
+        letterhead,
         refreshed,
         dto,
         validCrossMatch ?? null,
@@ -742,13 +743,13 @@ export function IssuesTable({
 }) {
   const styles = useStyles();
   const notify = useNotify();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const [returning, setReturning] = useState<BloodIssueDto | null>(null);
 
   const reprint = (issue: BloodIssueDto) => {
     const crossMatch =
       request.crossMatches.find((c) => c.componentId === issue.componentId && c.result === 'Compatible') ?? null;
-    void printIssueSlip(facilityName, request, issue, crossMatch, null).catch((error: unknown) =>
+    void printIssueSlip(letterhead, request, issue, crossMatch, null).catch((error: unknown) =>
       notify.error(error, 'Printing failed'),
     );
   };

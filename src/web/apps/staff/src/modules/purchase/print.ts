@@ -1,16 +1,20 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+} from '@hc360/core';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import type { GoodsReceiptDetail, PurchaseOrderDetail } from './api';
 
-export interface PurchaseLetterhead {
-  name: string;
-  address?: string | null;
-  phone?: string | null;
-  gstin?: string | null;
-}
+/** Purchase orders and goods receipt notes (A4), with the purchase print template. */
 
 const STYLES = `
-  .hospital { font-weight: 700; font-size: 16px; }
   .small { font-size: 10px; color: #444; }
   .meta td { padding: 2px 12px 2px 0; vertical-align: top; }
   .lines th { border-bottom: 1px solid #888; font-size: 10px; text-align: right; }
@@ -22,12 +26,14 @@ const STYLES = `
   .net td { font-weight: 800; border-top: 1px solid #888; }
   .sign { display: flex; justify-content: space-between; margin-top: 44px; }`;
 
-function heading(letterhead: PurchaseLetterhead, title: string): string {
-  return `
-    <div class="hospital">${escapeHtml(letterhead.name)}</div>
-    ${letterhead.address ? `<div class="small">${escapeHtml(letterhead.address)}</div>` : ''}
-    <div class="small">${letterhead.gstin ? `GSTIN ${escapeHtml(letterhead.gstin)}` : ''}${letterhead.phone ? ` · Ph ${escapeHtml(letterhead.phone)}` : ''}</div>
+/** The letterhead with GSTIN and PAN, which the supplier's invoice quotes, and the title. */
+function heading(letterhead: Letterhead, title: string): string {
+  return `${letterheadHtml(letterhead, templateFor(letterhead, 'purchase'), { taxIds: true })}
     <h2 style="margin-top:10px">${escapeHtml(title)}</h2>`;
+}
+
+function page(body: string, title: string, letterhead: Letterhead): string {
+  return printDocument(body, { title, pageSize: 'A4', styles: STYLES, template: templateFor(letterhead, 'purchase') });
 }
 
 function taxColumns(interState: boolean): string {
@@ -66,7 +72,7 @@ function totalsTable(doc: {
 }
 
 /** Purchase order for the vendor (A4), with GST per line as CGST + SGST or IGST exactly as saved. */
-export function buildPurchaseOrderHtml(order: PurchaseOrderDetail, letterhead: PurchaseLetterhead): string {
+export function buildPurchaseOrderHtml(order: PurchaseOrderDetail, letterhead: Letterhead): string {
   const rows = order.lines
     .map(
       (
@@ -91,11 +97,11 @@ export function buildPurchaseOrderHtml(order: PurchaseOrderDetail, letterhead: P
     ${order.remarks ? `<p>${escapeHtml(order.remarks)}</p>` : ''}
     <p class="small">Rates exclude GST. Please quote this order number on your invoice. Medicines must carry batch, expiry and MRP; goods expiring within 90 days may be refused.</p>
     <div class="sign"><div>Prepared by</div><div>Authorised signatory${order.approvedAt ? ` (approved ${escapeHtml(formatDateTime(order.approvedAt))})` : ''}</div></div>`;
-  return printDocument(body, { title: `Purchase order ${order.number}`, pageSize: 'A4', styles: STYLES });
+  return page(body, `Purchase order ${order.number}`, letterhead);
 }
 
 /** Goods receipt note (A4) as posted: batches, expiry, MRP, free goods and the GST split. */
-export function buildGoodsReceiptHtml(grn: GoodsReceiptDetail, letterhead: PurchaseLetterhead): string {
+export function buildGoodsReceiptHtml(grn: GoodsReceiptDetail, letterhead: Letterhead): string {
   const rows = grn.lines
     .map(
       (
@@ -118,13 +124,13 @@ export function buildGoodsReceiptHtml(grn: GoodsReceiptDetail, letterhead: Purch
     ${totalsTable(grn)}
     ${grn.remarks ? `<p>${escapeHtml(grn.remarks)}</p>` : ''}
     <div class="sign"><div>Received by (store)</div><div>Checked by</div></div>`;
-  return printDocument(body, { title: `GRN ${grn.number}`, pageSize: 'A4', styles: STYLES });
+  return page(body, `GRN ${grn.number}`, letterhead);
 }
 
-export async function printPurchaseOrder(order: PurchaseOrderDetail, letterhead: PurchaseLetterhead): Promise<void> {
+export async function printPurchaseOrder(order: PurchaseOrderDetail, letterhead: Letterhead): Promise<void> {
   await printHtml(buildPurchaseOrderHtml(order, letterhead), { pageSize: 'A4' });
 }
 
-export async function printGoodsReceipt(grn: GoodsReceiptDetail, letterhead: PurchaseLetterhead): Promise<void> {
+export async function printGoodsReceipt(grn: GoodsReceiptDetail, letterhead: Letterhead): Promise<void> {
   await printHtml(buildGoodsReceiptHtml(grn, letterhead), { pageSize: 'A4' });
 }

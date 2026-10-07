@@ -1,7 +1,8 @@
-import { formatTime, useSession } from '@hc360/core';
+import { formatTime } from '@hc360/core';
 import { ConfirmDialog, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { schedulingApi, schedulingKeys, type AppointmentRef } from './api';
 import type { ActionContext, AppointmentAction } from './appointmentRules';
@@ -31,7 +32,7 @@ export interface AppointmentDesk {
 export function useAppointmentDesk(): AppointmentDesk {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const canManage = usePermission('scheduling.appointments.manage');
   const now = useNow();
   const today = useToday();
@@ -71,7 +72,7 @@ export function useAppointmentDesk(): AppointmentDesk {
         confirm.mutate(appointment);
         break;
       case 'print':
-        void printAppointmentSlip(facilityName, appointment).catch((error: unknown) =>
+        void printAppointmentSlip(letterhead, appointment).catch((error: unknown) =>
           notify.error(error, 'Printing failed'),
         );
         break;

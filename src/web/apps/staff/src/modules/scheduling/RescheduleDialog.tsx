@@ -21,11 +21,12 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { CheckmarkCircleRegular, PrintRegular } from '@fluentui/react-icons';
-import { formatDateTime, formatTime, isApiError, todayIso, useSession } from '@hc360/core';
+import { formatDateTime, formatTime, isApiError, todayIso } from '@hc360/core';
 import { useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useFeatureOn } from '@/lib/features';
+import { useLetterhead } from '@/lib/letterhead';
 import { toOptions, usePractitioners } from '@/lib/lookups';
 import {
   schedulingApi,
@@ -84,7 +85,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const today = todayIso();
   const [practitionerId, setPractitionerId] = useState(appointment.practitionerId);
   const [chosenMode, setMode] = useState<VisitMode>(appointment.isTelehealth ? 'Telehealth' : 'InPerson');
@@ -148,7 +149,7 @@ function RescheduleContent({ appointment, onClose }: { appointment: AppointmentR
           <Button
             icon={<PrintRegular />}
             onClick={() =>
-              void printAppointmentSlip(facilityName, done).catch((error: unknown) =>
+              void printAppointmentSlip(letterhead, done).catch((error: unknown) =>
                 notify.error(error, 'Printing failed'),
               )
             }

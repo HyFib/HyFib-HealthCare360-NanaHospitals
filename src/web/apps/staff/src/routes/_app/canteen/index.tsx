@@ -35,6 +35,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   canteenApi,
@@ -55,7 +56,6 @@ import { isValidEmployeeCode } from '@/modules/canteen/rules';
 import { SaleDrawer } from '@/modules/canteen/SaleDrawer';
 import { useStoredState } from '@/modules/inpatient/hooks';
 import { PatientPicker } from '@/modules/patients/PatientPicker';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 export const Route = createFileRoute('/_app/canteen/')({
   component: CanteenPosPage,

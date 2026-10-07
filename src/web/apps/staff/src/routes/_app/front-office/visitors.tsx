@@ -17,11 +17,13 @@ import { AddRegular, DoorArrowRightRegular, PrintRegular, ProhibitedRegular } fr
 import {
   escapeHtml,
   formatDateTime,
+  letterheadHtml,
   normalizePhone,
   printDocument,
   printHtml,
+  templateFor,
   useDebouncedValue,
-  useSession,
+  type Letterhead,
 } from '@hc360/core';
 import {
   barcodeSvg,
@@ -39,6 +41,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
+import { useLetterhead } from '@/lib/letterhead';
 import { frontOfficeQueries, type IssueVisitorPassRequest, type VisitorPassDto } from '@/modules/front-office/api';
 import { PatientPicker, type PickedPatient } from '@/modules/patients/PatientPicker';
 
@@ -48,11 +51,12 @@ export const Route = createFileRoute('/_app/front-office/visitors')({
 
 const ID_PROOFS = ['Aadhaar', 'Driving licence', 'Voter ID', 'PAN card', 'Passport', 'Employee ID', 'Other'];
 
-async function printPass(pass: VisitorPassDto, facilityName: string) {
+async function printPass(pass: VisitorPassDto, letterhead: Letterhead) {
   const barcode = await barcodeSvg(pass.passNumber, 'code128', { height: 8 });
+  const template = templateFor(letterhead, 'other');
   const body = `
     <div class="pass">
-      <div class="hospital">${escapeHtml(facilityName)}</div>
+      ${letterheadHtml(letterhead, template, { compact: true })}
       <div class="title">${pass.isAttendant ? 'ATTENDANT PASS' : 'VISITOR PASS'}</div>
       <div class="name">${escapeHtml(pass.visitorName)}</div>
       ${pass.patientName ? `<div>Visiting: ${escapeHtml(pass.patientName)}</div>` : ''}
@@ -63,13 +67,12 @@ async function printPass(pass: VisitorPassDto, facilityName: string) {
     </div>`;
   const styles = `
     .pass { width: 72mm; font-family: 'Segoe UI', sans-serif; text-align: center; font-size: 10pt; }
-    .hospital { font-weight: 700; }
     .title { margin: 4px 0; letter-spacing: 2px; font-weight: 700; }
     .name { font-size: 14pt; font-weight: 700; }
     .barcode svg { width: 100%; height: 12mm; margin-top: 6px; }
     .number { font-family: Consolas, monospace; }
     .valid { margin-top: 4px; font-weight: 600; }`;
-  await printHtml(printDocument(body, { title: `Pass ${pass.passNumber}`, pageSize: 'Receipt80', styles }), {
+  await printHtml(printDocument(body, { title: `Pass ${pass.passNumber}`, pageSize: 'Receipt80', styles, template }), {
     pageSize: 'Receipt80',
     silent: true,
   });
@@ -78,7 +81,7 @@ async function printPass(pass: VisitorPassDto, facilityName: string) {
 function VisitorPassesPage() {
   const notify = useNotify();
   const queryClient = useQueryClient();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const [activeOnly, setActiveOnly] = useState(true);
   const [page, setPage] = useState(1);
   const [term, setTerm] = useState('');
@@ -99,7 +102,7 @@ function VisitorPassesPage() {
   });
 
   const print = (pass: VisitorPassDto) =>
-    void printPass(pass, facilityName).catch((error: unknown) => notify.error(error, 'Printing failed'));
+    void printPass(pass, letterhead).catch((error: unknown) => notify.error(error, 'Printing failed'));
 
   return (
     <Page>

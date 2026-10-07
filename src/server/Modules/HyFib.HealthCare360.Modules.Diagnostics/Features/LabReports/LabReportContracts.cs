@@ -27,8 +27,10 @@ public sealed record AmendReportRequest(string Reason, IReadOnlyList<AmendmentCh
 // ---------------------------------------------------------------- printable report (shared by lab, radiology, cardiology)
 
 /// <summary>Facility letterhead printed on every report (UX-09).</summary>
+/// <param name="FacilityId">Whose reports template (HMS-04) the report prints with; the hospital-wide one when null.</param>
 public sealed record ReportLetterhead(
-    string FacilityName, string? Address, string? Phone, string? Email, string? NabhNumber, string? LetterheadNote, Guid? LogoFileId);
+    string FacilityName, string? Address, string? Phone, string? Email, string? NabhNumber, string? LetterheadNote, Guid? LogoFileId,
+    Guid? FacilityId = null);
 
 public sealed record ReportPatient(Guid Id, string Uhid, string Name, Gender Gender, string? Age, DateOnly? DateOfBirth);
 

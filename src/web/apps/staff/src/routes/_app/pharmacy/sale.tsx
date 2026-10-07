@@ -36,6 +36,7 @@ import { EmptyState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { PatientFlagsStrip } from '@/modules/emr/PatientFlagsStrip';
 import { sumNumbers } from '@/modules/inventory/decimal';
@@ -59,7 +60,6 @@ import {
   DEFAULT_MAX_DISCOUNT_PERCENT,
   useCounterPrefs,
   useItemMaster,
-  useLetterhead,
   usePharmacyBatches,
 } from '@/modules/pharmacy/counter';
 import { controlledItems, itemsFromErrorData, planBatchIssue } from '@/modules/pharmacy/dispense';

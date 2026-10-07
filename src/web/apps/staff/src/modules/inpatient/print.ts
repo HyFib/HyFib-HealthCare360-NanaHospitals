@@ -4,8 +4,11 @@ import {
   formatDateTime,
   formatPhone,
   humanize,
+  letterheadHtml,
   printDocument,
   printHtml,
+  templateFor,
+  type Letterhead,
   type WristbandLabel,
 } from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
@@ -25,9 +28,11 @@ function row(label: string, value: string | null | undefined): string {
 
 /**
  * Admission slip (A5) handed to the attendant and filed in the case sheet: identity, admission and visit numbers,
- * ward and bed, doctors, payer, attendant and a scannable UHID. Every value is escaped.
+ * ward and bed, doctors, payer, attendant and a scannable UHID, under the letterhead ("Other documents" template).
+ * Every value is escaped.
  */
-export async function printAdmissionSlip(admission: AdmissionDetail, facilityName: string): Promise<void> {
+export async function printAdmissionSlip(admission: AdmissionDetail, letterhead: Letterhead): Promise<void> {
+  const template = templateFor(letterhead, 'other');
   const barcode = await barcodeSvg(admission.uhid, 'code128', { height: 9 });
   const attendant = [
     admission.attendantName,
@@ -37,14 +42,10 @@ export async function printAdmissionSlip(admission: AdmissionDetail, facilityNam
     .filter(Boolean)
     .join(' ');
   const body = `
-    <div class="head">
-      <div>
-        <div class="hospital">${escapeHtml(facilityName)}</div>
-        <h1>Admission slip</h1>
-      </div>
-      <div class="barcode">${barcode}<div class="mono center">${escapeHtml(admission.uhid)}</div></div>
-    </div>
-    <div class="rule"></div>
+    ${letterheadHtml(letterhead, template, {
+      aside: `<div class="barcode">${barcode}<div class="mono center">${escapeHtml(admission.uhid)}</div></div>`,
+    })}
+    <h1>Admission slip</h1>
     <div class="patient">${escapeHtml(admission.patientName)} <span class="muted">· ${escapeHtml(admission.age ?? '—')} / ${escapeHtml(humanize(admission.gender))}</span></div>
     <table class="grid">
       ${row('Admission number', admission.admissionNumber)}
@@ -69,8 +70,6 @@ export async function printAdmissionSlip(admission: AdmissionDetail, facilityNam
     rules are displayed at the nursing station.</p>
     <div class="signs"><span>Admitted by</span><span>Patient / attendant signature</span></div>`;
   const styles = `
-    .head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    .hospital { font-weight: 700; font-size: 12pt; color: #045E80; }
     h1 { font-size: 14pt; margin-top: 2px; }
     .barcode { width: 55mm; }
     .barcode svg { width: 100%; height: 12mm; }
@@ -81,9 +80,10 @@ export async function printAdmissionSlip(admission: AdmissionDetail, facilityNam
     .small { font-size: 8.5pt; color: #333; }
     .signs { display: flex; justify-content: space-between; margin-top: 28px; font-size: 9pt; }
     .signs span { border-top: 1px solid #555; padding-top: 3px; min-width: 40%; text-align: center; }`;
-  await printHtml(printDocument(body, { title: `Admission ${admission.admissionNumber}`, pageSize: 'A5', styles }), {
-    pageSize: 'A5',
-  });
+  await printHtml(
+    printDocument(body, { title: `Admission ${admission.admissionNumber}`, pageSize: 'A5', styles, template }),
+    { pageSize: 'A5' },
+  );
 }
 
 /** Age and sex as the band shows them: "46Y/M"; only the sex when the age is not known. */

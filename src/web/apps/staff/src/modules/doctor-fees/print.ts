@@ -1,16 +1,26 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  letterheadHtml,
+  printDocument,
+  templateFor,
+  type Letterhead,
+} from '@hc360/core';
 import { PAYMENT_MODE_LABEL, SERVICE_CATEGORY_LABEL } from '@/modules/billing/labels';
 import { amountInWords } from '@/modules/billing/money';
-import type { PrintFacility } from '@/modules/billing/print';
 import { ACCRUAL_STATUS_LABEL, PAYOUT_STATUS_LABEL, type DoctorStatement, type PayoutDto } from './api';
 
-/** Doctor fee prints (A4): the statement for a period and the payout advice. Every value is escaped. */
+/**
+ * Doctor fee prints (A4): the statement for a period and the payout advice, with the "Other documents" print template.
+ * Every value is escaped.
+ */
 
 const e = escapeHtml;
 const money = (value: number) => e(formatInr(value));
 
 const STYLES = `
-  .h-name { font-size: 15px; font-weight: 700; color: #045E80; }
   .h-title { font-size: 15px; font-weight: 700; text-transform: uppercase; margin: 6px 0; }
   .box { border: 1px solid #bbb; border-radius: 4px; padding: 6px 8px; margin: 8px 0; }
   table.lines th { border-bottom: 1px solid #555; background: #f2f2f2; font-size: 10.5px; }
@@ -22,14 +32,18 @@ const STYLES = `
   .sign div { border-top: 1px solid #555; padding-top: 2px; min-width: 180px; text-align: center; }
   .foot { margin-top: 12px; font-size: 9.5px; color: #555; }`;
 
-function header(facility: PrintFacility, title: string): string {
-  return `<div class="h-name">${e(facility.legalName || facility.name)}</div>
-    ${facility.gstin ? `<div class="muted">GSTIN ${e(facility.gstin)}</div>` : ''}
+/** The letterhead, with GSTIN and PAN for the tax deducted, and the title. */
+function header(letterhead: Letterhead, title: string): string {
+  return `${letterheadHtml(letterhead, templateFor(letterhead, 'other'), { taxIds: true })}
     <div class="h-title">${e(title)}</div>`;
 }
 
+function page(body: string, title: string, letterhead: Letterhead): string {
+  return printDocument(body, { title, pageSize: 'A4', styles: STYLES, template: templateFor(letterhead, 'other') });
+}
+
 /** Doctor fee statement for a period (DFA-04). */
-export function buildStatementHtml(statement: DoctorStatement, facility: PrintFacility, printedAt: string): string {
+export function buildStatementHtml(statement: DoctorStatement, letterhead: Letterhead, printedAt: string): string {
   const accruals = statement.accruals
     .map(
       (a) => `<tr>
@@ -51,7 +65,7 @@ export function buildStatementHtml(statement: DoctorStatement, facility: PrintFa
         <td class="num">${money(p.grossAmount)}</td><td class="num">${money(p.deductionAmount)}</td><td class="num">${money(p.tdsAmount)}</td><td class="num">${money(p.netAmount)}</td><td>${e(PAYOUT_STATUS_LABEL[p.status])}</td></tr>`,
     )
     .join('');
-  const body = `${header(facility, 'Doctor fee statement')}
+  const body = `${header(letterhead, 'Doctor fee statement')}
     <div class="box"><b>${e(statement.practitionerName ?? 'Doctor')}</b> · ${e(formatDateOnly(statement.from))} to ${e(formatDateOnly(statement.to))}</div>
     <table class="totals">
       <tr><td>Fees earned</td><td class="num">${money(statement.accrued)}</td></tr>
@@ -64,19 +78,15 @@ export function buildStatementHtml(statement: DoctorStatement, facility: PrintFa
     <table class="lines"><tr><th>Date</th><th>Bill</th><th>Service</th><th class="num">Billed value</th><th class="num">Rate</th><th class="num">Share</th><th>Status</th></tr>${accruals || '<tr><td colspan="7">No fees in this period.</td></tr>'}</table>
     ${payouts ? `<h3>Payouts</h3><table class="lines"><tr><th>Payout</th><th>Period</th><th class="num">Gross</th><th class="num">Deductions</th><th class="num">TDS</th><th class="num">Net</th><th>Status</th></tr>${payouts}</table>` : ''}
     <div class="foot">Printed ${e(formatDateTime(printedAt))}. TDS is deducted under section 194J.</div>`;
-  return printDocument(body, {
-    title: `Fee statement ${statement.practitionerName ?? ''}`.trim(),
-    pageSize: 'A4',
-    styles: STYLES,
-  });
+  return page(body, `Fee statement ${statement.practitionerName ?? ''}`.trim(), letterhead);
 }
 
 /** Payout advice given to the doctor with the payment. */
-export function buildPayoutAdviceHtml(payout: PayoutDto, facility: PrintFacility): string {
+export function buildPayoutAdviceHtml(payout: PayoutDto, letterhead: Letterhead): string {
   const deductions = payout.deductions
     .map((d) => `<tr><td>Less: ${e(d.description)}</td><td class="num">${money(-d.amount)}</td></tr>`)
     .join('');
-  const body = `${header(facility, 'Doctor payout advice')}
+  const body = `${header(letterhead, 'Doctor payout advice')}
     <div class="box">
       <div>Payout <b>${e(payout.payoutNumber)}</b> · ${e(PAYOUT_STATUS_LABEL[payout.status])}</div>
       <div>Paid to <b>${e(payout.practitionerName ?? 'Doctor')}</b> for ${e(formatDateOnly(payout.periodFrom))} to ${e(formatDateOnly(payout.periodTo))} (${e(payout.accrualCount)} fee lines)</div>
@@ -91,5 +101,5 @@ export function buildPayoutAdviceHtml(payout: PayoutDto, facility: PrintFacility
     <div class="foot">${e(amountInWords(payout.netAmount))}</div>
     ${payout.notes ? `<div class="foot">${e(payout.notes)}</div>` : ''}
     <div class="sign"><div>Received by the doctor</div><div>Accounts</div></div>`;
-  return printDocument(body, { title: `Payout ${payout.payoutNumber}`, pageSize: 'A4', styles: STYLES });
+  return page(body, `Payout ${payout.payoutNumber}`, letterhead);
 }

@@ -44,6 +44,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { EChart, type ChartOption } from '@/lib/EChart';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import {
   assetApi,
@@ -78,7 +79,6 @@ import { formatPercent } from '@/modules/inventory/format';
 import { ASSET_READERS, SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, DocStatus } from '@/modules/inventory/StockBits';
-import { useLetterhead } from '@/modules/pharmacy/counter';
 
 type AssetTab = 'overview' | 'contracts' | 'depreciation' | 'maintenance' | 'calibration' | 'tickets';
 const TABS: AssetTab[] = ['overview', 'contracts', 'depreciation', 'maintenance', 'calibration', 'tickets'];

@@ -1,4 +1,6 @@
 import { bridge, type PageSize, type PrintHtmlRequest } from '../bridge/bridge';
+import { escapeHtml } from './escape';
+import { closingNoteHtml, LETTERHEAD_STYLES, stationeryMarginMm, type PrintTemplate } from './letterhead';
 import { loadPrinterSetup, printerFor, roleForPageSize } from './printers';
 
 export type PrintOptions = Omit<PrintHtmlRequest, 'html'>;
@@ -54,20 +56,35 @@ export async function desktopTarget(options: PrintOptions): Promise<PrintOptions
   return printer ? { ...options, printerName: printer.printer, silent: true } : { ...options, silent: false };
 }
 
+/** The margin of A4 and A5 pages, to which pre-printed stationery adds its blank space. */
+const DOCUMENT_MARGIN_MM = 12;
+
 const PAGE_CSS: Record<PageSize, { size: string; margin: string; fontSize: string }> = {
-  A4: { size: 'A4', margin: '12mm', fontSize: '12px' },
-  A5: { size: 'A5', margin: '12mm', fontSize: '12px' },
+  A4: { size: 'A4', margin: `${DOCUMENT_MARGIN_MM}mm`, fontSize: '12px' },
+  A5: { size: 'A5', margin: `${DOCUMENT_MARGIN_MM}mm`, fontSize: '12px' },
   Receipt80: { size: '80mm auto', margin: '2mm', fontSize: '11px' },
   Label50x25: { size: '50mm 25mm', margin: '2mm', fontSize: '12px' },
   Wristband: { size: '25.4mm 279.4mm', margin: '0', fontSize: '12px' },
 };
 
+export interface PrintDocumentOptions {
+  title: string;
+  pageSize?: PageSize;
+  styles?: string;
+  /**
+   * How this kind of document is printed (`templateFor`): on A4 and A5, room for pre-printed stationery; on any paper,
+   * the closing note at the end.
+   */
+  template?: PrintTemplate;
+}
+
 /** Wraps body HTML with the page setup for the given paper size. */
-export function printDocument(body: string, options: { title: string; pageSize?: PageSize; styles?: string }): string {
-  const page = PAGE_CSS[options.pageSize ?? 'A4'];
+export function printDocument(body: string, options: PrintDocumentOptions): string {
+  const pageSize = options.pageSize ?? 'A4';
+  const page = PAGE_CSS[pageSize];
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(options.title)}</title>
 <style>
-@page { size: ${page.size}; margin: ${page.margin}; }
+@page { size: ${page.size}; margin: ${pageMargin(pageSize, page.margin, options.template)}; }
 * { box-sizing: border-box; }
 body { font-family: "Segoe UI", system-ui, sans-serif; color: #111; font-size: ${page.fontSize}; margin: 0; }
 h1, h2, h3 { margin: 0 0 4px; }
@@ -77,15 +94,16 @@ th, td { text-align: left; padding: 3px 4px; vertical-align: top; }
 .right { text-align: right; }
 .center { text-align: center; }
 .rule { border-top: 1px solid #999; margin: 6px 0; }
+${LETTERHEAD_STYLES}
+${pageSize === 'Receipt80' ? '.closing-note { margin-top: 6px; text-align: center; }' : ''}
 ${options.styles ?? ''}
-</style></head><body>${body}</body></html>`;
+</style></head><body>${body}${closingNoteHtml(options.template)}</body></html>`;
 }
 
-export function escapeHtml(value: string | number | null | undefined): string {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function pageMargin(pageSize: PageSize, margin: string, template: PrintTemplate | undefined): string {
+  const space = stationeryMarginMm(template);
+  if ((pageSize !== 'A4' && pageSize !== 'A5') || (space.top === 0 && space.bottom === 0)) {
+    return margin;
+  }
+  return `${DOCUMENT_MARGIN_MM + space.top}mm ${DOCUMENT_MARGIN_MM}mm ${DOCUMENT_MARGIN_MM + space.bottom}mm`;
 }

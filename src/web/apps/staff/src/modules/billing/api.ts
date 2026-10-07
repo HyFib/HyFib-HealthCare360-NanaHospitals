@@ -1,4 +1,4 @@
-import type { Address, PagedResult, PayerType } from '@hc360/core';
+import type { PagedResult, PayerType } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { DiscountAuthority } from './billTotals';
@@ -618,23 +618,6 @@ export interface PriceQuoteDto {
   isDiscountAllowed: boolean;
 }
 
-/** FacilityDto from /api/v1/masters/facilities/{id}: the hospital header on bills and receipts. */
-export interface FacilityDto {
-  id: string;
-  code: string;
-  name: string;
-  legalName: string | null;
-  address: Address;
-  phone: string | null;
-  email: string | null;
-  website: string | null;
-  gstin: string | null;
-  pan: string | null;
-  registrationNumber: string | null;
-  nabhNumber: string | null;
-  letterheadNote: string | null;
-}
-
 // ------------------------------------------------------------------ query keys and queries
 
 export const billingKeys = {
@@ -772,12 +755,6 @@ export const billingQueries = {
     queryOptions({
       queryKey: ['billing', 'pos', id],
       queryFn: ({ signal }) => api.get<PosSaleDto>(`/api/v1/billing/pos/sales/${id}`, { signal }),
-    }),
-  facility: (id: string) =>
-    queryOptions({
-      queryKey: ['billing', 'facility', id],
-      queryFn: ({ signal }) => api.get<FacilityDto>(`/api/v1/masters/facilities/${id}`, { signal }),
-      staleTime: 30 * 60_000,
     }),
 };
 

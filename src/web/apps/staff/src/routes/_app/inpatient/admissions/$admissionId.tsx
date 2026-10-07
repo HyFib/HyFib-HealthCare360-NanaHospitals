@@ -32,7 +32,7 @@ import {
   ShieldKeyholeRegular,
   TagRegular,
 } from '@fluentui/react-icons';
-import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError, useSession } from '@hc360/core';
+import { formatDate, formatDateOnly, formatDateTime, formatPhone, humanize, isApiError } from '@hc360/core';
 import {
   DataTable,
   EmptyState,
@@ -47,6 +47,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState, type ReactNode } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import { AdmissionDietPanel } from '@/modules/dietary/AdmissionDietPanel';
@@ -113,7 +114,7 @@ function AdmissionPage() {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const permissions = useInpatientPermissions();
-  const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  const letterhead = useLetterhead();
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const canSeeDiet = usePermission('dietary.orders.read');
   useInpatientRealtime();
@@ -179,7 +180,7 @@ function AdmissionPage() {
   ];
 
   const print = (what: 'slip' | 'wristband') => {
-    const job = what === 'slip' ? printAdmissionSlip(a, facilityName) : printWristband(a);
+    const job = what === 'slip' ? printAdmissionSlip(a, letterhead) : printWristband(a);
     job.catch((error: unknown) => notify.error(error, 'Printing failed'));
   };
 

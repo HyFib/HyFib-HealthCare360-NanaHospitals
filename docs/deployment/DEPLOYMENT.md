@@ -149,6 +149,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
      address, registration, NABH, GSTIN, PAN, a letterhead line, and the logo (shrunk on upload to fit the 300 KB a
      document embeds). *Preview letterhead* shows the result before saving. Doctors' signatures are uploaded in
      **Hospital setup › Doctors and clinical staff**. Documents print without them until they are set.
+   - **Hospital setup › Print templates**: for documents printed on the hospital's own pre-printed stationery, choose
+     *Pre-printed stationery* and measure the space its letterhead (and footer) takes; *Preview* shows the page. Add
+     closing notes, such as the terms on bills, and choose A5 or A4 for prescriptions. Without templates, documents
+     print the letterhead with the logo, as before.
    - Set `portal.baseUrl` (the patient portal's public https address). Documents then carry a QR code that anyone can
      scan to check the report is genuine. Without it they print only the verification code.
    - E-mail (`integrations.email`): the "report ready" e-mail carries the report's PDF.

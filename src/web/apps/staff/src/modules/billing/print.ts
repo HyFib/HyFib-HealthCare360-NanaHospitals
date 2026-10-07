@@ -1,5 +1,16 @@
-import { escapeHtml, formatDateOnly, formatDateTime, formatInr, printDocument, printHtml } from '@hc360/core';
-import type { BillDetail, DayEndReport, FacilityDto, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
+import {
+  escapeHtml,
+  formatDateOnly,
+  formatDateTime,
+  formatInr,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type Letterhead,
+  type PrintTemplateKey,
+} from '@hc360/core';
+import type { BillDetail, DayEndReport, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
 import type { RunningBill } from './ipApi';
 import {
   PAYMENT_MODE_LABEL,
@@ -14,58 +25,41 @@ import { amountInWords, formatPercent, fromPaise, toPaise } from './money';
  * Receipt, counter bill and report prints. Everything is built as a self-contained HTML string (every value escaped)
  * and sent to `printHtml`: counters print 80 mm receipts silently on the thermal printer, other prints open the print
  * dialog. The A4 bill (tax invoice / bill of supply with GST details) is made by the server instead, so the printed
- * copy matches its PDF (see `@/lib/documents`).
+ * copy matches its PDF (see `@/lib/documents`). Each print follows its print template (`templateFor`): the letterhead
+ * or pre-printed stationery, the logo and the closing note.
  */
 
 export type PrintFormat = 'A4' | 'Receipt80';
 
-/** The hospital as printed at the top of bills (FacilityDto, or just a name while it loads). */
-export type PrintFacility = Pick<FacilityDto, 'name'> &
-  Partial<Pick<FacilityDto, 'legalName' | 'address' | 'phone' | 'email' | 'gstin' | 'pan' | 'registrationNumber'>>;
-
 const e = escapeHtml;
 const money = (value: number | null | undefined) => e(formatInr(value));
 
-function facilityAddress(facility: PrintFacility): string {
-  const a = facility.address;
-  return a ? [a.line1, a.line2, a.city, a.district, a.state, a.pinCode].filter(Boolean).join(', ') : '';
+interface HeaderOptions {
+  compact: boolean;
+  /** GSTIN, PAN and the registration number, which bills, receipts and vouchers show. */
+  ids?: boolean;
 }
 
-function header(facility: PrintFacility, title: string, meta: [string, string][], compact: boolean): string {
-  const address = facilityAddress(facility);
-  const contact = [facility.phone ? `Phone ${facility.phone}` : '', facility.email ?? ''].filter(Boolean).join(' · ');
-  const tax = [facility.gstin ? `GSTIN ${facility.gstin}` : '', facility.pan ? `PAN ${facility.pan}` : '']
-    .filter(Boolean)
-    .join(' · ');
+/** The letterhead with the document's title and numbers: centred on an 80 mm roll, on the right of an A4 page. */
+function header(
+  letterhead: Letterhead,
+  key: PrintTemplateKey,
+  title: string,
+  meta: [string, string][],
+  { compact, ids = true }: HeaderOptions,
+): string {
+  const template = templateFor(letterhead, key);
   if (compact) {
-    return `<div class="center">
-      <div class="h-name">${e(facility.legalName || facility.name)}</div>
-      ${address ? `<div class="small">${e(address)}</div>` : ''}
-      ${contact ? `<div class="small">${e(contact)}</div>` : ''}
-      ${tax ? `<div class="small">${e(tax)}</div>` : ''}
-      <div class="rule"></div>
-      <div class="h-title">${e(title)}</div>
-    </div>
+    return `${letterheadHtml(letterhead, template, { compact: true, taxIds: ids })}
+    <div class="rule"></div>
+    <div class="center h-title">${e(title)}</div>
     <table class="meta">${meta.map(([k, v]) => `<tr><td>${e(k)}</td><td class="right">${e(v)}</td></tr>`).join('')}</table>`;
   }
-  return `<table class="hdr"><tr>
-      <td>
-        <div class="h-name">${e(facility.legalName || facility.name)}</div>
-        ${address ? `<div class="muted">${e(address)}</div>` : ''}
-        ${contact ? `<div class="muted">${e(contact)}</div>` : ''}
-        ${tax ? `<div class="muted">${e(tax)}</div>` : ''}
-        ${facility.registrationNumber ? `<div class="muted">Registration ${e(facility.registrationNumber)}</div>` : ''}
-      </td>
-      <td class="right">
-        <div class="h-title">${e(title)}</div>
-        ${meta.map(([k, v]) => `<div>${e(k)}: <b>${e(v)}</b></div>`).join('')}
-      </td>
-    </tr></table>`;
+  const aside = `<div class="h-title">${e(title)}</div>${meta.map(([k, v]) => `<div>${e(k)}: <b>${e(v)}</b></div>`).join('')}`;
+  return letterheadHtml(letterhead, template, { taxIds: ids, registration: ids, aside });
 }
 
 const A4_STYLES = `
-  .hdr td { vertical-align: top; }
-  .h-name { font-size: 15px; font-weight: 700; color: #045E80; }
   .h-title { font-size: 16px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; }
   .box { border: 1px solid #bbb; border-radius: 4px; padding: 6px 8px; margin: 8px 0; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 16px; }
@@ -84,7 +78,6 @@ const A4_STYLES = `
 
 const RECEIPT80_STYLES = `
   body { width: 72mm; }
-  .h-name { font-size: 12.5px; font-weight: 700; }
   .h-title { font-size: 12px; font-weight: 700; text-transform: uppercase; margin: 2px 0; }
   .small { font-size: 9.5px; }
   .meta td, .items td, .sum td { padding: 1px 0; }
@@ -164,7 +157,7 @@ function billMeta(bill: BillDetail): [string, string][] {
 }
 
 /** Compact bill for the counter's 80 mm receipt printer (the A4 bill is made by the server). */
-export function buildCounterBillHtml(bill: BillDetail, facility: PrintFacility): string {
+export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): string {
   const title = billTitle(bill);
   const stamp = watermark(bill);
   const patient = `${bill.patientName ?? ''}${bill.uhid ? ` (UHID ${bill.uhid})` : ''}`;
@@ -181,7 +174,7 @@ export function buildCounterBillHtml(bill: BillDetail, facility: PrintFacility):
     )
     .join('');
   const body = `${stamp ? `<div class="stamp">${e(stamp)}</div>` : ''}
-      ${header(facility, title, [...billMeta(bill), ['Patient', patient]], true)}
+      ${header(letterhead, 'bill', title, [...billMeta(bill), ['Patient', patient]], { compact: true })}
       <div class="rule"></div>
       <table class="items">${items}</table>
       <div class="rule"></div>
@@ -194,6 +187,7 @@ export function buildCounterBillHtml(bill: BillDetail, facility: PrintFacility):
     title: `${title} ${bill.billNumber ?? ''}`.trim(),
     pageSize: 'Receipt80',
     styles: RECEIPT80_STYLES,
+    template: templateFor(letterhead, 'bill'),
   });
 }
 
@@ -234,8 +228,9 @@ function receiptTitle(receipt: ReceiptDto): string {
 }
 
 /** Payment or advance receipt. */
-export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, format: PrintFormat): string {
+export function buildReceiptHtml(receipt: ReceiptDto, letterhead: Letterhead, format: PrintFormat): string {
   const title = receiptTitle(receipt);
+  const template = templateFor(letterhead, 'receipt');
   const meta: [string, string][] = [
     ['Receipt no.', receipt.receiptNumber],
     ['Date', formatDateTime(receipt.receivedAt)],
@@ -252,7 +247,7 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
         return `<tr><td>${e(PAYMENT_MODE_LABEL[p.mode])}${detail ? `<div class="small">${e(detail)}</div>` : ''}</td><td class="num">${money(p.amount)}</td></tr>`;
       })
       .join('');
-    const body = `${header(facility, title, [...meta, ['Patient', patient]], true)}
+    const body = `${header(letterhead, 'receipt', title, [...meta, ['Patient', patient]], { compact: true })}
       <div class="rule"></div>
       <table class="sum">${lines}<tr class="strong"><td>Total received</td><td class="num">${money(receipt.amount)}</td></tr></table>
       <div class="words">${e(amountInWords(receipt.amount))}</div>
@@ -264,6 +259,7 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
       title: `${title} ${receipt.receiptNumber}`,
       pageSize: 'Receipt80',
       styles: RECEIPT80_STYLES,
+      template,
     });
   }
 
@@ -273,7 +269,7 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
         `<tr><td>${e(PAYMENT_MODE_LABEL[p.mode])}</td><td>${e(paymentDetail(p) || '—')}</td><td class="num">${money(p.amount)}</td></tr>`,
     )
     .join('');
-  const body = `${header(facility, title, meta, false)}
+  const body = `${header(letterhead, 'receipt', title, meta, { compact: false })}
     <div class="box grid">
       <div>Received from: <b>${e(receipt.patientName ?? '—')}</b></div>
       <div>UHID: <b>${e(receipt.uhid ?? '—')}</b></div>
@@ -285,13 +281,18 @@ export function buildReceiptHtml(receipt: ReceiptDto, facility: PrintFacility, f
     ${receipt.notes ? `<div class="foot">${e(receipt.notes)}</div>` : ''}
     <div class="sign"><div>Received by ${e(receipt.receivedByName ?? '')}${receipt.counter ? `, ${e(receipt.counter)}` : ''}</div><div>Authorised signatory</div></div>
     <div class="foot">This is a computer-generated receipt. Cheque payments are subject to realisation.</div>`;
-  return printDocument(body, { title: `${title} ${receipt.receiptNumber}`, pageSize: 'A4', styles: A4_STYLES });
+  return printDocument(body, {
+    title: `${title} ${receipt.receiptNumber}`,
+    pageSize: 'A4',
+    styles: A4_STYLES,
+    template,
+  });
 }
 
 /** Day-end collection report (A4) for the accounts office. */
 export function buildDayEndHtml(
   report: DayEndReport,
-  facility: PrintFacility,
+  letterhead: Letterhead,
   printedBy: string,
   printedAt: string,
 ): string {
@@ -313,7 +314,7 @@ export function buildDayEndHtml(
       <td class="num">${money(s.collected)}</td><td class="num">${money(s.refunded)}</td><td class="num">${money(s.expectedCash)}</td><td class="num">${money(s.declaredCash)}</td><td class="num">${money(s.variance)}</td></tr>`,
     )
     .join('');
-  const body = `${header(facility, 'Day-end collection report', meta, false)}
+  const body = `${header(letterhead, 'other', 'Day-end collection report', meta, { compact: false, ids: false })}
     ${report.openShifts > 0 ? `<div class="box"><b>${e(report.openShifts)} shift(s) still open.</b> Their figures can still change.</div>` : ''}
     <table class="totals" style="width:100%">
       <tr><td>Total collected</td><td class="num">${money(report.totalCollected)}</td><td>Bills finalised</td><td class="num">${e(report.billsFinalized)} (${money(report.billedAmount)})</td></tr>
@@ -327,16 +328,21 @@ export function buildDayEndHtml(
     <table class="lines"><tr><th>Cashier</th><th>Counter</th><th>Opened</th><th>Closed</th><th class="num">Collected</th><th class="num">Refunded</th><th class="num">Expected cash</th><th class="num">Declared cash</th><th class="num">Short / excess</th></tr>${shifts || '<tr><td colspan="9">No shifts.</td></tr>'}</table>
     <div class="sign"><div>Cashier</div><div>Accounts</div></div>
     <div class="foot">Printed by ${e(printedBy)} on ${e(formatDateTime(printedAt))}. A negative short/excess is a cash shortage.</div>`;
-  return printDocument(body, { title: `Day-end report ${report.date}`, pageSize: 'A4', styles: A4_STYLES });
+  return printDocument(body, {
+    title: `Day-end report ${report.date}`,
+    pageSize: 'A4',
+    styles: A4_STYLES,
+    template: templateFor(letterhead, 'other'),
+  });
 }
 
 /** Refund voucher signed by the patient when money is handed back. */
-export function buildRefundVoucherHtml(refund: RefundDto, facility: PrintFacility): string {
+export function buildRefundVoucherHtml(refund: RefundDto, letterhead: Letterhead): string {
   const meta: [string, string][] = [
     ['Voucher no.', refund.refundNumber],
     ['Date', formatDateTime(refund.paidAt ?? refund.requestedAt)],
   ];
-  const body = `${header(facility, 'Refund voucher', meta, false)}
+  const body = `${header(letterhead, 'receipt', 'Refund voucher', meta, { compact: false })}
     <div class="box grid">
       <div>Paid to: <b>${e(refund.patientName ?? '—')}</b></div>
       <div>UHID: <b>${e(refund.uhid ?? '—')}</b></div>
@@ -349,13 +355,18 @@ export function buildRefundVoucherHtml(refund: RefundDto, facility: PrintFacilit
     <div class="words">${e(amountInWords(refund.amount))}</div>
     <div class="foot">Requested by ${e(refund.requestedByName ?? 'the system')} on ${e(formatDateTime(refund.requestedAt))}${refund.decidedAt ? `; approved on ${e(formatDateTime(refund.decidedAt))}` : ''}.</div>
     <div class="sign"><div>Received by (patient / attendant)</div><div>Cashier</div></div>`;
-  return printDocument(body, { title: `Refund ${refund.refundNumber}`, pageSize: 'A4', styles: A4_STYLES });
+  return printDocument(body, {
+    title: `Refund ${refund.refundNumber}`,
+    pageSize: 'A4',
+    styles: A4_STYLES,
+    template: templateFor(letterhead, 'receipt'),
+  });
 }
 
 /** In-patient running bill: an interim statement for the patient's family (not a bill). */
 export function buildRunningBillHtml(
   bill: RunningBill,
-  facility: PrintFacility,
+  letterhead: Letterhead,
   patient: { name: string; uhid: string | null },
   printedAt: string,
 ): string {
@@ -375,7 +386,7 @@ export function buildRunningBillHtml(
         `<tr><td>${e(formatDateOnly(d.date))}</td><td class="num">${e(d.items)}</td><td class="num">${money(d.net)}</td></tr>`,
     )
     .join('');
-  const body = `${header(facility, 'Running bill (interim statement)', meta, false)}
+  const body = `${header(letterhead, 'bill', 'Running bill (interim statement)', meta, { compact: false })}
     <div class="box grid"><div>Patient: <b>${e(patient.name)}</b></div><div>UHID: <b>${e(patient.uhid ?? '—')}</b></div></div>
     <h3>By category</h3>
     <table class="lines"><tr><th>Category</th><th class="num">Items</th><th class="num">Amount</th><th class="num">Discount</th><th class="num">GST</th><th class="num">Net</th></tr>${categories}</table>
@@ -391,7 +402,12 @@ export function buildRunningBillHtml(
       <tr class="strong"><td>${bill.estimatedBalance >= 0 ? 'Estimated balance to pay' : 'Estimated refund'}</td><td class="num">${money(Math.abs(bill.estimatedBalance))}</td></tr>
     </table>
     <div class="foot">This statement is an estimate while the patient is in hospital. The final bill may differ (package, insurer approval, pending services).</div>`;
-  return printDocument(body, { title: `Running bill ${bill.admissionNumber}`, pageSize: 'A4', styles: A4_STYLES });
+  return printDocument(body, {
+    title: `Running bill ${bill.admissionNumber}`,
+    pageSize: 'A4',
+    styles: A4_STYLES,
+    template: templateFor(letterhead, 'bill'),
+  });
 }
 
 /** Sends a document to the printer: 80 mm prints go silently to the counter's receipt printer. */

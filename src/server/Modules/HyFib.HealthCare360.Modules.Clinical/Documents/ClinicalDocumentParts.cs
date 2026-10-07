@@ -17,6 +17,7 @@ internal static class ClinicalDocumentParts
         .letterhead { display: flex; justify-content: space-between; gap: 12px; border-bottom: 2px solid #045E80; padding-bottom: 6px; margin-bottom: 8px; }
         .letterhead .brand { display: flex; gap: 10px; align-items: center; }
         .letterhead .logo { max-height: 16mm; max-width: 36mm; object-fit: contain; }
+        .letterhead.preprinted { border-bottom: none; padding-bottom: 0; }
         .facility { font-size: 14pt; font-weight: 700; color: #045E80; }
         .doctor { text-align: right; }
         .doctor .name { font-weight: 700; font-size: 11pt; }
@@ -37,10 +38,16 @@ internal static class ClinicalDocumentParts
 
     /// <summary>
     /// The clinical letterhead: logo, facility name, address, "phone · e-mail · website", "Reg. … · NABH …" and the
-    /// facility's own letterhead line, with <paramref name="right"/> (the doctor's block) on the right.
+    /// facility's own letterhead line, with <paramref name="right"/> (the doctor's block) on the right. On pre-printed
+    /// stationery (<paramref name="template"/>) only the doctor's block is printed: the paper has the rest.
     /// </summary>
-    public static Html Letterhead(FacilityLetterhead? letterhead, ImageData? logo, Html right)
+    public static Html Letterhead(FacilityLetterhead? letterhead, ImageData? logo, Html right, PrintTemplate? template = null)
     {
+        if (template is { PrintsLetterhead: false })
+        {
+            return Html.Of($"<header class=\"letterhead preprinted\"><div></div>{right}</header>");
+        }
+
         var contact = Join(letterhead?.Phone, letterhead?.Email, letterhead?.Website);
         var registration = Join(
             letterhead?.RegistrationNumber is { Length: > 0 } number ? $"Reg. {number}" : null,

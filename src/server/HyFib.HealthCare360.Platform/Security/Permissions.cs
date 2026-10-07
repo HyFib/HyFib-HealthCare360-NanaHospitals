@@ -110,6 +110,9 @@ public static class PlatformPermissions
     public const string SettingsManage = "admin.settings.manage";
     public const string IntegrationsManage = "admin.integrations.manage";
     public const string NumberingManage = "admin.numbering.manage";
+
+    /// <summary>Set up how documents print (Hospital setup › Print templates, SRS HMS-04).</summary>
+    public const string PrintManage = "admin.print.manage";
     public const string NotificationTemplatesManage = "admin.notifications.manage";
     public const string SystemRead = "admin.system.read";
 
@@ -137,6 +140,7 @@ public static class PlatformPermissions
         new(SettingsManage, "Administration", "Change system settings", Admins),
         new(IntegrationsManage, "Administration", "Configure integrations and credentials"),
         new(NumberingManage, "Administration", "Configure number series (UHID, bill numbers)", Admins),
+        new(PrintManage, "Administration", "Set up print templates (letterhead, logo, closing notes)", Admins),
         new(NotificationTemplatesManage, "Administration", "Edit SMS/WhatsApp/e-mail templates", [SystemRoles.HospitalAdmin, SystemRoles.CrmExecutive]),
         new(SystemRead, "Administration", "View server health, WiFi link and backups", Admins),
         new(SystemManage, "Administration", "Change the server's database password"),

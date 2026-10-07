@@ -31,6 +31,7 @@ import { DataTable, EmptyState, ErrorState, LoadingState, Page, Section, StatusB
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
 import { PatientBannerWithFlags } from '@/modules/emr/PatientBannerWithFlags';
 import type { BatchStock } from '@/modules/inventory/api';
@@ -52,7 +53,7 @@ import {
   type WardIndentLineDto,
 } from '@/modules/pharmacy/api';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
-import { useItemMaster, useLetterhead, usePharmacyBatches } from '@/modules/pharmacy/counter';
+import { useItemMaster, usePharmacyBatches } from '@/modules/pharmacy/counter';
 import {
   controlledItems,
   itemsFromErrorData,

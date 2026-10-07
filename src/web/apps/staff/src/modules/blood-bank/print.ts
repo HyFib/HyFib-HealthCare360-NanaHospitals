@@ -1,4 +1,14 @@
-import { escapeHtml, formatDate, formatDateTime, printDocument, printHtml, type BloodUnitLabel } from '@hc360/core';
+import {
+  escapeHtml,
+  formatDate,
+  formatDateTime,
+  letterheadHtml,
+  printDocument,
+  printHtml,
+  templateFor,
+  type BloodUnitLabel,
+  type Letterhead,
+} from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
 import { printLabelJob } from '@/lib/labelPrinting';
 import type { BloodComponentType, BloodIssueDto, BloodRequestDetail, BloodUnitDto, CrossMatchDto } from './api';
@@ -83,15 +93,19 @@ export interface IssueSlipUnit {
   componentType: BloodComponentType;
 }
 
-/** Issue slip (80 mm) that travels with the unit to the ward: patient, unit barcode, cross-match or emergency release. */
+/**
+ * Issue slip (80 mm) that travels with the unit to the ward: patient, unit barcode, cross-match or emergency release,
+ * under the letterhead ("Other documents" template).
+ */
 export async function printIssueSlip(
-  facilityName: string,
+  letterhead: Letterhead,
   request: BloodRequestDetail,
   issue: BloodIssueDto,
   crossMatch: CrossMatchDto | null,
   unit: IssueSlipUnit | null,
 ): Promise<void> {
   const barcode = await barcodeSvg(issue.unitNumber, 'code128', { height: 9 });
+  const template = templateFor(letterhead, 'other');
   const compatibility = issue.isEmergencyRelease
     ? `<div class="alert">EMERGENCY RELEASE — NOT CROSS-MATCHED<br/>Authorised by ${escapeHtml(request.emergencyReleaseAuthorisedBy ?? '—')}</div>`
     : crossMatch
@@ -101,7 +115,7 @@ export async function printIssueSlip(
       : '<div>Cross-match: plasma component, ABO compatible</div>';
   const body = `
     <div class="slip">
-      <div class="hospital">${escapeHtml(facilityName)}</div>
+      ${letterheadHtml(letterhead, template, { compact: true })}
       <div class="title">BLOOD ISSUE SLIP</div>
       <div class="small">Request ${escapeHtml(request.requestNumber)} · ${escapeHtml(formatDateTime(issue.issuedAt))}</div>
       <hr/>
@@ -123,7 +137,6 @@ export async function printIssueSlip(
     </div>`;
   const styles = `
     .slip { width: 72mm; font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; }
-    .hospital { font-weight: 700; text-align: center; }
     .title { font-weight: 800; font-size: 12pt; text-align: center; letter-spacing: 1px; }
     .small { font-size: 8pt; text-align: center; }
     .name { font-weight: 700; font-size: 11pt; }
@@ -133,7 +146,8 @@ export async function printIssueSlip(
     .note { font-size: 7.5pt; margin-top: 6px; }
     .sign { margin-top: 10px; font-size: 8pt; }
     hr { border: none; border-top: 1px dashed #666; margin: 5px 0; }`;
-  await printHtml(printDocument(body, { title: `Blood issue ${issue.unitNumber}`, pageSize: 'Receipt80', styles }), {
-    pageSize: 'Receipt80',
-  });
+  await printHtml(
+    printDocument(body, { title: `Blood issue ${issue.unitNumber}`, pageSize: 'Receipt80', styles, template }),
+    { pageSize: 'Receipt80' },
+  );
 }
