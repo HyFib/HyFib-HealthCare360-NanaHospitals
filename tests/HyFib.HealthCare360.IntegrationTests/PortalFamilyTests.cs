@@ -172,6 +172,62 @@ public sealed class PortalFamilyTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Tries_of_a_code_sent_together_are_each_counted()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (father, fatherPhone) = await RegisterPatientAsync(frontOffice, "Kiran");
+        var account = await server.SignInToPortalAsync(NewMobile());
+        var sent = await account.PostAsync<FamilyCodeSent>("/api/v1/portal/family/codes",
+            new RequestFamilyCodeRequest(father.Uhid, fatherPhone, FamilyRelation.Parent));
+        var code = (await FamilyCodeMessageAsync(fatherPhone)).Values["code"];
+        var verify = $"/api/v1/portal/family/codes/{sent.CodeId}/verify";
+
+        var tries = await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => account.SendRawAsync(HttpMethod.Post, verify, new VerifyFamilyCodeRequest(code == "000000" ? "111111" : "000000"))));
+        try
+        {
+            tries.Count(r => r.StatusCode == HttpStatusCode.BadRequest).ShouldBe(PortalFamilyCode.MaxAttempts, "every wrong code counts");
+            tries.Count(r => r.StatusCode == HttpStatusCode.UnprocessableEntity).ShouldBe(12 - PortalFamilyCode.MaxAttempts);
+        }
+        finally
+        {
+            foreach (var response in tries)
+            {
+                response.Dispose();
+            }
+        }
+
+        using var late = await account.SendRawAsync(HttpMethod.Post, verify, new VerifyFamilyCodeRequest(code));
+        late.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity, "the right code no longer works once the tries are used up");
+    }
+
+    [Fact]
+    public async Task Code_requests_sent_together_stay_within_the_limit_for_a_number()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var (sister, sisterPhone) = await RegisterPatientAsync(frontOffice, "Lata");
+        var account = await server.SignInToPortalAsync(NewMobile());
+
+        var requests = await Task.WhenAll(Enumerable.Range(0, 8)
+            .Select(_ => account.SendRawAsync(HttpMethod.Post, "/api/v1/portal/family/codes",
+                new RequestFamilyCodeRequest(sister.Uhid, sisterPhone, FamilyRelation.Sibling))));
+        try
+        {
+            // A number gets three codes in 15 minutes (PortalFamilyService.CodesPerNumberPer15Minutes).
+            requests.Count(r => r.IsSuccessStatusCode).ShouldBe(3);
+        }
+        finally
+        {
+            foreach (var response in requests)
+            {
+                response.Dispose();
+            }
+        }
+
+        (await FamilyCodeMessagesAsync(sisterPhone)).Count.ShouldBe(3);
+    }
+
+    [Fact]
     public async Task Merging_a_duplicate_moves_its_family_links_to_the_record_that_stays()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
