@@ -152,9 +152,10 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
-    /// Deletes the run's data directory. On Windows a helper of the PDF renderer's browser can hold a file in its
-    /// profile for a moment after the browser closes, so the delete is tried for a few seconds; a folder still in use
-    /// after that is left in the temp directory rather than failing a run whose tests all finished.
+    /// Deletes the run's data directory. The server has closed its files by now (the PDF renderer waits for the browser's
+    /// processes to exit), but on Windows a virus scanner or the search indexer can still hold one for a moment, so the
+    /// delete is tried for a few seconds; a folder still in use after that is left in the temp directory rather than
+    /// failing a run whose tests all finished.
     /// </summary>
     private async Task DeleteDataDirectoryAsync()
     {

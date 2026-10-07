@@ -261,8 +261,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     run code or reach anything, local files included.
   - Each PDF is made in a tab of its own browser context. The browser has no extensions, no sync and no background
     networking, and it keeps its sandbox.
-  - It runs in a job object that ends it, and every process it started, when the server stops. Its private profile
-    folder is deleted.
+  - It runs in a job object that ends it, and every process it started, when the server stops. It starts inside the
+    job, so none of its processes begins outside it, and it inherits only its own pipes. Its private profile folder is
+    deleted.
 - Calls to outside services follow no redirects and need TLS 1.2 or later.
 - The API reference is off by default. If IT turns it on, it answers only on the server machine.
 - The embedded browser in HC360 Desktop:
