@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -31,6 +32,9 @@ internal sealed class DevToolsPipe : IDisposable
         "--remote-debugging-pipe",
         $"--remote-debugging-io-pipes={_toBrowser.GetClientHandleAsString()},{_fromBrowser.GetClientHandleAsString()}",
     ];
+
+    /// <summary>The browser's ends of the pipes, which it must inherit for <see cref="BrowserArguments"/> to work.</summary>
+    public IReadOnlyCollection<SafeHandle> BrowserHandles => [_toBrowser.ClientSafePipeHandle, _fromBrowser.ClientSafePipeHandle];
 
     /// <summary>Completes when the browser closes its end (it exited or crashed).</summary>
     public Task Closed => _closed.Task;
