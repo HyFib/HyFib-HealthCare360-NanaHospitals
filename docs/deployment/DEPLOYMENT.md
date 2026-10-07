@@ -351,15 +351,17 @@ lists every extract with when it was last refreshed.
    ```
 
    Use the account the Power BI on-premises data gateway runs as (or the account of whoever opens the files).
-2. Tell HC360 the folder with a machine environment variable, which an upgrade keeps, and restart the service:
+2. Tell HC360 the folder in its settings file, `%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json`, which
+   upgrades keep. Add `Analytics` at the top of its `HealthCare360` section, writing each `\` twice as JSON needs:
 
-   ```powershell
-   [Environment]::SetEnvironmentVariable('HC360_HealthCare360__Analytics__ExtractDirectory', 'D:\HC360-BI', 'Machine')
-   Restart-Service HC360Server
+   ```json
+   "HealthCare360": {
+     "Analytics": { "ExtractDirectory": "D:\\HC360-BI" },
+     "HttpsPort": 7360,
    ```
 
-   Without it, HC360 writes to `%ProgramData%\HyFib\HealthCare360\bi-extracts`, which only Administrators and HC360
-   can read.
+   Then restart the service: `Restart-Service HC360Server`. Without the setting, HC360 writes to
+   `%ProgramData%\HyFib\HealthCare360\bi-extracts`, which only Administrators and HC360 can read.
 3. If the gateway runs on another computer, share the folder read-only:
    `New-SmbShare -Name HC360-BI -Path D:\HC360-BI -ReadAccess 'HOSPITAL\svc-pbi-gateway'`.
 4. Open Analytics › BI extracts. The *Extract folder* panel shows the facility's folder and the refresh log, or why
@@ -381,11 +383,12 @@ same shared folder, as a UNC path such as `\\NAS\HC360-BI`, on every server, and
 
 The installer stops the service, replaces the program files, keeps configuration and data, and starts the new version.
 Every setting in `hc360.settings.json` stays as it is, including those added by hand (such as
-`HealthCare360:Pdf:BrowserPath` or a reporting replica) and protected values. Of its own settings, the installer changes
-only those given to it again as parameters (`-HttpsPort`, `-FacilityCode`, `-FacilityName`, `-SecondaryBackupDir`), and
-`HealthCare360:Backup:PgDumpPath`, which follows the newest PostgreSQL under Program Files. The same holds when it runs
-again for `-LabPorts`. Leave comments out of the file: Windows PowerShell cannot read them (the installer then stops
-before it changes anything), and they are lost when the file is rewritten.
+`HealthCare360:Pdf:BrowserPath`, the BI extract folder or a reporting replica) and protected values. Of its own
+settings, the installer changes only those given to it again as parameters (`-HttpsPort`, `-FacilityCode`,
+`-FacilityName`, `-SecondaryBackupDir`), and `HealthCare360:Backup:PgDumpPath`, which follows the newest PostgreSQL
+under Program Files. The same holds when it runs again for `-LabPorts`. Leave comments out of the file: Windows
+PowerShell cannot read them (the installer then stops before it changes anything), and they are lost when the file is
+rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
 done), and checks BitLocker again.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
@@ -453,7 +456,7 @@ distribution tool).
 | A report e-mail arrives without its PDF | The notification log notes "Sent without the document" and why. The PDF was tried three times first |
 | WhatsApp refuses the report message (error 132012) | The WhatsApp template has no document header but "Document header" is ticked in HC360, or the other way round. Make them match |
 | A modality cannot read the worklist | Administration › Integrations › Modality worklist: is it listening, and what is the last error? The modality's AE title and IP address must match its entry exactly, and the firewall rule must list its address. Refusals are logged once per ten minutes per network, so wait or look at the refused count |
-| "HC360 cannot write the extract folder" (Analytics › BI extracts), or an extract is "Not refreshing" | The message gives the Windows error. Does the folder set in `HC360_HealthCare360__Analytics__ExtractDirectory` exist, and does `NT SERVICE\HC360Server` (or the server's computer account, for a share) have *Modify* on it? Is the disk full? A file the BI tool keeps open can also stop a refresh: close Power BI Desktop and press *Refresh now* |
+| "HC360 cannot write the extract folder" (Analytics › BI extracts), or an extract is "Not refreshing" | The message gives the Windows error. Does the folder set as `HealthCare360:Analytics:ExtractDirectory` in `hc360.settings.json` exist (a machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory` overrides it), and does `NT SERVICE\HC360Server` (or the server's computer account, for a share) have *Modify* on it? Is the disk full? A file the BI tool keeps open can also stop a refresh: close Power BI Desktop and press *Refresh now* |
 | Images are not linked with PACS | Press "Link images from PACS" on the study: the message says why. "Under another patient ID", "without a patient ID" or "several studies" must be corrected in PACS; "not reached PACS yet" usually means the modality has not sent the images, or sent them without the worklist's accession number |
 
 Log files hold no patient-identifiable data by design. Share them with HyFib support when asked.
