@@ -71,7 +71,9 @@ public sealed record GoodsReceiptLineDto(
     decimal BaseQuantity,
     decimal UnitCost,
     decimal UnitMrp,
-    Guid? StockBatchId);
+    Guid? StockBatchId,
+    string? ItemCode = null,
+    string? BaseUnit = null);
 
 public sealed record GoodsReceiptDetail(
     Guid Id,

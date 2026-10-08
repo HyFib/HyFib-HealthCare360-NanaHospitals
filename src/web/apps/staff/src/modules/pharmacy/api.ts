@@ -152,6 +152,23 @@ export interface PharmacyStockRow {
   available: number;
   mrp: number | null;
   nearestExpiry: string | null;
+  /** The item's own barcode, to tell an exact scan from a match on the name. */
+  barcode?: string | null;
+  /** When the search was a scanned pharmacy tag: the batch it names, in this store. */
+  scanned?: ScannedBatch | null;
+}
+
+/**
+ * The batch a scanned pharmacy tag names (INT-BAR): `batchId` is the store's batch to hand out, or null with `problem`
+ * saying why it cannot be (not in this store, none left, expired or blocked).
+ */
+export interface ScannedBatch {
+  batchNumber: string;
+  batchId: string | null;
+  expiryDate: string | null;
+  mrp: number | null;
+  available: number;
+  problem: string | null;
 }
 
 export interface ExternalPrescription {

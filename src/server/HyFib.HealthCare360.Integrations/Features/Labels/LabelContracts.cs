@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Labels.Templates;
 
@@ -47,6 +48,8 @@ public sealed record CssdPackLabelsRequest(LabelPrinterSetup Printer, IReadOnlyL
 
 public sealed record AssetTagLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<AssetTagLabel> Labels, int Copies = 1);
 
+public sealed record PharmacyTagLabelsRequest(LabelPrinterSetup Printer, IReadOnlyList<PharmacyTagLabel> Labels, int Copies = 1);
+
 /// <summary>A test label for a printer being set up: on label rolls or on wristband bands.</summary>
 /// <param name="Computer">The workstation's name, printed on the label.</param>
 public sealed record TestLabelRequest(LabelPrinterSetup Printer, LabelStock Stock = LabelStock.Label, string? Computer = null);
@@ -73,8 +76,27 @@ public sealed record PrinterRoleSetup(
     decimal? HeightMm,
     string? Code = null);
 
-/// <summary>The server's approval of a printer change: who the change is saved as (the signed-in user's name).</summary>
+/// <summary>
+/// The server's approval of a change to a workstation's printers or scanner: who the change is saved as (the signed-in
+/// user's name).
+/// </summary>
 public sealed record PrinterChangeApproval(string ChangedBy);
+
+/// <summary>
+/// A change to the serial barcode scanner of one workstation (a scanner on a COM port, read by HC360 Desktop): approved
+/// before HC360 Desktop saves it there and recorded in the audit trail once it has, as printer changes are.
+/// </summary>
+/// <param name="Port">COM1 to COM256, or null for no serial scanner (scanners that type like a keyboard need none).</param>
+/// <param name="Parity">none, even or odd.</param>
+/// <param name="StopBits">one or two.</param>
+public sealed record ScannerSetupChange(
+    string Computer,
+    Guid? DeviceId,
+    string? Port,
+    int BaudRate = 9600,
+    int DataBits = 8,
+    string Parity = "none",
+    string StopBits = "one");
 
 /// <summary>The sizes each kind of stock may have, and the rules the label requests share.</summary>
 internal static class LabelRules
@@ -205,6 +227,18 @@ public sealed class AssetTagLabelValidator : AbstractValidator<AssetTagLabel>
     }
 }
 
+public sealed class PharmacyTagLabelValidator : AbstractValidator<PharmacyTagLabel>
+{
+    public PharmacyTagLabelValidator()
+    {
+        RuleFor(x => x.Barcode).Cascade(CascadeMode.Stop).NotEmpty().Barcode();
+        RuleFor(x => x.Medicine).NotEmpty().SafeText(200);
+        RuleFor(x => x.Batch).SafeText(40);
+        RuleFor(x => x.Mrp).InclusiveBetween(0, 10_000_000).When(x => x.Mrp is not null);
+        RuleFor(x => x.Unit).SafeText(12);
+    }
+}
+
 public sealed class LabTubeLabelsRequestValidator : AbstractValidator<LabTubeLabelsRequest>
 {
     public LabTubeLabelsRequestValidator()
@@ -272,6 +306,17 @@ public sealed class AssetTagLabelsRequestValidator : AbstractValidator<AssetTagL
     }
 }
 
+public sealed class PharmacyTagLabelsRequestValidator : AbstractValidator<PharmacyTagLabelsRequest>
+{
+    public PharmacyTagLabelsRequestValidator()
+    {
+        RuleFor(x => x.Printer).NotNull().ChildRules(p => LabelRules.Printer(p, LabelStock.Label));
+        RuleFor(x => x.Labels).NotEmpty().Must(l => l is null || l.Count <= LabelRules.MaxLabels).WithMessage(LabelRules.TooMany(LabelRules.MaxLabels));
+        RuleForEach(x => x.Labels).NotNull().SetValidator(new PharmacyTagLabelValidator());
+        RuleFor(x => x.Copies).InclusiveBetween(1, LabelRules.MaxCopies);
+    }
+}
+
 public sealed class TestLabelRequestValidator : AbstractValidator<TestLabelRequest>
 {
     public TestLabelRequestValidator()
@@ -305,4 +350,25 @@ public sealed class PrinterSetupChangeValidator : AbstractValidator<PrinterSetup
             role.RuleFor(r => r.Code).Null().When(r => r.Role != "wristbands").WithMessage("Only wristbands have a code.");
         });
     }
+}
+
+public sealed partial class ScannerSetupChangeValidator : AbstractValidator<ScannerSetupChange>
+{
+    private static readonly int[] BaudRates = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+
+    public ScannerSetupChangeValidator()
+    {
+        RuleFor(x => x.Computer).NotEmpty().SafeText(64);
+        RuleFor(x => x.Port).Must(p => p is null || ComPort().IsMatch(p)).WithMessage("Use a COM port, COM1 to COM256.");
+        When(x => x.Port is not null, () =>
+        {
+            RuleFor(x => x.BaudRate).Must(BaudRates.Contains).WithMessage("Use 1200 to 115200 baud.");
+            RuleFor(x => x.DataBits).Must(d => d is 7 or 8).WithMessage("Use 7 or 8 data bits.");
+            RuleFor(x => x.Parity).Must(p => p is "none" or "even" or "odd").WithMessage("Use none, even or odd.");
+            RuleFor(x => x.StopBits).Must(s => s is "one" or "two").WithMessage("Use one or two.");
+        });
+    }
+
+    [GeneratedRegex("^COM([1-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-6])$", RegexOptions.IgnoreCase)]
+    private static partial Regex ComPort();
 }

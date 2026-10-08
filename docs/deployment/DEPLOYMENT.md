@@ -221,7 +221,11 @@ listens on port 7360 there, because the network search does not always find the 
 
   Printer names must match Windows exactly. A printer that is not installed, or an entry that is not valid, is not
   used, and Printers on this computer says why.
-- Barcode scanners work as keyboards (no driver).
+- Barcode scanners that work as keyboards (USB HID) need no driver or setup. A scanner on a COM port (RS-232, or USB
+  in serial mode) is read by HC360 Desktop: in **Printers on this computer › Barcode scanner** choose the port and set
+  the speed, data bits, parity and stop bits as they are set on the scanner (most use 9600, 8, none, 1), then try a
+  scan there. It is kept in `%ProgramData%\HyFib\HC360Desktop\Workstation\scanner.json`; IT can fix it with a
+  `scanner` entry in `policy.json`, for example `"scanner": { "port": "COM3", "baudRate": 9600 }`.
 - PACS, the modality worklist, biometric attendance devices, Tally and payment terminals are configured in
   **Administration › Integrations**. See `docs/modules/integrations.md`.
 - Lab analysers, radiology and BI tools such as Power BI: see below.

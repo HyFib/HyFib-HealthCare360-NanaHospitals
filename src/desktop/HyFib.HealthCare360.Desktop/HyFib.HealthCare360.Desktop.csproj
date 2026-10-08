@@ -2,8 +2,8 @@
   <!--
     HC360 Desktop: the Windows client for hospital workstations, kiosks and waiting-area TVs.
     A WPF shell that hosts the HC360 staff app in WebView2 (Evergreen), pins the hospital's private CA, keeps
-    working through WiFi drops, and exposes a small JSON-RPC bridge (printing, WiFi status, notifications,
-    dictation) to the web app.
+    working through WiFi drops, and exposes a small JSON-RPC bridge (printing, serial barcode scanners, WiFi status,
+    notifications, dictation) to the web app.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -32,6 +32,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" />
     <PackageReference Include="Makaretu.Dns.Multicast.New" />
     <PackageReference Include="System.Speech" />
+    <PackageReference Include="System.IO.Ports" />
     <PackageReference Include="Serilog.Sinks.File" />
   </ItemGroup>
 

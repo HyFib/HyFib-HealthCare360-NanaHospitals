@@ -18,8 +18,9 @@ public static class IntegrationsPermissions
     public const string LabStatusRead = "integrations.lab.status";
 
     /// <summary>
-    /// Change which printer a workstation uses for labels, wristbands, receipts and documents. The printers are kept by
-    /// HC360 Desktop on the workstation; the server checks this permission and records the change before it is saved.
+    /// Change which printer a workstation uses for labels, wristbands, receipts and documents, and its serial barcode
+    /// scanner. Both are kept by HC360 Desktop on the workstation; the server checks this permission before a change is
+    /// saved and records it after.
     /// </summary>
     public const string PrintersSetup = "integrations.printers.setup";
 
@@ -29,7 +30,7 @@ public static class IntegrationsPermissions
         new(LabelsPrint, "Integrations", "Print barcode/QR labels (UHID cards, wristbands, sample, pharmacy and asset tags)", PlatformPermissions.AllStaff),
         new(LabConnectionsManage, "Integrations", "Set up analyser connections: network ports, allowed addresses, serial ports and lab agents", [SystemRoles.HospitalAdmin]),
         new(LabStatusRead, "Integrations", "See whether lab analysers and their agents are connected", [SystemRoles.LabTechnician, SystemRoles.Pathologist, SystemRoles.HospitalAdmin]),
-        new(PrintersSetup, "Integrations", "Choose the printers a workstation uses for labels, wristbands, receipts and documents", [SystemRoles.HospitalAdmin]),
+        new(PrintersSetup, "Integrations", "Choose the printers a workstation uses for labels, wristbands, receipts and documents, and its serial barcode scanner", [SystemRoles.HospitalAdmin]),
     ];
 }
 

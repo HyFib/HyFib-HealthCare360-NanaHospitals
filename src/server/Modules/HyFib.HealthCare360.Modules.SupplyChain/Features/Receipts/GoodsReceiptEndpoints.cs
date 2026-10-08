@@ -82,6 +82,10 @@ internal static class GoodsReceiptEndpoints
 
         var vendor = await db.Set<Vendor>().AsNoTracking().Where(v => v.Id == g.VendorId).Select(v => new { v.Name, v.Gstin }).FirstOrDefaultAsync(ct);
         var storeName = await db.Set<Store>().Where(s => s.Id == g.StoreId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
+        var itemIds = g.Lines.Select(l => l.ItemId).Distinct().ToList();
+        var items = await db.Set<Item>().AsNoTracking().Where(i => itemIds.Contains(i.Id))
+            .Select(i => new { i.Id, i.Code, i.BaseUnit })
+            .ToDictionaryAsync(i => i.Id, ct);
         return TypedResults.Ok(new GoodsReceiptDetail(
             g.Id, g.Number, g.VendorId, vendor?.Name ?? string.Empty, vendor?.Gstin, g.StoreId, storeName, g.PurchaseOrderId, g.VendorInvoiceNumber,
             g.VendorInvoiceDate, g.ReceivedOn, g.IsInterState, g.Status, g.Remarks, g.PostedAt, g.GrossAmount, g.DiscountAmount, g.TaxableAmount,
@@ -89,7 +93,7 @@ internal static class GoodsReceiptEndpoints
             g.Lines.OrderBy(l => l.ItemName).Select(l => new GoodsReceiptLineDto(
                 l.Id, l.ItemId, l.ItemName, l.PurchaseOrderLineId, l.BatchNumber, l.ManufactureDate, l.ExpiryDate, l.Quantity, l.FreeQuantity, l.Rate,
                 l.Mrp, l.DiscountPercent, l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount, l.LineTotal, l.BaseQuantity, l.UnitCost,
-                l.UnitMrp, l.StockBatchId)).ToList(),
+                l.UnitMrp, l.StockBatchId, items.GetValueOrDefault(l.ItemId)?.Code, items.GetValueOrDefault(l.ItemId)?.BaseUnit)).ToList(),
             g.Version));
     }
 }

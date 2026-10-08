@@ -1,6 +1,4 @@
 using System.IO;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Serilog;
@@ -79,11 +77,7 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
 
     public string FilePath => Path.Combine(folder, "printers.json");
 
-    public static PrinterSetupStore ForThisComputer()
-    {
-        var root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "HyFib", "HC360Desktop");
-        return new PrinterSetupStore(Path.Combine(root, "Workstation"), Path.Combine(root, "policy.json"));
-    }
+    public static PrinterSetupStore ForThisComputer() => new(WorkstationFiles.Folder, WorkstationFiles.PolicyPath);
 
     /// <summary>
     /// The policy's printers when IT set them, else the saved ones; nothing set when neither can be read. A kind of
@@ -180,13 +174,10 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
 
         // UpdatedBy is the name the server gave the staff app when it approved the change; HC360 Desktop cannot check
         // it, so it is shown as a note, and the server's audit trail is the record of who changed the printers.
-        var saved = setup with { UpdatedAt = now, UpdatedBy = Clean(setup.UpdatedBy, 128) };
+        var saved = setup with { UpdatedAt = now, UpdatedBy = WorkstationFiles.Clean(setup.UpdatedBy, 128) };
         try
         {
-            EnsureFolder();
-            var temp = FilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(saved, Json));
-            File.Move(temp, FilePath, overwrite: true);
+            WorkstationFiles.Write(folder, FilePath, JsonSerializer.Serialize(saved, Json));
             Log.Information("Printers of this computer saved by {User}", saved.UpdatedBy ?? "(unknown)");
             return saved;
         }
@@ -269,60 +260,6 @@ internal sealed class PrinterSetupStore(string folder, string? policyPath)
 
     private static BridgeException Invalid(string message) => new("bad_request", message);
 
-    private static string? Clean(string? value, int max)
-    {
-        var text = value is null ? null : new string(value.Where(c => !char.IsControl(c)).ToArray()).Trim();
-        return string.IsNullOrEmpty(text) ? null : text.Length > max ? text[..max] : text;
-    }
-
-    /// <summary>
-    /// Creates the folder so every Windows user on the computer may change the files in it (Users: modify, inherited).
-    /// The installer creates it the same way; a folder that already exists is left as it is.
-    /// </summary>
-    private void EnsureFolder()
-    {
-        if (Directory.Exists(folder))
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(folder);
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        var security = new DirectoryInfo(folder).GetAccessControl();
-        security.AddAccessRule(new FileSystemAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null),
-            FileSystemRights.Modify,
-            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-            PropagationFlags.None,
-            AccessControlType.Allow));
-        new DirectoryInfo(folder).SetAccessControl(security);
-    }
-
     /// <summary>The <c>printers</c> entry of the machine policy, when IT set one.</summary>
-    private WorkstationPrinters? ReadPolicy()
-    {
-        if (policyPath is null || !File.Exists(policyPath))
-        {
-            return null;
-        }
-
-        try
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(policyPath));
-            return document.RootElement.ValueKind == JsonValueKind.Object
-                   && document.RootElement.TryGetProperty("printers", out var printers)
-                   && printers.ValueKind == JsonValueKind.Object
-                ? printers.Deserialize<WorkstationPrinters>(Json)
-                : null;
-        }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
-        {
-            Log.Error(ex, "The printers in the machine policy could not be read");
-            return null;
-        }
-    }
+    private WorkstationPrinters? ReadPolicy() => WorkstationFiles.ReadPolicy<WorkstationPrinters>(policyPath, "printers", Json);
 }

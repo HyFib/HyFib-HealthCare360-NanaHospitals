@@ -3,6 +3,7 @@ export * from './api/errors';
 export * from './api/queryClient';
 export * from './auth/session';
 export * from './bridge/bridge';
+export * from './bridge/scans';
 export * from './connection/connection';
 export * from './format/format';
 export * from './hooks/hooks';

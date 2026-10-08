@@ -64,6 +64,7 @@ import {
 } from '@/modules/pharmacy/counter';
 import { controlledItems, itemsFromErrorData, planBatchIssue } from '@/modules/pharmacy/dispense';
 import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
+import { scannedBatchProblem } from '@/modules/pharmacy/tags';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
 import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
@@ -226,12 +227,31 @@ function CounterSalePage() {
       notify.warning(`${row.name} is out of stock here`, 'Check another store or order it through an indent.');
       return;
     }
+    // A scanned pharmacy tag names the batch in hand; one that cannot be sold leaves the batch to the bill (the
+    // line's own, or first-expiry-first-out).
+    const problem = scannedBatchProblem(row.scanned);
+    if (problem) {
+      notify.warning(`${row.name}: ${problem}`, 'It is sold from the batch the bill shows. Check the strip in hand.');
+    }
+    const scannedBatchId = row.scanned?.batchId ?? null;
     const existing = cart.find((l) => l.item.itemId === row.itemId);
     if (existing) {
+      // One line sells one batch: a tag of another batch is not added to a line that already has one.
+      if (scannedBatchId && existing.batchId && existing.batchId !== scannedBatchId) {
+        notify.warning(
+          `${row.name} is already on the bill with another batch`,
+          `Batch ${row.scanned?.batchNumber} was not added. Sell it on its own bill, or change the line's batch first.`,
+        );
+        return;
+      }
       const next = (parseNumber(existing.quantity) ?? 0) + 1;
-      setCart(cart.map((l) => (l.item.itemId === row.itemId ? { ...l, quantity: String(next) } : l)));
+      setCart(
+        cart.map((l) =>
+          l.item.itemId === row.itemId ? { ...l, quantity: String(next), batchId: l.batchId ?? scannedBatchId } : l,
+        ),
+      );
     } else {
-      setCart([...cart, { item: row, quantity: '1', batchId: null }]);
+      setCart([...cart, { item: row, quantity: '1', batchId: scannedBatchId }]);
     }
   };
   const updateLine = (itemId: string, patch: Partial<CartLine>) =>

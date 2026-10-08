@@ -103,6 +103,41 @@ export interface PrinterSetupInfo {
   problems?: string[] | null;
 }
 
+/**
+ * The barcode scanner on one of this computer's serial (COM) ports, as HC360 Desktop keeps it: an RS-232 scanner, or a
+ * USB scanner in its serial mode. No port means none (a scanner that types like a keyboard needs no setup).
+ */
+export interface WorkstationScanner {
+  port?: string | null;
+  baudRate: number;
+  dataBits: 7 | 8;
+  parity: 'none' | 'even' | 'odd';
+  stopBits: 'one' | 'two';
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+/** Whether HC360 Desktop is listening to the serial scanner now. */
+export interface ScannerStatus {
+  state: 'off' | 'listening' | 'not_found' | 'busy' | 'error';
+  message: string;
+  lastScanAt?: string | null;
+  /** Why the last scan was refused (the port's speed or parity does not match the scanner's, say). */
+  lastProblem?: string | null;
+}
+
+export interface ScannerSetupInfo {
+  setup: WorkstationScanner;
+  /** IT fixed the scanner in the HC360 Desktop policy: it is shown, not changed. */
+  lockedByPolicy: boolean;
+  computerName: string;
+  /** Why a scanner that was set is not used. */
+  problems: string[];
+  status: ScannerStatus;
+  /** The COM ports this computer has now, in number order. */
+  ports: string[];
+}
+
 /** A desktop bridge call that failed, with the desktop's reason code (`printer_not_found`, `method_not_found`…). */
 export class BridgeError extends Error {
   readonly code: string;
@@ -187,6 +222,10 @@ export const bridge = {
   getPrinterSetup: () => invoke<PrinterSetupInfo>('printer.getSetup'),
   /** Saves this computer's printers for everyone who uses it; returns what was saved. */
   savePrinterSetup: (setup: WorkstationPrinters) => invoke<WorkstationPrinters>('printer.saveSetup', { setup }),
+  /** This computer's serial barcode scanner. An HC360 Desktop older than this answers `method_not_found`. */
+  getScannerSetup: () => invoke<ScannerSetupInfo>('scanner.getSetup'),
+  /** Saves this computer's serial scanner for everyone who uses it and listens to it; returns what was saved. */
+  saveScannerSetup: (setup: WorkstationScanner) => invoke<WorkstationScanner>('scanner.saveSetup', { setup }),
   printHtml: (request: PrintHtmlRequest) => invoke<void>('printer.printHtml', request, 60_000),
   printRaw: (printerName: string, data: string) => invoke<void>('printer.printRaw', { printerName, data }),
   openExternal: (url: string) => invoke<void>('shell.openExternal', { url }),

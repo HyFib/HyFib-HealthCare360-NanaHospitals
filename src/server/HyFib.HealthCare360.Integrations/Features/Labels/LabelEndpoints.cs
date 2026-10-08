@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Integrations.Features.Labels;
 /// /api/v1/integrations/labels: ZPL or TSPL for the label printer of the workstation asking (INT-BAR). The staff app
 /// sends the label's data and the printer's setup; the answer is the printer commands, which HC360 Desktop sends to
 /// that printer. Nothing is printed, stored or logged here. /api/v1/integrations/printers/changes approves a change to a
-/// workstation's printers before HC360 Desktop saves it, and records it in the audit trail after.
+/// workstation's printers before HC360 Desktop saves it, and records it in the audit trail after;
+/// /api/v1/integrations/scanners/changes does the same for its serial barcode scanner.
 /// </summary>
 internal static class LabelEndpoints
 {
@@ -36,6 +37,9 @@ internal static class LabelEndpoints
         labels.MapPost("/asset-tags", (AssetTagLabelsRequest r) =>
                 Render(r.Printer, r.Labels, r.Copies, AssetTagTemplate.Draw))
             .WithValidation<AssetTagLabelsRequest>();
+        labels.MapPost("/pharmacy-tags", (PharmacyTagLabelsRequest r) =>
+                Render(r.Printer, r.Labels, r.Copies, PharmacyTagTemplate.Draw))
+            .WithValidation<PharmacyTagLabelsRequest>();
         labels.MapPost("/test", (TestLabelRequest r, TimeProvider time) =>
                 Render(r.Printer, new[] { r }, 1, (canvas, test) => TestLabelTemplate.Draw(canvas, test.Stock, test.Computer, time.GetUtcNow())))
             .WithValidation<TestLabelRequest>();
@@ -45,6 +49,12 @@ internal static class LabelEndpoints
             .RequirePermission(IntegrationsPermissions.PrintersSetup);
         printers.MapPost("/approval", Approve).WithValidation<PrinterSetupChange>();
         printers.MapPost("/", RecordChange).WithValidation<PrinterSetupChange>();
+
+        var scanners = app.MapGroup("/api/v1/integrations/scanners/changes")
+            .WithTags("Integrations")
+            .RequirePermission(IntegrationsPermissions.PrintersSetup);
+        scanners.MapPost("/approval", (ScannerSetupChange _, ICurrentUser user) => Approval(user)).WithValidation<ScannerSetupChange>();
+        scanners.MapPost("/", RecordScannerChange).WithValidation<ScannerSetupChange>();
     }
 
     private static IResult Build(PrintLabelRequest request, ILabelPrinterService labels)
@@ -92,7 +102,9 @@ internal static class LabelEndpoints
     /// printers get an approval, so the staff app saves only what this accepted. The answer names the user the change is
     /// saved as; the change is recorded once it is saved (<see cref="RecordChange"/>).
     /// </summary>
-    private static IResult Approve(PrinterSetupChange change, ICurrentUser user) =>
+    private static IResult Approve(PrinterSetupChange change, ICurrentUser user) => Approval(user);
+
+    private static IResult Approval(ICurrentUser user) =>
         TypedResults.Ok(new PrinterChangeApproval(user.DisplayName ?? user.UserName ?? "Unknown user"));
 
     /// <summary>Records who changed which workstation's printers, and to what, after HC360 Desktop saved the change.</summary>
@@ -114,6 +126,22 @@ internal static class LabelEndpoints
                 change.DeviceId,
                 roles = change.Roles.Select(r => new { r.Role, r.Printer, r.Language, r.Dpi, r.WidthMm, r.HeightMm, r.Code }),
             },
+        }, ct);
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>Records who changed which workstation's serial barcode scanner, and to what, after HC360 Desktop saved it.</summary>
+    private static async Task<IResult> RecordScannerChange(ScannerSetupChange change, IAuditLogger audit, CancellationToken ct)
+    {
+        var computer = change.Computer.Trim();
+        var scanner = change.Port is { } port
+            ? $"{port.Trim().ToUpperInvariant()} at {change.BaudRate} baud, {change.DataBits} data bits, {(change.Parity == "none" ? "no" : change.Parity)} parity, {(change.StopBits == "two" ? 2 : 1)} stop bit{(change.StopBits == "two" ? "s" : "")}"
+            : "none (keyboard scanners only)";
+        await audit.WriteAsync(new AuditEntry(AuditCategories.Admin, "workstation.scanner_changed", $"Changed the barcode scanner on {computer}: {scanner}")
+        {
+            EntityType = "Workstation",
+            EntityId = change.DeviceId?.ToString() ?? computer,
+            Details = new { computer, change.DeviceId, change.Port, change.BaudRate, change.DataBits, change.Parity, change.StopBits },
         }, ct);
         return TypedResults.NoContent();
     }

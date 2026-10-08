@@ -122,6 +122,8 @@ public sealed record SaleReturnDto(
 public sealed record SaleReturnItemDto(Guid SaleItemId, string ItemName, string BatchNumber, decimal Quantity, decimal RefundAmount, bool Restocked);
 
 /// <summary>Counter picker row: what the store can sell now, at which MRP, and whether a prescription is needed.</summary>
+/// <param name="Barcode">The item's own barcode, so a scan can be checked as an exact match.</param>
+/// <param name="Scanned">When the search was a scanned pharmacy tag: the batch it names, in this store.</param>
 public sealed record PharmacyStockRow(
     Guid ItemId,
     string Code,
@@ -135,7 +137,15 @@ public sealed record PharmacyStockRow(
     string BaseUnit,
     decimal Available,
     decimal? Mrp,
-    DateOnly? NearestExpiry);
+    DateOnly? NearestExpiry,
+    string? Barcode = null,
+    ScannedBatch? Scanned = null);
+
+/// <summary>
+/// The batch a scanned pharmacy tag names (INT-BAR). <see cref="BatchId"/> is the store's batch to hand out, or null
+/// with <see cref="Problem"/> saying why it cannot be: not in this store, none left, expired or blocked.
+/// </summary>
+public sealed record ScannedBatch(string BatchNumber, Guid? BatchId, DateOnly? ExpiryDate, decimal? Mrp, decimal Available, string? Problem);
 
 public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleRequest>
 {

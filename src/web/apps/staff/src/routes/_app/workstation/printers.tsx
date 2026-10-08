@@ -15,6 +15,7 @@ import { usePermission } from '@/lib/permissions';
 import { PrinterChangeNotRecordedError, printerKeys, printerQueries, printersApi } from '@/modules/printers/api';
 import { PRINTERS_SETUP, toSetup, type PrinterSetupForm } from '@/modules/printers/form';
 import { PrinterSetupForm as PrinterSetupFields } from '@/modules/printers/PrinterSetupForm';
+import { ScannerSetupSection } from '@/modules/printers/ScannerSetupSection';
 
 export const Route = createFileRoute('/_app/workstation/printers')({
   component: PrintersPage,
@@ -24,8 +25,8 @@ const TITLE = 'Printers on this computer';
 
 /**
  * Printers on this computer (INT-BAR): which printer this workstation uses for labels, wristbands, 80 mm slips and A4/A5
- * documents. HC360 Desktop keeps them for the computer; staff allowed to set up printers change them, and anyone may
- * see them and print a test.
+ * documents, and the barcode scanner on its COM port, if it has one. HC360 Desktop keeps them for the computer; staff
+ * allowed to set up printers change them, and anyone may see them, print a test and try a scan.
  */
 function PrintersPage() {
   if (!isDesktop) {
@@ -183,6 +184,7 @@ function DesktopPrinters() {
         onSave={(values) => save.mutate(values)}
         onTest={(role, printer) => test.mutate({ role, printer })}
       />
+      <ScannerSetupSection computer={computer} deviceId={device.data?.deviceId ?? null} mayChange={mayChange} />
     </Page>
   );
 }

@@ -12,13 +12,14 @@ import {
   Text,
   Tooltip,
 } from '@fluentui/react-components';
-import { DismissRegular, HistoryRegular, LockClosedRegular, LockOpenRegular } from '@fluentui/react-icons';
+import { DismissRegular, HistoryRegular, LockClosedRegular, LockOpenRegular, TagRegular } from '@fluentui/react-icons';
 import { formatDateTime, formatInr } from '@hc360/core';
 import { ConfirmDialog, DataTable, EmptyState, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { usePermission } from '@/lib/permissions';
+import { PrintTagsDialog } from '@/modules/pharmacy/PrintTagsDialog';
 import { inventoryApi, inventoryKeys, inventoryQueries, type BatchStock } from './api';
 import { formatPercent, formatQty } from './format';
 import { referenceModuleLabel } from './labels';
@@ -34,6 +35,7 @@ export function BatchDrawer({
   storeId,
   storeName,
   itemId,
+  itemCode,
   itemName,
   baseUnit,
   onClose,
@@ -41,6 +43,8 @@ export function BatchDrawer({
   storeId: string;
   storeName: string;
   itemId: string;
+  /** For pharmacy tags (INT-BAR); without it no tags are offered. */
+  itemCode?: string;
   itemName: string;
   baseUnit?: string;
   onClose: () => void;
@@ -54,6 +58,7 @@ export function BatchDrawer({
   const [includeEmpty, setIncludeEmpty] = useState(false);
   const [blocking, setBlocking] = useState<BatchStock | null>(null);
   const [releasing, setReleasing] = useState<BatchStock | null>(null);
+  const [tagging, setTagging] = useState<BatchStock | null>(null);
   const batches = useQuery({ ...inventoryQueries.batches(storeId, itemId, includeEmpty), enabled: canRead });
   const reservations = useQuery({ ...inventoryQueries.reservations(storeId, itemId), enabled: canRead });
 
@@ -167,18 +172,26 @@ export function BatchDrawer({
                 },
               ]}
               rowActions={
-                canHold
+                canHold || itemCode
                   ? (b) =>
                       b.onHand > 0 ? (
-                        b.isBlocked ? (
-                          <Button size="small" icon={<LockOpenRegular />} onClick={() => setReleasing(b)}>
-                            Release
-                          </Button>
-                        ) : (
-                          <Button size="small" icon={<LockClosedRegular />} onClick={() => setBlocking(b)}>
-                            Put on hold
-                          </Button>
-                        )
+                        <span style={{ display: 'inline-flex', gap: 4 }}>
+                          {itemCode && !b.isBlocked && !b.isExpired && (
+                            <Button size="small" icon={<TagRegular />} onClick={() => setTagging(b)}>
+                              Tags
+                            </Button>
+                          )}
+                          {canHold &&
+                            (b.isBlocked ? (
+                              <Button size="small" icon={<LockOpenRegular />} onClick={() => setReleasing(b)}>
+                                Release
+                              </Button>
+                            ) : (
+                              <Button size="small" icon={<LockClosedRegular />} onClick={() => setBlocking(b)}>
+                                Put on hold
+                              </Button>
+                            ))}
+                        </span>
                       ) : null
                   : undefined
               }
@@ -226,6 +239,23 @@ export function BatchDrawer({
         <Button onClick={onClose}>Close</Button>
       </DrawerFooter>
 
+      {tagging && itemCode && (
+        <PrintTagsDialog
+          title={`Pharmacy tags for batch ${tagging.batchNumber}`}
+          tags={[
+            {
+              itemCode,
+              medicine: itemName,
+              batchNumber: tagging.batchNumber,
+              expiryDate: tagging.expiryDate,
+              mrp: tagging.mrp,
+              unit: baseUnit ?? null,
+              copies: 1,
+            },
+          ]}
+          onClose={() => setTagging(null)}
+        />
+      )}
       {blocking && (
         <ReasonDialog
           title={`Put batch ${blocking.batchNumber} on hold?`}

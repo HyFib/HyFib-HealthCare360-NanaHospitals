@@ -9,16 +9,19 @@ import {
   type PrinterRole,
   type RolePrinter,
   type WorkstationPrinters,
+  type WorkstationScanner,
 } from '@hc360/core';
 import { queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { toChange } from './form';
+import { toScannerChange } from './scanner';
 
 export const printerKeys = {
   all: ['workstation', 'printers'] as const,
   setup: ['workstation', 'printers', 'setup'] as const,
   installed: ['workstation', 'printers', 'installed'] as const,
   device: ['workstation', 'device'] as const,
+  scanner: ['workstation', 'scanner'] as const,
 };
 
 export const printerQueries = {
@@ -35,6 +38,8 @@ export const printerQueries = {
       retry: false,
       staleTime: Infinity,
     }),
+  /** This computer's serial barcode scanner and whether HC360 Desktop is listening to it, from HC360 Desktop. */
+  scanner: () => queryOptions({ queryKey: printerKeys.scanner, queryFn: () => bridge.getScannerSetup(), retry: false }),
 };
 
 export const printersApi = {
@@ -79,11 +84,34 @@ export const printersApi = {
   },
 };
 
-/** The printers were saved on this computer, but the server could not record the change in the audit trail. */
+export const scannersApi = {
+  /**
+   * Saves this computer's serial scanner as the printers are saved: approved by the server, saved by HC360 Desktop
+   * (which then listens to it), and recorded in the audit trail.
+   */
+  save: async (setup: WorkstationScanner, computer: string, deviceId: string | null): Promise<WorkstationScanner> => {
+    const change = toScannerChange(setup, computer, deviceId);
+    const approval = await api.post<{ changedBy: string }>('/api/v1/integrations/scanners/changes/approval', change);
+    const saved = await bridge.saveScannerSetup({ ...setup, updatedBy: approval.changedBy });
+    try {
+      await api.post<void>('/api/v1/integrations/scanners/changes', change);
+    } catch (error) {
+      throw new PrinterChangeNotRecordedError(error, 'scanner');
+    }
+    return saved;
+  },
+};
+
+/** The printers (or scanner) were saved on this computer, but the server could not record the change in the audit trail. */
 export class PrinterChangeNotRecordedError extends Error {
-  constructor(readonly reason: unknown) {
+  constructor(
+    readonly reason: unknown,
+    what: 'printers' | 'scanner' = 'printers',
+  ) {
     super(
-      'The printers were saved on this computer, but the change could not be recorded in the audit trail. Save them again when the server can be reached.',
+      what === 'scanner'
+        ? 'The scanner was saved on this computer, but the change could not be recorded in the audit trail. Save it again when the server can be reached.'
+        : 'The printers were saved on this computer, but the change could not be recorded in the audit trail. Save them again when the server can be reached.',
     );
     this.name = 'PrinterChangeNotRecordedError';
   }

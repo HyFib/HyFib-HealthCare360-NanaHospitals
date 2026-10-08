@@ -235,6 +235,9 @@ export interface GoodsReceiptLineDto {
   unitCost: number;
   unitMrp: number;
   stockBatchId: string | null;
+  /** The item's code and the unit stock is counted in, for pharmacy tags. */
+  itemCode?: string | null;
+  baseUnit?: string | null;
 }
 
 export interface GoodsReceiptDetail {
