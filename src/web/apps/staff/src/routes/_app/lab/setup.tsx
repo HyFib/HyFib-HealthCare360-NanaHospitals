@@ -15,7 +15,7 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { AddRegular, PlugConnectedRegular } from '@fluentui/react-icons';
+import { AddRegular, BeakerRegular, PlugConnectedRegular } from '@fluentui/react-icons';
 import { formatInr, useDebouncedValue } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -39,6 +39,7 @@ import { connectionStatus, connectionSummary } from '@/modules/lab/setup/connect
 import { InstrumentDrawer } from '@/modules/lab/setup/InstrumentDrawer';
 import { ReferralLabDrawer } from '@/modules/lab/setup/ReferralLabDrawer';
 import { TestDrawer } from '@/modules/lab/setup/TestDrawer';
+import { TrainingResultsDialog } from '@/modules/lab/setup/TrainingResultsDialog';
 
 const TABS = ['tests', 'analysers', 'referral-labs'] as const;
 type SetupTab = (typeof TABS)[number];
@@ -307,13 +308,14 @@ function AnalysersTab({
   const connections = useQuery({ ...labQueries.connections(), enabled: canSeeConnections });
   const [editing, setEditing] = useState<LabInstrumentDto | null>(null);
   const [connecting, setConnecting] = useState<LabInstrumentDto | null>(null);
+  const [training, setTraining] = useState<LabInstrumentDto | null>(null);
   const connectionOf = (instrument: LabInstrumentDto) =>
     connections.data?.connections.find((c) => c.code.toUpperCase() === instrument.code.toUpperCase());
 
   return (
     <Section
       title="Analysers"
-      description="Each analyser's details, and how it connects: over the network, or by serial cable to a lab PC with the HC360 lab agent"
+      description="Each analyser's details, and how it connects: over the network, by serial cable to a lab PC with the HC360 lab agent, or as the training analyser"
       actions={<InactiveSwitch includeInactive={includeInactive} />}
       flush
     >
@@ -406,14 +408,26 @@ function AnalysersTab({
         rowActions={
           canSeeConnections && connections.data
             ? (instrument: LabInstrumentDto) => (
-                <Button
-                  size="small"
-                  appearance="subtle"
-                  icon={<PlugConnectedRegular />}
-                  onClick={() => setConnecting(instrument)}
-                >
-                  Connection
-                </Button>
+                <>
+                  {canEditConnections && connectionOf(instrument)?.transport === 'Simulator' && (
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      icon={<BeakerRegular />}
+                      onClick={() => setTraining(instrument)}
+                    >
+                      Send results
+                    </Button>
+                  )}
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    icon={<PlugConnectedRegular />}
+                    onClick={() => setConnecting(instrument)}
+                  >
+                    Connection
+                  </Button>
+                </>
               )
             : undefined
         }
@@ -439,6 +453,7 @@ function AnalysersTab({
           onClose={() => setConnecting(null)}
         />
       )}
+      {training && <TrainingResultsDialog instrument={training} onClose={() => setTraining(null)} />}
     </Section>
   );
 }

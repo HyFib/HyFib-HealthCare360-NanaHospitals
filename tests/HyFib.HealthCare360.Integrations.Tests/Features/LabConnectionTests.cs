@@ -50,7 +50,8 @@ public sealed class LabConnectionTests
     [Fact]
     public void Checks_the_transport_encoding_and_hl7_options()
     {
-        Errors(Tcp() with { Transport = "Usb" }).ShouldContain("Choose network (Tcp) or serial (Serial).");
+        Errors(Tcp() with { Transport = "Usb" }).ShouldContain("Choose network (Tcp), serial (Serial) or the training analyser (Simulator).");
+        Validator.Validate(Tcp() with { Transport = "Simulator", Port = null }).IsValid.ShouldBeTrue();
         Errors(Tcp() with { Encoding = "ascii" }).ShouldContain("Encoding is latin1 or utf-8.");
         Errors(Tcp() with { SampleIdFields = ["OBX-3"] }).ShouldContain("A field is written like SPM-2, SAC-3, OBR-3 or OBR-2.");
         Errors(Tcp() with { OrderMessage = "ORU^R01" }).ShouldContain("The order message is OML^O21 or ORM^O01.");

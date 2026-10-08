@@ -192,6 +192,64 @@ describe('printLabel', () => {
     expect(result).toEqual({ via: 'page', printer: null });
   });
 
+  describe('with the labels simulator', () => {
+    it('has the server write the job for this computer’s printer and shows the label instead of printing it', async () => {
+      desktop.getPrinterSetup.mockResolvedValue(
+        setup({ labels: { printer: 'TSC TE244', language: 'tspl', dpi: 300, widthMm: 50, heightMm: 25 } }),
+      );
+      api.post.mockResolvedValue({ language: 'tspl', content: 'SIZE 50 mm,25 mm\r\n', labels: 1 });
+
+      const result = await printLabel(api, { kind: 'lab-tubes', labels: [tube], page, copies: 2 }, { simulator: true });
+
+      expect(api.post).toHaveBeenCalledWith('/api/v1/integrations/labels/lab-tubes', {
+        printer: { language: 'tspl', dpi: 300, widthMm: 50, heightMm: 25 },
+        labels: [tube],
+        copies: 2,
+      });
+      expect(desktop.printRaw).not.toHaveBeenCalled();
+      expect(desktop.printHtml).toHaveBeenCalledWith({
+        html: '<html>label page</html>',
+        pageSize: 'Label50x25',
+        copies: 2,
+        silent: false,
+      });
+      expect(result).toEqual({ via: 'page', printer: null });
+    });
+
+    it('writes for standard stock when this computer has no ZPL or TSPL printer', async () => {
+      desktop.getPrinterSetup.mockResolvedValue(setup({ wristbands: { printer: 'HP LaserJet', language: 'driver' } }));
+      api.post.mockResolvedValue({ language: 'zpl', content: '^XA^XZ', labels: 1 });
+      const band = { uhid: 'NH00012345', patientName: 'Sharma Ravi Kumar', allergies: 'Recorded' as const };
+
+      await printLabel(api, { kind: 'wristbands', labels: [band], page }, { simulator: true });
+
+      expect(api.post).toHaveBeenCalledWith('/api/v1/integrations/labels/wristbands', {
+        printer: { language: 'zpl', dpi: 203, widthMm: 25.4, heightMm: 279.4 },
+        labels: [band],
+        copies: 1,
+        code: 'Code128',
+      });
+      expect(desktop.printHtml).toHaveBeenCalledWith(expect.objectContaining({ pageSize: 'Wristband', silent: false }));
+    });
+
+    it('still shows a label the printer fonts cannot print, and stops on any other refusal', async () => {
+      desktop.getPrinterSetup.mockResolvedValue(setup({}));
+      api.post.mockRejectedValueOnce(
+        new ApiError({ status: 422, title: 'Cannot complete this action', code: 'labels.text_not_printable' }),
+      );
+
+      await printLabel(api, { kind: 'lab-tubes', labels: [tube], page }, { simulator: true });
+      expect(desktop.printHtml).toHaveBeenCalledOnce();
+
+      const refusal = new ApiError({ status: 422, title: 'Cannot complete this action', code: 'labels.does_not_fit' });
+      api.post.mockRejectedValueOnce(refusal);
+      await expect(printLabel(api, { kind: 'lab-tubes', labels: [tube], page }, { simulator: true })).rejects.toBe(
+        refusal,
+      );
+      expect(desktop.printHtml).toHaveBeenCalledOnce();
+    });
+  });
+
   it('prints nothing for no labels', async () => {
     await printLabel(api, { kind: 'dispensing', labels: [], page });
 

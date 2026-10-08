@@ -1539,7 +1539,8 @@ const icdBy = (...providers: string[]) => when(ICD, 'provider', ...providers);
 const icdSpec: SettingsSpec = {
   id: 'icd',
   title: 'ICD lookup',
-  intro: 'Online ICD-11 search and ICD-10 code lookup with the WHO ICD-API. The local ICD-10 list always works.',
+  intro:
+    'Online ICD-11 search and ICD-10 code lookup with the WHO ICD-API, or with the simulator for training. The local ICD-10 list always works.',
   prefix: ICD,
   fields: [
     { key: ICD, path: 'enabled', label: 'Search ICD online', kind: 'switch' },
@@ -1550,6 +1551,7 @@ const icdSpec: SettingsSpec = {
       kind: 'select',
       options: [
         { value: 'who', label: 'WHO ICD-API' },
+        { value: 'simulator', label: 'Simulator (training: a short built-in list, no internet)' },
         { value: 'disabled', label: 'Off (local ICD-10 list only)' },
       ],
       requiredWhen: switchedOn(ICD),
@@ -1707,7 +1709,31 @@ const labSpec: SettingsSpec = {
   secrets: [],
 };
 
-/** Integrations with settings (barcode labels need none). */
+const LABELS = 'integrations.labels';
+
+const labelsSpec: SettingsSpec = {
+  id: 'labels',
+  title: 'Barcode labels',
+  intro:
+    'Each workstation chooses its label and wristband printers in HC360 Desktop, under Printers on this computer. For a ZPL or TSPL printer the server writes the printer commands; HC360 Desktop sends them to the printer. For training, the simulator prints nothing: each label shows in the print dialog, and the jobs are kept under Simulator.',
+  prefix: LABELS,
+  fields: [
+    {
+      key: LABELS,
+      path: 'provider',
+      label: 'Labels go to',
+      kind: 'select',
+      defaultValue: 'printers',
+      options: [
+        { value: 'printers', label: 'The workstations’ label and wristband printers' },
+        { value: 'simulator', label: 'Simulator (training: nothing prints, labels show on screen)' },
+      ],
+    },
+  ],
+  secrets: [],
+};
+
+/** Integrations with settings. */
 export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>> = {
   sms: smsSpec,
   whatsapp: whatsAppSpec,
@@ -1718,6 +1744,7 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   pacs: pacsSpec,
   mwl: mwlSpec,
   lab: labSpec,
+  labels: labelsSpec,
   icd: icdSpec,
   biometric: biometricSpec,
 };

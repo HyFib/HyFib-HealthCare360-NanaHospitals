@@ -2,6 +2,7 @@ using System.Net;
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Tests.TestSupport;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Caching.Memory;
@@ -36,6 +37,7 @@ public sealed class IcdLookupRouterTests : IDisposable
     private IcdLookupRouter Router => new(
         new IntegrationSettingsReader(_settings, Substitute.For<ICurrentUser>(), NullLogger<IntegrationSettingsReader>.Instance),
         new WhoIcdApiClient(_http.Client(), _tokens, _tracing.Trace),
+        _tracing.Trace,
         _cache,
         NullLogger<IcdLookupRouter>.Instance);
 
@@ -91,6 +93,31 @@ public sealed class IcdLookupRouterTests : IDisposable
         Configure(new IcdSettings { Enabled = false, Provider = "who" });
 
         (await Router.SearchAsync("cholera", "ICD-11 MMS", 20, Ct)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_simulator_answers_from_its_training_list_without_calling_who()
+    {
+        Configure(new IcdSettings { Enabled = true, Provider = "Simulator", Icd11Release = "2025-01" });
+
+        var icd11 = await Router.SearchAsync("type 2 diabetes", "ICD-11 MMS", 20, Ct);
+        var byCode = await Router.SearchAsync("CA2", "ICD-11 MMS", 20, Ct);
+        var icd10 = await Router.SearchAsync("j45", "ICD-10 2019", 20, Ct);
+
+        icd11.ShouldBe([new IcdSearchResult("5A11", "Type 2 diabetes mellitus", "ICD-11 MMS 2025-01", "05")]);
+        byCode.Select(r => r.Code).ShouldBe(["CA22", "CA23"]);
+        icd10.Select(r => (r.Code, r.IsLeaf)).ShouldBe([("J45", false), ("J45.9", true)]);
+        icd10[0].Release.ShouldBe("ICD-10 2019");
+        (await Router.SearchAsync("Z99", "ICD-10 2019", 20, Ct)).ShouldBeEmpty();
+        (await Router.SearchAsync("hypertension", "ICD-10 2019", 20, Ct)).ShouldBeEmpty();
+        _http.Requests.ShouldBeEmpty();
+        _tracing.Entries.Select(e => (e.Integration, e.Provider, e.Operation, e.Success)).ShouldBe(
+        [
+            ("icd", "simulator", "icd11.search", true),
+            ("icd", "simulator", "icd11.search", true),
+            ("icd", "simulator", "icd10.lookup", true),
+            ("icd", "simulator", "icd10.lookup", true),
+        ]);
     }
 
     [Fact]

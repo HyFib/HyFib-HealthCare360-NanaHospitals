@@ -17,9 +17,11 @@ internal enum IcdRevision
 /// inactive until an administrator configures it: while online lookup is disabled or not configured it returns an
 /// empty list, and the coder keeps working with the local catalogue (REL-03). When the ICD-API itself fails, it throws
 /// <see cref="HttpRequestException"/> with a staff-facing message, which the Clinical module turns into its
-/// "online service could not be reached" answer instead of showing an empty result as if nothing matched.
+/// "online service could not be reached" answer instead of showing an empty result as if nothing matched. With the
+/// <c>simulator</c> provider it answers from <see cref="SimulatorIcdCatalogue"/> (training, no internet).
 /// </summary>
-internal sealed class IcdLookupRouter(IntegrationSettingsReader settings, WhoIcdApiClient who, IMemoryCache cache, ILogger<IcdLookupRouter> logger) : IIcdLookup
+internal sealed class IcdLookupRouter(
+    IntegrationSettingsReader settings, WhoIcdApiClient who, IntegrationTrace trace, IMemoryCache cache, ILogger<IcdLookupRouter> logger) : IIcdLookup
 {
     public async Task<IReadOnlyList<IcdSearchResult>> SearchAsync(string text, string release, int limit, CancellationToken cancellationToken)
     {
@@ -31,7 +33,7 @@ internal sealed class IcdLookupRouter(IntegrationSettingsReader settings, WhoIcd
         }
 
         var config = await settings.ReadAsync<IcdSettings, IcdSecrets>(IntegrationNames.Icd, cancellationToken);
-        if (config.ActiveProvider != ProviderKeys.WhoIcdApi || config.Settings is not { } icd)
+        if (config.ActiveProvider is not (ProviderKeys.WhoIcdApi or ProviderKeys.Simulator) || config.Settings is not { } icd)
         {
             return [];
         }
@@ -43,6 +45,11 @@ internal sealed class IcdLookupRouter(IntegrationSettingsReader settings, WhoIcd
         }
 
         var take = Math.Clamp(limit, 1, 50);
+        if (config.ActiveProvider == ProviderKeys.Simulator)
+        {
+            return await SimulateAsync(query, revision, take, icd);
+        }
+
         var key = $"icd:{(revision == IcdRevision.Icd10 ? "10:" + icd.Icd10Release : "11:" + icd.Icd11Release)}:{icd.Language}:{take}:{query.ToUpperInvariant()}";
         if (cache.TryGetValue(key, out IReadOnlyList<IcdSearchResult>? cached) && cached is not null)
         {
@@ -64,6 +71,18 @@ internal sealed class IcdLookupRouter(IntegrationSettingsReader settings, WhoIcd
             logger.LogWarning("Online ICD lookup failed: {Reason}", reason);
             throw new HttpRequestException(reason, ex);
         }
+    }
+
+    private async Task<IReadOnlyList<IcdSearchResult>> SimulateAsync(string query, IcdRevision revision, int take, IcdSettings icd)
+    {
+        var started = trace.Start();
+        var icd10 = revision == IcdRevision.Icd10;
+        var results = icd10
+            ? SimulatorIcdCatalogue.LookupIcd10(query, take, icd.Icd10Release)
+            : SimulatorIcdCatalogue.SearchIcd11(query, take, icd.Icd11Release);
+        await trace.LogAsync(IntegrationNames.Icd, ProviderKeys.Simulator, icd10 ? "icd10.lookup" : "icd11.search", true, started,
+            reference: null, request: icd10 ? query.ToUpperInvariant() : "search", response: $"{results.Count} result(s) from the training list");
+        return results;
     }
 
     /// <summary>

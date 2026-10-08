@@ -21,6 +21,12 @@ internal enum LabTransport
 
     /// <summary>The analyser is cabled to a lab PC whose HC360 lab agent relays the serial line to the server.</summary>
     Serial,
+
+    /// <summary>
+    /// The training analyser (simulator): nothing connects; someone enters a sample's results on screen and HC360 builds
+    /// the analyser's message from them (<see cref="Features.LabConnections.LabTrainingAnalyser"/>).
+    /// </summary>
+    Simulator,
 }
 
 internal static class LabSettingKeys
@@ -120,7 +126,8 @@ internal sealed partial record LabInstrumentSettings
             LabTransport.Tcp => Port is < 1 or > 65535 ? "port must be between 1 and 65535" : null,
             LabTransport.Serial when AgentDeviceId is null || AgentDeviceId == Guid.Empty => "a serial analyser needs its lab agent",
             LabTransport.Serial => Serial is null ? "a serial analyser needs its port settings" : Serial.Validate(),
-            _ => "transport must be Tcp or Serial",
+            LabTransport.Simulator => null,
+            _ => "transport must be Tcp, Serial or Simulator",
         };
     }
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Mail;
 using HyFib.HealthCare360.Integrations.Biometric;
+using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
@@ -25,6 +26,7 @@ internal sealed class IntegrationTestService(
     ModalityWorklistSelfTest worklist,
     IIcdLookup icd,
     ILabelPrinterService labels,
+    LabelJobs labelJobs,
     IntegrationSettingsReader settings,
     LabGatewayState lab,
     IAuditLogger audit,
@@ -49,7 +51,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Mwl => await worklist.RunAsync(cancellationToken),
             IntegrationNames.Icd => await IcdAsync(cancellationToken),
             IntegrationNames.Lab => Lab(),
-            IntegrationNames.Labels => Labels(),
+            IntegrationNames.Labels => await LabelsAsync(cancellationToken),
             IntegrationNames.Biometric => await BiometricAsync(cancellationToken),
             _ => null,
         };
@@ -188,8 +190,8 @@ internal sealed class IntegrationTestService(
         }
 
         return results.Count > 0
-            ? new IntegrationTestResult(true, $"ICD-API returned {results.Count} result(s), for example {results[0].Code} {results[0].Title}.")
-            : new IntegrationTestResult(false, "No results. Check that online ICD lookup is enabled with provider \"who\".");
+            ? new IntegrationTestResult(true, $"Online ICD lookup returned {results.Count} result(s), for example {results[0].Code} {results[0].Title}.")
+            : new IntegrationTestResult(false, "No results. Check that online ICD lookup is enabled with the WHO ICD-API or the simulator.");
     }
 
     private IntegrationTestResult Lab()
@@ -203,8 +205,10 @@ internal sealed class IntegrationTestService(
 
         var listening = analysers.Count(a => a.Transport == "tcp" && a.State == "listening");
         var relayed = analysers.Count(a => a.Transport == "serial" && a.State == "connected");
+        var training = analysers.Count(a => a.Transport == "simulator" && a.State == "training");
         var problems = analysers.Where(a => a.State is "failed" or "port_error" or "waiting").Select(Problem).ToList();
-        var summary = $"{listening} network analyser(s) listening, {relayed} serial analyser(s) connected through their lab agent.";
+        var summary = $"{listening} network analyser(s) listening, {relayed} serial analyser(s) connected through their lab agent"
+                      + (training > 0 ? $", {training} training analyser(s) taking results entered in Lab setup." : ".");
         return problems.Count == 0
             ? new IntegrationTestResult(true, summary)
             : new IntegrationTestResult(false, $"{summary} Not working: {string.Join("; ", problems)}");
@@ -214,13 +218,13 @@ internal sealed class IntegrationTestService(
             : $"{analyser.InstrumentCode} ({analyser.LastError})";
     }
 
-    private IntegrationTestResult Labels()
+    private async Task<IntegrationTestResult> LabelsAsync(CancellationToken cancellationToken)
     {
         var zpl = labels.Build(new LabelRequest("HC360-TEST", LabelSymbology.Code128, ["HC360 test label"]), "zpl");
-        return new IntegrationTestResult(
-            true,
-            "A sample ZPL label was built. To check a printer, open Printers on this computer in HC360 Desktop on that workstation and print a test.",
-            new Dictionary<string, string?> { ["zpl"] = zpl });
+        var message = await labelJobs.IsSimulatorAsync(cancellationToken)
+            ? "A sample ZPL label was built. Labels go to the simulator: staff see each label on screen instead of it printing, and the jobs are kept in Simulator › Messages."
+            : "A sample ZPL label was built. To check a printer, open Printers on this computer in HC360 Desktop on that workstation and print a test.";
+        return new IntegrationTestResult(true, message, new Dictionary<string, string?> { ["zpl"] = zpl });
     }
 
     private static IntegrationTestResult Sent(SendResult result, string success) =>

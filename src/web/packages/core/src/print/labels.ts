@@ -126,6 +126,22 @@ export interface LabelPrintResult {
   printer: string | null;
 }
 
+/** How a facility prints labels: on the workstations' printers, or by the simulator for training. */
+export interface LabelPrintOptions {
+  /**
+   * The facility's labels go to the simulator (Administration › Integrations › Barcode labels): the server still writes
+   * the printer commands and keeps them as the training printer's, and the label page shows in the print dialog for
+   * the person to see, never printing silently.
+   */
+  simulator?: boolean;
+}
+
+/** Label stock the simulator writes for when this computer has no ZPL or TSPL printer for the kind. */
+const SIMULATOR_STOCK = {
+  labels: { language: 'zpl', dpi: 203, widthMm: 50, heightMm: 25 },
+  wristbands: { language: 'zpl', dpi: 203, widthMm: 25.4, heightMm: 279.4 },
+} as const;
+
 /** The server's answer: printer commands for every label. */
 interface LabelCommands {
   language: string;
@@ -143,6 +159,7 @@ interface LabelCommands {
 export async function printLabel<K extends LabelKind>(
   api: Pick<ApiClient, 'post'>,
   job: LabelPrintJob<K>,
+  options: LabelPrintOptions = {},
 ): Promise<LabelPrintResult> {
   if (job.labels.length === 0) {
     return { via: 'page', printer: null };
@@ -150,6 +167,28 @@ export async function printLabel<K extends LabelKind>(
   const wristband = job.kind === 'wristbands';
   const printer = printerFor(await loadPrinterSetup(), wristband ? 'wristbands' : 'labels');
   const copies = job.copies ?? 1;
+
+  if (options.simulator) {
+    const commands = printer && (printer.language === 'zpl' || printer.language === 'tspl');
+    const stock = SIMULATOR_STOCK[wristband ? 'wristbands' : 'labels'];
+    try {
+      await api.post<LabelCommands>(`/api/v1/integrations/labels/${job.kind}`, {
+        printer: commands
+          ? { language: printer.language, dpi: printer.dpi, widthMm: printer.widthMm, heightMm: printer.heightMm }
+          : stock,
+        labels: job.labels,
+        copies,
+        ...(wristband ? { code: printer?.code === 'qr' ? 'QrCode' : 'Code128' } : {}),
+      });
+    } catch (error) {
+      if (!printsAsPage(error)) {
+        throw error;
+      }
+    }
+    // Shown, never printed silently: the person sees the label and can cancel the dialog.
+    await printHtml(await job.page(), { pageSize: wristband ? 'Wristband' : 'Label50x25', copies, silent: false });
+    return { via: 'page', printer: null };
+  }
 
   if (printer && (printer.language === 'zpl' || printer.language === 'tspl')) {
     try {

@@ -240,7 +240,8 @@ export type SaveLabInstrumentRequest = Omit<LabInstrumentDto, 'id' | 'version'> 
  * How an analyser reaches HC360 (Integrations: `/api/v1/integrations/lab/connections`): a network port it connects to,
  * or a serial port on a lab PC whose HC360 lab agent relays it. Names follow Windows (System.IO.Ports).
  */
-export type LabTransport = 'Tcp' | 'Serial';
+/** How an analyser reaches HC360; `Simulator` is the training analyser, whose results are entered on screen. */
+export type LabTransport = 'Tcp' | 'Serial' | 'Simulator';
 export const SERIAL_BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200] as const;
 export const SERIAL_PARITIES = ['None', 'Odd', 'Even', 'Mark', 'Space'] as const;
 export const SERIAL_STOP_BITS = ['One', 'OnePointFive', 'Two'] as const;
@@ -1265,7 +1266,37 @@ export const labApi = {
     api.delete<void>(`/api/v1/integrations/lab/connections/${encodeURIComponent(code)}`, {
       query: { version: listVersion },
     }),
+  /** The training analyser: the tests a received sample still needs on it. */
+  trainingSample: (code: string, barcode: string) =>
+    api.get<TrainingSampleDto>(
+      `/api/v1/integrations/lab/connections/${encodeURIComponent(code)}/training/samples/${encodeURIComponent(barcode)}`,
+    ),
+  /** The training analyser: sends the results as the analyser would, and says whether the LIS took them. */
+  sendTrainingResults: (code: string, request: TrainingResultsRequest) =>
+    api.post<TrainingResultsOutcome>(
+      `/api/v1/integrations/lab/connections/${encodeURIComponent(code)}/training/results`,
+      request,
+    ),
 };
+
+/** A sample as the training analyser sees it: whose it is, and the analyser's channel codes it still needs. */
+export interface TrainingSampleDto {
+  sampleBarcode: string;
+  patientName: string;
+  patientId: string | null;
+  channels: string[];
+}
+
+export interface TrainingResultsRequest {
+  sampleBarcode: string;
+  results: { channel: string; value: string; units: string | null }[];
+}
+
+export interface TrainingResultsOutcome {
+  accepted: boolean;
+  message: string;
+  rawMessage: string;
+}
 
 /** The A4 lab report as the server prints it and makes its PDF (see `@/lib/documents`). */
 export const labReportDocument = (reportId: string) => `/api/v1/lab/reports/${reportId}`;

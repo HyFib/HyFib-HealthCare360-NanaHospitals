@@ -55,6 +55,7 @@ const LISTENER_STATES: Record<string, { label: string; tone: 'success' | 'warnin
   connected: { label: 'Connected', tone: 'success' },
   waiting: { label: 'Waiting for agent', tone: 'warning' },
   port_error: { label: 'COM port problem', tone: 'danger' },
+  training: { label: 'Training', tone: 'success' },
 };
 
 function shorten(text: string, length = 140): string {
@@ -284,9 +285,11 @@ function ListenerTable({ listeners, worklist = false }: { listeners: LabListener
           key: 'port',
           header: 'Connection',
           render: (listener) =>
-            listener.transport === 'serial'
-              ? `${listener.serialPort ?? 'Serial'}${listener.agent ? ` on ${listener.agent}` : ''}`
-              : `Port ${listener.port}`,
+            listener.transport === 'simulator'
+              ? 'Training analyser (simulator)'
+              : listener.transport === 'serial'
+                ? `${listener.serialPort ?? 'Serial'}${listener.agent ? ` on ${listener.agent}` : ''}`
+                : `Port ${listener.port}`,
         },
         {
           key: 'state',

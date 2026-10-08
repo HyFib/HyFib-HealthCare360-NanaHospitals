@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
 
@@ -70,8 +71,12 @@ internal sealed class IntegrationStatusService(
         switch (name)
         {
             case IntegrationNames.Labels:
-                // Label building is local to the server: always available.
-                return (true, true, "zpl/tspl");
+            {
+                // Label building is local to the server: always available, on the workstations' printers or the simulator.
+                var labels = await settings.ReadAsync<LabelSettings, NoSecrets>(name, null, requireEnabled: false, cancellationToken);
+                var simulated = string.Equals(labels.Settings?.Provider?.Trim(), ProviderKeys.Simulator, StringComparison.OrdinalIgnoreCase);
+                return (true, true, simulated ? ProviderKeys.Simulator : "zpl/tspl");
+            }
             case IntegrationNames.Lab:
                 var gateway = await settings.ReadValueAsync<LabGatewaySettings>(LabSettingKeys.Gateway, null, cancellationToken);
                 return (gateway is not null, gateway?.Enabled == true, "tcp");
