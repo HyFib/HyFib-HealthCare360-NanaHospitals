@@ -152,6 +152,8 @@ export interface PharmacyStockRow {
   available: number;
   mrp: number | null;
   nearestExpiry: string | null;
+  /** The item's own barcode, to tell an exact scan from a match on the name. */
+  barcode?: string | null;
   /** When the search was a scanned pharmacy tag: the batch it names, in this store. */
   scanned?: ScannedBatch | null;
 }

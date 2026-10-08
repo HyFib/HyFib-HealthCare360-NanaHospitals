@@ -52,7 +52,7 @@ internal static class SaleEndpoints
             .Search(search)
             .OrderBy(i => i.Name)
             .Take(Math.Clamp(take ?? 30, 1, 100))
-            .Select(i => new { i.Id, i.Code, i.Name, i.GenericName, i.Strength, i.Schedule, i.IsControlled, i.IsColdChain, i.BaseUnit })
+            .Select(i => new { i.Id, i.Code, i.Barcode, i.Name, i.GenericName, i.Strength, i.Schedule, i.IsControlled, i.IsColdChain, i.BaseUnit })
             .ToListAsync(ct);
         var availability = await InventoryQueries.AvailabilityAsync(db, storeId, items.Select(i => i.Id).ToList(), time.Today(), ct);
 
@@ -60,11 +60,15 @@ internal static class SaleEndpoints
             {
                 var stock = availability.GetValueOrDefault(i.Id);
                 return new PharmacyStockRow(i.Id, i.Code, i.Name, i.GenericName, i.Strength, i.Schedule, i.IsControlled,
-                    Item.NeedsPrescription(i.Schedule, i.IsControlled), i.IsColdChain, i.BaseUnit, stock?.Available ?? 0, stock?.CurrentMrp, stock?.NearestExpiry);
+                    Item.NeedsPrescription(i.Schedule, i.IsControlled), i.IsColdChain, i.BaseUnit, stock?.Available ?? 0, stock?.CurrentMrp, stock?.NearestExpiry,
+                    i.Barcode);
             })
             .Where(r => inStockOnly != true || r.Available > 0)
             .ToList();
-        if (BatchTag.TryParse(search, out _, out var batchNumber) && rows.Count == 1)
+        // Only the tag's own item: not an item whose barcode merely looks like a tag.
+        if (BatchTag.TryParse(search, out var taggedCode, out var batchNumber)
+            && rows.Count == 1
+            && string.Equals(rows[0].Code, taggedCode, StringComparison.OrdinalIgnoreCase))
         {
             var batches = await stock.GetBatchesAsync(storeId, rows[0].ItemId, includeEmpty: true, ct);
             rows[0] = rows[0] with { Scanned = Scanned(batchNumber, batches) };

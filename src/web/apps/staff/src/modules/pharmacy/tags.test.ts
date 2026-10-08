@@ -9,6 +9,7 @@ const {
   batchTagValue,
   buildTagsHtml,
   isBatchTag,
+  isExactScan,
   MAX_TAGS,
   pharmacyTagData,
   printPharmacyTags,
@@ -103,6 +104,22 @@ describe('printing tags', () => {
     expect(html).toContain('MRP Rs 2.50/tab');
     expect(html).toContain('PCM500#AB1234');
     expect(html).toContain('<svg');
+  });
+});
+
+describe('a scanned code', () => {
+  const row = { code: 'PCM500', barcode: '8901234567890', scanned: null };
+
+  it('is the item whose code or barcode it is, or the item of a tag', () => {
+    expect(isExactScan(row, 'pcm500')).toBe(true);
+    expect(isExactScan(row, ' 8901234567890 ')).toBe(true);
+    const tagged = { ...row, barcode: null, scanned: { batchNumber: 'AB1234' } as ScannedBatch };
+    expect(isExactScan(tagged, 'PCM500#AB1234')).toBe(true);
+  });
+
+  it('is not a medicine that only matched on its name', () => {
+    expect(isExactScan(row, '500')).toBe(false);
+    expect(isExactScan({ ...row, barcode: null }, '8901234567890')).toBe(false);
   });
 });
 

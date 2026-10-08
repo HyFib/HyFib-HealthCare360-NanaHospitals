@@ -2,7 +2,7 @@ import { escapeHtml, printDocument, type PharmacyTagLabel } from '@hc360/core';
 import { barcodeSvg } from '@hc360/ui';
 import { printLabelJob } from '@/lib/labelPrinting';
 import { formatExpiry } from '@/modules/inventory/format';
-import type { ScannedBatch } from './api';
+import type { PharmacyStockRow, ScannedBatch } from './api';
 
 /**
  * Pharmacy tags (INT-BAR): a label for a strip, bottle, box or shelf with the medicine, its batch, expiry and MRP, and
@@ -114,6 +114,19 @@ export async function buildTagsHtml(labels: readonly PharmacyTagLabel[]): Promis
     }),
   );
   return printDocument(pages.join(''), { title: 'Pharmacy tags', pageSize: 'Label50x25', styles: TAG_STYLES });
+}
+
+/**
+ * Whether a search result is the very item a scanned code names: the tag's own item, or the item whose code or barcode
+ * is the code. A medicine that only matched on its name ("500" in "500 mg") is not.
+ */
+export function isExactScan(row: Pick<PharmacyStockRow, 'code' | 'barcode' | 'scanned'>, code: string): boolean {
+  const scanned = code.trim();
+  return (
+    row.scanned != null ||
+    row.code.toUpperCase() === scanned.toUpperCase() ||
+    (row.barcode != null && row.barcode.trim() === scanned)
+  );
 }
 
 /** What to tell the pharmacist about a scanned tag's batch: null when it was picked. */

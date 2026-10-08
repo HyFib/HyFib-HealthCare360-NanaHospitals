@@ -713,13 +713,15 @@ joined by `#` (`PCM500#AB1234`); item codes never hold a `#`, so the server spli
 staff app prints tags from a posted goods receipt (Print tags) and from a batch on the stock screen (Tags), one per
 batch with as many copies as needed, at most 100 labels a print. Scanning a tag:
 
-* at the counter (`GET /api/v1/pharmacy/stock?search=PCM500%23AB1234`) finds the medicine by its exact code and answers
+* at the counter (`GET /api/v1/pharmacy/stock?search=PCM500%23AB1234`) finds the medicine by its exact code (and any
+  item whose own barcode is the whole text, since a barcode may hold a `#`; that item gets no `scanned`) and answers
   `scanned: ScannedBatch { batchNumber, batchId, expiryDate, mrp, available, problem }`. The batch is the usable one
   of that number that expires first (the number matches whatever the case); otherwise `batchId` is null and `problem`
   says why: not in this store, blocked (with the reason), expired, or nothing left to sell. The counter adds the
   medicine with that batch, or warns.
 * in the dispensing queue, the "Scan to check a medicine" box checks the strip or tag in hand against the prescription:
-  a medicine not on it is warned about, and a tag's batch is picked for its line.
+  a medicine not on it is warned about, and a tag's batch is picked for its line. Only an exact match counts (the tag's
+  item, or the item whose code or barcode is the scan); a medicine that only matched on its name does not.
 
 **Wristband allergy mark.** `GET /api/v1/inpatient/admissions/{id}/wristband` gives the chart's allergy status, and the
 staff app passes it through as `allergies`:

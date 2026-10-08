@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { normalizeScan } from '@/modules/lab/scan';
 import type { PharmacyStockRow } from './api';
+import { isExactScan } from './tags';
 
 /**
  * Scan to check a medicine (INT-BAR): the barcode on the strip, bottle or pharmacy tag in hand is looked up in the store,
@@ -35,10 +36,11 @@ export function ScanCheck({
     }
     setBusy(true);
     try {
+      // The search also matches names, so only the item the code names exactly is taken.
       const rows = await api.get<PharmacyStockRow[]>('/api/v1/pharmacy/stock', {
-        query: { storeId, search: code, take: 2 },
+        query: { storeId, search: code, take: 25 },
       });
-      const row = rows.length === 1 ? rows[0] : rows.find((r) => r.code.toUpperCase() === code.toUpperCase());
+      const row = rows.find((r) => isExactScan(r, code));
       if (row) {
         onScanned(row);
       } else {

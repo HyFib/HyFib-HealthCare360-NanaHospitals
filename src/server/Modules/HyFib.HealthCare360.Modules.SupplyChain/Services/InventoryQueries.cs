@@ -47,7 +47,8 @@ public static class InventoryQueries
 {
     /// <summary>
     /// Counter search: exact code or barcode, or name / generic / brand words (trigram-indexed). A scanned pharmacy tag
-    /// (<see cref="BatchTag"/>) finds its item by the code it carries.
+    /// (<see cref="BatchTag"/>) finds its item by the code it carries, or an item whose own barcode is the whole text
+    /// (a barcode may hold a <c>#</c> too).
     /// </summary>
     public static IQueryable<Item> Search(this IQueryable<Item> items, string? term)
     {
@@ -56,12 +57,12 @@ public static class InventoryQueries
             return items;
         }
 
+        term = term.Trim();
         if (BatchTag.TryParse(term, out var taggedCode, out _))
         {
-            return items.Where(i => i.Code == taggedCode);
+            return items.Where(i => i.Code == taggedCode || i.Barcode == term);
         }
 
-        term = term.Trim();
         var code = term.ToUpperInvariant();
         var like = term.ToLikePattern();
         return items.Where(i => i.Code == code || i.Barcode == term || EF.Functions.ILike(i.Name, like)
