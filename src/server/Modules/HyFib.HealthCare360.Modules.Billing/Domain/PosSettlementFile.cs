@@ -4,7 +4,7 @@ using System.Text;
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
 /// <summary>One transaction read from an acquirer's settlement file, in HC360's terms.</summary>
-/// <param name="RowNumber">The row in the file (1 is the first), for messages.</param>
+/// <param name="RowNumber">The row in its sheet (1 is the first), for messages.</param>
 /// <param name="Amount">The transaction's amount, always positive.</param>
 /// <param name="Net">What the transaction added to the payout: <c>Gross - Charges - Tax</c>.</param>
 public sealed record PosSettlementRow(
@@ -25,14 +25,26 @@ public sealed record PosSettlementRow(
     string? Utr)
 {
     /// <summary>
+    /// For a chargeback with neither an RRN nor an approval code: which of the report's chargebacks that look the same
+    /// (terminal, amount, days and UTR) this one is, counted in the report's order. It keeps them apart, and a later
+    /// report listing the same ones in the same order gives them the same keys.
+    /// </summary>
+    public int Occurrence { get; init; } = 1;
+
+    /// <summary>
     /// The same transaction gets the same key from every file that lists it: its type and RRN, or without an RRN its
-    /// terminal, approval code, amount and day (a chargeback without either: also its settlement day and UTR).
+    /// terminal, approval code, amount and day (a chargeback without either: also its settlement day, UTR and
+    /// <see cref="Occurrence"/>).
     /// </summary>
     public string Key => Rrn is not null
         ? $"{Type}|{Rrn}"
         : ApprovalCode is not null
             ? $"{Type}|{TerminalId}|{ApprovalCode}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}"
-            : $"{Type}|{TerminalId}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}|{Day(SettledOn)}|{Utr}";
+            : $"{Type}|{TerminalId}|{Amount.ToString("0.00", CultureInfo.InvariantCulture)}|{Day(TransactionOn)}|{Day(SettledOn)}|{Utr}"
+              + (Occurrence > 1 ? $"#{Occurrence.ToString(CultureInfo.InvariantCulture)}" : string.Empty);
+
+    /// <summary>A chargeback without an RRN or approval code: nothing in the report tells two alike apart.</summary>
+    public bool IsUnreferenced => Rrn is null && ApprovalCode is null;
 
     private static string Day(DateOnly? date) => date?.ToString("yyyyMMdd", CultureInfo.InvariantCulture) ?? "-";
 }
@@ -136,19 +148,33 @@ public static class PosSettlementFile
             return sheets.Error!;
         }
 
+        // Every sheet with the headings holds transactions (some acquirers put cards and UPI on sheets of their own);
+        // a sheet without them, such as a summary, is passed over.
         var synonyms = Synonyms(settings);
-        foreach (var sheet in sheets.Value)
+        var found = sheets.Value
+            .Select(sheet => (Sheet: sheet, Header: FindHeader(sheet.Rows, synonyms)))
+            .Where(s => s.Header is not null)
+            .Select(s => (s.Sheet, Header: s.Header!))
+            .ToList();
+        if (found.Count == 0)
         {
-            if (FindHeader(sheet, synonyms) is { } header)
+            return Error.Field("file",
+                "HC360 could not find the column headings: it needs the transaction amount and the RRN or approval code, with headings such as "
+                + "\"Txn Amount\", \"RRN\" and \"Approval Code\". If your acquirer names them differently, an administrator can add its headings "
+                + $"in the setting {PosSettlementSettings.Key}.");
+        }
+
+        var report = new ReportReader(settledOn);
+        foreach (var (sheet, header) in found)
+        {
+            var read = report.Read(sheet, header, nameSheets: found.Count > 1);
+            if (read is not null)
             {
-                return ReadRows(sheet, header, settledOn);
+                return read;
             }
         }
 
-        return Error.Field("file",
-            "HC360 could not find the column headings: it needs the transaction amount and the RRN or approval code, with headings such as "
-            + "\"Txn Amount\", \"RRN\" and \"Approval Code\". If your acquirer names them differently, an administrator can add its headings "
-            + $"in the setting {PosSettlementSettings.Key}.");
+        return report.Content();
     }
 
     /// <summary>A heading as HC360 compares it: letters and digits only, lower case.</summary>
@@ -226,88 +252,117 @@ public static class PosSettlementFile
         || heading.Contains("rate", StringComparison.OrdinalIgnoreCase)
         || heading.Contains("percent", StringComparison.OrdinalIgnoreCase);
 
-    private static Result<PosSettlementFileContent> ReadRows(IReadOnlyList<string[]> sheet, Header header, DateOnly? settledOn)
+    /// <summary>
+    /// Reads the transactions of a report's sheets into one list: a transaction repeated, also on another sheet, is
+    /// left out, and the problems name the sheet when there is more than one.
+    /// </summary>
+    private sealed class ReportReader(DateOnly? settledOn)
     {
-        if (!header.Columns.ContainsKey("settlementDate") && settledOn is null)
-        {
-            return Error.Field("settledOn", "The report has no settlement date column. Choose the day the acquirer paid the bank.");
-        }
+        private readonly List<PosSettlementRow> _rows = [];
+        private readonly List<string> _problems = [];
+        private readonly List<string> _columns = [];
+        private readonly Dictionary<string, string> _seen = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _unreferenced = new(StringComparer.Ordinal);
+        private int _ignored;
 
-        if (sheet.Count - header.Row - 1 > MaxRows + 1000)
+        /// <summary>Reads one sheet; returns an error that stops the import, or null.</summary>
+        public Result<PosSettlementFileContent>? Read(ReportSheet sheet, Header header, bool nameSheets)
         {
-            return Error.Field("file", $"The report has more than {MaxRows:N0} rows. Import it in parts, for example a week at a time.");
-        }
-
-        var rows = new List<PosSettlementRow>();
-        var problems = new List<string>();
-        var ignored = 0;
-        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        var hints = new DateHints();
-
-        void Problem(string message)
-        {
-            ignored++;
-            if (problems.Count < MaxProblems)
+            var sheetName = nameSheets && !string.IsNullOrWhiteSpace(sheet.Name) ? $"Sheet \"{sheet.Name.Trim()}\"" : null;
+            if (!header.Columns.ContainsKey("settlementDate") && settledOn is null)
             {
-                problems.Add(message);
+                return Error.Field("settledOn",
+                    $"{(sheetName is null ? "The report" : sheetName)} has no settlement date column. Choose the day the acquirer paid the bank.");
+            }
+
+            if (sheet.Rows.Count - header.Row - 1 > MaxRows + 1000)
+            {
+                return Error.Field("file", $"The report has more than {MaxRows:N0} rows. Import it in parts, for example a week at a time.");
+            }
+
+            _columns.AddRange(header.Found.Where(c => !_columns.Contains(c)));
+            var hints = new DateHints();
+            for (var r = header.Row + 1; r < sheet.Rows.Count; r++)
+            {
+                var cells = sheet.Rows[r];
+                var place = sheetName is null ? $"Row {r + 1}" : $"{sheetName}, row {r + 1}";
+                if (cells.All(string.IsNullOrWhiteSpace))
+                {
+                    continue;
+                }
+
+                string? Cell(string field) => header.Columns.TryGetValue(field, out var index) && index < cells.Length && !string.IsNullOrWhiteSpace(cells[index])
+                    ? cells[index].Trim()
+                    : null;
+
+                // The report's totals are not transactions.
+                if (cells.Take(3).Any(c => c.TrimStart().StartsWith("total", StringComparison.OrdinalIgnoreCase)
+                                           || c.TrimStart().StartsWith("grand total", StringComparison.OrdinalIgnoreCase)))
+                {
+                    continue;
+                }
+
+                var parsed = ReadRow(r + 1, place, Cell, cells, header, hints, settledOn);
+                if (parsed.IsFailure)
+                {
+                    Problem(parsed.Error!.Message);
+                    continue;
+                }
+
+                var row = parsed.Value;
+                if (row.IsUnreferenced)
+                {
+                    // Nothing tells two such chargebacks apart, so both are kept, counted in the report's order.
+                    var occurrence = _unreferenced.GetValueOrDefault(row.Key) + 1;
+                    _unreferenced[row.Key] = occurrence;
+                    row = row with { Occurrence = occurrence };
+                }
+                else if (_seen.TryGetValue(row.Key, out var first))
+                {
+                    Problem($"{place} repeats {Lower(first)}, so it was left out.");
+                    continue;
+                }
+
+                _seen[row.Key] = place;
+                _rows.Add(row);
+                if (_rows.Count > MaxRows)
+                {
+                    return Error.Field("file", $"The report has more than {MaxRows:N0} transactions. Import it in parts, for example a week at a time.");
+                }
+            }
+
+            return null;
+        }
+
+        public Result<PosSettlementFileContent> Content()
+        {
+            if (_rows.Count == 0)
+            {
+                return Error.Field("file", _problems.Count > 0
+                    ? "No transaction in the report could be read. " + _problems[0]
+                    : "The report has headings but no transactions.");
+            }
+
+            var problems = _problems.ToList();
+            if (_ignored > problems.Count && problems.Count == MaxProblems)
+            {
+                problems.Add($"…and {_ignored - problems.Count} more rows left out.");
+            }
+
+            return new PosSettlementFileContent(_rows, _ignored, problems, _columns);
+        }
+
+        private void Problem(string message)
+        {
+            _ignored++;
+            if (_problems.Count < MaxProblems)
+            {
+                _problems.Add(message);
             }
         }
 
-        for (var r = header.Row + 1; r < sheet.Count; r++)
-        {
-            var cells = sheet[r];
-            var number = r + 1;
-            if (cells.All(string.IsNullOrWhiteSpace))
-            {
-                continue;
-            }
-
-            string? Cell(string field) => header.Columns.TryGetValue(field, out var index) && index < cells.Length && !string.IsNullOrWhiteSpace(cells[index])
-                ? cells[index].Trim()
-                : null;
-
-            // The report's totals are not transactions.
-            if (cells.Take(3).Any(c => c.TrimStart().StartsWith("total", StringComparison.OrdinalIgnoreCase)
-                                       || c.TrimStart().StartsWith("grand total", StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            var parsed = ReadRow(number, Cell, cells, header, hints, settledOn);
-            if (parsed.IsFailure)
-            {
-                Problem(parsed.Error!.Message);
-                continue;
-            }
-
-            var row = parsed.Value;
-            if (seen.TryGetValue(row.Key, out var first))
-            {
-                Problem($"Row {number} repeats row {first}, so it was left out.");
-                continue;
-            }
-
-            seen[row.Key] = number;
-            rows.Add(row);
-            if (rows.Count > MaxRows)
-            {
-                return Error.Field("file", $"The report has more than {MaxRows:N0} transactions. Import it in parts, for example a week at a time.");
-            }
-        }
-
-        if (rows.Count == 0)
-        {
-            return Error.Field("file", problems.Count > 0
-                ? "No transaction in the report could be read. " + problems[0]
-                : "The report has headings but no transactions.");
-        }
-
-        if (ignored > problems.Count && problems.Count == MaxProblems)
-        {
-            problems.Add($"…and {ignored - problems.Count} more rows left out.");
-        }
-
-        return new PosSettlementFileContent(rows, ignored, problems, header.Found);
+        /// <summary>A place as it reads mid-sentence: "row 2", "sheet "UPI", row 2".</summary>
+        private static string Lower(string place) => char.ToLowerInvariant(place[0]) + place[1..];
     }
 
     /// <summary>The date formats the report's columns turned out to use.</summary>
@@ -318,11 +373,11 @@ public static class PosSettlementFile
     }
 
     private static Result<PosSettlementRow> ReadRow(
-        int number, Func<string, string?> cell, string[] cells, Header header, DateHints hints, DateOnly? defaultSettledOn)
+        int number, string place, Func<string, string?> cell, string[] cells, Header header, DateHints hints, DateOnly? defaultSettledOn)
     {
         if (cell("amount") is not { } amountText || ParseAmount(amountText) is not { } signedAmount || signedAmount == 0)
         {
-            return Error.Rule("row", $"Row {number} has no transaction amount, so it was left out.");
+            return Error.Rule("row", $"{place} has no transaction amount, so it was left out.");
         }
 
         var typeText = cell("type") ?? string.Empty;
@@ -342,7 +397,7 @@ public static class PosSettlementFile
 
         if (rrn is null && approval is null && type != PosSettlementLineType.Adjustment)
         {
-            return Error.Rule("row", $"Row {number} has neither an RRN nor an approval code, so it cannot be matched and was left out.");
+            return Error.Rule("row", $"{place} has neither an RRN nor an approval code, so it cannot be matched and was left out.");
         }
 
         DateOnly settledOn;
@@ -350,7 +405,7 @@ public static class PosSettlementFile
         {
             if (ParseDateTime(settledText, ref hints.Settled) is not { } settled)
             {
-                return Error.Rule("row", $"Row {number}: the settlement date \"{Shorten(settledText)}\" could not be read.");
+                return Error.Rule("row", $"{place}: the settlement date \"{Shorten(settledText)}\" could not be read.");
             }
 
             settledOn = DateOnly.FromDateTime(settled);
@@ -361,7 +416,7 @@ public static class PosSettlementFile
         }
         else
         {
-            return Error.Rule("row", $"Row {number} has no settlement date, so it was left out.");
+            return Error.Rule("row", $"{place} has no settlement date, so it was left out.");
         }
 
         DateTimeOffset? transactionAt = null;
@@ -369,7 +424,7 @@ public static class PosSettlementFile
         {
             if (ParseDateTime(dateText, ref hints.Transaction) is not { } local)
             {
-                return Error.Rule("row", $"Row {number}: the transaction date \"{Shorten(dateText)}\" could not be read.");
+                return Error.Rule("row", $"{place}: the transaction date \"{Shorten(dateText)}\" could not be read.");
             }
 
             if (local.TimeOfDay == TimeSpan.Zero && cell("transactionTime") is { } timeText && ParseTime(timeText) is { } time)
@@ -401,7 +456,7 @@ public static class PosSettlementFile
 
             if (net < 0 || charges < 0)
             {
-                return Error.Rule("row", $"Row {number}: the net amount, charges and GST do not add up to the transaction amount, so it was left out.");
+                return Error.Rule("row", $"{place}: the net amount, charges and GST do not add up to the transaction amount, so it was left out.");
             }
         }
         else
@@ -579,7 +634,7 @@ public static class PosSettlementFile
 
     // ---------------------------------------------------------------------------------------------------- the table
 
-    private static Result<IReadOnlyList<IReadOnlyList<string[]>>> ReadSheets(byte[] content)
+    private static Result<IReadOnlyList<ReportSheet>> ReadSheets(byte[] content)
     {
         if (content is [0xD0, 0xCF, 0x11, 0xE0, ..])
         {
@@ -591,7 +646,7 @@ public static class PosSettlementFile
             return XlsxSheets.Read(content, MaxUnzippedBytes, MaxRows);
         }
 
-        return Result<IReadOnlyList<IReadOnlyList<string[]>>>.Ok([ReadDelimited(Decode(content))]);
+        return Result<IReadOnlyList<ReportSheet>>.Ok([new ReportSheet(null, ReadDelimited(Decode(content)))]);
     }
 
     private static string Decode(byte[] content)

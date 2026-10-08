@@ -191,6 +191,38 @@ public sealed class PosSettlementFileTests
             r => r.Key.ShouldContain("UTR123"));
     }
 
+    [Fact]
+    public void Chargebacks_that_nothing_tells_apart_are_all_kept_and_keep_their_keys_in_a_later_report()
+    {
+        const string report = """
+            TID,Txn Type,RRN,Txn Amount,Net Amount,Settlement Date,UTR
+            72001234,Chargeback,,500.00,500.00,07/10/2026,UTR123
+            72001234,Chargeback,,500.00,500.00,07/10/2026,UTR123
+            """;
+
+        var file = Read(report);
+
+        file.Rows.Count.ShouldBe(2, "both took money from the payout");
+        file.Problems.ShouldBeEmpty();
+        file.Rows.Select(r => r.Key).Distinct().Count().ShouldBe(2);
+        Read(report).Rows.Select(r => r.Key).ShouldBe(file.Rows.Select(r => r.Key), "an overlapping report adds neither again");
+    }
+
+    [Fact]
+    public void Every_sheet_with_the_headings_is_read_and_the_problems_name_their_sheet()
+    {
+        var file = PosSettlementFile.Read(SplitWorkbook(), Defaults, null);
+
+        file.IsSuccess.ShouldBeTrue(file.Error?.Message);
+        file.Value.Rows.Select(r => (r.Mode, r.Rrn)).ShouldBe([(PaymentMode.Card, "627910123456"), (PaymentMode.Upi, "627910654321")]);
+        file.Value.Problems.ShouldBe(
+        [
+            "Sheet \"Card\", row 3 has neither an RRN nor an approval code, so it cannot be matched and was left out.",
+            "Sheet \"UPI\", row 3 repeats sheet \"Card\", row 2, so it was left out.",
+        ]);
+        file.Value.Ignored.ShouldBe(2);
+    }
+
     [Theory]
     [InlineData("06/10/2026", 2026, 10, 6)]
     [InlineData("6-10-2026", 2026, 10, 6)]
@@ -262,6 +294,52 @@ public sealed class PosSettlementFileTests
     /// A workbook as Excel saves it: shared strings for the text, numbers for amounts, an RRN typed as a number, and
     /// dates as serial numbers (46302 is 7 October 2026; 46301.4375 is 6 October 2026, 10:30).
     /// </summary>
+    /// <summary>
+    /// A workbook with a summary sheet (no transactions) and the card and UPI transactions on sheets of their own, in
+    /// inline strings. The UPI sheet repeats the card sheet's transaction.
+    /// </summary>
+    private static byte[] SplitWorkbook()
+    {
+        static string Cell(string column, int row, string value) =>
+            double.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, out _)
+                ? $"<c r=\"{column}{row}\"><v>{value}</v></c>"
+                : $"<c r=\"{column}{row}\" t=\"inlineStr\"><is><t>{value}</t></is></c>";
+
+        static string Sheet(params string[][] rows) =>
+            "<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>"
+            + string.Concat(rows.Select((cells, i) =>
+                $"<row r=\"{i + 1}\">{string.Concat(cells.Select((value, c) => value.Length == 0 ? string.Empty : Cell(((char)('A' + c)).ToString(), i + 1, value)))}</row>"))
+            + "</sheetData></worksheet>";
+
+        string[] headings = ["RRN", "Approval Code", "Payment Mode", "Txn Amount", "Settlement Date"];
+        using var stream = new MemoryStream();
+        using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string path, string xml)
+            {
+                using var writer = new StreamWriter(zip.CreateEntry(path).Open(), new UTF8Encoding(false));
+                writer.Write(xml);
+            }
+
+            Add("xl/workbook.xml", """
+                <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                <sheets><sheet name="Summary" sheetId="1" r:id="rId1"/><sheet name="Card" sheetId="2" r:id="rId2"/><sheet name="UPI" sheetId="3" r:id="rId3"/></sheets></workbook>
+                """);
+            Add("xl/_rels/workbook.xml.rels", """
+                <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+                <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+                <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet3.xml"/>
+                </Relationships>
+                """);
+            Add("xl/worksheets/sheet1.xml", Sheet(["Settlement summary"], ["Total paid", "2300"]));
+            Add("xl/worksheets/sheet2.xml", Sheet(headings, ["627910123456", "A1B2C3", "VISA", "1500", "07/10/2026"], ["", "", "VISA", "100", "07/10/2026"]));
+            Add("xl/worksheets/sheet3.xml", Sheet(headings, ["627910654321", "", "UPI", "800", "07/10/2026"], ["627910123456", "A1B2C3", "VISA", "1500", "07/10/2026"]));
+        }
+
+        return stream.ToArray();
+    }
+
     private static byte[] Workbook()
     {
         using var stream = new MemoryStream();

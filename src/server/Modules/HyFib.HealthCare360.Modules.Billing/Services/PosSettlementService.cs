@@ -499,6 +499,12 @@ public sealed class PosSettlementService(
                 .ToListAsync(ct));
         }
 
+        // A reference typed with spaces, dashes or in lower case ("6279 1012-3456") is compared by its letters and
+        // digits, which the database cannot do: the window's receipts with a reference are read and compared here.
+        AddRange(candidates, await payments.Where(x => x.p.Reference != null && x.r.ReceivedAt >= start && x.r.ReceivedAt < end)
+            .Select(x => new PaymentCandidate(x.p.Id, x.r.Id, x.p.Mode, x.p.Amount, x.p.Reference, x.p.CardLast4, x.p.ExternalId, x.r.ReceivedAt))
+            .ToListAsync(ct));
+
         var approvals = new List<PosApproval>();
         foreach (var chunk in codes.Chunk(1000))
         {
@@ -619,21 +625,30 @@ public sealed class PosSettlementService(
     private async Task MatchRefundsAsync(Guid facilityId, IReadOnlyList<PosSettlementLine> lines, DateTimeOffset now, CancellationToken ct)
     {
         var references = Variants(lines.SelectMany(l => new[] { l.Rrn, l.ApprovalCode }));
-        var candidates = new List<RefundCandidate>();
+        var (start, end) = Window(lines);
+        var paid = db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(r => r.FacilityId == facilityId && r.Status == RefundStatus.Paid && (r.Mode == PaymentMode.Card || r.Mode == PaymentMode.Upi) && r.Reference != null);
+        var found = new Dictionary<Guid, RefundCandidate>();
         foreach (var chunk in references.Chunk(1000))
         {
-            candidates.AddRange(await db.Set<Refund>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-                .Where(r => r.FacilityId == facilityId && r.Status == RefundStatus.Paid && (r.Mode == PaymentMode.Card || r.Mode == PaymentMode.Upi)
-                            && r.Reference != null && chunk.Contains(r.Reference))
-                .Select(r => new RefundCandidate(r.Id, r.Amount, r.Reference, r.PaidAt))
-                .ToListAsync(ct));
+            foreach (var refund in await paid.Where(r => chunk.Contains(r.Reference!)).Select(r => new RefundCandidate(r.Id, r.Amount, r.Reference, r.PaidAt)).ToListAsync(ct))
+            {
+                found[refund.Id] = refund;
+            }
         }
 
-        if (candidates.Count == 0)
+        // As for receipts, a reference typed with spaces, dashes or in lower case is compared by its letters and digits.
+        foreach (var refund in await paid.Where(r => r.PaidAt >= start && r.PaidAt < end).Select(r => new RefundCandidate(r.Id, r.Amount, r.Reference, r.PaidAt)).ToListAsync(ct))
+        {
+            found[refund.Id] = refund;
+        }
+
+        if (found.Count == 0)
         {
             return;
         }
 
+        var candidates = found.Values.OrderBy(c => c.PaidAt).ThenBy(c => c.Id).ToList();
         var ids = candidates.Select(c => c.Id).ToList();
         var taken = (await db.Set<PosSettlementLine>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
                 .Where(l => l.RefundId != null && ids.Contains(l.RefundId.Value))

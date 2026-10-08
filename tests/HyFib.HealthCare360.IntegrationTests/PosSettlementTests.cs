@@ -162,8 +162,11 @@ public sealed class PosSettlementTests(HospitalServer server)
         var bill = await FinalizedBillAsync(billing);
         var last4 = Random.Shared.Next(2000, 9999).ToString(CultureInfo.InvariantCulture);
         var reference = Digits(12);
+
+        // The cashier typed the RRN from the charge slip with a space and a dash; the report has the digits only.
+        var typed = $"{reference[..4]} {reference[4..8]}-{reference[8..]}";
         var receipt = await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
-            bill.Id, [new PaymentLineInput(PaymentMode.Card, bill.DueAmount, reference, last4, "RUPAY", null, null, null)], null));
+            bill.Id, [new PaymentLineInput(PaymentMode.Card, bill.DueAmount, typed, last4, "RUPAY", null, null, null)], null));
 
         // Taken six days ago; the acquirer's reports run from eight days ago to today, but none carries it.
         await using (var scope = server.Services.CreateAsyncScope())
@@ -190,13 +193,16 @@ public sealed class PosSettlementTests(HospitalServer server)
         summary.Unsettled.ShouldBeGreaterThanOrEqualTo(1);
         summary.SettlementDays.ShouldBe(3);
 
-        // A later report carries it (by the RRN the cashier typed): it is settled, and leaves the list.
+        // A later report carries it (by the RRN the cashier typed, spaces and dash aside): it is settled, and leaves the list.
         var sixDaysAgoDay = Today.AddDays(-6).ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
         var carried = await ImportAsync(accounts, $"""
             RRN,Txn Date,Card Type,Txn Amount,Net Amount,Settlement Date,UTR
             {reference},{sixDaysAgoDay},RUPAY,{Money(bill.DueAmount)},{Money(bill.DueAmount)},{Today:dd/MM/yyyy},AXISN{Digits(11)}
             """, "HDFC Bank");
         carried.Matched.ShouldBe(1);
+        (await LineAsync(reference)).ShouldSatisfyAllConditions(
+            l => l.MatchBasis.ShouldBe(PosMatchBasis.Rrn),
+            l => l.ReceiptId.ShouldBe(receipt.Id));
         (await accounts.GetAsync<List<UnsettledPosReceiptDto>>("/api/v1/billing/pos/settlements/unsettled")).ShouldNotContain(u => u.ReceiptId == receipt.Id);
     }
 

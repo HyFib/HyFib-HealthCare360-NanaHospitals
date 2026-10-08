@@ -5,6 +5,9 @@ using System.Xml;
 
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
 
+/// <summary>One sheet of a report: its rows of cells as text, and its name in a workbook (null for a CSV file).</summary>
+internal sealed record ReportSheet(string? Name, IReadOnlyList<string[]> Rows);
+
 /// <summary>
 /// Reads the cell values of an Excel workbook (.xlsx), sheet by sheet, as text: shared and inline strings, numbers
 /// (dates stay Excel serial numbers, which <see cref="PosSettlementFile"/> reads as dates) and booleans. Formatting,
@@ -30,7 +33,7 @@ internal static class XlsxSheets
         MaxCharactersInDocument = 64_000_000,
     };
 
-    public static Result<IReadOnlyList<IReadOnlyList<string[]>>> Read(byte[] content, long maxUnzippedBytes, int maxRows)
+    public static Result<IReadOnlyList<ReportSheet>> Read(byte[] content, long maxUnzippedBytes, int maxRows)
     {
         try
         {
@@ -41,8 +44,8 @@ internal static class XlsxSheets
             }
 
             var strings = SharedStrings(zip);
-            var sheets = new List<IReadOnlyList<string[]>>();
-            foreach (var path in SheetPaths(zip))
+            var sheets = new List<ReportSheet>();
+            foreach (var (name, path) in SheetPaths(zip))
             {
                 if (zip.GetEntry(path) is not { } entry)
                 {
@@ -55,7 +58,7 @@ internal static class XlsxSheets
                     return Error.Field("file", "The report has too many rows. Import it in parts, for example a week at a time.");
                 }
 
-                sheets.Add(rows);
+                sheets.Add(new ReportSheet(name, rows));
             }
 
             if (sheets.Count == 0)
@@ -63,7 +66,7 @@ internal static class XlsxSheets
                 return Error.Field("file", "The workbook has no sheets with data.");
             }
 
-            return Result<IReadOnlyList<IReadOnlyList<string[]>>>.Ok(sheets);
+            return Result<IReadOnlyList<ReportSheet>>.Ok(sheets);
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or XmlException or FormatException or OverflowException or NotSupportedException)
         {
@@ -71,8 +74,8 @@ internal static class XlsxSheets
         }
     }
 
-    /// <summary>The worksheets in the workbook's order, from xl/workbook.xml and its relationships.</summary>
-    private static IReadOnlyList<string> SheetPaths(ZipArchive zip)
+    /// <summary>The worksheets' names and parts in the workbook's order, from xl/workbook.xml and its relationships.</summary>
+    private static IReadOnlyList<(string? Name, string Path)> SheetPaths(ZipArchive zip)
     {
         var targets = new Dictionary<string, string>(StringComparer.Ordinal);
         if (zip.GetEntry("xl/_rels/workbook.xml.rels") is { } rels)
@@ -88,7 +91,7 @@ internal static class XlsxSheets
             }
         }
 
-        var paths = new List<string>();
+        var paths = new List<(string? Name, string Path)>();
         if (zip.GetEntry("xl/workbook.xml") is { } workbook)
         {
             using var reader = XmlReader.Create(workbook.Open(), Settings);
@@ -97,7 +100,7 @@ internal static class XlsxSheets
                 if (reader is { NodeType: XmlNodeType.Element, LocalName: "sheet", NamespaceURI: Main }
                     && reader.GetAttribute("id", RelationshipsNs) is { } id && targets.TryGetValue(id, out var path))
                 {
-                    paths.Add(path);
+                    paths.Add((reader.GetAttribute("name"), path));
                 }
             }
         }
@@ -105,7 +108,7 @@ internal static class XlsxSheets
         return paths.Count > 0
             ? paths
             : zip.Entries.Where(e => e.FullName.StartsWith("xl/worksheets/sheet", StringComparison.Ordinal) && e.FullName.EndsWith(".xml", StringComparison.Ordinal))
-                .Select(e => e.FullName).Order(StringComparer.Ordinal).ToList();
+                .Select(e => e.FullName).Order(StringComparer.Ordinal).Select(path => ((string?)null, path)).ToList();
     }
 
     private static List<string> SharedStrings(ZipArchive zip)

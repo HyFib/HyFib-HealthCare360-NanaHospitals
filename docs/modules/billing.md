@@ -481,7 +481,8 @@ accountant imports on **Billing › Card and UPI settlements**; HC360 checks it 
 
 **Reading the report** (`PosSettlementFile`). CSV (comma, semicolon, tab or pipe separated, quoted fields allowed) or
 an Excel workbook (.xlsx, read by HC360's own reader, `XlsxSheets`: cell values only, no DTDs, at most 150 MB unpacked);
-an older .xls is refused with what to do. Banks lay their reports out differently, so the columns are found by their
+an older .xls is refused with what to do. Every sheet with the headings is read (some acquirers put cards and UPI on
+sheets of their own), a sheet without them (a summary) is passed over, and the problems then name their sheet. Banks lay their reports out differently, so the columns are found by their
 headings, in the first 30 rows (title rows before them are skipped): RRN (UPI: the UPI reference), approval code,
 transaction amount, MDR or commission, GST (or IGST, CGST and SGST added up), net amount, TID, transaction date and
 time, card number, transaction type, payment mode, settlement date and UTR, each under the names banks use ("Txn
@@ -494,7 +495,9 @@ the card number or anything about the customer.
 * A payment's net is what reached the bank; when the report gives it, the charges are the amount less GST less the net,
   so `amount = net + charges + GST` always holds. Without a net column, the net is the amount less MDR and GST.
 * A refund, void or reversal (or a negative amount) takes money back; a chargeback, dispute or adjustment is kept for
-  review. On these, any charge returned with the money counts as charges.
+  review. On these, any charge returned with the money counts as charges. Chargebacks without an RRN or approval code
+  that look the same (terminal, amount, days, UTR) are all kept, numbered in the report's order, so a later report
+  listing them again adds none of them.
 * Rows left out, each with its reason (at most 20 listed): rows without an amount, rows with neither an RRN nor an
   approval code (except chargebacks), rows whose net, charges and GST do not add up, and repeated rows. The report's
   total rows are skipped and not counted. The import says which heading it read as what (`Amount from "Txn Amount"`).
@@ -503,7 +506,9 @@ the card number or anything about the customer.
   and day), so a later report adds only what is new.
 
 **Matching** (each receipt payment and refund once; a partial unique index on the matched payment and on the refund
-stops two imports taking the same one):
+stops two imports taking the same one). References are compared by their letters and digits, whatever the case, so an
+RRN typed as "6279 1012-3456" matches 627910123456: the receipts and refunds of the report's days (from two days before
+its first transaction) are read and compared that way, and older ones by the reference as typed.
 
 | Settled | Matches | Shown as |
 |---|---|---|
