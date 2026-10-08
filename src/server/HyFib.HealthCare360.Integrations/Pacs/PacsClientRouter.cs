@@ -78,6 +78,24 @@ internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, Int
     }
 
     /// <summary>
+    /// The provider and the STOW-RS root objects are sent to, for example <c>dicomweb http://orthanc:8042/dicom-web</c>
+    /// (<c>simulator</c> for the simulator). Configured URLs cannot carry credentials, so neither does this.
+    /// </summary>
+    /// <exception cref="HttpRequestException">PACS is not usable; the message is safe to show to staff.</exception>
+    public async Task<string> StoreDestinationAsync(Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var (provider, config, problem) = await ResolveAsync(facilityId, cancellationToken);
+        if (provider is null)
+        {
+            throw new HttpRequestException(problem ?? "The PACS is not available.");
+        }
+
+        return provider.Key != ProviderKeys.Simulator && config!.Settings!.StowRoot?.Trim().TrimEnd('/') is { Length: > 0 } root
+            ? $"{provider.Key} {root}"
+            : provider.Key;
+    }
+
+    /// <summary>
     /// Viewer launch URL from <c>viewerUrlTemplate</c> (null when none is configured, or when the template needs a value
     /// that is not given). Synchronous by contract; the settings read is served from the settings cache.
     /// </summary>

@@ -164,4 +164,16 @@ public sealed class PacsClientRouterTests
 
         failure.Message.ShouldBe("PACS is disabled.");
     }
+
+    [Fact]
+    public async Task Names_the_pacs_objects_go_to_by_provider_and_sending_address()
+    {
+        (await Router.StoreDestinationAsync(null, Ct)).ShouldBe("dicomweb http://orthanc:8042/dicom-web");
+
+        Configure(new PacsSettings { Enabled = true, Provider = "dicomweb", QidoUrl = "http://orthanc:8042/dicom-web", StowUrl = "http://stow.local/rs/ " });
+        (await Router.StoreDestinationAsync(null, Ct)).ShouldBe("dicomweb http://stow.local/rs");
+
+        Configure(new PacsSettings { Enabled = false, Provider = "dicomweb" });
+        (await Should.ThrowAsync<HttpRequestException>(() => Router.StoreDestinationAsync(null, Ct))).Message.ShouldBe("PACS is disabled.");
+    }
 }

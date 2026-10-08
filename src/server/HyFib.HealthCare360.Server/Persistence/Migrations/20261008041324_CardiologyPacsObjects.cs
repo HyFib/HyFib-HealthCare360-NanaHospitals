@@ -30,6 +30,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     file_id = table.Column<Guid>(type: "uuid", nullable: false),
                     sop_instance_uid = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
                     status = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    destination = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
                     message = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: true),
                     sent_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),

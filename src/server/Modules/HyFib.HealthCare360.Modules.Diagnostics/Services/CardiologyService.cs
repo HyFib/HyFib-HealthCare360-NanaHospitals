@@ -320,9 +320,10 @@ internal sealed class CardiologyService(
     /// <summary>
     /// Sends the study's DICOM device files the PACS does not hold yet (STOW-RS), filed under the patient's UHID, name,
     /// birth date and sex, the accession number and a study UID made from the study's id, so they open in the PACS
-    /// viewer with the patient's other images. Each file's outcome is kept: one the PACS refused or could not take is
-    /// sent again next time, and one it holds is not. A PACS stores DICOM only, so ECG PDFs, pictures and SCP-ECG files
-    /// stay in HC360. Sending patient data to the PACS is audited.
+    /// viewer with the patient's other images. Each file's outcome is kept with the PACS it was sent to: one the PACS
+    /// refused or could not take is sent again next time, and so is one stored in another PACS (before the PACS was
+    /// changed, or in the simulator while training); one the PACS holds is not. A PACS stores DICOM only, so ECG PDFs,
+    /// pictures and SCP-ECG files stay in HC360. Sending patient data to the PACS is audited.
     /// </summary>
     public async Task<Result<CardiologyStudyDetail>> SendToPacsAsync(Guid id, CancellationToken ct)
     {
@@ -353,9 +354,20 @@ internal sealed class CardiologyService(
                 "The study has no DICOM files to send. A PACS stores DICOM files only; PDFs, pictures and SCP-ECG files stay in HC360.");
         }
 
+        string destination;
+        try
+        {
+            destination = await pacs.StoreDestinationAsync(study.FacilityId, ct);
+        }
+        catch (HttpRequestException ex)
+        {
+            // The PACS integration is not set up or is switched off: nothing is sent.
+            return Error.Rule("pacs.unavailable", ex.Message);
+        }
+
         var records = await db.Set<CardiologyPacsObject>().Where(o => o.CardiologyStudyId == id).ToDictionaryAsync(o => o.FileId, ct);
         var toSend = fileIds.Where(dicomFiles.Contains)
-            .Where(f => records.GetValueOrDefault(f) is not { Status: CardiologyPacsStatus.Stored })
+            .Where(f => records.GetValueOrDefault(f) is not { Status: CardiologyPacsStatus.Stored } stored || stored.Destination != destination)
             .ToList();
         if (toSend.Count == 0)
         {
@@ -425,6 +437,7 @@ internal sealed class CardiologyService(
                 _ => CardiologyPacsStatus.Failed,
             };
             record.Message = TextLimits.ClipOrNull(outcome.Message, 300);
+            record.Destination = TextLimits.Clip(destination, 300);
             record.SentAt = now;
         }
 
@@ -435,7 +448,7 @@ internal sealed class CardiologyService(
             EntityType = nameof(CardiologyStudy),
             EntityId = study.Id.ToString(),
             PatientId = study.PatientId,
-            Details = new { study.StudyInstanceUid, Files = outcomes.Select(o => new { o.FileId, o.Outcome.Status, o.Outcome.SopInstanceUid }) },
+            Details = new { study.StudyInstanceUid, Destination = destination, Files = outcomes.Select(o => new { o.FileId, o.Outcome.Status, o.Outcome.SopInstanceUid }) },
         });
         try
         {
@@ -454,7 +467,7 @@ internal sealed class CardiologyService(
         return (await DetailAsync(id, ct))!;
     }
 
-    /// <summary>The PACS viewer for the study, once the PACS holds at least one of its files.</summary>
+    /// <summary>The PACS viewer for the study, once the PACS set up now holds at least one of its files.</summary>
     public async Task<Result<ViewerLink>> ViewerAsync(Guid id, CancellationToken ct)
     {
         if (services.GetService(typeof(IPacsClient)) is not IPacsClient pacs)
@@ -468,8 +481,10 @@ internal sealed class CardiologyService(
             return Error.NotFound(nameof(CardiologyStudy), id);
         }
 
+        var destination = await DestinationAsync(pacs, study.FacilityId, ct);
         if (study.StudyInstanceUid is not { } studyUid
-            || !await db.Set<CardiologyPacsObject>().AnyAsync(o => o.CardiologyStudyId == id && o.Status == CardiologyPacsStatus.Stored, ct))
+            || !await db.Set<CardiologyPacsObject>().AnyAsync(
+                o => o.CardiologyStudyId == id && o.Status == CardiologyPacsStatus.Stored && (destination == null || o.Destination == destination), ct))
         {
             return Error.Rule("cardiology.not_in_pacs", "The PACS holds none of this study's files yet. Send its DICOM files to the PACS first.");
         }
@@ -500,7 +515,8 @@ internal sealed class CardiologyService(
         var patient = await lookups.PatientAsync(s.PatientId, ct);
         var doctors = await lookups.PractitionerNamesAsync([s.OrderingPractitionerId], ct);
         var users = await lookups.UserNamesAsync([s.TechnicianUserId, report?.ReportedBy, report?.VerifiedBy], ct);
-        var files = await FilesAsync(s.Id, s.DeviceFileIds, ct);
+        var files = await FilesAsync(s.Id, s.DeviceFileIds, ct,
+            services.GetService(typeof(IPacsClient)) is IPacsClient pacs ? await DestinationAsync(pacs, s.FacilityId, ct) : null);
 
         return new CardiologyStudyDetail(
             s.Id, s.AccessionNumber, s.PatientId, patient?.Uhid ?? string.Empty, patient?.FullName ?? string.Empty, patient?.Gender ?? Gender.Unknown,
@@ -590,7 +606,11 @@ internal sealed class CardiologyService(
         return (await DetailAsync(id, ct))!;
     }
 
-    private async Task<IReadOnlyList<DeviceFileDto>> FilesAsync(Guid studyId, IReadOnlyCollection<Guid> fileIds, CancellationToken ct)
+    /// <summary>
+    /// The device files, each with what the PACS did with it. With <paramref name="destination"/>, an outcome from another
+    /// PACS is left out: the file is not in the PACS set up now.
+    /// </summary>
+    private async Task<IReadOnlyList<DeviceFileDto>> FilesAsync(Guid studyId, IReadOnlyCollection<Guid> fileIds, CancellationToken ct, string? destination = null)
     {
         if (fileIds.Count == 0)
         {
@@ -598,11 +618,25 @@ internal sealed class CardiologyService(
         }
 
         var ids = fileIds.ToList();
-        var pacs = await db.Set<CardiologyPacsObject>().AsNoTracking().Where(o => o.CardiologyStudyId == studyId)
+        var pacs = await db.Set<CardiologyPacsObject>().AsNoTracking()
+            .Where(o => o.CardiologyStudyId == studyId && (destination == null || o.Destination == destination))
             .ToDictionaryAsync(o => o.FileId, o => new DeviceFilePacsDto(o.Status, o.Message, o.SentAt), ct);
         var files = await db.Set<StoredFile>().AsNoTracking().Where(f => ids.Contains(f.Id))
             .ToDictionaryAsync(f => f.Id, f => new DeviceFileDto(f.Id, f.FileName, f.ContentType, f.SizeBytes), ct);
         return ids.Select(id => (files.GetValueOrDefault(id) ?? new DeviceFileDto(id, null, null, null)) with { Pacs = pacs.GetValueOrDefault(id) }).ToList();
+    }
+
+    /// <summary>The PACS set up now for the facility, or null while the integration is off (outcomes are then shown as they are).</summary>
+    private async Task<string?> DestinationAsync(IPacsClient pacs, Guid facilityId, CancellationToken ct)
+    {
+        try
+        {
+            return await pacs.StoreDestinationAsync(facilityId, ct);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
     }
 
     private static CardiologyReportDto ToDto(CardiologyReport r, IReadOnlyDictionary<Guid, string> users) => new(

@@ -103,6 +103,49 @@ public sealed class CardiologyPacsTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Files_stored_in_the_simulator_are_not_taken_as_in_the_pacs_set_up_after_it()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var technician = await server.SignInAsync(HospitalServer.Users.CardiologyTechnician);
+        var facilityId = (await technician.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+        var patient = await RegisterPatientAsync();
+        var study = await AddEchoAsync(facilityId, patient.Id);
+        var loop = await UploadAsync(technician, patient.Id, EchoLoop(), "loop.dcm");
+        await technician.PostAsync<CardiologyStudyDetail>($"/api/v1/cardiology/studies/{study.Id}/files", new AttachDeviceFilesRequest([loop]));
+
+        await using var pacs = await PacsSimulatorAsync(admin);
+        (await technician.PostAsync<CardiologyStudyDetail>($"/api/v1/cardiology/studies/{study.Id}/pacs"))
+            .Files.Single(f => f.Id == loop).Pacs.ShouldNotBeNull().Status.ShouldBe(CardiologyPacsStatus.Stored);
+
+        // Training is over and the hospital's PACS is set up (here at an address where nothing answers).
+        await SetPacsAsync(admin, new JsonObject
+        {
+            ["enabled"] = true,
+            ["provider"] = "dicomweb",
+            ["qidoUrl"] = "http://127.0.0.1:9/dicom-web",
+            ["viewerUrlTemplate"] = "https://pacs.example.org/viewer?study={studyUid}",
+        });
+
+        // The simulator's "stored" says nothing about the new PACS: the file shows as not sent, the viewer is not offered,
+        // and sending tries the new PACS instead of answering that every file is already there.
+        (await technician.GetAsync<CardiologyStudyDetail>($"/api/v1/cardiology/studies/{study.Id}")).Files.Single(f => f.Id == loop).Pacs.ShouldBeNull();
+        using (var viewer = await technician.SendRawAsync(HttpMethod.Get, $"/api/v1/cardiology/studies/{study.Id}/viewer"))
+        {
+            viewer.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await viewer.Content.ReadAsStringAsync(Ct)).ShouldContain("cardiology.not_in_pacs");
+        }
+
+        var resent = await technician.PostAsync<CardiologyStudyDetail>($"/api/v1/cardiology/studies/{study.Id}/pacs");
+        var outcome = resent.Files.Single(f => f.Id == loop).Pacs.ShouldNotBeNull();
+        outcome.Status.ShouldBe(CardiologyPacsStatus.Failed);
+        outcome.Message.ShouldNotBeNullOrWhiteSpace();
+
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<CardiologyPacsObject>().AsNoTracking()
+            .SingleAsync(o => o.CardiologyStudyId == study.Id, Ct)).Destination.ShouldBe("dicomweb http://127.0.0.1:9/dicom-web");
+    }
+
+    [Fact]
     public async Task A_study_without_dicom_files_has_nothing_to_send_or_open()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);

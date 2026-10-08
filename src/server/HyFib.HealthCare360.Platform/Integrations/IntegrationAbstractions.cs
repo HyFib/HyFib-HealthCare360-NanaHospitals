@@ -421,6 +421,14 @@ public interface IPacsClient
     Task<IReadOnlyList<PacsStoreOutcome>> StoreAsync(PacsStoreRequest request, CancellationToken cancellationToken);
 
     /// <summary>
+    /// The PACS that objects sent now for the facility go to: its provider and STOW-RS address (no credentials). A
+    /// caller records it with each outcome, so an object stored in another PACS (before the PACS was changed, or in the
+    /// simulator while training) is not taken as being in this one.
+    /// </summary>
+    /// <exception cref="HttpRequestException">PACS is not configured or disabled; the message is safe to show to staff.</exception>
+    Task<string> StoreDestinationAsync(Guid? facilityId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Viewer launch URL built from the configured template (for example OHIF/Weasis/vendor viewer). Null when no
     /// template is configured, or when it needs a value that is not given: a template with <c>{studyUid}</c> needs the
     /// study UID, one with <c>{accession}</c> the accession number.

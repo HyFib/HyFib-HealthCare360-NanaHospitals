@@ -13,7 +13,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HyFib.HealthCare360.Server.Persistence.Migrations
 {
     [DbContext(typeof(HospitalDbContext))]
-    [Migration("20261008033903_CardiologyPacsObjects")]
+    [Migration("20261008041324_CardiologyPacsObjects")]
     partial class CardiologyPacsObjects
     {
         /// <inheritdoc />
@@ -9758,6 +9758,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid?>("DeletedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
+
+                    b.Property<string>("Destination")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("destination");
 
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")

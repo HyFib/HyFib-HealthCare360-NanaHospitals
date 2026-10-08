@@ -38,6 +38,7 @@ internal sealed class CardiologyPacsObjectConfiguration : IEntityTypeConfigurati
         b.ToTable("cardiology_pacs_objects", DiagnosticsSchema.Name);
         b.Property(x => x.SopInstanceUid).HasMaxLength(64);
         b.Property(x => x.Message).HasMaxLength(300);
+        b.Property(x => x.Destination).HasMaxLength(300);
         b.HasOne<CardiologyStudy>().WithMany().HasForeignKey(x => x.CardiologyStudyId).OnDelete(DeleteBehavior.Cascade);
         b.HasIndex(x => new { x.CardiologyStudyId, x.FileId }).IsUnique();
     }

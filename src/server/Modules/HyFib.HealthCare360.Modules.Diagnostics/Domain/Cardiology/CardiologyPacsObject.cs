@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Integrations;
+
 namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology;
 
 public enum CardiologyPacsStatus
@@ -18,7 +20,8 @@ public enum CardiologyPacsStatus
 /// <summary>
 /// A cardiology study's DICOM device file sent to the PACS (INT-PACS, STOW-RS), and what the PACS did with it: one row per
 /// file, updated each time it is sent. The object goes under the patient's UHID and the study's UID, with the
-/// machine's values kept in the object itself.
+/// machine's values kept in the object itself. An outcome holds only for the PACS it was sent to
+/// (<see cref="Destination"/>): once another PACS is set up, the file counts as not sent there.
 /// </summary>
 public sealed class CardiologyPacsObject : AuditableEntity, IFacilityScoped
 {
@@ -33,6 +36,9 @@ public sealed class CardiologyPacsObject : AuditableEntity, IFacilityScoped
     public string? SopInstanceUid { get; set; }
 
     public CardiologyPacsStatus Status { get; set; }
+
+    /// <summary>The PACS it was sent to: provider and STOW-RS address (<see cref="IPacsClient.StoreDestinationAsync"/>).</summary>
+    public string Destination { get; set; } = string.Empty;
 
     /// <summary>Why it was not stored, or the PACS's warning about one it stored.</summary>
     public string? Message { get; set; }

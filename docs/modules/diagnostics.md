@@ -177,8 +177,8 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/studies/{id}` | same | → `CardiologyStudyDetail` (device files, each with `pacs` {status, message, sentAt} once sent to the PACS; report, packageBookingId, quantity) |
 | POST | `/studies/{id}/schedule` · `/start` | `cardiology.studies.manage` | `ScheduleCardiologyRequest` / `StartCardiologyRequest` (deviceName) → `CardiologyStudyDetail` |
 | POST | `/studies/{id}/files` | `cardiology.studies.manage` | `AttachDeviceFilesRequest` (fileIds uploaded via `/api/v1/files`; must belong to this patient) → `CardiologyStudyDetail`. Device output may be a PDF, images, DICOM or SCP-ECG (stored as `application/x-scp-ecg`, `.scp`); the staff app shows PDFs and images and offers the others for saving, to open in an ECG or DICOM viewer |
-| POST | `/studies/{id}/pacs` | `cardiology.studies.manage` | → `CardiologyStudyDetail`: sends the DICOM device files the PACS does not hold yet (STOW-RS; see *Cardiology to the PACS* below). 422 `cardiology.no_dicom_files`, `cardiology.in_pacs` (every DICOM file is in the PACS), `cardiology.cancelled`, `pacs.unavailable` (the integration is off or not set up; nothing sent). Guard; audit `cardiology.pacs.sent` |
-| GET | `/studies/{id}/viewer` | studies.read, studies.manage or reports.verify | → `ViewerLink` (url, studyInstanceUid) once the PACS holds one of the study's files; 422 `cardiology.not_in_pacs`, `pacs.viewer_not_configured`, `pacs.accession_too_long`. Guard; audit "Opened images of {accession}" |
+| POST | `/studies/{id}/pacs` | `cardiology.studies.manage` | → `CardiologyStudyDetail`: sends the DICOM device files the PACS set up now does not hold yet (STOW-RS; see *Cardiology to the PACS* below). 422 `cardiology.no_dicom_files`, `cardiology.in_pacs` (every DICOM file is in the PACS), `cardiology.cancelled`, `pacs.unavailable` (the integration is off or not set up; nothing sent). Guard; audit `cardiology.pacs.sent` |
+| GET | `/studies/{id}/viewer` | studies.read, studies.manage or reports.verify | → `ViewerLink` (url, studyInstanceUid) once the PACS set up now holds one of the study's files; 422 `cardiology.not_in_pacs`, `pacs.viewer_not_configured`, `pacs.accession_too_long`. Guard; audit "Opened images of {accession}" |
 | POST | `/studies/{id}/complete` | `cardiology.studies.manage` | `CompleteCardiologyRequest` (notes) → `CardiologyStudyDetail`; 422 `cardiology.no_tracing` without device output |
 | POST | `/studies/{id}/cancel` | `cardiology.studies.manage` | `CancelCardiologyRequest` (reason) → `CardiologyStudyDetail` |
 | PUT | `/studies/{id}/report` | studies.manage or reports.verify | `SaveCardiologyReportRequest` (ecg: rate/rhythm/PR/QRS/QT/QTc/axis/ST-T/interpretation; echo: LVEF/chambers/valves/RWMA/diastolic function/pericardium/conclusion; tmt: protocol/duration/METs/max HR/%target/BP response/result; holter; abpm; conclusion; recommendations; isCriticalFinding) → `CardiologyStudyDetail` |
@@ -344,9 +344,12 @@ diagnostics screen.
   `CardiologyStudy.StudyInstanceUid`), so every file of the study goes under one study, whenever it is sent. The values
   the machine recorded are kept in each object (see *Sending (STOW-RS)* in [integrations.md](integrations.md)). Only
   `application/dicom` files go; PDFs, pictures and SCP-ECG stay in HC360. Each file's outcome is a
-  `CardiologyPacsObject` row (status Stored, Refused, Failed or NotDicom, the PACS's reason, when it was sent):
-  the page shows it under the file, a file not stored is sent again by the next **Send again to PACS**, and one stored
-  is not. Once the PACS holds a file, **Open in PACS viewer** opens the configured viewer link for the study UID and
+  `CardiologyPacsObject` row (status Stored, Refused, Failed or NotDicom, the PACS's reason, when it was sent, and the
+  PACS it was sent to, from `IPacsClient.StoreDestinationAsync`): the page shows it under the file, a file not stored
+  is sent again by the next **Send again to PACS**, and one stored is not. An outcome counts only for the PACS it came
+  from: after a change of PACS (or of its STOW-RS address), or once the simulator used while training is replaced, the
+  page shows the files as not sent, the viewer is not offered, and **Send to PACS** sends them to the new one. While
+  the integration is off, the outcomes are shown as they are. Once the PACS holds a file, **Open in PACS viewer** opens the configured viewer link for the study UID and
   accession number. Sending is audited (`cardiology.pacs.sent`, with the files and their SOP instance UIDs), as
   patient data leaves HC360.
 
