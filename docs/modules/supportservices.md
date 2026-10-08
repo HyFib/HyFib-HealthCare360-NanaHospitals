@@ -62,9 +62,11 @@ for how long, and whether the trays were clean on inspection. It passes when the
 (ISO 15883-1: each second counts 10^((T − 80) / 10), so 90 °C held for 5 minutes gives 3000) and the trays are clean;
 otherwise, or when the operator aborts it, it fails and the trays are washed again in a new cycle. A sterilizer load
 may name, for each set, the passed cycle its trays were washed in. The load is refused when that cycle has not passed
-(`cssd.wash_not_passed`) or did not wash the set (`cssd.wash_set_mismatch`). Each pack keeps the link, so a pack
-traces back through its load to its wash, and a wash cycle lists the packs made from its trays. Naming the wash cycle
-is optional.
+(`cssd.wash_not_passed`), did not wash the set (`cssd.wash_set_mismatch`), or has fewer trays of the set left than the
+load packs (`cssd.wash_trays_used`): each tray washed makes one pack, and only the packs of a load that failed before
+release (Reprocess) are packed again from the same cycle. Loads naming the same cycle take turns, so two loads saved
+together cannot both pack its last tray. Each pack keeps the link, so a pack traces back through its load to its wash,
+and a wash cycle lists the packs made from its trays. Naming the wash cycle is optional.
 
 ### Sterilizer loads — `/api/v1/cssd/loads`
 | Method | Path | Permission | Request → response |
@@ -72,7 +74,7 @@ is optional.
 | GET | `/?status&method&biologicalPending&from&to&search` (paged) | `cssd.read` or `cssd.process` | → `PagedResult<LoadListItem>` |
 | GET | `/{id}` | same | → `LoadDto` (parameters, indicators, packs with expiry) |
 | GET | `/{id}/recall` | `cssd.read` or `cssd.recalls` | → `RecallReport` (every issue of the load with department, status, patient, acknowledgement) |
-| POST | `/` | `cssd.process` | `CreateLoadRequest` (sterilizerName, method, program, containsImplants, operatorName, packs[setId, quantity, washCycleId?] ≤ 200; sets must match the method; a named wash cycle must have passed and washed the set) → 201 `LoadDto`; packs numbered `{cycle}-001…` and linked to their wash cycle |
+| POST | `/` | `cssd.process` | `CreateLoadRequest` (sterilizerName, method, program, containsImplants, operatorName, packs[setId, quantity, washCycleId?] ≤ 200; sets must match the method; a named wash cycle must have passed and washed at least that many trays of the set not yet packed) → 201 `LoadDto`; packs numbered `{cycle}-001…` and linked to their wash cycle |
 | POST | `/{id}/start` | `cssd.process` | → `LoadDto` |
 | POST | `/{id}/complete` | `cssd.process` | `CompleteLoadRequest` (temperatureC, pressureKpa, exposureMinutes, chemicalIndicator) → `LoadDto`; out-of-range parameters or a failed CI fail the load at once |
 | POST | `/{id}/release` | `cssd.release` | → `LoadDto` (packs dated release date + shelf life; implant loads wait for BI pass) |

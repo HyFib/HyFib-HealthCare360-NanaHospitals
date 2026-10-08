@@ -202,7 +202,8 @@ Every value in a page template is escaped. The QR code SVG is the only markup ac
   whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
   field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes
   hashed, allows 5 tries per code and 10 minutes, and limits codes per account (5 an hour) and per number (3 in 15
-  minutes).
+  minutes). Tries of one code, and code requests for one account or number, take turns (a PostgreSQL advisory lock
+  held until each is saved), so requests sent together cannot get past these limits.
 * **Privacy notice.** `/privacy` covers the Digital Personal Data Protection Act 2023: what is used and why, who sees
   it, how long it is kept, and the rights to access, correct, withdraw consent and complain.
 

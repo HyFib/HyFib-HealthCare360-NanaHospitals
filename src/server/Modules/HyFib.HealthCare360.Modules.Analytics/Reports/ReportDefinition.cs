@@ -79,8 +79,23 @@ internal sealed class ReportContext(HospitalDbContext db, ReportArguments args, 
         return rows;
     }
 
-    /// <summary>Master-data look-ups (names for grouped ids); bounded by the number of rows already returned.</summary>
-    public Task<List<T>> LookupAsync<T>(IQueryable<T> query, CancellationToken ct) => executor.ListAsync(query.Take(LookupCap), ct);
+    /// <summary>
+    /// Master-data look-ups (names for grouped ids): bounded by the number of rows already returned, so the cap follows
+    /// <see cref="RowCap"/> (a BI extract reads more rows than a screen). A look-up cut at its cap marks the report
+    /// truncated, since the rows past it would have no name.
+    /// </summary>
+    public async Task<List<T>> LookupAsync<T>(IQueryable<T> query, CancellationToken ct)
+    {
+        var cap = Math.Max(LookupCap, rowCap);
+        var rows = await executor.ListAsync(query.Take(cap + 1), ct);
+        if (rows.Count > cap)
+        {
+            rows.RemoveAt(rows.Count - 1);
+            Truncated = true;
+        }
+
+        return rows;
+    }
 
     /// <summary>Most measurement rows read for in-memory statistics (about 10 MB of small tuples).</summary>
     public const int MeasurementCap = 250_000;

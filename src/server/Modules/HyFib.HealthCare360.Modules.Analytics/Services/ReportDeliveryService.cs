@@ -73,7 +73,7 @@ internal sealed class ReportDeliveryService(
 
         var parameters = ScheduleParameters.Read(schedule.ParametersJson);
         parameters[ReportKeys.Facility] = schedule.FacilityId.ToString();
-        var execution = await runner.RunAsync(actor, schedule.ReportId, parameters, ct);
+        var execution = await runner.RunAsync(actor, schedule.ReportId, parameters, ct, schedule.IsExtract ? ReportRunner.ExtractRowCap : null);
         if (execution.IsFailure)
         {
             return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed, execution.Error!.Message, ct);
@@ -153,6 +153,14 @@ internal sealed class ReportDeliveryService(
         d.Recipients.OrderBy(r => r.Email, StringComparer.Ordinal).Select(r => new DeliveryRecipientDto(r.Email, r.Status, r.Attempts, r.LastError, r.SentAt)).ToList());
 
     /// <summary>
+    /// Why an extract of <paramref name="data"/> is not written, or null to write it: a report that reached its row limit
+    /// would give the BI tool part of the data with nothing to say so, so the last complete file stays instead.
+    /// </summary>
+    internal static string? IncompleteExtractProblem(ReportData data) => data.Truncated
+        ? "The report reached its row limit, so the file would leave out data. Narrow the extract's inputs, for example a shorter period or one store."
+        : null;
+
+    /// <summary>
     /// Writes a BI extract: the report's rows as a plain CSV table (<see cref="ReportExporter.ExtractCsv"/>) in the
     /// facility's folder, replacing the previous file. The file is not kept in HC360 as well: the extract folder holds it.
     /// </summary>
@@ -163,6 +171,11 @@ internal sealed class ReportDeliveryService(
         if (facilityCode is null || schedule.ExtractName is null || !ExtractFolder.IsValidName(schedule.ExtractName))
         {
             return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed, "The extract has no valid file name. Open it and save it again.", ct);
+        }
+
+        if (IncompleteExtractProblem(execution.Data) is { } incomplete)
+        {
+            return await FinishAsync(schedule, delivery, now, DeliveryStatus.Failed, incomplete, ct);
         }
 
         var filters = await presenter.DescribeAsync(execution, ct);
@@ -195,7 +208,7 @@ internal sealed class ReportDeliveryService(
         schedule.RecordRun(now, ScheduleRunStatus.Succeeded, null);
 
         // Saves the delivery and the schedule together with the audit entry.
-        await auditor.ExportedAsync(execution, ExportFormat.Csv, document.Rows.Count, actor, $"BI extract {Path.Combine(facilityCode, delivery.FileName)}", [], ct);
+        await auditor.ExportedAsync(execution, ExportFormat.Csv, document.Rows.Count, actor, $"BI extract {Path.Combine(ExtractFolder.FolderNameFor(facilityCode), delivery.FileName)}", [], ct);
         await monitor.WriteRefreshLogAsync(ct);
         logger.LogInformation("BI extract {ScheduleId} written ({Rows} rows)", schedule.Id, document.Rows.Count);
         return delivery;

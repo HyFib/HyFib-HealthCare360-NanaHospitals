@@ -1,4 +1,7 @@
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Identity;
@@ -168,6 +171,11 @@ public sealed class PortalFamilyService(
             return Error.Rule("portal.family_own_number", "Everyone registered with your own number is already in your family.");
         }
 
+        // The limits are counts of codes already saved, so the account's and the number's requests take turns until the
+        // new code is saved: requests sent together would otherwise all count the same codes and all pass.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockAsync([LockKey("account", accountPhone), LockKey("number", target)], ct);
+
         var now = time.GetUtcNow();
         var hourAgo = now.AddHours(-1);
         if (await db.Set<PortalFamilyCode>().CountAsync(c => c.AccountPhone == accountPhone && c.CreatedAt > hourAgo, ct) >= CodesPerAccountPerHour)
@@ -221,6 +229,7 @@ public sealed class PortalFamilyService(
 
         db.Add(code);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return new FamilyCodeSent(code.Id, code.ExpiresAt);
     }
 
@@ -232,6 +241,18 @@ public sealed class PortalFamilyService(
             return NotSignedIn;
         }
 
+        // Tries of one code take turns, and each is saved before the next is read: tries sent together would otherwise
+        // read the same attempt count and save one attempt for all of them, so far more guesses than MaxAttempts.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockAsync([LockKey("code", codeId.ToString("N"))], ct);
+        var result = await VerifyTakingTurnsAsync(codeId, enteredCode, accountPhone, ct);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return result;
+    }
+
+    private async Task<Result<PortalLinkedRelativeDto>> VerifyTakingTurnsAsync(Guid codeId, string enteredCode, string accountPhone, CancellationToken ct)
+    {
         var code = await db.Set<PortalFamilyCode>().FirstOrDefaultAsync(c => c.Id == codeId && c.AccountPhone == accountPhone, ct);
         if (code is null)
         {
@@ -242,14 +263,12 @@ public sealed class PortalFamilyService(
         var verified = code.Verify(HashOf(code.Id, enteredCode.Trim()), now);
         if (verified.IsFailure)
         {
-            await db.SaveChangesAsync(ct);
             return verified.Error!;
         }
 
         var patient = await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == verified.Value, ct);
         if (patient is null || !patient.IsActive || patient.MergedIntoPatientId is not null)
         {
-            await db.SaveChangesAsync(ct);
             return Error.Rule("portal.family_code_expired", "This code can no longer be used. Ask for a new one.");
         }
 
@@ -272,7 +291,6 @@ public sealed class PortalFamilyService(
                 $"{patient.Uhid} shared with the portal account of {Phone.Mask(accountPhone)} by a code sent to {Phone.Mask(code.TargetPhone)}");
         }
 
-        await db.SaveChangesAsync(ct);
         return new PortalLinkedRelativeDto(link.Id, patient.Id, patient.FullName, patient.Uhid, link.Relation, link.Source, link.LinkedAt);
     }
 
@@ -330,6 +348,22 @@ public sealed class PortalFamilyService(
     private static Error NotSignedIn => Error.Forbidden("portal.account_required", "Sign in to the patient portal first.");
 
     private static string HashOf(Guid codeId, string code) => SecretTokens.Hash($"{codeId:N}:{code}");
+
+    /// <summary>
+    /// Holds a lock per key until the caller's transaction ends (<c>pg_advisory_xact_lock</c>), in ascending order so two
+    /// requests never wait on each other's keys.
+    /// </summary>
+    private async Task LockAsync(IEnumerable<long> keys, CancellationToken ct)
+    {
+        foreach (var key in keys.Distinct().Order())
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", ct);
+        }
+    }
+
+    /// <summary>A lock key for an account, a number or a code; two values sharing a key only wait for each other.</summary>
+    private static long LockKey(string kind, string value) =>
+        BinaryPrimitives.ReadInt64LittleEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"portal.family.{kind}:{value}")));
 
     /// <summary>How the code's message names the person asking: their name and masked number, or just the number.</summary>
     private string Requester(string accountPhone)

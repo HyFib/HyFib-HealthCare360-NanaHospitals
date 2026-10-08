@@ -99,6 +99,25 @@ public sealed class WashCycleTests
     }
 
     [Fact]
+    public void A_cycle_gives_one_pack_for_each_tray_it_washed()
+    {
+        var cycle = Running();
+        cycle.Complete(90m, 5m, inspectedClean: true, Now);
+
+        cycle.CanPack(MajorSet, "Major set", quantity: 2).IsSuccess.ShouldBeTrue();
+        cycle.CanPack(MajorSet, "Major set", quantity: 1, alreadyPacked: 1).IsSuccess.ShouldBeTrue();
+
+        var tooMany = cycle.CanPack(MajorSet, "Major set", quantity: 3);
+        tooMany.Error!.Code.ShouldBe("cssd.wash_trays_used");
+        tooMany.Error.Message.ShouldBe("Wash cycle NHCW26000001 washed 2 trays of Major set: pack at most 2 from it.");
+
+        cycle.CanPack(MajorSet, "Major set", quantity: 2, alreadyPacked: 1).Error!.Message
+            .ShouldBe("Wash cycle NHCW26000001 washed 2 trays of Major set, and 1 is already packed: pack at most 1 more from it.");
+        cycle.CanPack(MajorSet, "Major set", quantity: 1, alreadyPacked: 2).Error!.Message
+            .ShouldBe("The 2 trays of Major set washed in cycle NHCW26000001 are already packed. Wash any others in a new cycle.");
+    }
+
+    [Fact]
     public void Trays_of_a_running_cycle_cannot_be_packed_yet() =>
         Running().CanPack(MajorSet, "Major set").Error!.Message.ShouldContain("has not finished");
 }

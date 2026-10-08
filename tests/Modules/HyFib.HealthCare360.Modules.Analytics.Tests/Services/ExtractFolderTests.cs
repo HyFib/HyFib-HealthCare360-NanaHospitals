@@ -45,6 +45,19 @@ public sealed class ExtractFolderTests : IDisposable
             "a relative path is taken from the data folder, not the service's working directory");
     }
 
+    [Theory]
+    [InlineData("NH", "NH")]
+    [InlineData("CONS", "CONS")]
+    [InlineData("CON", "CON_")]
+    [InlineData("PRN", "PRN_")]
+    [InlineData("AUX", "AUX_")]
+    [InlineData("NUL", "NUL_")]
+    public void A_facility_coded_like_a_windows_device_gets_a_folder_windows_can_make(string code, string folder)
+    {
+        ExtractFolder.FolderNameFor(code).ShouldBe(folder);
+        Folder(Root).FilePath(code, "daily-revenue").ShouldBe(Path.Combine(Path.GetFullPath(Root), folder, "daily-revenue.csv"));
+    }
+
     [Fact]
     public async Task A_file_is_replaced_whole_and_never_written_outside_the_folder()
     {

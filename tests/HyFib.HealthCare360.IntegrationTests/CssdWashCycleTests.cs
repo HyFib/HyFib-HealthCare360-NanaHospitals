@@ -8,7 +8,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// CSSD-04 through the API, as the CSSD technician does it: trays go through the washer-disinfector, the cycle is
 /// completed from its printout, and the sterilizer load names the wash its packs came from, so every pack traces back to
-/// its wash. A load cannot name a wash that failed, or one that did not wash its set.
+/// its wash. A load cannot name a wash that failed, one that did not wash its set, or one whose trays are all packed.
 /// </summary>
 public sealed class CssdWashCycleTests(HospitalServer server)
 {
@@ -64,6 +64,54 @@ public sealed class CssdWashCycleTests(HospitalServer server)
         using var refused = await cssd.SendRawAsync(HttpMethod.Post, Loads, Load(new LoadPackInput(major.Id, 1, wash.Id)));
         refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
         (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain("cssd.wash_not_passed");
+    }
+
+    [Fact]
+    public async Task A_wash_gives_as_many_packs_as_it_washed_trays_and_a_failed_load_gives_them_back()
+    {
+        var cssd = await server.SignInAsync(HospitalServer.Users.CssdTechnician);
+        var (major, _) = await SteamSetsAsync(cssd);
+        var wash = await PassedWashAsync(cssd, major.Id, trays: 2);
+
+        // Two washed trays make two packs, never three, and none once both are packed.
+        await RefusedAsync(cssd, Load(new LoadPackInput(major.Id, 3, wash.Id)), "cssd.wash_trays_used");
+        var first = await cssd.PostAsync<LoadDto>(Loads, Load(new LoadPackInput(major.Id, 2, wash.Id)));
+        await RefusedAsync(cssd, Load(new LoadPackInput(major.Id, 1, wash.Id)), "cssd.wash_trays_used");
+
+        // A load that fails before release sends its packs back for reprocessing: the trays are packed again.
+        await cssd.PostAsync<LoadDto>($"{Loads}/{first.Id}/abort", new FailLoadRequest("Door seal fault"));
+        (await cssd.PostAsync<LoadDto>(Loads, Load(new LoadPackInput(major.Id, 2, wash.Id)))).Packs.Count.ShouldBe(2);
+
+        // Loads sent together take turns: only one of them gets the last tray.
+        var last = await PassedWashAsync(cssd, major.Id, trays: 1);
+        var loads = await Task.WhenAll(Enumerable.Range(0, 4)
+            .Select(_ => cssd.SendRawAsync(HttpMethod.Post, Loads, Load(new LoadPackInput(major.Id, 1, last.Id)))));
+        try
+        {
+            loads.Count(r => r.IsSuccessStatusCode).ShouldBe(1);
+            loads.Count(r => r.StatusCode == HttpStatusCode.UnprocessableEntity).ShouldBe(3);
+        }
+        finally
+        {
+            foreach (var response in loads)
+            {
+                response.Dispose();
+            }
+        }
+    }
+
+    private static async Task<WashCycleDto> PassedWashAsync(ApiClient cssd, Guid setId, int trays)
+    {
+        var wash = await cssd.PostAsync<WashCycleDto>(Washes,
+            new StartWashCycleRequest("Washer-disinfector 3", null, null, null, [new WashTrayInput(setId, trays)]));
+        return await cssd.PostAsync<WashCycleDto>($"{Washes}/{wash.Id}/complete", new CompleteWashCycleRequest(90m, 5m, true));
+    }
+
+    private static async Task RefusedAsync(ApiClient cssd, CreateLoadRequest load, string code)
+    {
+        using var refused = await cssd.SendRawAsync(HttpMethod.Post, Loads, load);
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+        (await refused.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)).ShouldContain(code);
     }
 
     private static CreateLoadRequest Load(LoadPackInput packs) =>
