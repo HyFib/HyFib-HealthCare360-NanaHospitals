@@ -60,6 +60,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<PrepaymentChecker>();
         services.AddScoped<GatewayReconciliationRunner>();
         services.AddScoped<GatewayWebhookLog>();
+        services.AddScoped<PosSettlementService>();
 
         // Replace the Platform's "billing not installed" fallbacks; ChargeService is shared so a request has one unit of work.
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
@@ -79,6 +80,7 @@ public sealed class BillingModule : IModule
         PaymentEndpoints.Map(endpoints);
         GatewayEndpoints.Map(endpoints);
         ReconciliationEndpoints.Map(endpoints);
+        PosSettlementEndpoints.Map(endpoints);
         ShiftEndpoints.Map(endpoints);
         IpEndpoints.Map(endpoints);
         PayerEndpoints.Map(endpoints);

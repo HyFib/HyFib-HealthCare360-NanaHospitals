@@ -251,7 +251,26 @@ export function TallyLedgerForm({ map, canEdit }: { map: TallyLedgerMap; canEdit
             disabled={disabled}
           />
           <Ledger control={control} name="gatewayCharges" label="Gateway charges" disabled={disabled} />
-          <Ledger control={control} name="gatewayInputGst" label="GST on gateway charges" disabled={disabled} />
+          <Ledger
+            control={control}
+            name="gatewayInputGst"
+            label="GST on gateway, card and UPI charges"
+            hint="Input GST on the payment gateway's and the card acquirer's charges."
+            disabled={disabled}
+          />
+        </FormGrid>
+      </Section>
+
+      <Section title="Card and UPI settlements">
+        <FormGrid columns={2}>
+          <Ledger
+            control={control}
+            name="posSettlementBank"
+            label="Bank the card acquirer pays into"
+            hint="Each card and UPI settlement journal clears the Card and UPI ledgers above into this bank."
+            disabled={disabled}
+          />
+          <Ledger control={control} name="posCharges" label="Card and UPI charges (MDR)" disabled={disabled} />
         </FormGrid>
       </Section>
 

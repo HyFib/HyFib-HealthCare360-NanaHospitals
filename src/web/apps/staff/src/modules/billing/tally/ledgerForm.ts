@@ -87,6 +87,8 @@ export const ledgerFormSchema = z
     gatewaySettlementBank: ledger,
     gatewayCharges: ledger,
     gatewayInputGst: ledger,
+    posSettlementBank: ledger,
+    posCharges: ledger,
     departments: z
       .array(
         z.object({
@@ -182,6 +184,8 @@ export function toLedgerForm(map: TallyLedgerMap): LedgerForm {
     gatewaySettlementBank: map.gatewaySettlementBank,
     gatewayCharges: map.gatewayCharges,
     gatewayInputGst: map.gatewayInputGst,
+    posSettlementBank: map.posSettlementBank,
+    posCharges: map.posCharges,
     departments: Object.entries(map.incomeByDepartment ?? {})
       .map(([code, name]) => ({ code, ledger: name }))
       .sort((a, b) => a.code.localeCompare(b.code)),
@@ -226,6 +230,8 @@ export function toLedgerMap(form: LedgerForm): TallyLedgerMap {
     gatewaySettlementBank: form.gatewaySettlementBank.trim(),
     gatewayCharges: form.gatewayCharges.trim(),
     gatewayInputGst: form.gatewayInputGst.trim(),
+    posSettlementBank: form.posSettlementBank.trim(),
+    posCharges: form.posCharges.trim(),
     pharmacy: counterMap(form.pharmacy),
     canteen: counterMap(form.canteen),
     salesLedgerPerGstRate: form.salesLedgerPerGstRate,

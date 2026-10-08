@@ -181,6 +181,9 @@ export interface TallyLedgerMap {
   gatewaySettlementBank: string;
   gatewayCharges: string;
   gatewayInputGst: string;
+  /** The card and UPI settlement journal: the bank the acquirer pays into and its charges (GST on them: gatewayInputGst). */
+  posSettlementBank: string;
+  posCharges: string;
   pharmacy: TallyCounterLedgers;
   canteen: TallyCounterLedgers;
   salesLedgerPerGstRate: boolean;

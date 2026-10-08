@@ -26,6 +26,8 @@ const map: TallyLedgerMap = {
   gatewaySettlementBank: 'HDFC Current Account',
   gatewayCharges: 'Payment Gateway Charges',
   gatewayInputGst: 'Input GST',
+  posSettlementBank: 'HDFC Current Account',
+  posCharges: 'Card & UPI Charges (MDR)',
   pharmacy: {
     include: true,
     sales: 'Pharmacy Sales',
@@ -65,6 +67,8 @@ describe('ledger names form', () => {
     expect(saved.gatewaySettlementBank).toBe('HDFC Current Account');
     expect(saved.gatewayCharges).toBe('Payment Gateway Charges');
     expect(saved.gatewayInputGst).toBe('Input GST');
+    expect(saved.posSettlementBank).toBe('HDFC Current Account');
+    expect(saved.posCharges).toBe('Card & UPI Charges (MDR)');
     expect(saved.pharmacy).toEqual({
       include: true,
       sales: null,

@@ -3,14 +3,15 @@
 Tariffs and pricing, charge capture from every clinical/support module, OP and IP billing, payments (counter, POS
 terminal, payment gateway), cashier shifts and day-end, patient advances (online appointment prepayments), refunds and
 credit notes, insurance/TPA (payers, policies, pre-authorisation, claims, receivable ageing), doctor fee accounting,
-the Tally day book and the reconciliation of the payment gateway. SRS **MB-01..06, OPB-01..07, IPB-01..08,
+the Tally day book, and the reconciliation of the payment gateway and of card and UPI terminals. SRS **MB-01..06, OPB-01..07, IPB-01..08,
 INS-01..07, DFA-01..05**, business side of **INT-PG / INT-POS / INT-TALLY**, and OA-03 (appointment prepayments).
 
 Project: `src/server/Modules/HyFib.HealthCare360.Modules.Billing` (layer 7; references Patients and Scheduling).
-Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (277 unit tests: pure domain and the
+Schema `billing`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Billing.Tests` (372 unit tests: pure domain, the settlement reports and the
 printed bill's HTML, plus change-tracking checks on the real EF model without a database), and the end-to-end
 `GatewayReconciliationTests` in `tests/HyFib.HealthCare360.IntegrationTests` (payment link to settlement journal, a
-webhook delivered twice, who may reconcile).
+webhook delivered twice, who may reconcile) and `PosSettlementTests` (a terminal sale and a typed card payment matched
+from the acquirer's report, the review, the settlement journal, a card receipt never settled).
 
 The module implements the Platform contracts `IChargePoster` and `IBillingStatusProvider` (replacing the Null
 fallbacks) — see [Contracts for other modules](#contracts-for-other-modules). For insurance claims it reads the coding
@@ -49,7 +50,7 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
 | `billing.tally.export` | Post and export the Tally day book, mark it imported and reconcile it with Tally | HospitalAdmin, Accountant |
 | `billing.tally.configure` | Set the Tally ledger names the day book posts to | HospitalAdmin, Accountant |
-| `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again | HospitalAdmin, Accountant |
+| `billing.gateway.reconcile` | Gateway reconciliation: settlements, exceptions, record a missed online receipt, send a failed gateway refund again. Card and UPI reconciliation: import the acquirer's settlement reports, review what does not match | HospitalAdmin, Accountant |
 | `insurance.payers.manage` | Insurers, TPAs, corporates, schemes, non-payable items | InsuranceDesk, HospitalAdmin |
 | `insurance.policies.manage` | Patient policies | InsuranceDesk, Billing, HospitalAdmin |
 | `insurance.preauth.manage` | Cashless pre-authorisation, enhancements | InsuranceDesk, HospitalAdmin |
@@ -251,6 +252,22 @@ Every route needs `billing.gateway.reconcile` and works on the signed-in facilit
 | POST | `/exceptions/{id}/record-receipt` | → `DiscrepancyActionResult(message, discrepancy)`; only for money taken without a receipt. Records the receipt against its bill, admission or booking after asking the gateway; if that can no longer take it (a closed admission, an older order of a booking), keeps it as a patient advance. 422 `billing.payment_unlinked` when HC360 does not know what the payment was for. Audited `billing.gateway.receipt_recorded` |
 | POST | `/exceptions/{id}/retry` | → `DiscrepancyActionResult`; by kind: asks the gateway again, reads the settlements of the next five days again, sends a failed gateway refund again (audited `billing.refund.gateway_retried`; 422 `billing.refund_retrying` while another request is sending it), or matches the settled transaction again. 422 `billing.nothing_to_retry` for a settlement-level difference |
 | POST | `/exceptions/{id}/resolve` | `ResolveDiscrepancyRequest(note, version)` (5–500 characters) → `GatewayDiscrepancyDto`; 409 when someone changed it meanwhile. Audited `billing.gateway.exception_resolved` |
+
+### Card and UPI reconciliation — `/api/v1/billing/pos/settlements`
+Every route needs `billing.gateway.reconcile` and works on the signed-in facility (422 `facility.required` without
+one). See [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos) for what happens behind them.
+
+| Method | Path | Request → response |
+|---|---|---|
+| GET | `/summary` | → `PosSettlementSummaryDto` (expected settlement days, transactions to look at by reason with count and amount, receipts not settled with their total, the last payout day, the last report imported, the other counters' terminals) |
+| POST | `/imports` | multipart `file` (CSV or .xlsx, at most 10 MB), `acquirer` (at most 64 characters), `settledOn` (only for a report without a settlement date column) → 201 `PosSettlementImportResult(import, columns, problems, matched, toLookAt, message)`. 400 `file` when the report cannot be read (no headings found, an .xls file, too many rows; the message says why), 400 `settledOn` when it has no settlement dates and none was given, 409 `billing.pos_settlement_imported` for a report imported before (same content), 409 `billing.pos_settlement_busy` when another import or match ran at the same time. Audited `billing.pos.settlement_imported` |
+| GET | `/imports` (paged) | → `PagedResult<PosSettlementImportDto>` newest first (acquirer, file, rows, new, already imported, left out, the days paid, who imported it) |
+| GET | `/days?from&to` (IST days, the last month by default, at most 92 days) | → `PosSettlementDayDto[]`: per day the payouts (`PosPayoutDto`: UTR, acquirer, transactions, payments, refunds and chargebacks, charges without GST, GST, paid to the bank, to look at, and the settlement journal's number) |
+| GET | `/lines?attention&settledOn&utr&noUtr` (paged) | → `PagedResult<PosSettlementLineDto>`: `attention=true` the ones to look at, worst first (no receipt, amount differs, no refund, chargeback); `settledOn` with `utr` (or `noUtr=true`) one payout's transactions. Each with its references (RRN, approval code, card's last four digits, TID), amounts, what it matched (receipt or refund number, bill, how it was found) and any review |
+| POST | `/lines/{id}/review` | `ReviewPosSettlementLineRequest(note, version)` (5–500 characters) → `PosSettlementLineDto`; 422 `billing.pos_settlement_matched` for a line that matches, `billing.pos_settlement_reviewed` for one already reviewed; 409 when someone changed it meanwhile. Audited `billing.pos.settlement_reviewed` |
+| POST | `/match` | → `PosMatchResult(checked, matched, toLookAt, message)`: matches again the transactions without a receipt or refund settled in the last 90 days, for example after a missing receipt was recorded |
+| GET | `/unsettled` | → `UnsettledPosReceiptDto[]` oldest first: card and UPI receipts no report carries although the reports already go `settlementDays` past them (receipt and bill, mode, amount, reference, card's last four digits, HC360's terminal, days waiting) |
+| GET | `/training-file?date` | → `text/csv` `training-card-settlement-<date>.csv`: the training terminal's approved sales of the day as an acquirer would report them, to practise the import |
 
 ### Patient portal — `/api/v1/portal/bills` (`patients.portal`, own/linked patients only)
 | Method | Path | Request → response |
@@ -456,6 +473,67 @@ acknowledged and not acted on; after that, or after a failure, one delivery take
 event recorded as processed stays processed. Never the payload, which carries the patient's contact and card or bank details.
 They are deleted with the integration log after its retention period (Privacy › Retention).
 
+## Card and UPI reconciliation (INT-POS)
+
+Card and UPI money reaches the bank through the acquirer (the bank or POS company behind the terminals), less its
+charges (MDR) and the GST on them. The acquirer reports what it paid in a settlement report (its MIS), which an
+accountant imports on **Billing › Card and UPI settlements**; HC360 checks it against the card and UPI receipts.
+
+**Reading the report** (`PosSettlementFile`). CSV (comma, semicolon, tab or pipe separated, quoted fields allowed) or
+an Excel workbook (.xlsx, read by HC360's own reader, `XlsxSheets`: cell values only, no DTDs, at most 150 MB unpacked);
+an older .xls is refused with what to do. Banks lay their reports out differently, so the columns are found by their
+headings, in the first 30 rows (title rows before them are skipped): RRN (UPI: the UPI reference), approval code,
+transaction amount, MDR or commission, GST (or IGST, CGST and SGST added up), net amount, TID, transaction date and
+time, card number, transaction type, payment mode, settlement date and UTR, each under the names banks use ("Txn
+Amount", "Auth Code", "Cust Ref No", "MDR Amount", "Net Amount", "Settlement Date", "UTR No"…). A column whose heading is a
+rate ("MDR %") is never taken for an amount. The hospital can add its acquirer's own headings in
+`billing.pos.settlements` (`columns`). Dates are read day first (07/10/2026, 07-Oct-2026, 2026-10-07, Excel serial
+numbers) in Indian time; amounts with commas, ₹, INR, brackets or Dr. Only the card's last four digits are kept, never
+the card number or anything about the customer.
+
+* A payment's net is what reached the bank; when the report gives it, the charges are the amount less GST less the net,
+  so `amount = net + charges + GST` always holds. Without a net column, the net is the amount less MDR and GST.
+* A refund, void or reversal (or a negative amount) takes money back; a chargeback, dispute or adjustment is kept for
+  review. On these, any charge returned with the money counts as charges.
+* Rows left out, each with its reason (at most 20 listed): rows without an amount, rows with neither an RRN nor an
+  approval code (except chargebacks), rows whose net, charges and GST do not add up, and repeated rows. The report's
+  total rows are skipped and not counted. The import says which heading it read as what (`Amount from "Txn Amount"`).
+* At most 20,000 transactions and 10 MB per file. The same file (by its SHA-256) is refused a second time. Reports
+  overlap: each transaction is stored once (`line_key`: its type and RRN, or without one its TID, approval code, amount
+  and day), so a later report adds only what is new.
+
+**Matching** (each receipt payment and refund once; a partial unique index on the matched payment and on the refund
+stops two imports taking the same one):
+
+| Settled | Matches | Shown as |
+|---|---|---|
+| Payment | the card or UPI receipt payment whose reference is the RRN: the terminal's (a connected terminal's sale records it) or the one the cashier typed | `Matched` by the RRN, or `AmountDiffers` when HC360 recorded another amount |
+| Payment | else a connected terminal's approved sale with the approval code and amount, within two days, or a payment whose typed reference is the approval code | `Matched` by the approval code |
+| Payment by card | else a card payment typed with the same last four digits and amount, within a day | `Matched` by the card and amount |
+| Payment | nothing | `NoReceipt` |
+| Refund | the refund paid by card or UPI whose reference is the RRN or (same amount) the approval code | `Matched`, else `NoRefund` |
+| Chargeback | nothing to match | `Review` |
+| Any, at a TID in `otherTerminals` | the pharmacy's or canteen's terminal, whose sales Billing does not record | `OtherCounter` |
+
+`NoReceipt`, `AmountDiffers`, `NoRefund` and `Review` are listed to look at until an accountant reviews them with a
+note. Transactions without a receipt or refund settled in the last 90 days are matched again with each import and by
+**Match again** (after the missing receipt is recorded); one that matched stays matched.
+
+**Not settled.** A card or UPI receipt is listed when no report carries it although the reports of its mode already go
+`settlementDays` past it (from the first day a report covers, for the last 60 days, at most 500).
+
+**Settlement journal.** Each payout (a day's transactions under one UTR, or the day's without a UTR) is a Journal in
+the day book of its settlement day, numbered `POS-<facility>-<UTR>` (`POS-<facility>-<yyyyMMdd>` without a UTR):
+`posSettlementBank` is debited with what reached the bank, `posCharges` with the charges and `gatewayInputGst` with the
+GST on them, and the Card and UPI mode ledgers ("Card Settlement Account", "UPI Settlement Account" by default) are
+credited with the gross (payments less refunds and chargebacks). The receipts debited those ledgers, so what stays in
+them is not settled. Importing a report queues the posted days it touches again (`TallyCorrections`); the journal
+keeps its number, so Tally alters it.
+
+**Training.** `/training-file` turns the training terminal's approved sales of a day into a report, paid the next day
+with a 1.5 % charge on cards plus GST, under the UTR `SIMUTR<yyyyMMdd>`, so the whole flow can be tried without an
+acquirer.
+
 ## The Tally day book
 
 `TallyService` builds one facility's day as balanced vouchers (`TallyVoucherBuilder`) with the ledger names of
@@ -473,7 +551,9 @@ They are deleted with the integration log after its retention period (Privacy �
   Pharmacy and SupportServices): one summary Sales voucher (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST
   rate, a Credit Note for returns (`…-R`) and a Receipt for balances paid later (`…-C`). A counter can be left out with
   `pharmacy.include` / `canteen.include` while its sales are still entered in Tally by hand;
-* a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg)).
+* a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg));
+* a Journal per card and UPI payout of the day, from the acquirer's reports (see
+  [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos)).
 
 Every voucher carries a reference; Tally keeps it as `REMOTEID="HC360-<reference>"`, so posting a day again alters its
 vouchers instead of adding new ones. Narrations carry document numbers, never patient names.
@@ -578,9 +658,10 @@ the bill's day again, never to delete it.
 | `billing.registrationFee.enabled` | `true` | Charge `REG-NEW` on a patient's first visit |
 | `billing.discount.defaultMaxPercent` | `0` | Staff discount allowed without approval when the user has no limit row |
 | `billing.shift.required` | `true` | Counter collections need an open cashier shift |
-| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default); set on the Tally screen |
+| `billing.tally.ledgers` | built-in names | `TallyLedgerMap` JSON (income by department, mode ledgers, payer and doctor ledgers, `pharmacy` and `canteen` ledgers, `salesLedgerPerGstRate`; for the settlement journal `gatewaySettlementBank` "Bank", `gatewayCharges` "Payment Gateway Charges", `gatewayInputGst` "Input GST", and the clearing ledger is `modeLedgers.PaymentGateway`, "Payment Gateway Clearing" by default; for the card and UPI settlement journal `posSettlementBank` "Bank" and `posCharges` "Card & UPI Charges (MDR)", GST on `gatewayInputGst`); set on the Tally screen |
 | `billing.tally.dailyPost.enabled` | `true` | Queue the daily Tally post |
 | `billing.gateway.reconciliation` | `{ "enabled": true, "settlementDays": 3, "checkoutExpiryHours": 48 }` | Gateway reconciliation: read settlements and list exceptions (`enabled`); an online receipt not settled after `settlementDays` (1–30) is an exception; a portal checkout nobody paid is marked expired after `checkoutExpiryHours` (1–720) |
+| `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI receipt not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of counters Billing does not record (pharmacy, canteen); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
 
@@ -603,12 +684,18 @@ are append-mostly and not data-audited; exceptions are. The migrations live in
 `HyFib.HealthCare360.Server/Persistence/Migrations`: `TallyReconciliation` adds the Tally voucher records and the
 export's tracking columns, and `GatewayReconciliation` adds `gateway_settlements`, `gateway_settlement_lines`,
 `gateway_discrepancies`, `gateway_webhook_events` and the gateway status, attempt and retry columns of `refunds`.
+`PosSettlements` adds `pos_settlement_imports` (unique facility and file SHA-256) and `pos_settlement_lines` (unique
+facility and `line_key`; unique matched `receipt_payment_id` and `refund_id` where set; `xmin` as the concurrency
+token), and indexes on `receipt_payments.reference` and `pos_transactions.approval_code` for the matching. Both tables
+are append-mostly and not data-audited; imports and reviews are audited.
 
 ## Not covered yet
 * **A failed gateway refund paid another way.** The refund stays paid through the gateway in HC360; the accountant
   pays it by bank transfer outside HC360, records that in Tally, and resolves the exception with the reference.
-* **Card/UPI POS settlements.** Terminal sales are recorded when approved, but the acquirer's settlement file is not
-  read yet, so POS money is not matched to the bank.
+* **Card and UPI settlement reports are imported by hand.** HC360 does not fetch them from the acquirer (Pine Labs and
+  the banks offer them as downloads or e-mails, not through the terminal API).
+* **The pharmacy's and the canteen's card sales** are not recorded with references, so they are not matched: their
+  terminals are set as `otherTerminals`, and their money still clears through the settlement journal.
 * **Reversing a settlement journal.** A settlement the gateway reports as failed after it was journalled is not
   reversed in Tally; the accountant corrects it there.
 * **Chargebacks and disputes** arrive as gateway adjustments and are listed as amount differences; there is no dispute

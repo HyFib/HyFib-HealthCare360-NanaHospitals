@@ -151,6 +151,7 @@ public sealed class TallyService(
             FacilityCode = facilityCode,
             Counters = await CountersAsync(facilityId, date, ct),
             LegacyDoctorFeeNumbers = legacy,
+            PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
         };
     }
 
