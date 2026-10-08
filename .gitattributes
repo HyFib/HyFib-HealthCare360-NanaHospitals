@@ -10,3 +10,4 @@
 *.woff2 binary
 *.dll binary
 *.exe binary
+*.gcs binary

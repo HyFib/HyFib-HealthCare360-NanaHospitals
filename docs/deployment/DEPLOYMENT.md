@@ -141,7 +141,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    has a new password. If it is still there, delete it.
 3. **Administration › Backups › Recovery key**: write the key down or print it, and store it in the hospital safe.
    Without it, backups cannot be restored on new hardware.
-4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs.
+4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
+   refuses passwords on public breach lists or holding a facility's name, for temporary passwords too.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
@@ -396,6 +397,8 @@ PowerShell cannot read them (the installer then stops before it changes anything
 rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
 done), and checks BitLocker again.
+Staff whose password is on the breach list built into the new version are asked to choose a new one at their next
+sign-in, before anything else (SECURITY.md, "Identity and sessions"). Warn them if many may be affected.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.

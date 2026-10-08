@@ -25,6 +25,8 @@ export interface AuthUser {
   hasPin: boolean;
   mustChangePassword: boolean;
   restriction: 'password' | 'mfa-setup' | null;
+  /** The password must be changed because a sign-in found it published from data breaches (SRS SEC-01). */
+  passwordBreached?: boolean;
 }
 
 export interface AuthResult {

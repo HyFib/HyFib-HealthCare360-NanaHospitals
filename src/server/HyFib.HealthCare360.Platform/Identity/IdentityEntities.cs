@@ -26,6 +26,12 @@ public sealed class User : AuditableEntity
 
     public DateTimeOffset? PasswordChangedAt { get; set; }
     public bool MustChangePassword { get; set; }
+
+    /// <summary>
+    /// When a sign-in found the password published from a data breach or on the common-password list (SRS SEC-01): it
+    /// must be changed before anything else. Cleared when it is changed or reset.
+    /// </summary>
+    public DateTimeOffset? PasswordBreachedAt { get; set; }
     public bool IsActive { get; set; } = true;
     public int FailedLoginCount { get; set; }
     public DateTimeOffset? LockoutEndsAt { get; set; }

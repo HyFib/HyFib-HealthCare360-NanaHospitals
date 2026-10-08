@@ -24,7 +24,7 @@ reviewed again once a year, and before each major release.
 | [V3 Web Frontend Security](#v3-web-frontend-security) | 14 | 4 | 1 | 0 |
 | [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
 | [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
-| [V6 Authentication](#v6-authentication) | 14 | 14 | 2 | 5 |
+| [V6 Authentication](#v6-authentication) | 17 | 12 | 1 | 5 |
 | [V7 Session Management](#v7-session-management) | 5 | 9 | 1 | 3 |
 | [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
 | [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
@@ -36,7 +36,7 @@ reviewed again once a year, and before each major release.
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **112** | **73** | **14** | **54** |
+| **Total** | **115** | **71** | **13** | **54** |
 
 ## Fixed while making this checklist
 
@@ -120,9 +120,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
   - "sign out everywhere" for users and for administrators;
   - re-authentication before MFA changes;
   - a concurrent-session policy.
-- **Passwords and lockout** (V6.1.1, V6.1.2, V6.2.4, V6.2.11, V6.2.12, V6.3.1, V6.3.2, V6.4.1, V6.4.3, V6.4.4, V6.5.5):
-  - a deny list of 3,000+ passwords long enough for the policy, and an offline breached-password set;
-  - context words matched anywhere in a password;
+- **Passwords and lockout** (V6.1.1, V6.1.2, V6.3.1, V6.3.2, V6.4.1, V6.4.3, V6.4.4, V6.5.5):
   - a cap on TOTP failures, and lockouts that decay;
   - temporary passwords that expire, and notifications on credential changes;
   - no fixed bootstrap password outside development.
@@ -271,15 +269,15 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V6.2.1 | L1 | Passwords of at least 8 characters (15 recommended) | Met | Minimum is 12 characters by default. The setting has no lower bound, so configuration could weaken it. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
 | V6.2.2 | L1 | Users can change their password | Met | Staff change their password under Account › Password. Patients have no passwords (OTP only). | [AuthEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthEndpoints.cs), [account.tsx](../../src/web/apps/staff/src/routes/_app/account.tsx) |
 | V6.2.3 | L1 | Change needs the current and new password | Met | The server checks the current password before accepting the new one. The form asks for current, new and confirmation. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
-| V6.2.4 | L1 | Common passwords rejected | Partial | The deny list has 173 entries, only 19 of them 12+ characters: far below 3,000 policy-compliant passwords. Matching on letters only helps a little. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [common-passwords.txt](../../src/server/HyFib.HealthCare360.Platform/Security/Resources/common-passwords.txt) |
+| V6.2.4 | L1 | Common passwords rejected | Met | About 690,000 breached passwords of 12+ characters (the default minimum) are refused, from the 10 million most common, as well as the common-password list. The most common 8 to 11 character ones are in too, for a lowered minimum. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [BreachedPasswords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/BreachedPasswords.cs), [build-breached-passwords.cs](../../tools/build-breached-passwords.cs) |
 | V6.2.5 | L1 | No composition rules | Met | No character-class rules. The only extra rule is five distinct characters, which is not a composition rule. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
 | V6.2.6 | L1 | Password fields masked | Met | All password and PIN fields use type=password. Sign-in has a show/hide toggle. | [login.tsx](../../src/web/apps/staff/src/routes/login.tsx), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
 | V6.2.7 | L1 | Paste and password managers allowed | Partial | Web forms allow paste and set autocomplete. HC360 Desktop turns off WebView2 password saving and autofill; paste still works, and the reason is not documented. | [MainWindow.xaml.cs](../../src/desktop/HyFib.HealthCare360.Desktop/MainWindow.xaml.cs), [login.tsx](../../src/web/apps/staff/src/routes/login.tsx) |
 | V6.2.8 | L1 | Password checked exactly as typed | Met | The password reaches PBKDF2 unchanged; only the username is trimmed and lower-cased. Passwords over 128 characters are rejected, never truncated. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
 | V6.2.9 | L2 | Passwords of 64+ characters allowed | Met | API and UI accept up to 128 characters. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
 | V6.2.10 | L2 | No forced periodic password changes | Met | PasswordChangedAt is only recorded. There is no expiry or rotation setting. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
-| V6.2.11 | L2 | Context-specific words rejected | Partial | Context words are blocked only as the whole password or its letters-only form, so "NanaHospitalsChennai" passes. Username and name checks work. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
-| V6.2.12 | L2 | Breached passwords rejected | Gap | No breached-password set, online or offline. The SRS promises a breached list; the code has only the small embedded list. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [SRS.md](../../docs/requirements/SRS.md) |
+| V6.2.11 | L2 | Context-specific words rejected | Met | HC360's own names and every facility's name and legal name are refused anywhere in a password, in any case and ignoring spaces and punctuation, as are the user's name and username. A facility name is matched whole. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.2.12 | L2 | Breached passwords rejected | Met | An offline set of about 800,000 passwords from public breach compilations (2.2 MB, built into the server; nothing leaves the hospital) is checked on every new password. A staff sign-in with a password in it, set before this check, must change it first, and is audited. | [BreachedPasswords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/BreachedPasswords.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PasswordPolicyTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/PasswordPolicyTests.cs), [BreachedPasswordTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/BreachedPasswordTests.cs) |
 | V6.3.1 | L1 | Brute-force and credential-stuffing defences in place | Partial | Per-account lockout and per-address limits exist, and a locked account now gets the same answer (and the same work) as a wrong password. TOTP guesses have no per-account cap, and the failure count never decays. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
 | V6.3.2 | L1 | No default accounts | Partial | A well-known "admin" account is always created (random one-time password, forced change). Config can set a fixed, unchecked password, skip the change, or seed demo users; nothing blocks this in production. | [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs), [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
 | V6.3.3 | L2 | Multi-factor authentication required | Partial | TOTP is enforced only for the SuperAdmin and HospitalAdmin role names. Clinicians, billing and custom admin roles sign in with a password only; device binding is off; patients use SMS only. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |

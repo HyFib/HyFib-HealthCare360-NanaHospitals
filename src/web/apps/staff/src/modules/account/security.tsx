@@ -37,7 +37,7 @@ export async function reloadCurrentUser(): Promise<void> {
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Enter your current password.'),
-    // Length is checked here for instant feedback; the server also rejects common and personal passwords.
+    // Length is checked here for instant feedback; the server also rejects breached, common and personal passwords.
     newPassword: z
       .string()
       .min(12, 'Use at least 12 characters. A short sentence works well.')
@@ -55,7 +55,7 @@ const passwordSchema = z
 
 type PasswordForm = z.infer<typeof passwordSchema>;
 
-/** Change password; the server enforces the full policy (length, deny list, reuse) and returns fresh tokens. */
+/** Change password; the server enforces the full policy (length, breach and deny lists, names, reuse) and returns fresh tokens. */
 export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
   const styles = useStyles();
   const notify = useNotify();

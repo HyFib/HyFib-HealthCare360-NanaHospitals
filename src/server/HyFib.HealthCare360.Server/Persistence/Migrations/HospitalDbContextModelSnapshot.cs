@@ -34708,6 +34708,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("normalized_user_name");
 
+                    b.Property<DateTimeOffset?>("PasswordBreachedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("password_breached_at");
+
                     b.Property<DateTimeOffset?>("PasswordChangedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("password_changed_at");
