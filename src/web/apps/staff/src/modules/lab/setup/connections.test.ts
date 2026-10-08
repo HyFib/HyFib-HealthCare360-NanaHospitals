@@ -10,6 +10,7 @@ import {
   splitList,
   toConnectionForm,
   toSaveRequest,
+  trainingValueProblem,
   type ConnectionForm,
 } from './connections';
 
@@ -295,5 +296,44 @@ describe('the status shown', () => {
   it('names agents with their PC and whether they are online', () => {
     expect(agentOptionLabel(agent())).toBe('Haematology PC (LAB-PC-1) · online');
     expect(agentOptionLabel(agent({ machineName: null, online: false }))).toBe('Haematology PC · offline');
+  });
+});
+
+describe('the training analyser', () => {
+  it('sends neither a port nor a COM line, and needs none', () => {
+    const values: ConnectionForm = {
+      ...toConnectionForm(undefined),
+      transport: 'Simulator',
+      port: null,
+      agentDeviceId: '',
+    };
+
+    expect(connectionSchema.safeParse(values).success).toBe(true);
+    expect(toSaveRequest(values, false, 7)).toMatchObject({
+      transport: 'Simulator',
+      port: null,
+      allowedIps: null,
+      agentDeviceId: null,
+      serial: null,
+      listVersion: 7,
+    });
+  });
+
+  it('shows as training, with results entered on screen', () => {
+    const training = connection({ transport: 'Simulator', port: null, status: null });
+
+    expect(connectionSummary(training)).toBe('Training · results entered on screen');
+    expect(connectionStatus(training, { gatewayEnabled: true, agents: [] })).toMatchObject({
+      label: 'Training',
+      tone: 'informative',
+    });
+    expect(connectionStatus(training, { gatewayEnabled: false, agents: [] }).label).toBe('Gateway off');
+  });
+
+  it('refuses the characters analyser messages reserve in a result', () => {
+    expect(trainingValueProblem('96.5')).toBeNull();
+    expect(trainingValueProblem('<5')).toBeNull();
+    expect(trainingValueProblem('9|6')).not.toBeNull();
+    expect(trainingValueProblem('a^b')).not.toBeNull();
   });
 });

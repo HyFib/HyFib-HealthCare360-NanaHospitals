@@ -43,7 +43,7 @@ export function splitList(text: string): string[] {
 
 export const connectionSchema = z
   .object({
-    transport: z.enum(['Tcp', 'Serial']),
+    transport: z.enum(['Tcp', 'Serial', 'Simulator']),
     enabled: z.boolean(),
     port: z.number().int('Enter a whole number.').nullable(),
     allowedIps: z.string().max(1000),
@@ -75,7 +75,7 @@ export const connectionSchema = z
       } else if (ips.length > 16) {
         problem('allowedIps', 'List at most 16 addresses.');
       }
-    } else {
+    } else if (values.transport === 'Serial') {
       if (!values.agentDeviceId) {
         problem('agentDeviceId', 'Choose the lab agent on the PC the analyser is cabled to.');
       }
@@ -127,6 +127,7 @@ export function handshakeUsesRts(handshake: ConnectionForm['handshake']): boolea
 /** The save request: only what applies to the transport (and to HL7 analysers), against the list the person saw. */
 export function toSaveRequest(values: ConnectionForm, isHl7: boolean, listVersion: number): SaveLabConnectionRequest {
   const tcp = values.transport === 'Tcp';
+  const serial = values.transport === 'Serial';
   const ips = splitList(values.allowedIps);
   const fields = splitList(values.sampleIdFields).map((field) => field.toUpperCase());
   return {
@@ -137,8 +138,8 @@ export function toSaveRequest(values: ConnectionForm, isHl7: boolean, listVersio
     encoding: values.encoding === 'utf-8' ? 'utf-8' : null,
     sampleIdFields: isHl7 && fields.length > 0 ? fields : null,
     orderMessage: isHl7 ? values.orderMessage : null,
-    agentDeviceId: tcp ? null : values.agentDeviceId,
-    serial: tcp
+    agentDeviceId: serial ? values.agentDeviceId : null,
+    serial: !serial
       ? null
       : {
           portName: values.portName.trim().toUpperCase(),
@@ -178,8 +179,11 @@ export function formFieldOf(serverField: string): keyof ConnectionForm | null {
   return known.find((name) => name === field.replace(/\[\d+\]$/, '')) ?? null;
 }
 
-/** "Network · port 5100" or "Serial · COM3 on Haematology PC". */
+/** "Network · port 5100", "Serial · COM3 on Haematology PC" or "Training · results entered on screen". */
 export function connectionSummary(connection: LabConnectionDto): string {
+  if (connection.transport === 'Simulator') {
+    return 'Training · results entered on screen';
+  }
   if (connection.transport === 'Serial') {
     const port = connection.serial?.portName ?? 'COM port not set';
     return `Serial · ${port}${connection.agentName ? ` on ${connection.agentName}` : ''}`;
@@ -227,6 +231,14 @@ export function connectionStatus(
     };
   }
   const status = connection.status;
+  if (connection.transport === 'Simulator') {
+    return {
+      label: 'Training',
+      tone: 'informative',
+      detail:
+        'The training analyser: nothing connects. Use Send results to enter a received sample’s results; HC360 sends them as this analyser would.',
+    };
+  }
   if (connection.transport === 'Tcp') {
     switch (status?.state) {
       case 'listening':
@@ -279,4 +291,9 @@ export function connectionStatus(
 /** "Haematology PC · online" for the agent picker. */
 export function agentOptionLabel(agent: LabAgentDto): string {
   return `${agent.name}${agent.machineName ? ` (${agent.machineName})` : ''} · ${agent.online ? 'online' : 'offline'}`;
+}
+
+/** The training analyser: a result or unit the server takes, without the characters analyser messages reserve. */
+export function trainingValueProblem(value: string): string | null {
+  return /[|^~\\&\r\n]/.test(value) ? 'Remove | ^ ~ \\ & from the value.' : null;
 }

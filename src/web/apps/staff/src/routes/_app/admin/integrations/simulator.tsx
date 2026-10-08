@@ -108,8 +108,8 @@ function SimulatorPage() {
       <MessageBar intent="warning" layout="multiline">
         <MessageBarBody>
           <MessageBarTitle>Training and simulation only</MessageBarTitle>
-          Nothing on this page was really sent, charged or posted to Tally. When an integration’s provider is Simulator,
-          what it would have done is recorded here so staff can practise without real messages or money.
+          Nothing on this page was really sent, charged, printed or posted to Tally. When an integration’s provider is
+          Simulator, what it would have done is recorded here so staff can practise without real messages or money.
         </MessageBarBody>
       </MessageBar>
       <TabList
@@ -120,7 +120,7 @@ function SimulatorPage() {
         aria-label="Simulator records"
         size="small"
       >
-        <Tab value="messages">Messages (SMS, WhatsApp, e-mail, Tally)</Tab>
+        <Tab value="messages">Messages (SMS, WhatsApp, e-mail, Tally, labels)</Tab>
         <Tab value="payments">Payments, POS and punches</Tab>
       </TabList>
       {payments ? <SimulatedPayments /> : <SimulatedMessages />}

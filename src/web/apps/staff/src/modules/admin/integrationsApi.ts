@@ -49,7 +49,8 @@ export type IntegrationHealth = 'healthy' | 'degraded' | 'failing' | 'idle' | 'd
 
 /**
  * LabListenerStatus: one analyser connection. A network analyser (`transport` tcp) is starting, listening or failed; a
- * serial analyser (serial) is waiting for its lab agent, connected, or has a port_error. The modality worklist row
+ * serial analyser (serial) is waiting for its lab agent, connected, or has a port_error; the training analyser
+ * (simulator) is training. The modality worklist row
  * reports its DICOM listener in the same shape: `instrumentCode` is its AE title, the messages are queries answered
  * and associations refused.
  */
@@ -64,7 +65,7 @@ export interface LabListenerStatus {
   lastMessageAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
-  transport: 'tcp' | 'serial';
+  transport: 'tcp' | 'serial' | 'simulator';
   agent: string | null;
   serialPort: string | null;
   connectedSince: string | null;
@@ -118,7 +119,7 @@ export interface IntegrationLogDto {
   correlationId: string | null;
 }
 
-export const SIMULATOR_CHANNELS = ['Sms', 'WhatsApp', 'Email', 'Accounting'] as const;
+export const SIMULATOR_CHANNELS = ['Sms', 'WhatsApp', 'Email', 'Accounting', 'Labels'] as const;
 export type SimulatorChannel = (typeof SIMULATOR_CHANNELS)[number];
 
 export interface SimulatorMessageDto {
@@ -403,6 +404,7 @@ export const SIMULATOR_CHANNEL_LABELS: Record<SimulatorChannel, string> = {
   WhatsApp: 'WhatsApp',
   Email: 'E-mail',
   Accounting: 'Tally',
+  Labels: 'Labels',
 };
 
 export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> = {
@@ -462,7 +464,7 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   mwl: 'Sends a DICOM echo from this server to its own worklist server. No patient data is sent.',
   lab: 'Checks that each network analyser’s port is open and each serial analyser’s lab agent is connected.',
   labels: 'Builds a sample label. Print it from a workstation to check the printer.',
-  icd: 'Searches the WHO ICD-API for a sample term.',
+  icd: 'Searches online ICD lookup (the WHO ICD-API or the simulator) for a sample term.',
   biometric:
     'Checks the settings for reading attendance terminals. Each terminal is read from HR › Attendance terminals with Read now; terminals that send their punches need none of this.',
 };

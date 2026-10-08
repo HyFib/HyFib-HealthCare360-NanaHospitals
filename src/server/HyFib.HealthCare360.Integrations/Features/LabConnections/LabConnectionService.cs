@@ -124,7 +124,12 @@ internal sealed class LabConnectionService(
         }
 
         var others = stored.Instruments.Where(i => !string.Equals(i.Code, profile.Code, StringComparison.OrdinalIgnoreCase)).ToList();
-        var transport = request.Transport == "Serial" ? LabTransport.Serial : LabTransport.Tcp;
+        var transport = request.Transport switch
+        {
+            "Serial" => LabTransport.Serial,
+            "Simulator" => LabTransport.Simulator,
+            _ => LabTransport.Tcp,
+        };
         var hl7 = profile.Protocol == "Hl7";
         string? agentName = null;
         if (transport == LabTransport.Tcp)
@@ -140,7 +145,7 @@ internal sealed class LabConnectionService(
                 return Error.Field("port", $"Port {port} is already used by analyser {taken.Code}.");
             }
         }
-        else
+        else if (transport == LabTransport.Serial)
         {
             var agent = await db.Set<Device>().AsNoTracking().FirstOrDefaultAsync(d => d.Id == request.AgentDeviceId, cancellationToken);
             if (agent is null || agent.IsRevoked || agent.Kind != DeviceKind.LabAgent || !InScope(agent.FacilityId))
@@ -183,10 +188,12 @@ internal sealed class LabConnectionService(
             return Error.Rule("lab.connection_invalid", $"The connection is not valid: {problem}.");
         }
 
-        audit.Add(new AuditEntry(AuditCategories.Admin, "lab.connection.saved",
-            transport == LabTransport.Tcp
-                ? $"Set analyser {profile.Code} to connect over the network on port {entry.Port}"
-                : $"Set analyser {profile.Code} to connect through lab agent {agentName} on {entry.Serial!.PortName}")
+        audit.Add(new AuditEntry(AuditCategories.Admin, "lab.connection.saved", transport switch
+        {
+            LabTransport.Tcp => $"Set analyser {profile.Code} to connect over the network on port {entry.Port}",
+            LabTransport.Serial => $"Set analyser {profile.Code} to connect through lab agent {agentName} on {entry.Serial!.PortName}",
+            _ => $"Set analyser {profile.Code} to be the training analyser (results entered on screen)",
+        })
         {
             EntityType = "LabConnection",
             EntityId = profile.Code,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Labels.Templates;
 
@@ -6,7 +7,9 @@ namespace HyFib.HealthCare360.Integrations.Features.Labels;
 /// <summary>
 /// /api/v1/integrations/labels: ZPL or TSPL for the label printer of the workstation asking (INT-BAR). The staff app
 /// sends the label's data and the printer's setup; the answer is the printer commands, which HC360 Desktop sends to
-/// that printer. Nothing is printed, stored or logged here. /api/v1/integrations/printers/changes approves a change to a
+/// that printer. Nothing is printed or stored here; each job is traced in the integration log without what is on the
+/// labels, and with the simulator (<c>integrations.labels</c>) kept in the simulator inbox (<see cref="LabelJobs"/>).
+/// /api/v1/integrations/printers/changes approves a change to a
 /// workstation's printers before HC360 Desktop saves it, and records it in the audit trail after;
 /// /api/v1/integrations/scanners/changes does the same for its serial barcode scanner.
 /// </summary>
@@ -19,30 +22,31 @@ internal static class LabelEndpoints
             .RequirePermission(IntegrationsPermissions.LabelsPrint);
 
         labels.MapPost("/", Build).WithValidation<PrintLabelRequest>();
-        labels.MapPost("/lab-tubes", (LabTubeLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, LabTubeTemplate.Draw))
+        labels.MapPost("/lab-tubes", (LabTubeLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("lab-tubes", r.Printer, r.Labels, r.Copies, LabTubeTemplate.Draw, ct))
             .WithValidation<LabTubeLabelsRequest>();
-        labels.MapPost("/wristbands", (WristbandLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, (canvas, band) => WristbandTemplate.Draw(canvas, band, r.Code)))
+        labels.MapPost("/wristbands", (WristbandLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("wristbands", r.Printer, r.Labels, r.Copies, (canvas, band) => WristbandTemplate.Draw(canvas, band, r.Code), ct))
             .WithValidation<WristbandLabelsRequest>();
-        labels.MapPost("/dispensing", (DispensingLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, DispensingTemplate.Draw))
+        labels.MapPost("/dispensing", (DispensingLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("dispensing", r.Printer, r.Labels, r.Copies, DispensingTemplate.Draw, ct))
             .WithValidation<DispensingLabelsRequest>();
-        labels.MapPost("/blood-units", (BloodUnitLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, BloodUnitTemplate.Draw))
+        labels.MapPost("/blood-units", (BloodUnitLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("blood-units", r.Printer, r.Labels, r.Copies, BloodUnitTemplate.Draw, ct))
             .WithValidation<BloodUnitLabelsRequest>();
-        labels.MapPost("/cssd-packs", (CssdPackLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, CssdPackTemplate.Draw))
+        labels.MapPost("/cssd-packs", (CssdPackLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("cssd-packs", r.Printer, r.Labels, r.Copies, CssdPackTemplate.Draw, ct))
             .WithValidation<CssdPackLabelsRequest>();
-        labels.MapPost("/asset-tags", (AssetTagLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, AssetTagTemplate.Draw))
+        labels.MapPost("/asset-tags", (AssetTagLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("asset-tags", r.Printer, r.Labels, r.Copies, AssetTagTemplate.Draw, ct))
             .WithValidation<AssetTagLabelsRequest>();
-        labels.MapPost("/pharmacy-tags", (PharmacyTagLabelsRequest r) =>
-                Render(r.Printer, r.Labels, r.Copies, PharmacyTagTemplate.Draw))
+        labels.MapPost("/pharmacy-tags", (PharmacyTagLabelsRequest r, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("pharmacy-tags", r.Printer, r.Labels, r.Copies, PharmacyTagTemplate.Draw, ct))
             .WithValidation<PharmacyTagLabelsRequest>();
-        labels.MapPost("/test", (TestLabelRequest r, TimeProvider time) =>
-                Render(r.Printer, new[] { r }, 1, (canvas, test) => TestLabelTemplate.Draw(canvas, test.Stock, test.Computer, time.GetUtcNow())))
+        labels.MapPost("/test", (TestLabelRequest r, TimeProvider time, LabelJobs jobs, CancellationToken ct) =>
+                jobs.RenderAsync("test", r.Printer, new[] { r }, 1, (canvas, test) => TestLabelTemplate.Draw(canvas, test.Stock, test.Computer, time.GetUtcNow()), ct))
             .WithValidation<TestLabelRequest>();
+        labels.MapGet("/mode", async (LabelJobs jobs, CancellationToken ct) => TypedResults.Ok(new LabelMode(await jobs.IsSimulatorAsync(ct))));
 
         var printers = app.MapGroup("/api/v1/integrations/printers/changes")
             .WithTags("Integrations")
@@ -57,44 +61,31 @@ internal static class LabelEndpoints
         scanners.MapPost("/", RecordScannerChange).WithValidation<ScannerSetupChange>();
     }
 
-    private static IResult Build(PrintLabelRequest request, ILabelPrinterService labels)
+    private static async Task<IResult> Build(
+        PrintLabelRequest request, ILabelPrinterService labels, LabelJobs jobs, IntegrationTrace trace, CancellationToken ct)
     {
+        var started = trace.Start();
+        var language = request.Language.Trim().ToLowerInvariant();
+        var name = language == "tspl2" ? "tspl" : language;
+        var job = string.Create(CultureInfo.InvariantCulture,
+            $"1 {request.Symbology} label × {request.Copies}, {request.WidthMm} × {request.HeightMm} mm at {request.Dpi} dpi");
+        string content;
         try
         {
-            var language = request.Language.Trim().ToLowerInvariant();
-            var content = labels.Build(
+            content = labels.Build(
                 new LabelRequest(request.Value.Trim(), request.Symbology, request.TextLines ?? [], request.WidthMm, request.HeightMm, request.Copies, request.Dpi),
                 language);
-            return TypedResults.Ok(new PrintLabelResponse(language == "tspl2" ? "tspl" : language, content, request.Copies));
         }
         catch (ArgumentException ex)
         {
             // Layout limits the validator cannot know (for example a value too long for the chosen label width).
-            return Error.Field("value", ex.Message.Split(" (Parameter", 2)[0]).ToProblem();
+            var reason = ex.Message.Split(" (Parameter", 2)[0];
+            await trace.LogAsync(IntegrationNames.Labels, name, "general", false, started, request: job, error: reason);
+            return Error.Field("value", reason).ToProblem();
         }
-    }
 
-    /// <summary>
-    /// The labels in the printer's language. A label that does not fit its media, or whose text the printer's fonts
-    /// cannot print, is refused with a reason (422): <c>labels.does_not_fit</c> or <c>labels.text_not_printable</c>. On
-    /// the second the staff app prints the label's page through the Windows driver instead.
-    /// </summary>
-    internal static IResult Render<T>(LabelPrinterSetup printer, IReadOnlyList<T> labels, int copies, Action<LabelCanvas, T> draw)
-    {
-        var media = printer.ToMedia();
-        try
-        {
-            var content = LabelRenderer.Render(media, labels, copies, draw);
-            return TypedResults.Ok(new LabelCommands(LabelMedia.Name(media.Language), content, labels.Count));
-        }
-        catch (LabelTextException ex)
-        {
-            return Error.Rule("labels.text_not_printable", ex.Message).ToProblem();
-        }
-        catch (LabelLayoutException ex)
-        {
-            return Error.Rule("labels.does_not_fit", ex.Message).ToProblem();
-        }
+        await jobs.RecordAsync("general", name, job, content, started, ct);
+        return TypedResults.Ok(new PrintLabelResponse(name, content, request.Copies));
     }
 
     /// <summary>

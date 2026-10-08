@@ -28,7 +28,12 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   credentials. SMS, WhatsApp, e-mail and Tally write to `integrations.simulator_messages`. Payment orders and links
   are captured immediately and POS sales are approved after a few seconds, all stored in
   `integrations.simulator_transactions`, with the punches HR makes on a training attendance terminal. Administrators browse these under
-  `/api/v1/admin/integrations/simulator/*`. Payment links point to the reserved host `pay.simulator.invalid`.
+  `/api/v1/admin/integrations/simulator/*`. Payment links point to the reserved host `pay.simulator.invalid`. The
+  others have their own: PACS answers searches and stores from a stateless training archive; ICD lookup answers from
+  a short built-in list of common codes (`SimulatorIcdCatalogue`), with no internet; barcode labels
+  (`integrations.labels`) are written as usual but kept in `simulator_messages` (channel `Labels`) instead of being
+  printed, and the staff app shows each label in the print dialog; a laboratory analyser whose connection is
+  `Simulator` is the training analyser, whose results are entered on screen (see *Training analyser* below).
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
   `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
@@ -88,9 +93,10 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
 | `integrations.biometric` | `enabled`, `provider` (`zkteco` \| `simulator`), `timeoutSeconds` (30; 5 to 300, for connecting and reading a terminal) | `commKey` (the terminals' COMM Key, 0 to 999999; empty when they have none) |
-| `integrations.icd` | `enabled`, `provider` (`who` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
+| `integrations.labels` | `provider` (`printers`, the default: each workstation's printers \| `simulator`) | none |
+| `integrations.icd` | `enabled`, `provider` (`who` \| `simulator` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
-| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery }` | none |
+| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), transport (Tcp \| Serial \| Simulator), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery }` | none |
 
 ## Channels
 
@@ -678,17 +684,49 @@ acknowledgements are never acknowledged in turn.
 * Raw messages, host queries and orders sent are written to the integration log only after `LabPhiMasking` has removed
   names, dates of birth, addresses and phones and cut identifiers to their last four characters. Relay log rows hold the
   agent, the line settings and byte counts.
-* Live status per analyser (listening, connected through its agent, waiting for its agent, COM port problem, failed;
-  connections, accepted and refused counts, last error, orders waiting) appears on the integration dashboard and in
-  Lab setup › Analysers. Administration › Integrations › Test reports how many network analysers are listening and
-  serial analysers connected, and which are not working.
+* Live status per analyser (listening, connected through its agent, waiting for its agent, COM port problem, failed,
+  training; connections, accepted and refused counts, last error, orders waiting) appears on the integration dashboard
+  and in Lab setup › Analysers. Administration › Integrations › Test reports how many network analysers are listening,
+  serial analysers connected and training analysers ready, and which are not working.
+
+#### Training analyser (transport `Simulator`)
+
+The lab's simulator: an analyser in Lab setup whose connection is *Training analyser (simulator)*. Nothing connects to
+it, so the lab can practise without an analyser. Code: `Features/LabConnections/LabTrainingAnalyser.cs`.
+
+* **Sending results.** In Lab setup › Analysers, *Send results* (needs `integrations.lab.connections`) takes a received
+  sample's barcode and lists the analyser's channel codes the sample still needs (the same answer as a host query,
+  `IInstrumentResultSink.GetOrderForSampleAsync`). Someone enters the values, and HC360 writes the message the analyser
+  would send: an ORU^R01 (HL7 2.5.1, the barcode in OBR-2, OBR-3 and SPM-2) or an ASTM E1394 message (the barcode in
+  O.3), per the analyser's protocol in Lab setup.
+* **The same path.** The message is read back with the gateway's own mappers (`Hl7ResultMapper`, honouring the
+  analyser's sample-id fields, or `AstmMessageMapper`) and handed to the LIS through `ILabMessageProcessor`. So results
+  are matched by channel code, auto-validated, delta-checked and held by QC lockout as a real analyser's are, and are
+  logged (provider `simulator:<code>`) and counted on the dashboard.
+* **Limits.** Only an analyser whose connection is `Simulator` takes results from the screen (otherwise 422
+  `lab.not_training_analyser`), with the gateway on, the connection and the analyser switched on, at the user's own
+  facility. Values and units cannot hold the characters analyser messages reserve (`| ^ ~ \ &`, line breaks); at most
+  100 results a message. Use it only for training: the results are real results on the sample.
 
 ### Barcode labels (INT-BAR)
 
 The server writes printer commands; it never prints. HC360 Desktop sends the commands to the workstation's label or
-wristband printer (`printer.printRaw`). Labels have no server settings: each workstation keeps its own printers (see
-*Printers on this computer* below). Code: `Labels/` (canvas, writers, fonts, Code 128, QR sizing) and
-`Labels/Templates/`, endpoints in `Features/Labels/`.
+wristband printer (`printer.printRaw`). Each workstation keeps its own printers (see *Printers on this computer*
+below); the facility only chooses, in `integrations.labels`, between those printers and the simulator. Code: `Labels/`
+(canvas, writers, fonts, Code 128, QR sizing) and `Labels/Templates/`, endpoints and `LabelJobs` in
+`Features/Labels/`.
+
+**Log and health.** Every label request is traced in the integration log (integration `labels`): the kind of label
+as the operation, the printer language as the provider, `n label(s) × copies, W × H mm at D dpi` as the request, and
+the outcome, with the reason when a label is refused. What is on the labels is never logged. The integrations dashboard
+takes Barcode labels' health from these rows, as for any integration.
+
+**Simulator.** With `integrations.labels` `provider: "simulator"` (Administration › Integrations › Barcode labels),
+nothing prints. `GET /api/v1/integrations/labels/mode` answers `LabelMode { simulator }` (cached a minute by the staff
+app); the staff app still posts each job, for this computer's ZPL or TSPL printer if it has one and otherwise for
+standard stock (50 × 25 mm labels, 25.4 × 279.4 mm bands, ZPL at 203 dpi). The server writes the commands as usual and
+keeps them in the simulator inbox (channel `Labels`: the kind and size as the subject, the commands as the body), and
+the staff app shows the label page in the print dialog instead of printing it silently.
 
 **Typed labels.** Each kind of label has a template that lays out the same facts as the staff app's own label page, so
 a label looks the same whichever way it is printed. The staff app sends the data; nothing is looked up here.
@@ -852,6 +890,11 @@ staff app.
   of the WHO ICD-10 2019 ClaML file (WHO-licensed, supplied by the hospital) or the public-domain CMS ICD-10-PCS order
   file into Clinical's local catalogue: Medical records > ICD catalogue > Import, or `catalogue import --file <file>` on
   the Server Node. See [Clinical, Catalogue import](clinical.md#catalogue-import).
+* **Simulator.** With `provider: "simulator"` the lookup answers from a short built-in list of common codes
+  (`SimulatorIcdCatalogue`, 27 ICD-11 and 27 ICD-10 entries), the way the ICD-API does: ICD-11 by words in the title or
+  the start of the code, ICD-10 by code with its subcategories. Nothing goes to WHO and no credentials are needed; each
+  search is logged (provider `simulator`). The codes and titles are real, but the list is a sample for training, not
+  the classification.
 * **Registration.** `IIcdLookup` is **always registered**, so Clinical's 422 `icd.online_unavailable` path, which is
   taken only when no implementation exists, is not reached. How the lookup behaves:
   * It stays **inactive until configured**: disabled, not configured or `provider: "disabled"` returns an empty list.
@@ -873,11 +916,14 @@ staff app.
 | GET | `/api/v1/integrations/lab/connections` | `integrations.lab.connections`, `integrations.lab.status` or `admin.integrations.manage` | → `LabConnectionsDto { gatewayEnabled, listVersion, connections[], agents[] }`: each analyser's connection with its Lab setup state, live status and orders waiting, and the facility's enrolled lab agents (online when seen in the last 3 minutes or relaying) |
 | PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
 | DELETE | `/api/v1/integrations/lab/connections/{code}?version` | `integrations.lab.connections` | → 204; 409 on a stale version. Audited as `lab.connection.removed` |
+| GET | `/api/v1/integrations/lab/connections/{code}/training/samples/{barcode}` | `integrations.lab.connections` | Training analyser only → `TrainingSampleDto { sampleBarcode, patientName, patientId, channels[] }`; 422 `lab.training_no_tests` when the sample needs nothing from the analyser, `lab.not_training_analyser`, `lab.gateway_off` or `lab.training_off` |
+| POST | `/api/v1/integrations/lab/connections/{code}/training/results` | `integrations.lab.connections` | `TrainingResultsRequest { sampleBarcode, results[{ channel, value, units }] }` → `TrainingResultsOutcome { accepted, message, rawMessage }`; the same 422s; 400 for values analyser messages cannot carry |
 | POST | `/api/v1/integrations/lab/agent/heartbeat` | anonymous, lab agent credential (`X-Device-Id`, `X-Device-Key`), `device` rate limit | `LabAgentHeartbeatRequest { appVersion, ports[] { code, open, error } }` (at most 64 ports) → `LabAgentAssignments { deviceId, deviceName, gatewayEnabled, heartbeatSeconds, instruments[] }`; 401 for a device that is not an enrolled lab agent |
 | GET | `/api/v1/integrations/lab/agent/relay/{code}` | anonymous, lab agent credential, `device` rate limit | WebSocket, sub-protocol `hc360.lab-relay.v1`: the analyser's serial bytes. 401 not an enrolled lab agent, 404 analyser not assigned to it, 503 gateway off |
 | POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language, dpi }` → `PrintLabelResponse { language, content, copies }` |
 | POST | `/api/v1/integrations/labels/{lab-tubes\|wristbands\|dispensing\|blood-units\|cssd-packs\|asset-tags\|pharmacy-tags}` | `integrations.labels.print` | `{ printer: LabelPrinterSetup, labels[], copies }` (wristbands also `code`) → `LabelCommands { language, content, labels }`; 422 `labels.does_not_fit` or `labels.text_not_printable`. See [Barcode labels](#barcode-labels-int-bar) |
 | POST | `/api/v1/integrations/labels/test` | `integrations.labels.print` | `TestLabelRequest { printer, stock, computer }` → `LabelCommands` |
+| GET | `/api/v1/integrations/labels/mode` | `integrations.labels.print` | → `LabelMode { simulator }`: whether the facility's labels go to the simulator |
 | POST | `/api/v1/integrations/printers/changes/approval` | `integrations.printers.setup` | `PrinterSetupChange { computer, deviceId, roles[{ role, printer, language, dpi, widthMm, heightMm, code }] }` → `PrinterChangeApproval { changedBy }`; records nothing |
 | POST | `/api/v1/integrations/printers/changes` | `integrations.printers.setup` | `PrinterSetupChange` → 204; audited as `workstation.printers_changed` |
 | POST | `/api/v1/integrations/scanners/changes/approval` | `integrations.printers.setup` | `ScannerSetupChange { computer, deviceId, port, baudRate, dataBits, parity, stopBits }` → `PrinterChangeApproval { changedBy }`; records nothing |

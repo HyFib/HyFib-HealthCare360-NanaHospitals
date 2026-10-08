@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Integrations.Biometric;
 using HyFib.HealthCare360.Integrations.Email;
 using HyFib.HealthCare360.Integrations.Features.Admin;
+using HyFib.HealthCare360.Integrations.Features.Labels;
 using HyFib.HealthCare360.Integrations.Features.Webhooks;
 using HyFib.HealthCare360.Integrations.Icd;
 using HyFib.HealthCare360.Integrations.Labels;
@@ -51,6 +52,7 @@ internal static class IntegrationsServiceCollectionExtensions
         AddLaboratory(services);
 
         services.AddSingleton<ILabelPrinterService, LabelPrinterService>();
+        services.AddScoped<LabelJobs>();
         services.AddSingleton<IPdfRenderer, EdgePdfRenderer>();
         services.AddScoped<NotificationLogUpdater>();
         services.AddScoped<WhatsAppInboundStore>();
@@ -121,6 +123,7 @@ internal static class IntegrationsServiceCollectionExtensions
 
     private static void AddLaboratory(IServiceCollection services)
     {
+        services.AddScoped<LabTrainingAnalyser>();
         services.AddSingleton<LabGatewayState>();
         services.AddSingleton<ILabMessageProcessor, LabMessageProcessor>();
         services.AddHostedService<LabGatewayHostedService>();

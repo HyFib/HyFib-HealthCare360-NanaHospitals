@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabSamples;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Contracts;
@@ -170,13 +171,74 @@ public sealed class LabAnalyserTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // Diagnostics asked, in the receipt's own transaction, for the chemistry analyser (bidirectional, on the
+        // biochemistry bench) to be sent the order; the haematology analyser is not told, nor the unidirectional one.
+        var requested = (await OutboxRequestsAsync()).Single(r => r.SampleBarcode == tube.Barcode);
+        requested.Action.ShouldBe(InstrumentOrderAction.New);
+        requested.Analysers.Select(a => a.InstrumentCode).ShouldBe(["EM360"]);
+
+        // The outbox hands it to the lab gateway's queue, where it waits until the analyser is connected.
+        var queued = await WaitForQueuedOrderAsync(tube.Barcode);
+        queued.InstrumentCode.ShouldBe("EM360");
+        queued.Status.ShouldBe(LabOrderDownloadStatus.Pending);
+        queued.Action.ShouldBe(InstrumentOrderAction.New);
+    }
+
+    [Fact]
+    public async Task Results_sent_from_the_training_analyser_reach_the_sample_as_that_analysers()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        await EnableGatewayAsync(admin);
+        const string connections = "/api/v1/integrations/lab/connections";
+        var version = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+        await admin.PutAsync($"{connections}/EM360", new SaveLabConnectionRequest("Simulator", true, null, null, null, null, null, null, null, version));
+        try
+        {
+            // The training analyser lists the sample's tests it runs, by its own channel codes.
+            var sample = await admin.GetAsync<TrainingSampleDto>($"{connections}/EM360/training/samples/{tube.Barcode}");
+            sample.SampleBarcode.ShouldBe(tube.Barcode);
+            var channel = sample.Channels.ShouldHaveSingleItem();
+
+            // The results go through the analyser's own message and the same path as a real analyser's.
+            var outcome = await admin.PostAsync<TrainingResultsOutcome>($"{connections}/EM360/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", "mg/dL")]));
+            outcome.Accepted.ShouldBeTrue(outcome.Message);
+            outcome.RawMessage.ShouldContain(tube.Barcode);
+
+            var sheet = await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
+            var line = sheet.Lines.ShouldHaveSingleItem();
+            (line.Value, line.InstrumentCode).ShouldBe(("96", "EM360"));
+
+            // Only a training analyser takes results from the screen.
+            using var refused = await admin.SendRawAsync(HttpMethod.Post, $"{connections}/XN550/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "96", null)]));
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            using var unsafeValue = await admin.SendRawAsync(HttpMethod.Post, $"{connections}/EM360/training/results",
+                new TrainingResultsRequest(tube.Barcode, [new TrainingResult(channel, "9|6", null)]));
+            unsafeValue.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            var current = (await admin.GetAsync<LabConnectionsDto>(connections)).ListVersion;
+            using var removed = await admin.SendRawAsync(HttpMethod.Delete, $"{connections}/EM360?version={current}");
+            removed.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    /// <summary>A walk-in fasting blood sugar, collected and received in the lab (the counter's payment gate waived).</summary>
+    private async Task<CreatedSample> ReceivedFastingSugarSampleAsync(ApiClient admin, ApiClient lab)
+    {
         var patient = await RegisterPatientAsync();
         var fbs = (await lab.GetAsync<PagedResult<LabTestListItem>>("/api/v1/lab/tests?search=LAB-FBS")).Items.Single(t => t.Code == "LAB-FBS");
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
             patient.Id, null, [fbs.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
         var tube = order.Samples.ShouldHaveSingleItem();
 
-        // A walk-in test is drawn only once paid; this test is about the analyser, so the counter waives that here.
+        // A walk-in test is drawn only once paid; these tests are about the analyser, so the counter waives that here.
         var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         await SetPaymentGateAsync(admin, facilityId, required: false);
@@ -191,17 +253,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
             await SetPaymentGateAsync(admin, facilityId, required: true);
         }
 
-        // Diagnostics asked, in the receipt's own transaction, for the chemistry analyser (bidirectional, on the
-        // biochemistry bench) to be sent the order; the haematology analyser is not told, nor the unidirectional one.
-        var requested = (await OutboxRequestsAsync()).Single(r => r.SampleBarcode == tube.Barcode);
-        requested.Action.ShouldBe(InstrumentOrderAction.New);
-        requested.Analysers.Select(a => a.InstrumentCode).ShouldBe(["EM360"]);
-
-        // The outbox hands it to the lab gateway's queue, where it waits until the analyser is connected.
-        var queued = await WaitForQueuedOrderAsync(tube.Barcode);
-        queued.InstrumentCode.ShouldBe("EM360");
-        queued.Status.ShouldBe(LabOrderDownloadStatus.Pending);
-        queued.Action.ShouldBe(InstrumentOrderAction.New);
+        return tube;
     }
 
     private Task<(Guid DeviceId, string Secret)> EnrolLabAgentAsync(ApiClient admin, Guid? facilityId = null) =>

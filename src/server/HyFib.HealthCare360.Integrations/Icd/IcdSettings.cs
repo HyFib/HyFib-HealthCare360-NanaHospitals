@@ -5,7 +5,10 @@ internal sealed record IcdSettings : IIntegrationSettings
 {
     public bool Enabled { get; init; }
 
-    /// <summary><c>who</c> or <c>disabled</c> (online lookup off; the local ICD-10 catalogue still works).</summary>
+    /// <summary>
+    /// <c>who</c>, <c>simulator</c> (a built-in training list, <see cref="SimulatorIcdCatalogue"/>) or <c>disabled</c>
+    /// (online lookup off; the local ICD-10 catalogue still works).
+    /// </summary>
     public string? Provider { get; init; }
 
     public string TokenUrl { get; init; } = "https://icdaccessmanagement.who.int/connect/token";

@@ -105,9 +105,17 @@ export function ConnectionFields({
         options={[
           { value: 'Tcp', label: 'Network: the analyser connects to the HC360 server' },
           { value: 'Serial', label: 'Serial cable to a lab PC, relayed by its HC360 lab agent' },
+          { value: 'Simulator', label: 'Training analyser (simulator): results are entered on screen' },
         ]}
       />
-      {transport === 'Tcp' ? (
+      {transport === 'Simulator' ? (
+        <MessageBar intent="info">
+          <MessageBarBody>
+            Nothing connects. In Lab setup › Analysers, Send results takes a received sample’s results and HC360 sends
+            them as this analyser would, so the lab can practise without one. Use it only for training.
+          </MessageBarBody>
+        </MessageBar>
+      ) : transport === 'Tcp' ? (
         <FormGrid columns={2}>
           <NumberField
             control={control}

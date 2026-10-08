@@ -11,7 +11,8 @@ namespace HyFib.HealthCare360.Integrations.Features.LabConnections;
 public sealed record LabConnectionsDto(bool GatewayEnabled, uint ListVersion, IReadOnlyList<LabConnectionDto> Connections, IReadOnlyList<LabAgentDto> Agents);
 
 /// <summary>
-/// One analyser's connection. <c>Transport</c> is <c>Tcp</c> or <c>Serial</c>; <c>Protocol</c> follows Lab setup
+/// One analyser's connection. <c>Transport</c> is <c>Tcp</c>, <c>Serial</c> or <c>Simulator</c> (the training analyser);
+/// <c>Protocol</c> follows Lab setup
 /// (<c>Hl7v2</c> or <c>Astm</c>). <c>HostQueryRetiredOff</c> means the connection still carries the retired
 /// <c>"hostQuery": false</c>, which keeps host queries and order download off until it is saved again. <c>Problem</c>
 /// says why the gateway ignores it.
@@ -68,7 +69,8 @@ public sealed class SaveLabConnectionRequestValidator : AbstractValidator<SaveLa
 {
     public SaveLabConnectionRequestValidator()
     {
-        RuleFor(r => r.Transport).Must(t => t is "Tcp" or "Serial").WithMessage("Choose network (Tcp) or serial (Serial).");
+        RuleFor(r => r.Transport).Must(t => t is "Tcp" or "Serial" or "Simulator")
+            .WithMessage("Choose network (Tcp), serial (Serial) or the training analyser (Simulator).");
 
         When(r => r.Transport == "Tcp", () =>
         {

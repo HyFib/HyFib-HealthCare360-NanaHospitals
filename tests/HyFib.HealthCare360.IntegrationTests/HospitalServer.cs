@@ -275,11 +275,40 @@ public sealed class HospitalServer : IAsyncLifetime
             throw new InvalidOperationException($"The new account '{userName}' should first have to change its password (restriction: {first.Restriction}).");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/change-password");
-        request.Content = JsonContent.Create(new ChangePasswordRequest(temporary, _password), options: ApiClient.Json);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", restricted);
-        using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+        using var response = await PostChangePasswordAsync(http, restricted, temporary);
         return FullAccess(userName, await ApiClient.ReadAsync<SignInResult>(response, HttpMethod.Post, "/api/v1/auth/change-password"));
+    }
+
+    // Changing the password shares sign-in's budget of 10 a minute per address: past that, wait for the next minute, as a
+    // sign-in does, rather than leave the account half made.
+    private async Task<HttpResponseMessage> PostChangePasswordAsync(HttpClient http, string restricted, string temporary)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        HttpRequestMessage Request()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/change-password")
+            {
+                Content = JsonContent.Create(new ChangePasswordRequest(temporary, _password), options: ApiClient.Json),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", restricted);
+            return request;
+        }
+
+        using (var first = Request())
+        {
+            var response = await http.SendAsync(first, ct);
+            if (response.StatusCode != System.Net.HttpStatusCode.TooManyRequests)
+            {
+                return response;
+            }
+
+            var wait = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromMinutes(1);
+            response.Dispose();
+            await Task.Delay(wait + TimeSpan.FromSeconds(1), ct);
+        }
+
+        using var retry = Request();
+        return await http.SendAsync(retry, ct);
     }
 
     /// <summary>

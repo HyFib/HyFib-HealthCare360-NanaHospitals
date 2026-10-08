@@ -6,6 +6,9 @@ public enum SimulatorChannel
     WhatsApp,
     Email,
     Accounting,
+
+    /// <summary>Label print jobs (INT-BAR): the printer commands the training printer received.</summary>
+    Labels,
 }
 
 /// <summary>

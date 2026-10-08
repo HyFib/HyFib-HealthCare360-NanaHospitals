@@ -81,6 +81,7 @@ internal sealed class LabGatewayHostedService(
 
         var desired = new Dictionary<string, LabInstrumentSettings>(StringComparer.OrdinalIgnoreCase);
         var serial = new List<LabInstrumentSettings>();
+        var training = new List<LabInstrumentSettings>();
         if (gateway.Enabled)
         {
             foreach (var instrument in instruments.Where(i => i.Enabled))
@@ -92,6 +93,10 @@ internal sealed class LabGatewayHostedService(
                 else if (instrument.Transport == LabTransport.Serial)
                 {
                     serial.Add(instrument);
+                }
+                else if (instrument.Transport == LabTransport.Simulator)
+                {
+                    training.Add(instrument);
                 }
                 else
                 {
@@ -106,6 +111,13 @@ internal sealed class LabGatewayHostedService(
         }
 
         state.RetainSerial(serial.Select(i => i.Code).ToList());
+
+        foreach (var instrument in training)
+        {
+            state.TrainingReady(instrument.Code, instrument.Protocol);
+        }
+
+        state.RetainTraining(training.Select(i => i.Code).ToList());
 
         foreach (var (code, entry) in _listeners.ToList())
         {

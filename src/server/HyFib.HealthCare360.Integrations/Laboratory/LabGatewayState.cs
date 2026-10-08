@@ -1,10 +1,11 @@
 namespace HyFib.HealthCare360.Integrations.Laboratory;
 
 /// <summary>
-/// Live status of one analyser connection for the integration dashboard and Lab setup. <c>Transport</c> is <c>tcp</c> or
-/// <c>serial</c>. <c>State</c> is <c>starting</c>, <c>listening</c> or <c>failed</c> for a network port, and
-/// <c>waiting</c> (no relay from its agent), <c>connected</c> or <c>port_error</c> (the agent could not open the COM
-/// port) for a serial analyser. <c>Agent</c> names the lab agent relaying a serial analyser.
+/// Live status of one analyser connection for the integration dashboard and Lab setup. <c>Transport</c> is <c>tcp</c>,
+/// <c>serial</c> or <c>simulator</c>. <c>State</c> is <c>starting</c>, <c>listening</c> or <c>failed</c> for a network
+/// port, <c>waiting</c> (no relay from its agent), <c>connected</c> or <c>port_error</c> (the agent could not open the COM
+/// port) for a serial analyser, and <c>training</c> for the training analyser. <c>Agent</c> names the lab agent relaying a
+/// serial analyser.
 /// </summary>
 public sealed record LabListenerStatus(
     string InstrumentCode,
@@ -72,12 +73,26 @@ internal sealed class LabGatewayState(TimeProvider time)
         }
     });
 
+    /// <summary>A training analyser is set up: it is always ready, since results are entered on screen.</summary>
+    public void TrainingReady(string code, LabProtocol protocol) => Update(code, entry =>
+    {
+        entry.Transport = "simulator";
+        entry.Protocol = protocol.ToString();
+        entry.Port = 0;
+        entry.State = "training";
+    });
+
     /// <summary>Keeps only the serial analysers still configured (network ports are managed by their listeners).</summary>
-    public void RetainSerial(IReadOnlyCollection<string> codes)
+    public void RetainSerial(IReadOnlyCollection<string> codes) => Retain("serial", codes);
+
+    /// <summary>Keeps only the training analysers still configured.</summary>
+    public void RetainTraining(IReadOnlyCollection<string> codes) => Retain("simulator", codes);
+
+    private void Retain(string transport, IReadOnlyCollection<string> codes)
     {
         lock (_lock)
         {
-            foreach (var code in _entries.Where(e => e.Value.Transport == "serial" && !codes.Contains(e.Key, StringComparer.OrdinalIgnoreCase)).Select(e => e.Key).ToList())
+            foreach (var code in _entries.Where(e => e.Value.Transport == transport && !codes.Contains(e.Key, StringComparer.OrdinalIgnoreCase)).Select(e => e.Key).ToList())
             {
                 _entries.Remove(code);
             }

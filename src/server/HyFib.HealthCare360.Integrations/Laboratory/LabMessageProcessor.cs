@@ -243,6 +243,7 @@ internal sealed class LabMessageProcessor(IServiceScopeFactory scopes, LabGatewa
         }
     }
 
-    private static string Provider(LabInstrumentSettings instrument) =>
-        $"{(instrument.Protocol == LabProtocol.Hl7v2 ? "hl7" : "astm")}:{instrument.Code}";
+    private static string Provider(LabInstrumentSettings instrument) => instrument.Transport == LabTransport.Simulator
+        ? $"{ProviderKeys.Simulator}:{instrument.Code}"
+        : $"{(instrument.Protocol == LabProtocol.Hl7v2 ? "hl7" : "astm")}:{instrument.Code}";
 }
