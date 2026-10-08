@@ -61,7 +61,7 @@ internal sealed class LabGatewayHostedService(
         }
     }
 
-    private async Task ReconcileAsync(CancellationToken cancellationToken)
+    internal async Task ReconcileAsync(CancellationToken cancellationToken)
     {
         LabGatewaySettings gateway;
         IReadOnlyList<LabInstrumentSettings> instruments;
@@ -105,6 +105,18 @@ internal sealed class LabGatewayHostedService(
             }
         }
 
+        // Stop obsolete listeners first: stopping one forgets its analyser's status, which for an analyser moved from the
+        // network to serial or training is the status set just below.
+        foreach (var (code, entry) in _listeners.ToList())
+        {
+            if (!desired.TryGetValue(code, out var instrument) || Signature(gateway, instrument) != entry.Signature)
+            {
+                await entry.Listener.DisposeAsync();
+                _listeners.Remove(code);
+                _logger.LogInformation("Stopped listening for instrument {Instrument}", code);
+            }
+        }
+
         foreach (var instrument in serial)
         {
             state.SerialExpected(instrument.Code, instrument.Protocol, instrument.Serial!.PortName.ToUpperInvariant());
@@ -118,16 +130,6 @@ internal sealed class LabGatewayHostedService(
         }
 
         state.RetainTraining(training.Select(i => i.Code).ToList());
-
-        foreach (var (code, entry) in _listeners.ToList())
-        {
-            if (!desired.TryGetValue(code, out var instrument) || Signature(gateway, instrument) != entry.Signature)
-            {
-                await entry.Listener.DisposeAsync();
-                _listeners.Remove(code);
-                _logger.LogInformation("Stopped listening for instrument {Instrument}", code);
-            }
-        }
 
         var bindAddress = IPAddress.TryParse(gateway.BindAddress, out var address) ? address : IPAddress.Any;
         foreach (var (code, instrument) in desired.Where(d => !_listeners.ContainsKey(d.Key)))

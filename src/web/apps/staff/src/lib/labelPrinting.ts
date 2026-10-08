@@ -1,4 +1,4 @@
-import { printLabel, type LabelKind, type LabelPrintJob, type LabelPrintResult } from '@hc360/core';
+import { printLabel, useSession, type LabelKind, type LabelPrintJob, type LabelPrintResult } from '@hc360/core';
 import { api } from './api';
 
 /**
@@ -11,16 +11,21 @@ export async function printLabelJob<K extends LabelKind>(job: LabelPrintJob<K>):
 }
 
 const MODE_TTL_MS = 60_000;
-let mode: { simulator: boolean; at: number } | null = null;
+let mode: { simulator: boolean; at: number; session: string } | null = null;
 
-/** Whether the facility's labels go to the simulator, asked at most once a minute. Unknown counts as printing. */
+/**
+ * Whether the facility's labels go to the simulator, asked at most once a minute. The answer is kept for the user and
+ * facility it was asked for, so switching facility or user asks again. Unknown counts as printing.
+ */
 async function labelsSimulated(): Promise<boolean> {
-  if (mode && Date.now() - mode.at < MODE_TTL_MS) {
+  const user = useSession.getState().user;
+  const session = `${user?.id ?? ''}|${user?.facilityId ?? ''}`;
+  if (mode && mode.session === session && Date.now() - mode.at < MODE_TTL_MS) {
     return mode.simulator;
   }
   try {
     const answer = await api.get<{ simulator: boolean }>('/api/v1/integrations/labels/mode');
-    mode = { simulator: answer.simulator === true, at: Date.now() };
+    mode = { simulator: answer.simulator === true, at: Date.now(), session };
     return mode.simulator;
   } catch {
     return false;

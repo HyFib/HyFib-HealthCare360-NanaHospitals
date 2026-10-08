@@ -1,14 +1,20 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Integrations.Common;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Tests.TestSupport;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace HyFib.HealthCare360.Integrations.Tests.Laboratory;
@@ -284,5 +290,41 @@ public sealed class LabGatewayTests
 
         answer.Status.ShouldBe(HostQueryStatus.TurnedOff);
         answer.Error.ShouldNotBeNull().ShouldContain("is not set up in Lab setup");
+    }
+
+    [Theory]
+    [InlineData("Simulator", "simulator", "training")]
+    [InlineData("Serial", "serial", "waiting")]
+    public async Task An_analyser_moved_off_the_network_shows_its_new_connection_straight_away(string transport, string shownTransport, string shownState)
+    {
+        var settings = Substitute.For<ISettingsService>();
+        var services = new ServiceCollection();
+        services.AddSingleton(settings);
+        services.AddSingleton(Substitute.For<ICurrentUser>());
+        services.AddSingleton<ILogger<IntegrationSettingsReader>>(NullLogger<IntegrationSettingsReader>.Instance);
+        services.AddScoped<IntegrationSettingsReader>();
+        using var gateway = new LabGatewayHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Options.Create(new PlatformOptions()), Substitute.For<ILabMessageProcessor>(), _state, TimeProvider.System, NullLoggerFactory.Instance);
+        settings.GetAsync<LabGatewaySettings>(LabSettingKeys.Gateway, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns(new LabGatewaySettings { Enabled = true, BindAddress = "127.0.0.1" });
+        var network = LabSamples.AstmInstrument with { Port = FreePort() };
+        var moved = network with { Transport = Enum.Parse<LabTransport>(transport), AgentDeviceId = Guid.CreateVersion7(), Serial = new LabSerialSettings { PortName = "COM3" } };
+        settings.GetAsync<List<LabInstrumentSettings>>(LabSettingKeys.Instruments, Arg.Any<Guid?>(), Arg.Any<CancellationToken>())
+            .Returns([network], [moved]);
+
+        await gateway.ReconcileAsync(Ct);
+        _state.Snapshot().ShouldHaveSingleItem().State.ShouldBe("listening");
+
+        // The network listener stops in the same pass, and its analyser shows its new connection, not nothing.
+        await gateway.ReconcileAsync(Ct);
+        var status = _state.Snapshot().ShouldHaveSingleItem();
+        (status.InstrumentCode, status.Transport, status.State).ShouldBe(("C311", shownTransport, shownState));
+    }
+
+    private static int FreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 }
