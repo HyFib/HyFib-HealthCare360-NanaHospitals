@@ -21,9 +21,12 @@ import {
 } from '@fluentui/react-components';
 import {
   AddRegular,
+  ArrowDownloadRegular,
+  ClockRegular,
   CopyRegular,
   EditRegular,
   FingerprintRegular,
+  HandRightRegular,
   KeyResetRegular,
   MoreHorizontalRegular,
 } from '@fluentui/react-icons';
@@ -34,6 +37,7 @@ import {
   ConfirmDialog,
   DataTable,
   FormGrid,
+  NumberField,
   Page,
   PageHeader,
   Section,
@@ -46,10 +50,20 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { toOptions, useDepartments } from '@/lib/lookups';
 import { hrApi, hrKeys, hrQueries, type BiometricDeviceDto, type DeviceKeyIssued } from '@/modules/hr/api';
+import {
+  clockDrift,
+  connectionText,
+  DEFAULT_PULL_MINUTES,
+  DEFAULT_PULL_PORT,
+  everyText,
+  MAX_PULL_MINUTES,
+  readSummary,
+  terminalStatus,
+} from '@/modules/hr/terminals';
 import { HR_PERMISSIONS as P } from '@/modules/hr/labels';
 import { EditorDrawer } from '@/modules/hr/shared/EditorDrawer';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
@@ -75,6 +89,7 @@ const useStyles = makeStyles({
   },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   muted: { color: tokens.colorNeutralForeground3 },
+  problem: { color: tokens.colorPaletteRedForeground1, maxWidth: '320px' },
 });
 
 function DevicesPage() {
@@ -84,9 +99,41 @@ function DevicesPage() {
   const notify = useNotify();
   const queryClient = useQueryClient();
   const devices = useQuery(hrQueries.devices());
+  const reading = useQuery(hrQueries.terminalReading());
   const [editing, setEditing] = useState<BiometricDeviceDto | 'new' | null>(null);
   const [rotating, setRotating] = useState<BiometricDeviceDto | null>(null);
   const [issued, setIssued] = useState<DeviceKeyIssued | null>(null);
+  const [settingClock, setSettingClock] = useState<BiometricDeviceDto | null>(null);
+  const [punching, setPunching] = useState<BiometricDeviceDto | null>(null);
+  const training = reading.data?.provider === 'simulator';
+
+  const read = useMutation({
+    mutationFn: (device: BiometricDeviceDto) => hrApi.readDevice(device.id),
+    onSuccess: (result, device) => {
+      const summary = readSummary(result);
+      if (result.success) {
+        notify.success(`${device.name}: ${summary.title}`, summary.detail ?? undefined);
+      } else {
+        notify.warning(`${device.name}: ${summary.title}`, summary.detail ?? undefined);
+      }
+      void queryClient.invalidateQueries({ queryKey: hrKeys.devices });
+    },
+    onError: (error) => notify.error(error, 'Could not read the terminal'),
+  });
+
+  const setClock = useMutation({
+    mutationFn: (id: string) => hrApi.setDeviceClock(id),
+    onSuccess: (result) => {
+      setSettingClock(null);
+      if (result.success) {
+        notify.success('Clock set to the hospital’s time');
+      } else {
+        notify.warning('The clock was not set', result.error ?? undefined);
+      }
+      void queryClient.invalidateQueries({ queryKey: hrKeys.devices });
+    },
+    onError: (error) => notify.error(error, 'Could not set the clock'),
+  });
 
   const rotate = useMutation({
     mutationFn: (id: string) => hrApi.rotateDeviceKey(id),
@@ -104,7 +151,7 @@ function DevicesPage() {
     <Page maxWidth={1300}>
       <PageHeader
         title="Attendance terminals"
-        subtitle="Fingerprint and face terminals that send punches to HealthCare360. Only attendance logs are received; fingerprints never leave the terminal."
+        subtitle="Fingerprint and face terminals that send their punches to HealthCare360, or that HealthCare360 reads. Only attendance records are taken; fingerprints never leave the terminal."
         icon={<FingerprintRegular />}
         actions={
           <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
@@ -143,26 +190,44 @@ function DevicesPage() {
             {
               key: 'online',
               header: 'Connection',
-              render: (d) =>
-                !d.isActive ? (
-                  <StatusBadge status="Inactive" tone="informative" label="Switched off here" />
-                ) : d.isOnline ? (
-                  <StatusBadge status="Online" tone="success" label="Online" />
-                ) : (
-                  <StatusBadge
-                    status="Offline"
-                    tone="danger"
-                    label={d.lastPushAt || d.lastHandshakeAt ? 'Not heard from' : 'Never connected'}
-                  />
-                ),
+              render: (d) => {
+                const status = terminalStatus(d);
+                const drift = d.connection === 'Pull' ? clockDrift(d.clockOffsetSeconds) : null;
+                return (
+                  <span>
+                    <StatusBadge status={status.label} tone={status.tone} label={status.label} />
+                    <Caption1 block className={styles.muted}>
+                      {connectionText(d)}
+                    </Caption1>
+                    {status.detail && (
+                      <Caption1 block className={styles.problem}>
+                        {status.detail}
+                      </Caption1>
+                    )}
+                    {drift && (
+                      <Caption1 block className={styles.problem}>
+                        {drift}
+                      </Caption1>
+                    )}
+                  </span>
+                );
+              },
             },
             {
               key: 'last',
               header: 'Last contact',
               priority: 'low',
-              render: (d) => formatRelative(d.lastPushAt ?? d.lastHandshakeAt),
+              render: (d) =>
+                formatRelative(
+                  d.connection === 'Pull' ? (d.lastHandshakeAt ?? d.lastPullAt) : (d.lastPushAt ?? d.lastHandshakeAt),
+                ),
             },
-            { key: 'ip', header: 'Allowed address', priority: 'low', render: (d) => d.allowedIpAddress ?? 'Any' },
+            {
+              key: 'ip',
+              header: 'Allowed address',
+              priority: 'low',
+              render: (d) => (d.connection === 'Pull' ? '—' : (d.allowedIpAddress ?? 'Any')),
+            },
           ]}
           rowActions={(d) => (
             <Menu>
@@ -180,6 +245,25 @@ function DevicesPage() {
                   <MenuItem icon={<EditRegular />} onClick={() => setEditing(d)}>
                     Edit
                   </MenuItem>
+                  {d.connection === 'Pull' && (
+                    <>
+                      <MenuItem
+                        icon={<ArrowDownloadRegular />}
+                        disabled={!d.isActive || read.isPending}
+                        onClick={() => read.mutate(d)}
+                      >
+                        Read now
+                      </MenuItem>
+                      <MenuItem icon={<ClockRegular />} disabled={!d.isActive} onClick={() => setSettingClock(d)}>
+                        Set the terminal’s clock
+                      </MenuItem>
+                      {training && (
+                        <MenuItem icon={<HandRightRegular />} disabled={!d.isActive} onClick={() => setPunching(d)}>
+                          Punch on the training terminal
+                        </MenuItem>
+                      )}
+                    </>
+                  )}
                   <MenuItem icon={<KeyResetRegular />} onClick={() => setRotating(d)}>
                     Issue a new key
                   </MenuItem>
@@ -205,19 +289,54 @@ function DevicesPage() {
             X-Device-Serial and X-Device-Key (the key shown once when registering)
           </Detail>
           <Detail label="Online">Heard from in the last 10 minutes</Detail>
+          <Detail label="Terminals HC360 reads (ZKTeco / eSSL)">
+            Give the terminal a fixed IP address. HC360 reads it on TCP port 4370 every few minutes; set the provider
+            and the terminals’ COMM Key in Administration › Integrations › Biometric attendance.
+          </Detail>
+          <Detail label="Reading terminals">
+            {reading.isLoading
+              ? 'Checking…'
+              : reading.data?.provider
+                ? reading.data.provider === 'simulator'
+                  ? 'With the training terminal: punch on it from a terminal’s menu, then Read now.'
+                  : 'Set up.'
+                : (reading.data?.problem ?? 'Not set up.')}
+          </Detail>
         </DetailGrid>
       </Section>
 
       {editing && (
         <DeviceDrawer
           device={editing === 'new' ? null : editing}
+          readingProblem={reading.data?.provider ? null : (reading.data?.problem ?? null)}
           onClose={() => setEditing(null)}
           onIssued={(key) => {
             setEditing(null);
-            setIssued(key);
+            if (key.apiKey) {
+              setIssued(key);
+            } else {
+              notify.success('Terminal registered', 'HC360 reads it at the next read; use Read now to try it at once.');
+            }
           }}
         />
       )}
+
+      {punching && <TrainingPunchDialog device={punching} onClose={() => setPunching(null)} />}
+
+      <ConfirmDialog
+        open={settingClock !== null}
+        title="Set the terminal’s clock?"
+        confirmLabel="Set the clock"
+        busy={setClock.isPending}
+        onConfirm={() => settingClock && setClock.mutate(settingClock.id)}
+        onCancel={() => setSettingClock(null)}
+      >
+        {settingClock?.name}’s clock is set to the hospital’s time.{' '}
+        {clockDrift(settingClock?.clockOffsetSeconds)
+          ? `It is now: ${clockDrift(settingClock?.clockOffsetSeconds)}. `
+          : ''}
+        Punches already made keep the times they were given. The change is recorded in the audit trail.
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={rotating !== null}
@@ -249,7 +368,7 @@ function DevicesPage() {
               <Button
                 icon={<CopyRegular />}
                 onClick={() =>
-                  issued &&
+                  issued?.apiKey &&
                   void navigator.clipboard?.writeText(issued.apiKey).then(
                     () => notify.success('Key copied'),
                     () => notify.warning('Copy failed', 'Select the key and copy it by hand.'),
@@ -269,32 +388,56 @@ function DevicesPage() {
   );
 }
 
-const schema = z.object({
-  serialNumber: z
-    .string()
-    .trim()
-    .min(1, 'Enter the serial number exactly as shown on the terminal.')
-    .max(64)
-    .regex(/^[A-Za-z0-9_-]+$/, 'Use the serial number exactly as shown on the terminal.'),
-  name: z.string().trim().min(1, 'Give the terminal a name, e.g. Main gate.').max(100),
-  location: z.string().trim().max(150),
-  departmentId: z.string().nullable(),
-  model: z.string().trim().max(64),
-  allowedIpAddress: z
-    .string()
-    .trim()
-    .refine((v) => !v || /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-fA-F:]+$/.test(v), 'Enter a valid IP address.'),
-  isActive: z.boolean(),
-});
+const ipAddress = (v: string) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-fA-F:]+$/.test(v);
+
+const schema = z
+  .object({
+    serialNumber: z
+      .string()
+      .trim()
+      .min(1, 'Enter the serial number exactly as shown on the terminal.')
+      .max(64)
+      .regex(/^[A-Za-z0-9_-]+$/, 'Use the serial number exactly as shown on the terminal.'),
+    name: z.string().trim().min(1, 'Give the terminal a name, e.g. Main gate.').max(100),
+    location: z.string().trim().max(150),
+    departmentId: z.string().nullable(),
+    model: z.string().trim().max(64),
+    allowedIpAddress: z
+      .string()
+      .trim()
+      .refine((v) => !v || ipAddress(v), 'Enter a valid IP address.'),
+    isActive: z.boolean(),
+    connection: z.enum(['Push', 'Pull']),
+    pullAddress: z.string().trim().max(45),
+    pullPort: z.number({ error: 'Enter the terminal’s port.' }).int().min(1).max(65535).nullable(),
+    pullEveryMinutes: z
+      .number({ error: 'Enter how often to read the terminal.' })
+      .int()
+      .min(1, 'Read the terminal at least every minute.')
+      .max(MAX_PULL_MINUTES, 'Read the terminal at least once a day.')
+      .nullable(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.connection === 'Pull' && !ipAddress(v.pullAddress)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['pullAddress'],
+        message: 'Enter the terminal’s IP address on the device network, for example 192.168.1.201.',
+      });
+    }
+  });
 
 type Values = z.infer<typeof schema>;
 
 function DeviceDrawer({
   device,
+  readingProblem,
   onClose,
   onIssued,
 }: {
   device: BiometricDeviceDto | null;
+  /** Why HC360 cannot read terminals yet, shown when this one is to be read. */
+  readingProblem: string | null;
   onClose: () => void;
   onIssued: (key: DeviceKeyIssued) => void;
 }) {
@@ -311,8 +454,14 @@ function DeviceDrawer({
       model: device?.model ?? '',
       allowedIpAddress: device?.allowedIpAddress ?? '',
       isActive: device?.isActive ?? true,
+      connection: device?.connection ?? 'Push',
+      pullAddress: device?.pullAddress ?? '',
+      pullPort: device?.pullPort ?? DEFAULT_PULL_PORT,
+      pullEveryMinutes: device?.pullEveryMinutes ?? DEFAULT_PULL_MINUTES,
     },
   });
+  const pull = useWatch({ control: form.control, name: 'connection' }) === 'Pull';
+  const every = useWatch({ control: form.control, name: 'pullEveryMinutes' });
 
   const save = useMutation({
     mutationFn: async (v: Values) => {
@@ -322,9 +471,13 @@ function DeviceDrawer({
         location: v.location.trim() || null,
         departmentId: v.departmentId,
         model: v.model.trim() || null,
-        allowedIpAddress: v.allowedIpAddress.trim() || null,
+        allowedIpAddress: v.connection === 'Pull' ? null : v.allowedIpAddress.trim() || null,
         isActive: v.isActive,
         version: device?.version ?? null,
+        connection: v.connection,
+        pullAddress: v.connection === 'Pull' ? v.pullAddress.trim() : null,
+        pullPort: v.connection === 'Pull' ? (v.pullPort ?? DEFAULT_PULL_PORT) : null,
+        pullEveryMinutes: v.connection === 'Pull' ? (v.pullEveryMinutes ?? DEFAULT_PULL_MINUTES) : null,
       };
       if (device) {
         await hrApi.updateDevice(device.id, request);
@@ -357,7 +510,7 @@ function DeviceDrawer({
       onClose={onClose}
       onSubmit={form.handleSubmit((v) => save.mutate(v))}
       busy={save.isPending}
-      submitLabel={device ? 'Save' : 'Register and show key'}
+      submitLabel={device ? 'Save' : pull ? 'Register' : 'Register and show key'}
     >
       <TextField
         control={form.control}
@@ -384,13 +537,116 @@ function DeviceDrawer({
         placeholder="Hospital-wide"
         options={toOptions(departments.data)}
       />
-      <TextField
+      <SelectField
         control={form.control}
-        name="allowedIpAddress"
-        label="Only accept from this IP address"
-        hint="Optional: pins the terminal to its fixed LAN address."
+        name="connection"
+        label="How punches reach HealthCare360"
+        options={[
+          { value: 'Push', label: 'The terminal sends them (ADMS or the punch API)' },
+          { value: 'Pull', label: 'HealthCare360 reads the terminal (ZKTeco / eSSL, TCP 4370)' },
+        ]}
       />
+      {pull ? (
+        <>
+          {readingProblem && (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                HealthCare360 cannot read terminals yet: {readingProblem} Ask the administrator to set up Biometric
+                attendance.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          <FormGrid columns={2} minColumnWidth={180}>
+            <TextField
+              control={form.control}
+              name="pullAddress"
+              label="Terminal’s IP address"
+              required
+              hint="Fixed address on the device network, shown in the terminal’s Comm. menu."
+            />
+            <NumberField control={form.control} name="pullPort" label="Port" min={1} max={65535} hint="Usually 4370." />
+          </FormGrid>
+          <NumberField
+            control={form.control}
+            name="pullEveryMinutes"
+            label="Read it every (minutes)"
+            min={1}
+            max={MAX_PULL_MINUTES}
+            hint={
+              typeof every === 'number' && every >= 1
+                ? `Every ${everyText(every)}. HR is told if it cannot be read for a while.`
+                : undefined
+            }
+          />
+        </>
+      ) : (
+        <TextField
+          control={form.control}
+          name="allowedIpAddress"
+          label="Only accept from this IP address"
+          hint="Optional: pins the terminal to its fixed LAN address."
+        />
+      )}
       <SwitchField control={form.control} name="isActive" label="Accept punches from this terminal" />
     </EditorDrawer>
+  );
+}
+
+const punchSchema = z.object({
+  pin: z
+    .string()
+    .trim()
+    .min(1, 'Enter the employee’s number on the terminal.')
+    .max(24)
+    .regex(/^[A-Za-z0-9]+$/, 'Use letters and digits only, as on the terminal.'),
+});
+
+/** Training: punch with an employee's number on the simulated terminal, then read it in. */
+function TrainingPunchDialog({ device, onClose }: { device: BiometricDeviceDto; onClose: () => void }) {
+  const notify = useNotify();
+  const form = useForm<z.infer<typeof punchSchema>>({ resolver: zodResolver(punchSchema), defaultValues: { pin: '' } });
+  const punch = useMutation({
+    mutationFn: (pin: string) => hrApi.trainingPunch(device.id, pin),
+    onSuccess: (_, pin) => {
+      notify.success(`Punched ${pin} on ${device.name}`, 'Read the terminal to bring the punch in.');
+      form.reset({ pin: '' });
+    },
+    onError: (error) => {
+      if (!applyServerErrors(error, form.setError)) {
+        notify.error(error, 'Could not punch on the training terminal');
+      }
+    },
+  });
+
+  return (
+    <Dialog open onOpenChange={(_, d) => !d.open && onClose()}>
+      <DialogSurface>
+        <form onSubmit={form.handleSubmit((v) => punch.mutate(v.pin))}>
+          <DialogBody>
+            <DialogTitle>Punch on {device.name}</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Text>
+                As an employee would at a real terminal. The punch is made now and stays on the training terminal until
+                it is read.
+              </Text>
+              <TextField
+                control={form.control}
+                name="pin"
+                label="Employee’s number on the terminal"
+                required
+                autoFocus
+                hint="The biometric PIN on the employee’s record."
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={onClose}>Close</Button>
+              <Button appearance="primary" type="submit" disabled={punch.isPending}>
+                Punch
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
   );
 }

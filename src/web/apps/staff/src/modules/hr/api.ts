@@ -316,7 +316,22 @@ export interface BiometricDeviceDto {
   lastIpAddress: string | null;
   isOnline: boolean;
   version: number;
+  connection: BiometricConnection;
+  /** A terminal HC360 reads: its IP address, port and how often it is read. */
+  pullAddress: string | null;
+  pullPort: number;
+  pullEveryMinutes: number;
+  lastPullAt: string | null;
+  /** Why the last read failed; null when it worked. */
+  lastPullError: string | null;
+  /** How far the terminal's clock was ahead (positive) or behind when last read. */
+  clockOffsetSeconds: number | null;
+  /** When HR was told the terminal had gone quiet. */
+  offlineSince: string | null;
 }
+
+/** Push: the terminal sends its punches (ADMS or the punch API). Pull: HC360 reads it. */
+export type BiometricConnection = 'Push' | 'Pull';
 
 export interface SaveBiometricDeviceRequest {
   serialNumber: string;
@@ -327,12 +342,45 @@ export interface SaveBiometricDeviceRequest {
   allowedIpAddress: string | null;
   isActive: boolean;
   version: number | null;
+  connection: BiometricConnection;
+  pullAddress: string | null;
+  pullPort: number | null;
+  pullEveryMinutes: number | null;
 }
 
+/** The key is shown once; a terminal HC360 reads gets none (null). */
 export interface DeviceKeyIssued {
   deviceId: string;
   serialNumber: string;
-  apiKey: string;
+  apiKey: string | null;
+}
+
+/** How this facility's terminals are read: `zkteco`, `simulator`, or null with the reason. */
+export interface AttendanceTerminalReading {
+  provider: string | null;
+  problem: string | null;
+}
+
+export interface PunchIngestResult {
+  accepted: number;
+  duplicates: number;
+  unknownPins: number;
+  rejected: number;
+}
+
+/** What reading a terminal brought in. */
+export interface TerminalPullResult {
+  success: boolean;
+  error: string | null;
+  read: number;
+  earlier: number;
+  punches: PunchIngestResult | null;
+  clockOffsetSeconds: number | null;
+}
+
+export interface TerminalClockResult {
+  success: boolean;
+  error: string | null;
 }
 
 export interface PunchDto {
@@ -845,6 +893,11 @@ export const hrQueries = {
       queryFn: ({ signal }) => api.get<BiometricDeviceDto[]>('/api/v1/hr/biometric-devices', { signal }),
       refetchInterval: 60_000,
     }),
+  terminalReading: () =>
+    queryOptions({
+      queryKey: ['hr', 'devices', 'reading'],
+      queryFn: ({ signal }) => api.get<AttendanceTerminalReading>('/api/v1/hr/biometric-devices/reading', { signal }),
+    }),
   attendance: (filters: AttendanceFilters) =>
     queryOptions({
       queryKey: ['hr', 'attendance', 'days', filters],
@@ -1058,6 +1111,10 @@ export const hrApi = {
   updateDevice: (id: string, request: SaveBiometricDeviceRequest) =>
     api.put<void>(`/api/v1/hr/biometric-devices/${id}`, request),
   rotateDeviceKey: (id: string) => api.post<DeviceKeyIssued>(`/api/v1/hr/biometric-devices/${id}/rotate-key`),
+  readDevice: (id: string) => api.post<TerminalPullResult>(`/api/v1/hr/biometric-devices/${id}/read`),
+  setDeviceClock: (id: string) => api.post<TerminalClockResult>(`/api/v1/hr/biometric-devices/${id}/set-clock`),
+  trainingPunch: (id: string, pin: string) =>
+    api.post<void>(`/api/v1/hr/biometric-devices/${id}/training-punch`, { pin }),
 
   computeAttendance: (from: string, to: string, employeeId?: string | null) =>
     api.post<{ employeeDays: number }>('/api/v1/hr/attendance/compute', { from, to, employeeId: employeeId ?? null }),

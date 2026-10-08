@@ -22,6 +22,7 @@ export const INTEGRATION_NAMES = [
   'lab',
   'labels',
   'icd',
+  'biometric',
 ] as const;
 export type IntegrationName = (typeof INTEGRATION_NAMES)[number];
 
@@ -37,6 +38,7 @@ export const INTEGRATION_LABELS: Record<IntegrationName, string> = {
   lab: 'Laboratory equipment',
   labels: 'Barcode labels',
   icd: 'ICD lookup',
+  biometric: 'Biometric attendance',
 };
 
 export function isIntegrationName(value: unknown): value is IntegrationName {
@@ -131,7 +133,13 @@ export interface SimulatorMessageDto {
   providerMessageId: string;
 }
 
-export const SIMULATOR_TRANSACTION_KINDS = ['PaymentOrder', 'PaymentLink', 'PosSale', 'PaymentRefund'] as const;
+export const SIMULATOR_TRANSACTION_KINDS = [
+  'PaymentOrder',
+  'PaymentLink',
+  'PosSale',
+  'PaymentRefund',
+  'TerminalPunch',
+] as const;
 export type SimulatorTransactionKind = (typeof SIMULATOR_TRANSACTION_KINDS)[number];
 export type SimulatorTransactionStatus =
   'Created' | 'AwaitingCustomer' | 'Captured' | 'Approved' | 'Cancelled' | 'Refunded';
@@ -330,6 +338,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   disabled: 'Off',
   tcp: 'Network and serial analysers',
   'zpl/tspl': 'ZPL / TSPL printers',
+  zkteco: 'ZKTeco / eSSL terminals',
+  push: 'Terminals send their punches',
 };
 
 export function providerLabel(provider: string | null | undefined): string {
@@ -400,6 +410,7 @@ export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> =
   PaymentLink: 'Payment link',
   PosSale: 'POS sale',
   PaymentRefund: 'Payment refund',
+  TerminalPunch: 'Attendance punch',
 };
 
 export function transactionStatusDisplay(status: SimulatorTransactionStatus): { label: string; tone: Tone } {
@@ -445,6 +456,8 @@ export const TEST_DESCRIPTIONS: Record<IntegrationName, string> = {
   lab: 'Checks that each network analyser’s port is open and each serial analyser’s lab agent is connected.',
   labels: 'Builds a sample label. Print it from a workstation to check the printer.',
   icd: 'Searches the WHO ICD-API for a sample term.',
+  biometric:
+    'Checks the settings for reading attendance terminals. Each terminal is read from HR › Attendance terminals with Read now; terminals that send their punches need none of this.',
 };
 
 export type TestInput = 'mobile' | 'email' | null;

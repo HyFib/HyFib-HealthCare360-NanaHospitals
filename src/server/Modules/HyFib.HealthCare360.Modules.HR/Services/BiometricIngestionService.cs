@@ -129,39 +129,62 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         }
 
         await db.SaveChangesAsync(ct);
-        await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, source == PunchSource.Adms ? "zkteco-adms" : "device-api", "punches.received",
+        await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(source), "punches.received",
             IntegrationDirection.Inbound, true, Reference: device.SerialNumber,
             Response: $"accepted={accepted} duplicates={duplicates} unknownPins={unknown} rejected={rejected}"), ct);
         return new PunchIngestResult(accepted, duplicates, unknown, rejected);
     }
 
     /// <summary>Records a successful upload (and the terminal's new ATTLOG stamp).</summary>
-    public Task RecordPushAsync(BiometricDevice device, IPAddress? remoteIp, string? stamp, CancellationToken ct)
+    public async Task RecordPushAsync(BiometricDevice device, IPAddress? remoteIp, string? stamp, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var ip = NormalizeIp(remoteIp);
         var newStamp = AdmsProtocol.IsValidStamp(stamp) ? stamp : device.AttLogStamp;
-        return db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(d => d.Id == device.Id)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(d => d.LastPushAt, now)
                 .SetProperty(d => d.LastHandshakeAt, now)
                 .SetProperty(d => d.LastIpAddress, ip)
-                .SetProperty(d => d.AttLogStamp, newStamp), ct);
+                .SetProperty(d => d.AttLogStamp, newStamp)
+                .SetProperty(d => d.OfflineSince, (DateTimeOffset?)null), ct);
+        await LogBackAsync(device, ct);
     }
 
-    /// <summary>Records that the terminal is alive (handshake/command poll), at most every few minutes.</summary>
-    public Task RecordSeenAsync(BiometricDevice device, IPAddress? remoteIp, CancellationToken ct)
+    /// <summary>
+    /// Records that the terminal is alive (handshake/command poll), at most every few minutes; at once when HR was told
+    /// it had gone quiet.
+    /// </summary>
+    public async Task RecordSeenAsync(BiometricDevice device, IPAddress? remoteIp, CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        if (device.LastHandshakeAt is { } last && now - last < SeenThrottle)
+        if (device.OfflineSince is null && device.LastHandshakeAt is { } last && now - last < SeenThrottle)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var ip = NormalizeIp(remoteIp);
-        return db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(d => d.Id == device.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastHandshakeAt, now).SetProperty(d => d.LastIpAddress, ip), ct);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.LastHandshakeAt, now)
+                .SetProperty(d => d.LastIpAddress, ip)
+                .SetProperty(d => d.OfflineSince, (DateTimeOffset?)null), ct);
+        await LogBackAsync(device, ct);
     }
+
+    /// <summary>A terminal HR was told had gone quiet is heard from again: the integrations dashboard shows it working.</summary>
+    internal Task LogBackAsync(BiometricDevice device, CancellationToken ct) =>
+        device.OfflineSince is null
+            ? Task.CompletedTask
+            : integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(device.Connection == BiometricConnection.Pull ? PunchSource.Pull : PunchSource.Adms),
+                "terminal.back", IntegrationDirection.Inbound, true, Reference: device.SerialNumber), ct);
+
+    internal static string ProviderName(PunchSource source) => source switch
+    {
+        PunchSource.Adms => "zkteco-adms",
+        PunchSource.Pull => "pull",
+        _ => "device-api",
+    };
 }

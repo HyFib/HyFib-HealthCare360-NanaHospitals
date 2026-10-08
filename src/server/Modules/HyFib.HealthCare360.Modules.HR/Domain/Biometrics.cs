@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+
 namespace HyFib.HealthCare360.Modules.HR.Domain;
 
 /// <summary>
@@ -28,6 +31,76 @@ public sealed class BiometricDevice : AuditableEntity, IFacilityScoped
 
     /// <summary>ADMS "ATTLOGStamp" echoed back at handshake so the terminal resumes where it left off.</summary>
     public string? AttLogStamp { get; set; }
+
+    /// <summary>Whether the terminal sends its punches (ADMS or the punch API) or HC360 reads them from it.</summary>
+    public BiometricConnection Connection { get; set; }
+
+    /// <summary>A terminal HC360 reads: its IP address on the device network.</summary>
+    public string? PullAddress { get; set; }
+
+    /// <summary>A terminal HC360 reads: its TCP port (4370 on ZKTeco and eSSL terminals).</summary>
+    public int PullPort { get; set; } = DefaultPullPort;
+
+    public int PullEveryMinutes { get; set; } = DefaultPullMinutes;
+
+    /// <summary>When HC360 last tried to read the terminal, and why it could not (null when it could).</summary>
+    public DateTimeOffset? LastPullAt { get; set; }
+
+    public string? LastPullError { get; set; }
+
+    /// <summary>The latest punch read from the terminal: later reads look only a little before it.</summary>
+    public DateTimeOffset? PulledUpTo { get; set; }
+
+    /// <summary>How far the terminal's clock was ahead (positive) or behind when it was last read.</summary>
+    public int? ClockOffsetSeconds { get; set; }
+
+    /// <summary>When HR was told the terminal had gone quiet; cleared when it is heard from again.</summary>
+    public DateTimeOffset? OfflineSince { get; set; }
+
+    public const int DefaultPullPort = 4370;
+    public const int DefaultPullMinutes = 10;
+    public const int MaxPullMinutes = 1440;
+    public const int MaxPullAddressLength = 45;
+
+    /// <summary>
+    /// A terminal is read only at an IP address on a network, never at a host name, this server's own address, a
+    /// link-local address (where cloud metadata services answer) or a multicast or broadcast address.
+    /// </summary>
+    public static bool IsAllowedPullAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address) || address.Length > MaxPullAddressLength || !IPAddress.TryParse(address.Trim(), out var ip))
+        {
+            return false;
+        }
+
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            ip = ip.MapToIPv4();
+        }
+
+        if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any) || ip.Equals(IPAddress.Broadcast)
+            || ip.IsIPv6LinkLocal || ip.IsIPv6Multicast || ip.IsIPv6SiteLocal)
+        {
+            return false;
+        }
+
+        if (ip.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var bytes = ip.GetAddressBytes();
+            return bytes[0] is not (0 or >= 224) && !(bytes[0] == 169 && bytes[1] == 254);
+        }
+
+        return true;
+    }
+}
+
+public enum BiometricConnection
+{
+    /// <summary>The terminal sends its punches over ADMS or the punch API.</summary>
+    Push = 0,
+
+    /// <summary>HC360 reads the terminal over the network (ZKTeco protocol, TCP port 4370).</summary>
+    Pull,
 }
 
 public enum PunchDirection
@@ -42,6 +115,9 @@ public enum PunchSource
     Adms = 0,
     DeviceApi,
     Regularisation,
+
+    /// <summary>Read from the terminal by HC360.</summary>
+    Pull,
 }
 
 /// <summary>

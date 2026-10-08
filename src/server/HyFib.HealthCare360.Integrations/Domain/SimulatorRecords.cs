@@ -35,6 +35,12 @@ public enum SimulatorTransactionKind
 
     /// <summary>Money returned on a simulated payment: <c>ExternalId</c> is the refund id, <c>Reference</c> the payment id.</summary>
     PaymentRefund,
+
+    /// <summary>
+    /// A punch on a training attendance terminal: <c>TerminalId</c> is the terminal's serial number, <c>Reference</c>
+    /// the employee's number on it and <c>Description</c> the terminal's clock at the punch.
+    /// </summary>
+    TerminalPunch,
 }
 
 public enum SimulatorTransactionStatus

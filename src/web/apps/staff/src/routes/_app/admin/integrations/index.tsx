@@ -96,7 +96,7 @@ function IntegrationsPage() {
     <Page>
       <PageHeader
         title="Integrations"
-        subtitle="SMS, WhatsApp, e-mail, payments, card/UPI POS, Tally, PACS, lab analysers, labels and ICD lookup"
+        subtitle="SMS, WhatsApp, e-mail, payments, card/UPI POS, Tally, PACS, lab analysers, labels, ICD lookup and biometric attendance"
         actions={
           <Button icon={<ArrowClockwiseRegular />} onClick={() => void status.refetch()} disabled={status.isFetching}>
             Refresh
@@ -245,8 +245,9 @@ function IntegrationsPage() {
         {canConfigure
           ? 'Choose an integration to change its settings. '
           : 'Changing settings needs the “Change system settings” permission. '}
-        Biometric attendance machines (ZKTeco/eSSL) send punches straight to HR and are managed under HR → Devices. All
-        settings are also listed under <Link to="/admin/settings">Administration → Settings</Link>.
+        Attendance terminals are registered under HR → Attendance terminals; these settings are only for the terminals
+        HC360 reads, as terminals that send their punches need none. All settings are also listed under{' '}
+        <Link to="/admin/settings">Administration → Settings</Link>.
       </Caption1>
 
       {testing && (

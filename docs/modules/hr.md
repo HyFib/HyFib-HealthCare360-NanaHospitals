@@ -59,10 +59,14 @@ are **warnings**. A contiguous double duty on one date is allowed.
 ### Biometric attendance (INT-BIO)
 | Method | Path | Permission | Notes |
 |---|---|---|---|
-| GET | `/api/v1/hr/biometric-devices` | attendance.manage | `BiometricDeviceDto` incl. `isOnline` (heard from in the last 10 min) |
-| POST | `/api/v1/hr/biometric-devices` | attendance.manage | `SaveBiometricDeviceRequest {serialNumber, name, location, departmentId, model, allowedIpAddress, isActive}` → 201 `DeviceKeyIssued {deviceId, serialNumber, apiKey}`; the key is shown once and stored as a SHA-256 hash |
+| GET | `/api/v1/hr/biometric-devices` | attendance.manage | `BiometricDeviceDto` incl. `isOnline` (heard from in the last 10 min; a terminal HC360 reads: read successfully within its quiet window, below), `connection`, `pullAddress`, `pullPort`, `pullEveryMinutes`, `lastPullAt`, `lastPullError`, `clockOffsetSeconds`, `offlineSince` |
+| GET | `/api/v1/hr/biometric-devices/reading` | attendance.manage | → `AttendanceTerminalReading {provider, problem}`: how this facility's terminals are read (`zkteco`, `simulator`), or why they cannot be |
+| POST | `/api/v1/hr/biometric-devices` | attendance.manage | `SaveBiometricDeviceRequest {serialNumber, name, location, departmentId, model, allowedIpAddress, isActive, connection (Push \| Pull), pullAddress, pullPort (4370), pullEveryMinutes (10, at most 1440)}` → 201 `DeviceKeyIssued {deviceId, serialNumber, apiKey}`; the key is shown once and stored as a SHA-256 hash. A terminal HC360 reads gets no key (`apiKey` null) |
 | PUT | `/api/v1/hr/biometric-devices/{id}` | attendance.manage | serial number is immutable |
 | POST | `/api/v1/hr/biometric-devices/{id}/rotate-key` | attendance.manage | → new `DeviceKeyIssued` (audited) |
+| POST | `/api/v1/hr/biometric-devices/{id}/read` | attendance.manage | Reads the terminal now → `TerminalPullResult {success, error, read, earlier, punches: PunchIngestResult, clockOffsetSeconds}` |
+| POST | `/api/v1/hr/biometric-devices/{id}/set-clock` | attendance.manage | Sets a terminal HC360 reads to the hospital's time → `TerminalClockResult {success, error}`; audited as `biometric_device.clock_set` |
+| POST | `/api/v1/hr/biometric-devices/{id}/training-punch` | attendance.manage | `TrainingPunchRequest {pin}` → 204: a punch now on the training terminal (simulator only); 422 `biometric.training_punch` with the reason otherwise |
 | GET | `/iclock/cdata?SN=…&options=all` | **anonymous**, rate limit `device` (per serial number) | ADMS handshake (text). Requests attendance logs only; operation logs and photos are suppressed and fingerprint templates are never requested |
 | POST | `/iclock/cdata?SN=…&table=ATTLOG&Stamp=…` | **anonymous**, `device` | body `PIN\tYYYY-MM-DD HH:MM:SS\tstatus\tverify…` per line, ≤ 1 MB → `OK: n`; other tables → `OK` (not stored) |
 | GET | `/iclock/getrequest?SN=…` | **anonymous**, `device` | → `OK` (HC360 never sends terminal commands) |
@@ -72,6 +76,27 @@ Only registered, active serial numbers are served. A device can optionally be pi
 serials get 403, and the attempt is written to `integrations.integration_logs`. Punches are de-duplicated per device.
 Punches more than 10 min in the future or more than 90 days old are refused. Punches from PINs that are not yet
 mapped are kept and linked when HR assigns the PIN. Terminal times are interpreted in IST.
+
+**Terminals HC360 reads (pull).** A terminal that cannot push is registered with `connection: Pull`, its IP address
+on the device network and port. `BiometricPullService` reads it through the Platform's `IAttendanceTerminalClient`
+(ZKTeco/eSSL protocol on TCP 4370, or the training simulator; see
+[integrations.md](integrations.md#biometric-attendance-terminals-int-bio), settings `integrations.biometric`):
+
+* `BiometricPullJob` reads every active terminal whose interval has passed, once a minute at most; Read now does the
+  same at once. One read of a terminal runs at a time, across nodes (advisory lock per terminal).
+* A terminal keeps every punch, so a read returns them all. Punches from more than two days before the latest one
+  already read (`pulled_up_to`), or more than 90 days old, are left out (`earlier`); the rest go through the same intake
+  as pushed punches (source `Pull`), which leaves out those already received.
+* After a read, `clockOffsetSeconds` says how far the terminal's clock is out. More than two minutes is pointed out on
+  the screen, and HR can set the terminal's clock to the hospital's time.
+* A read that fails keeps its reason in `lastPullError`. Reads update the terminal with set-based updates, as pushes do,
+  so reading every few minutes does not fill the audit trail.
+* Addresses are IP addresses only, and never a loopback, link-local (cloud metadata), multicast or broadcast address.
+
+**Quiet terminals.** An active terminal that was working and is not heard from for 30 minutes (a terminal HC360 reads:
+two missed reads plus five minutes, if longer) is reported once to `hr.attendance.manage` holders of its facility, with
+why when a read failed, and logged as `terminal.quiet`. `offlineSince` records it; it clears, and `terminal.back` is
+logged, as soon as the terminal calls or is read again.
 
 ### Attendance and regularisation
 | Method | Path | Permission | Body → Response |
@@ -213,12 +238,14 @@ sourceReference)`** records a payroll deduction, for example canteen staff credi
 * `CredentialExpiryAlertJob`: after 08:00 IST. Each credential alerts once at 30 days, once at 7 days and once on
   expiry. The employee receives a personal notice and `hr.credentials.manage` holders receive one summary per
   facility.
+* `BiometricPullJob`: every minute, reads the terminals HC360 reads whose interval has passed (each under its own lock)
+  and reports terminals that have gone quiet.
 
 ## Notifications
 In-app only (`NotifyUsersAsync` / `NotifyPermissionHoldersAsync`): leave and regularisation requests (to the manager,
 or HR when there is no manager), decisions (to the employee), salary bank account changed (to the employee, as a
-fraud alert), salary credited, credential expiry, and separated employee (to `admin.users.manage` holders). No SMS
-templates.
+fraud alert), salary credited, credential expiry, separated employee (to `admin.users.manage` holders), and an
+attendance terminal not heard from (to `hr.attendance.manage` holders, once per outage). No SMS templates.
 
 ## Number series
 `hr.employee`: `{FAC}EMP{SEQ:5}`, per facility, never resets (e.g. `NHEMP00042`).
@@ -241,4 +268,5 @@ seeded for this year and next. Five demo employees with salary structures are ad
   every export is audited (PRV-04).
 * Punches (`attendance_punches`) and computed days (`attendance_days`) are `[NotAudited]`. Regularisations, leave,
   payroll and masters are data-audited.
-* Terminals send only attendance logs. Biometric templates never reach the server (DPDP data minimisation).
+* Terminals send only attendance logs, and HC360 reads only attendance records and the clock from the terminals it
+  reads. Biometric templates never reach the server (DPDP data minimisation).

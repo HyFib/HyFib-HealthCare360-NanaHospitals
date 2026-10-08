@@ -33,6 +33,8 @@ describe('dashboard display', () => {
     expect(providerLabel('simulator')).toBe('Simulator (training)');
     expect(providerLabel('MSG91')).toBe('MSG91');
     expect(providerLabel('zpl/tspl')).toBe('ZPL / TSPL printers');
+    expect(providerLabel('zkteco')).toBe('ZKTeco / eSSL terminals');
+    expect(providerLabel('push')).toBe('Terminals send their punches');
     expect(providerLabel(null)).toBe('—');
     expect(providerLabel('newprovider')).toBe('newprovider');
   });
