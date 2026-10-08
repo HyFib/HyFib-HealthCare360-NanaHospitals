@@ -145,7 +145,7 @@ change the database password, at once if the Server Node, its disks or a backup 
   `keys\field-keys` beside `keys\field-master.key`, and every backup carries them all, so older backups restore as
   before. The backup recovery key does not change: keep using the one you have.
 - **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
-  expire, within minutes, so nobody is signed out.
+  expire, within minutes, so nobody is signed out. It can be rotated again once those have expired.
 
 The keys are on the Server Node: rotate them there, not on a second API server, which cannot share them yet.
 

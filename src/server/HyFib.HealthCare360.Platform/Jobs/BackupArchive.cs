@@ -351,10 +351,11 @@ public static class BackupRestore
                 }
 
                 var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), protector, contents.MasterKey, time.GetUtcNow());
-                if (contents.Manifest.CurrentKey is { } current)
-                {
-                    FieldKeyRing.SetCurrent(directories, current == contents.Manifest.KeyFingerprint ? null : current);
-                }
+
+                // The backup decides which key encrypts new data, also when it is the original key (no current key in its
+                // manifest): a key this machine had made current before is not used again, in case it was exposed.
+                var current = contents.Manifest.CurrentKey;
+                FieldKeyRing.SetCurrent(directories, current is null || current == contents.Manifest.KeyFingerprint ? null : current);
 
                 return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs)
                 {

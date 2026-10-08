@@ -243,14 +243,18 @@ internal sealed class FieldKeyMover(HospitalDbContext db, IFieldProtector protec
         try
         {
             var stored = await File.ReadAllBytesAsync(path, cancellationToken);
-            if (ring.KeyIdOf(stored) != ring.CurrentKeyId)
+            var keyId = ring.KeyIdOf(stored);
+            if (keyId != ring.CurrentKeyId)
             {
-                // Written beside the document, then put in its place in one step: a reader sees one or the other.
-                await File.WriteAllBytesAsync(temp, protector.ProtectBytes(protector.UnprotectBytes(stored, FilesPurpose), FilesPurpose), cancellationToken);
+                // Written beside the document, then put in its place in one step: a reader sees one or the other. The row
+                // names the key the new bytes name, which a rotation meanwhile cannot make wrong.
+                var encrypted = protector.ProtectBytes(protector.UnprotectBytes(stored, FilesPurpose), FilesPurpose);
+                await File.WriteAllBytesAsync(temp, encrypted, cancellationToken);
                 File.Move(temp, path, overwrite: true);
+                keyId = ring.KeyIdOf(encrypted);
             }
 
-            file.EncryptionKeyId = ring.CurrentKeyId;
+            file.EncryptionKeyId = keyId;
             return true;
         }
         catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)

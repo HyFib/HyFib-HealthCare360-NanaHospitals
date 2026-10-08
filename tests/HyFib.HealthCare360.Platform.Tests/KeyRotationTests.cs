@@ -172,12 +172,40 @@ public sealed class KeyRotationTests : IDisposable
         store.Key.KeyId.ShouldBe(after);
         Ids(store).ShouldBe([after, before]);
 
+        // Only one previous key is kept, so a second rotation waits until its tokens have expired.
+        store.NextRotationAt.ShouldBe(clock.Now + TimeSpan.FromMinutes(11));
+        Should.Throw<InvalidOperationException>(store.Rotate);
+
         // A restart within the overlap keeps the previous key; past it, only the current one is accepted.
         clock.Now += TimeSpan.FromMinutes(5);
         Ids(new SigningKeyStore(machine, _protection, options, clock)).ShouldBe([after, before]);
         clock.Now += TimeSpan.FromMinutes(7);
         Ids(store).ShouldBe([after]);
         Ids(new SigningKeyStore(machine, _protection, options, clock)).ShouldBe([after]);
+        store.NextRotationAt.ShouldBeNull();
+        Ids(store).ShouldNotContain(store.Rotate());
+        Ids(store).ShouldBe([store.Key.KeyId, after]);
+    }
+
+    [Fact]
+    public async Task A_backup_made_before_any_rotation_makes_the_original_key_current_again()
+    {
+        // A backup of a server that never rotated.
+        var oldServer = Machine("old");
+        var oldProtector = new FieldProtector(oldServer, _protection);
+        var value = oldProtector.Protect("12-3456-7890-1234");
+        var (backup, recoveryKey) = await BackupWithRingAsync(oldServer, oldProtector);
+
+        // Restored on a machine that had rotated its own keys (perhaps because one was exposed).
+        var machine = Machine("new");
+        var own = new FieldProtector(machine, _protection);
+        own.Rotate();
+        await BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(machine.Temp, "r.dump"), machine, _protection, TimeProvider.System, CancellationToken.None);
+
+        var restored = new FieldProtector(machine, _protection);
+        restored.CurrentKeyId.ShouldBe(oldProtector.CurrentKeyId);
+        restored.Protect("new").ShouldStartWith("v1.");
+        restored.Unprotect(value).ShouldBe("12-3456-7890-1234");
     }
 
     private static string?[] Ids(SigningKeyStore store) => store.ValidationKeys().Select(k => k.KeyId).ToArray();

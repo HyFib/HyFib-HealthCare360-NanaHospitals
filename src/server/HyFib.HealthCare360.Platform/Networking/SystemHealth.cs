@@ -345,7 +345,7 @@ internal static class SystemEndpoints
         admin.MapGet("/keys", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.StatusAsync(ct)));
         admin.MapPost("/keys/data/rotate", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.RotateDataKeyAsync(ct)))
             .RequirePermission(PlatformPermissions.SystemManage);
-        admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.RotateSigningKeyAsync(ct)))
+        admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => (await keys.RotateSigningKeyAsync(ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage);
 
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>

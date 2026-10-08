@@ -308,7 +308,7 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     must not change. Short-lived encrypted data (stored responses for repeated requests, 24 hours; scheduled report
     files, 30 days by default) is not moved: it expires with its key still in the ring.
   - *Sign-in token key.* New access tokens are signed with a new key, and the previous one is still accepted for the
-    access-token lifetime plus a minute, so nobody is signed out.
+    access-token lifetime plus a minute, so nobody is signed out. Another rotation waits until then.
 - **Key policy.** Rotate the sign-in token key every year and the data encryption key every two years; System health
   says when either is due. Rotate both at once, and change the database password, when the Server Node, its disks or a
   backup may have been exposed, and when someone with administrator access to the Server Node leaves. Data keys are

@@ -74,13 +74,31 @@ public sealed class SigningKeyStore
             : [keys.Key];
     }
 
+    /// <summary>
+    /// While the previous key still validates tokens (after a rotation), when the next rotation may be made; otherwise null.
+    /// Only one previous key is kept, so a second rotation sooner would end its tokens early.
+    /// </summary>
+    public DateTimeOffset? NextRotationAt
+    {
+        get
+        {
+            var keys = Current;
+            return keys.RetiredAt is { } retired && _time.GetUtcNow() < retired + _overlap ? retired + _overlap : null;
+        }
+    }
+
     /// <summary>Makes a new key current; the previous one validates tokens it signed until they expire. Returns the new key's id.</summary>
+    /// <exception cref="InvalidOperationException">The key was rotated less than an access-token lifetime ago (<see cref="NextRotationAt"/>).</exception>
     public string Rotate()
     {
         lock (_rotation)
         {
             var keys = Current;
             var now = _time.GetUtcNow();
+            if (NextRotationAt is { } allowedAt)
+            {
+                throw new InvalidOperationException($"The signing key was rotated a moment ago; it can be rotated again from {allowedAt:O}.");
+            }
 
             // The current key is kept as the previous one before the new one takes its place.
             var currentFile = File.ReadAllBytes(_path);

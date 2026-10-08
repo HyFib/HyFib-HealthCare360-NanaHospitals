@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -37,6 +38,7 @@ internal sealed class KeyRotationService(
     FieldKeyMover mover,
     FieldKeyMoveSignal signal,
     IAuditLogger audit,
+    TimeProvider time,
     ILogger<KeyRotationService> logger)
 {
     public const string DataKeyRotated = "security.data_key_rotated";
@@ -76,11 +78,19 @@ internal sealed class KeyRotationService(
         return await StatusAsync(ct);
     }
 
-    public async Task<EncryptionKeysStatus> RotateSigningKeyAsync(CancellationToken ct)
+    public async Task<Result<EncryptionKeysStatus>> RotateSigningKeyAsync(CancellationToken ct)
     {
         await OneAtATime.WaitAsync(ct);
         try
         {
+            // Tokens signed with the previous key are still valid, and only one previous key is kept.
+            if (signing.NextRotationAt is { } next)
+            {
+                var minutes = Math.Max(1, (int)Math.Ceiling((next - time.GetUtcNow()).TotalMinutes));
+                return Error.Rule("keys.signing_rotated_recently",
+                    $"The sign-in token key was rotated a few minutes ago, and tokens signed before that are still in use. Rotate it again in {minutes} minute(s).");
+            }
+
             var previous = signing.Key.KeyId;
             var id = signing.Rotate();
             logger.LogWarning("Token signing key rotated from {Previous} to {Current}", previous, id);

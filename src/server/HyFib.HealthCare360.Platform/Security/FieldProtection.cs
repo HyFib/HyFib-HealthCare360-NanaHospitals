@@ -455,7 +455,11 @@ public static class FieldKeyRing
         var path = Path.Combine(DirectoryIn(directories), CurrentFileName);
         if (id is null)
         {
-            File.Delete(path);
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
             return;
         }
 
