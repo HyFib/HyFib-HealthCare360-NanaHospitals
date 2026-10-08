@@ -80,6 +80,21 @@ export interface AssetTagLabel {
   hospital?: string | null;
 }
 
+/**
+ * A pharmacy tag (INT-BAR): the medicine, its batch, expiry and MRP, and the barcode the counter scans: the item code
+ * and batch number joined by `#` (`PCM500#AB1234`), or the item code alone.
+ */
+export interface PharmacyTagLabel {
+  barcode: string;
+  medicine: string;
+  batch?: string | null;
+  /** yyyy-MM-dd */
+  expiry?: string | null;
+  mrp?: number | null;
+  /** What the MRP is for, as stock is counted ("tab"): "MRP Rs 2.50/tab". */
+  unit?: string | null;
+}
+
 /** The kinds of label, named as the server's endpoints are. */
 export interface LabelData {
   'lab-tubes': LabTubeLabel;
@@ -88,6 +103,7 @@ export interface LabelData {
   'blood-units': BloodUnitLabel;
   'cssd-packs': CssdPackLabel;
   'asset-tags': AssetTagLabel;
+  'pharmacy-tags': PharmacyTagLabel;
 }
 
 export type LabelKind = keyof LabelData;

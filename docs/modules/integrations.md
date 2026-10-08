@@ -701,10 +701,25 @@ a label looks the same whichever way it is printed. The staff app sends the data
 | `blood-units` | `BloodUnitLabel { unitNumber, bloodGroup, component, volumeMl, cleared, expiresAt, storage }` | Group with POS or NEG in full, component and volume, TTI NON-REACTIVE, or QUARANTINE / NOT FOR ISSUE in white on black until cleared; the barcode and unit number, expiry, storage | Unit number (Code 128) |
 | `cssd-packs` | `CssdPackLabel { packNumber, setName, method, sterileUntil }` | Set name, the barcode and pack number, method and use-by date, or NOT RELEASED in white on black while `sterileUntil` is null | Pack number (Code 128) |
 | `asset-tags` | `AssetTagLabel { assetTag, assetName, hospital }` | Hospital, asset name, the barcode and tag | Asset tag (Code 128) |
+| `pharmacy-tags` | `PharmacyTagLabel { barcode, medicine, batch, expiry, mrp, unit }` | Medicine, `B {batch}   Exp {Mon yyyy}`, `MRP Rs {mrp}/{unit}`, the barcode and its value. On a short label the MRP line gives way first, then the batch line; the barcode is never dropped | Item code and batch, `PCM500#AB1234` (Code 128) |
 | `test` | `TestLabelRequest { printer, stock (Label or Wristband), computer }` | A frame 1 mm inside the edges, the printer as HC360 sees it (language, dpi, size), a sample barcode at real module width, the computer and time | `HC360-TEST` |
 
 Each request carries `printer: LabelPrinterSetup { language, dpi, widthMm, heightMm }` and `copies` (1–10); the answer
 is `LabelCommands { language, content, labels }`. At most 100 labels a request, 10 wristbands.
+
+**Pharmacy tags.** A tag goes on a strip, bottle, box or shelf. Its barcode is the item code and the batch number
+joined by `#` (`PCM500#AB1234`); item codes never hold a `#`, so the server splits the value unambiguously
+(`BatchTag` in SupplyChain). A batch that cannot be coded (too long, or with `! > " \`) gets the item code alone. The
+staff app prints tags from a posted goods receipt (Print tags) and from a batch on the stock screen (Tags), one per
+batch with as many copies as needed, at most 100 labels a print. Scanning a tag:
+
+* at the counter (`GET /api/v1/pharmacy/stock?search=PCM500%23AB1234`) finds the medicine by its exact code and answers
+  `scanned: ScannedBatch { batchNumber, batchId, expiryDate, mrp, available, problem }`. The batch is the usable one
+  of that number that expires first (the number matches whatever the case); otherwise `batchId` is null and `problem`
+  says why: not in this store, blocked (with the reason), expired, or nothing left to sell. The counter adds the
+  medicine with that batch, or warns.
+* in the dispensing queue, the "Scan to check a medicine" box checks the strip or tag in hand against the prescription:
+  a medicine not on it is warned about, and a tag's batch is picked for its line.
 
 **Wristband allergy mark.** `GET /api/v1/inpatient/admissions/{id}/wristband` gives the chart's allergy status, and the
 staff app passes it through as `allergies`:
@@ -787,6 +802,35 @@ HC360 Desktop keeps each workstation's printers for every Windows account on it,
 * **Test print.** For a ZPL or TSPL printer the screen prints the server's test label; for any other printer a test page
   in the role's paper size.
 
+#### Serial barcode scanners
+
+A scanner that types like a keyboard (USB HID, the usual kind) needs no setup: it types the code and presses Enter in
+whatever field has the focus. A scanner on a COM port (RS-232, or USB set to its serial mode) is read by HC360 Desktop,
+which hands each code to the staff app; the staff app types it into the focused field of the window in front and
+presses Enter, so every scan box works with either kind. Code: `Bridge/SerialScannerService.cs`,
+`Bridge/ScanAssembler.cs` and `Bridge/ScannerSetup.cs` in HC360 Desktop; `packages/core/src/bridge/scans.ts` in the
+staff app.
+
+* **Setup.** One scanner per workstation, on the Printers on this computer screen (Barcode scanner): the COM port
+  (COM1–COM256), speed (1200–115200 baud), data bits (7 or 8), parity (none, even, odd) and stop bits (1 or 2), as set
+  on the scanner; most leave the factory at 9600, 8, none, 1. Saved in
+  `%ProgramData%\HyFib\HC360Desktop\Workstation\scanner.json`, or fixed by IT with a `scanner` entry in the machine
+  policy. Changing it follows the printers' approval and record steps, with
+  `/api/v1/integrations/scanners/changes/approval` and `/api/v1/integrations/scanners/changes` (audited as
+  `workstation.scanner_changed`).
+* **Reading.** A scan ends at CR, LF or tab, or after 100 ms of silence (for a scanner set to send no suffix). GS, RS,
+  EOT and NUL are dropped, as a keyboard scanner drops them. Anything else outside printable ASCII means the port's
+  settings do not match the scanner's, so that scan is refused rather than typed, and the screen says to check them.
+  More than 512 characters without an end is refused as noise.
+* **Where scans go.** Into a focused text, search, number, phone, URL or e-mail field, or a text area (where Enter
+  starts a new line unless the page takes it); never a password, a disabled or read-only field, or anything else. A
+  scan with no field focused, or while HC360 is not the window in front, goes nowhere.
+* **Port trouble.** While the port is missing (a USB scanner unplugged), held by another program or failing, HC360
+  Desktop tries again every 5 seconds, and the screen shows which (`not_found`, `busy`, `error`), with the last scan's
+  time. "Try a scan" on the screen shows what a scan reads, from either kind of scanner.
+* **Bridge.** `scanner.getSetup` → `ScannerSetupInfo { setup, lockedByPolicy, computerName, problems, status, ports }`;
+  `scanner.saveSetup { setup }` saves and listens to it; each scan arrives as the `scanner.scan` event `{ text }`.
+
 ### ICD lookup (INT-ICD) and the Clinical module
 
 * WHO ICD-API v2 with OAuth2 client credentials (`scope=icdapi_access`). Tokens are cached until one minute before
@@ -830,10 +874,12 @@ HC360 Desktop keeps each workstation's printers for every Windows account on it,
 | POST | `/api/v1/integrations/lab/agent/heartbeat` | anonymous, lab agent credential (`X-Device-Id`, `X-Device-Key`), `device` rate limit | `LabAgentHeartbeatRequest { appVersion, ports[] { code, open, error } }` (at most 64 ports) → `LabAgentAssignments { deviceId, deviceName, gatewayEnabled, heartbeatSeconds, instruments[] }`; 401 for a device that is not an enrolled lab agent |
 | GET | `/api/v1/integrations/lab/agent/relay/{code}` | anonymous, lab agent credential, `device` rate limit | WebSocket, sub-protocol `hc360.lab-relay.v1`: the analyser's serial bytes. 401 not an enrolled lab agent, 404 analyser not assigned to it, 503 gateway off |
 | POST | `/api/v1/integrations/labels` | `integrations.labels.print` | `PrintLabelRequest { value, symbology, textLines, widthMm, heightMm, copies, language, dpi }` → `PrintLabelResponse { language, content, copies }` |
-| POST | `/api/v1/integrations/labels/{lab-tubes\|wristbands\|dispensing\|blood-units\|cssd-packs\|asset-tags}` | `integrations.labels.print` | `{ printer: LabelPrinterSetup, labels[], copies }` (wristbands also `code`) → `LabelCommands { language, content, labels }`; 422 `labels.does_not_fit` or `labels.text_not_printable`. See [Barcode labels](#barcode-labels-int-bar) |
+| POST | `/api/v1/integrations/labels/{lab-tubes\|wristbands\|dispensing\|blood-units\|cssd-packs\|asset-tags\|pharmacy-tags}` | `integrations.labels.print` | `{ printer: LabelPrinterSetup, labels[], copies }` (wristbands also `code`) → `LabelCommands { language, content, labels }`; 422 `labels.does_not_fit` or `labels.text_not_printable`. See [Barcode labels](#barcode-labels-int-bar) |
 | POST | `/api/v1/integrations/labels/test` | `integrations.labels.print` | `TestLabelRequest { printer, stock, computer }` → `LabelCommands` |
 | POST | `/api/v1/integrations/printers/changes/approval` | `integrations.printers.setup` | `PrinterSetupChange { computer, deviceId, roles[{ role, printer, language, dpi, widthMm, heightMm, code }] }` → `PrinterChangeApproval { changedBy }`; records nothing |
 | POST | `/api/v1/integrations/printers/changes` | `integrations.printers.setup` | `PrinterSetupChange` → 204; audited as `workstation.printers_changed` |
+| POST | `/api/v1/integrations/scanners/changes/approval` | `integrations.printers.setup` | `ScannerSetupChange { computer, deviceId, port, baudRate, dataBits, parity, stopBits }` → `PrinterChangeApproval { changedBy }`; records nothing |
+| POST | `/api/v1/integrations/scanners/changes` | `integrations.printers.setup` | `ScannerSetupChange` → 204; audited as `workstation.scanner_changed` |
 | POST | `/api/v1/integrations/webhooks/sms/msg91` | anonymous, token | delivery reports (JSON or form `data`) |
 | POST | `/api/v1/integrations/webhooks/sms/twilio` | anonymous, `X-Twilio-Signature` | status callbacks (form) |
 | GET, POST | `/api/v1/integrations/webhooks/sms/generic` | anonymous, token | `{ id\|messageId\|msgid…, status }` |

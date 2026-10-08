@@ -8,7 +8,13 @@ import {
   Text,
   tokens,
 } from '@fluentui/react-components';
-import { BoxCheckmarkRegular, DismissCircleRegular, OpenRegular, PrintRegular } from '@fluentui/react-icons';
+import {
+  BoxCheckmarkRegular,
+  DismissCircleRegular,
+  OpenRegular,
+  PrintRegular,
+  TagRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, isApiError } from '@hc360/core';
 import { ConfirmDialog, DataTable, ErrorState, LoadingState, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +26,8 @@ import { formatPercent, formatQty } from '@/modules/inventory/format';
 import { SUPPLY_PERMISSIONS as S } from '@/modules/inventory/permissions';
 import { ReasonDialog } from '@/modules/inventory/ReasonDialog';
 import { Detail, DetailGrid, DocStatus, ExpiryText } from '@/modules/inventory/StockBits';
+import { PrintTagsDialog } from '@/modules/pharmacy/PrintTagsDialog';
+import type { PharmacyTag } from '@/modules/pharmacy/tags';
 import { purchaseApi, purchaseKeys, purchaseQueries, type GoodsReceiptLineDto } from '@/modules/purchase/api';
 import { GstSplitNote, PurchaseTotals } from '@/modules/purchase/GstSplitNote';
 import { explainGstSplit, type GstSplit } from '@/modules/purchase/gstPreview';
@@ -55,6 +63,7 @@ function GrnPage() {
   const canReceive = usePermission(S.grnReceive);
   const grn = useQuery(purchaseQueries.grn(grnId));
   const [dialog, setDialog] = useState<'post' | 'cancel' | null>(null);
+  const [tagging, setTagging] = useState(false);
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: purchaseKeys.all });
     void queryClient.invalidateQueries({ queryKey: ['inventory'] });
@@ -103,6 +112,18 @@ function GrnPage() {
         detail: split.interState ? 'Saved as a supply within the state.' : split.detail,
       };
 
+  const tags: PharmacyTag[] = g.lines
+    .filter((l) => l.itemCode)
+    .map((l) => ({
+      itemCode: l.itemCode!,
+      medicine: l.itemName,
+      batchNumber: l.batchNumber,
+      expiryDate: l.expiryDate,
+      mrp: l.unitMrp,
+      unit: l.baseUnit,
+      copies: 1,
+    }));
+
   return (
     <Page>
       <PageHeader
@@ -122,6 +143,11 @@ function GrnPage() {
             >
               Print
             </Button>
+            {g.status === 'Posted' && tags.length > 0 && (
+              <Button icon={<TagRegular />} onClick={() => setTagging(true)}>
+                Print tags
+              </Button>
+            )}
             {g.purchaseOrderId && (
               <Button
                 icon={<OpenRegular />}
@@ -296,6 +322,9 @@ function GrnPage() {
         >
           Nothing was added to stock. The vendor invoice number can be used again.
         </ReasonDialog>
+      )}
+      {tagging && (
+        <PrintTagsDialog title={`Pharmacy tags for ${g.number}`} tags={tags} onClose={() => setTagging(false)} />
       )}
     </Page>
   );

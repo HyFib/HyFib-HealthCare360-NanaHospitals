@@ -59,10 +59,17 @@ entry) the staff app prints one label per medicine, without a dialog, on the wor
 medicine and quantity, directions, batch and expiry, hospital and date. On a ZPL or TSPL printer the server writes the
 label (`dispensing`); otherwise the label page prints. See [integrations.md](integrations.md#barcode-labels-int-bar).
 
+**Pharmacy tags and scanning (INT-BAR).** Tags with the medicine, batch, expiry, MRP per unit and a barcode of the item
+code and batch (`PCM500#AB1234`) are printed from a posted goods receipt or a batch on the stock screen. Scanning a tag
+at the counter adds the medicine with that batch; in the dispensing queue, "Scan to check a medicine" checks the strip
+or tag in hand against the prescription and picks the tag's batch for its line. A batch that is not in the store,
+blocked, expired or used up is warned about, not picked. Scanners that type like a keyboard and scanners on a COM port
+(through HC360 Desktop) both work. See [integrations.md](integrations.md#barcode-labels-int-bar).
+
 ### Counter sales, payments, returns, stock — `/sales`, `/stock` (PH-02, PH-06)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry) |
+| GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry). A pharmacy tag's barcode as `search` (`PCM500#AB1234`) finds the item by its exact code and adds `scanned` (the batch it names, or why it cannot be handed out) |
 | GET | `/stock/batches?storeId&itemId&includeEmpty` | Counter staff | → `BatchStock[]` (FEFO order) |
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
 | GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments) · `SaleReturnDto[]` |

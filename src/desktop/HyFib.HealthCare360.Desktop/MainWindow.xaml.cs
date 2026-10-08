@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private readonly ServerTrust _trust;
     private readonly ServerClient _client;
     private readonly NetworkStatusService _network;
+    private readonly SerialScannerService _scanner = new();
     private readonly DispatcherTimer _retry = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<StaffWindow> _windows = [];
@@ -107,6 +108,7 @@ public partial class MainWindow : Window
         _tray = new TrayNotifier(() => Activate([]));
         CreateBridge(core, new WindowInteropHelper(this).Handle).Attach();
         _network.Start();
+        _scanner.Use(ScannerSetupStore.ForThisComputer().Load().Setup);
         _ = HeartbeatLoopAsync(_lifetime.Token);
 
         // The pinned check runs before the staff app (and the sign-in cookies it sends) goes to the server.
@@ -145,7 +147,8 @@ public partial class MainWindow : Window
     {
         var tray = _tray ?? throw new InvalidOperationException("The tray icon is created before any view.");
         var printing = new PrintService(core.Environment, owner);
-        return new BridgeHost(core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), tray);
+        return new BridgeHost(
+            core, _server, _settings, _network, printing, PrinterSetupStore.ForThisComputer(), ScannerSetupStore.ForThisComputer(), _scanner, tray);
     }
 
     private bool Locked => Volatile.Read(ref _rejected) is not null;
@@ -513,6 +516,7 @@ public partial class MainWindow : Window
         _lifetime.Cancel();
         _retry.Stop();
         _network.Dispose();
+        _scanner.Dispose();
         _client.Dispose();
         _trust.Dispose();
         _tray?.Dispose();

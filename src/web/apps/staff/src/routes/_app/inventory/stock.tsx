@@ -212,6 +212,7 @@ function StockPage() {
           storeId={storeId}
           storeName={store?.name ?? 'this store'}
           itemId={drill.itemId}
+          itemCode={drill.itemCode}
           itemName={drill.itemName}
           baseUnit={drill.baseUnit}
           onClose={() => setDrill(null)}

@@ -30,6 +30,10 @@ const manifest: ModuleManifest = {
             'tspl',
             'barcode',
             'test print',
+            'scanner',
+            'barcode scanner',
+            'serial scanner',
+            'com port',
           ],
         },
       ]

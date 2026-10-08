@@ -26,6 +26,10 @@ internal static class LabelSamples
 
     public static AssetTagLabel Asset() => new("AST-2600123", "Multipara monitor, ICU bed 4", "Nana Hospitals");
 
+    public static PharmacyTagLabel PharmacyTag(bool batch = true) => batch
+        ? new("PCM500#AB1234", "Paracetamol 500 mg tab", "AB1234", new DateOnly(2027, 9, 30), 2.5m, "tab")
+        : new("PCM500", "Paracetamol 500 mg tab", null, null, null);
+
     public static LabelMedia Label(LabelLanguage language = LabelLanguage.Zpl, int dpi = 203, decimal width = 50, decimal height = 25) =>
         new(language, dpi, width, height);
 

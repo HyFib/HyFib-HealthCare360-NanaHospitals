@@ -127,7 +127,7 @@ Failures return problem details that carry the error `code`: 400 validation, 404
 ### Goods receipt — `/api/v1/purchase/grns`
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/?page&status&vendorId&storeId&from&to` · `/{id}` | any of `purchase.grn.receive`, `purchase.manage`, `purchase.approve` | → paged `GoodsReceiptListItem` · `GoodsReceiptDetail` |
+| GET | `/?page&status&vendorId&storeId&from&to` · `/{id}` | any of `purchase.grn.receive`, `purchase.manage`, `purchase.approve` | → paged `GoodsReceiptListItem` · `GoodsReceiptDetail` (each line with the item's code and base unit, for pharmacy tags) |
 | POST | `/` | `purchase.grn.receive` | `CreateGoodsReceiptRequest` (vendorId, storeId, purchaseOrderId?, vendorInvoiceNumber, vendorInvoiceDate, receivedOn, remarks, lines[itemId, purchaseOrderLineId?, batchNumber, manufactureDate, expiryDate, quantity, freeQuantity, rate, mrp, discountPercent, gstRate, acceptShortExpiry], post) → 201 `GoodsReceiptCreated` (id, number, status, netAmount) |
 | POST | `/{id}/post` · `/{id}/cancel` | `purchase.grn.receive` | — · `InventoryReasonRequest` → 204 |
 
@@ -135,6 +135,11 @@ GRN checks: duplicate vendor invoice (unique vendor + invoice number unless canc
 must be valid on the receipt date for drug items; an expired batch is refused; a batch expiring within 90 days
 needs `acceptShortExpiry`; rate ≤ MRP; purchase units are converted to base units, free goods lower the unit cost,
 and re-receipt of the same batch number/expiry/MRP averages the cost.
+
+Pharmacy tags (INT-BAR): a posted receipt prints a tag per line (Print tags), with the medicine, batch, expiry, MRP per
+base unit and a barcode of the item code and batch (`PCM500#AB1234`); so does a batch on the stock screen (Tags). An
+inventory search for a tag's barcode finds the item by its exact code. See
+[integrations.md](integrations.md#barcode-labels-int-bar).
 
 ### Assets — `/api/v1/assets` (AST-01/02/06, tag Assets)
 | Method | Path | Permission | Request → response |

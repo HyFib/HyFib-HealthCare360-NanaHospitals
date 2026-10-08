@@ -98,6 +98,8 @@ import {
 } from '@/modules/pharmacy/dispense';
 import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
+import { ScanCheck } from '@/modules/pharmacy/ScanCheck';
+import { scannedBatchProblem } from '@/modules/pharmacy/tags';
 import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { ipIssueAmount, priceSaleLine, saleTotals, type SaleLinePrice } from '@/modules/pharmacy/pricing';
@@ -111,6 +113,7 @@ export const Route = createFileRoute('/_app/pharmacy/queue/$entryId')({
 });
 
 const useStyles = makeStyles({
+  scan: { padding: '12px 16px 8px', maxWidth: '460px' },
   layout: {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) 380px',
@@ -392,6 +395,31 @@ function EntryScreen({
 
   const setChoice = (lineId: string, patch: Partial<LineChoice>) =>
     setChoices((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
+
+  // A scanned strip or pharmacy tag (INT-BAR): is it on this prescription, and which batch is in hand?
+  const checkScanned = (row: PharmacyStockRow) => {
+    const lines = plans.filter((p) => p.item?.itemId === row.itemId && p.quantity > 0);
+    if (lines.length === 0) {
+      notify.warning(
+        `${row.name} is not being given on this prescription`,
+        'Check the medicine in hand against the prescription.',
+      );
+      return;
+    }
+    if (!row.scanned) {
+      notify.success(`${row.name} is on this prescription`);
+      return;
+    }
+    const problem = scannedBatchProblem(row.scanned);
+    if (problem) {
+      notify.warning(`${row.name}: ${problem}`, 'Pick another batch, or put this one aside.');
+      return;
+    }
+    for (const p of lines) {
+      setChoice(p.line.id, { batchId: row.scanned.batchId });
+    }
+    notify.success(`${row.name}: batch ${row.scanned.batchNumber} picked`);
+  };
 
   const buildLabels = (): DrugLabel[] =>
     active
@@ -690,6 +718,11 @@ function EntryScreen({
             }
             flush
           >
+            {open && canDispense && (
+              <div className={styles.scan}>
+                <ScanCheck storeId={storeId} onScanned={checkScanned} />
+              </div>
+            )}
             <LineTable<LinePlan | QueueLineDto>
               ariaLabel="Prescription lines"
               rows={open ? plans : entry.lines}

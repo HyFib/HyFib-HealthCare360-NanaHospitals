@@ -91,3 +91,16 @@ public sealed record AssetTagLabel(
     string AssetTag,
     string AssetName,
     string? Hospital);
+
+/// <summary>
+/// A pharmacy tag (INT-BAR) for a strip, bottle, box or shelf: the medicine, its batch, expiry and MRP, and the barcode
+/// the counter scans. The barcode is the item code and batch number (<c>PCM500#AB1234</c>), or the item code alone.
+/// </summary>
+/// <param name="Unit">What the MRP is for, as stock is counted (<c>tab</c>): "MRP Rs 2.50/tab".</param>
+public sealed record PharmacyTagLabel(
+    string Barcode,
+    string Medicine,
+    string? Batch,
+    DateOnly? Expiry,
+    decimal? Mrp,
+    string? Unit = null);

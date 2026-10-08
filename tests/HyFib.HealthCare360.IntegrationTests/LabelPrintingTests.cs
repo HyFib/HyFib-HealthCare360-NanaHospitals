@@ -169,6 +169,67 @@ public sealed class LabelPrintingTests(HospitalServer server)
         badCode.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task A_pharmacy_tag_carries_the_item_code_and_batch_the_counter_scans()
+    {
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+
+        var commands = await pharmacist.PostAsync<LabelCommands>("/api/v1/integrations/labels/pharmacy-tags", new PharmacyTagLabelsRequest(Zebra,
+        [
+            new PharmacyTagLabel("PCM500#AB1234", "Paracetamol 500 mg tab", "AB1234", new DateOnly(2027, 9, 30), 2.5m, "tab"),
+        ], Copies: 2));
+
+        commands.Labels.ShouldBe(1);
+        commands.Content.ShouldContain("PCM500#AB1234");
+        commands.Content.ShouldContain("MRP Rs 2.50/tab");
+        commands.Content.ShouldContain("^PQ2");
+
+        using var unscannable = await pharmacist.SendRawAsync(HttpMethod.Post, "/api/v1/integrations/labels/pharmacy-tags", new PharmacyTagLabelsRequest(Zebra,
+        [
+            new PharmacyTagLabel("PCM500#AB\\1234", "Paracetamol 500 mg tab", null, null, null),
+        ]));
+        unscannable.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Only_staff_allowed_to_set_up_printers_change_a_workstations_serial_scanner_and_each_change_is_recorded()
+    {
+        var computer = "PHARMACY-" + Digits(4);
+        var change = new ScannerSetupChange(computer, null, "com3", 19200, 7, "even", "one");
+
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        foreach (var path in new[] { "/api/v1/integrations/scanners/changes/approval", "/api/v1/integrations/scanners/changes" })
+        {
+            using var refused = await pharmacist.SendRawAsync(HttpMethod.Post, path, change);
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var me = await admin.GetAsync<JsonElement>("/api/v1/auth/me");
+        var approval = await admin.PostAsync<PrinterChangeApproval>("/api/v1/integrations/scanners/changes/approval", change);
+        approval.ChangedBy.ShouldBe(me.GetProperty("displayName").GetString());
+
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var recorded = db.Set<AuditEvent>().AsNoTracking().Where(e => e.Action == "workstation.scanner_changed" && e.EntityId == computer);
+        (await recorded.CountAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
+
+        await admin.PostAsync("/api/v1/integrations/scanners/changes", change);
+        await admin.PostAsync("/api/v1/integrations/scanners/changes", change with { Port = null });
+
+        (await recorded.OrderBy(e => e.OccurredAt).Select(e => e.Summary).ToListAsync(TestContext.Current.CancellationToken)).ShouldBe(
+        [
+            $"Changed the barcode scanner on {computer}: COM3 at 19200 baud, 7 data bits, even parity, 1 stop bit",
+            $"Changed the barcode scanner on {computer}: none (keyboard scanners only)",
+        ]);
+
+        foreach (var bad in new[] { change with { Port = "LPT1" }, change with { BaudRate = 9601 }, change with { Parity = "mark" } })
+        {
+            using var refused = await admin.SendRawAsync(HttpMethod.Post, "/api/v1/integrations/scanners/changes/approval", bad);
+            refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        }
+    }
+
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));

@@ -40,8 +40,12 @@ internal static class SaleEndpoints
             .RequirePermission(PharmacyPermissions.Returns).WithValidation<SaleReturnRequest>();
     }
 
-    /// <summary>Counter picker: sellable stock of matching items in a pharmacy store, with MRP and the prescription flag.</summary>
-    private static async Task<IResult> Stock(Guid storeId, string? search, bool? inStockOnly, int? take, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// Counter picker: sellable stock of matching items in a pharmacy store, with MRP and the prescription flag. A
+    /// scanned pharmacy tag finds its item and says which of the store's batches it names.
+    /// </summary>
+    private static async Task<IResult> Stock(
+        Guid storeId, string? search, bool? inStockOnly, int? take, HospitalDbContext db, StockService stock, TimeProvider time, CancellationToken ct)
     {
         var items = await db.Set<Item>().AsNoTracking()
             .Where(i => i.IsActive)
@@ -60,7 +64,31 @@ internal static class SaleEndpoints
             })
             .Where(r => inStockOnly != true || r.Available > 0)
             .ToList();
+        if (BatchTag.TryParse(search, out _, out var batchNumber) && rows.Count == 1)
+        {
+            var batches = await stock.GetBatchesAsync(storeId, rows[0].ItemId, includeEmpty: true, ct);
+            rows[0] = rows[0] with { Scanned = Scanned(batchNumber, batches) };
+        }
+
         return TypedResults.Ok(rows);
+    }
+
+    /// <summary>The store's batch a tag names: the usable one expiring first, or why none can be handed out.</summary>
+    internal static ScannedBatch Scanned(string batchNumber, IReadOnlyList<BatchStock> batches)
+    {
+        var named = batches.Where(b => BatchTag.Matches(b.BatchNumber, batchNumber)).ToList();
+        var usable = named.Where(b => b.Available > 0 && !b.IsExpired && !b.IsBlocked).OrderBy(b => b.ExpiryDate ?? DateOnly.MaxValue).FirstOrDefault();
+        if (usable is not null)
+        {
+            return new ScannedBatch(usable.BatchNumber, usable.BatchId, usable.ExpiryDate, usable.Mrp, usable.Available, null);
+        }
+
+        var problem = named.Count == 0 ? $"Batch {batchNumber} is not in this store."
+            : named.Any(b => b.IsBlocked && b.OnHand > 0) ? $"Batch {batchNumber} is blocked: {named.First(b => b.IsBlocked).BlockReason ?? "see the stock screen"}."
+            : named.Any(b => b.IsExpired && b.OnHand > 0) ? $"Batch {batchNumber} has expired."
+            : $"Nothing of batch {batchNumber} is left to sell here.";
+        var latest = named.OrderByDescending(b => b.ExpiryDate ?? DateOnly.MaxValue).FirstOrDefault();
+        return new ScannedBatch(latest?.BatchNumber ?? batchNumber, null, latest?.ExpiryDate, latest?.Mrp, 0, problem);
     }
 
     /// <summary>Invoices for a date range (local dates, default today); search by invoice number, customer or UHID.</summary>

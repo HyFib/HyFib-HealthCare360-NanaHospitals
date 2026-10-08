@@ -25,6 +25,8 @@ internal sealed class BridgeHost(
     NetworkStatusService network,
     PrintService printing,
     PrinterSetupStore printers,
+    ScannerSetupStore scannerSetup,
+    SerialScannerService scanner,
     TrayNotifier tray)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
@@ -33,12 +35,17 @@ internal sealed class BridgeHost(
     };
 
     private Action<NetworkStatus>? _networkChanged;
+    private Action<string>? _scanned;
 
     public void Attach()
     {
         webView.WebMessageReceived += OnWebMessageReceived;
         _networkChanged = status => PostEvent("network.changed", status);
         network.Changed += _networkChanged;
+
+        // Every staff window hears each scan; the staff app types it into the focused field of the window in front.
+        _scanned = text => PostEvent("scanner.scan", new { text });
+        scanner.Scanned += _scanned;
     }
 
     /// <summary>
@@ -51,6 +58,12 @@ internal sealed class BridgeHost(
         {
             network.Changed -= _networkChanged;
             _networkChanged = null;
+        }
+
+        if (_scanned is not null)
+        {
+            scanner.Scanned -= _scanned;
+            _scanned = null;
         }
     }
 
@@ -186,6 +199,25 @@ internal sealed class BridgeHost(
                 var data = String(parameters, "data") ?? throw new BridgeException("bad_request", "Nothing to print.");
                 RawPrinter.Send(printer, data);
                 return null;
+            }
+
+            case "scanner.getSetup":
+            {
+                var (setup, locked, problems) = scannerSetup.Load();
+                return new ScannerSetupInfo(setup, locked, Environment.MachineName, problems, scanner.Status, SerialScannerService.PortNames());
+            }
+
+            case "scanner.saveSetup":
+            {
+                // As printer.saveSetup: offered only to staff allowed to set up printers, after the server approved it.
+                var setup = Required(parameters).TryGetProperty("setup", out var value) && value.ValueKind == JsonValueKind.Object
+                    ? value.Deserialize<WorkstationScanner>(Json)
+                    : null;
+                var saved = scannerSetup.Save(
+                    setup ?? throw new BridgeException("bad_request", "No scanner to save."),
+                    DateTimeOffset.UtcNow);
+                scanner.Use(saved);
+                return saved;
             }
 
             case "shell.openExternal":

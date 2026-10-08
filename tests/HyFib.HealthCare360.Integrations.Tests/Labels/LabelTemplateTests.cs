@@ -242,6 +242,41 @@ public sealed class LabelTemplateTests
 
     [Theory]
     [MemberData(nameof(Printers))]
+    public void A_pharmacy_tag_carries_the_medicine_its_batch_and_the_barcode_the_counter_scans(LabelLanguage language, int dpi)
+    {
+        var tag = Draw(LabelSamples.Label(language, dpi), LabelSamples.PharmacyTag(), PharmacyTagTemplate.Draw);
+        var item = Draw(LabelSamples.Label(language, dpi), LabelSamples.PharmacyTag(batch: false), PharmacyTagTemplate.Draw);
+
+        BarcodesScan(tag);
+        BarcodesScan(item);
+        tag.Elements.OfType<BarcodeElement>().ShouldHaveSingleItem().Plan.Value.ShouldBe("PCM500#AB1234");
+        tag.Elements.OfType<TextElement>().Select(t => t.Text)
+            .ShouldBe(["Paracetamol 500 mg tab", "B AB1234   Exp Sep 2027", "MRP Rs 2.50/tab", "PCM500#AB1234"]);
+        item.Elements.OfType<TextElement>().Select(t => t.Text).ShouldBe(["Paracetamol 500 mg tab", "PCM500"]);
+    }
+
+    [Fact]
+    public void On_a_short_label_a_pharmacy_tag_gives_up_the_mrp_then_the_batch_line_but_keeps_its_barcode()
+    {
+        var lines = new Dictionary<int, string[]>();
+        foreach (var height in new[] { 25, 15, 13 })
+        {
+            var tag = Draw(LabelSamples.Label(height: height), LabelSamples.PharmacyTag(), PharmacyTagTemplate.Draw);
+            BarcodesScan(tag);
+            tag.Elements.OfType<BarcodeElement>().ShouldHaveSingleItem();
+            lines[height] = tag.Elements.OfType<TextElement>().Select(t => t.Text).ToArray();
+        }
+
+        var tiny = Should.Throw<LabelLayoutException>(() => Draw(LabelSamples.Label(height: 10), LabelSamples.PharmacyTag(), PharmacyTagTemplate.Draw));
+
+        lines[25].ShouldBe(["Paracetamol 500 mg tab", "B AB1234   Exp Sep 2027", "MRP Rs 2.50/tab", "PCM500#AB1234"]);
+        lines[15].ShouldBe(["Paracetamol 500 mg tab", "B AB1234   Exp Sep 2027", "PCM500#AB1234"]);
+        lines[13].ShouldBe(["Paracetamol 500 mg tab", "PCM500#AB1234"]);
+        tiny.Message.ShouldContain("too short for a pharmacy tag");
+    }
+
+    [Theory]
+    [MemberData(nameof(Printers))]
     public void The_test_label_frames_the_label_and_shows_the_setup(LabelLanguage language, int dpi)
     {
         var label = Draw(LabelSamples.Label(language, dpi), LabelStock.Label, (c, s) => TestLabelTemplate.Draw(c, s, "OPD-RECEPTION-2", LabelSamples.Collected));
