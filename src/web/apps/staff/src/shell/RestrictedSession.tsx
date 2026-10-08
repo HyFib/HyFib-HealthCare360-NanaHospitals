@@ -29,8 +29,9 @@ const useStyles = makeStyles({
 });
 
 /**
- * Shown instead of the app while the session is restricted: a first sign-in with a temporary password, or a
- * role that must use two-step verification (SRS SEC-02/03). The server rejects every other call until done.
+ * Shown instead of the app while the session is restricted: a first sign-in with a temporary password, a password
+ * published from data breaches (SRS SEC-01), or a role that must use two-step verification (SRS SEC-02/03). The server
+ * rejects every other call until done.
  */
 export function RestrictedSession({ restriction }: { restriction: 'password' | 'mfa-setup' }) {
   const styles = useStyles();
@@ -50,8 +51,9 @@ export function RestrictedSession({ restriction }: { restriction: 'password' | '
           <>
             <Title2 as="h1">Choose a new password</Title2>
             <Text className={styles.muted}>
-              Welcome, {user?.displayName}. You signed in with a temporary password. Choose your own password to
-              continue.
+              {user?.passwordBreached
+                ? `Welcome, ${user.displayName}. Your password is on published lists of passwords from data breaches, so attackers try it first. Choose a new one to continue.`
+                : `Welcome, ${user?.displayName}. You signed in with a temporary password. Choose your own password to continue.`}
             </Text>
             <ChangePasswordForm />
           </>

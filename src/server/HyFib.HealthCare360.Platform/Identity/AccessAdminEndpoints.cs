@@ -190,7 +190,7 @@ internal static class AccessAdminEndpoints
         }
 
         var password = string.IsNullOrWhiteSpace(request.TemporaryPassword) ? GenerateTemporaryPassword() : request.TemporaryPassword;
-        var errors = policy.Validate(password, request.UserName, request.DisplayName);
+        var errors = policy.Validate(password, request.UserName, request.DisplayName, await AuthService.FacilityNamesAsync(db, ct));
         if (errors.Count > 0)
         {
             return Error.Validation("user.weak_password", errors[0], new Dictionary<string, string[]> { ["temporaryPassword"] = errors.ToArray() }).ToProblem();
@@ -307,6 +307,7 @@ internal static class AccessAdminEndpoints
         var password = GenerateTemporaryPassword();
         user.PasswordHash = hashing.Hash(password);
         user.MustChangePassword = true;
+        user.PasswordBreachedAt = null;
         user.FailedLoginCount = 0;
         user.LockoutEndsAt = null;
         await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", time.GetUtcNow(), ct);

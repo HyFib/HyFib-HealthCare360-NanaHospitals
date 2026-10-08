@@ -36,6 +36,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Security\Resources\common-passwords.txt" />
+    <EmbeddedResource Include="Security\Resources\breached-passwords.gcs" />
   </ItemGroup>
 
   <ItemGroup>

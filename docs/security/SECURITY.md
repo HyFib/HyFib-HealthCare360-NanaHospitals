@@ -58,7 +58,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
 ### Identity and sessions
 - Passwords:
   - At least 12 characters.
-  - Checked against a list of common passwords and the user's own name.
+  - Refused when they are on public breach lists, on the common-password list, or hold the user's own name, a
+    facility's name or HC360's (SRS SEC-01). The breach set is built into the server, so nothing about a password
+    leaves the hospital: about 800,000 passwords from the 10 million most common in public breach compilations
+    (SecLists, MIT licence), rebuilt with `dotnet run tools/build-breached-passwords.cs`.
+  - A staff sign-in with a password found there, set before the check existed, must change it before anything else.
+    The sign-in is audited as `auth.password_breached`, and the screen says why.
   - Stored with PBKDF2-SHA512 (210 000 iterations).
   - Accounts lock after 5 failures for 15 minutes. A locked account gets the same answer as a wrong password, so a
     response never confirms that an account exists.

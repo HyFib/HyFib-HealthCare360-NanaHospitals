@@ -53,7 +53,8 @@ public sealed record AuthUser(
     bool MfaEnabled,
     bool HasPin,
     bool MustChangePassword,
-    string? Restriction);
+    string? Restriction,
+    bool PasswordBreached = false);
 
 public sealed record AuthResult(
     string? AccessToken,
@@ -173,6 +174,21 @@ public sealed class AuthService(
         if (check.NeedsRehash)
         {
             user.PasswordHash = hashing.Hash(request.Password!);
+        }
+
+        // A password attackers try first has to be changed before anything else (SRS SEC-01). It was set before HC360
+        // checked new passwords against breaches, or the lists have grown since.
+        if (user.Type == UserType.Staff && !user.MustChangePassword && PasswordPolicy.IsKnownToAttackers(request.Password!))
+        {
+            user.MustChangePassword = true;
+            user.PasswordBreachedAt = now;
+            audit.Add(new AuditEntry(AuditCategories.Security, "auth.password_breached",
+                "Signed in with a password published from data breaches or on the common-password list; it must be changed")
+            {
+                UserId = user.Id,
+                UserName = user.UserName,
+                Severity = AuditSeverity.Warning,
+            });
         }
 
         var roles = RoleNames(user);
@@ -509,7 +525,7 @@ public sealed class AuthService(
             return Error.Field("currentPassword", "Current password is incorrect.");
         }
 
-        var errors = passwordPolicy.Validate(request.NewPassword, user.UserName, user.DisplayName);
+        var errors = passwordPolicy.Validate(request.NewPassword, user.UserName, user.DisplayName, await FacilityNamesAsync(db, ct));
         if (errors.Count > 0)
         {
             return Error.Validation("auth.weak_password", errors[0], new Dictionary<string, string[]> { ["newPassword"] = errors.ToArray() });
@@ -524,6 +540,7 @@ public sealed class AuthService(
         user.PasswordHash = hashing.Hash(request.NewPassword);
         user.PasswordChangedAt = now;
         user.MustChangePassword = false;
+        user.PasswordBreachedAt = null;
 
         // Sign out every other session of this user.
         var others = await db.Set<UserSession>().Where(s => s.UserId == user.Id && s.Id != session.Id && s.RevokedAt == null).ToListAsync(ct);
@@ -822,8 +839,15 @@ public sealed class AuthService(
             user.MfaEnabled,
             user.PinHash is not null,
             user.MustChangePassword,
-            restriction);
+            restriction,
+            user.MustChangePassword && user.PasswordBreachedAt is not null);
     }
+
+    /// <summary>The facilities' names and legal names, refused in passwords (ASVS V6.2.11).</summary>
+    internal static async Task<List<string?>> FacilityNamesAsync(HospitalDbContext db, CancellationToken ct) =>
+        (await db.Set<Facility>().IgnoreQueryFilters().Select(f => new { f.Name, f.LegalName }).ToListAsync(ct))
+            .SelectMany(f => new[] { f.Name, f.LegalName })
+            .ToList();
 
     private async Task<List<FacilityOption>> AllowedFacilitiesAsync(User user, IReadOnlyList<string> roles, CancellationToken ct)
     {
