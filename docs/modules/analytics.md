@@ -307,8 +307,8 @@ A BI extract is a schedule whose file goes to a folder instead of e-mail: the re
 BI extracts.
 
 * **Folder** (`ExtractFolder`): `HealthCare360:Analytics:ExtractDirectory` in the server's configuration (on a server,
-  the machine environment variable `HC360_HealthCare360__Analytics__ExtractDirectory`; `%VARIABLES%` in it are
-  expanded, and a relative path is taken from the data folder), by default `bi-extracts` in the data folder
+  `config\hc360.settings.json`, which upgrades keep; `%VARIABLES%` in it are expanded, and a relative path is taken
+  from the data folder), by default `bi-extracts` in the data folder
   (`%ProgramData%\HyFib\HealthCare360\bi-extracts`).
   Each facility has a sub-folder named by its code, so `NH\daily-revenue.csv`; a code Windows keeps for a device
   (`CON`, `PRN`, `AUX`, `NUL`) gets an underscore, `CON_`, because Windows cannot make a folder by that name. The
@@ -352,7 +352,7 @@ BI extracts.
 | Key | Default | Purpose |
 |---|---|---|
 | `ConnectionStrings:Analytics` (or `ConnectionStrings:Reporting`) | not set | Read replica for reports and KPIs (BI-05) |
-| `HealthCare360:Analytics:ExtractDirectory` (server configuration, e.g. `HC360_HealthCare360__Analytics__ExtractDirectory`) | `bi-extracts` in the data folder | Folder BI extracts are written to (*BI extracts*) |
+| `HealthCare360:Analytics:ExtractDirectory` (server configuration: `hc360.settings.json`) | `bi-extracts` in the data folder | Folder BI extracts are written to (*BI extracts*) |
 | `analytics.schedules.allowedEmailDomains` (setting, string[]) | not set = any | Only these e-mail domains may receive scheduled reports, e.g. `["nanahospitals.in"]` |
 | `analytics.deliveries.retentionDays` (setting, int) | 30 | Days a delivered file can be downloaded again |
 

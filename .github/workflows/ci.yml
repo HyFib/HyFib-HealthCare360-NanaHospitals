@@ -56,6 +56,24 @@ jobs:
       - name: Test
         run: dotnet test --solution HyFib.HealthCare360.slnx --no-build -c Release --timeout 30m
 
+  installer:
+    name: Server installer (PowerShell 5.1 and 7)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Install-HC360Server.ps1 runs in Windows PowerShell 5.1 (the default on the Server Node) and in PowerShell 7, and
+      # must keep the site's settings file across upgrades in both: their JSON cmdlets differ.
+      - name: Test the installer's handling of hc360.settings.json
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-InstallerSettings.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-InstallerSettings.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
   web:
     name: Web apps (TypeScript)
     runs-on: ubuntu-latest
