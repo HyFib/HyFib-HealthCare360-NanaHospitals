@@ -119,7 +119,14 @@ internal sealed class FakeZkTecoTerminal : IAsyncDisposable
     {
         if (Banner is not null)
         {
+            // Like a real service, it keeps the connection open and reads until the client hangs up. Closing it with the
+            // client's request unread would reset the connection, and Windows then drops the banner before it is read.
             await stream.WriteAsync(Banner, ct);
+            var ignored = new byte[256];
+            while (await stream.ReadAsync(ignored, ct) > 0)
+            {
+            }
+
             return;
         }
 
