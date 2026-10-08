@@ -33,6 +33,8 @@ describe('dashboard display', () => {
     expect(providerLabel('simulator')).toBe('Simulator (training)');
     expect(providerLabel('MSG91')).toBe('MSG91');
     expect(providerLabel('zpl/tspl')).toBe('ZPL / TSPL printers');
+    expect(providerLabel('zkteco')).toBe('ZKTeco / eSSL terminals');
+    expect(providerLabel('push')).toBe('Terminals send their punches');
     expect(providerLabel(null)).toBe('—');
     expect(providerLabel('newprovider')).toBe('newprovider');
   });
@@ -46,6 +48,7 @@ describe('dashboard display', () => {
   it('shows simulated payments and durations plainly', () => {
     expect(transactionStatusDisplay('Captured')).toEqual({ label: 'Paid', tone: 'success' });
     expect(transactionStatusDisplay('AwaitingCustomer').tone).toBe('warning');
+    expect(transactionStatusDisplay('Captured', 'TerminalPunch')).toEqual({ label: 'Punched', tone: 'success' });
     expect(formatDuration(850)).toBe('850 ms');
     expect(formatDuration(1234)).toBe('1.2 s');
     expect(formatDuration(null)).toBe('—');

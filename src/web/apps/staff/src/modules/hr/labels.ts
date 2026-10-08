@@ -157,7 +157,7 @@ export const SALARY_CALCULATION_TYPES = ['Fixed', 'PercentOfBasic'] as const;
 export type SalaryCalculationType = (typeof SALARY_CALCULATION_TYPES)[number];
 
 export type PunchDirection = 'Unknown' | 'In' | 'Out';
-export type PunchSource = 'Adms' | 'DeviceApi' | 'Regularisation';
+export type PunchSource = 'Adms' | 'DeviceApi' | 'Regularisation' | 'Pull';
 
 export type RosterConflictKind =
   'NotEmployed' | 'DuplicateAssignment' | 'WeekOffWithShift' | 'OverlappingShifts' | 'InsufficientRest' | 'OnLeave';

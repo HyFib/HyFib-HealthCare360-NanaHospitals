@@ -34,7 +34,7 @@ internal sealed class SimulatorTransactionConfiguration : IEntityTypeConfigurati
         b.Property(x => x.ExternalId).HasMaxLength(64);
         b.Property(x => x.Currency).HasMaxLength(3);
         b.Property(x => x.Reference).HasMaxLength(128);
-        b.Property(x => x.TerminalId).HasMaxLength(32);
+        b.Property(x => x.TerminalId).HasMaxLength(64);
         b.Property(x => x.PaymentId).HasMaxLength(64);
         b.Property(x => x.ApprovalCode).HasMaxLength(16);
         b.Property(x => x.Description).HasMaxLength(300);

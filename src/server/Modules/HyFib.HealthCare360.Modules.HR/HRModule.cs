@@ -56,6 +56,7 @@ public sealed class HRModule : IModule
         services.AddScoped<HrApprovers>();
         services.AddScoped<RosterService>();
         services.AddScoped<BiometricIngestionService>();
+        services.AddScoped<BiometricPullService>();
         services.AddScoped<AttendanceService>();
         services.AddScoped<RegularisationService>();
         services.AddScoped<LeaveService>();
@@ -68,6 +69,7 @@ public sealed class HRModule : IModule
         // Both jobs return immediately on API-only nodes (PlatformOptions.RunsJobs).
         services.AddHostedService<AttendanceComputationJob>();
         services.AddHostedService<CredentialExpiryAlertJob>();
+        services.AddHostedService<BiometricPullJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

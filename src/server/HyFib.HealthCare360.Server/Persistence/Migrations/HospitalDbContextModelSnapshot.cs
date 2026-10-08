@@ -352,8 +352,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnName("status");
 
                     b.Property<string>("TerminalId")
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
                         .HasColumnName("terminal_id");
 
                     b.HasKey("Id")
@@ -15309,6 +15309,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("att_log_stamp");
 
+                    b.Property<int?>("ClockOffsetSeconds")
+                        .HasColumnType("integer")
+                        .HasColumnName("clock_offset_seconds");
+
+                    b.Property<string>("Connection")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("connection");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -15350,6 +15360,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("last_ip_address");
 
+                    b.Property<DateTimeOffset?>("LastPullAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_pull_at");
+
+                    b.Property<string>("LastPullError")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("last_pull_error");
+
                     b.Property<DateTimeOffset?>("LastPushAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_push_at");
@@ -15369,6 +15388,27 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("name");
+
+                    b.Property<DateTimeOffset?>("OfflineSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("offline_since");
+
+                    b.Property<string>("PullAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("pull_address");
+
+                    b.Property<int>("PullEveryMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_every_minutes");
+
+                    b.Property<int>("PullPort")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_port");
+
+                    b.Property<DateTimeOffset?>("PulledUpTo")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pulled_up_to");
 
                     b.Property<string>("SerialNumber")
                         .IsRequired()

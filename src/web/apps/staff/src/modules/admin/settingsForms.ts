@@ -1613,6 +1613,49 @@ const icdSpec: SettingsSpec = {
   ],
 };
 
+const BIOMETRIC = 'integrations.biometric';
+
+const biometricSpec: SettingsSpec = {
+  id: 'biometric',
+  title: 'Biometric attendance',
+  intro:
+    'Reads punches from attendance terminals that cannot send them to HC360: ZKTeco, eSSL and compatible terminals on TCP port 4370. Only attendance records and the clock are read, never fingerprints or faces. Terminals that send their punches (ADMS) need none of this. Register each terminal in HR › Attendance terminals.',
+  prefix: BIOMETRIC,
+  fields: [
+    { key: BIOMETRIC, path: 'enabled', label: 'Read attendance terminals', kind: 'switch' },
+    {
+      key: BIOMETRIC,
+      path: 'provider',
+      label: 'Provider',
+      kind: 'select',
+      options: [
+        { value: 'zkteco', label: 'ZKTeco / eSSL terminals (TCP 4370)' },
+        { value: 'simulator', label: 'Simulator (training: punch from HR › Attendance terminals)' },
+      ],
+      requiredWhen: switchedOn(BIOMETRIC),
+    },
+    {
+      key: BIOMETRIC,
+      path: 'timeoutSeconds',
+      label: 'Give a terminal up to (seconds)',
+      kind: 'number',
+      defaultNumber: 30,
+      min: 5,
+      max: 300,
+      when: when(BIOMETRIC, 'provider', 'zkteco'),
+      hint: 'For connecting and reading every punch it holds.',
+    },
+  ],
+  secrets: [
+    {
+      key: 'integrations.biometric.secret',
+      prop: 'commKey',
+      label: 'Communication key (COMM Key)',
+      hint: 'The number set in each terminal’s menu under Comm. settings, 0 to 999999. Leave it empty when the terminals have none.',
+    },
+  ],
+};
+
 const LAB = 'integrations.lab';
 
 const labSpec: SettingsSpec = {
@@ -1676,6 +1719,7 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   mwl: mwlSpec,
   lab: labSpec,
   icd: icdSpec,
+  biometric: biometricSpec,
 };
 
 const SPEECH = 'ai.speech';

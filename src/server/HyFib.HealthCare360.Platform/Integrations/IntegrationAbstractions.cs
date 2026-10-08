@@ -153,6 +153,52 @@ public interface IPosTerminal
     Task<PosTransactionResult> CancelAsync(string transactionId, CancellationToken cancellationToken);
 }
 
+// ---------- Biometric attendance terminals (read by HC360) ----------
+/// <summary>A terminal HC360 reads punches from, as registered in HR.</summary>
+/// <param name="FacilityId">Facility whose biometric settings apply.</param>
+/// <param name="SerialNumber">The registered serial number: a terminal that reports another one is not read.</param>
+/// <param name="Host">The terminal's IP address or host name on the device network.</param>
+public sealed record AttendanceTerminal(Guid FacilityId, string SerialNumber, string Host, int Port);
+
+/// <summary>One attendance record as the terminal holds it, in the terminal's own clock.</summary>
+/// <param name="StatusCode">Punch state: 0 check-in, 1 check-out, 2 break-out, 3 break-in, 4 overtime-in, 5 overtime-out.</param>
+/// <param name="VerifyMode">How the person was verified: 0 password, 1 fingerprint, 2 card, 15 face…</param>
+public sealed record TerminalPunchRecord(string Pin, DateTime LocalTime, int StatusCode, int VerifyMode, string? WorkCode);
+
+/// <param name="Error">Why the terminal could not be read, in words for HR staff.</param>
+/// <param name="TerminalTime">The terminal's clock when it was read, to show how far it has drifted.</param>
+/// <param name="Records">Every attendance record the terminal holds: terminals cannot be asked for a period.</param>
+public sealed record AttendanceTerminalRead(bool Success, string? Error, DateTime? TerminalTime, IReadOnlyList<TerminalPunchRecord> Records)
+{
+    public static AttendanceTerminalRead Failed(string error) => new(false, error, null, []);
+}
+
+/// <summary>
+/// Reads attendance terminals that cannot push to HC360 (INT-BIO "pull"). Only the attendance records and the clock
+/// are read: users, fingerprints and faces are never asked for, and nothing on the terminal is changed apart from its
+/// clock, when HR sets it.
+/// </summary>
+/// <param name="Provider"><c>zkteco</c>, <c>simulator</c>, or null when terminals cannot be read.</param>
+/// <param name="Problem">Why terminals cannot be read, in words for HR staff.</param>
+public sealed record AttendanceTerminalReading(string? Provider, string? Problem);
+
+public interface IAttendanceTerminalClient
+{
+    /// <summary>How the facility's terminals are read, so HR sees before saving a terminal whether it can be.</summary>
+    Task<AttendanceTerminalReading> ReadingAsync(Guid facilityId, CancellationToken cancellationToken);
+
+    Task<AttendanceTerminalRead> ReadAsync(AttendanceTerminal terminal, CancellationToken cancellationToken);
+
+    /// <summary>Sets the terminal's clock. Returns why it could not, or null.</summary>
+    Task<string?> SetClockAsync(AttendanceTerminal terminal, DateTime localTime, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Training only: records a punch on the simulated terminal, as an employee would at a real one, for the next read
+    /// to bring in. Returns why it could not (for example when the facility does not use the simulator), or null.
+    /// </summary>
+    Task<string?> PunchOnTrainingTerminalAsync(AttendanceTerminal terminal, string pin, DateTime localTime, CancellationToken cancellationToken);
+}
+
 // ---------- Accounting (Tally) ----------
 public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null);
 

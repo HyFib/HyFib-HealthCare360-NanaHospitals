@@ -40,6 +40,9 @@ internal sealed class BiometricDeviceConfiguration : IEntityTypeConfiguration<Bi
         b.Property(x => x.ApiKeyHash).HasMaxLength(64);
         b.Property(x => x.LastIpAddress).HasMaxLength(64);
         b.Property(x => x.AttLogStamp).HasMaxLength(20);
+        b.Property(x => x.Connection).HasMaxLength(16);
+        b.Property(x => x.PullAddress).HasMaxLength(BiometricDevice.MaxPullAddressLength);
+        b.Property(x => x.LastPullError).HasMaxLength(500);
         b.HasIndex(x => x.SerialNumber).IsUnique().HasFilter(HrSchema.NotDeleted);
     }
 }

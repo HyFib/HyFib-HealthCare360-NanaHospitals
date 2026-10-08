@@ -18,8 +18,18 @@ public sealed record BiometricDeviceDto(
     DateTimeOffset? LastHandshakeAt,
     string? LastIpAddress,
     bool IsOnline,
-    uint Version);
+    uint Version,
+    BiometricConnection Connection,
+    string? PullAddress,
+    int PullPort,
+    int PullEveryMinutes,
+    DateTimeOffset? LastPullAt,
+    string? LastPullError,
+    int? ClockOffsetSeconds,
+    DateTimeOffset? OfflineSince);
 
+/// <param name="Connection">Push (the terminal sends its punches) unless HC360 is to read it.</param>
+/// <param name="PullAddress">A terminal HC360 reads: its IP address on the device network.</param>
 public sealed record SaveBiometricDeviceRequest(
     string SerialNumber,
     string Name,
@@ -28,10 +38,23 @@ public sealed record SaveBiometricDeviceRequest(
     string? Model,
     string? AllowedIpAddress,
     bool IsActive,
-    uint? Version);
+    uint? Version,
+    BiometricConnection Connection = BiometricConnection.Push,
+    string? PullAddress = null,
+    int? PullPort = null,
+    int? PullEveryMinutes = null);
 
-/// <summary>The device key is returned only once; HC360 stores just its hash.</summary>
-public sealed record DeviceKeyIssued(Guid DeviceId, string SerialNumber, string ApiKey);
+/// <summary>
+/// The device key is returned only once; HC360 stores just its hash. A terminal HC360 reads gets none (null): it
+/// sends nothing.
+/// </summary>
+public sealed record DeviceKeyIssued(Guid DeviceId, string SerialNumber, string? ApiKey);
+
+/// <summary>Training: the employee number to punch with on the simulated terminal.</summary>
+public sealed record TrainingPunchRequest(string Pin);
+
+/// <summary>Setting a terminal's clock: null error when it was set.</summary>
+public sealed record TerminalClockResult(bool Success, string? Error);
 
 public sealed record DevicePunchInput(string Pin, DateTimeOffset PunchedAt, PunchDirection? Direction, int? VerifyMode);
 
@@ -125,7 +148,25 @@ public sealed class SaveBiometricDeviceRequestValidator : AbstractValidator<Save
         RuleFor(x => x.AllowedIpAddress)
             .Must(ip => string.IsNullOrWhiteSpace(ip) || IPAddress.TryParse(ip.Trim(), out _))
             .WithMessage("Enter a valid IP address.");
+        RuleFor(x => x.Connection).IsInEnum();
+        When(x => x.Connection == BiometricConnection.Pull, () =>
+        {
+            RuleFor(x => x.PullAddress)
+                .Must(BiometricDevice.IsAllowedPullAddress)
+                .WithMessage("Enter the terminal's IP address on the device network, for example 192.168.1.201.");
+            RuleFor(x => x.PullPort).InclusiveBetween(1, 65535).When(x => x.PullPort is not null)
+                .WithMessage("Enter the terminal's port, 4370 unless it was changed on the terminal.");
+            RuleFor(x => x.PullEveryMinutes).InclusiveBetween(1, BiometricDevice.MaxPullMinutes).When(x => x.PullEveryMinutes is not null)
+                .WithMessage($"Read the terminal every 1 to {BiometricDevice.MaxPullMinutes} minutes.");
+        });
     }
+}
+
+public sealed class TrainingPunchRequestValidator : AbstractValidator<TrainingPunchRequest>
+{
+    public TrainingPunchRequestValidator() =>
+        RuleFor(x => x.Pin).NotEmpty().Must(pin => ZkTecoAttLogParser.IsValidPin(pin?.Trim()))
+            .WithMessage("Enter the employee's number on the terminal (letters and digits).");
 }
 
 public sealed class DevicePunchBatchValidator : AbstractValidator<DevicePunchBatch>

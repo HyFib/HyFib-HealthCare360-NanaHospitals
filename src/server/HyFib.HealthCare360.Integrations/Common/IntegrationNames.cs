@@ -19,7 +19,10 @@ internal static class IntegrationNames
     public const string Labels = "labels";
     public const string Icd = "icd";
 
-    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Mwl, Lab, Labels, Icd];
+    /// <summary>Attendance terminals (INT-BIO). HR logs pushes under this name too.</summary>
+    public const string Biometric = "biometric";
+
+    public static IReadOnlyList<string> All { get; } = [Sms, WhatsApp, Email, Payment, Pos, Tally, Pacs, Mwl, Lab, Labels, Icd, Biometric];
 
     public static string SettingsKey(string integration) => $"integrations.{integration}";
 
@@ -38,6 +41,7 @@ internal static class IntegrationNames
         Lab => "Laboratory equipment",
         Labels => "Barcode labels",
         Icd => "ICD lookup",
+        Biometric => "Biometric attendance",
         _ => integration,
     };
 }
@@ -56,5 +60,6 @@ internal static class ProviderKeys
     public const string TallyPrime = "tally";
     public const string DicomWeb = "dicomweb";
     public const string WhoIcdApi = "who";
+    public const string ZkTeco = "zkteco";
     public const string Disabled = "disabled";
 }

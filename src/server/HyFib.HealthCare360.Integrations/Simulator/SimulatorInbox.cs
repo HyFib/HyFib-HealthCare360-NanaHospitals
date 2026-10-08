@@ -144,6 +144,19 @@ internal sealed class SimulatorInbox(IDbContextFactory<HospitalDbContext> contex
             .ToListAsync(cancellationToken);
     }
 
+    /// <summary>The punches made on a training attendance terminal since <paramref name="since"/>, oldest first.</summary>
+    public async Task<IReadOnlyList<SimulatorTransaction>> TerminalPunchesAsync(
+        Guid facilityId, string serialNumber, DateTimeOffset since, CancellationToken cancellationToken)
+    {
+        await using var db = await contexts.CreateDbContextAsync(cancellationToken);
+        return await db.Set<SimulatorTransaction>().AsNoTracking()
+            .Where(t => t.Kind == SimulatorTransactionKind.TerminalPunch && t.FacilityId == facilityId && t.TerminalId == serialNumber
+                        && t.CreatedAt >= since)
+            .OrderBy(t => t.CreatedAt)
+            .Take(20_000)
+            .ToListAsync(cancellationToken);
+    }
+
     /// <summary>Loads a transaction by gateway/terminal id or payment id and lets <paramref name="update"/> change it.</summary>
     public async Task<SimulatorTransaction?> UpdateTransactionAsync(
         string id, Func<SimulatorTransaction, DateTimeOffset, bool> update, CancellationToken cancellationToken)

@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Integrations.Biometric;
 using HyFib.HealthCare360.Integrations.Email;
 using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Integrations.Features.Webhooks;
@@ -92,6 +93,10 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<IPosProvider>(sp => sp.GetRequiredService<PineLabsPosTerminal>());
         services.AddScoped<IPosProvider, SimulatorPosTerminal>();
         services.AddScoped<IPosTerminal, PosTerminalRouter>();
+
+        services.AddScoped<IAttendanceTerminalProvider, ZkTecoTerminal>();
+        services.AddScoped<IAttendanceTerminalProvider, SimulatorAttendanceTerminal>();
+        services.AddScoped<IAttendanceTerminalClient, AttendanceTerminalRouter>();
     }
 
     private static void AddAccountingAndImaging(IServiceCollection services)

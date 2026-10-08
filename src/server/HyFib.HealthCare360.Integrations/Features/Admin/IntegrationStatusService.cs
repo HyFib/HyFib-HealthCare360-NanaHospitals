@@ -78,6 +78,17 @@ internal sealed class IntegrationStatusService(
             case IntegrationNames.Mwl:
                 var server = await settings.ReadValueAsync<WorklistSettings>(WorklistSettings.Key, null, cancellationToken);
                 return (server is not null, server?.Enabled == true, "dicom");
+            case IntegrationNames.Biometric:
+                // Terminals that push need no settings: the settings are for terminals HC360 reads. Until a terminal has
+                // been heard from or read, there is nothing to show.
+                var reading = await settings.ReadAsync<IntegrationSummarySettings, NoSecrets>(name, null, requireEnabled: false, cancellationToken);
+                if (reading.Settings is { } read)
+                {
+                    return (true, read.Enabled, read.Provider?.Trim().ToLowerInvariant());
+                }
+
+                var heard = await db.Set<IntegrationLog>().AnyAsync(l => l.Integration == name, cancellationToken);
+                return (heard, heard, heard ? "push" : null);
             default:
                 var config = await settings.ReadAsync<IntegrationSummarySettings, NoSecrets>(name, null, requireEnabled: false, cancellationToken);
                 return (config.Settings is not null, config.Settings?.Enabled == true, config.Settings?.Provider?.Trim().ToLowerInvariant());

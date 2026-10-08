@@ -15,7 +15,8 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 
 * **Platform contracts, one router each.** Other modules depend only on the contracts in
   `Platform/Integrations/IntegrationAbstractions.cs` (`ISmsSender`, `IWhatsAppSender`, `IEmailSender`,
-  `IPaymentGateway`, `IPosTerminal`, `IAccountingExporter`, `IPacsClient`, `IIcdLookup`, `ILabelPrinterService`).
+  `IPaymentGateway`, `IPosTerminal`, `IAttendanceTerminalClient`, `IAccountingExporter`, `IPacsClient`, `IIcdLookup`,
+  `ILabelPrinterService`).
   Integrations registers a **router** for each of them. On every call the router reads the facility's settings and
   delegates to the configured provider. Switching provider, or turning an integration off, takes effect within a
   minute (the settings cache) and needs no restart. In the other direction, the listeners here call contracts that
@@ -26,7 +27,7 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 * **Simulator for every channel.** Setting `"provider": "simulator"` makes the integration work end to end with no
   credentials. SMS, WhatsApp, e-mail and Tally write to `integrations.simulator_messages`. Payment orders and links
   are captured immediately and POS sales are approved after a few seconds, all stored in
-  `integrations.simulator_transactions`. Administrators browse these under
+  `integrations.simulator_transactions`, with the punches HR makes on a training attendance terminal. Administrators browse these under
   `/api/v1/admin/integrations/simulator/*`. Payment links point to the reserved host `pay.simulator.invalid`.
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
   `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
@@ -60,7 +61,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 | `IIcdLookup` | Clinical online ICD search (`/api/v1/mrd/icd-codes/online`) | `IcdLookupRouter` → WHO ICD-API | Returns an empty list until configured. ICD-API failures throw `HttpRequestException`, which Clinical reports as `icd.online_failed`. |
 | `ISmsSender`, `IWhatsAppSender`, `IEmailSender` | Platform `notify.sms`, `notify.whatsapp` and `notify.email` outbox handlers; the WhatsApp STOP/START confirmation (`IWhatsAppSender.SendTextAsync`) | `SmsRouter`, `WhatsAppRouter`, `EmailRouter` | `SendResult.Fail("… is not configured. Set it up in Administration → Integrations.")`, the same as the platform's `UnconfiguredChannelSender`. |
 | `IPdfRenderer` | Document endpoints of Diagnostics, Clinical, Billing and Analytics (`…/pdf`, MIS export as PDF), and the notification document sources that attach reports to e-mails and WhatsApp messages | `EdgePdfRenderer` (singleton) → headless Microsoft Edge, else Google Chrome | Without a browser, `Status` says why and `RenderAsync` throws `PdfRenderException` with a message for staff. Document endpoints answer 503 `pdf.unavailable`, and the administrator dashboard shows the `pdf.unavailable` warning. Without this module, the platform's `UnavailablePdfRenderer` does the same. |
-| Biometric attendance | HR (`/iclock/*` ZKTeco/eSSL ADMS push endpoints) | None, by design | HR implements the ADMS protocol itself (`AdmsEndpoints`, `BiometricIngestionService`), so there is no Platform abstraction and nothing for Integrations to register. |
+| `IAttendanceTerminalClient` | HR: reading attendance terminals that cannot push (`BiometricPullJob`, Read now, set the clock, training punches) | `AttendanceTerminalRouter` → ZKTeco (TCP 4370) / simulator | `ReadAsync` returns an unsuccessful read with the reason ("Biometric attendance is not configured…", "…is disabled"); `SetClockAsync` and `PunchOnTrainingTerminalAsync` return the reason. `ReadingAsync` tells HR the provider, or why there is none. Terminals that push (ADMS on `/iclock/*`, the JSON punch API) do not use it: HR receives those itself. |
 
 ## Configuration
 
@@ -86,6 +87,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
+| `integrations.biometric` | `enabled`, `provider` (`zkteco` \| `simulator`), `timeoutSeconds` (30; 5 to 300, for connecting and reading a terminal) | `commKey` (the terminals' COMM Key, 0 to 999999; empty when they have none) |
 | `integrations.icd` | `enabled`, `provider` (`who` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
 | `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery }` | none |
@@ -277,6 +279,38 @@ would prompt a customer at a counter.
 acquirer's settlement report, which an accountant imports; see *Card and UPI reconciliation* in
 [billing.md](billing.md#card-and-upi-reconciliation-int-pos). The simulator's sales can be turned into a training
 report there.
+
+### Biometric attendance terminals (INT-BIO)
+
+Terminals that can push send their punches to HR directly, over ZKTeco/eSSL ADMS (`/iclock/*`) or the JSON punch
+API; see [hr.md](hr.md#biometric-attendance-int-bio). Terminals that cannot are **read** by HC360 through
+`IAttendanceTerminalClient`, over the protocol ZKTeco, eSSL and compatible terminals speak on TCP port 4370 (the one
+their own attendance software uses):
+
+* **What is read.** Connect (with the COMM Key when the terminal asks for one), check the serial number, read the
+  clock and the number of punches, then read the attendance buffer in pieces of at most 65,472 bytes, free it and
+  exit. Users, fingerprint templates and faces are never asked for, and no punch is deleted from the terminal. The only
+  change ever made is setting its clock, when HR asks.
+* **Serial number.** A terminal that reports a serial number other than the registered one is not read, so punches
+  are never put on the wrong terminal when an address changes hands.
+* **Records.** 40-byte records (firmware of the last decade) and 16-byte records with a work code (older firmware) are
+  read. If the terminal took punches between counting and reading, the buffer is read in the layout that fits it.
+  8-byte records of the oldest firmware are refused with what to do instead. A record whose time is not a date is
+  counted as unreadable and left out. A buffer over 16 MB is refused.
+* **Protocol details** (`ZkTecoProtocol`, unit-tested against bytes worked out with the open-source pyzk client): each
+  packet is framed by `50 50 82 7D` and its length; the checksum is the SDK's ones'-complement-style sum, computed with
+  the previous reply number while the packet carries the next one; the COMM Key is bit-reversed, added to the session
+  id and mixed with "ZKSO" and a tick count; times count 31-day months from 2000.
+* **Failures in words.** Every failure becomes a sentence for HR staff: no answer within the timeout, connection
+  refused, not an attendance terminal, the key missing or refused, another serial number, firmware too old. Each read
+  and clock change is logged as `terminal.read` or `terminal.set_clock` with the serial number and counts; the COMM Key
+  is never logged.
+* **Simulator.** The training terminal keeps the punches HR makes on it (`TerminalPunch` rows in
+  `integrations.simulator_transactions`: serial number, employee number and the terminal's time) and returns those of
+  the last 90 days on every read, as a real terminal does. Its clock is India time.
+* **Dashboard and test.** The biometric row shows the provider (or `push` while terminals only push), and its health
+  from the log: reads, pushes, refused serial numbers and terminals HR was told had gone quiet. The test checks the
+  settings; HR reads each terminal with Read now.
 
 ### Tally Prime (INT-TALLY)
 
@@ -785,10 +819,10 @@ HC360 Desktop keeps each workstation's printers for every Windows account on it,
 | Method | Path | Permission | Notes |
 |---|---|---|---|
 | GET | `/api/v1/admin/integrations` | `admin.integrations.manage` | → `IntegrationStatusDto[]`: provider, enabled/configured, health (`healthy`, `degraded`, `failing`, `idle`, `disabled` or `not_configured`), last success/failure, failures in 24 h, lab and modality worklist listener status |
-| POST | `/api/v1/admin/integrations/{name}/test` | `admin.integrations.manage` | `TestIntegrationRequest { to, message, dltTemplateId, templateName, languageCode }` → `IntegrationTestResult`. Sends a real test SMS, WhatsApp or e-mail, creates a ₹1 order, pings Tally, PACS or ICD, echoes the modality worklist server (`mwl`), and checks lab and label configuration. Audited as `integration.tested`. |
+| POST | `/api/v1/admin/integrations/{name}/test` | `admin.integrations.manage` | `TestIntegrationRequest { to, message, dltTemplateId, templateName, languageCode }` → `IntegrationTestResult`. Sends a real test SMS, WhatsApp or e-mail, creates a ₹1 order, pings Tally, PACS or ICD, echoes the modality worklist server (`mwl`), and checks lab, label and biometric configuration. Audited as `integration.tested`. |
 | GET | `/api/v1/admin/integrations/logs` | `admin.integrations.manage` | paging + `integration, success, from, to, search` → `PagedResult<IntegrationLogDto>` |
 | GET | `/api/v1/admin/integrations/simulator/messages` | `admin.integrations.manage` | paging + `channel` → simulated SMS, WhatsApp, e-mail and Tally deliveries |
-| GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders, links and refunds, and POS sales |
+| GET | `/api/v1/admin/integrations/simulator/transactions` | `admin.integrations.manage` | paging + `kind` → simulated payment orders, links and refunds, POS sales, and punches on training attendance terminals |
 | GET | `/api/v1/admin/integrations/whatsapp/inbound` | `admin.integrations.manage` | paging + `keyword` → `InboundWhatsAppMessageDto` (sender masked) with `keyword` and `keywordAction` (`OptedOut`, `OptedIn`, `Superseded`, `None`, or null for replies not acted on yet). The staff inbox shows it as the Result column |
 | GET | `/api/v1/integrations/lab/connections` | `integrations.lab.connections`, `integrations.lab.status` or `admin.integrations.manage` | → `LabConnectionsDto { gatewayEnabled, listVersion, connections[], agents[] }`: each analyser's connection with its Lab setup state, live status and orders waiting, and the facility's enrolled lab agents (online when seen in the last 3 minutes or relaying) |
 | PUT | `/api/v1/integrations/lab/connections/{code}` | `integrations.lab.connections` | `SaveLabConnectionRequest { transport, enabled, port, allowedIps, encoding, sampleIdFields, orderMessage, agentDeviceId, serial, listVersion }` → 204. 404 for an analyser not in Lab setup or of another facility; 400 for a port the server uses, a port or an agent's COM port already taken, or an agent that is not an enrolled lab agent of the analyser's facility; 409 when the list changed since `listVersion`. Clears the retired `hostQuery`. Audited as `lab.connection.saved` |
@@ -837,6 +871,7 @@ Permissions:
   * `IEmailProvider`: smtp, simulator.
   * `IPaymentProvider`: razorpay, simulator.
   * `IPosProvider`: pinelabs, simulator.
+  * `IAttendanceTerminalProvider`: zkteco, simulator.
   * `IAccountingProvider`: tally, simulator.
   * `IPacsProvider`: dicomweb, simulator.
 * **Platform contracts** (scoped routers):
@@ -845,6 +880,7 @@ Permissions:
   * `IEmailSender` → `EmailRouter`
   * `IPaymentGateway` → `PaymentGatewayRouter`
   * `IPosTerminal` → `PosTerminalRouter`
+  * `IAttendanceTerminalClient` → `AttendanceTerminalRouter`
   * `IAccountingExporter` → `AccountingExporterRouter`
   * `IPacsClient` → `PacsClientRouter`
   * `IIcdLookup` → `IcdLookupRouter`
@@ -880,14 +916,21 @@ Permissions:
   port on the imaging network (see [SECURITY.md](../security/SECURITY.md)).
 * PACS images reach the browser only through the server, as JPEG or PNG within a size limit, for people with
   `radiology.images.view`, with a per-person limit on images in flight.
+* Attendance terminals are read only at an IP address that HR registered, never at a host name, a loopback, link-local
+  (cloud metadata), multicast or broadcast address; the address is checked when it is saved and again before every
+  read. Each read has a time limit (`timeoutSeconds`) and a size limit.
 * External ids and paths (Razorpay ids, POS transaction ids, WhatsApp phone-number id and API version, ICD child
   links, PACS viewer templates, DICOM UIDs) are validated before they are used in URLs.
 * Queries order only by timestamps. Enum columns (stored as text) are only compared for equality.
 
 ## Not implemented here
 
-* **Biometric attendance**: by design there is no biometric abstraction. HR receives ZKTeco/eSSL ADMS pushes on
-  `/iclock/*` itself, so no adapter lives here.
+* **Biometric attendance**:
+  * Pushes are received by HR itself (ZKTeco/eSSL ADMS on `/iclock/*`); only reading terminals lives here.
+  * Terminals that speak the protocol over UDP only, and Suprema, Matrix or other makes' own protocols, are not read:
+    they can push over ADMS-compatible firmware or the JSON punch API through their middleware.
+  * Real-time events (the terminal reporting each punch on an open connection) are not used: terminals are read on a
+    schedule, every few minutes.
 * **ABDM (HIP/HIU)** is out of scope for this project. The **HL7 FHIR R4 read facade** (EHR-05) is not an adapter:
   it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.

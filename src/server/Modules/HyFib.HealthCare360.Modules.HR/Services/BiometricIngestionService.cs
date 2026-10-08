@@ -24,7 +24,10 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
     public static readonly TimeSpan MaxBacklog = TimeSpan.FromDays(90);
     private static readonly TimeSpan SeenThrottle = TimeSpan.FromMinutes(5);
 
-    /// <summary>The registered, active device with this serial, or null (also when the request comes from a non-allowed IP).</summary>
+    /// <summary>
+    /// The registered, active device with this serial that sends its punches, or null: also when the request comes
+    /// from a non-allowed IP, or the terminal is one HC360 reads (it sends nothing, so a push in its name is refused).
+    /// </summary>
     public async Task<BiometricDevice?> FindDeviceAsync(string? serialNumber, IPAddress? remoteIp, CancellationToken ct)
     {
         if (!AdmsProtocol.IsValidSerial(serialNumber))
@@ -36,12 +39,19 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         var device = await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .FirstOrDefaultAsync(d => d.SerialNumber == serial, ct);
 
-        var refused = device is null || !device.IsActive
-                      || (device.AllowedIpAddress is { } allowed && !string.Equals(allowed, NormalizeIp(remoteIp), StringComparison.OrdinalIgnoreCase));
-        if (refused)
+        var refusal = device switch
+        {
+            null => "Unregistered serial number.",
+            { Connection: BiometricConnection.Pull } => "The terminal is set to be read by HC360, so it may not push.",
+            _ when !device.IsActive
+                   || (device.AllowedIpAddress is { } allowed && !string.Equals(allowed, NormalizeIp(remoteIp), StringComparison.OrdinalIgnoreCase))
+                => "Device inactive or request from a non-allowed address.",
+            _ => null,
+        };
+        if (refusal is not null)
         {
             await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, "zkteco-adms", "device.refused", IntegrationDirection.Inbound, false,
-                Reference: serial, Error: device is null ? "Unregistered serial number." : "Device inactive or request from a non-allowed address."), ct);
+                Reference: serial, Error: refusal), ct);
             return null;
         }
 
@@ -129,39 +139,62 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         }
 
         await db.SaveChangesAsync(ct);
-        await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, source == PunchSource.Adms ? "zkteco-adms" : "device-api", "punches.received",
+        await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(source), "punches.received",
             IntegrationDirection.Inbound, true, Reference: device.SerialNumber,
             Response: $"accepted={accepted} duplicates={duplicates} unknownPins={unknown} rejected={rejected}"), ct);
         return new PunchIngestResult(accepted, duplicates, unknown, rejected);
     }
 
     /// <summary>Records a successful upload (and the terminal's new ATTLOG stamp).</summary>
-    public Task RecordPushAsync(BiometricDevice device, IPAddress? remoteIp, string? stamp, CancellationToken ct)
+    public async Task RecordPushAsync(BiometricDevice device, IPAddress? remoteIp, string? stamp, CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var ip = NormalizeIp(remoteIp);
         var newStamp = AdmsProtocol.IsValidStamp(stamp) ? stamp : device.AttLogStamp;
-        return db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(d => d.Id == device.Id)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(d => d.LastPushAt, now)
                 .SetProperty(d => d.LastHandshakeAt, now)
                 .SetProperty(d => d.LastIpAddress, ip)
-                .SetProperty(d => d.AttLogStamp, newStamp), ct);
+                .SetProperty(d => d.AttLogStamp, newStamp)
+                .SetProperty(d => d.OfflineSince, (DateTimeOffset?)null), ct);
+        await LogBackAsync(device, ct);
     }
 
-    /// <summary>Records that the terminal is alive (handshake/command poll), at most every few minutes.</summary>
-    public Task RecordSeenAsync(BiometricDevice device, IPAddress? remoteIp, CancellationToken ct)
+    /// <summary>
+    /// Records that the terminal is alive (handshake/command poll), at most every few minutes; at once when HR was told
+    /// it had gone quiet.
+    /// </summary>
+    public async Task RecordSeenAsync(BiometricDevice device, IPAddress? remoteIp, CancellationToken ct)
     {
         var now = time.GetUtcNow();
-        if (device.LastHandshakeAt is { } last && now - last < SeenThrottle)
+        if (device.OfflineSince is null && device.LastHandshakeAt is { } last && now - last < SeenThrottle)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var ip = NormalizeIp(remoteIp);
-        return db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+        await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(d => d.Id == device.Id)
-            .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastHandshakeAt, now).SetProperty(d => d.LastIpAddress, ip), ct);
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.LastHandshakeAt, now)
+                .SetProperty(d => d.LastIpAddress, ip)
+                .SetProperty(d => d.OfflineSince, (DateTimeOffset?)null), ct);
+        await LogBackAsync(device, ct);
     }
+
+    /// <summary>A terminal HR was told had gone quiet is heard from again: the integrations dashboard shows it working.</summary>
+    internal Task LogBackAsync(BiometricDevice device, CancellationToken ct) =>
+        device.OfflineSince is null
+            ? Task.CompletedTask
+            : integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, ProviderName(device.Connection == BiometricConnection.Pull ? PunchSource.Pull : PunchSource.Adms),
+                "terminal.back", IntegrationDirection.Inbound, true, Reference: device.SerialNumber), ct);
+
+    internal static string ProviderName(PunchSource source) => source switch
+    {
+        PunchSource.Adms => "zkteco-adms",
+        PunchSource.Pull => "pull",
+        _ => "device-api",
+    };
 }

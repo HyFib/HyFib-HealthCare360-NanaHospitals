@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net.Mail;
+using HyFib.HealthCare360.Integrations.Biometric;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Labels;
 using HyFib.HealthCare360.Integrations.Pacs.Worklist;
@@ -49,6 +50,7 @@ internal sealed class IntegrationTestService(
             IntegrationNames.Icd => await IcdAsync(cancellationToken),
             IntegrationNames.Lab => Lab(),
             IntegrationNames.Labels => Labels(),
+            IntegrationNames.Biometric => await BiometricAsync(cancellationToken),
             _ => null,
         };
 
@@ -148,6 +150,28 @@ internal sealed class IntegrationTestService(
         return problems.Count == 0
             ? new IntegrationTestResult(true, $"Configuration looks complete for {terminals.Count} terminal(s): {string.Join(", ", terminals)}. Run a ₹1 sale from a billing counter to test end to end.")
             : new IntegrationTestResult(false, "POS configuration incomplete: " + string.Join("; ", problems) + ".");
+    }
+
+    /// <summary>Terminals are registered in HR, so the test checks the settings; HR reads each terminal with "Read now".</summary>
+    private async Task<IntegrationTestResult> BiometricAsync(CancellationToken cancellationToken)
+    {
+        var config = await settings.ReadAsync<BiometricSettings, BiometricSecrets>(IntegrationNames.Biometric, cancellationToken);
+        if (config.ActiveProvider is not { } provider)
+        {
+            return new IntegrationTestResult(false,
+                (config.Problem ?? "Reading terminals is not available.") + " Terminals that push to HC360 do not need it.");
+        }
+
+        return provider switch
+        {
+            ProviderKeys.Simulator => new IntegrationTestResult(true,
+                "The training terminal is ready. Register a terminal in HR › Attendance terminals to be read by HC360, punch on it there, then read it."),
+            ProviderKeys.ZkTeco when !ZkTecoTerminal.TryCommKey(config.Secrets.CommKey, out _) => new IntegrationTestResult(false,
+                "The communication key must be a number from 0 to 999999, or empty when the terminals have none."),
+            ProviderKeys.ZkTeco => new IntegrationTestResult(true,
+                "The settings are complete. Use Read now on a terminal in HR › Attendance terminals to check that HC360 reaches it."),
+            _ => new IntegrationTestResult(false, $"Unknown biometric provider '{provider}'. Use zkteco or simulator."),
+        };
     }
 
     private async Task<IntegrationTestResult> IcdAsync(CancellationToken cancellationToken)
