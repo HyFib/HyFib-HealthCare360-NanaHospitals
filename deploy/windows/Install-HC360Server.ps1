@@ -9,7 +9,9 @@
     - Creates the PostgreSQL database and a least-privilege application role (optional, -CreateDatabase).
     - Writes the site configuration (%ProgramData%\HyFib\HealthCare360\config\hc360.settings.json), readable only by
       SYSTEM, Administrators and the service's own virtual account, with the database password protected by DPAPI for
-      this machine (SRS SEC-07).
+      this machine (SRS SEC-07). Every setting already in the file is kept, including those added by hand. Of the
+      installer's own, one the file has changes only when its parameter is given again (-HttpsPort, -FacilityCode,
+      -FacilityName, -SecondaryBackupDir, -CreateDatabase); pg_dump follows the newest PostgreSQL found.
     - Checks that BitLocker protects the fixed disks, and registers the "HC360 disk encryption check" scheduled task,
       which checks again as SYSTEM every day and at start-up for System health (SRS SEC-05).
     - Registers the "HC360Server" Windows service (virtual account NT SERVICE\HC360Server, delayed auto-start,
@@ -113,6 +115,104 @@ function Set-RestrictedAcl([string] $Path, [switch] $ServiceWrite) {
     Set-Acl -Path $Path -AclObject $acl
 }
 
+# ---------------------------------------------------------------- site settings (hc360.settings.json)
+# The file belongs to the site and survives upgrades: the installer changes only its own settings in it, and keeps the
+# rest as they are, such as HealthCare360:Pdf:BrowserPath, a reporting replica and protected (dpapi:) values. Settings are
+# named as the server reads them, Section:Name.
+
+# The settings file, or an empty one when there is none yet. It is read as UTF-8, as the server reads it: Windows
+# PowerShell reads a file without a byte order mark as ANSI otherwise.
+function Read-SettingsFile([string] $Path) {
+    $text = if (Test-Path -LiteralPath $Path) { Get-Content -LiteralPath $Path -Raw -Encoding UTF8 }
+    if (-not $text -or -not $text.Trim()) { return [pscustomobject]@{} }
+    try { $settings = $text | ConvertFrom-Json }
+    catch { throw "$Path is not valid JSON: $($_.Exception.Message) Correct it and run the installer again (Windows PowerShell does not accept comments in it). Nothing has been changed." }
+    if ($settings -isnot [System.Management.Automation.PSCustomObject]) {
+        throw "$Path does not hold a JSON object. Correct it and run the installer again. Nothing has been changed."
+    }
+    return $settings
+}
+
+# Every setting as the server reads it: its name (Section:Name, array items by index) and its value as text. A null
+# value holds nothing to keep, and is left out.
+function ConvertTo-SettingTable($Node, [string] $Key = '', [hashtable] $Table = @{}) {
+    if ($Node -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($property in $Node.PSObject.Properties) {
+            $name = if ($Key) { "${Key}:$($property.Name)" } else { $property.Name }
+            $null = ConvertTo-SettingTable $property.Value $name $Table
+        }
+    }
+    elseif ($Node -is [System.Collections.IList]) {
+        for ($i = 0; $i -lt $Node.Count; $i++) { $null = ConvertTo-SettingTable $Node[$i] "${Key}:$i" $Table }
+    }
+    elseif ($null -ne $Node) {
+        if ($Table.ContainsKey($Key)) { throw "The setting $Key is in hc360.settings.json twice, once with ':' in a name. The server does not start like that: keep one of them." }
+        $Table[$Key] = "$Node"
+    }
+    return $Table
+}
+
+# The property that holds the setting $Key, nested ("Backup": { "Directory": ... }) or with colons in its name
+# ("Backup:Directory": ...), as the server reads either; $null when the file does not have it.
+function Find-Setting($Node, [string] $Key) {
+    if ($Node -isnot [System.Management.Automation.PSCustomObject]) { return $null }
+    foreach ($property in $Node.PSObject.Properties) {
+        if ($property.Name -eq $Key) { return $property }
+        if ($Key.StartsWith($property.Name + ':', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $found = Find-Setting $property.Value $Key.Substring($property.Name.Length + 1)
+            if ($found) { return $found }
+        }
+    }
+    return $null
+}
+
+# Sets one of the installer's own settings, and returns its name when that changes the file. A setting the file has is
+# replaced only with -Replace, where it is; a missing one is added, in nested sections.
+function Set-Setting($Settings, [string] $Key, $Value, [switch] $Replace) {
+    $setting = Find-Setting $Settings $Key
+    if ($setting) {
+        if ($Replace -and "$($setting.Value)" -cne "$Value") {
+            $setting.Value = $Value
+            return $Key
+        }
+        return
+    }
+    $node = $Settings
+    $names = $Key -split ':'
+    for ($i = 0; $i -lt $names.Count - 1; $i++) {
+        $section = $node.PSObject.Properties[$names[$i]]
+        if (-not $section) {
+            $node | Add-Member -NotePropertyName $names[$i] -NotePropertyValue ([pscustomobject]@{})
+            $section = $node.PSObject.Properties[$names[$i]]
+        }
+        elseif ($section.Value -isnot [System.Management.Automation.PSCustomObject]) {
+            $section.Value = [pscustomobject]@{}
+        }
+        $node = $section.Value
+    }
+    $node | Add-Member -NotePropertyName $names[-1] -NotePropertyValue $Value
+    return $Key
+}
+
+# The settings as JSON. ConvertTo-Json can lose a value without a word (Windows PowerShell cuts off what lies deeper
+# than -Depth), so every setting but $Changed must read back exactly as it was in $Before, or this stops.
+function ConvertTo-SettingsJson($Settings, [hashtable] $Before, [string[]] $Changed) {
+    $json = $Settings | ConvertTo-Json -Depth 100
+    $after = ConvertTo-SettingTable ($json | ConvertFrom-Json)
+    $lost = @($Before.Keys | Where-Object { $Changed -notcontains $_ -and $after[$_] -cne $Before[$_] })
+    if ($lost) {
+        throw "PowerShell $($PSVersionTable.PSVersion) cannot write the settings back without changing $($lost -join ', '). Run the installer in the other PowerShell (powershell.exe or pwsh.exe). hc360.settings.json was left as it was."
+    }
+    return $json
+}
+
+# Writes the settings over the file, which keeps its ACL, as UTF-8 with the byte order mark Windows PowerShell 5.1 needs.
+function Save-SettingsFile($Settings, [hashtable] $Before, [string[]] $Changed, [string] $Path) {
+    $json = ConvertTo-SettingsJson $Settings $Before $Changed
+    $encoding = if ($PSVersionTable.PSVersion.Major -ge 6) { 'utf8BOM' } else { 'UTF8' }
+    Set-Content -LiteralPath $Path -Value $json -Encoding $encoding
+}
+
 # ---------------------------------------------------------------- checks
 Write-Step 'Checking prerequisites'
 if (-not (Test-Path (Join-Path $PackagePath $ExeName))) {
@@ -125,6 +225,17 @@ $pgBin = Find-PostgresBin
 if (-not $pgBin) {
     Write-Warning 'PostgreSQL was not found under Program Files. Install it first (Install-PostgreSQL.ps1) or backups will need -PgDumpPath configured manually.'
 }
+
+# Checked before anything changes: settings that cannot be read, or written back as they are, stop the installer while
+# the installed version runs. They are read again once the service has stopped.
+$settingsPath = Join-Path $DataDir 'config\hc360.settings.json'
+$settings = Read-SettingsFile $settingsPath
+$settingsBefore = ConvertTo-SettingTable $settings
+$null = ConvertTo-SettingsJson $settings $settingsBefore @()
+
+# Without -HttpsPort (an upgrade, or a run for -LabPorts) the server keeps its port, and the firewall and checks follow it.
+$installedPort = $settingsBefore['HealthCare360:HttpsPort'] -as [int]
+if ($installedPort -and -not $PSBoundParameters.ContainsKey('HttpsPort')) { $HttpsPort = $installedPort }
 
 # ---------------------------------------------------------------- stop an existing service (upgrade)
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
@@ -165,8 +276,9 @@ if (-not [System.Diagnostics.EventLog]::SourceExists($EventSource)) {
 }
 
 # ---------------------------------------------------------------- database
-$settingsPath = Join-Path $DataDir 'config\hc360.settings.json'
-$settings = if (Test-Path $settingsPath) { Get-Content $settingsPath -Raw | ConvertFrom-Json } else { $null }
+# Until it stopped, the service could still change the settings (a new database password from System health).
+$settings = Read-SettingsFile $settingsPath
+$settingsBefore = ConvertTo-SettingTable $settings
 
 if ($CreateDatabase) {
     if (-not $pgBin) { throw 'PostgreSQL client tools (psql.exe) were not found.' }
@@ -193,31 +305,32 @@ if ($CreateDatabase) {
     }
     $connectionString = "Host=$PostgresHost;Port=$PostgresPort;Database=$DatabaseName;Username=hc360_app;Password=$appPassword;Maximum Pool Size=200;Timeout=15;Command Timeout=60"
 }
-elseif ($settings -and $settings.ConnectionStrings -and $settings.ConnectionStrings.Hospital) {
-    $connectionString = $settings.ConnectionStrings.Hospital
-}
-else {
+elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
     throw 'No database is configured yet. Re-run with -CreateDatabase (recommended) or create hc360.settings.json with ConnectionStrings.Hospital.'
 }
 
 # ---------------------------------------------------------------- configuration
-Write-Step "Writing $settingsPath"
-$backupDir = Join-Path $DataDir 'backups'
-$config = [ordered]@{
-    ConnectionStrings = [ordered]@{ Hospital = $connectionString }
-    HealthCare360 = [ordered]@{
-        HttpsPort = $HttpsPort
-        DefaultFacilityCode = $FacilityCode
-        DefaultFacilityName = $FacilityName
-        Backup = [ordered]@{
-            Enabled = $true
-            Directory = $backupDir
-            SecondaryDirectory = $SecondaryBackupDir
-            PgDumpPath = if ($pgBin) { Join-Path $pgBin 'pg_dump.exe' } else { 'pg_dump' }
-        }
-    }
+# The installer's own settings. One the file has changes only when its parameter is given again, so an upgrade keeps the
+# port, facility and backup folders as they are; pg_dump follows the newest PostgreSQL found. One it lacks is added.
+Write-Step "Configuring $settingsPath"
+$changed = @(
+    if ($CreateDatabase) { Set-Setting $settings 'ConnectionStrings:Hospital' $connectionString -Replace }
+    Set-Setting $settings 'HealthCare360:HttpsPort' $HttpsPort -Replace:$PSBoundParameters.ContainsKey('HttpsPort')
+    Set-Setting $settings 'HealthCare360:DefaultFacilityCode' $FacilityCode -Replace:$PSBoundParameters.ContainsKey('FacilityCode')
+    Set-Setting $settings 'HealthCare360:DefaultFacilityName' $FacilityName -Replace:$PSBoundParameters.ContainsKey('FacilityName')
+    Set-Setting $settings 'HealthCare360:Backup:Enabled' $true
+    Set-Setting $settings 'HealthCare360:Backup:Directory' (Join-Path $DataDir 'backups')
+    Set-Setting $settings 'HealthCare360:Backup:SecondaryDirectory' $SecondaryBackupDir -Replace:$PSBoundParameters.ContainsKey('SecondaryBackupDir')
+    if ($pgBin) { Set-Setting $settings 'HealthCare360:Backup:PgDumpPath' (Join-Path $pgBin 'pg_dump.exe') -Replace }
+    else { Set-Setting $settings 'HealthCare360:Backup:PgDumpPath' 'pg_dump' }
+)
+if ($changed) {
+    Save-SettingsFile $settings $settingsBefore $changed $settingsPath
+    Write-Host "    Set $($changed -join ', ')."
 }
-$config | ConvertTo-Json -Depth 6 | Set-Content -Path $settingsPath -Encoding UTF8
+else {
+    Write-Host '    Nothing to change.'
+}
 
 # The database password, and any other secret in the file, is kept protected with DPAPI for this machine, so a copy of
 # the file is no use elsewhere (SRS SEC-07). A value carried over from an earlier install is already protected.
