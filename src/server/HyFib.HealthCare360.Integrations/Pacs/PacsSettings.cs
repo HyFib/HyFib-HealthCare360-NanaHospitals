@@ -17,6 +17,12 @@ internal sealed record PacsSettings : IIntegrationSettings
     /// </summary>
     public string? WadoUrl { get; init; }
 
+    /// <summary>
+    /// DICOMweb root for STOW-RS (sending objects to the PACS) when the PACS accepts them at another address; empty means
+    /// <see cref="QidoUrl"/>.
+    /// </summary>
+    public string? StowUrl { get; init; }
+
     /// <summary><c>none</c>, <c>basic</c> or <c>bearer</c>.</summary>
     public string AuthType { get; init; } = "none";
 
@@ -35,6 +41,9 @@ internal sealed record PacsSettings : IIntegrationSettings
 
     /// <summary>The WADO-RS root: <see cref="WadoUrl"/>, or the QIDO-RS one when that is empty.</summary>
     public string? WadoRoot => string.IsNullOrWhiteSpace(WadoUrl) ? QidoUrl : WadoUrl;
+
+    /// <summary>The STOW-RS root: <see cref="StowUrl"/>, or the QIDO-RS one when that is empty.</summary>
+    public string? StowRoot => string.IsNullOrWhiteSpace(StowUrl) ? QidoUrl : StowUrl;
 }
 
 /// <summary>Secret PACS configuration (<c>integrations.pacs.secret</c>).</summary>
@@ -59,4 +68,10 @@ internal interface IPacsProvider
         string studyInstanceUid, string seriesInstanceUid, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
 
     Task<PacsImage> RetrieveImageAsync(PacsImageRequest request, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sends one prepared object (STOW-RS). A PACS that cannot be reached or answers with a failure gives an outcome, not
+    /// an exception, so the caller goes on with the next object.
+    /// </summary>
+    Task<PacsStoreOutcome> StoreAsync(DicomObjectToStore item, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken);
 }

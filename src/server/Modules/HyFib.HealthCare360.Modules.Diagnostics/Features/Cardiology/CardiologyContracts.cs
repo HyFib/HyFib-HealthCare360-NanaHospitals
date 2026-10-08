@@ -23,7 +23,11 @@ public sealed record CardiologyStudyListItem(
     DiagnosticReportStatus? ReportStatus,
     bool IsCriticalFinding);
 
-public sealed record DeviceFileDto(Guid Id, string? FileName, string? ContentType, long? SizeBytes);
+/// <summary>A device file; <paramref name="Pacs"/> says what the PACS did with it, once a DICOM file was sent there.</summary>
+public sealed record DeviceFileDto(Guid Id, string? FileName, string? ContentType, long? SizeBytes, DeviceFilePacsDto? Pacs = null);
+
+/// <summary>What the PACS did with a device file the last time it was sent (INT-PACS, STOW-RS).</summary>
+public sealed record DeviceFilePacsDto(CardiologyPacsStatus Status, string? Message, DateTimeOffset SentAt);
 
 public sealed record CardiologyReportDto(
     Guid Id,

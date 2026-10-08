@@ -8,6 +8,7 @@ import type {
   PatientClass,
   ReportStudyRef,
 } from '@/modules/lab/common/types';
+import type { ViewerLink } from '@/modules/radiology/api';
 
 // ------------------------------------------------------------------------------------------------ enums (as strings)
 
@@ -116,11 +117,23 @@ export interface CardiologyStudyListItem {
   isCriticalFinding: boolean;
 }
 
+/** What the PACS did with a device file the last time it was sent (STOW-RS). */
+export type CardiologyPacsStatus = 'Stored' | 'Refused' | 'Failed' | 'NotDicom';
+
+export interface DeviceFilePacsDto {
+  status: CardiologyPacsStatus;
+  /** Why it was not stored, or the PACS's warning about one it stored. */
+  message: string | null;
+  sentAt: string;
+}
+
 export interface DeviceFileDto {
   id: string;
   fileName: string | null;
   contentType: string | null;
   sizeBytes: number | null;
+  /** Null until the file is sent to the PACS (DICOM files only). */
+  pacs: DeviceFilePacsDto | null;
 }
 
 export interface CardiologyReportDto {
@@ -271,6 +284,10 @@ export const cardiologyApi = {
   verifyReport: (id: string, criticalCall: CriticalCallDetails | null, release: boolean) =>
     api.post<CardiologyStudyDetail>(`${study(id)}/report/verify`, { criticalCall, release }),
   releaseReport: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/report/release`),
+  /** Sends the study's DICOM files the PACS does not hold yet, under the patient's UHID and the study. */
+  sendToPacs: (id: string) => api.post<CardiologyStudyDetail>(`${study(id)}/pacs`),
+  /** The PACS viewer link, once the PACS holds one of the study's files. */
+  viewer: (id: string) => api.get<ViewerLink>(`${study(id)}/viewer`),
 };
 
 /** The A4 cardiology report as the server prints it and makes its PDF (see `@/lib/documents`). */

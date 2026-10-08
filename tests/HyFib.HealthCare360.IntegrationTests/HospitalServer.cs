@@ -48,6 +48,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.MrdOfficer] = SystemRoles.MrdOfficer,
         [Users.MrdVerifier] = SystemRoles.MrdOfficer,
         [Users.CssdTechnician] = SystemRoles.CssdTechnician,
+        [Users.CardiologyTechnician] = SystemRoles.CardiologyTechnician,
     };
 
     // A test-only password for the staff accounts, new for every run.
@@ -367,6 +368,9 @@ public sealed class HospitalServer : IAsyncLifetime
 
         /// <summary>Washes, packs and sterilizes the instrument trays in CSSD. Created on first use.</summary>
         public const string CssdTechnician = "cssdtech";
+
+        /// <summary>Records ECGs and echos and attaches the machines' files. Created on first use.</summary>
+        public const string CardiologyTechnician = "cardiotech";
     }
 
     private sealed record SignInResult(string? AccessToken, bool MfaRequired, string? Restriction);

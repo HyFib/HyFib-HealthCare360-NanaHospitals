@@ -69,6 +69,12 @@ public sealed class CardiologyStudy : AuditableEntity, IFacilityScoped
     /// <summary>Device output files in the encrypted platform file store.</summary>
     public List<Guid> DeviceFileIds { get; set; } = [];
 
+    /// <summary>
+    /// The study UID its DICOM files are filed under in the PACS (INT-PACS), from the study's id
+    /// (<see cref="Imaging.DicomConventions.UidFrom"/>); null until they are first sent.
+    /// </summary>
+    public string? StudyInstanceUid { get; set; }
+
     public string? TechnicianNotes { get; set; }
     public DateTimeOffset? ReportedAt { get; set; }
     public DateTimeOffset? VerifiedAt { get; set; }

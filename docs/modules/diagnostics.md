@@ -174,9 +174,11 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/studies?from&to&status&studyType&patientId` | studies.read, studies.manage or reports.verify | → `PagedResult<CardiologyStudyListItem>` |
-| GET | `/studies/{id}` | same | → `CardiologyStudyDetail` (device files, report, packageBookingId, quantity) |
+| GET | `/studies/{id}` | same | → `CardiologyStudyDetail` (device files, each with `pacs` {status, message, sentAt} once sent to the PACS; report, packageBookingId, quantity) |
 | POST | `/studies/{id}/schedule` · `/start` | `cardiology.studies.manage` | `ScheduleCardiologyRequest` / `StartCardiologyRequest` (deviceName) → `CardiologyStudyDetail` |
 | POST | `/studies/{id}/files` | `cardiology.studies.manage` | `AttachDeviceFilesRequest` (fileIds uploaded via `/api/v1/files`; must belong to this patient) → `CardiologyStudyDetail`. Device output may be a PDF, images, DICOM or SCP-ECG (stored as `application/x-scp-ecg`, `.scp`); the staff app shows PDFs and images and offers the others for saving, to open in an ECG or DICOM viewer |
+| POST | `/studies/{id}/pacs` | `cardiology.studies.manage` | → `CardiologyStudyDetail`: sends the DICOM device files the PACS does not hold yet (STOW-RS; see *Cardiology to the PACS* below). 422 `cardiology.no_dicom_files`, `cardiology.in_pacs` (every DICOM file is in the PACS), `cardiology.cancelled`, `pacs.unavailable` (the integration is off or not set up; nothing sent). Guard; audit `cardiology.pacs.sent` |
+| GET | `/studies/{id}/viewer` | studies.read, studies.manage or reports.verify | → `ViewerLink` (url, studyInstanceUid) once the PACS holds one of the study's files; 422 `cardiology.not_in_pacs`, `pacs.viewer_not_configured`, `pacs.accession_too_long`. Guard; audit "Opened images of {accession}" |
 | POST | `/studies/{id}/complete` | `cardiology.studies.manage` | `CompleteCardiologyRequest` (notes) → `CardiologyStudyDetail`; 422 `cardiology.no_tracing` without device output |
 | POST | `/studies/{id}/cancel` | `cardiology.studies.manage` | `CancelCardiologyRequest` (reason) → `CardiologyStudyDetail` |
 | PUT | `/studies/{id}/report` | studies.manage or reports.verify | `SaveCardiologyReportRequest` (ecg: rate/rhythm/PR/QRS/QT/QTc/axis/ST-T/interpretation; echo: LVEF/chambers/valves/RWMA/diastolic function/pericardium/conclusion; tmt: protocol/duration/METs/max HR/%target/BP response/result; holter; abpm; conclusion; recommendations; isCriticalFinding) → `CardiologyStudyDetail` |
@@ -334,6 +336,19 @@ diagnostics screen.
   browser (`Cache-Control: no-store`), and limited per person by the `radiology-images` rate-limit policy (6 at once,
   32 waiting, then 429). Without a PACS client the endpoints return
   `pacs.not_configured` and the workflow continues.
+* **Cardiology to the PACS** (INT-PACS, STOW-RS): echo machines and other cardiology systems that are not on the
+  network export DICOM files, which the technician attaches to the study. **Send to PACS** on the study page sends them
+  (`IPacsClient.StoreAsync`, one file at a time, so a study's files are never all in memory), filed under the patient's
+  UHID, name (PN, as on the worklist), birth date and sex, the accession number (when it fits DICOM's 16 characters)
+  and the study's name, with a study UID HC360 makes from the study's id (`DicomConventions.UidFrom`; kept as
+  `CardiologyStudy.StudyInstanceUid`), so every file of the study goes under one study, whenever it is sent. The values
+  the machine recorded are kept in each object (see *Sending (STOW-RS)* in [integrations.md](integrations.md)). Only
+  `application/dicom` files go; PDFs, pictures and SCP-ECG stay in HC360. Each file's outcome is a
+  `CardiologyPacsObject` row (status Stored, Refused, Failed or NotDicom, the PACS's reason, when it was sent):
+  the page shows it under the file, a file not stored is sent again by the next **Send again to PACS**, and one stored
+  is not. Once the PACS holds a file, **Open in PACS viewer** opens the configured viewer link for the study UID and
+  accession number. Sending is audited (`cardiology.pacs.sent`, with the files and their SOP instance UIDs), as
+  patient data leaves HC360.
 
 ## Events
 

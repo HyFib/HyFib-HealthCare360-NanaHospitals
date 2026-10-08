@@ -9730,6 +9730,94 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.ToTable("vital_signs", "clinical");
                 });
 
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology.CardiologyPacsObject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CardiologyStudyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cardiology_study_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<Guid>("FacilityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("facility_id");
+
+                    b.Property<Guid>("FileId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("file_id");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("message");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("SopInstanceUid")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("sop_instance_uid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_cardiology_pacs_objects");
+
+                    b.HasIndex("FacilityId")
+                        .HasDatabaseName("ix_cardiology_pacs_objects_facility_id");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_cardiology_pacs_objects_is_deleted");
+
+                    b.HasIndex("CardiologyStudyId", "FileId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_cardiology_pacs_objects_cardiology_study_id_file_id");
+
+                    b.ToTable("cardiology_pacs_objects", "diagnostics");
+                });
+
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology.CardiologyReport", b =>
                 {
                     b.Property<Guid>("Id")
@@ -10252,6 +10340,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("status");
+
+                    b.Property<string>("StudyInstanceUid")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("study_instance_uid");
 
                     b.Property<string>("StudyName")
                         .IsRequired()
@@ -36472,6 +36565,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_vital_signs_patients_patient_id");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology.CardiologyPacsObject", b =>
+                {
+                    b.HasOne("HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology.CardiologyStudy", null)
+                        .WithMany()
+                        .HasForeignKey("CardiologyStudyId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_cardiology_pacs_objects_cardiology_study_cardiology_study_id");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Diagnostics.Domain.Cardiology.CardiologyReport", b =>

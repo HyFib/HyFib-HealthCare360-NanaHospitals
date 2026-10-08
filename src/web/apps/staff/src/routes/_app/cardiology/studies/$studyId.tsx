@@ -30,6 +30,8 @@ import { CARDIOLOGY_PERMISSIONS, cardiologyQueries, type CardiologyStudyDetail }
 import { CardiologyStatusBadge, StudyTypeBadge } from '@/modules/cardiology/badges';
 import { CardiologyReportPanel } from '@/modules/cardiology/CardiologyReportEditor';
 import { studyTypeLongLabel } from '@/modules/cardiology/labels';
+import { pacsFileStatus } from '@/modules/cardiology/pacs';
+import { PacsButtons } from '@/modules/cardiology/PacsButtons';
 import { useCardiologyActions } from '@/modules/cardiology/useCardiologyActions';
 import { cardiologyActionLabel, cardiologyActions, nextCardiologyAction } from '@/modules/cardiology/workflow';
 
@@ -43,7 +45,10 @@ const useStyles = makeStyles({
   facts: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: '12px 24px' },
   fact: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
   label: { color: tokens.colorNeutralForeground3 },
-  files: { display: 'flex', gap: '8px', flexWrap: 'wrap' },
+  files: { display: 'flex', gap: '8px 16px', flexWrap: 'wrap', alignItems: 'flex-start' },
+  file: { display: 'flex', flexDirection: 'column', gap: '2px', maxWidth: '360px' },
+  inPacs: { color: tokens.colorPaletteGreenForeground1 },
+  notInPacs: { color: tokens.colorPaletteDarkOrangeForeground1 },
 });
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -211,33 +216,40 @@ function StudyView({ study }: { study: CardiologyStudyDetail }) {
             : 'Nothing attached yet. The report is written from the attached tracing.'
         }
         actions={
-          canManage &&
-          !['Verified', 'Released', 'Cancelled'].includes(study.status) && (
-            <Button icon={<AttachRegular />} onClick={() => actions.run('attach', ref)}>
-              Attach files
-            </Button>
-          )
+          <>
+            <PacsButtons study={study} canSend={canManage} />
+            {canManage && !['Verified', 'Released', 'Cancelled'].includes(study.status) && (
+              <Button icon={<AttachRegular />} onClick={() => actions.run('attach', ref)}>
+                Attach files
+              </Button>
+            )}
+          </>
         }
       >
         {study.files.length > 0 && (
           <div className={styles.files}>
-            {study.files.map((file, index) => (
-              <Button
-                key={file.id}
-                icon={<DocumentRegular />}
-                disabled={!canReadFiles || viewer.opening}
-                onClick={() =>
-                  void viewer.open(
-                    file.id,
-                    file.fileName ?? `${study.studyName} ${index + 1}`,
-                    file.fileName ?? undefined,
-                  )
-                }
-              >
-                {file.fileName ?? `File ${index + 1}`}
-                {file.sizeBytes ? ` (${Math.ceil(file.sizeBytes / 1024)} KB)` : ''}
-              </Button>
-            ))}
+            {study.files.map((file, index) => {
+              const pacs = pacsFileStatus(file);
+              return (
+                <div key={file.id} className={styles.file}>
+                  <Button
+                    icon={<DocumentRegular />}
+                    disabled={!canReadFiles || viewer.opening}
+                    onClick={() =>
+                      void viewer.open(
+                        file.id,
+                        file.fileName ?? `${study.studyName} ${index + 1}`,
+                        file.fileName ?? undefined,
+                      )
+                    }
+                  >
+                    {file.fileName ?? `File ${index + 1}`}
+                    {file.sizeBytes ? ` (${Math.ceil(file.sizeBytes / 1024)} KB)` : ''}
+                  </Button>
+                  {pacs && <Caption1 className={pacs.stored ? styles.inPacs : styles.notInPacs}>{pacs.text}</Caption1>}
+                </div>
+              );
+            })}
           </div>
         )}
       </Section>

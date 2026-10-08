@@ -4,8 +4,13 @@ using System.Text.Json;
 
 namespace HyFib.HealthCare360.Integrations.Tests.TestSupport;
 
-/// <summary>A request the adapter sent, captured for assertions.</summary>
-internal sealed record RecordedRequest(HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers, string? Body, string? ContentType)
+/// <summary>
+/// A request the adapter sent, captured for assertions. <paramref name="ContentTypeHeader"/> is the whole Content-Type
+/// header, with its parameters; <paramref name="BodyBytes"/> the body as sent, for binary bodies.
+/// </summary>
+internal sealed record RecordedRequest(
+    HttpMethod Method, Uri Uri, IReadOnlyDictionary<string, string> Headers, string? Body, string? ContentType, byte[]? BodyBytes = null,
+    string? ContentTypeHeader = null)
 {
     public JsonElement Json()
     {
@@ -46,9 +51,11 @@ internal sealed class FakeHttpHandler : HttpMessageHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+        var bytes = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
         var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
         var headers = request.Headers.ToDictionary(h => h.Key, h => string.Join(",", h.Value), StringComparer.OrdinalIgnoreCase);
-        Requests.Add(new RecordedRequest(request.Method, request.RequestUri!, headers, body, request.Content?.Headers.ContentType?.MediaType));
+        Requests.Add(new RecordedRequest(
+            request.Method, request.RequestUri!, headers, body, request.Content?.Headers.ContentType?.MediaType, bytes, request.Content?.Headers.ContentType?.ToString()));
         if (_responses.Count == 0)
         {
             throw new InvalidOperationException("No response queued for " + request.RequestUri);

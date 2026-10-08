@@ -349,6 +349,49 @@ public sealed record PacsImage(
     PacsImageStatus Status, ReadOnlyMemory<byte> Content = default, string? ContentType = null);
 
 /// <summary>
+/// The patient and study that objects sent to the PACS are filed under (STOW-RS). HC360 writes these over the values the
+/// machine recorded, so the objects reach the PACS under the patient's UHID and HC360's study; the machine's values are
+/// kept in each object's Original Attributes Sequence. Values are already in DICOM form: the name as PN
+/// (<c>FAMILY^GIVEN</c>), the birth date as <c>yyyyMMdd</c>, the sex as <c>M</c>, <c>F</c> or <c>O</c>, and an accession
+/// number of at most 16 characters (null when HC360's is longer).
+/// </summary>
+public sealed record PacsStudyIdentity(
+    string PatientId,
+    string PatientName,
+    string? BirthDate,
+    string? Sex,
+    string StudyInstanceUid,
+    string? AccessionNumber,
+    string? StudyDescription);
+
+/// <summary>A file to send. <paramref name="Reference"/> is the caller's name for it (HC360's file id), echoed in its outcome.</summary>
+public sealed record PacsStoreFile(string Reference, byte[] Content);
+
+/// <param name="FacilityId">Facility whose PACS settings apply (null: the signed-in facility, then the all-facility settings).</param>
+public sealed record PacsStoreRequest(PacsStudyIdentity Study, IReadOnlyList<PacsStoreFile> Files, Guid? FacilityId = null);
+
+public enum PacsStoreStatus
+{
+    /// <summary>The PACS holds the object.</summary>
+    Stored = 0,
+
+    /// <summary>The PACS answered and refused the object; the message says why.</summary>
+    Refused,
+
+    /// <summary>The object did not reach the PACS (unreachable, timed out, a server error); sending it again may work.</summary>
+    Failed,
+
+    /// <summary>Not a DICOM object HC360 can send: unreadable, or without its SOP class and instance UIDs.</summary>
+    NotDicom,
+}
+
+/// <summary>
+/// What became of one file sent to the PACS. <paramref name="SopInstanceUid"/> is the object's UID when HC360 could read
+/// it. <paramref name="Message"/> says why it was not stored, or the PACS's warning about one it stored.
+/// </summary>
+public sealed record PacsStoreOutcome(string Reference, PacsStoreStatus Status, string? SopInstanceUid, string? Message);
+
+/// <summary>
 /// The PACS (INT-PACS, IMG-02). Searches and image retrieval that cannot run (PACS not configured, disabled, unreachable,
 /// or an answer HC360 will not pass on) throw <see cref="HttpRequestException"/> whose message is safe to show to staff.
 /// Credentials stay on the server: callers get study data and finished images, never a PACS address.
@@ -367,6 +410,15 @@ public interface IPacsClient
 
     /// <summary>A rendered image or a thumbnail (WADO-RS): only JPEG or PNG, within a size limit.</summary>
     Task<PacsImage> RetrieveImageAsync(PacsImageRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Sends DICOM objects to the PACS (STOW-RS), one request per object, filed under <see cref="PacsStoreRequest.Study"/>.
+    /// Returns one outcome per file, in order: a file that is not DICOM, or that the PACS refuses or cannot be reached
+    /// for, gets its own outcome and the others are still sent. Sending an object again is safe: the PACS keeps one copy
+    /// per SOP instance UID.
+    /// </summary>
+    /// <exception cref="HttpRequestException">PACS is not configured or disabled; the message is safe to show to staff.</exception>
+    Task<IReadOnlyList<PacsStoreOutcome>> StoreAsync(PacsStoreRequest request, CancellationToken cancellationToken);
 
     /// <summary>
     /// Viewer launch URL built from the configured template (for example OHIF/Weasis/vendor viewer). Null when no

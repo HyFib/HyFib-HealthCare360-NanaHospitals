@@ -16,7 +16,7 @@ public sealed class DicomWebPacsProviderTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private DicomWebPacsProvider Provider => new(_http.Client(), _tracing.Trace);
+    private DicomWebPacsProvider Provider => new(_http.Client(), new PacsStowHttp(_http.Client()), _tracing.Trace);
 
     [Fact]
     public async Task Searches_studies_under_the_dicomweb_root()

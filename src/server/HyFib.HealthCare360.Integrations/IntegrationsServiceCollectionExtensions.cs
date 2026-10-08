@@ -35,6 +35,9 @@ internal static class IntegrationsServiceCollectionExtensions
     // 30 s in all, and stops calling Tally after 24 s (TallyService.CallDeadline): one call must fit well inside that.
     private static readonly TimeSpan TallyTimeout = TimeSpan.FromSeconds(20);
 
+    // Sending a DICOM file to the PACS (STOW-RS) moves up to 25 MB, so it gets longer than a search, which must fail fast.
+    private static readonly TimeSpan PacsStowTimeout = TimeSpan.FromMinutes(2);
+
     public static IServiceCollection AddIntegrations(this IServiceCollection services)
     {
         services.AddScoped<IntegrationSettingsReader>();
@@ -100,6 +103,7 @@ internal static class IntegrationsServiceCollectionExtensions
         services.AddScoped<IAccountingExporter, AccountingExporterRouter>();
 
         services.AddIntegrationHttpClient<DicomWebPacsProvider>(CloudAttempt, CloudTotal);
+        services.AddIntegrationHttpClient<PacsStowHttp>(PacsStowTimeout, PacsStowTimeout);
         services.AddScoped<IPacsProvider>(sp => sp.GetRequiredService<DicomWebPacsProvider>());
         services.AddScoped<IPacsProvider, SimulatorPacsProvider>();
         services.AddScoped<IPacsClient, PacsClientRouter>();

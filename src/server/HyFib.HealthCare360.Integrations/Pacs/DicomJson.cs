@@ -177,6 +177,9 @@ internal static class DicomJson
         return value[0] == '-' ? -span : span;
     }
 
+    /// <summary>The items of a sequence attribute (SQ): its values that are objects.</summary>
+    internal static IEnumerable<JsonElement> Items(JsonElement item, string tag) => Values(item, tag).Where(v => v.ValueKind == JsonValueKind.Object);
+
     private static IEnumerable<JsonElement> Values(JsonElement item, string tag)
     {
         if (item.ValueKind == JsonValueKind.Object
