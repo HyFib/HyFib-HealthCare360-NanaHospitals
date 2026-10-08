@@ -6,11 +6,12 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 namespace HyFib.HealthCare360.Integrations.Pacs;
 
 /// <summary>
-/// A DICOMweb PACS (INT-PACS): QIDO-RS study, series and instance searches, and WADO-RS rendered images and thumbnails,
-/// with none/basic/bearer authentication. Results contain patient names, so only the query shape and counts are logged.
-/// A viewer fetches hundreds of images, so image retrievals are logged only when they fail.
+/// A DICOMweb PACS (INT-PACS): QIDO-RS study, series and instance searches, WADO-RS rendered images and thumbnails, and
+/// STOW-RS to send objects, with none/basic/bearer authentication. Results contain patient names, so only the query
+/// shape and counts are logged. A viewer fetches hundreds of images, so image retrievals are logged only when they fail.
+/// Each object sent is logged by its SOP instance UID and size, never with the patient's details.
 /// </summary>
-internal sealed class DicomWebPacsProvider(HttpClient http, IntegrationTrace trace) : IPacsProvider
+internal sealed class DicomWebPacsProvider(HttpClient http, PacsStowHttp stow, IntegrationTrace trace) : IPacsProvider
 {
     public string Key => ProviderKeys.DicomWeb;
 
@@ -112,6 +113,38 @@ internal sealed class DicomWebPacsProvider(HttpClient http, IntegrationTrace tra
         }
     }
 
+    public async Task<PacsStoreOutcome> StoreAsync(DicomObjectToStore item, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        var summary = string.Create(CultureInfo.InvariantCulture, $"one object, {item.Content.Length / 1024.0:0.#} KB");
+        PacsStoreOutcome outcome;
+        try
+        {
+            if (!IntegrationHttp.TryCreateEndpoint(settings.StowRoot, requireHttps: false, out var baseUri))
+            {
+                throw new IntegrationException("The PACS DICOMweb URL is not configured.");
+            }
+
+            using var request = CreateRequest(IntegrationHttp.Combine(baseUri, "studies"), settings, secrets, HttpMethod.Post);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/dicom+json"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json", 0.9));
+            request.Content = DicomStow.Body(item);
+            using var response = await stow.Client.SendAsync(request, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            outcome = DicomStow.Outcome(item, response.StatusCode, body);
+            await trace.LogAsync(IntegrationNames.Pacs, Key, "stow", outcome.Status == PacsStoreStatus.Stored, started, item.SopInstanceUid, summary,
+                string.Create(CultureInfo.InvariantCulture, $"HTTP {(int)response.StatusCode}"), outcome.Status == PacsStoreStatus.Stored ? null : outcome.Message);
+        }
+        catch (Exception ex) when (ex is IntegrationException || IntegrationErrors.IsCallFailure(ex, cancellationToken))
+        {
+            var error = ex is IntegrationException ? ex.Message : IntegrationErrors.Describe(ex, "The PACS");
+            outcome = DicomStow.Failed(item, error);
+            await trace.LogAsync(IntegrationNames.Pacs, Key, "stow", false, started, item.SopInstanceUid, summary, error: error);
+        }
+
+        return outcome;
+    }
+
     /// <summary>What an image request asked for, without UIDs beyond the series reference.</summary>
     private static string Shape(PacsImageRequest request) =>
         string.Create(CultureInfo.InvariantCulture, $"{request.Kind}{(request.SopInstanceUid is null ? " of the series" : " of one object")}{(request.Frame is { } frame ? $", frame {frame}" : string.Empty)}, {request.Size} px");
@@ -165,9 +198,9 @@ internal sealed class DicomWebPacsProvider(HttpClient http, IntegrationTrace tra
         return (response.StatusCode, await response.Content.ReadAsStringAsync(cancellationToken));
     }
 
-    private static HttpRequestMessage CreateRequest(Uri uri, PacsSettings settings, PacsSecrets secrets)
+    private static HttpRequestMessage CreateRequest(Uri uri, PacsSettings settings, PacsSecrets secrets, HttpMethod? method = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        var request = new HttpRequestMessage(method ?? HttpMethod.Get, uri);
         switch (settings.AuthType.Trim().ToLowerInvariant())
         {
             case "basic" when !string.IsNullOrWhiteSpace(settings.UserName):
@@ -180,4 +213,10 @@ internal sealed class DicomWebPacsProvider(HttpClient http, IntegrationTrace tra
 
         return request;
     }
+}
+
+/// <summary>The HTTP client for STOW-RS: files take longer to send than a search takes to answer.</summary>
+internal sealed class PacsStowHttp(HttpClient client)
+{
+    public HttpClient Client => client;
 }

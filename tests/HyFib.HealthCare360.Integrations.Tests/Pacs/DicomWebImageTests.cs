@@ -24,7 +24,7 @@ public sealed class DicomWebImageTests
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private DicomWebPacsProvider Provider => new(new HttpClient(_http, disposeHandler: false), _tracing.Trace);
+    private DicomWebPacsProvider Provider => new(new HttpClient(_http, disposeHandler: false), new PacsStowHttp(new HttpClient(_http, disposeHandler: false)), _tracing.Trace);
 
     private static PacsImageRequest Rendered(int? frame = null) => new("1.2.3", "1.2.3.1", "1.2.3.1.7", frame, PacsImageKind.Rendered, 1024);
 

@@ -8,7 +8,7 @@ namespace HyFib.HealthCare360.Integrations.Pacs;
 /// not be reached" rather than "no images yet", and it never surfaces as a server error. Every call reads the settings of
 /// the facility it names (null: the signed-in facility), because background linking has no signed-in facility.
 /// </summary>
-internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, IntegrationSettingsReader settings) : IPacsClient
+internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, IntegrationSettingsReader settings, TimeProvider time) : IPacsClient
 {
     public async Task<bool> PingAsync(CancellationToken cancellationToken)
     {
@@ -43,6 +43,57 @@ internal sealed class PacsClientRouter(IEnumerable<IPacsProvider> providers, Int
 
             return provider.RetrieveImageAsync(request, config.Settings!, config.Secrets, cancellationToken);
         }, cancellationToken);
+
+    /// <summary>
+    /// Sends the files (STOW-RS), each filed under the request's patient and study (<see cref="DicomStow.Prepare"/>). A
+    /// file that is not DICOM HC360 can send is not sent; the PACS's answer for each of the others is its outcome.
+    /// </summary>
+    /// <exception cref="HttpRequestException">PACS is not usable, or the study has no valid UID or patient ID; the message is safe to show to staff.</exception>
+    public async Task<IReadOnlyList<PacsStoreOutcome>> StoreAsync(PacsStoreRequest request, CancellationToken cancellationToken)
+    {
+        var study = request.Study;
+        Valid(study.StudyInstanceUid);
+        if (string.IsNullOrWhiteSpace(study.PatientId))
+        {
+            throw new HttpRequestException("HC360 refused to send objects without the patient's ID.");
+        }
+
+        var (provider, config, problem) = await ResolveAsync(request.FacilityId, cancellationToken);
+        if (provider is null)
+        {
+            throw new HttpRequestException(problem ?? "The PACS is not available.");
+        }
+
+        var now = time.GetUtcNow();
+        var outcomes = new List<PacsStoreOutcome>(request.Files.Count);
+        foreach (var file in request.Files)
+        {
+            var prepared = DicomStow.Prepare(file, study, now, out var notSendable);
+            outcomes.Add(prepared is null
+                ? new PacsStoreOutcome(file.Reference, PacsStoreStatus.NotDicom, null, notSendable)
+                : await provider.StoreAsync(prepared, config!.Settings!, config.Secrets, cancellationToken));
+        }
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// The provider and the STOW-RS root objects are sent to, for example <c>dicomweb http://orthanc:8042/dicom-web</c>
+    /// (<c>simulator</c> for the simulator). Configured URLs cannot carry credentials, so neither does this.
+    /// </summary>
+    /// <exception cref="HttpRequestException">PACS is not usable; the message is safe to show to staff.</exception>
+    public async Task<string> StoreDestinationAsync(Guid? facilityId, CancellationToken cancellationToken)
+    {
+        var (provider, config, problem) = await ResolveAsync(facilityId, cancellationToken);
+        if (provider is null)
+        {
+            throw new HttpRequestException(problem ?? "The PACS is not available.");
+        }
+
+        return provider.Key != ProviderKeys.Simulator && config!.Settings!.StowRoot?.Trim().TrimEnd('/') is { Length: > 0 } root
+            ? $"{provider.Key} {root}"
+            : provider.Key;
+    }
 
     /// <summary>
     /// Viewer launch URL from <c>viewerUrlTemplate</c> (null when none is configured, or when the template needs a value

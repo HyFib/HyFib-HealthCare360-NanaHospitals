@@ -35,6 +35,8 @@ internal static class CardiologyEndpoints
             .RequirePermission(Manage).WithValidation<StartCardiologyRequest>();
         studies.MapPost("/{id:guid}/files", async (Guid id, AttachDeviceFilesRequest r, CardiologyService s, CancellationToken ct) => (await s.AttachFilesAsync(id, r, ct)).ToOk())
             .RequirePermission(Manage).WithValidation<AttachDeviceFilesRequest>();
+        studies.MapPost("/{id:guid}/pacs", SendToPacs).RequirePermission(Manage);
+        studies.MapGet("/{id:guid}/viewer", Viewer).RequireAnyPermission(readers);
         studies.MapPost("/{id:guid}/complete", async (Guid id, CompleteCardiologyRequest r, CardiologyService s, CancellationToken ct) => (await s.CompleteAsync(id, r, ct)).ToOk())
             .RequirePermission(Manage).WithValidation<CompleteCardiologyRequest>();
         studies.MapPost("/{id:guid}/cancel", async (Guid id, CancelCardiologyRequest r, CardiologyService s, CancellationToken ct) => (await s.CancelAsync(id, r.Reason, ct)).ToOk())
@@ -128,6 +130,41 @@ internal static class CardiologyEndpoints
 
         var paged = await studies.OrderByUrgency(s => s.Priority).ThenBy(s => s.AcquiredAt).ToPagedResultAsync(page, ct);
         return TypedResults.Ok(await ToListItemsAsync(paged, db, lookups, time, ct));
+    }
+
+    /// <summary>Sends the study's DICOM files to the PACS (INT-PACS). Patient data leaves HC360, so a restricted record is checked first.</summary>
+    private static async Task<IResult> SendToPacs(Guid id, CardiologyService service, PatientAccessGuard guard, CancellationToken ct)
+    {
+        if (await service.PatientOfAsync(id, ct) is not { } study)
+        {
+            return Error.NotFound(nameof(CardiologyStudy), id).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenAsync(study.PatientId, ct);
+        return access.IsFailure ? access.Error!.ToProblem() : (await service.SendToPacsAsync(id, ct)).ToOk();
+    }
+
+    /// <summary>Opens the study's images in the PACS viewer; opening them is a PHI read and is audited.</summary>
+    private static async Task<IResult> Viewer(Guid id, CardiologyService service, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)
+    {
+        if (await service.PatientOfAsync(id, ct) is not { } study)
+        {
+            return Error.NotFound(nameof(CardiologyStudy), id).ToProblem();
+        }
+
+        var access = await guard.EnsureCanOpenAsync(study.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!.ToProblem();
+        }
+
+        var link = await service.ViewerAsync(id, ct);
+        if (link.IsSuccess)
+        {
+            await audit.PatientRecordAccessedAsync(study.PatientId, $"Opened images of {study.AccessionNumber}", ct);
+        }
+
+        return link.ToOk();
     }
 
     private static async Task<IResult> Get(

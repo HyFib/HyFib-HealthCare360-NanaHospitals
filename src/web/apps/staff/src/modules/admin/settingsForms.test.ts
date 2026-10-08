@@ -345,13 +345,20 @@ describe('modality worklist and PACS settings', () => {
     expect(viewerLinkProblem('javascript:alert(1)//{studyUid}')).toContain('http');
   });
 
-  it('keeps the image address with the DICOMweb settings', () => {
+  it('keeps the image and sending addresses with the DICOMweb settings', () => {
     const pacs = INTEGRATION_SETTINGS.pacs as SettingsSpec;
     const wado = pacs.fields.find((field) => field.path === 'wadoUrl');
     expect(wado?.kind).toBe('url');
     expect(parseFieldValue(wado!, 'http://pacs.local/wado-rs')).toEqual({
       ok: true,
       value: 'http://pacs.local/wado-rs',
+    });
+    const stow = pacs.fields.find((field) => field.path === 'stowUrl');
+    expect(stow?.kind).toBe('url');
+    expect(stow?.when).toBeDefined();
+    expect(parseFieldValue(stow!, 'http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs')).toEqual({
+      ok: true,
+      value: 'http://dcm4chee:8080/dcm4chee-arc/aets/DCM4CHEE/rs',
     });
   });
 });

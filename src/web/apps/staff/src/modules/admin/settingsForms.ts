@@ -1339,7 +1339,7 @@ const pacsSpec: SettingsSpec = {
   id: 'pacs',
   title: 'PACS',
   intro:
-    'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee), shows their images in HC360 (WADO-RS) and opens them in the viewer. PACS sign-in details stay on the server.',
+    'Finds radiology studies on the PACS (DICOMweb QIDO-RS, e.g. Orthanc or dcm4chee), shows their images in HC360 (WADO-RS) and opens them in the viewer. Cardiology sends the DICOM files of echos and other studies to it (STOW-RS). PACS sign-in details stay on the server.',
   prefix: PACS,
   fields: [
     { key: PACS, path: 'enabled', label: 'Look up studies on the PACS', kind: 'switch' },
@@ -1371,6 +1371,15 @@ const pacsSpec: SettingsSpec = {
       placeholder: 'The DICOMweb address',
       when: pacsBy('dicomweb'),
       hint: 'Only when the PACS serves images at another address. Leave empty to use the DICOMweb address.',
+    },
+    {
+      key: PACS,
+      path: 'stowUrl',
+      label: 'Sending address (STOW-RS)',
+      kind: 'url',
+      placeholder: 'The DICOMweb address',
+      when: pacsBy('dicomweb'),
+      hint: 'Only when the PACS takes files at another address. Leave empty to use the DICOMweb address.',
     },
     {
       key: PACS,

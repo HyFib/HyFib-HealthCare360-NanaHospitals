@@ -19,6 +19,7 @@ internal sealed class CardiologyStudyConfiguration : IEntityTypeConfiguration<Ca
         b.Property(x => x.TechnicianNotes).HasMaxLength(1000);
         b.Property(x => x.CancelReason).HasMaxLength(300);
         b.Property(x => x.ChargeError).HasMaxLength(300);
+        b.Property(x => x.StudyInstanceUid).HasMaxLength(64);
         b.Ignore(x => x.IsPackageComponent);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
         b.HasIndex(x => x.AccessionNumber).IsUnique();
@@ -27,6 +28,19 @@ internal sealed class CardiologyStudyConfiguration : IEntityTypeConfiguration<Ca
         b.HasIndex(x => new { x.FacilityId, x.OrderedAt });
         b.HasIndex(x => new { x.PatientId, x.OrderedAt });
         b.HasIndex(x => x.PackageBookingId);
+    }
+}
+
+internal sealed class CardiologyPacsObjectConfiguration : IEntityTypeConfiguration<CardiologyPacsObject>
+{
+    public void Configure(EntityTypeBuilder<CardiologyPacsObject> b)
+    {
+        b.ToTable("cardiology_pacs_objects", DiagnosticsSchema.Name);
+        b.Property(x => x.SopInstanceUid).HasMaxLength(64);
+        b.Property(x => x.Message).HasMaxLength(300);
+        b.Property(x => x.Destination).HasMaxLength(300);
+        b.HasOne<CardiologyStudy>().WithMany().HasForeignKey(x => x.CardiologyStudyId).OnDelete(DeleteBehavior.Cascade);
+        b.HasIndex(x => new { x.CardiologyStudyId, x.FileId }).IsUnique();
     }
 }
 

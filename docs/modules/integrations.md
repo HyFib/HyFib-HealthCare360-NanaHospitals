@@ -9,7 +9,7 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
 | Project | `src/server/HyFib.HealthCare360.Integrations` (module key `integrations`, registered by `IntegrationsModule`) |
 | Schema | `integrations`: `simulator_messages`, `simulator_transactions`, `whatsapp_inbound_messages`, `lab_order_downloads` (the integration log itself is the platform's `integration_logs`) |
 | Requirements | SRS §5: INT-SMS, INT-WA, INT-PG, INT-POS, INT-TALLY, INT-PACS, INT-LAB, INT-BAR, INT-ICD; SEC-10 (PHI in logs) |
-| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: about 800 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, QIDO-RS and WADO-RS against a fake PACS, the modality worklist server answering fo-dicom's own client on a local port, worklist matching and settings, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`) covers the connection rules, facility scoping, the relay endpoint and the order queue's claims against PostgreSQL |
+| Tests | `tests/HyFib.HealthCare360.Integrations.Tests`: about 800 tests covering signatures, templates, every provider against a fake HTTP handler, the routers other modules resolve (payment, POS, PACS, ICD), webhook parsers, WhatsApp STOP/START handling, Tally XML, DICOM JSON, QIDO-RS, WADO-RS and STOW-RS against a fake PACS (with the DICOM rewriting of objects sent), the modality worklist server answering fo-dicom's own client on a local port, worklist matching and settings, the HL7/MLLP and ASTM E1381/E1394 sessions over an in-memory socket (host queries, order download, contention, size limits), the lab agent relay over an in-memory WebSocket, PHI masking, labels, validators and DI wiring. `tests/HyFib.HealthCare360.LabAgent.Tests` runs the lab agent against the server's relay end to end (Windows). `tests/HyFib.HealthCare360.IntegrationTests` (`LabAnalyserTests`, `LabConnectionTests`) covers the connection rules, facility scoping, the relay endpoint and the order queue's claims against PostgreSQL, and `CardiologyPacsTests` sends an echo's DICOM files through the whole server to the PACS simulator |
 
 ## How it fits together
 
@@ -54,7 +54,7 @@ branch while this module is loaded. They get the behaviour in the last column in
 | `IPaymentGateway` | Billing payment links and portal bill payment, Scheduling portal prepayment, Billing webhook, Billing gateway reconciliation (settlements, refund status) | `PaymentGatewayRouter` → Razorpay / simulator | `CreateOrderAsync` and `CreatePaymentLinkAsync` throw `IntegrationException` (an `InvalidOperationException`) with the reason. Billing turns it into `billing.gateway_unavailable`; Scheduling switches to pay-at-hospital. `GetStatusAsync` returns `Pending` with the reason. `VerifySignature` returns false. `GetSettlementsAsync` returns a report marked unavailable with the reason; `GetRefundStatusAsync` returns `Pending` with the reason. Settlements and refund status are read even while online payments are switched off, so earlier payments are still reconciled. The signature convention is HMAC-SHA256 over `"{orderId}\|{paymentId}"` with the key secret; see below. |
 | `IPosTerminal` | Billing card/UPI sales | `PosTerminalRouter` → Pine Labs / simulator | A **declined** result with the reason ("Card/UPI POS is not configured…"). Each declined attempt gets a unique `declined-…` transaction id, and `Provider` reports the provider that handled the call (`none`, `pinelabs` or `simulator`), because Billing stores sales under a unique (provider, transaction id) index. |
 | `IAccountingExporter` | Billing Tally day book (outbox), its read-back check and the day-book file download | `AccountingExporterRouter` → Tally Prime / simulator | `GetConnectionAsync` says Not configured (no settings, or posting switched off) or Invalid (settings that cannot be used). `PushVouchersAsync` then returns a result with `NotConfigured` set and every voucher not sent, and Billing marks the day Not configured instead of retrying; Invalid settings fail the day until corrected. `ReadBackAsync` returns an unsuccessful result with the reason. `PingAsync` returns false. `BuildImportFile` always works (Tally XML) and throws only for a voucher Tally would reject. |
-| `IPacsClient` | Diagnostics radiology: linking studies with PACS (by hand and by `PacsLinkJob`), the study's series and images, and viewer links | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync`, `FindSeriesAsync`, `FindInstancesAsync` and `RetrieveImageAsync` throw **`HttpRequestException`** with a staff-facing reason: not configured, disabled, unreachable, an HTTP error, a UID that is not a DICOM UID, or an answer that is not a JPEG or PNG image within the size limit. Diagnostics reports it as `pacs.unreachable`. Every call names the facility whose settings apply (null: the signed-in facility), because background linking has none. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). |
+| `IPacsClient` | Diagnostics radiology: linking studies with PACS (by hand and by `PacsLinkJob`), the study's series and images, and viewer links. Diagnostics cardiology: sending a study's DICOM device files (`StoreAsync`) and its viewer link | `PacsClientRouter` → DICOMweb / simulator | `FindStudiesAsync`, `FindSeriesAsync`, `FindInstancesAsync` and `RetrieveImageAsync` throw **`HttpRequestException`** with a staff-facing reason: not configured, disabled, unreachable, an HTTP error, a UID that is not a DICOM UID, or an answer that is not a JPEG or PNG image within the size limit. Diagnostics reports it as `pacs.unreachable`. `StoreAsync` throws only when PACS is not configured or disabled, or the study has no valid UID or patient ID (`pacs.unavailable`); a file the PACS refuses or cannot be reached for gets its own `PacsStoreOutcome`. `StoreDestinationAsync` names where objects go now (the provider and the STOW-RS root, or `simulator`), so a caller can tell an outcome from another PACS; it throws like `StoreAsync`. Every call names the facility whose settings apply (null: the signed-in facility), because background linking has none. `BuildViewerUrl` returns null without a viewer template (`pacs.viewer_not_configured`). |
 | `IModalityWorklistSource` (implemented by Diagnostics, scoped) | Consumed by the modality worklist server here, and by Diagnostics' own `/api/v1/radiology/worklist/mwl` | `ModalityWorklistSource` in Diagnostics, resolved in a new scope for every C-FIND | The server is off until `integrations.mwl.enabled` is set and modalities are listed. Without a registered source, every query is answered "unable to process" and logged. |
 | `IInstrumentResultSink` (implemented by Diagnostics, scoped) | Consumed by the lab analyser gateway here | `LabMessageProcessor` resolves it in a new scope per message: `ReceiveAsync` for results, `GetOrderForSampleAsync` for ASTM host queries | The gateway is off until `integrations.lab.enabled` is set and instruments are listed. Without a registered sink, results are refused (HL7 `AE`, ASTM NAK) and logged. |
 | `IIcdLookup` | Clinical online ICD search (`/api/v1/mrd/icd-codes/online`) | `IcdLookupRouter` → WHO ICD-API | Returns an empty list until configured. ICD-API failures throw `HttpRequestException`, which Clinical reports as `icd.online_failed`. |
@@ -84,7 +84,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `simulator`), `baseUrl`, `keyId`, `paymentLinkCallbackUrl`, `notifyByRazorpay` (false), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret` |
 | `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
-| `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
+| `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
 | `integrations.icd` | `enabled`, `provider` (`who` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
@@ -361,6 +361,44 @@ server, which modalities query over DICOM. Diagnostics owns the rules about stud
   series and object UIDs PACS lists for that study. The thumbnail and rendered-image endpoints use the
   `radiology-images` rate-limit policy: per person, 6 images fetched at once and 32 waiting, then 429.
 
+#### Sending (STOW-RS)
+
+Cardiology sends the DICOM files of echos and other studies that machines export (see *Cardiology to the PACS* in
+[diagnostics.md](diagnostics.md)). `StoreAsync` takes the files and the patient and study they belong to
+(`PacsStudyIdentity`); the router prepares each file (`DicomStow.Prepare`, fo-dicom) and the provider sends it.
+
+* **Filed under HC360's patient and study.** A machine records whatever was typed at its console, often a name without
+  the UHID, and its own study. HC360 writes Patient ID (the UHID), Patient's Name, Birth Date and Sex, Study Instance
+  UID, Accession Number (left empty when HC360's is longer than DICOM's 16 characters) and Study Description over them,
+  so the PACS files the object with the patient's other studies and the viewer link finds it. Values are cut to their
+  DICOM lengths (64 characters for LO and each PN component group).
+* **Nothing the machine recorded is lost.** The values replaced go in the object's Original Attributes Sequence
+  (0400,0561; PS3.3 §C.12.1) with Modifying System `HC360`, reason `COERCE` and the time; an earlier entry (from another
+  system) is kept. A value HC360 does not change is not listed.
+* **Same object, same UID.** The SOP class and instance UIDs (and the series UID) are kept, so sending a file again
+  replaces the same object in the PACS instead of adding a copy. A file without a SOP class or instance UID in the
+  object, a DICOMDIR (a CD's index) or a file fo-dicom cannot read is not sent (`NotDicom`).
+* **Character sets.** When a new value holds characters the object's character set cannot (a name in Devanagari in a
+  Latin-1 or ASCII object), the object is changed to UTF-8 (`ISO_IR 192`); fo-dicom then writes all of its text,
+  nested sequences included, in UTF-8. ASCII values never change the character set.
+* **The request.** One object per request: `POST {stowUrl or qidoUrl}/studies` with
+  `Content-Type: multipart/related; type="application/dicom"` and one `application/dicom` part, Accept
+  `application/dicom+json`, and the PACS's sign-in. Sending has its own HTTP client with two minutes per file (a file is
+  at most 25 MB); searches keep their 20 seconds. POST is never retried at the HTTP layer.
+* **The answer.** 200 (and 204) is stored; 202 is stored with a warning. The DICOM JSON body is read for this object:
+  in the Failed SOP Sequence (0008,1198) it is refused with the Failure Reason (0008,1197) in words (out of resources,
+  SOP class not supported, does not match its SOP class, transfer syntax not supported, cannot understand); in the
+  Referenced SOP Sequence (0008,1199) a Warning Reason (0008,1196) is passed on. Failure reason 0111 (the PACS already
+  holds the object) counts as stored, and a failure in a 200 answer still refuses it. Without a body: 409, 400, 413 and
+  415 are refusals; 401 and 403 (sign-in), 404, 405 and 501 (wrong address) and other statuses are failures, which
+  sending again may get past.
+* **Log.** One `stow` line per object, with its SOP instance UID, its size and the HTTP status, and the reason when it
+  was not stored. The patient's details are never logged.
+* **Where it went.** `StoreDestinationAsync` gives the provider and the STOW-RS root, for example
+  `dicomweb http://orthanc:8042/dicom-web`, or `simulator`. Cardiology keeps it with each outcome, so an object stored
+  in the simulator while training, or in the PACS used before, is not taken as held by the PACS set up now. URLs cannot
+  carry credentials, so neither does this.
+
 #### Viewer launch
 
 * `BuildViewerUrl` fills `viewerUrlTemplate` with URL-encoded values and returns only http(s) URLs. A template must
@@ -377,7 +415,8 @@ server, which modalities query over DICOM. Diagnostics owns the rules about stud
 `"provider": "simulator"` answers every accession-number or study-UID query with one study, held under the patient ID
 HC360 expects (the query's `ExpectedPatientId`, which real PACS never receive), with three series: a localiser (one
 image), an image series (eight images) and a cine loop (one object of twelve frames, without a series thumbnail).
-Images are generated PNGs. UIDs are derived from the accession number or study UID, so they stay the same.
+Images are generated PNGs. UIDs are derived from the accession number or study UID, so they stay the same. Objects sent
+to it (STOW-RS) are prepared as for a real PACS and taken as stored; they are not kept.
 
 #### Modality worklist server (DICOM MWL SCP)
 
@@ -848,7 +887,8 @@ Permissions:
   it is the Interop module (`/fhir/r4`), documented in [interop.md](interop.md).
 * **ICD-10 free-text search online**: the WHO ICD-API does not support it, so the local catalogue answers instead.
 * **DICOM beyond the worklist and DICOMweb reads**:
-  * No STOW-RS and no C-STORE: HC360 never sends images to PACS; modalities send them there directly.
+  * No C-STORE: HC360 sends objects over STOW-RS only, and only cardiology's DICOM device files; modalities send their
+    images to PACS directly. PDFs and SCP-ECG are not turned into DICOM (Encapsulated PDF, ECG waveform) to send.
   * No C-MOVE or C-GET, no WADO-URI, and no download of DICOM files: HC360 shows JPEG or PNG renderings only.
     Windowing, measurements and the diagnostic read happen in the PACS viewer.
   * No Modality Performed Procedure Step (N-CREATE/N-SET) and no storage commitment: a study's progress is recorded by

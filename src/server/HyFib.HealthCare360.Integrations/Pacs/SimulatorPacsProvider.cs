@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Integrations.Pacs;
 /// linking, the image viewer and the viewer launch without a PACS. Every study has the same three series: a localiser
 /// (one image), an image series (eight images) and a cine loop (one object of twelve frames, without a series
 /// thumbnail, as many real PACS). The study is held under the patient ID HC360 expects, so linking succeeds. UIDs use
-/// a fixed test root and are derived from the study, so they stay the same.
+/// a fixed test root and are derived from the study, so they stay the same. Objects sent to it (STOW-RS) are taken as
+/// stored and not kept.
 /// </summary>
 internal sealed class SimulatorPacsProvider(IntegrationTrace trace, TimeProvider time) : IPacsProvider
 {
@@ -92,6 +93,15 @@ internal sealed class SimulatorPacsProvider(IntegrationTrace trace, TimeProvider
         }
 
         return Task.FromResult(Png(request.Size, (series.Number * 100) + number + (request.Frame ?? 1)));
+    }
+
+    /// <summary>Takes every object as stored, so staff can practise sending device files without a PACS.</summary>
+    public async Task<PacsStoreOutcome> StoreAsync(DicomObjectToStore item, PacsSettings settings, PacsSecrets secrets, CancellationToken cancellationToken)
+    {
+        var started = trace.Start();
+        await trace.LogAsync(IntegrationNames.Pacs, Key, "stow", true, started, item.SopInstanceUid,
+            string.Create(CultureInfo.InvariantCulture, $"one object, {item.Content.Length / 1024.0:0.#} KB"), "stored (simulated)");
+        return new PacsStoreOutcome(item.Reference, PacsStoreStatus.Stored, item.SopInstanceUid, null);
     }
 
     private static PacsImage Png(int size, int seed) => new(PacsImageStatus.Ok, SimulatorImages.Png(Math.Min(size, 512), seed), PacsImageContent.Png);
