@@ -141,6 +141,12 @@ public sealed record TallyLedgerMap
     /// <summary>GST the gateway charged on its fees, which the hospital can claim as input tax credit.</summary>
     public string GatewayInputGst { get; init; } = "Input GST";
 
+    /// <summary>The bank account the card and UPI acquirer settles into (debited with each payout); GST on its charges goes to <see cref="GatewayInputGst"/>.</summary>
+    public string PosSettlementBank { get; init; } = "Bank";
+
+    /// <summary>The acquirer's charges on card and UPI payments (MDR), without GST.</summary>
+    public string PosCharges { get; init; } = "Card & UPI Charges (MDR)";
+
     public string CreditNotes { get; init; } = "Sales Returns & Allowances";
     public string WriteOffs { get; init; } = "Bad Debts Written Off";
     public string InsuranceDisallowances { get; init; } = "Insurance Disallowances";
@@ -241,8 +247,11 @@ public sealed record TallyDayBook(
     /// </summary>
     public bool LegacyDoctorFeeNumbers { get; init; }
 
+    /// <summary>The card and UPI acquirer's payouts of the day, from the settlement reports imported (INT-POS).</summary>
+    public IReadOnlyList<TallyPosSettlement> PosSettlements { get; init; } = [];
+
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
-                           + (GatewaySettlements?.Count ?? 0) == 0
+                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count == 0
                            && Counters.All(c => c.IsEmpty);
 }
 
@@ -272,6 +281,7 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
         vouchers.AddRange(TallyCounters.Vouchers(day, map));
         vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
+        vouchers.AddRange(day.PosSettlements.Select(s => PosSettlementVoucher(s, map)));
         return vouchers.OfType<AccountingVoucher>().ToList();
     }
 
@@ -301,6 +311,28 @@ public static class TallyVoucherBuilder
         var narration = settlement.Utr is null
             ? $"Payment gateway settlement {settlement.SettlementId}"
             : $"Payment gateway settlement {settlement.SettlementId}, UTR {settlement.Utr}";
+        return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
+    }
+
+    /// <summary>
+    /// Card and UPI settlement journal: the payout reaches the bank, the acquirer's charges and the GST on them are
+    /// expenses, and the gross (payments less refunds and chargebacks) clears the card and UPI settlement ledgers that
+    /// the receipts debited.
+    /// </summary>
+    private static AccountingVoucher? PosSettlementVoucher(TallyPosSettlement settlement, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        entries.Debit(map.PosSettlementBank, settlement.Net);
+        entries.Debit(map.PosCharges, settlement.Charges);
+        entries.Debit(map.GatewayInputGst, settlement.Tax);
+        foreach (var clearing in settlement.Clears)
+        {
+            entries.Credit(map.ModeLedger(clearing.Mode), clearing.Gross);
+        }
+
+        var narration = settlement.Utr is null
+            ? $"Card and UPI settlement of {settlement.Date.ToString("dd-MM-yyyy", System.Globalization.CultureInfo.InvariantCulture)}"
+            : $"Card and UPI settlement, UTR {settlement.Utr}";
         return entries.ToVoucher(JournalType, settlement.Date, settlement.Number, narration, settlement.Number);
     }
 

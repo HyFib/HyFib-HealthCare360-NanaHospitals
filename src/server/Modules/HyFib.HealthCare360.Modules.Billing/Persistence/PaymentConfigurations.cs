@@ -63,6 +63,9 @@ internal sealed class ReceiptPaymentConfiguration : IEntityTypeConfiguration<Rec
         // A POS transaction or gateway payment can be recorded only once, whatever the number of retries/webhooks.
         b.HasIndex(x => new { x.Mode, x.ExternalId }).IsUnique().HasFilter("external_id IS NOT NULL");
         b.HasIndex(x => x.ReceiptId);
+
+        // The acquirer's settlement report is matched by the RRN or UTR the terminal returned or the cashier typed.
+        b.HasIndex(x => x.Reference).HasFilter("reference IS NOT NULL");
     }
 }
 
@@ -177,6 +180,7 @@ internal sealed class PosTransactionConfiguration : IEntityTypeConfiguration<Pos
         b.Ignore(x => x.IsComplete);
         b.HasIndex(x => new { x.Provider, x.TransactionId }).IsUnique();
         b.HasIndex(x => x.BillId);
+        b.HasIndex(x => x.ApprovalCode).HasFilter("approval_code IS NOT NULL");
         b.HasIndex(x => new { x.Status, x.CreatedAt });
     }
 }

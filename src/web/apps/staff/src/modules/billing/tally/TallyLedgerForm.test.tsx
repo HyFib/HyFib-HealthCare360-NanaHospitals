@@ -35,6 +35,8 @@ const map: TallyLedgerMap = {
   gatewaySettlementBank: 'HDFC Current Account',
   gatewayCharges: 'Payment Gateway Charges',
   gatewayInputGst: 'Input GST',
+  posSettlementBank: 'HDFC Current Account',
+  posCharges: 'Card & UPI Charges (MDR)',
   pharmacy: { include: true, sales: 'Pharmacy Sales', onAccount: 'Pharmacy Receivables', modeLedgers: {} },
   canteen: { include: true, sales: 'Canteen Sales', onAccount: 'Staff Canteen Recoverable', modeLedgers: {} },
   salesLedgerPerGstRate: true,

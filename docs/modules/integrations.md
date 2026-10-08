@@ -273,6 +273,11 @@ paise), so no extra table is required. A sale that never reached a terminal gets
 status or cancel response reports "still waiting" rather than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
 would prompt a customer at a counter.
 
+**Reconcile.** The terminal's RRN and approval code are kept with the receipt, and Billing matches them with the
+acquirer's settlement report, which an accountant imports; see *Card and UPI reconciliation* in
+[billing.md](billing.md#card-and-upi-reconciliation-int-pos). The simulator's sales can be turned into a training
+report there.
+
 ### Tally Prime (INT-TALLY)
 
 Billing builds the day book and keeps what Tally answered for every voucher; see
@@ -903,7 +908,7 @@ Permissions:
 * **Instant (on-demand) settlements** are read like any other settlement; HC360 does not request them.
 * **Settlement webhooks** (`settlement.processed`) are recorded but not acted on; the hourly reconciliation job reads
   the settlements instead.
-* **Card/UPI POS settlement files** from the acquirer are not read (POS sales are reconciled at the counter only).
+* **Card/UPI settlement reports** are imported by an accountant (Billing); HC360 does not fetch them from the acquirer.
 
 ## Database
 

@@ -114,6 +114,23 @@ const manifest: ModuleManifest = {
         'refund status',
       ],
     },
+    {
+      label: 'Card and UPI settlements',
+      to: '/billing/card-settlements',
+      permission: 'billing.gateway.reconcile',
+      keywords: [
+        'pos',
+        'card',
+        'upi',
+        'terminal',
+        'acquirer',
+        'mis',
+        'mdr',
+        'settlement report',
+        'reconcile',
+        'chargeback',
+      ],
+    },
   ],
   quickActions: [
     {
