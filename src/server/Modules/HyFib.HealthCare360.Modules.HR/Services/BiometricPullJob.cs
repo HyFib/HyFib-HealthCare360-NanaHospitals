@@ -8,8 +8,8 @@ namespace HyFib.HealthCare360.Modules.HR.Services;
 
 /// <summary>
 /// Every minute: reads each active terminal set to be read by HC360 whose interval has passed, and tells HR once
-/// about terminals that have gone quiet (INT-BIO). Runs only on job-running nodes; each terminal is read under its own
-/// cluster-wide lock, in its own scope, so one unreachable terminal does not hold up the others for long.
+/// about terminals that have gone quiet (INT-BIO). Runs only on job-running nodes; terminals are read a few at a time,
+/// each under its own cluster-wide lock and in its own scope, so an unreachable terminal does not hold up the others.
 /// </summary>
 internal sealed class BiometricPullJob(
     IServiceScopeFactory scopeFactory,
@@ -17,6 +17,9 @@ internal sealed class BiometricPullJob(
     IOptions<PlatformOptions> options,
     ILogger<BiometricPullJob> logger) : BackgroundService
 {
+    /// <summary>How many terminals are read at the same time.</summary>
+    internal const int ReadsAtOnce = 4;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.Value.RunsJobs)
@@ -56,15 +59,23 @@ internal sealed class BiometricPullJob(
                 .ToList();
         }
 
-        foreach (var id in due)
+        // A few at a time: an unreachable terminal waits out its timeout without holding up the others.
+        await Parallel.ForEachAsync(due, new ParallelOptions { MaxDegreeOfParallelism = ReadsAtOnce, CancellationToken = ct }, async (id, token) =>
         {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var result = await scope.ServiceProvider.GetRequiredService<BiometricPullService>().PullAsync(id, ct);
-            if (result.Success && result.Punches is { Accepted: > 0 } punches)
+            try
             {
-                logger.LogInformation("Read {Accepted} new punches from attendance terminal {DeviceId}", punches.Accepted, id);
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var result = await scope.ServiceProvider.GetRequiredService<BiometricPullService>().PullAsync(id, token);
+                if (result.Success && result.Punches is { Accepted: > 0 } punches)
+                {
+                    logger.LogInformation("Read {Accepted} new punches from attendance terminal {DeviceId}", punches.Accepted, id);
+                }
             }
-        }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Reading attendance terminal {DeviceId} failed; it is tried again at its next read", id);
+            }
+        });
 
         await using (var scope = scopeFactory.CreateAsyncScope())
         {

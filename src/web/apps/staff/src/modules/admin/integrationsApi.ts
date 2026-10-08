@@ -413,7 +413,14 @@ export const TRANSACTION_KIND_LABELS: Record<SimulatorTransactionKind, string> =
   TerminalPunch: 'Attendance punch',
 };
 
-export function transactionStatusDisplay(status: SimulatorTransactionStatus): { label: string; tone: Tone } {
+/** A simulated record's status; a punch on a training attendance terminal is not a payment, whatever its status. */
+export function transactionStatusDisplay(
+  status: SimulatorTransactionStatus,
+  kind?: SimulatorTransactionKind,
+): { label: string; tone: Tone } {
+  if (kind === 'TerminalPunch') {
+    return { label: 'Punched', tone: 'success' };
+  }
   switch (status) {
     case 'Captured':
       return { label: 'Paid', tone: 'success' };

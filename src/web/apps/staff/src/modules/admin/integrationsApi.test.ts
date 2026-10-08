@@ -48,6 +48,7 @@ describe('dashboard display', () => {
   it('shows simulated payments and durations plainly', () => {
     expect(transactionStatusDisplay('Captured')).toEqual({ label: 'Paid', tone: 'success' });
     expect(transactionStatusDisplay('AwaitingCustomer').tone).toBe('warning');
+    expect(transactionStatusDisplay('Captured', 'TerminalPunch')).toEqual({ label: 'Punched', tone: 'success' });
     expect(formatDuration(850)).toBe('850 ms');
     expect(formatDuration(1234)).toBe('1.2 s');
     expect(formatDuration(null)).toBe('—');

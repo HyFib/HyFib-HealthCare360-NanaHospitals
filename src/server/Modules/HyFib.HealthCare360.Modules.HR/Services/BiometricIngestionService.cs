@@ -24,7 +24,10 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
     public static readonly TimeSpan MaxBacklog = TimeSpan.FromDays(90);
     private static readonly TimeSpan SeenThrottle = TimeSpan.FromMinutes(5);
 
-    /// <summary>The registered, active device with this serial, or null (also when the request comes from a non-allowed IP).</summary>
+    /// <summary>
+    /// The registered, active device with this serial that sends its punches, or null: also when the request comes
+    /// from a non-allowed IP, or the terminal is one HC360 reads (it sends nothing, so a push in its name is refused).
+    /// </summary>
     public async Task<BiometricDevice?> FindDeviceAsync(string? serialNumber, IPAddress? remoteIp, CancellationToken ct)
     {
         if (!AdmsProtocol.IsValidSerial(serialNumber))
@@ -36,12 +39,19 @@ public sealed class BiometricIngestionService(HospitalDbContext db, TimeProvider
         var device = await db.Set<BiometricDevice>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .FirstOrDefaultAsync(d => d.SerialNumber == serial, ct);
 
-        var refused = device is null || !device.IsActive
-                      || (device.AllowedIpAddress is { } allowed && !string.Equals(allowed, NormalizeIp(remoteIp), StringComparison.OrdinalIgnoreCase));
-        if (refused)
+        var refusal = device switch
+        {
+            null => "Unregistered serial number.",
+            { Connection: BiometricConnection.Pull } => "The terminal is set to be read by HC360, so it may not push.",
+            _ when !device.IsActive
+                   || (device.AllowedIpAddress is { } allowed && !string.Equals(allowed, NormalizeIp(remoteIp), StringComparison.OrdinalIgnoreCase))
+                => "Device inactive or request from a non-allowed address.",
+            _ => null,
+        };
+        if (refusal is not null)
         {
             await integrationLog.LogAsync(new IntegrationLogEntry(IntegrationName, "zkteco-adms", "device.refused", IntegrationDirection.Inbound, false,
-                Reference: serial, Error: device is null ? "Unregistered serial number." : "Device inactive or request from a non-allowed address."), ct);
+                Reference: serial, Error: refusal), ct);
             return null;
         }
 

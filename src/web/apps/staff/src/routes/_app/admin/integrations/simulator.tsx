@@ -121,7 +121,7 @@ function SimulatorPage() {
         size="small"
       >
         <Tab value="messages">Messages (SMS, WhatsApp, e-mail, Tally)</Tab>
-        <Tab value="payments">Payments and POS</Tab>
+        <Tab value="payments">Payments, POS and punches</Tab>
       </TabList>
       {payments ? <SimulatedPayments /> : <SimulatedMessages />}
       <Caption1 className={styles.muted}>Recipients are stored masked, like the notification log.</Caption1>
@@ -294,7 +294,7 @@ function SimulatedPayments() {
         </FilterBar>
       </div>
       <DataTable
-        ariaLabel="Simulated payments and POS sales"
+        ariaLabel="Simulated payments, POS sales and attendance punches"
         rows={transactions.data?.items}
         loading={transactions.isLoading}
         error={transactions.error}
@@ -309,18 +309,28 @@ function SimulatedPayments() {
             header: 'Amount',
             width: 130,
             align: 'end',
-            render: (row) => (row.currency === 'INR' ? formatInr(row.amount) : `${row.amount} ${row.currency}`),
+            render: (row) =>
+              row.kind === 'TerminalPunch'
+                ? '—'
+                : row.currency === 'INR'
+                  ? formatInr(row.amount)
+                  : `${row.amount} ${row.currency}`,
           },
           {
             key: 'status',
             header: 'Status',
             width: 170,
             render: (row) => {
-              const status = transactionStatusDisplay(row.status);
+              const status = transactionStatusDisplay(row.status, row.kind);
               return <StatusBadge status={row.status} tone={status.tone} label={status.label} />;
             },
           },
-          { key: 'reference', header: 'Reference', render: (row) => row.reference ?? '—' },
+          {
+            key: 'reference',
+            header: 'Reference',
+            render: (row) =>
+              row.kind === 'TerminalPunch' ? `Employee number ${row.reference ?? '—'}` : (row.reference ?? '—'),
+          },
           {
             key: 'external',
             header: 'Simulator id',
@@ -336,8 +346,8 @@ function SimulatedPayments() {
             render: (row) => (row.refundedAmount > 0 ? formatInr(row.refundedAmount) : '—'),
           },
         ]}
-        emptyTitle="No simulated payments"
-        emptyDescription="Set the payment gateway or POS provider to Simulator to practise payment links and card/UPI sales. No money moves."
+        emptyTitle="No simulated payments or punches"
+        emptyDescription="Set the payment gateway, POS or biometric attendance provider to Simulator to practise payment links, card/UPI sales and attendance punches. No money moves."
         page={page}
         pageSize={INBOX_PAGE_SIZE}
         totalCount={transactions.data?.totalCount}

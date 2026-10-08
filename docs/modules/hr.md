@@ -82,8 +82,9 @@ on the device network and port. `BiometricPullService` reads it through the Plat
 (ZKTeco/eSSL protocol on TCP 4370, or the training simulator; see
 [integrations.md](integrations.md#biometric-attendance-terminals-int-bio), settings `integrations.biometric`):
 
-* `BiometricPullJob` reads every active terminal whose interval has passed, once a minute at most; Read now does the
-  same at once. One read of a terminal runs at a time, across nodes (advisory lock per terminal).
+* `BiometricPullJob` reads every active terminal whose interval has passed, once a minute at most, four terminals at a
+  time so an unreachable one waiting out its timeout does not hold up the others; Read now does the same at once. One
+  read of a terminal runs at a time, across nodes (advisory lock per terminal).
 * A terminal keeps every punch, so a read returns them all. Punches from more than two days before the latest one
   already read (`pulled_up_to`), or more than 90 days old, are left out (`earlier`); the rest go through the same intake
   as pushed punches (source `Pull`), which leaves out those already received.
@@ -92,6 +93,8 @@ on the device network and port. `BiometricPullService` reads it through the Plat
 * A read that fails keeps its reason in `lastPullError`. Reads update the terminal with set-based updates, as pushes do,
   so reading every few minutes does not fill the audit trail.
 * Addresses are IP addresses only, and never a loopback, link-local (cloud metadata), multicast or broadcast address.
+* A terminal set to be read sends nothing, so it gets no device key, and punches pushed in its name (ADMS or the punch
+  API, even with a key it had while it pushed) are refused and logged as `device.refused`.
 
 **Quiet terminals.** An active terminal that was working and is not heard from for 30 minutes (a terminal HC360 reads:
 two missed reads plus five minutes, if longer) is reported once to `hr.attendance.manage` holders of its facility, with
@@ -238,8 +241,8 @@ sourceReference)`** records a payroll deduction, for example canteen staff credi
 * `CredentialExpiryAlertJob`: after 08:00 IST. Each credential alerts once at 30 days, once at 7 days and once on
   expiry. The employee receives a personal notice and `hr.credentials.manage` holders receive one summary per
   facility.
-* `BiometricPullJob`: every minute, reads the terminals HC360 reads whose interval has passed (each under its own lock)
-  and reports terminals that have gone quiet.
+* `BiometricPullJob`: every minute, reads the terminals HC360 reads whose interval has passed (four at a time, each
+  under its own lock) and reports terminals that have gone quiet.
 
 ## Notifications
 In-app only (`NotifyUsersAsync` / `NotifyPermissionHoldersAsync`): leave and regularisation requests (to the manager,

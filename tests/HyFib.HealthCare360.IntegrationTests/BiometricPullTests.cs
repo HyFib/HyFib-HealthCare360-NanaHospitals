@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Integrations.Features.Admin;
 using HyFib.HealthCare360.Modules.HR.Domain;
@@ -33,9 +34,11 @@ public sealed class BiometricPullTests(HospitalServer server)
         var hr = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await hr.GetAsync<AttendanceTerminalReading>("/api/v1/hr/biometric-devices/reading")).ShouldBe(new AttendanceTerminalReading("simulator", null));
 
-        // A terminal HC360 reads sends nothing, so it gets no device key.
-        var registered = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(Serial(), BiometricConnection.Pull, "10.20.30.40"));
+        // A terminal HC360 reads sends nothing, so it gets no device key, and a push in its name is refused.
+        var serial = Serial();
+        var registered = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Pull, "10.20.30.40"));
         registered.ApiKey.ShouldBeNull();
+        (await server.Anonymous().Http.GetAsync($"/iclock/cdata?SN={serial}&options=all", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
 
         var pins = new[] { Pin(), Pin() };
         foreach (var pin in pins)
@@ -116,12 +119,46 @@ public sealed class BiometricPullTests(HospitalServer server)
         }
 
         // A terminal that pushes is not read; a cashier cannot read terminals.
-        var pushing = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(Serial(), BiometricConnection.Push, null));
+        var serial = Serial();
+        var pushing = await hr.PostAsync<DeviceKeyIssued>("/api/v1/hr/biometric-devices", Terminal(serial, BiometricConnection.Push, null));
         pushing.ApiKey.ShouldNotBeNullOrEmpty();
         (await ReadAsync(hr, pushing.DeviceId)).Error.ShouldBe("This terminal sends its punches; HC360 does not read it.");
         var cashier = await server.SignInAsync(HospitalServer.Users.Billing);
         using var forbidden = await cashier.SendRawAsync(HttpMethod.Post, $"/api/v1/hr/biometric-devices/{pushing.DeviceId}/read");
         forbidden.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        // Once it is set to be read, punches pushed in its name are refused, even with the key it had while it pushed.
+        var anonymous = server.Anonymous().Http;
+        using (var accepted = await PushAsync(anonymous, serial, pushing.ApiKey!))
+        {
+            accepted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+
+        await hr.PutAsync($"/api/v1/hr/biometric-devices/{pushing.DeviceId}", Terminal(serial, BiometricConnection.Pull, "192.168.10.202"));
+        using (var refused = await PushAsync(anonymous, serial, pushing.ApiKey!))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        (await anonymous.GetAsync($"/iclock/cdata?SN={serial}&options=all", Ct)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        await using var scope = server.Services.CreateAsyncScope();
+        var refusals = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<IntegrationLog>().AsNoTracking()
+            .Where(l => l.Integration == "biometric" && l.Reference == serial && l.Operation == "device.refused")
+            .Select(l => l.Error)
+            .ToListAsync(Ct);
+        refusals.Count.ShouldBe(2);
+        refusals.ShouldAllBe(e => e == "The terminal is set to be read by HC360, so it may not push.");
+    }
+
+    private static Task<HttpResponseMessage> PushAsync(HttpClient http, string serial, string key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/hr/attendance/device-punches")
+        {
+            Content = JsonContent.Create(new DevicePunchBatch([new DevicePunchInput(Pin(), DateTimeOffset.UtcNow.AddMinutes(-1), null, null)])),
+        };
+        request.Headers.Add("X-Device-Serial", serial);
+        request.Headers.Add("X-Device-Key", key);
+        return http.SendAsync(request, Ct);
     }
 
     [Fact]
