@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.Billing.Persistence;
 
@@ -38,7 +39,7 @@ internal sealed class PatientPolicyConfiguration : IEntityTypeConfiguration<Pati
     public void Configure(EntityTypeBuilder<PatientPolicy> b)
     {
         b.ToTable("patient_policies", BillingSchema.Name);
-        b.Property(x => x.PolicyNumberCipher).HasMaxLength(256);
+        b.Property(x => x.PolicyNumberCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.PolicyNumberIndex).HasMaxLength(64);
         b.Property(x => x.PolicyNumberMasked).HasMaxLength(40);
         b.Property(x => x.MemberId).HasMaxLength(64);

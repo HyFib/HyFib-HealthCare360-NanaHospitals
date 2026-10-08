@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.Patients.Persistence;
 
@@ -29,7 +30,7 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
         b.Property(x => x.Religion).HasMaxLength(64);
         b.Property(x => x.Nationality).HasMaxLength(64);
         b.Property(x => x.PreferredLanguage).HasMaxLength(32);
-        b.Property(x => x.AbhaNumberCipher).HasMaxLength(256);
+        b.Property(x => x.AbhaNumberCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.AbhaNumberIndex).HasMaxLength(64);
         b.Property(x => x.AbhaNumberMasked).HasMaxLength(20);
         b.Property(x => x.AbhaAddress).HasMaxLength(128);

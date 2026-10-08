@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.HR.Domain;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.HR.Persistence;
 
@@ -39,12 +40,12 @@ internal sealed class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         b.Property(x => x.SeparationNote).HasMaxLength(500);
         b.Property(x => x.BiometricPin).HasMaxLength(ZkTecoAttLogParser.MaxPinLength);
         b.Property(x => x.BankName).HasMaxLength(100);
-        b.Property(x => x.BankAccountCipher).HasMaxLength(256);
+        b.Property(x => x.BankAccountCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.BankAccountIndex).HasMaxLength(64);
         b.Property(x => x.BankAccountMasked).HasMaxLength(24);
-        b.Property(x => x.BankIfscCipher).HasMaxLength(256);
+        b.Property(x => x.BankIfscCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.BankIfscMasked).HasMaxLength(16);
-        b.Property(x => x.PanCipher).HasMaxLength(256);
+        b.Property(x => x.PanCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.PanIndex).HasMaxLength(64);
         b.Property(x => x.PanMasked).HasMaxLength(16);
         b.Property(x => x.Uan).HasMaxLength(12);

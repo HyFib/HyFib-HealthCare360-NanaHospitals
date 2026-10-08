@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Security;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Persistence;
 
@@ -14,7 +15,7 @@ internal sealed class AdmissionConfiguration : IEntityTypeConfiguration<Admissio
         b.Property(x => x.AdmissionNumber).HasMaxLength(24);
         b.Property(x => x.ProvisionalDiagnosis).HasMaxLength(500);
         b.Property(x => x.ReferredBy).HasMaxLength(200);
-        b.Property(x => x.PolicyNumberCipher).HasMaxLength(256);
+        b.Property(x => x.PolicyNumberCipher).HasMaxLength(256).IsProtectedValue();
         b.Property(x => x.PolicyNumberMasked).HasMaxLength(64);
         b.Property(x => x.MlcNumber).HasMaxLength(64);
         b.Property(x => x.AttendantName).HasMaxLength(200);

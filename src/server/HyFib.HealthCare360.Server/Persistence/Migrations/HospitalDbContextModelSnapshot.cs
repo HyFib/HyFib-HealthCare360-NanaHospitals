@@ -4085,7 +4085,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("policy_number_cipher");
+                        .HasColumnName("policy_number_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("PolicyNumberIndex")
                         .IsRequired()
@@ -15652,7 +15653,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("BankAccountCipher")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("bank_account_cipher");
+                        .HasColumnName("bank_account_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("BankAccountIndex")
                         .HasMaxLength(64)
@@ -15667,7 +15669,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("BankIfscCipher")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("bank_ifsc_cipher");
+                        .HasColumnName("bank_ifsc_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("BankIfscMasked")
                         .HasMaxLength(16)
@@ -15808,7 +15811,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("PanCipher")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("pan_cipher");
+                        .HasColumnName("pan_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("PanIndex")
                         .HasMaxLength(64)
@@ -17606,7 +17610,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("PolicyNumberCipher")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("policy_number_cipher");
+                        .HasColumnName("policy_number_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("PolicyNumberMasked")
                         .HasMaxLength(64)
@@ -19391,7 +19396,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("AbhaNumberCipher")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)")
-                        .HasColumnName("abha_number_cipher");
+                        .HasColumnName("abha_number_cipher")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<string>("AbhaNumberIndex")
                         .HasMaxLength(64)
@@ -34069,6 +34075,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<string>("EncryptionKeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("encryption_key_id");
+
                     b.Property<Guid?>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -34696,7 +34707,8 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<string>("MfaSecret")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)")
-                        .HasColumnName("mfa_secret");
+                        .HasColumnName("mfa_secret")
+                        .HasAnnotation("HC360:ProtectedValue", true);
 
                     b.Property<bool>("MustChangePassword")
                         .HasColumnType("boolean")

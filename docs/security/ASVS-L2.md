@@ -29,14 +29,14 @@ reviewed again once a year, and before each major release.
 | [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
 | [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
 | [V10 OAuth and OIDC](#v10-oauth-and-oidc) | 1 | 0 | 0 | 28 |
-| [V11 Cryptography](#v11-cryptography) | 7 | 4 | 2 | 1 |
+| [V11 Cryptography](#v11-cryptography) | 8 | 5 | 0 | 1 |
 | [V12 Secure Communication](#v12-secure-communication) | 2 | 6 | 0 | 1 |
 | [V13 Configuration](#v13-configuration) | 6 | 5 | 2 | 0 |
 | [V14 Data Protection](#v14-data-protection) | 3 | 5 | 1 | 0 |
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **115** | **71** | **13** | **54** |
+| **Total** | **116** | **72** | **11** | **54** |
 
 ## Fixed while making this checklist
 
@@ -102,11 +102,10 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 - **Database credentials** (V13.2.1, V13.3.1): have the server sign in to PostgreSQL with SSPI or a certificate
   instead of a password. The password in `hc360.settings.json` is already DPAPI-protected and can be changed from
   System health (SRS SEC-07), and BitLocker is checked daily.
-- **Key management** (V11.1.1, V11.1.2, V11.2.2, V13.3.2):
-  - a field master key ring, with a rotation command and job;
-  - a backup recovery key separate from the master key;
-  - a token signing-key set with key IDs and an overlap period;
-  - a written key-management policy and cryptographic inventory.
+- **Key management** (V11.1.1, V11.2.2, V13.3.2): the data encryption key and the token signing key rotate from System
+  health, with a written key policy and inventory (SECURITY.md). Still to do:
+  - a backup recovery key separate from the master key, so it can change and is not shown to every SuperAdmin;
+  - a way to retire an old data key once no data or backup needs it.
 - **Sign-in strength** (V6.3.3, V6.3.4, V6.1.3):
   - require two-step verification beyond the two administrator roles (at least finance, and anyone holding
     administrative permissions);
@@ -384,10 +383,10 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 | ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
 |---|---|---|---|---|---|
-| V11.1.1 | L2 | Key management policy and lifecycle documented | Gap | No key-management policy or lifecycle (cryptoperiods, rotation, revocation, destruction). The recovery key opens every backup, and any SuperAdmin can display it again. | [SECURITY.md](../../docs/security/SECURITY.md), [Backup.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs) |
-| V11.1.2 | L2 | Cryptographic inventory kept | Partial | The main algorithms are named, but no inventory lists every key and certificate with its location, owner, permitted uses and the data it protects. | [SECURITY.md](../../docs/security/SECURITY.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V11.1.1 | L2 | Key management policy and lifecycle documented | Partial | SECURITY.md sets cryptoperiods and when to rotate each key, and System health says when one is due. Old data keys are kept for good (no destruction step), and the recovery key, which opens every backup, never changes and any SuperAdmin can display it. | [SECURITY.md](../../docs/security/SECURITY.md), [KeyRotation.cs](../../src/server/HyFib.HealthCare360.Platform/Security/KeyRotation.cs) |
+| V11.1.2 | L2 | Cryptographic inventory kept | Met | SECURITY.md lists every key, certificate and secret: where it is, what protects it, what it protects, and how it is rotated. | [SECURITY.md](../../docs/security/SECURITY.md) |
 | V11.2.1 | L2 | Industry-validated crypto implementations | Met | Uses .NET CNG/SChannel primitives, the ASP.NET Core Identity hasher, Data Protection, Microsoft.IdentityModel and Otp.NET. No home-grown primitives. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
-| V11.2.2 | L2 | Crypto agility (algorithms replaceable) | Gap | Only a format version byte and password rehash exist. The single field master key and the backup, file and blind-index keys derived from it cannot be rotated. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs) |
+| V11.2.2 | L2 | Crypto agility (algorithms replaceable) | Partial | The data encryption key is a ring: values and documents name their key, a rotation makes a new one current and a background job moves earlier data to it; the token signing key rotates with an overlap. The blind-index and backup keys still come from the original key: an Aadhaar index cannot be computed again, and the recovery key must not change. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [FieldKeyMover.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldKeyMover.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
 | V11.2.3 | L2 | At least 128-bit security | Partial | AES-256, P-256, SHA-256+, HMAC and the RSA-3072 CA all reach 128 bits. The LAN server certificate key is RSA-2048 (about 112 bits). | [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs), [LanCertificateManager.cs](../../src/server/HyFib.HealthCare360.Platform/Networking/LanCertificateManager.cs) |
 | V11.3.1 | L1 | No ECB or weak padding | Met | No ECB and no RSA encryption. AES-256-GCM with random 96-bit nonces; Data Protection uses AES-CBC with HMAC. | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [BackupEncryption.cs](../../src/server/HyFib.HealthCare360.Platform/Jobs/BackupEncryption.cs) |
 | V11.3.2 | L1 | Approved ciphers and modes (such as AES-GCM) | Met | Application code uses only AES-256-GCM. Key wrapping uses the Data Protection/DPAPI defaults (AES-256 with HMAC). | [FieldProtection.cs](../../src/server/HyFib.HealthCare360.Platform/Security/FieldProtection.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |

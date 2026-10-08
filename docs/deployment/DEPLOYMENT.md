@@ -132,6 +132,23 @@ leaves, and at least once a year.
 It works on the Windows Server Node when the connection string is in the settings file. When the connection is set
 somewhere else, such as in environment variables, System health says so, and the password is changed there.
 
+### Rotating the encryption keys
+
+Two keys are rotated from Administration › System health › Encryption keys, with the same permission
+(`admin.system.manage`), while HC360 runs (SRS SEC-07). Each rotation is recorded in the audit log, and System health
+says when one is due: the sign-in token key every year, the data encryption key every two years. Rotate both, and
+change the database password, at once if the Server Node, its disks or a backup may have been exposed.
+
+- **Rotate data key.** New identifiers, secrets and documents are encrypted with a new key from then on. A background
+  job moves everything encrypted before to the new key, a little at a time; the section shows how much is left, and
+  screens keep working meanwhile. Documents move only while no backup is copying them. Earlier keys stay in
+  `keys\field-keys` beside `keys\field-master.key`, and every backup carries them all, so older backups restore as
+  before. The backup recovery key does not change: keep using the one you have.
+- **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
+  expire, within minutes, so nobody is signed out.
+
+The keys are on the Server Node: rotate them there, not on a second API server, which cannot share them yet.
+
 ## 4. First sign-in and security set-up
 
 On the server open `https://localhost:7360/`. The browser warns once, because the hospital CA is private. Then:
@@ -417,7 +434,7 @@ distribution tool).
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure also raises a System health warning
   and an SMS to `alerts.oncallPhone`.
-- Each backup holds the database, the stored documents and the field encryption key, all encrypted. Every backup is
+- Each backup holds the database, the stored documents and the field encryption keys, all encrypted. Every backup is
   read back and checked when it is made. The **Contents** and **Checked** columns show this.
 - **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
 

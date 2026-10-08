@@ -116,6 +116,11 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<FieldProtector>();
         services.AddSingleton<IFieldProtector>(sp => sp.GetRequiredService<FieldProtector>());
         services.AddSingleton<IFieldKeyEscrow>(sp => sp.GetRequiredService<FieldProtector>());
+        services.AddSingleton<IFieldKeyRing>(sp => sp.GetRequiredService<FieldProtector>());
+        services.AddScoped<IDocumentStoreLock, PostgresDocumentStoreLock>();
+        services.AddSingleton<FieldKeyMoveSignal>();
+        services.AddScoped<FieldKeyMover>();
+        services.AddScoped<KeyRotationService>();
         services.AddSingleton<IPermissionService, PermissionService>();
         services.AddSingleton<ISessionValidator, SessionValidator>();
         services.AddScoped<AuthService>();
@@ -161,8 +166,9 @@ public static class PlatformServiceCollectionExtensions
                 },
             };
         });
+        // The current key, and the previous one for a few minutes after a rotation (SRS SEC-07).
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-            .Configure<SigningKeyStore>((jwt, keys) => jwt.TokenValidationParameters.IssuerSigningKey = keys.Key);
+            .Configure<SigningKeyStore>((jwt, keys) => jwt.TokenValidationParameters.IssuerSigningKeyResolver = (_, _, _, _) => keys.ValidationKeys());
 
         // Deny by default: a request whose endpoint states no authorization of its own requires a signed-in user. Every
         // endpoint states it (checked by EndpointAuthorizationTests), so this only guards against one that forgets.
@@ -250,6 +256,7 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService<AuditSealer>();
             services.AddHostedService<IdempotencyCleanupService>();
             services.AddHostedService<WifiMonitor>();
+            services.AddHostedService<FieldKeyMoverService>();
 
             services.AddQuartz(quartz =>
             {

@@ -32,7 +32,7 @@ public sealed class BackupArchiveTests : IDisposable
         var documents = BackupArchive.ListDocuments(source.Files);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(key, documents), key, dump, source.Files, documents, CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(key, documents), key, [], dump, source.Files, documents, CancellationToken.None);
         payload.Position = 0;
 
         var target = Machine("target");
@@ -67,7 +67,7 @@ public sealed class BackupArchiveTests : IDisposable
         var documents = BackupArchive.ListDocuments(source.Files);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(key, documents) with { DocumentCount = 2 }, key, dump, source.Files, documents, CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(key, documents) with { DocumentCount = 2 }, key, [], dump, source.Files, documents, CancellationToken.None);
         payload.Position = 0;
 
         var ex = await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None));
@@ -82,7 +82,7 @@ public sealed class BackupArchiveTests : IDisposable
         var dump = WriteDump(source);
 
         var payload = new MemoryStream();
-        await BackupArchive.WriteAsync(payload, Manifest(RandomNumberGenerator.GetBytes(32), []), key, dump, source.Files, [], CancellationToken.None);
+        await BackupArchive.WriteAsync(payload, Manifest(RandomNumberGenerator.GetBytes(32), []), key, [], dump, source.Files, [], CancellationToken.None);
         payload.Position = 0;
 
         var ex = await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None));
@@ -314,7 +314,7 @@ public sealed class BackupArchiveTests : IDisposable
         await using (var output = File.Create(file))
         await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, WriteDump(machine), machine.Files, documents, CancellationToken.None);
+            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], WriteDump(machine), machine.Files, documents, CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);
         }
 

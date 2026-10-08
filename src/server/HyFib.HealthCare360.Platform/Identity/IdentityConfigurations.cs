@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -14,7 +15,7 @@ internal sealed class UserConfiguration : IEntityTypeConfiguration<User>
         b.Property(x => x.Email).HasMaxLength(256);
         b.Property(x => x.Phone).HasMaxLength(20);
         b.Property(x => x.PasswordHash).HasMaxLength(512);
-        b.Property(x => x.MfaSecret).HasMaxLength(512);
+        b.Property(x => x.MfaSecret).HasMaxLength(512).IsProtectedValue();
         b.Property(x => x.PinHash).HasMaxLength(512);
         b.HasIndex(x => x.NormalizedUserName).IsUnique();
         b.HasIndex(x => new { x.Type, x.Phone });

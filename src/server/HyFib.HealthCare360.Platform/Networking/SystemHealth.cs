@@ -76,9 +76,16 @@ public sealed class SystemHealthService(
     IOptions<PlatformOptions> options,
     IHostEnvironment environment,
     IPdfRenderer pdf,
+    SigningKeyStore signingKey,
+    IFieldKeyRing dataKeys,
     TimeProvider time)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
+
+    /// <summary>How long a key is used before System health suggests rotating it (the key policy, SECURITY.md).</summary>
+    public static readonly TimeSpan SigningKeyPeriod = TimeSpan.FromDays(365);
+
+    public static readonly TimeSpan DataKeyPeriod = TimeSpan.FromDays(2 * 365);
 
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
@@ -191,6 +198,16 @@ public sealed class SystemHealthService(
         if (power is { Available: true, OnBattery: true })
         {
             warnings.Add(new("power.battery", "critical", $"Running on UPS/battery power ({power.ChargePercent}% remaining)."));
+        }
+
+        if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
+        {
+            warnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));
+        }
+
+        if (dataKeys.Keys.Single(k => k.Current).CreatedAt is { } dataSince && now - dataSince > DataKeyPeriod)
+        {
+            warnings.Add(new("keys.data_due", "info", "The data encryption key is over two years old. Rotate it under Encryption keys."));
         }
 
         return new SystemHealthReport(server, network, database, storage, backup, outbox, certificate, power, warnings, now);
@@ -322,6 +339,13 @@ internal static class SystemEndpoints
         // The database password (SRS SEC-07): who may see whether it can be changed, and who may change it.
         admin.MapGet("/database-password", async (DatabasePasswordService passwords, CancellationToken ct) => TypedResults.Ok(await passwords.StatusAsync(ct)));
         admin.MapPost("/database-password/change", async (DatabasePasswordService passwords, CancellationToken ct) => (await passwords.ChangeAsync(ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage);
+
+        // The encryption keys (SRS SEC-07): who may see their age and what is left to move, and who may rotate them.
+        admin.MapGet("/keys", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.StatusAsync(ct)));
+        admin.MapPost("/keys/data/rotate", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.RotateDataKeyAsync(ct)))
+            .RequirePermission(PlatformPermissions.SystemManage);
+        admin.MapPost("/keys/signing/rotate", async (KeyRotationService keys, CancellationToken ct) => TypedResults.Ok(await keys.RotateSigningKeyAsync(ct)))
             .RequirePermission(PlatformPermissions.SystemManage);
 
         admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
