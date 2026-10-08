@@ -110,6 +110,13 @@ describe('EncryptionKeys', () => {
     );
   });
 
+  it('names only what is left to move', async () => {
+    readStatus.mockResolvedValue(status({ keys: 2, valuesToMove: 4 }));
+    renderSection();
+
+    expect(await screen.findByText('Moving to the new key: 4 value(s) left.')).toBeInTheDocument();
+  });
+
   it('shows the keys, but no buttons, to those who may not rotate them', async () => {
     permissions.manage = false;
     readStatus.mockResolvedValue(status({ lastRotation: { at: '2026-09-01T05:00:00Z', by: 'IT Admin' } }));

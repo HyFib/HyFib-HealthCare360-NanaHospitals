@@ -16,6 +16,16 @@ const useStyles = makeStyles({
 
 type Rotating = 'data' | 'signing' | null;
 
+/** What is still on an earlier key, in words: "1,240 value(s) and 56 document(s)". */
+function leftText(values: number, documents: number): string {
+  return [
+    values > 0 ? `${values.toLocaleString('en-IN')} value(s)` : null,
+    documents > 0 ? `${documents.toLocaleString('en-IN')} document(s)` : null,
+  ]
+    .filter(Boolean)
+    .join(' and ');
+}
+
 function rotationText(last: KeyRotationEvent | null, since: string | null): string {
   if (last) {
     return `Rotated ${formatDateTime(last.at)}${last.by ? ` by ${last.by}` : ''}`;
@@ -74,10 +84,7 @@ export function EncryptionKeys() {
           {dataKey.keys > 1 ? `${dataKey.keys} keys kept, so older data and backups stay readable.` : ''}
         </Caption1>
         {left > 0 && (
-          <Text>
-            Moving to the new key: {dataKey.valuesToMove.toLocaleString('en-IN')} value(s) and{' '}
-            {dataKey.documentsToMove.toLocaleString('en-IN')} document(s) left.
-          </Text>
+          <Text>Moving to the new key: {leftText(dataKey.valuesToMove, dataKey.documentsToMove)} left.</Text>
         )}
         {canManage && (
           <Button icon={<KeyResetRegular />} onClick={() => setRotating('data')} disabled={rotate.isPending}>
