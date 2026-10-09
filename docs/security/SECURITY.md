@@ -382,8 +382,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
   the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
   on main, and every Monday so that new queries reach code nobody is changing.
-  - A finding of high or critical severity fails the pull request. Each run checks whether GitHub Code Security is on
-    for the repository, and acts on the answer:
+  - A finding of high or critical severity fails the pull request. On a pull request, CodeQL reports only findings in
+    the lines it changes, as code scanning does; the runs on main and every Monday report everything. Each run checks
+    whether GitHub Code Security is on for the repository, and acts on the answer:
     - **On:** the results go to Security › Code scanning, and its check fails a pull request that adds such an alert.
     - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
       (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and

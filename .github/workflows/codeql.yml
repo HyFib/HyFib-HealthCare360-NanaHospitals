@@ -7,7 +7,8 @@ name: CodeQL
 # With GitHub Code Security on for the repository, the results go to Security › Code scanning, and its check on a pull
 # request fails for a new alert of high or critical severity. While Code Security is off, GitHub refuses the results,
 # so they are not uploaded: each job lists its findings in its summary and on the lines they are about, and fails for
-# one of high or critical severity (.github/codeql/check-results.ps1). Each run finds out which applies by itself.
+# one of high or critical severity (.github/codeql/check-results.ps1). Each run finds out which applies by itself. On
+# a pull request, CodeQL reports only findings in the lines it changes; the runs on main and every Monday report all.
 on:
   push:
     branches: [main]
