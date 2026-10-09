@@ -35029,6 +35029,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("kind");
 
+                    b.Property<string>("RecoveryKeyId")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("recovery_key_id");
+
                     b.Property<bool>("SecondaryCopied")
                         .HasColumnType("boolean")
                         .HasColumnName("secondary_copied");

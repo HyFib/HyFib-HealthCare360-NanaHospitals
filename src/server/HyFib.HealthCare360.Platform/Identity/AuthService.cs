@@ -862,6 +862,21 @@ public sealed class AuthService(
             s.LockedAt is not null)).ToList();
     }
 
+    /// <summary>
+    /// Checks the signed-in user's password again before a sensitive action elsewhere, such as making a new backup recovery
+    /// key, which is shown on screen.
+    /// </summary>
+    public async Task<Result> ConfirmPasswordAsync(ReauthenticateRequest request, CancellationToken ct)
+    {
+        var (user, _) = await CurrentUserAndSessionAsync(ct);
+        if (user is null)
+        {
+            return SessionEnded;
+        }
+
+        return PasswordMatches(user, request.Password) ? Result.Success() : Error.Field("password", "Password is incorrect.");
+    }
+
     /// <summary>Signs out one of the user's sessions, once the password is given again (ASVS V7.5.2).</summary>
     public async Task<Result> EndSessionAsync(Guid sessionId, ReauthenticateRequest request, CancellationToken ct)
     {

@@ -235,6 +235,8 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IIntegrationLogger, IntegrationLogger>();
         services.AddScoped<SystemHealthService>();
         services.AddScoped<BackupService>();
+        services.AddSingleton<RecoveryKeyStore>();
+        services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
 

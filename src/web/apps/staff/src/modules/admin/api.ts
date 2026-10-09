@@ -291,12 +291,46 @@ export interface BackupRunDto {
   sha256: string | null;
   secondaryCopied: boolean;
   error: string | null;
-  /** 1: the database only (older backups). 2: the database, the field encryption key and, for full backups, the documents. */
+  /**
+   * 1: the database only (older backups). 2: the database, the field encryption key and, for full backups, the documents.
+   * 3: the same, in a file that names its recovery key.
+   */
   formatVersion: number;
   /** Documents in the backup; null when it holds the database only (older backups, and those taken before an update). */
   documentCount: number | null;
   /** When the finished file was read back in full and checked; null for older backups. */
   verifiedAt: string | null;
+  /** The id of the recovery key that opens the backup; null for backups made before backups named it (the original key). */
+  recoveryKeyId: string | null;
+}
+
+/** Which recovery key new backups use. The key itself is shown once only, when it is made. */
+export interface RecoveryKeyStatus {
+  keyId: string;
+  /** Backups still use the original recovery key, which comes from the original data key. */
+  original: boolean;
+  /** Since when this server has used the key; null for the original key. */
+  since: string | null;
+  by: string | null;
+  /** For the original key: whether it was ever displayed, when administrators still could. If not, nobody holds it. */
+  originalShown: boolean;
+  /** The original key's id, which the backups made with it name. */
+  originalKeyId: string;
+}
+
+/** A new recovery key, shown this once. It replaces the current key only when it is typed back before `expiresAt`. */
+export interface NewRecoveryKey {
+  keyId: string;
+  /** 14 groups of 4 letters and digits. */
+  key: string;
+  expiresAt: string;
+}
+
+/** The recovery key a backup opens with, in words for the backup list. */
+export function backupKeyText(keyId: string | null, originalKeyId: string | undefined): string {
+  return keyId === null || keyId === originalKeyId
+    ? 'Opens with the original recovery key'
+    : `Opens with recovery key ${keyId}`;
 }
 
 /** What a backup holds, in plain words, for the backup list. */
@@ -358,6 +392,11 @@ export const adminQueries = {
       queryKey: ['admin', 'database-password'],
       queryFn: ({ signal }) => api.get<DatabasePasswordStatus>('/api/v1/admin/system/database-password', { signal }),
     }),
+  recoveryKey: () =>
+    queryOptions({
+      queryKey: ['admin', 'backups', 'recovery-key'],
+      queryFn: ({ signal }) => api.get<RecoveryKeyStatus>('/api/v1/admin/backups/recovery-key', { signal }),
+    }),
   encryptionKeys: () =>
     queryOptions({
       queryKey: ['admin', 'encryption-keys'],
@@ -416,6 +455,24 @@ export function formatBytes(bytes: number | null | undefined): string {
  */
 export function changeDatabasePassword() {
   return api.post<DatabasePasswordChanged>('/api/v1/admin/system/database-password/change');
+}
+
+/**
+ * Makes a new backup recovery key and returns it, this once, after the password is given again (400 with a `password`
+ * field error when it is wrong). Needs `admin.system.manage`.
+ */
+export function createRecoveryKey(password: string) {
+  return api.post<NewRecoveryKey>('/api/v1/admin/backups/recovery-key', { password });
+}
+
+/**
+ * Makes the new recovery key current once it is typed back from the administrator's copy: 400 with a `key` field error
+ * when it does not match, 422 `backup.recovery_key_not_waiting` once it has expired (30 minutes) or was replaced.
+ */
+export function confirmRecoveryKey(keyId: string, key: string) {
+  return api.post<RecoveryKeyStatus>(`/api/v1/admin/backups/recovery-key/${encodeURIComponent(keyId)}/confirm`, {
+    key,
+  });
 }
 
 /** Makes a new data encryption key current; data encrypted before moves to it in the background. Needs `admin.system.manage`. */

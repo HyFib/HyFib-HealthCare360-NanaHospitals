@@ -18,6 +18,7 @@ regexes = [
   '''auth-token-123''',                   # tests/HyFib.HealthCare360.Integrations.Tests/Sms/TwilioSmsProviderTests.cs
   '''pay_A1B2C3D4E5''',                   # src/web/apps/staff/src/modules/billing/GatewayExceptions.test.tsx (a fake gateway payment id)
   '''rfnd_K1L2M3N4O5''',                  # src/web/apps/staff/src/modules/billing/GatewayExceptions.test.tsx (a fake gateway refund id)
+  '''^AB12-CD34-EF56-GH78-JK9M-NP0Q-RS1T-VW2X-YZ3A-B4CD-E5FG-H6JK-M7NP-Q8RS$''', # src/web/apps/staff/src/modules/admin/RecoveryKeyDialog.test.tsx (a made-up backup recovery key)
   '''bm90LWZyb20tdGhpcy1tYWNoaW5l''',      # tests/HyFib.HealthCare360.Platform.Tests/ProtectedSettingsTests.cs (base64 of "not-from-this-machine", a fake DPAPI value)
   '''^AQAAANCMnd8BFdERjHoAwE/Cl\+s[BCD]AAAA$''', # tests/deploy/Test-InstallerSettings.ps1 (fake DPAPI values: only the header a real blob starts with, hence anchored)
 ]

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -49,7 +50,8 @@ public sealed class BackupRun
 
     /// <summary>
     /// 1: the database only (backups made before archive backups existed). 2: an archive with the database, the field
-    /// encryption key and, for full backups, the stored documents (<see cref="BackupArchive"/>).
+    /// encryption key and, for full backups, the stored documents (<see cref="BackupArchive"/>). 3: the same, in a file
+    /// that names its recovery key.
     /// </summary>
     public int FormatVersion { get; set; } = BackupEncryption.LegacyVersion;
 
@@ -58,6 +60,12 @@ public sealed class BackupRun
 
     /// <summary>When the finished file was read back in full, checked against its manifest and its dump listed by pg_restore.</summary>
     public DateTimeOffset? VerifiedAt { get; set; }
+
+    /// <summary>
+    /// The id of the recovery key that opens the backup (<see cref="BackupRecoveryKey.Id"/>). Null for backups made before
+    /// backups named their key, which all open with the original recovery key.
+    /// </summary>
+    public string? RecoveryKeyId { get; set; }
 }
 
 internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRun>
@@ -69,12 +77,14 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
         b.Property(x => x.FileName).HasMaxLength(260);
         b.Property(x => x.Sha256).HasMaxLength(64);
         b.Property(x => x.Error).HasMaxLength(2000);
+        b.Property(x => x.RecoveryKeyId).HasMaxLength(16);
         b.HasIndex(x => x.StartedAt);
     }
 }
 
 public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, BackupKind Kind, BackupStatus Status, string? FileName,
-    long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt);
+    long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
+    string? RecoveryKeyId);
 
 /// <summary>A finished, verified backup file.</summary>
 internal sealed record BackupResult(
@@ -87,20 +97,22 @@ internal sealed record BackupResult(
     int? DocumentCount,
     DateTimeOffset VerifiedAt,
     bool SecondaryCopied,
-    string? Warning);
+    string? Warning,
+    string RecoveryKeyId);
 
 /// <summary>
 /// Encrypted backups (DED-16). Each one is a single <see cref="BackupArchive"/> with the pg_dump of the database, an escrow
-/// copy of the field encryption key and the stored documents, encrypted with the backup key, which is also the recovery
-/// key administrators keep offline. The file is written under a temporary name, then read back in full and its database
-/// dump listed by pg_restore; only a backup that passes becomes the finished file, is copied to the secondary location
-/// (USB/NAS) and counts for retention. Restore with Restore-HC360.ps1, which runs the Server CLI's <c>backup restore</c>.
+/// copy of the field encryption key and the stored documents, encrypted with the current recovery key, which
+/// administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The file is written under a temporary
+/// name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes the finished
+/// file, is copied to the secondary location (USB/NAS) and counts for retention. Restore with Restore-HC360.ps1, which runs
+/// the Server CLI's <c>backup restore</c>.
 /// </summary>
 internal sealed class BackupService(
     IDbContextFactory<HospitalDbContext> contextFactory,
     IOptions<PlatformOptions> options,
     DataDirectories directories,
-    IFieldProtector protector,
+    RecoveryKeyStore recoveryKeys,
     IFieldKeyEscrow keys,
     IDocumentStoreLock documentsLock,
     IPostgresTools postgres,
@@ -161,7 +173,8 @@ internal sealed class BackupService(
     }
 
     internal static BackupRunDto ToDto(BackupRun r) =>
-        new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt);
+        new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
+            r.RecoveryKeyId);
 
     internal async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
     {
@@ -172,7 +185,8 @@ internal sealed class BackupService(
         var target = Path.Combine(directories.Backups, fileName);
         var partial = target + PartialExtension;
         var dump = Path.Combine(directories.Temp, $"{Guid.NewGuid():N}.dump");
-        var backupKey = protector.DeriveKey("backup");
+        var recoveryKey = recoveryKeys.Current();
+        var backupKey = recoveryKey.Key;
         IAsyncDisposable? documentsHeld = null;
         try
         {
@@ -245,7 +259,7 @@ internal sealed class BackupService(
 
             CleanupOld(directories.Backups);
             return new BackupResult(kind, startedAt, time.GetUtcNow(), fileName, new FileInfo(target).Length, sha256,
-                includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning);
+                includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId);
         }
         finally
         {
@@ -254,6 +268,7 @@ internal sealed class BackupService(
                 await documentsHeld.DisposeAsync();
             }
 
+            CryptographicOperations.ZeroMemory(backupKey);
             File.Delete(dump);
             File.Delete(partial);
         }
@@ -347,9 +362,10 @@ internal sealed class BackupService(
         run.Sha256 = result.Sha256;
         run.SecondaryCopied = result.SecondaryCopied;
         run.Error = result.Warning is null ? null : Truncate(result.Warning);
-        run.FormatVersion = BackupEncryption.ArchiveVersion;
+        run.FormatVersion = BackupEncryption.KeyedVersion;
         run.DocumentCount = result.DocumentCount;
         run.VerifiedAt = result.VerifiedAt;
+        run.RecoveryKeyId = result.RecoveryKeyId;
     }
 
     private static AuditEvent AuditEventFor(BackupRun run) => new()
@@ -423,15 +439,17 @@ internal static class BackupEndpoints
             return TypedResults.Accepted("/api/v1/admin/backups");
         });
 
-        // The recovery key opens every backup, and each backup carries the field encryption key and the documents, so with
-        // it one backup file restores everything on replacement hardware. Export it once and store it offline (safe/locker).
-        group.MapGet("/recovery-key", async (IFieldProtector protector, IAuditLogger audit, CancellationToken ct) =>
-        {
-            await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "backup.recovery_key_exported", "Backup recovery key displayed")
-            {
-                Severity = AuditSeverity.Critical,
-            }, ct);
-            return TypedResults.Ok(new { key = Convert.ToBase64String(protector.DeriveKey("backup")) });
-        });
+        // The recovery key opens the backups, and each backup carries the field encryption keys and the documents, so with
+        // it one backup file restores everything on replacement hardware. Whoever runs backups sees which key new ones use;
+        // a new key is shown once, to the holder of admin.system.manage who makes it after giving their password again,
+        // and replaces the current one once they type it back from their copy (ASVS V11.1.1, V13.3.2).
+        group.MapGet("/recovery-key", async (RecoveryKeyService keys, CancellationToken ct) => TypedResults.Ok(await keys.StatusAsync(ct)));
+        group.MapPost("/recovery-key", async (ReauthenticateRequest request, RecoveryKeyService keys, CancellationToken ct) =>
+                (await keys.CreateAsync(request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage)
+            .RequireRateLimiting(AuthEndpoints.AuthRateLimit);
+        group.MapPost("/recovery-key/{keyId}/confirm", async (string keyId, ConfirmRecoveryKeyRequest request, RecoveryKeyService keys, CancellationToken ct) =>
+                (await keys.ConfirmAsync(keyId, request, ct)).ToOk())
+            .RequirePermission(PlatformPermissions.SystemManage);
     }
 }

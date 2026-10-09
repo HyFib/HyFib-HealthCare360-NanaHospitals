@@ -14,8 +14,8 @@ namespace HyFib.HealthCare360.Platform.Security;
 /// The master keys form a ring (SRS SEC-07): the original key, and one more for each rotation from System health. New
 /// values are encrypted with the current key and name it; every key is kept, so anything encrypted before stays
 /// readable until <see cref="FieldKeyMover"/> moves it to the current key. Blind indexes and the keys from
-/// <see cref="DeriveKey"/> (backups) stay on the original key: an Aadhaar index cannot be computed again, and the
-/// recovery key administrators keep must not change.
+/// <see cref="DeriveKey"/> stay on the original key: an Aadhaar index cannot be computed again, and older backups open
+/// with the original recovery key, which comes from it (<see cref="Jobs.BackupRecoveryKey.Original"/>).
 /// </para>
 /// </summary>
 public interface IFieldProtector
@@ -41,8 +41,8 @@ public interface IFieldProtector
     byte[] UnprotectBytes(ReadOnlySpan<byte> protectedData, string purpose);
 
     /// <summary>
-    /// A 256-bit key dedicated to <paramref name="purpose"/> (for streaming encryption such as backups), from the original
-    /// master key, so it does not change when the key is rotated.
+    /// A 256-bit key dedicated to <paramref name="purpose"/>, from the original master key, so it does not change when the
+    /// key is rotated.
     /// </summary>
     byte[] DeriveKey(string purpose);
 }
