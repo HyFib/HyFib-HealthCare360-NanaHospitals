@@ -209,7 +209,7 @@ try {
         Set-Acl -LiteralPath $path -AclObject $acl
         $sddl = (Get-Acl -LiteralPath $path).Sddl
         $changed = Invoke-ConfigurationStep $path @{ FacilityCode = 'NHY' }
-        Assert ($changed.Count -eq 2 -and (Read-Table $path)['HealthCare360:DefaultFacilityCode'] -ceq 'NHY') "the file is written ($($changed -join ', '))"
+        Assert ($changed.Count -eq 3 -and (Read-Table $path)['HealthCare360:DefaultFacilityCode'] -ceq 'NHY') "the file is written ($($changed -join ', '))"
         Assert ((Get-Acl -LiteralPath $path).Sddl -ceq $sddl) 'and keeps its ACL'
     }
 }
