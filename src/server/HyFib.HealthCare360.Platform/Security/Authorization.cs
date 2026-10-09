@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -145,9 +146,15 @@ public interface ISessionValidator
     void Invalidate(Guid sessionId);
 }
 
-internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory scopeFactory, TimeProvider time) : ISessionValidator
+internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory scopeFactory, TimeProvider time, IConfiguration configuration)
+    : ISessionValidator
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(30);
+
+    // On one server, every change to a session clears what is cached about it (Invalidate), so an active session can be
+    // kept for a while. With several API servers behind the Redis backplane (SCAL-02), a session locked or ended on one
+    // would still be cached as active on the others: there, only an ended session, which never comes back, is kept.
+    private readonly bool _severalServers = !string.IsNullOrEmpty(configuration.GetConnectionString("Redis"));
 
     public async ValueTask<SessionState> GetStateAsync(Guid sessionId, CancellationToken cancellationToken = default)
     {
@@ -166,9 +173,9 @@ internal sealed class SessionValidator(IMemoryCache cache, IServiceScopeFactory 
             .FirstOrDefaultAsync(cancellationToken);
         var state = session is null ? SessionState.Ended : session.LockedAt is null ? SessionState.Active : SessionState.Locked;
 
-        // A locked session is read every time, so unlocking it on another server takes effect at once. It makes few
+        // A locked session is read every time, so unlocking it takes effect at once on every server. It makes few
         // requests: the locked app does not fetch.
-        if (state != SessionState.Locked)
+        if (state == SessionState.Ended || (state == SessionState.Active && !_severalServers))
         {
             cache.Set(key, state, CacheDuration);
         }

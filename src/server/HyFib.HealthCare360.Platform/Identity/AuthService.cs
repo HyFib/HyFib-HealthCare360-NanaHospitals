@@ -1179,6 +1179,10 @@ public sealed class AuthService(
     /// A staff account may have <see cref="MaxSessionsSetting"/> sessions at once (ASVS V7.1.2): signing in once more
     /// signs out the one used least recently. Returns the sessions it ended, to invalidate once saved.
     /// </summary>
+    /// <remarks>
+    /// Two sign-ins of one account at once cannot both find room under the limit: each also updates the account's row
+    /// (its last sign-in), whose version (xmin) lets only the first commit. The other fails, its new session with it.
+    /// </remarks>
     private async Task<List<UserSession>> EnforceSessionLimitAsync(User user, UserSession session, DateTimeOffset now, CancellationToken ct)
     {
         if (user.Type != UserType.Staff || await IntSettingAsync(MaxSessionsSetting, session.FacilityId, DefaultMaxSessions, ct) is not (> 0 and var max))
