@@ -182,27 +182,37 @@ public sealed class AuthService(
             // The same work and the same answer as a wrong password: neither says whether the account exists. The
             // password is not checked against the lock, so the lock cannot be used to test guesses.
             hashing.Verify(_dummyHash ??= hashing.Hash("hc360-timing-equaliser"), request.Password ?? string.Empty);
-            await audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
-            {
-                UserId = user.Id,
-                UserName = user.UserName,
-                Severity = AuditSeverity.Warning,
-            }, ct);
+            await AuditLockedAsync(user, ct);
             return InvalidCredentials;
         }
 
         var check = hashing.Verify(user.PasswordHash, request.Password ?? string.Empty);
-        if (!check.Succeeded)
+
+        // Attempts sent at once all read the account before any of them was counted. Read it again under its row lock, one
+        // attempt at a time, so that each wrong password counts and none gets in once the others have locked the account
+        // (ASVS V6.3.1). The lock is held only while this is decided.
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            var locked = SignInPolicy.RecordFailure(Security, user, now);
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login_failed", "Wrong password")
+            await LockAndReloadAsync(user, ct);
+            if (user.LockoutEndsAt > now)
             {
-                UserId = user.Id,
-                UserName = user.UserName,
-                Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
-            });
-            await db.SaveChangesAsync(ct);
-            return InvalidCredentials;
+                await AuditLockedAsync(user, ct);
+                return InvalidCredentials;
+            }
+
+            if (!check.Succeeded)
+            {
+                var locked = SignInPolicy.RecordFailure(Security, user, now);
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login_failed", "Wrong password")
+                {
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+                });
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return InvalidCredentials;
+            }
         }
 
         // A temporary password works only for a while (ASVS V6.4.1); an administrator gives out a new one.
@@ -288,19 +298,35 @@ public sealed class AuthService(
             return ChallengeExpired;
         }
 
-        if (!VerifyTotp(user, request.Code, out var timeStep))
+        // As for passwords: codes sent at once are judged one at a time, against the account as read under its row lock,
+        // so that each wrong code counts and none gets in once the others have locked the account (ASVS V6.3.1). The code
+        // is checked after the account is read again, so that it is checked against the last code used.
+        long timeStep;
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
-            // Whoever is guessing codes already knows the password, so a wrong code counts against the account like a
-            // wrong password, whichever sign-in attempt it comes in (ASVS V6.3.1).
-            var locked = SignInPolicy.RecordFailure(Security, user, now);
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", locked ? "Wrong authenticator code; the account is locked" : "Wrong authenticator code")
+            await LockAndReloadAsync(user, ct);
+            if (user.LockoutEndsAt > now)
             {
-                UserId = user.Id,
-                UserName = user.UserName,
-                Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
-            });
-            await db.SaveChangesAsync(ct);
-            return Error.Field("code", "The code is incorrect or has expired.");
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return ChallengeExpired;
+            }
+
+            if (!VerifyTotp(user, request.Code, out timeStep))
+            {
+                // Whoever is guessing codes already knows the password, so a wrong code counts against the account like a
+                // wrong password, whichever sign-in attempt it comes in.
+                var locked = SignInPolicy.RecordFailure(Security, user, now);
+                audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", locked ? "Wrong authenticator code; the account is locked" : "Wrong authenticator code")
+                {
+                    UserId = user.Id,
+                    UserName = user.UserName,
+                    Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
+                });
+                await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+                return Error.Field("code", "The code is incorrect or has expired.");
+            }
         }
 
         user.MfaLastTimeStep = timeStep;
@@ -1303,6 +1329,25 @@ public sealed class AuthService(
             .Include(u => u.Facilities)
             .AsSplitQuery()
             .FirstOrDefaultAsync(predicate, ct);
+
+    /// <summary>
+    /// Locks the account's row until the caller's transaction ends, then reads the account again: it now shows every
+    /// failure counted, and every lock set, by attempts that got there first. The lock is the one an update takes, so
+    /// rows that refer to the account by foreign key, such as its roles, can still be written meanwhile.
+    /// </summary>
+    private async Task LockAndReloadAsync(User user, CancellationToken ct)
+    {
+        await db.Database.ExecuteSqlAsync($"SELECT 1 FROM identity.users WHERE id = {user.Id} FOR NO KEY UPDATE", ct);
+        await db.Entry(user).ReloadAsync(ct);
+    }
+
+    private Task AuditLockedAsync(User user, CancellationToken ct) =>
+        audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.login_locked", "Sign-in attempted while locked")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            Severity = AuditSeverity.Warning,
+        }, ct);
 
     private static List<string> RoleNames(User user) => user.Roles.Where(r => r.Role is not null).Select(r => r.Role!.Name).ToList();
 

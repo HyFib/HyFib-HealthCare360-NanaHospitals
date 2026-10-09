@@ -62,6 +62,53 @@ public sealed class SignInHardeningTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Wrong_passwords_sent_at_once_each_count()
+    {
+        const string name = "it-password-burst";
+        await server.CreateStaffAccountAsync(name, SystemRoles.Billing);
+
+        // Ten at once, as from ten machines: each reads the account before any of the others is counted.
+        var answers = await Task.WhenAll(Enumerable.Range(0, 10).Select(async _ =>
+        {
+            using var response = await LogInAsync(name, "not-the-password");
+            return response.StatusCode;
+        }));
+
+        // The fifth locks the account, and the rest are answered as for a locked account.
+        answers.ShouldAllBe(a => a == HttpStatusCode.Unauthorized);
+        var user = await UserAsync(name);
+        user.FailedLoginCount.ShouldBe(5);
+        user.LockoutEndsAt.ShouldNotBeNull().ShouldBeGreaterThan(DateTimeOffset.UtcNow);
+        (await AuditAsync(user.Id, "auth.login_failed")).Count.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Wrong_codes_sent_at_once_each_count()
+    {
+        const string name = "it-code-burst";
+        await server.CreateStaffAccountAsync(name, SystemRoles.Billing);
+        var (client, _) = await server.SignInNewSessionAsync(name);
+        var setup = await client.PostAsync<MfaSetupResponse>("/api/v1/auth/mfa/setup", new MfaSetupRequest(server.Password));
+        await client.PostAsync<AuthResult>("/api/v1/auth/mfa/enable", new MfaEnableRequest(CodeAt(setup.Secret, DateTime.UtcNow)));
+
+        // Ten sign-ins with the password, then a wrong code for each, all at once.
+        var challenges = new List<Guid>();
+        for (var i = 0; i < 10; i++)
+        {
+            challenges.Add(await StartSignInAsync(name));
+        }
+
+        var answers = await Task.WhenAll(challenges.Select(c => VerifyAsync(c, WrongCode(setup.Secret))));
+
+        // Five are told the code is wrong, the fifth locking the account; the rest find the account locked.
+        answers.Count(a => a == HttpStatusCode.BadRequest).ShouldBe(5);
+        answers.Count(a => a == HttpStatusCode.Unauthorized).ShouldBe(5);
+        var user = await UserAsync(name);
+        user.FailedLoginCount.ShouldBe(5);
+        user.LockoutEndsAt.ShouldNotBeNull().ShouldBeGreaterThan(DateTimeOffset.UtcNow);
+    }
+
+    [Fact]
     public async Task Failures_are_forgotten_after_a_day_without_another()
     {
         const string name = "it-forgotten";
@@ -166,14 +213,17 @@ public sealed class SignInHardeningTests(HospitalServer server)
             "IT audit reviewers", "Reads the audit trail", [PlatformPermissions.AuditRead], Version: null));
         await server.CreateStaffAccountAsync("it-auditor", "IT audit reviewers");
         await server.CreateStaffAccountAsync("it-accountant", SystemRoles.Accountant);
+        await server.CreateStaffAccountAsync("it-hr-manager", SystemRoles.HrManager);
         await server.CreateStaffAccountAsync("it-billing-desk", SystemRoles.Billing);
 
+        // With the server's own settings (appsettings.json), not only the defaults in code.
         var security = server.Services.GetRequiredService<IOptions<PlatformOptions>>().Value.Security;
         security.EnforceMfa = true;
         try
         {
             (await RestrictionAfterSignInAsync("it-auditor")).ShouldBe(AuthService.RestrictionMfaSetup);
             (await RestrictionAfterSignInAsync("it-accountant")).ShouldBe(AuthService.RestrictionMfaSetup);
+            (await RestrictionAfterSignInAsync("it-hr-manager")).ShouldBe(AuthService.RestrictionMfaSetup);
             (await RestrictionAfterSignInAsync("it-billing-desk")).ShouldBeNull();
         }
         finally

@@ -26,8 +26,10 @@ internal sealed class IdentitySeeder(
     TimeProvider time,
     ILogger<IdentitySeeder> logger) : ISeeder
 {
-    public const string AdminPasswordKey = "HealthCare360:Bootstrap:AdminPassword";
-    public const string RequirePasswordChangeKey = "HealthCare360:Bootstrap:RequirePasswordChange";
+    public const string AdminPasswordKey = BootstrapSection + ":AdminPassword";
+    public const string RequirePasswordChangeKey = BootstrapSection + ":RequirePasswordChange";
+
+    private const string BootstrapSection = "HealthCare360:Bootstrap";
 
     public int Order => 10;
 
@@ -55,9 +57,9 @@ internal sealed class IdentitySeeder(
         if (!environment.IsDevelopment()
             && (!string.IsNullOrWhiteSpace(configuration[AdminPasswordKey]) || !configuration.GetValue(RequirePasswordChangeKey, true)))
         {
-            logger.LogWarning("The bootstrap password settings ({Keys}) apply on development machines only, and are ignored here. Remove them.",
-                $"{AdminPasswordKey}, {RequirePasswordChangeKey}");
+            logger.LogWarning("The {Section} settings apply on development machines only, and are ignored here. Remove them.", BootstrapSection);
         }
+
         var roles = await db.Set<Role>().Include(r => r.Permissions).ToDictionaryAsync(r => r.Name, StringComparer.Ordinal, cancellationToken);
 
         foreach (var (name, description) in SystemRoles.All)

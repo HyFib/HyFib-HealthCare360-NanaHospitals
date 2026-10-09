@@ -70,7 +70,8 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     portal codes in 15 minutes, and an address may ask for 5.
   - An account locks for 15 minutes after 5 wrong passwords or authenticator codes in a row. Each further 5 double the
     lock, up to 24 hours. A wrong code counts like a wrong password, whichever sign-in attempt it comes in, because
-    whoever is guessing codes knows the password.
+    whoever is guessing codes knows the password. Attempts sent at once, from many machines, are judged one at a time
+    under a lock on the account, so each guess counts and none gets in once the account is locked.
   - Failures are forgotten after 24 hours without another, so the occasional mistyped password does not add up to ever
     longer locks.
   - A locked account gets the same answer, after the same work, as a wrong password, so a response never confirms that
@@ -78,8 +79,9 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     the account from Administration › Users.
   - Settings: `HealthCare360:Security:MaxFailedLogins`, `LockoutMinutes` and `FailedLoginResetHours`.
 - **Two-step verification (TOTP)** (ASVS V6.3.3):
-  - Required of the SuperAdmin, HospitalAdmin, Accountant and HrManager roles
-    (`HealthCare360:Security:MfaRequiredRoles`), who run the hospital, its accounts and its payroll.
+  - Required of the SuperAdmin, HospitalAdmin, Accountant and HrManager roles, who run the hospital, its accounts and
+    its payroll. Roles listed in `HealthCare360:Security:MfaRequiredRoles` are required as well; the setting adds to
+    these four and cannot remove them.
   - Required of anyone holding an administrative permission (all-access, or any `admin.` permission), whatever their
     roles are called (`MfaForAdministration`), so a custom role with administrative rights needs it too.
   - Until it is set up, such an account can do nothing else after signing in, and it cannot be turned off.
