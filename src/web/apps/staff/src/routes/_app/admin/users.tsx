@@ -42,7 +42,7 @@ import {
   SignOutRegular,
 } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatRelative, isApiError, normalizePhone, useDebouncedValue, useSession } from '@hc360/core';
+import { formatDateTime, formatRelative, isApiError, normalizePhone, useDebouncedValue, useSession } from '@hc360/core';
 import {
   applyServerErrors,
   ConfirmDialog,
@@ -122,7 +122,7 @@ function UsersPage() {
   const [roleId, setRoleId] = useState('');
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [pending, setPending] = useState<{ user: UserListItem; action: RowAction } | null>(null);
-  const [tempPassword, setTempPassword] = useState<{ name: string; password: string } | null>(null);
+  const [tempPassword, setTempPassword] = useState<TemporaryPassword | null>(null);
   const roles = useQuery(adminQueries.roles());
   const users = useQuery(
     adminQueries.users({
@@ -135,11 +135,15 @@ function UsersPage() {
 
   const act = useMutation({
     mutationFn: ({ user, action }: { user: UserListItem; action: RowAction }) =>
-      api.post<{ temporaryPassword?: string }>(`/api/v1/admin/users/${user.id}/${action}`),
+      api.post<{ temporaryPassword?: string; expiresAt?: string }>(`/api/v1/admin/users/${user.id}/${action}`),
     onSuccess: (result, { user, action }) => {
       setPending(null);
       if (action === 'reset-password' && result?.temporaryPassword) {
-        setTempPassword({ name: user.displayName, password: result.temporaryPassword });
+        setTempPassword({
+          name: user.displayName,
+          password: result.temporaryPassword,
+          expiresAt: result.expiresAt ?? null,
+        });
       } else if (action !== 'reset-password') {
         notify.success(ACTION_TEXT[action].done);
       }
@@ -356,9 +360,9 @@ function UsersPage() {
         <UserDrawer
           userId={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
-          onCreated={(name, password) => {
+          onCreated={(created) => {
             setEditing(null);
-            setTempPassword({ name, password });
+            setTempPassword(created);
           }}
         />
       )}
@@ -390,7 +394,11 @@ function UsersPage() {
               <MessageBar intent="warning">
                 <MessageBarBody>
                   This is shown only once. Give it to the user in person. They will be asked to change it when they sign
-                  in.
+                  in
+                  {tempPassword?.expiresAt
+                    ? `, and it stops working after ${formatDateTime(tempPassword.expiresAt)}`
+                    : ''}
+                  .
                 </MessageBarBody>
               </MessageBar>
             </DialogContent>
@@ -437,6 +445,13 @@ const userSchema = z.object({
 
 type UserForm = z.infer<typeof userSchema>;
 
+/** A temporary password just given out: shown once, with when it stops working. */
+interface TemporaryPassword {
+  name: string;
+  password: string;
+  expiresAt: string | null;
+}
+
 function UserDrawer({
   userId,
   onClose,
@@ -444,7 +459,7 @@ function UserDrawer({
 }: {
   userId: string | null;
   onClose: () => void;
-  onCreated: (name: string, password: string) => void;
+  onCreated: (created: TemporaryPassword) => void;
 }) {
   const styles = useStyles();
   const notify = useNotify();
@@ -501,7 +516,7 @@ function UserDrawerForm({
   roles: { id: string; name: string; description: string | null }[];
   isSelf: boolean;
   onClose: () => void;
-  onCreated: (name: string, password: string) => void;
+  onCreated: (created: TemporaryPassword) => void;
   onSaved: () => void;
   styles: ReturnType<typeof useStyles>;
 }) {
@@ -534,7 +549,7 @@ function UserDrawerForm({
       };
       return user
         ? api.put(`/api/v1/admin/users/${user.id}`, { ...common, isActive: values.isActive, version: user.version })
-        : api.post<{ userId: string; temporaryPassword: string }>('/api/v1/admin/users', {
+        : api.post<{ userId: string; temporaryPassword: string; expiresAt: string }>('/api/v1/admin/users', {
             ...common,
             userName: values.userName,
             temporaryPassword: values.temporaryPassword || null,
@@ -543,7 +558,8 @@ function UserDrawerForm({
     onSuccess: (result, values) => {
       if (!user && result && typeof result === 'object' && 'temporaryPassword' in result) {
         void queryClient.invalidateQueries({ queryKey: ['admin'] });
-        onCreated(values.displayName, (result as { temporaryPassword: string }).temporaryPassword);
+        const created = result as { temporaryPassword: string; expiresAt: string };
+        onCreated({ name: values.displayName, password: created.temporaryPassword, expiresAt: created.expiresAt });
       } else {
         onSaved();
       }

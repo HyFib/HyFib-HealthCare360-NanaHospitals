@@ -172,14 +172,16 @@ HC360 keeps the key protected on the Server Node, to encrypt new backups, and ne
 
 On the server open `https://localhost:7360/`. The browser warns once, because the hospital CA is private. Then:
 
-1. Sign in as `admin` and choose a new password. Set up two-step verification; administrators must use it.
+1. Sign in as `admin` and choose a new password. Set up two-step verification. Administrators, accountants, HR
+   managers and anyone with an administrative permission must use it.
 2. Check that `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt` is gone: HC360 deletes it once `admin`
    has a new password. If it is still there, delete it.
 3. **Administration › Backups › Recovery key › Make a new key** (see "A new backup recovery key" above): write down
    the key and its ID, type the key back from your copy, and store the copy in the hospital safe. Until then System
    health warns that nobody holds the key, and backups cannot be restored on new hardware.
 4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
-   refuses passwords on public breach lists or holding a facility's name, for temporary passwords too.
+   refuses passwords on public breach lists or holding a facility's name, for temporary passwords too. A temporary
+   password works for 72 hours; after that, reset the password to give out a new one.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS if the server WiFi drops or a backup fails).
 6. **Documents and the messages that carry them** (reports, prescriptions, bills):
@@ -435,7 +437,11 @@ rewritten.
 It also protects any secret still written in plain text in the configuration (an installation from before this was
 done), and checks BitLocker again.
 Staff whose password is on the breach list built into the new version are asked to choose a new one at their next
-sign-in, before anything else (SECURITY.md, "Identity and sessions"). Warn them if many may be affected.
+sign-in, before anything else (SECURITY.md, "Identity and sessions"). Warn them if many may be affected. In the same
+way, staff who must now use two-step verification and have not set it up are asked to at their next sign-in:
+accountants, HR managers, and anyone whose roles carry an administrative permission. Check that each has an
+authenticator app on their phone. Temporary passwords given out before HC360 made them expire work for 72 hours after
+the upgrade.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.

@@ -99,6 +99,9 @@ public static class WhatsAppOptOutPolicy
 
         // Alerts to staff numbers: they also go by SMS and in-app.
         "rpm.alert", "lab.critical", "system.alert",
+
+        // Sent to staff by e-mail and in the app, never on WhatsApp.
+        "auth.credentials_changed",
     };
 
     public static bool IsEssential(string templateKey) => EssentialTemplates.Contains(templateKey);

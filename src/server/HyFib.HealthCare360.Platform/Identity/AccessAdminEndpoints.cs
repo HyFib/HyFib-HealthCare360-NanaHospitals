@@ -1,6 +1,8 @@
 using FluentValidation;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Identity;
 
@@ -52,7 +55,8 @@ public sealed record UpdateUserRequest(
     bool IsActive,
     uint Version);
 
-public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword);
+/// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
+public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt);
 
 public sealed record RoleListItem(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount);
 
@@ -175,6 +179,8 @@ internal static class AccessAdminEndpoints
         IAuditLogger audit,
         ICurrentUser current,
         IPermissionService permissions,
+        IOptions<PlatformOptions> options,
+        TimeProvider time,
         CancellationToken ct)
     {
         var normalized = User.Normalize(request.UserName);
@@ -206,6 +212,7 @@ internal static class AccessAdminEndpoints
             Type = UserType.Staff,
             PasswordHash = hashing.Hash(password),
             MustChangePassword = true,
+            TemporaryPasswordExpiresAt = TemporaryPasswordExpiry(options, time),
             PractitionerId = request.PractitionerId,
             DefaultFacilityId = request.DefaultFacilityId,
         };
@@ -215,7 +222,7 @@ internal static class AccessAdminEndpoints
         db.Add(user);
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.created", $"Created user {user.UserName}") { EntityType = nameof(User), EntityId = user.Id.ToString() });
         await db.SaveChangesAsync(ct);
-        return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password));
+        return TypedResults.Created($"/api/v1/admin/users/{user.Id}", new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt!.Value));
     }
 
     private static async Task<IResult> UpdateUser(
@@ -289,6 +296,8 @@ internal static class AccessAdminEndpoints
         ISessionValidator sessions,
         ICurrentUser current,
         IPermissionService permissions,
+        INotificationService notifications,
+        IOptions<PlatformOptions> options,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -304,21 +313,26 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
+        var now = time.GetUtcNow();
         var password = GenerateTemporaryPassword();
         user.PasswordHash = hashing.Hash(password);
         user.MustChangePassword = true;
+        user.TemporaryPasswordExpiresAt = TemporaryPasswordExpiry(options, time);
         user.PasswordBreachedAt = null;
         user.FailedLoginCount = 0;
+        user.LastFailedLoginAt = null;
         user.LockoutEndsAt = null;
-        await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", time.GetUtcNow(), ct);
+        await RevokeAllSessionsAsync(db, sessions, user.Id, "password_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordReset, now);
         await db.SaveChangesAsync(ct);
-        return TypedResults.Ok(new TemporaryPasswordResponse(user.Id, password));
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordReset, ct);
+        return TypedResults.Ok(new TemporaryPasswordResponse(user.Id, password, user.TemporaryPasswordExpiresAt.Value));
     }
 
     private static async Task<IResult> UnlockUser(Guid id, HospitalDbContext db, IAuditLogger audit, ICurrentUser current, IPermissionService permissions, CancellationToken ct)
@@ -336,6 +350,7 @@ internal static class AccessAdminEndpoints
         }
 
         user.FailedLoginCount = 0;
+        user.LastFailedLoginAt = null;
         user.LockoutEndsAt = null;
         audit.Add(new AuditEntry(AuditCategories.Security, "user.unlocked", $"Unlocked {user.UserName}") { EntityType = nameof(User), EntityId = user.Id.ToString() });
         await db.SaveChangesAsync(ct);
@@ -349,6 +364,7 @@ internal static class AccessAdminEndpoints
         ISessionValidator sessions,
         ICurrentUser current,
         IPermissionService permissions,
+        INotificationService notifications,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -364,18 +380,21 @@ internal static class AccessAdminEndpoints
             return mayManage.Error!.ToProblem();
         }
 
+        var now = time.GetUtcNow();
         user.MfaEnabled = false;
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
         // A lost or stolen authenticator: whoever holds it keeps no session either.
-        await RevokeAllSessionsAsync(db, sessions, user.Id, "mfa_reset", time.GetUtcNow(), ct);
+        await RevokeAllSessionsAsync(db, sessions, user.Id, "mfa_reset", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.mfa_reset", $"Two-step verification reset for {user.UserName}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaReset, now);
         await db.SaveChangesAsync(ct);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaReset, ct);
         return TypedResults.NoContent();
     }
 
@@ -590,7 +609,7 @@ internal static class AccessAdminEndpoints
             return Result.Success();
         }
 
-        var missing = permissionsToGrant.Where(IsAdministrative).Where(p => !held.Contains(p)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        var missing = permissionsToGrant.Where(PlatformPermissions.IsAdministrative).Where(p => !held.Contains(p)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         return missing.Count == 0
             ? Result.Success()
             : Error.Forbidden("role.escalation", $"Only an administrator who holds these permissions can give them: {string.Join(", ", missing)}.");
@@ -614,17 +633,10 @@ internal static class AccessAdminEndpoints
                             join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
                             where ur.UserId == targetId
                             select rp.Permission).Distinct().ToListAsync(ct);
-        return target.Where(IsAdministrative).All(held.Contains)
+        return target.Where(PlatformPermissions.IsAdministrative).All(held.Contains)
             ? Result.Success()
             : Error.Forbidden("user.more_privileged", "This account has administrative permissions you do not hold, so only an administrator who holds them can change it.");
     }
-
-    /// <summary>
-    /// The permissions that control accounts, roles, credentials and the server itself: all-access and the Administration
-    /// ("admin.") permissions. Clinical and business permissions are handed out by user administrators every day.
-    /// </summary>
-    private static bool IsAdministrative(string permission) =>
-        permission == PermissionRegistry.Wildcard || permission.StartsWith("admin.", StringComparison.Ordinal);
 
     private static async Task<IReadOnlySet<string>> CallerPermissionsAsync(ICurrentUser current, IPermissionService permissions, CancellationToken ct) =>
         current.UserId is { } callerId ? await permissions.GetPermissionsAsync(callerId, ct) : new HashSet<string>(StringComparer.Ordinal);
@@ -644,6 +656,10 @@ internal static class AccessAdminEndpoints
         user.Id, user.UserName, user.DisplayName, user.Email, user.Phone, user.IsActive, user.MfaEnabled, user.MustChangePassword,
         user.LastLoginAt, user.LockoutEndsAt, user.PractitionerId, user.DefaultFacilityId,
         user.Roles.Select(r => r.RoleId).ToList(), user.Facilities.Select(f => f.FacilityId).ToList(), user.Version);
+
+    /// <summary>When a temporary password given out now stops working (ASVS V6.4.1).</summary>
+    private static DateTimeOffset TemporaryPasswordExpiry(IOptions<PlatformOptions> options, TimeProvider time) =>
+        time.GetUtcNow() + TimeSpan.FromHours(Math.Max(1, options.Value.Security.TemporaryPasswordHours));
 
     internal static string GenerateTemporaryPassword() =>
         $"{SecretTokens.NewReadableCode(4)}-{SecretTokens.NewReadableCode(4)}-{SecretTokens.NewReadableCode(4)}";

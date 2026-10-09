@@ -24,7 +24,7 @@ reviewed again once a year, and before each major release.
 | [V3 Web Frontend Security](#v3-web-frontend-security) | 14 | 4 | 1 | 0 |
 | [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
 | [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
-| [V6 Authentication](#v6-authentication) | 17 | 12 | 1 | 5 |
+| [V6 Authentication](#v6-authentication) | 20 | 9 | 1 | 5 |
 | [V7 Session Management](#v7-session-management) | 10 | 5 | 0 | 3 |
 | [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
 | [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
@@ -36,7 +36,7 @@ reviewed again once a year, and before each major release.
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **122** | **67** | **10** | **54** |
+| **Total** | **125** | **64** | **10** | **54** |
 
 ## Fixed while making this checklist
 
@@ -105,9 +105,8 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 - **Key management** (V11.1.1, V11.2.2): the data encryption key and the token signing key rotate from System health,
   and the backup recovery key is a key of its own, replaced from Backups and shown once only, with a written key policy
   and inventory (SECURITY.md). Still to do: a way to retire an old data key once no data or backup needs it.
-- **Sign-in strength** (V6.3.3, V6.3.4, V6.1.3):
-  - require two-step verification beyond the two administrator roles (at least finance, and anyone holding
-    administrative permissions);
+- **Sign-in strength** (V6.3.3, V6.3.4, V6.1.3): two-step verification is required of the administrator, accounts and
+  HR roles, and of anyone holding an administrative permission. Still to do:
   - decide the enrolled-device defaults;
   - list every sign-in pathway with its strength.
 
@@ -118,10 +117,13 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
   staff account may have 3 sessions at once. Still to do:
   - a new refresh token after unlocking, changing the password or turning on two-step verification;
   - portal accounts in the admin user list, and a sessions screen in the portal.
-- **Passwords and lockout** (V6.1.1, V6.1.2, V6.3.1, V6.3.2, V6.4.1, V6.4.3, V6.4.4, V6.5.5):
-  - a cap on TOTP failures, and lockouts that decay;
-  - temporary passwords that expire, and notifications on credential changes;
-  - no fixed bootstrap password outside development.
+- **Passwords and lockout** (V6.1.2, V6.3.2, V6.4.1, V6.4.4, V6.5.5): wrong authenticator codes count toward the lock,
+  failures are forgotten after a day, temporary passwords expire, account holders are told of credential changes, and
+  a fixed first password works on development machines only. Still to do:
+  - document the context words refused in passwords;
+  - a first administrator not named `admin`, and first passwords only HC360 makes;
+  - an identity check and a reason recorded before a lost authenticator is reset;
+  - a TOTP window of one step.
 - **Patient portal sign-in:** verify the mobile number at registration, before records are linked, and offer an
   optional stronger factor. (V6.6.1)
 - **Data in the browser, and data classes** (V14.1.1, V14.1.2, V14.3.1, V14.3.3, V8.1.2):
@@ -261,7 +263,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 | ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
 |---|---|---|---|---|---|
-| V6.1.1 | L1 | Brute-force and credential-stuffing defences documented | Partial | The docs mention lockout and "rate limits" only. They don't give thresholds, per-IP/per-phone scope, the 24 h escalation, admin unlock, or how malicious lockout is prevented. | [SECURITY.md](../../docs/security/SECURITY.md), [SECURITY.md](../../docs/security/SECURITY.md) |
+| V6.1.1 | L1 | Brute-force and credential-stuffing defences documented | Met | SECURITY.md gives the limits per address and per phone number, the lock after 5 wrong passwords or authenticator codes in a row, its doubling up to 24 hours, failures forgotten after a day, administrator unlock, and why a lock reveals nothing and only delays its owner. | [SECURITY.md](../../docs/security/SECURITY.md) |
 | V6.1.2 | L2 | Context-specific banned words documented | Partial | A few context words (nana, hyfib, hc360, hospital, doctor, nurse) sit in the deny-list file. There is no documented list, and department, role and system names are missing. | [common-passwords.txt](../../src/server/HyFib.HealthCare360.Platform/Security/Resources/common-passwords.txt) |
 | V6.1.3 | L2 | All sign-in pathways documented | Partial | An architecture test lists every pathway and the docs summarise them. No document states each pathway's authentication strength or the controls they must share. | [SECURITY.md](../../docs/security/SECURITY.md), [EndpointAuthorizationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/EndpointAuthorizationTests.cs) |
 | V6.2.1 | L1 | Passwords of at least 8 characters (15 recommended) | Met | Minimum is 12 characters by default. The setting has no lower bound, so configuration could weaken it. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs) |
@@ -276,14 +278,14 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V6.2.10 | L2 | No forced periodic password changes | Met | PasswordChangedAt is only recorded. There is no expiry or rotation setting. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
 | V6.2.11 | L2 | Context-specific words rejected | Met | HC360's own names and every facility's name and legal name are refused anywhere in a password, in any case and ignoring spaces and punctuation, as are the user's name and username. A facility name is matched whole. | [Passwords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Passwords.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V6.2.12 | L2 | Breached passwords rejected | Met | An offline set of about 800,000 passwords from public breach compilations (2.2 MB, built into the server; nothing leaves the hospital) is checked on every new password. A staff sign-in with a password in it, set before this check, must change it first, and is audited. | [BreachedPasswords.cs](../../src/server/HyFib.HealthCare360.Platform/Security/BreachedPasswords.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PasswordPolicyTests.cs](../../tests/HyFib.HealthCare360.Platform.Tests/PasswordPolicyTests.cs), [BreachedPasswordTests.cs](../../tests/HyFib.HealthCare360.IntegrationTests/BreachedPasswordTests.cs) |
-| V6.3.1 | L1 | Brute-force and credential-stuffing defences in place | Partial | Per-account lockout and per-address limits exist, and a locked account now gets the same answer (and the same work) as a wrong password. TOTP guesses have no per-account cap, and the failure count never decays. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs) |
-| V6.3.2 | L1 | No default accounts | Partial | A well-known "admin" account is always created (random one-time password, forced change). Config can set a fixed, unchecked password, skip the change, or seed demo users; nothing blocks this in production. | [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs), [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
-| V6.3.3 | L2 | Multi-factor authentication required | Partial | TOTP is enforced only for the SuperAdmin and HospitalAdmin role names. Clinicians, billing and custom admin roles sign in with a password only; device binding is off; patients use SMS only. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V6.3.1 | L1 | Brute-force and credential-stuffing defences in place | Met | Per-address limits, and a per-account lock after 5 failures in a row that doubles up to 24 hours. Wrong authenticator codes count against the account like wrong passwords, across sign-in attempts. Failures are forgotten after 24 hours without another. A locked account gets the same answer, after the same work, as a wrong password. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [SignInPolicy.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/SignInPolicy.cs) |
+| V6.3.2 | L1 | No default accounts | Partial | A well-known "admin" account is created at first start, with a random one-time password that must be changed. A fixed first password, skipping the change, and demonstration accounts work on development machines only, and are ignored with a warning anywhere else. | [IdentitySeeder.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentitySeeder.cs) |
+| V6.3.3 | L2 | Multi-factor authentication required | Partial | TOTP is enforced for SuperAdmin, HospitalAdmin, Accountant and HrManager, and for anyone holding an administrative permission whatever the role. Clinicians and desk staff sign in with a password only; device binding is off; patients use SMS only. | [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs), [SignInPolicy.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/SignInPolicy.cs) |
 | V6.3.4 | L2 | No undocumented sign-in pathways | Partial | Every anonymous endpoint is listed, so none are hidden. Strength varies and is not documented: ADMS terminals are accepted on serial number alone (IP pin optional). | [EndpointAuthorizationTests.cs](../../tests/HyFib.HealthCare360.ArchitectureTests/EndpointAuthorizationTests.cs), [BiometricIngestionService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.HR/Services/BiometricIngestionService.cs) |
-| V6.4.1 | L1 | Initial passwords and activation codes random and short-lived | Partial | Temporary passwords are 12 random characters (CSPRNG) and force a change. But they never expire, admins may choose them, and the bootstrap password file is not deleted automatically. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
+| V6.4.1 | L1 | Initial passwords and activation codes random and short-lived | Partial | Temporary passwords are 12 random characters (CSPRNG), must be changed at first sign-in and stop working after 72 hours. The first administrator's one-time password file is deleted once the password is changed. An administrator may still choose a new account's first password. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs) |
 | V6.4.2 | L1 | No password hints or secret questions | Met | No hints or secret questions anywhere. Forgotten passwords go through the IT help desk. | [login.tsx](../../src/web/apps/staff/src/routes/login.tsx), [IdentityEntities.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/IdentityEntities.cs) |
-| V6.4.3 | L2 | Password reset keeps MFA | Partial | Admin reset keeps MFA, forces a change and ends sessions, and only an administrator holding every administrative permission of the account may reset it. The temporary password never expires and the user is not notified. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [login.tsx](../../src/web/apps/staff/src/routes/login.tsx) |
-| V6.4.4 | L2 | Identity checked again when an MFA factor is lost | Partial | A lost authenticator needs an audited admin reset, which now ends the account's sessions and cannot be done by a less privileged administrator. No identity check, reason or second approver is recorded. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Permissions.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Permissions.cs) |
+| V6.4.3 | L2 | Password reset keeps MFA | Met | Admin reset keeps MFA, forces a change and ends sessions, and only an administrator holding every administrative permission of the account may reset it. The temporary password stops working after 72 hours, and the account holder is told in the app and by e-mail. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [CredentialNotices.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/CredentialNotices.cs) |
+| V6.4.4 | L2 | Identity checked again when an MFA factor is lost | Partial | A lost authenticator needs an audited admin reset, which ends the account's sessions, cannot be done by a less privileged administrator, and is told to the account holder. No identity check, reason or second approver is recorded. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Permissions.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Permissions.cs) |
 | V6.5.1 | L2 | One-time codes usable once | Met | A TOTP must be newer than the last accepted one, and OTP/MFA challenges are marked used. The user row's concurrency token stops parallel reuse. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V6.5.2 | L2 | Low-entropy lookup secrets stored hashed | N/A | There are no lookup secrets (no recovery or backup codes). OTPs and enrolment codes are stored as SHA-256 hashes. | – |
 | V6.5.3 | L2 | Codes and TOTP seeds from a secure random generator | Met | The 160-bit TOTP seed comes from a CSPRNG key generator; OTP digits come from RandomNumberGenerator. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |

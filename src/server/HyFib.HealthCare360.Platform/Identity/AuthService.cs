@@ -151,6 +151,8 @@ public sealed class AuthService(
         ErrorType.Unauthorized);
     private static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
     private static readonly Error ChallengeExpired = new("auth.challenge_expired", "This sign-in attempt has expired. Please start again.", ErrorType.Unauthorized);
+    private static readonly Error TemporaryPasswordExpired = new(
+        "auth.temporary_password_expired", "This temporary password has expired. Ask an administrator for a new one.", ErrorType.Unauthorized);
 
     private SecurityOptions Security => options.Value.Security;
 
@@ -192,21 +194,27 @@ public sealed class AuthService(
         var check = hashing.Verify(user.PasswordHash, request.Password ?? string.Empty);
         if (!check.Succeeded)
         {
-            user.FailedLoginCount++;
-            if (user.FailedLoginCount % Security.MaxFailedLogins == 0)
-            {
-                var multiplier = Math.Pow(2, (user.FailedLoginCount / Security.MaxFailedLogins) - 1);
-                user.LockoutEndsAt = now + TimeSpan.FromMinutes(Math.Min(Security.LockoutMinutes * multiplier, 24 * 60));
-            }
-
+            var locked = SignInPolicy.RecordFailure(Security, user, now);
             audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login_failed", "Wrong password")
             {
                 UserId = user.Id,
                 UserName = user.UserName,
-                Severity = user.LockoutEndsAt > now ? AuditSeverity.Critical : AuditSeverity.Warning,
+                Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
             });
             await db.SaveChangesAsync(ct);
             return InvalidCredentials;
+        }
+
+        // A temporary password works only for a while (ASVS V6.4.1); an administrator gives out a new one.
+        if (user.MustChangePassword && user.TemporaryPasswordExpiresAt <= now)
+        {
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Auth, "auth.temporary_password_expired", "Signed in with an expired temporary password")
+            {
+                UserId = user.Id,
+                UserName = user.UserName,
+                Severity = AuditSeverity.Warning,
+            }, ct);
+            return TemporaryPasswordExpired;
         }
 
         if (check.NeedsRehash)
@@ -274,7 +282,7 @@ public sealed class AuthService(
 
         challenge.Attempts++;
         var user = await LoadUserAsync(u => u.Id == challenge.UserId, ct);
-        if (user is null || !user.IsActive)
+        if (user is null || !user.IsActive || user.LockoutEndsAt > now)
         {
             await db.SaveChangesAsync(ct);
             return ChallengeExpired;
@@ -282,11 +290,14 @@ public sealed class AuthService(
 
         if (!VerifyTotp(user, request.Code, out var timeStep))
         {
-            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", "Wrong authenticator code")
+            // Whoever is guessing codes already knows the password, so a wrong code counts against the account like a
+            // wrong password, whichever sign-in attempt it comes in (ASVS V6.3.1).
+            var locked = SignInPolicy.RecordFailure(Security, user, now);
+            audit.Add(new AuditEntry(AuditCategories.Auth, "auth.mfa_failed", locked ? "Wrong authenticator code; the account is locked" : "Wrong authenticator code")
             {
                 UserId = user.Id,
                 UserName = user.UserName,
-                Severity = AuditSeverity.Warning,
+                Severity = locked ? AuditSeverity.Critical : AuditSeverity.Warning,
             });
             await db.SaveChangesAsync(ct);
             return Error.Field("code", "The code is incorrect or has expired.");
@@ -615,12 +626,15 @@ public sealed class AuthService(
         user.PasswordChangedAt = now;
         user.MustChangePassword = false;
         user.PasswordBreachedAt = null;
+        user.TemporaryPasswordExpiresAt = null;
 
         // Sign out every other session of this user.
         var others = await EndSessionsAsync(OtherSessionsOf(user, session), "password_changed", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.password_changed", "Password changed") { UserId = user.Id });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordChanged, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordChanged, ct);
 
         // The first administrator now has a password of their own: the one-time password's file is no longer needed.
         if (user.UserName == InitialAdminPassword.UserName)
@@ -790,14 +804,17 @@ public sealed class AuthService(
             return Error.Field("code", "The code is incorrect. Check the time on your phone and try again.");
         }
 
+        var now = time.GetUtcNow();
         user.MfaEnabled = true;
         user.MfaLastTimeStep = timeStep;
 
         // Sessions signed in before need no code: end them (ASVS V7.4.3).
-        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_enabled", time.GetUtcNow(), ct);
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_enabled", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_enabled", "Two-step verification enabled") { UserId = user.Id });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaEnabled, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaEnabled, ct);
 
         var roles = RoleNames(user);
         var restriction = RestrictionFor(user, roles);
@@ -813,9 +830,9 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        if (RequiresMfa(RoleNames(user)))
+        if (RequiresMfa(user, RoleNames(user)))
         {
-            return Error.Forbidden("auth.mfa_required", "Your role requires two-step verification.");
+            return Error.Forbidden("auth.mfa_required", "Your account requires two-step verification.");
         }
 
         if (!hashing.Verify(user.PasswordHash, request.Password ?? string.Empty).Succeeded)
@@ -823,15 +840,18 @@ public sealed class AuthService(
             return Error.Field("password", "Password is incorrect.");
         }
 
+        var now = time.GetUtcNow();
         user.MfaEnabled = false;
         user.MfaSecret = null;
         user.MfaLastTimeStep = null;
 
         // Whoever turned it off may not be the account's owner: end the account's other sessions (ASVS V7.4.3).
-        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_disabled", time.GetUtcNow(), ct);
+        var others = await EndSessionsAsync(OtherSessionsOf(user, session), "mfa_disabled", now, ct);
         audit.Add(new AuditEntry(AuditCategories.Security, "auth.mfa_disabled", "Two-step verification disabled") { UserId = user.Id, Severity = AuditSeverity.Warning });
+        CredentialNotices.QueueEmail(notifications, user, CredentialNotices.MfaDisabled, now);
         await db.SaveChangesAsync(ct);
         InvalidateAll(others);
+        await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.MfaDisabled, ct);
         return Result.Success();
     }
 
@@ -990,6 +1010,7 @@ public sealed class AuthService(
         var ended = await EnforceSessionLimitAsync(user, session, now, ct);
 
         user.FailedLoginCount = 0;
+        user.LastFailedLoginAt = null;
         user.LockoutEndsAt = null;
         user.LastLoginAt = now;
         audit.Add(new AuditEntry(AuditCategories.Auth, "auth.login", $"Signed in ({clientType})") { UserId = user.Id, UserName = user.UserName });
@@ -1133,15 +1154,15 @@ public sealed class AuthService(
 
     private string? RestrictionFor(User user, IReadOnlyList<string> roles) =>
         user.MustChangePassword ? RestrictionPasswordChange
-        : RequiresMfa(roles) && !user.MfaEnabled ? RestrictionMfaSetup
+        : RequiresMfa(user, roles) && !user.MfaEnabled ? RestrictionMfaSetup
         : null;
 
     /// <summary>The account's restriction, else the session's lock.</summary>
     private string? RestrictionFor(User user, IReadOnlyList<string> roles, UserSession session) =>
         RestrictionFor(user, roles) ?? (session.LockedAt is null ? null : RestrictionLocked);
 
-    private bool RequiresMfa(IReadOnlyList<string> roles) =>
-        Security.EnforceMfa && roles.Any(r => Security.MfaRequiredRoles.Contains(r, StringComparer.OrdinalIgnoreCase));
+    private bool RequiresMfa(User user, IReadOnlyList<string> roles) =>
+        SignInPolicy.RequiresMfa(Security, roles, user.Roles.SelectMany(r => r.Role?.Permissions ?? []).Select(p => p.Permission));
 
     private bool PasswordMatches(User user, string? password) =>
         user.PasswordHash is not null && !string.IsNullOrEmpty(password) && hashing.Verify(user.PasswordHash, password).Succeeded;
@@ -1278,7 +1299,7 @@ public sealed class AuthService(
 
     private Task<User?> LoadUserAsync(System.Linq.Expressions.Expression<Func<User, bool>> predicate, CancellationToken ct) =>
         db.Set<User>()
-            .Include(u => u.Roles).ThenInclude(r => r.Role)
+            .Include(u => u.Roles).ThenInclude(r => r.Role!).ThenInclude(r => r.Permissions)
             .Include(u => u.Facilities)
             .AsSplitQuery()
             .FirstOrDefaultAsync(predicate, ct);

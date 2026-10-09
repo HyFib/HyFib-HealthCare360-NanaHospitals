@@ -86,6 +86,7 @@ cd src/web && pnpm install && pnpm dev
   written to `hc360-data/initial-admin-password.txt` (git-ignored, deleted once the password is changed); to choose it
   instead, set
   `HealthCare360:Bootstrap:AdminPassword` in user secrets before the first start. The demonstration accounts share it.
+  It works on development machines only: anywhere else HC360 ignores it, and makes no demonstration accounts.
   Choose one that is not on public breach lists: an account signing in with such a password must change it first.
 - The staff app runs at `http://localhost:5360`, with `/api` proxied to the server.
 - HC360 Desktop can point at either address: `dotnet run --project src/desktop/HyFib.HealthCare360.Desktop`.

@@ -61,7 +61,7 @@ export function RestrictedSession({ restriction }: { restriction: 'password' | '
           <>
             <Title2 as="h1">Turn on two-step verification</Title2>
             <Text className={styles.muted}>
-              Your role can see sensitive records, so the hospital requires two-step verification.
+              Your account has administrative or financial rights, so the hospital requires two-step verification.
             </Text>
             <MfaSetup />
           </>
