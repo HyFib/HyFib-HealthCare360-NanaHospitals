@@ -192,6 +192,7 @@ export interface SystemHealthReport {
     recentEvents: { at: string; kind: string; message: string }[];
     ipAddresses: string[];
     httpsPort: number;
+    portalHttpsPort: number;
     mdnsEnabled: boolean;
   };
   database: {

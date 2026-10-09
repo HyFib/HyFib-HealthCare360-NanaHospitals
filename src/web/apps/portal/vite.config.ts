@@ -4,10 +4,11 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-// The patient portal is served by the HC360 Server at /portal (same origin as the API). During development Vite
-// proxies /api, /hubs and /health to the local server (self-signed LAN certificate → secure: false), exactly like
-// the staff app, so the portal and the staff app can run side by side (ports 5361 and 5360).
-const server = process.env.HC360_SERVER ?? 'https://localhost:7360';
+// The patient portal is served by the HC360 Server at /portal on an address of its own (port 7361; the staff app's is
+// 7360), which answers only the portal's API. During development Vite proxies /api, /hubs and /health to that address
+// of the local server (self-signed LAN certificate → secure: false), so the portal and the staff app can run side by
+// side (ports 5361 and 5360).
+const server = process.env.HC360_PORTAL_SERVER ?? 'https://localhost:7361';
 
 export default defineConfig({
   base: '/portal/',

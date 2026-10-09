@@ -296,7 +296,8 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
         <Row label="Addresses">
           <span className={styles.mono}>{h.network.ipAddresses.join(', ')}</span>
         </Row>
-        <Row label="Port">{h.network.httpsPort}</Row>
+        <Row label="Staff app port">{h.network.httpsPort}</Row>
+        <Row label="Patient portal port">{h.network.portalHttpsPort}</Row>
         <Row label="Auto-discovery">
           {h.network.mdnsEnabled ? 'On (HC360 Desktop finds the server by itself)' : 'Off'}
         </Row>

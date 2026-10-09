@@ -82,13 +82,16 @@ dotnet run --project src/server/HyFib.HealthCare360.Server
 cd src/web && pnpm install && pnpm dev
 ```
 
-- The server listens on `https://localhost:7360`. On first start it creates the `admin` user with a one-time password
+- The server listens on `https://localhost:7360` (staff app and API), `https://localhost:7361/portal/` (patient portal,
+  an address of its own) and `https://localhost:7362/docs` (API reference). On first start it creates the `admin` user with a one-time password
   written to `hc360-data/initial-admin-password.txt` (git-ignored, deleted once the password is changed); to choose it
   instead, set
   `HealthCare360:Bootstrap:AdminPassword` in user secrets before the first start. The demonstration accounts share it.
   It works on development machines only: anywhere else HC360 ignores it, and makes no demonstration accounts.
   Choose one that is not on public breach lists: an account signing in with such a password must change it first.
-- The staff app runs at `http://localhost:5360`, with `/api` proxied to the server.
+- The staff app runs at `http://localhost:5360`, with `/api` proxied to the server's staff address. The patient portal
+  (`pnpm --filter @hc360/portal dev`) runs at `http://localhost:5361/portal/`, with `/api` proxied to the server's
+  portal address.
 - HC360 Desktop can point at either address: `dotnet run --project src/desktop/HyFib.HealthCare360.Desktop`.
 
 Tests and checks:

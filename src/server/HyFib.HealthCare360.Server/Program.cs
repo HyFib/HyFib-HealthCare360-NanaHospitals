@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Net;
 using System.Security.Authentication;
 using HyFib.HealthCare360.Platform;
 using HyFib.HealthCare360.Platform.Hosting;
@@ -9,6 +8,7 @@ using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Server;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.ResponseCompression;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.StaticFiles;
 using Npgsql;
 using OpenTelemetry.Metrics;
@@ -75,24 +75,43 @@ using var bootstrapLoggers = LoggerFactory.Create(logging => logging.AddSimpleCo
 var certificates = new LanCertificateManager(directories, platformOptions, bootstrapProtection, bootstrapLoggers.CreateLogger<LanCertificateManager>());
 certificates.EnsureCertificates();
 
+// The staff app, the patient portal and the API reference each have an address of their own (ASVS V3.5.4, ListenerPaths).
+var apiReferenceOn = Listeners.ApiReferenceOn(platformOptions, builder.Environment);
+if (Listeners.PortProblem(platformOptions, apiReferenceOn) is { } portProblem)
+{
+    throw new InvalidOperationException($"HC360 cannot start: {portProblem}");
+}
+
 builder.WebHost.ConfigureKestrel(kestrel =>
 {
     kestrel.AddServerHeader = false;
     kestrel.Limits.MaxRequestBodySize = 30 * 1024 * 1024;
     kestrel.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(2);
-    kestrel.ListenAnyIP(platformOptions.HttpsPort, listen => listen.UseHttps(https =>
+    void Https(ListenOptions listen) => listen.UseHttps(https =>
     {
         // TLS 1.2 is the floor on purpose: older Windows versions the server may run on still enable TLS 1.0/1.1 by default.
 #pragma warning disable CA5398 // Avoid hardcoded SslProtocols values
         https.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
 #pragma warning restore CA5398
         https.ServerCertificateSelector = (_, _) => certificates.ServerCertificate;
-    }));
+    });
+
+    kestrel.ListenAnyIP(platformOptions.HttpsPort, Https);
+    kestrel.ListenAnyIP(platformOptions.PortalHttpsPort, Https);
+    if (apiReferenceOn)
+    {
+        // The server machine only: the reference shows the whole API, and IT turns it on for integration work.
+        kestrel.ListenLocalhost(platformOptions.ApiReferencePort, Https);
+    }
+
     if (platformOptions.HttpRedirectPort > 0)
     {
         kestrel.ListenAnyIP(platformOptions.HttpRedirectPort);
     }
 });
+
+// Plain HTTP goes to the staff app's address: with more than one HTTPS address, the port cannot be inferred.
+builder.Services.AddHttpsRedirection(redirection => redirection.HttpsPort = platformOptions.HttpsPort);
 
 builder.AddServerApplication(certificates);
 
@@ -159,6 +178,9 @@ if (platformOptions.HttpRedirectPort > 0)
 // Before static files, so the staff and portal shells and their assets carry the security headers too.
 app.UseHospitalSecurityHeaders();
 
+// Each address serves only its own app (ListenerPaths), the app shells and their assets included.
+app.UseListenerGate();
+
 // Never compress token-bearing auth responses (BREACH); everything else is compressed to save WiFi airtime.
 app.Use((context, next) =>
 {
@@ -211,26 +233,11 @@ app.UseSerilogRequestLogging(logging =>
 
 app.UseServerApplication();
 
-if (app.Environment.IsDevelopment() || platformOptions.EnableApiReference)
+// The reference and its schema answer only on their own address (ListenerPaths), which listens on the server machine
+// alone: the API's shape is not published to the hospital network, and the reference's script shares no origin, and no
+// cookie, with the staff app.
+if (apiReferenceOn)
 {
-    if (!app.Environment.IsDevelopment())
-    {
-        // Turned on by IT outside development: the reference and its schema answer only on the server machine itself,
-        // so the API's shape is not published to the hospital network. (Kestrel faces the network directly: the
-        // address is the connection's own.)
-        app.Use((context, next) =>
-        {
-            if ((context.Request.Path.StartsWithSegments("/docs") || context.Request.Path.StartsWithSegments("/openapi"))
-                && !IPAddress.IsLoopback(context.Connection.RemoteIpAddress ?? IPAddress.None))
-            {
-                context.Response.StatusCode = StatusCodes.Status404NotFound;
-                return Task.CompletedTask;
-            }
-
-            return next(context);
-        });
-    }
-
     app.MapOpenApi().AllowAnonymous();
     app.MapScalarApiReference("/docs", scalar => scalar.WithTitle("HC360 API")).AllowAnonymous();
 }

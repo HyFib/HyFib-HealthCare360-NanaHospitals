@@ -135,7 +135,8 @@ internal sealed class LabConnectionService(
         if (transport == LabTransport.Tcp)
         {
             var port = request.Port ?? 0;
-            if (port == platform.Value.HttpsPort || port == platform.Value.HttpRedirectPort || port == 5353)
+            if (port == platform.Value.HttpsPort || port == platform.Value.PortalHttpsPort || port == platform.Value.ApiReferencePort
+                || port == platform.Value.HttpRedirectPort || port == 5353)
             {
                 return Error.Field("port", $"Port {port} is used by the HC360 server itself. Choose another, for example 5100.");
             }

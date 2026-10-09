@@ -8,8 +8,21 @@ public sealed class PlatformOptions
     /// <summary>Data root. Default: %ProgramData%\HyFib\HealthCare360 on Windows, ./hc360-data elsewhere.</summary>
     public string? DataDirectory { get; set; }
 
-    /// <summary>HTTPS port served on the hospital LAN/WiFi.</summary>
+    /// <summary>HTTPS port of the staff app, HC360 Desktop and the integrations, served on the hospital LAN/WiFi.</summary>
     public int HttpsPort { get; set; } = 7360;
+
+    /// <summary>
+    /// HTTPS port of the patient portal: an address of its own, so script on a portal page, such as the payment checkout,
+    /// cannot reach the staff app or a staff session (ASVS V3.5.4, <see cref="Http.ListenerPaths"/>). Portal links to the
+    /// staff port are sent here.
+    /// </summary>
+    public int PortalHttpsPort { get; set; } = 7361;
+
+    /// <summary>
+    /// HTTPS port of the interactive API reference while it is on (<see cref="EnableApiReference"/>): an address of its own,
+    /// on the server machine only, that takes and sets no cookies.
+    /// </summary>
+    public int ApiReferencePort { get; set; } = 7362;
 
     /// <summary>Optional plain-HTTP port used only to redirect to HTTPS (0 = disabled).</summary>
     public int HttpRedirectPort { get; set; }
@@ -33,7 +46,9 @@ public sealed class PlatformOptions
     /// <summary>Process role: <c>all</c> (default), <c>api</c> (no background jobs) or <c>worker</c> (jobs only).</summary>
     public string Role { get; set; } = "all";
 
-    /// <summary>Serve the interactive API reference at /docs.</summary>
+    /// <summary>
+    /// Serve the interactive API reference at /docs on <see cref="ApiReferencePort"/> (always on in development).
+    /// </summary>
     public bool EnableApiReference { get; set; }
 
     public SecurityOptions Security { get; set; } = new();

@@ -3,6 +3,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -111,8 +112,9 @@ public sealed class AuthService(
     public const string RefreshCookieName = "hc360_rt";
 
     /// <summary>
-    /// The patient portal's refresh cookie. The staff app and the portal are served from one origin, so each keeps its
-    /// own cookie: signing in to one never replaces the other's session in the same browser.
+    /// The patient portal's refresh cookie. The portal has an address of its own, but browsers send a host's cookies to
+    /// every port of it, so each app keeps its own cookie and each address reads only its own app's: signing in to one
+    /// never replaces the other's session in the same browser.
     /// </summary>
     public const string PortalRefreshCookieName = "hc360_prt";
     public const string RefreshCookiePath = "/api/v1/auth";
@@ -1351,16 +1353,18 @@ public sealed class AuthService(
 
     private static List<string> RoleNames(User user) => user.Roles.Where(r => r.Role is not null).Select(r => r.Role!.Name).ToList();
 
-    /// <summary>A request from the patient portal app, which refreshes and signs out the portal's own session.</summary>
+    /// <summary>A request to the patient portal's address, which refreshes and signs out the portal's own sessions.</summary>
     internal static bool IsPortalRequest(HttpRequest request) => ClientTypeOf(request.HttpContext) == "portal";
 
+    /// <summary>
+    /// The app a request comes from. The portal is told by the address the request came to, not by what the request says
+    /// (ASVS V3.5.4): browsers send the staff app's cookie to the portal's address too, and script on a portal page must
+    /// not be able to present it as the staff app. Nothing on the staff app's address is the portal either.
+    /// </summary>
     private static string ClientTypeOf(HttpContext http) =>
-        http.Request.Headers[ClientHeader].ToString() switch
-        {
-            "desktop" => "desktop",
-            "portal" => "portal",
-            _ => "web",
-        };
+        Listeners.Of(http) == Listener.Portal ? "portal"
+        : http.Request.Headers[ClientHeader].ToString() == "desktop" ? "desktop"
+        : "web";
 
     /// <summary>The refresh cookie of an app: the portal's, or the staff app's (browser and HC360 Desktop).</summary>
     internal static string RefreshCookieFor(string clientType) => clientType == "portal" ? PortalRefreshCookieName : RefreshCookieName;

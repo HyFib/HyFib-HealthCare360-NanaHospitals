@@ -26,7 +26,7 @@ foreach ($name in $functions) {
 $statement = @($ast.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] -and $_.Left.Extent.Text -eq '$changed' })
 if ($statement.Count -ne 1) { throw 'Install-HC360Server.ps1 no longer sets its own settings in one "$changed = @(...)" statement.' }
 $setOwnSettings = [scriptblock]::Create(
-    'param($settings, [string] $DataDir, [string] $pgBin, [int] $HttpsPort = 7360, [string] $FacilityCode = ''NH'', ' +
+    'param($settings, [string] $DataDir, [string] $pgBin, [int] $HttpsPort = 7360, [int] $PortalHttpsPort = 7361, [string] $FacilityCode = ''NH'', ' +
     '[string] $FacilityName = ''Nana Hospitals'', [string] $SecondaryBackupDir, [switch] $CreateDatabase, [string] $connectionString) ' +
     [Environment]::NewLine + $statement[0].Extent.Text + [Environment]::NewLine + '$changed')
 
@@ -108,10 +108,11 @@ $pgDump = Join-Path $pgBin 'pg_dump.exe'
 try {
     Write-Host 'Fresh install'
     $changed = Invoke-ConfigurationStep $path @{ CreateDatabase = $true; connectionString = 'Host=localhost;Database=hc360;Username=hc360_app;Password=p+/&w'; FacilityName = $hindi; SecondaryBackupDir = '\\NAS\HC360-Backups' }
-    Assert ($changed.Count -eq 8) "sets the installer's eight settings ($($changed -join ', '))"
+    Assert ($changed.Count -eq 9) "sets the installer's nine settings ($($changed -join ', '))"
     $table = Read-Table $path
     Assert ($table['ConnectionStrings:Hospital'] -ceq 'Host=localhost;Database=hc360;Username=hc360_app;Password=p+/&w') 'the database connection'
     Assert ($table['HealthCare360:HttpsPort'] -ceq '7360') 'HttpsPort 7360'
+    Assert ($table['HealthCare360:PortalHttpsPort'] -ceq '7361') 'PortalHttpsPort 7361, an address of its own for the patient portal'
     Assert ($table['HealthCare360:DefaultFacilityName'] -ceq $hindi) 'a facility name in Devanagari'
     Assert ($table['HealthCare360:Backup:Enabled'] -ceq 'True') 'Backup:Enabled'
     Assert ($table['HealthCare360:Backup:SecondaryDirectory'] -ceq '\\NAS\HC360-Backups') 'Backup:SecondaryDirectory'
@@ -123,10 +124,11 @@ try {
     $before = Read-Table $path
     Assert ($before.Count -eq 27) "the server's file holds 27 settings ($($before.Count))"
     $changed = Invoke-ConfigurationStep $path
-    Assert (($changed -join ', ') -ceq 'HealthCare360:Backup:PgDumpPath') "changes only PgDumpPath, to the PostgreSQL found ($($changed -join ', '))"
+    Assert (($changed -join ', ') -ceq 'HealthCare360:PortalHttpsPort, HealthCare360:Backup:PgDumpPath') "adds the portal's port, and changes only PgDumpPath, to the PostgreSQL found ($($changed -join ', '))"
     $after = Read-Table $path
     $differ = @($before.Keys | Where-Object { $_ -ne 'HealthCare360:Backup:PgDumpPath' -and -not ($after.ContainsKey($_) -and $after[$_] -ceq $before[$_]) })
-    Assert ($differ.Count -eq 0 -and $after.Count -eq 27) "keeps every other setting exactly ($($differ -join ', '))"
+    Assert ($differ.Count -eq 0 -and $after.Count -eq 28) "keeps every other setting exactly ($($differ -join ', '))"
+    Assert ($after['HealthCare360:PortalHttpsPort'] -ceq '7361') 'the patient portal gets its own port, 7361'
     Assert ($after['HealthCare360:Backup:PgDumpPath'] -ceq $pgDump) 'PgDumpPath follows the PostgreSQL found'
     Assert ($after['ConnectionStrings:Hospital'] -ceq 'dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA') 'a protected connection as it was'
     Assert ($after['HealthCare360:Network:CertificatePassword'] -ceq 'dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sDAAAA') 'a protected password as it was'

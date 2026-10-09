@@ -23,7 +23,8 @@ internal static class TelehealthEndpoints
         group.MapPost("/sessions/{id:guid}/cancel", Cancel).RequirePermission(VirtualCarePermissions.TelehealthManage).WithValidation<CancelTelehealthSessionRequest>();
 
         var video = group.MapGroup(string.Empty).RequireFeature(FeatureKeys.Telehealth);
-        video.MapGet("/config", Config).RequireAnyPermission(VirtualCarePermissions.TelehealthRead, PatientsPermissions.Portal);
+        // Staff only: patients get the ICE servers of their own consultation from the portal's join endpoint.
+        video.MapGet("/config", Config).RequirePermission(VirtualCarePermissions.TelehealthRead);
         video.MapGet("/sessions", List).RequirePermission(VirtualCarePermissions.TelehealthRead);
         video.MapGet("/sessions/{id:guid}", Get).RequirePermission(VirtualCarePermissions.TelehealthRead);
         video.MapPost("/sessions", Create).RequirePermission(VirtualCarePermissions.TelehealthManage).WithValidation<CreateTelehealthSessionRequest>();

@@ -88,8 +88,8 @@ internal sealed class BridgeHost(
 
     /// <summary>
     /// Only the staff app's pages may use the bridge (printers, device identity, notifications). The patient portal and
-    /// the API docs come from the same origin but run third-party script (the payment checkout, the API explorer), so
-    /// their messages are refused.
+    /// the API docs run third-party script (the payment checkout, the API explorer). They have addresses of their own, so
+    /// the origin check refuses them; their paths are refused too, for a server from before they moved.
     /// </summary>
     internal static bool IsTrustedSource(string source, Uri serverOrigin) =>
         Uri.TryCreate(source, UriKind.Absolute, out var uri)
