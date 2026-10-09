@@ -382,22 +382,27 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
   the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
   on main, and every Monday so that new queries reach code nobody is changing.
-  - Alerts appear under Security › Code scanning. The `CodeQL` check fails a pull request that adds an alert of high
-    or critical severity.
-  - It needs GitHub Code Security on the repository, with CodeQL's default setup off (this workflow is the advanced
-    setup).
+  - A finding of high or critical severity fails the pull request. Each run checks whether GitHub Code Security is on
+    for the repository, and acts on the answer:
+    - **On:** the results go to Security › Code scanning, and its check fails a pull request that adds such an alert.
+    - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
+      (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and
+      fails for one of high or critical severity.
+  - CodeQL's default setup must stay off, because this workflow is the advanced setup.
   - Test code and generated route files are left out. For TypeScript and the workflows the filter is
     `.github/codeql/codeql-config.yml`; for C#, which CodeQL analyses as it is compiled, the workflow builds only the
     shipped projects, so the tests are left out but the database migrations, part of the server, are analysed.
-  - An alert is fixed in the code. One reviewed as a false positive or an accepted risk is dismissed on GitHub with
-    the reason, never hidden by turning a query off. The first run's alerts and how each was handled are in the table
-    below.
+  - A finding is fixed in the code, never hidden by turning a query off. One of high or critical severity reviewed as
+    a false positive or an accepted risk is marked where it is: a `// codeql[<query id>]` comment on the line just
+    before it, with the reason beside it. While Code Security is off, that comment is what keeps it from failing the
+    check. With Code Security on, also dismiss the alert on GitHub with the same reason. Medium and low findings do
+    not fail the check. The first run's alerts and how each was handled are in the table below.
 
 | CodeQL alert | Where | How it was handled |
 |---|---|---|
-| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | Accepted risk: the first administrator's one-time password goes to `initial-admin-password.txt` so the installer can show it. The data directory is open only to administrators and the service, and HC360 now deletes the file as soon as `admin` sets a new password (and at start-up if that already happened). Dismiss as "won't fix" |
-| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. Dismiss as "false positive" |
-| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). Dismiss as "false positive" |
+| Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | False positive: what it flags is the log line giving the path of `initial-admin-password.txt`, which CodeQL takes for a password because the file's name contains the word. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive". The file itself does hold the first administrator's one-time password, so the installer can show it. That is an accepted risk: the data directory is open only to administrators and the service, and HC360 deletes the file as soon as `admin` sets a new password (and at start-up if that already happened) |
+| Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
+| Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
 
 | Rule | Where | Why it is accepted |
 |---|---|---|

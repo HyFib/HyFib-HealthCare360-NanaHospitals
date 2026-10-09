@@ -119,6 +119,9 @@ internal sealed class IdentitySeeder(
             await File.WriteAllTextAsync(path,
                 $"HyFib HealthCare360 — initial administrator{Environment.NewLine}User name: admin{Environment.NewLine}Password: {password}{Environment.NewLine}" +
                 $"You will be asked to change this password at first sign-in. HC360 deletes this file once you have.{Environment.NewLine}", ct);
+            // False positive: this logs where the file is, not the password. CodeQL takes the path for a password
+            // because the file's name contains the word.
+            // codeql[cs/cleartext-storage-of-sensitive-information]
             logger.LogWarning("Created the initial administrator 'admin'. The one-time password was written to {Path}", path);
         }
     }
