@@ -9,8 +9,8 @@ namespace HyFib.HealthCare360.Platform.Tests;
 
 /// <summary>
 /// SRS SEC-07, ASVS V11.2.2: the data encryption key and the token signing key rotate. After a rotation new data uses
-/// the new key, everything encrypted before stays readable, and blind indexes, the backup key and the recovery key do
-/// not change; backups carry every key, so a restore reads data encrypted with any of them.
+/// the new key, everything encrypted before stays readable, and blind indexes and the original recovery key do not
+/// change; backups carry every key, so a restore reads data encrypted with any of them.
 /// </summary>
 public sealed class KeyRotationTests : IDisposable
 {
@@ -49,18 +49,18 @@ public sealed class KeyRotationTests : IDisposable
     }
 
     [Fact]
-    public void Blind_indexes_the_backup_key_and_the_recovery_key_do_not_change()
+    public void Blind_indexes_and_the_original_recovery_key_do_not_change()
     {
         var protector = new FieldProtector(Machine("m"), _protection);
         var index = protector.BlindIndex("123456789012");
-        var backupKey = protector.DeriveKey("backup");
+        var originalRecoveryKey = BackupRecoveryKey.Original(protector.ExportMasterKey());
         var fingerprint = protector.Fingerprint;
 
         protector.Rotate();
         protector.Rotate();
 
         protector.BlindIndex("123456789012").ShouldBe(index);
-        protector.DeriveKey("backup").ShouldBe(backupKey);
+        BackupRecoveryKey.Original(protector.ExportMasterKey()).ShouldBe(originalRecoveryKey);
         protector.Fingerprint.ShouldBe(fingerprint);
     }
 
@@ -220,7 +220,7 @@ public sealed class KeyRotationTests : IDisposable
     /// <summary>A backup as the backup service writes it: the original key, the ring, and the documents.</summary>
     private static async Task<(string File, byte[] RecoveryKey)> BackupWithRingAsync(DataDirectories machine, FieldProtector protector)
     {
-        var recoveryKey = protector.DeriveKey("backup");
+        var recoveryKey = BackupRecoveryKey.Original(protector.ExportMasterKey());
         var documents = BackupArchive.ListDocuments(machine.Files);
         var ring = protector.ExportRing();
         var manifest = new BackupManifest(BackupArchive.Format, "Manual", DateTimeOffset.UtcNow, "1.0.0", "hc360", [], true,

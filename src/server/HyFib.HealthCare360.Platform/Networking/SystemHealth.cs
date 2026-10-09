@@ -210,6 +210,17 @@ public sealed class SystemHealthService(
             warnings.Add(new("keys.data_due", "info", "The data encryption key is over two years old. Rotate it under Encryption keys."));
         }
 
+        // Backups still use the original recovery key. Until HC360 made separate recovery keys, any holder of the backups
+        // permission could display it; one never displayed is held by nobody.
+        if (!File.Exists(RecoveryKeyStore.PathIn(directories)))
+        {
+            warnings.Add(await RecoveryKeyService.OriginalWasDisplayedAsync(db, ct)
+                ? new("backup.recovery_key_original", "warning",
+                    "Backups still use the original recovery key, which any administrator with the backups permission could display. Make a new one under Backups › Recovery key.")
+                : new("backup.recovery_key_missing", "critical",
+                    "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
+        }
+
         return new SystemHealthReport(server, network, database, storage, backup, outbox, certificate, power, warnings, now);
     }
 

@@ -25,12 +25,16 @@ internal static class ServerCli
               rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
               new name. The whole backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
-              machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order.
+              machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
+              key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
 
-        The recovery key is shown in Administration > Backups > Recovery key (each view is audited); keep it offline. It
-        does not change when the data encryption key is rotated. Without --key it is
-        read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or from a hidden
-        prompt, so it never appears in the process list.
+        The recovery key that opens a backup is the one that was current when the backup was made. A new key is shown once,
+        when it is made in Administration > Backups > Recovery key, as 14 groups of 4 letters and digits; keep each one
+        offline for as long as backups made with it are kept. The Backups list, and this tool when it is given another key,
+        name the key each backup needs. Backups made before HC360 named their key open with the original recovery key, 44
+        characters long; on the Server Node itself, --key original reads that key from the machine's own data key. Without
+        --key the key is read from the HC360_RECOVERY_KEY environment variable, from standard input when it is redirected, or
+        from a hidden prompt, so it never appears in the process list.
 
           settings protect [--data-dir <folder>]
               Protects the secrets in config\hc360.settings.json with Windows DPAPI for this machine: every connection string
@@ -70,6 +74,12 @@ internal static class ServerCli
                 ["disk-encryption", "check", ..] => CheckDiskEncryption(options),
                 _ => PrintUsage(args),
             };
+        }
+        catch (BackupKeyMismatchException ex)
+        {
+            Console.Error.WriteLine($"This backup opens with recovery key {ex.BackupKeyId}, not with the key entered ({ex.GivenKeyId}).");
+            Console.Error.WriteLine("Each key's id was shown with it when it was made, and Administration > Backups lists the key of every backup.");
+            return 1;
         }
         catch (AuthenticationTagMismatchException)
         {
@@ -115,7 +125,9 @@ internal static class ServerCli
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
         CryptographicOperations.ZeroMemory(contents.MasterKey);
         Describe(contents.Manifest);
-        Console.WriteLine("The backup decrypts in full and matches its manifest.");
+        Console.WriteLine(payload.KeyId is { } keyId
+            ? $"The backup decrypts in full and matches its manifest. It opens with recovery key {keyId}."
+            : "The backup decrypts in full and matches its manifest. It opens with the original recovery key.");
         return WarnIfNewer(contents.Manifest) ? 3 : 0;
     }
 
@@ -151,6 +163,16 @@ internal static class ServerCli
         if (result.PreviousKeyKeptAs is { } keptAs)
         {
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");
+        }
+
+        if (result.RecoveryKeyKept)
+        {
+            Console.WriteLine($"Backups made here from now on also open with the recovery key you entered ({BackupRecoveryKey.Id(key)}).");
+        }
+        else if (result.RecoveryKeyProblem is { } problem)
+        {
+            Console.WriteLine($"The recovery key you entered could not be kept for new backups ({problem}).");
+            Console.WriteLine("Once HC360 runs, make a new one in Administration > Backups > Recovery key.");
         }
 
         if (databaseOut is not null)
@@ -254,7 +276,11 @@ internal static class ServerCli
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(DatabaseDumpPath: options["out"]), CancellationToken.None);
             try
             {
-                BackupRestore.CheckKey(contents.MasterKey, key);
+                // A version 3 backup names its key, which every chunk authenticates; a version 2 one used the original key.
+                if (payload.Version == BackupEncryption.ArchiveVersion)
+                {
+                    BackupRestore.CheckKey(contents.MasterKey, key);
+                }
             }
             catch
             {
@@ -281,7 +307,7 @@ internal static class ServerCli
     {
         await using var input = File.OpenRead(backupFile);
         await using var payload = await BackupEncryption.OpenAsync(input, key, CancellationToken.None);
-        return payload.Version == BackupEncryption.ArchiveVersion && WarnIfNewer(await BackupArchive.ReadManifestAsync(payload, CancellationToken.None));
+        return payload.Version != BackupEncryption.LegacyVersion && WarnIfNewer(await BackupArchive.ReadManifestAsync(payload, CancellationToken.None));
     }
 
     private static void Describe(BackupManifest manifest) =>
@@ -315,17 +341,45 @@ internal static class ServerCli
             throw new RecoveryKeyException("A recovery key is required.");
         }
 
-        byte[] bytes;
-        try
+        if (string.Equals(key.Trim(), "original", StringComparison.OrdinalIgnoreCase))
         {
-            bytes = Convert.FromBase64String(key.Trim());
-        }
-        catch (FormatException)
-        {
-            throw new RecoveryKeyException("The recovery key is not valid base64.");
+            return OriginalRecoveryKey(options);
         }
 
-        return bytes.Length == FieldMasterKey.Length ? bytes : throw new RecoveryKeyException("That is not an HC360 recovery key (it should be 44 characters).");
+        return BackupRecoveryKey.TryParse(key, out var bytes, out var problem) ? bytes : throw new RecoveryKeyException(problem);
+    }
+
+    /// <summary>
+    /// The original recovery key, from this machine's own original data key: older backups open with it. Only the Server
+    /// Node they were made on has that key, unless a restore installed it on another.
+    /// </summary>
+    private static byte[] OriginalRecoveryKey(Dictionary<string, string> options)
+    {
+        var directories = new DataDirectories(new PlatformOptions { DataDirectory = options.GetValueOrDefault("data-dir") });
+        var path = FieldMasterKey.PathIn(directories);
+        byte[]? masterKey;
+        try
+        {
+            masterKey = FieldMasterKey.Load(path, FieldMasterKey.CreateProtector(HospitalDataProtection.CreateProvider(directories)));
+        }
+        catch (CryptographicException ex)
+        {
+            throw new RecoveryKeyException($"This machine's data key could not be read ({ex.Message}). Enter the recovery key instead.");
+        }
+
+        if (masterKey is null)
+        {
+            throw new RecoveryKeyException($"There is no data key at {path}, so 'original' cannot be used on this machine. Enter the recovery key instead.");
+        }
+
+        try
+        {
+            return BackupRecoveryKey.Original(masterKey);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(masterKey);
+        }
     }
 
     private static string? ReadSecret(string prompt)

@@ -169,6 +169,21 @@ public sealed class EndpointAuthorizationTests
         stale.ShouldBeEmpty($"In {listName} but no longer {access}; remove them from the list:\n" + string.Join('\n', stale));
     }
 
+    [Theory]
+    [InlineData("/api/v1/admin/backups/recovery-key")]
+    [InlineData("/api/v1/admin/backups/recovery-key/{keyId}/confirm")]
+    public void Making_a_backup_recovery_key_needs_the_system_permission_as_well(string route)
+    {
+        // Whoever runs backups sees which recovery key they use; making a new one shows it, so it needs more (ASVS V13.3.2).
+        var endpoint = ((IEndpointRouteBuilder)App.Value).DataSources.SelectMany(source => source.Endpoints).OfType<RouteEndpoint>()
+            .Single(e => "/" + (e.RoutePattern.RawText ?? string.Empty).TrimStart('/') == route
+                         && e.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods.Contains("POST") == true);
+
+        endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).ShouldBeSubsetOf(
+            [PermissionPolicyProvider.Prefix + PlatformPermissions.BackupsManage, PermissionPolicyProvider.Prefix + PlatformPermissions.SystemManage]);
+        endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Select(a => a.Policy).ShouldContain(PermissionPolicyProvider.Prefix + PlatformPermissions.SystemManage);
+    }
+
     [Fact]
     public async Task A_request_whose_endpoint_states_nothing_needs_a_signed_in_user()
     {

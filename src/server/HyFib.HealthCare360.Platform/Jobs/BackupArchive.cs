@@ -43,10 +43,10 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 }
 
 /// <summary>
-/// The payload of a version 2 backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
+/// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
 /// the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each already encrypted).
-/// The archive itself is encrypted by <see cref="BackupEncryption"/> with the backup key, which is also the recovery key
-/// administrators keep offline, so one backup file and that key restore everything on replacement hardware.
+/// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
+/// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
 /// </summary>
 public static class BackupArchive
 {
@@ -287,6 +287,15 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 {
     /// <summary>How many keys rotations had added to the backup's key ring, installed beside the original key.</summary>
     public int RingKeysInstalled { get; init; }
+
+    /// <summary>
+    /// Whether this machine now backs up with the recovery key the backup was opened with: it had no recovery key of its
+    /// own, and the backup's was not the original key.
+    /// </summary>
+    public bool RecoveryKeyKept { get; init; }
+
+    /// <summary>Why the recovery key could not be kept, when that failed after everything else was restored.</summary>
+    public string? RecoveryKeyProblem { get; init; }
 }
 
 /// <summary>
@@ -336,7 +345,12 @@ public static class BackupRestore
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(databaseDumpPath, staging), ct);
             try
             {
-                CheckKey(contents.MasterKey, recoveryKey);
+                // A version 3 backup names its recovery key in a header every chunk authenticates. A version 2 backup was
+                // encrypted with the original recovery key, which comes from the key inside it.
+                if (payload.Version == BackupEncryption.ArchiveVersion)
+                {
+                    CheckKey(contents.MasterKey, recoveryKey);
+                }
 
                 // Documents first: they are only ever added, and one the database does not refer to is harmless. The key
                 // last: until it is installed, this machine keeps the key its current database was encrypted with.
@@ -357,9 +371,25 @@ public static class BackupRestore
                 var current = contents.Manifest.CurrentKey;
                 FieldKeyRing.SetCurrent(directories, current is null || current == contents.Manifest.KeyFingerprint ? null : current);
 
+                // Backups made here from now on open with the key the hospital just used. Everything else is back by now,
+                // so a failure here is reported rather than undoing the restore.
+                bool recoveryKeyKept;
+                string? recoveryKeyProblem = null;
+                try
+                {
+                    recoveryKeyKept = RecoveryKeyStore.KeepAfterRestore(directories, dataProtection, recoveryKey, contents.MasterKey);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CryptographicException)
+                {
+                    recoveryKeyKept = false;
+                    recoveryKeyProblem = ex.Message;
+                }
+
                 return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs)
                 {
                     RingKeysInstalled = contents.RingKeys.Count,
+                    RecoveryKeyKept = recoveryKeyKept,
+                    RecoveryKeyProblem = recoveryKeyProblem,
                 };
             }
             finally
@@ -381,13 +411,13 @@ public static class BackupRestore
     }
 
     /// <summary>
-    /// The recovery key is the backup key derived from the escrowed master key. A mismatch means the archive's key is not the
-    /// one its data was encrypted with, so it must not be installed.
+    /// For a version 2 backup: it was encrypted with the original recovery key, derived from the escrowed master key. A
+    /// mismatch means the archive's key is not the one its data was encrypted with, so it must not be installed.
     /// </summary>
     /// <exception cref="InvalidDataException">The key in the backup does not belong to the recovery key.</exception>
     public static void CheckKey(byte[] masterKey, byte[] recoveryKey)
     {
-        if (!CryptographicOperations.FixedTimeEquals(FieldMasterKey.DeriveKey(masterKey, "backup"), recoveryKey))
+        if (!CryptographicOperations.FixedTimeEquals(BackupRecoveryKey.Original(masterKey), recoveryKey))
         {
             throw new InvalidDataException("The encryption key in the backup does not belong to this recovery key.");
         }

@@ -117,9 +117,9 @@ Administration › System health warns while a secret in the file is in plain te
 ### Changing the database password
 
 The password of HC360's database account is changed from Administration › System health, while HC360 runs (SRS
-SEC-07). It needs the permission *Change the server's database password and keys, and sign everybody out*
-(`admin.system.manage`), which only SuperAdmin has until it is given to another role in Administration › Roles and
-permissions. Then:
+SEC-07). It needs the permission *Change the server's database password and keys, make backup recovery keys, and sign
+everybody out* (`admin.system.manage`), which only SuperAdmin has until it is given to another role in Administration ›
+Roles and permissions. Then:
 
 1. Open Administration › System health. Under Database it shows when the password was last changed, and by whom.
 2. Select **Change password** and confirm.
@@ -144,11 +144,29 @@ change the database password, at once if the Server Node, its disks or a backup 
   job moves everything encrypted before to the new key, a little at a time; the section shows how much is left, and
   screens keep working meanwhile. Documents move only while no backup is copying them. Earlier keys stay in
   `keys\field-keys` beside `keys\field-master.key`, and every backup carries them all, so older backups restore as
-  before. The backup recovery key does not change: keep using the one you have.
+  before. Rotating it does not change the backup recovery key, which has a key of its own (below).
 - **Rotate sign-in key.** New sign-in tokens are signed with a new key. Tokens already issued stay valid until they
   expire, within minutes, so nobody is signed out. It can be rotated again once those have expired.
 
 The keys are on the Server Node: rotate them there, not on a second API server, which cannot share them yet.
+
+### A new backup recovery key
+
+Backups are encrypted with the recovery key, which the hospital keeps offline. Make a new one when someone who has
+seen the current one leaves, when a copy of it may have been exposed, and once after upgrading from a version that
+showed the original key on screen; System health says when backups still use that one. It needs the same permission
+(`admin.system.manage`):
+
+1. Open Administration › Backups and select **Recovery key**. It names the key backups use, since when, and who made
+   it.
+2. Select **Make a new key** and give your password.
+3. Write down the key, 14 groups of 4 letters and digits, and its ID. It is shown this once.
+4. Select **I have written it down** and type the key from your copy, within 30 minutes. Only then do backups use it,
+   so a key nobody wrote down never becomes the one they need. A mistake in the copy is caught here.
+
+The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
+on a NAS or USB drive, are deleted: 30 days by default. Both steps are recorded in the audit log, without the key.
+HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again.
 
 ## 4. First sign-in and security set-up
 
@@ -157,8 +175,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
 1. Sign in as `admin` and choose a new password. Set up two-step verification; administrators must use it.
 2. Check that `%ProgramData%\HyFib\HealthCare360\initial-admin-password.txt` is gone: HC360 deletes it once `admin`
    has a new password. If it is still there, delete it.
-3. **Administration › Backups › Recovery key**: write the key down or print it, and store it in the hospital safe.
-   Without it, backups cannot be restored on new hardware.
+3. **Administration › Backups › Recovery key › Make a new key** (see "A new backup recovery key" above): write down
+   the key and its ID, type the key back from your copy, and store the copy in the hospital safe. Until then System
+   health warns that nobody holds the key, and backups cannot be restored on new hardware.
 4. **Administration › Users**: create staff accounts, giving each person only the roles their job needs. HC360
    refuses passwords on public breach lists or holding a facility's name, for temporary passwords too.
 5. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
@@ -451,14 +470,20 @@ distribution tool).
      .\Restore-HC360.ps1 -BackupFile '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
      ```
 
-     It asks for the recovery key and checks the whole backup before it changes anything. It restores the database first,
-     keeping the current one under a new name (nothing is dropped). Only then does it put the documents back and install
-     the backup's encryption key. If a step fails, the previous database is put back and HC360 starts again on it.
+     It asks for the recovery key that opens that backup: the one in use when it was made, which the Backups list names.
+     It checks the whole backup before it changes anything. It restores the database first, keeping the current one
+     under a new name (nothing is dropped). Only then does it put the documents back and install the backup's
+     encryption key. If a step fails, the previous database is put back and HC360 starts again on it. On new hardware,
+     later backups open with the key entered here; make a new key if that one should be retired.
   3. Workstations see a new server certificate. Re-run HC360 Desktop setup (Change server…) and compare the
      fingerprint.
 
   Backups listed as "Database only (older backup)" were made before HC360 archive backups. To restore one of those on
   new hardware, first copy the old `%ProgramData%\HyFib\HealthCare360\keys` folder back, if you have it.
+
+  Backups whose recovery key is "Original key" open with the original key, which no screen shows any more. On the
+  Server Node that made them, enter `original` when the script asks for the key; elsewhere, use the copy made when
+  administrators could still display it.
 
 ## 9. Troubleshooting
 
@@ -470,6 +495,8 @@ distribution tool).
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
 | "HC360 stopped: the server could not be verified" | Something answered for the server with a certificate that is not from the hospital CA; the screen shows its issuer. A proxy or security product that inspects HTTPS: exempt the HC360 server from it. The server was reinstalled with a new CA: re-run setup (Change server…) and compare the fingerprint. Also check the workstation's date and time |
 | Service will not start | `%ProgramData%\HyFib\HealthCare360\logs\`, then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
+| A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
+| A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
 | "The database could not be reached to confirm the change" after Change password | HC360 kept the old password. If it cannot sign in to the database once the database is back, set a new password for its account as `postgres` (`\password hc360_app` in psql), write the connection string with it in plain text in `hc360.settings.json`, run `settings protect` and restart the `HC360Server` service |
 | `Install-HC360Server.ps1` stops at the start: "… hc360.settings.json is not valid JSON" | Nothing was changed, and HC360 keeps running. Correct the file where the message says (Windows PowerShell does not accept comments in it), then run the installer again |
 | Service will not start: "The setting … cannot be opened on this machine" | The configuration was copied from another server, or the value was damaged. Write that setting's plain value in `hc360.settings.json` and run `settings protect` (see "Changing a protected setting") |
