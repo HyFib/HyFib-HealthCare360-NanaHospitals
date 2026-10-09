@@ -25,7 +25,7 @@ reviewed again once a year, and before each major release.
 | [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
 | [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
 | [V6 Authentication](#v6-authentication) | 17 | 12 | 1 | 5 |
-| [V7 Session Management](#v7-session-management) | 5 | 9 | 1 | 3 |
+| [V7 Session Management](#v7-session-management) | 10 | 5 | 0 | 3 |
 | [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
 | [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
 | [V10 OAuth and OIDC](#v10-oauth-and-oidc) | 1 | 0 | 0 | 28 |
@@ -36,7 +36,7 @@ reviewed again once a year, and before each major release.
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **116** | **72** | **11** | **54** |
+| **Total** | **121** | **68** | **10** | **54** |
 
 ## Fixed while making this checklist
 
@@ -114,11 +114,11 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 ### Priority 2
 
-- **Sessions** (V7.1.1, V7.1.2, V7.2.4, V7.3.1, V7.4.3, V7.4.5, V7.5.1, V7.5.2):
-  - an idle timeout and lock enforced on the server, with refresh only after user activity;
-  - "sign out everywhere" for users and for administrators;
-  - re-authentication before MFA changes;
-  - a concurrent-session policy.
+- **Sessions** (V7.2.4, V7.4.5, V7.5.2): the server keeps the idle lock and ends sessions nobody uses, staff can sign
+  out their other devices and administrators everybody, two-step verification changes ask for the password, and a
+  staff account may have 3 sessions at once. Still to do:
+  - a new refresh token after unlocking, changing the password or turning on two-step verification;
+  - portal accounts in the admin user list, and a sessions screen in the portal.
 - **Passwords and lockout** (V6.1.1, V6.1.2, V6.3.1, V6.3.2, V6.4.1, V6.4.3, V6.4.4, V6.5.5):
   - a cap on TOTP failures, and lockouts that decay;
   - temporary passwords that expire, and notifications on credential changes;
@@ -302,22 +302,22 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 
 | ID | Level | Topic | Status | How HC360 meets it, or what is missing | Evidence |
 |---|---|---|---|---|---|
-| V7.1.1 | L2 | Session timeouts documented | Partial | The docs give 12 h absolute, 2 h idle and a 10-min lock. There is no reasoning against NIST 800-63B (AAL2 30-min idle) and no rationale per client. | [SECURITY.md](../../docs/security/SECURITY.md), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
-| V7.1.2 | L2 | Concurrent-session policy documented | Gap | Nothing says how many sessions one account may hold at once or what happens at a limit. The code allows unlimited sessions per user. | – |
+| V7.1.1 | L2 | Session timeouts documented | Met | SECURITY.md gives each limit and why, against NIST SP 800-63B at AAL2: 12 h absolute (a shift; AAL2 asks for sign-in again within 12 h), a lock kept by the server after 10 minutes unused that needs the PIN or password (AAL2: 30 minutes), and an end after 2 h unused for staff and 20 minutes for the patient portal (shared phones). | [SECURITY.md](../../docs/security/SECURITY.md), [PlatformOptions.cs](../../src/server/HyFib.HealthCare360.Platform/Hosting/PlatformOptions.cs) |
+| V7.1.2 | L2 | Concurrent-session policy documented | Met | A staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0 for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`. Patient portal accounts have no limit. Documented in SECURITY.md. | [SECURITY.md](../../docs/security/SECURITY.md), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.1.3 | L2 | Federated session systems documented | N/A | No SSO or federated identity; every session is a local HC360 session. | – |
 | V7.2.1 | L1 | Session tokens verified on the server | Met | The server's JwtBearer handler checks each JWT and whether its session is still active. Refresh tokens are checked against hashed DB rows. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.2.2 | L1 | Dynamic session tokens, not static keys | Met | Each sign-in gets its own ES256 access token and rotating opaque refresh token. No static keys represent user sessions. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.2.3 | L1 | Reference tokens random (128+ bits) | Met | Refresh tokens are 32 bytes (256 bits) from RandomNumberGenerator and are stored only as SHA-256 hashes. | [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.2.4 | L1 | New session token at every sign-in | Partial | Sign-in creates a new session, but an earlier session in the same browser is not revoked. Unlock, password change and MFA enrolment keep the same session. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
-| V7.3.1 | L2 | Inactivity timeout | Partial | The 2 h idle limit counts time between refreshes, but the SPA refreshes about every 9 min whether or not anyone is active. The staff 10-min lock is UI-only. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
+| V7.3.1 | L2 | Inactivity timeout | Met | Idle time counts from real use (a key press, click or touch, which the app reports with each refresh), not from the background refreshes. The server keeps the 10-minute lock: a locked session's requests are refused (423) until the PIN or password is given, and the server locks a session the app did not. Sessions end after 2 h unused (portal: 20 minutes). | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [SessionLock.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/SessionLock.cs), [session.ts](../../src/web/packages/core/src/auth/session.ts) |
 | V7.3.2 | L2 | Absolute session lifetime | Met | Session expiry is set at sign-in (12 h) and never extended. Every request and refresh checks it, and refresh tokens cannot outlive it. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
 | V7.4.1 | L1 | Ended sessions cannot be used again | Partial | Logout or revocation marks the session revoked and access tokens fail at once. Open events-hub connections now close within the token's 10 minutes; telehealth connections stay until the call ends. | [PlatformServiceCollectionExtensions.cs](../../src/server/HyFib.HealthCare360.Platform/PlatformServiceCollectionExtensions.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.4.2 | L1 | Sessions end when an account is disabled | Met | Deactivating a user revokes all their sessions, and inactive users get no permissions. Users cannot be hard-deleted. Open hub connections have the same gap as V7.4.1. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [Authorization.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Authorization.cs) |
-| V7.4.3 | L2 | Other sessions can be ended after a credential change | Partial | Password change, admin password reset and admin MFA reset end the other sessions. Turning one's own MFA on or off neither ends sessions nor offers to. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.4.3 | L2 | Other sessions can be ended after a credential change | Met | Password change, turning one's own two-step verification on or off, admin password reset and admin MFA reset all end the account's other sessions. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V7.4.4 | L2 | Sign-out visible on every page | Partial | The staff shell, lock and restricted screens, and portal navigation all show Sign out. The signed-in /display/queue TV page has none. | [UserMenu.tsx](../../src/web/apps/staff/src/shell/UserMenu.tsx), [Navigation.tsx](../../src/web/apps/portal/src/shell/Navigation.tsx) |
-| V7.4.5 | L2 | Administrators can end sessions | Partial | Admins can revoke all sessions of one user. There is no way to end every user's sessions, and portal accounts do not appear in the admin user list. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs) |
-| V7.5.1 | L2 | Re-authentication before changing sign-in attributes | Partial | Password change, MFA disable and PIN setup ask for the password. MFA setup and enable ask for nothing. Staff cannot edit their own email or phone. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
-| V7.5.2 | L2 | Users can see and end their sessions | Partial | Staff can list sessions and end them one at a time, with no re-authentication. There is no "end all", and the portal has no sessions screen. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [account.tsx](../../src/web/apps/staff/src/routes/_app/account.tsx) |
+| V7.4.5 | L2 | Administrators can end sessions | Partial | Admins can end all sessions of one user, and holders of `admin.system.manage` can sign everybody out, staff and portal, after giving their password (audited as critical). Portal accounts still do not appear in the admin user list, so one patient's sessions cannot be ended alone. | [AccessAdminEndpoints.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AccessAdminEndpoints.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
+| V7.5.1 | L2 | Re-authentication before changing sign-in attributes | Met | Password change, two-step verification setup and disable, and PIN setup ask for the password; enabling two-step verification also needs a code from the new authenticator. Staff cannot edit their own email or phone. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [security.tsx](../../src/web/apps/staff/src/modules/account/security.tsx) |
+| V7.5.2 | L2 | Users can see and end their sessions | Partial | Staff see their sessions (when each was last used, and whether it is locked) and end one or all the others after giving their password again. The patient portal has no sessions screen. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [account.tsx](../../src/web/apps/staff/src/routes/_app/account.tsx) |
 | V7.6.1 | L2 | RP and IdP session lifetimes coordinated | N/A | No identity provider or relying-party federation. | – |
 | V7.6.2 | L2 | Sessions created only by an explicit user action | N/A | No federation or silent SSO. Sessions start only from an explicit password (plus TOTP) or OTP sign-in. | – |
 

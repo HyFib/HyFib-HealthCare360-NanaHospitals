@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -67,13 +68,19 @@ internal static class AuthEndpoints
             .RequireAuthorization()
             .RequireRateLimiting(AuthRateLimit);
 
+        // Locking and unlocking are among the few things a locked session may do (SessionLock).
+        group.MapPost("/lock", async (AuthService auth, CancellationToken ct) => (await auth.LockAsync(ct)).ToNoContent())
+            .RequireAuthorization();
+
         group.MapPost("/unlock", async (UnlockRequest request, AuthService auth, HttpContext http, CancellationToken ct) =>
-                (await auth.UnlockAsync(request, http, ct)).ToNoContent())
+                (await auth.UnlockAsync(request, http, ct)).ToOk())
             .RequireAuthorization()
             .RequireRateLimiting(AuthRateLimit);
 
-        group.MapPost("/mfa/setup", async (AuthService auth, CancellationToken ct) => (await auth.BeginMfaSetupAsync(ct)).ToOk())
-            .RequireAuthorization();
+        group.MapPost("/mfa/setup", async (MfaSetupRequest request, AuthService auth, CancellationToken ct) =>
+                (await auth.BeginMfaSetupAsync(request, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
 
         group.MapPost("/mfa/enable", async (MfaEnableRequest request, AuthService auth, CancellationToken ct) =>
                 (await auth.EnableMfaAsync(request, ct)).ToOk())
@@ -88,8 +95,22 @@ internal static class AuthEndpoints
         group.MapGet("/sessions", async (AuthService auth, CancellationToken ct) => TypedResults.Ok(await auth.ListSessionsAsync(ct)))
             .RequireAuthorization();
 
-        group.MapDelete("/sessions/{id:guid}", async (Guid id, AuthService auth, CancellationToken ct) =>
-                (await auth.RevokeSessionAsync(id, ct)).ToNoContent())
-            .RequireAuthorization();
+        // Ending sessions asks for the password again (ASVS V7.5.2), so these share sign-in's limit on guesses.
+        group.MapPost("/sessions/{id:guid}/end", async (Guid id, ReauthenticateRequest request, AuthService auth, CancellationToken ct) =>
+                (await auth.EndSessionAsync(id, request, ct)).ToNoContent())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        group.MapPost("/sessions/end-others", async (ReauthenticateRequest request, AuthService auth, CancellationToken ct) =>
+                (await auth.EndOtherSessionsAsync(request, ct)).ToOk())
+            .RequireAuthorization()
+            .RequireRateLimiting(AuthRateLimit);
+
+        // Signs out everybody but the administrator who asks: for a suspected break-in (ASVS V7.4.5).
+        app.MapPost("/api/v1/admin/sessions/end-all", async (ReauthenticateRequest request, AuthService auth, CancellationToken ct) =>
+                (await auth.EndAllSessionsAsync(request, ct)).ToOk())
+            .WithTags("Administration")
+            .RequirePermission(PlatformPermissions.SystemManage)
+            .RequireRateLimiting(AuthRateLimit);
     }
 }

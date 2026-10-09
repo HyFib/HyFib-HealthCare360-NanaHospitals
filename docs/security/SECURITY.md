@@ -77,10 +77,29 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
   - A refresh token presented after it was spent ends the whole session, and is audited as critical. A retry within
     60 seconds (a response lost on the WiFi link) is re-issued a token once. The token it replaces is retired, so if a
     copy was being replayed, the real client's next refresh ends the session for both.
-- Sessions:
-  - End after 12 hours, or after 2 hours idle.
-  - Workstations **lock after 10 minutes** of inactivity; staff unlock with a PIN.
-  - Too many wrong PINs end the session.
+- **Sessions** (ASVS V7):
+  - **How long:** a session ends 12 hours after sign-in (one clinical shift), or after 2 hours nobody has used it. A
+    patient portal session ends after 20 minutes unused, because portals run on shared and family phones. Together
+    with the lock below, these meet NIST SP 800-63B at AAL2: sign in again within 12 hours, and give a secret again
+    after 30 minutes unused.
+  - **What counts as use:** a key press, click, touch or scroll in the app, which the app reports with each token
+    refresh. The refresh itself does not count, since the app refreshes every few minutes in the background. A video
+    consultation in progress counts as use on the portal.
+  - **Idle lock:** staff screens lock after 10 minutes unused (the `ui.idleLockMinutes` setting; 0 turns it off), and
+    staff unlock with a PIN or their password. The server keeps the lock: until the session is unlocked, its requests
+    are refused (423) and live updates stop, so hiding the lock screen opens nothing. The server also locks a session
+    the app did not lock, at the next refresh that reports 10 minutes unused. Too many wrong PINs end the session.
+    Locking and unlocking are audited.
+  - **How many at once:** a staff account may have 3 sessions at once (the `security.maxSessionsPerUser` setting; 0
+    for no limit). Signing in once more signs out the session used least recently, audited as `auth.session_limit`.
+    Patient portal accounts have no limit.
+  - **Other devices:** under My account › Signed-in devices, staff see their sessions, when each was last used and
+    whether it is locked. They can sign out one of the others, or all of them, after giving their password again.
+  - **Everybody:** an administrator with `admin.system.manage` can sign out every session but their own, staff and
+    portal, from Administration › Users, after giving their password. Use it for a suspected break-in or a leaked
+    password list. It is audited as critical.
+  - **Credential changes:** changing the password, or turning two-step verification on or off, signs out the
+    account's other sessions. Setting up two-step verification asks for the password first.
 - Selected roles can be limited to **enrolled devices**:
   - Each HC360 Desktop has a device secret, protected with Windows DPAPI.
   - Administrators can revoke a device at any time.
@@ -382,8 +401,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **CodeQL code scanning** (`.github/workflows/codeql.yml`) analyses the server, HC360 Desktop and the lab agent (C#),
   the web apps (TypeScript) and the CI workflows, with the `security-extended` queries. It runs on every pull request,
   on main, and every Monday so that new queries reach code nobody is changing.
-  - A finding of high or critical severity fails the pull request. Each run checks whether GitHub Code Security is on
-    for the repository, and acts on the answer:
+  - A finding of high or critical severity fails the pull request. On a pull request, CodeQL reports only findings in
+    the lines it changes, as code scanning does; the runs on main and every Monday report everything. Each run checks
+    whether GitHub Code Security is on for the repository, and acts on the answer:
     - **On:** the results go to Security › Code scanning, and its check fails a pull request that adds such an alert.
     - **Off:** GitHub refuses the results, so they are not uploaded. Instead, each `CodeQL` job checks them itself
       (`.github/codeql/check-results.ps1`). It lists every finding in the job summary and on the line it is about, and
